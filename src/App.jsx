@@ -5008,6 +5008,12 @@ export default function StreakdApp() {
   const [weeklyProgress, setWeeklyProgress] = useState(initialWeeklyProgress);
   const [userData, setUserData] = useState(initialUserData);
 
+  // Ref to always have access to latest userData (avoids stale closure issues)
+  const userDataRef = useRef(userData);
+  useEffect(() => {
+    userDataRef.current = userData;
+  }, [userData]);
+
   // Helper to determine effective category of an activity
   const getActivityCategory = (activity) => {
     // If countToward is set (for Yoga/Pilates), use that
@@ -5180,7 +5186,8 @@ export default function StreakdApp() {
     // Trigger celebration for completing a goal
     const goals = userData.goals;
     const prevProgress = weeklyProgress;
-    const records = userData.personalRecords;
+    // Use ref to get latest records (avoids stale closure issues)
+    const records = userDataRef.current.personalRecords;
     
     // Get the effective category of this activity (respects countToward)
     const activityCategory = getActivityCategory(newActivity);
@@ -5257,12 +5264,12 @@ export default function StreakdApp() {
         
         // Fastest pace (for runs with distance and duration)
         // Only count if distance is at least 0.1 miles and pace is reasonable (3-30 min/mile)
-        const distance = parseFloat(activity.distance);
-        if (activity.type === 'Running' && distance >= 0.1 && activity.duration) {
-          const pace = activity.duration / distance; // min per mile
+        const runDistance = parseFloat(activity.distance);
+        if (activity.type === 'Running' && runDistance >= 0.1 && activity.duration) {
+          const pace = activity.duration / runDistance; // min per mile
           if (pace >= 3 && pace <= 30) { // Reasonable running pace range
-            const currentFastest = records.fastestPace?.value || records.fastestPace;
-            if (!currentFastest || pace < currentFastest) {
+            const currentFastest = records.fastestPace?.value ?? null;
+            if (currentFastest === null || pace < currentFastest) {
               newRecords.fastestPace = { value: pace, activityType: 'Running' };
               const paceMin = Math.floor(pace);
               const paceSec = Math.round((pace - paceMin) * 60);

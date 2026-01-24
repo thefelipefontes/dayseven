@@ -674,7 +674,7 @@ const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!" }) =>
 const ShareModal = ({ isOpen, onClose, stats }) => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
-  const [cardType, setCardType] = useState('streak');
+  const [cardType, setCardType] = useState('weekly');
   const [weeklySlide, setWeeklySlide] = useState(0); // 0 = progress, 1 = highlights
   const [touchStart, setTouchStart] = useState(null);
 
@@ -689,10 +689,10 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
     const diff = touchStart - touchEnd;
 
     if (Math.abs(diff) > 50) { // Minimum swipe distance
-      if (diff > 0 && weeklySlide < 1) {
-        setWeeklySlide(1); // Swipe left = next slide
+      if (diff > 0 && weeklySlide < 2) {
+        setWeeklySlide(weeklySlide + 1); // Swipe left = next slide
       } else if (diff < 0 && weeklySlide > 0) {
-        setWeeklySlide(0); // Swipe right = prev slide
+        setWeeklySlide(weeklySlide - 1); // Swipe right = prev slide
       }
     }
     setTouchStart(null);
@@ -836,9 +836,8 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
 
   // Card type configurations
   const cardTypes = [
-    { id: 'streak', label: '🔥', name: 'Streak' },
-    { id: 'records', label: '🏆', name: 'Records' },
     { id: 'weekly', label: '📅', name: 'Weekly' },
+    { id: 'records', label: '🏆', name: 'Records' },
     { id: 'monthly', label: '📊', name: 'Monthly' }
   ];
 
@@ -896,87 +895,6 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
   // Render the appropriate card content
   const renderCardContent = () => {
     switch (cardType) {
-      case 'streak':
-        // Calculate total weeks won (weeks where master streak was maintained)
-        const weeksWon = stats?.last4Weeks?.filter(w => w).length || 0;
-        return (
-          <div className="relative h-full flex flex-col items-center justify-between pt-6 pb-3 px-5">
-            <div className="text-3xl" style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>🔥</div>
-            <div className="flex-1 flex flex-col items-center justify-center w-full -mt-2">
-              {/* Main master streak number */}
-              <div className="text-center">
-                <div className="font-black leading-none" style={{ fontSize: '4rem', color: colors.primary, textShadow: `0 0 40px ${colors.glow}, 0 0 80px ${colors.glow}`, animation: 'ring-pulse 3s ease-in-out infinite' }}>
-                  {streakCount}
-                </div>
-                <div className="text-[10px] font-semibold tracking-widest text-gray-400 uppercase mt-1">Master Streak</div>
-                <div className="text-[8px] text-gray-500 mt-0.5">weeks hitting all goals</div>
-              </div>
-
-              {/* Active Streaks */}
-              <div className="w-full p-2 rounded-xl mt-2" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-                <div className="flex items-center justify-center mb-0.5">
-                  <span className="text-[9px] text-gray-400 uppercase tracking-wider">Active Streaks</span>
-                </div>
-                <div className="w-full h-px mb-1.5" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }} />
-                <div className="flex justify-around">
-                  <div className="text-center">
-                    <div className="text-sm font-bold" style={{ color: '#00FF94' }}>{stats?.strengthStreak || 0}</div>
-                    <div className="text-[8px] text-gray-500 -mt-0.5">🏋️ weeks</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-sm font-bold" style={{ color: '#FF9500' }}>{stats?.cardioStreak || 0}</div>
-                    <div className="text-[8px] text-gray-500 -mt-0.5">🏃 weeks</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-sm font-bold" style={{ color: '#00D1FF' }}>{stats?.recoveryStreak || 0}</div>
-                    <div className="text-[8px] text-gray-500 -mt-0.5">🧊 weeks</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Streak Records */}
-              <div className="w-full p-2 rounded-xl mt-1.5" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-                <div className="flex items-center justify-center mb-0.5">
-                  <span className="text-[9px] text-gray-400 uppercase tracking-wider">Streak Records</span>
-                </div>
-                <div className="w-full h-px mb-1.5" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }} />
-                <div className="flex justify-around">
-                  <div className="text-center">
-                    <div className="text-sm font-bold" style={{ color: '#00FF94' }}>{stats?.longestStrengthStreak || 0}</div>
-                    <div className="text-[8px] text-gray-500 -mt-0.5">🏋️ weeks</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-sm font-bold" style={{ color: '#FF9500' }}>{stats?.longestCardioStreak || 0}</div>
-                    <div className="text-[8px] text-gray-500 -mt-0.5">🏃 weeks</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-sm font-bold" style={{ color: '#00D1FF' }}>{stats?.longestRecoveryStreak || 0}</div>
-                    <div className="text-[8px] text-gray-500 -mt-0.5">🧊 weeks</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Bottom stats */}
-            <div className="w-full">
-              <div className="grid grid-cols-2 gap-2 p-2 rounded-xl mb-2" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-                <div className="text-center">
-                  <div className="text-xl font-black text-white">{stats?.longestStreak || streakCount}</div>
-                  <div className="text-[8px] text-gray-500 uppercase">Streak Record</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-xl font-black text-white">{stats?.weeksWon || 0}</div>
-                  <div className="text-[8px] text-gray-500 uppercase">Weeks Won</div>
-                </div>
-              </div>
-              <div className="text-center">
-                <div className="inline-block text-base font-black tracking-wider" style={{ background: 'linear-gradient(135deg, #ffffff 0%, #888888 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
-                <div className="text-[8px] text-gray-600 tracking-widest uppercase -mt-0.5">Win the Week</div>
-              </div>
-            </div>
-          </div>
-        );
-
       case 'records':
         const records = stats?.records || {};
         // Find the "star" record - highest calories is often most impressive
@@ -1183,6 +1101,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
                 <div className="flex justify-center gap-2 mt-3">
                   <button onClick={() => setWeeklySlide(0)} className="w-2 h-2 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 0 ? colors.primary : 'rgba(255,255,255,0.2)' }} />
                   <button onClick={() => setWeeklySlide(1)} className="w-2 h-2 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 1 ? colors.primary : 'rgba(255,255,255,0.2)' }} />
+                  <button onClick={() => setWeeklySlide(2)} className="w-2 h-2 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 2 ? colors.primary : 'rgba(255,255,255,0.2)' }} />
                 </div>
               </div>
             </div>
@@ -1190,6 +1109,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
         }
 
         // Slide 2: Highlights & Achievements
+        if (weeklySlide === 1) {
         return (
           <div
             className="relative h-full flex flex-col items-center justify-between pt-8 pb-4 px-6"
@@ -1261,38 +1181,42 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
                 </div>
               </div>
 
-              {/* Records broken this week */}
+              {/* Records broken this week - capped at 3, prioritized by impressiveness */}
               {(() => {
                 const records = stats?.records || {};
                 const weeklyPRs = [];
 
                 // Check if weekly bests match all-time records (meaning PR was set this week)
+                // Priority: higher = more impressive (calories and distance are most shareable)
                 if (weeklyAnalysis?.bestCalorieWorkout &&
                     parseInt(weeklyAnalysis.bestCalorieWorkout.calories) === getRecordVal(records.highestCalories)) {
-                  weeklyPRs.push({ label: 'Highest Calories', value: parseInt(weeklyAnalysis.bestCalorieWorkout.calories).toLocaleString() });
+                  weeklyPRs.push({ label: 'Highest Calories', value: parseInt(weeklyAnalysis.bestCalorieWorkout.calories).toLocaleString(), priority: 5 });
                 }
                 if (weeklyAnalysis?.longestDistance &&
                     parseFloat(weeklyAnalysis.longestDistance.distance) === getRecordVal(records.longestDistance)) {
-                  weeklyPRs.push({ label: 'Longest Distance', value: `${parseFloat(weeklyAnalysis.longestDistance.distance).toFixed(2)}mi` });
+                  weeklyPRs.push({ label: 'Longest Distance', value: `${parseFloat(weeklyAnalysis.longestDistance.distance).toFixed(2)}mi`, priority: 4 });
+                }
+                if ((stats?.weeklyMiles || 0) === getRecordVal(records.mostMilesWeek) && (stats?.weeklyMiles || 0) > 0) {
+                  weeklyPRs.push({ label: 'Most Miles/Week', value: `${(stats?.weeklyMiles || 0).toFixed(1)}mi`, priority: 3 });
+                }
+                if ((weeklyAnalysis?.totalWorkouts || 0) === getRecordVal(records.mostWorkoutsWeek) && (weeklyAnalysis?.totalWorkouts || 0) > 0) {
+                  weeklyPRs.push({ label: 'Most Workouts/Week', value: weeklyAnalysis.totalWorkouts, priority: 2 });
                 }
                 if (weeklyAnalysis?.longestWorkout &&
                     parseInt(weeklyAnalysis.longestWorkout.duration) === getRecordVal(records.longestStrength)) {
-                  weeklyPRs.push({ label: 'Longest Strength', value: `${weeklyAnalysis.longestWorkout.duration}min` });
-                }
-                if ((stats?.weeklyMiles || 0) === getRecordVal(records.mostMilesWeek) && (stats?.weeklyMiles || 0) > 0) {
-                  weeklyPRs.push({ label: 'Most Miles/Week', value: `${(stats?.weeklyMiles || 0).toFixed(1)}mi` });
-                }
-                if ((weeklyAnalysis?.totalWorkouts || 0) === getRecordVal(records.mostWorkoutsWeek) && (weeklyAnalysis?.totalWorkouts || 0) > 0) {
-                  weeklyPRs.push({ label: 'Most Workouts/Week', value: weeklyAnalysis.totalWorkouts });
+                  weeklyPRs.push({ label: 'Longest Strength', value: `${weeklyAnalysis.longestWorkout.duration}min`, priority: 1 });
                 }
 
                 if (weeklyPRs.length === 0) return null;
+
+                // Sort by priority (highest first) and take top 3
+                const topPRs = weeklyPRs.sort((a, b) => b.priority - a.priority).slice(0, 3);
 
                 return (
                   <div className="w-full">
                     <div className="text-[9px] text-gray-500 uppercase text-center mb-1">Records Set This Week</div>
                     <div className="flex flex-wrap justify-center gap-2">
-                      {weeklyPRs.slice(0, 3).map((pr, i) => (
+                      {topPRs.map((pr, i) => (
                         <div key={i} className="px-2 py-1 rounded-full text-[10px]" style={{ backgroundColor: 'rgba(255,215,0,0.1)', border: '1px solid rgba(255,215,0,0.3)' }}>
                           <span style={{ color: '#FFD700' }}>🏆 {pr.label}: {pr.value}</span>
                         </div>
@@ -1310,6 +1234,97 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
               <div className="flex justify-center gap-2 mt-3">
                 <button onClick={() => setWeeklySlide(0)} className="w-2 h-2 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 0 ? colors.primary : 'rgba(255,255,255,0.2)' }} />
                 <button onClick={() => setWeeklySlide(1)} className="w-2 h-2 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 1 ? colors.primary : 'rgba(255,255,255,0.2)' }} />
+                <button onClick={() => setWeeklySlide(2)} className="w-2 h-2 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 2 ? colors.primary : 'rgba(255,255,255,0.2)' }} />
+              </div>
+            </div>
+          </div>
+        );
+        }
+
+        // Slide 3: Streaks
+        return (
+          <div
+            className="relative h-full flex flex-col items-center justify-between pt-6 pb-3 px-5"
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+          >
+            <div className="text-3xl" style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>🔥</div>
+            <div className="flex-1 flex flex-col items-center justify-center w-full -mt-2">
+              {/* Main master streak number */}
+              <div className="text-center">
+                <div className="font-black leading-none" style={{ fontSize: '4rem', color: colors.primary, textShadow: `0 0 40px ${colors.glow}, 0 0 80px ${colors.glow}`, animation: 'ring-pulse 3s ease-in-out infinite' }}>
+                  {stats?.streak || 0}
+                </div>
+                <div className="text-[10px] font-semibold tracking-widest text-gray-400 uppercase mt-1">Master Streak</div>
+                <div className="text-[8px] text-gray-500 mt-0.5">weeks hitting all goals</div>
+              </div>
+
+              {/* Active Streaks */}
+              <div className="w-full p-2 rounded-xl mt-2" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                <div className="flex items-center justify-center mb-0.5">
+                  <span className="text-[9px] text-gray-400 uppercase tracking-wider">Active Streaks</span>
+                </div>
+                <div className="w-full h-px mb-1.5" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }} />
+                <div className="flex justify-around">
+                  <div className="text-center">
+                    <div className="text-sm font-bold" style={{ color: '#00FF94' }}>{stats?.strengthStreak || 0}</div>
+                    <div className="text-[8px] text-gray-500 -mt-0.5">🏋️ weeks</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-sm font-bold" style={{ color: '#FF9500' }}>{stats?.cardioStreak || 0}</div>
+                    <div className="text-[8px] text-gray-500 -mt-0.5">🏃 weeks</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-sm font-bold" style={{ color: '#00D1FF' }}>{stats?.recoveryStreak || 0}</div>
+                    <div className="text-[8px] text-gray-500 -mt-0.5">🧊 weeks</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Streak Records */}
+              <div className="w-full p-2 rounded-xl mt-1.5" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                <div className="flex items-center justify-center mb-0.5">
+                  <span className="text-[9px] text-gray-400 uppercase tracking-wider">Streak Records</span>
+                </div>
+                <div className="w-full h-px mb-1.5" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }} />
+                <div className="flex justify-around">
+                  <div className="text-center">
+                    <div className="text-sm font-bold" style={{ color: '#00FF94' }}>{stats?.longestStrengthStreak || 0}</div>
+                    <div className="text-[8px] text-gray-500 -mt-0.5">🏋️ weeks</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-sm font-bold" style={{ color: '#FF9500' }}>{stats?.longestCardioStreak || 0}</div>
+                    <div className="text-[8px] text-gray-500 -mt-0.5">🏃 weeks</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-sm font-bold" style={{ color: '#00D1FF' }}>{stats?.longestRecoveryStreak || 0}</div>
+                    <div className="text-[8px] text-gray-500 -mt-0.5">🧊 weeks</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom stats */}
+            <div className="w-full">
+              <div className="grid grid-cols-2 gap-2 p-2 rounded-xl mb-2" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                <div className="text-center">
+                  <div className="text-xl font-black text-white">{stats?.longestStreak || stats?.streak || 0}</div>
+                  <div className="text-[8px] text-gray-500 uppercase">Streak Record</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xl font-black text-white">{stats?.weeksWon || 0}</div>
+                  <div className="text-[8px] text-gray-500 uppercase">Weeks Won</div>
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="inline-block text-base font-black tracking-wider" style={{ background: 'linear-gradient(135deg, #ffffff 0%, #888888 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
+                <div className="text-[8px] text-gray-600 tracking-widest uppercase -mt-0.5">Streak Stats</div>
+                {/* Slide indicator */}
+                <div className="flex justify-center gap-2 mt-3">
+                  <button onClick={() => setWeeklySlide(0)} className="w-2 h-2 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 0 ? colors.primary : 'rgba(255,255,255,0.2)' }} />
+                  <button onClick={() => setWeeklySlide(1)} className="w-2 h-2 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 1 ? colors.primary : 'rgba(255,255,255,0.2)' }} />
+                  <button onClick={() => setWeeklySlide(2)} className="w-2 h-2 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 2 ? colors.primary : 'rgba(255,255,255,0.2)' }} />
+                </div>
               </div>
             </div>
           </div>

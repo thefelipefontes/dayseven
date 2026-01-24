@@ -1759,7 +1759,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   const selectedType = activityTypes.find(t => t.name === activityType);
   const showCustomSportInput = activityType === 'Sports' && subtype === 'Other';
   const showCountToward = activityType === 'Yoga' || activityType === 'Pilates';
-  const isFromAppleHealth = !!pendingActivity;
+  const isFromAppleHealth = !!pendingActivity?.fromAppleHealth;
 
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
@@ -1890,7 +1890,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
         </button>
       </div>
 
-      {pendingActivity && (
+      {pendingActivity?.fromAppleHealth && (
         <div className="mx-4 mt-4 p-3 rounded-xl" style={{ backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.3)' }}>
           <div className="flex items-center gap-2 text-sm">
             <span className="text-lg">📱</span>
@@ -2180,14 +2180,13 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">
                 Duration {isFromAppleHealth && <span style={{ color: '#00FF94' }}>(from Apple Health)</span>}
               </label>
-              <DurationPicker 
+              <DurationPicker
                 hours={durationHours}
                 minutes={durationMinutes}
                 onChange={(h, m) => {
                   setDurationHours(h);
                   setDurationMinutes(m);
                 }}
-                disabled={isFromAppleHealth}
               />
             </div>
 
@@ -2406,7 +2405,6 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     onChange={(e) => setCalories(e.target.value)}
                     className="w-full p-3 rounded-xl bg-white/5 border border-white/10 text-white text-center"
                     placeholder="—"
-                    disabled={isFromAppleHealth}
                   />
                   <div className="text-[10px] text-gray-500 text-center mt-1">Calories</div>
                 </div>
@@ -2417,7 +2415,6 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     onChange={(e) => setAvgHr(e.target.value)}
                     className="w-full p-3 rounded-xl bg-white/5 border border-white/10 text-white text-center"
                     placeholder="—"
-                    disabled={isFromAppleHealth}
                   />
                   <div className="text-[10px] text-gray-500 text-center mt-1">Avg HR</div>
                 </div>
@@ -2428,7 +2425,6 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     onChange={(e) => setMaxHr(e.target.value)}
                     className="w-full p-3 rounded-xl bg-white/5 border border-white/10 text-white text-center"
                     placeholder="—"
-                    disabled={isFromAppleHealth}
                   />
                   <div className="text-[10px] text-gray-500 text-center mt-1">Max HR</div>
                 </div>
@@ -2489,12 +2485,13 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     const cycling = weekActivities.filter(a => a.type === 'Cycle');
     const sports = weekActivities.filter(a => a.type === 'Sports');
     const totalMiles = running.reduce((sum, r) => sum + (parseFloat(r.distance) || 0), 0);
+    const totalCalories = weekActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
 
     return {
       lifts: { completed: lifts.length, goal: goals.liftsPerWeek, sessions: lifts.map(l => l.subtype || l.type) },
       cardio: { completed: cardio.length, goal: goals.cardioPerWeek, miles: totalMiles, sessions: cardio.map(c => c.type), breakdown: { running: running.length, cycling: cycling.length, sports: sports.length } },
       recovery: { completed: recovery.length, goal: goals.recoveryPerWeek, sessions: recovery.map(r => r.type) },
-      calories: { burned: 0, goal: goals.caloriesPerWeek },
+      calories: { burned: totalCalories, goal: goals.caloriesPerWeek },
       steps: { today: 0, goal: goals.stepsPerDay }
     };
   }, [activities, userData?.goals]);
@@ -2966,7 +2963,8 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
 const TrendsView = ({ activities = [], calendarData = {} }) => {
   const [metric, setMetric] = useState('calories');
   const [timeRange, setTimeRange] = useState('1M');
-  const [selectedBar, setSelectedBar] = useState(null); // { index, label, value }
+  const [selectedBar, setSelectedBar] = useState(null); // For detail view on click
+  const [hoveredBar, setHoveredBar] = useState(null); // For hover highlighting
 
   // Generate data points based on time range
   const generateTrendData = () => {
@@ -3025,17 +3023,6 @@ const TrendsView = ({ activities = [], calendarData = {} }) => {
         let value = 0;
         if (metric === 'calories') {
           value = dayActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
-          // Estimate if no calories logged
-          if (value === 0 && dayActivities.length > 0) {
-            value = dayActivities.reduce((sum, a) => {
-              if (a.type === 'Strength Training') return sum + 350;
-              if (a.type === 'Running') return sum + 400;
-              if (a.type === 'Cycle') return sum + 350;
-              if (a.type === 'Sports') return sum + 300;
-              if (a.type === 'Yoga' || a.type === 'Pilates') return sum + 150;
-              return sum + 100;
-            }, 0);
-          }
         } else if (metric === 'steps') {
           // Steps would come from health data integration - currently not tracked
           value = 0;
@@ -3068,18 +3055,7 @@ const TrendsView = ({ activities = [], calendarData = {} }) => {
           const dayActivities = calendarData[dateStr] || [];
           
           if (metric === 'calories') {
-            let dayCals = dayActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
-            if (dayCals === 0 && dayActivities.length > 0) {
-              dayCals = dayActivities.reduce((sum, a) => {
-                if (a.type === 'Strength Training') return sum + 350;
-                if (a.type === 'Running') return sum + 400;
-                if (a.type === 'Cycle') return sum + 350;
-                if (a.type === 'Sports') return sum + 300;
-                if (a.type === 'Yoga' || a.type === 'Pilates') return sum + 150;
-                return sum + 100;
-              }, 0);
-            }
-            value += dayCals;
+            value += dayActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
           } else if (metric === 'steps') {
             // Steps would come from health data integration - currently not tracked
             value += 0;
@@ -3121,18 +3097,7 @@ const TrendsView = ({ activities = [], calendarData = {} }) => {
           const dayActivities = calendarData[dateStr] || [];
           
           if (metric === 'calories') {
-            let dayCals = dayActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
-            if (dayCals === 0 && dayActivities.length > 0) {
-              dayCals = dayActivities.reduce((sum, a) => {
-                if (a.type === 'Strength Training') return sum + 350;
-                if (a.type === 'Running') return sum + 400;
-                if (a.type === 'Cycle') return sum + 350;
-                if (a.type === 'Sports') return sum + 300;
-                if (a.type === 'Yoga' || a.type === 'Pilates') return sum + 150;
-                return sum + 100;
-              }, 0);
-            }
-            value += dayCals;
+            value += dayActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
           } else if (metric === 'steps') {
             // Steps would come from health data integration - currently not tracked
             value += 0;
@@ -3160,7 +3125,18 @@ const TrendsView = ({ activities = [], calendarData = {} }) => {
   const trendData = generateTrendData();
   const maxValue = Math.max(...trendData.map(d => d.value), 1);
   const total = trendData.reduce((sum, d) => sum + d.value, 0);
-  const avg = trendData.length > 0 ? total / trendData.length : 0;
+
+  // Calculate average based on days since first activity
+  let avg = 0;
+  if (activities.length > 0) {
+    const dates = activities.map(a => parseLocalDate(a.date)).sort((a, b) => a - b);
+    const earliestDate = new Date(dates[0]);
+    earliestDate.setHours(0, 0, 0, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const daysSinceFirst = Math.round((today - earliestDate) / (1000 * 60 * 60 * 24)) + 1;
+    avg = total / daysSinceFirst;
+  }
 
   const metricConfig = {
     calories: { label: 'Calories', icon: '🔥', unit: 'cal', color: '#FF9500' },
@@ -3235,21 +3211,21 @@ const TrendsView = ({ activities = [], calendarData = {} }) => {
       <div className="p-4 rounded-2xl mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
         {/* Tooltip - fixed height container to prevent layout shift */}
         <div style={{ minHeight: '72px' }}>
-          {selectedBar !== null && trendData[selectedBar] ? (
-            <div 
+          {(hoveredBar !== null || selectedBar !== null) && trendData[hoveredBar !== null ? hoveredBar : selectedBar] ? (
+            <div
               className="p-3 rounded-xl text-center transition-all duration-200"
-              style={{ 
+              style={{
                 backgroundColor: `${config.color}15`,
                 border: `1px solid ${config.color}40`
               }}
             >
               <div className="text-sm font-bold" style={{ color: config.color }}>
-                {trendData[selectedBar].label}
+                {trendData[hoveredBar !== null ? hoveredBar : selectedBar].label}
               </div>
               <div className="text-xl font-black text-white mt-1">
-                {metric === 'miles' 
-                  ? trendData[selectedBar].value.toFixed(1) 
-                  : trendData[selectedBar].value.toLocaleString()
+                {metric === 'miles'
+                  ? trendData[hoveredBar !== null ? hoveredBar : selectedBar].value.toFixed(1)
+                  : trendData[hoveredBar !== null ? hoveredBar : selectedBar].value.toLocaleString()
                 } {config.unit}
               </div>
             </div>
@@ -3262,33 +3238,33 @@ const TrendsView = ({ activities = [], calendarData = {} }) => {
         </div>
         
         {/* Chart Area */}
-        <div 
-          className="h-40 flex items-end gap-0.5 mb-2" 
+        <div
+          className="h-40 flex items-end gap-0.5 mb-2"
           style={{ minHeight: '160px' }}
-          onMouseLeave={() => setSelectedBar(null)}
+          onMouseLeave={() => setHoveredBar(null)}
         >
           {trendData.length > 0 ? trendData.map((point, i) => {
             const heightPercent = maxValue > 0 ? (point.value / maxValue) * 100 : 0;
-            const isSelected = selectedBar === i;
-            
+            const isHighlighted = selectedBar === i || hoveredBar === i;
+
             return (
-              <button 
-                key={i} 
+              <button
+                key={i}
                 className="flex-1 flex flex-col justify-end h-full cursor-pointer bg-transparent border-none p-0"
-                onMouseEnter={() => setSelectedBar(i)}
+                onMouseEnter={() => setHoveredBar(i)}
                 onClick={() => setSelectedBar(selectedBar === i ? null : i)}
                 type="button"
               >
                 {/* Visible bar */}
-                <div 
+                <div
                   className="w-full rounded-t-sm transition-all duration-200 pointer-events-none"
-                  style={{ 
+                  style={{
                     height: `${Math.max(heightPercent, 2)}%`,
                     backgroundColor: config.color,
-                    opacity: isSelected ? 1 : 0.6,
+                    opacity: isHighlighted ? 1 : 0.6,
                     minHeight: point.value > 0 ? '4px' : '2px',
-                    transform: isSelected ? 'scaleX(1.1)' : 'scaleX(1)',
-                    boxShadow: isSelected ? `0 0 10px ${config.color}50` : 'none'
+                    transform: isHighlighted ? 'scaleX(1.1)' : 'scaleX(1)',
+                    boxShadow: isHighlighted ? `0 0 10px ${config.color}50` : 'none'
                   }}
                 />
               </button>
@@ -3304,19 +3280,19 @@ const TrendsView = ({ activities = [], calendarData = {} }) => {
         {trendData.length > 0 && (
           <div className="flex gap-0.5">
             {trendData.map((point, i) => {
-              const showLabel = trendData.length <= 7 || 
+              const showLabel = trendData.length <= 7 ||
                 (trendData.length <= 14 && i % 2 === 0) ||
                 (trendData.length > 14 && (i === 0 || i === trendData.length - 1 || i % Math.ceil(trendData.length / 5) === 0));
-              const isSelected = selectedBar === i;
-              
+              const isHighlighted = selectedBar === i || hoveredBar === i;
+
               return (
                 <div key={i} className="flex-1 text-center">
-                  {(showLabel || isSelected) && (
-                    <span 
+                  {(showLabel || isHighlighted) && (
+                    <span
                       className="text-[8px] transition-all duration-200"
-                      style={{ 
-                        color: isSelected ? config.color : 'rgba(255,255,255,0.5)',
-                        fontWeight: isSelected ? 'bold' : 'normal'
+                      style={{
+                        color: isHighlighted ? config.color : 'rgba(255,255,255,0.5)',
+                        fontWeight: isHighlighted ? 'bold' : 'normal'
                       }}
                     >
                       {point.shortLabel || point.label}
@@ -3331,12 +3307,12 @@ const TrendsView = ({ activities = [], calendarData = {} }) => {
 
       {/* Summary Stats */}
       {(() => {
-        // Calculate dynamic trend when a bar is selected
-        const selectedValue = selectedBar !== null && trendData[selectedBar] ? trendData[selectedBar].value : null;
-        const vsAvgPercent = selectedValue !== null && avg > 0 
-          ? Math.round(((selectedValue - avg) / avg) * 100)
+        const activeBar = hoveredBar !== null ? hoveredBar : selectedBar;
+        const activeValue = activeBar !== null && trendData[activeBar] ? trendData[activeBar].value : null;
+        const vsAvgPercent = activeValue !== null && avg > 0
+          ? Math.round(((activeValue - avg) / avg) * 100)
           : null;
-        
+
         return (
           <div className="grid grid-cols-3 gap-3 mb-4">
             <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
@@ -3366,6 +3342,78 @@ const TrendsView = ({ activities = [], calendarData = {} }) => {
                 </>
               )}
             </div>
+          </div>
+        );
+      })()}
+
+      {/* Selected Day Activities - only shows on click */}
+      {selectedBar !== null && trendData[selectedBar] && (() => {
+        const selectedPoint = trendData[selectedBar];
+        const dateStr = selectedPoint.date;
+        const dayActivities = calendarData[dateStr] || [];
+
+        return (
+          <div className="p-4 rounded-xl mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <div className="text-sm font-semibold text-white">{selectedPoint.label}</div>
+                <span className="text-xs text-gray-400">Activities</span>
+              </div>
+              <button
+                onClick={() => setSelectedBar(null)}
+                className="text-gray-400 text-xs hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+
+            {dayActivities.length > 0 ? (
+              <div className="space-y-2">
+                {dayActivities.map((activity, idx) => (
+                  <div key={idx} className="p-3 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">{
+                          activity.type === 'Running' ? '🏃' :
+                          activity.type === 'Cycle' ? '🚴' :
+                          activity.type === 'Strength Training' ? '🏋️' :
+                          activity.type === 'Yoga' ? '🧘' :
+                          activity.type === 'Pilates' ? '🤸' :
+                          activity.type === 'Cold Plunge' ? '🧊' :
+                          activity.type === 'Sauna' ? '🔥' :
+                          activity.type === 'Sports' ? '⚽' : '💪'
+                        }</span>
+                        <span className="text-sm text-white font-medium">
+                          {activity.subtype || activity.type}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex gap-4 mt-2 text-xs text-gray-400">
+                      {activity.duration && <span>{activity.duration} min</span>}
+                      {activity.distance && <span>{activity.distance} mi</span>}
+                      {activity.calories && <span>{activity.calories} cal</span>}
+                      {activity.avgHr && <span>Avg HR: {activity.avgHr}</span>}
+                    </div>
+                  </div>
+                ))}
+
+                {/* Day Summary */}
+                <div className="pt-2 mt-2 border-t border-white/10">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-400">Day Total:</span>
+                    <span className="font-bold" style={{ color: config.color }}>
+                      {metric === 'calories' && `${dayActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0)} cal`}
+                      {metric === 'miles' && `${dayActivities.filter(a => a.type === 'Running').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0).toFixed(1)} mi`}
+                      {metric === 'steps' && `${selectedPoint.value.toLocaleString()} steps`}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-4">
+                <div className="text-gray-500 text-sm">No activities logged</div>
+              </div>
+            )}
           </div>
         );
       })()}
@@ -4838,16 +4886,17 @@ export default function StreakdApp() {
     const pilates = weekActivities.filter(a => a.type === 'Pilates');
     
     const totalMiles = running.reduce((sum, r) => sum + (parseFloat(r.distance) || 0), 0);
-    
+    const totalCalories = weekActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+
     return {
-      lifts: { 
-        completed: lifts.length, 
-        goal: userData.goals.liftsPerWeek, 
-        sessions: lifts.map(l => l.subtype || l.type) 
+      lifts: {
+        completed: lifts.length,
+        goal: userData.goals.liftsPerWeek,
+        sessions: lifts.map(l => l.subtype || l.type)
       },
-      cardio: { 
-        completed: cardio.length, 
-        goal: userData.goals.cardioPerWeek, 
+      cardio: {
+        completed: cardio.length,
+        goal: userData.goals.cardioPerWeek,
         miles: totalMiles,
         sessions: cardio.map(c => c.type),
         breakdown: {
@@ -4856,9 +4905,9 @@ export default function StreakdApp() {
           sports: sports.length
         }
       },
-      recovery: { 
-        completed: recovery.length, 
-        goal: userData.goals.recoveryPerWeek, 
+      recovery: {
+        completed: recovery.length,
+        goal: userData.goals.recoveryPerWeek,
         sessions: recovery.map(r => r.type),
         breakdown: {
           coldPlunge: coldPlunge.length,
@@ -4867,7 +4916,7 @@ export default function StreakdApp() {
           pilates: pilates.length
         }
       },
-      calories: { burned: 0, goal: userData.goals.caloriesPerWeek },
+      calories: { burned: totalCalories, goal: userData.goals.caloriesPerWeek },
       steps: { today: 0, goal: userData.goals.stepsPerDay }
     };
   };
@@ -4915,11 +4964,14 @@ export default function StreakdApp() {
       if (!updatedCalendar[activity.date]) {
         updatedCalendar[activity.date] = [];
       }
-      updatedCalendar[activity.date].push({ 
-        type: activity.type, 
+      updatedCalendar[activity.date].push({
+        type: activity.type,
         subtype: activity.subtype,
         duration: activity.duration,
-        distance: activity.distance
+        distance: activity.distance,
+        calories: activity.calories,
+        avgHr: activity.avgHr,
+        maxHr: activity.maxHr
       });
       setCalendarData(updatedCalendar);
     } else {
@@ -4939,11 +4991,14 @@ export default function StreakdApp() {
       if (!updatedCalendar[dateKey]) {
         updatedCalendar[dateKey] = [];
       }
-      updatedCalendar[dateKey] = [...updatedCalendar[dateKey], { 
-        type: activity.type, 
+      updatedCalendar[dateKey] = [...updatedCalendar[dateKey], {
+        type: activity.type,
         subtype: activity.subtype,
         duration: activity.duration,
-        distance: activity.distance
+        distance: activity.distance,
+        calories: activity.calories,
+        avgHr: activity.avgHr,
+        maxHr: activity.maxHr
       }];
       setCalendarData(updatedCalendar);
     }

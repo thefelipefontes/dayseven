@@ -674,6 +674,29 @@ const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!" }) =>
 const ShareModal = ({ isOpen, onClose, stats }) => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+  const [cardType, setCardType] = useState('streak');
+  const [weeklySlide, setWeeklySlide] = useState(0); // 0 = progress, 1 = highlights
+  const [touchStart, setTouchStart] = useState(null);
+
+  // Swipe handlers for weekly slides
+  const handleTouchStart = (e) => {
+    setTouchStart(e.touches[0].clientX);
+  };
+
+  const handleTouchEnd = (e) => {
+    if (!touchStart) return;
+    const touchEnd = e.changedTouches[0].clientX;
+    const diff = touchStart - touchEnd;
+
+    if (Math.abs(diff) > 50) { // Minimum swipe distance
+      if (diff > 0 && weeklySlide < 1) {
+        setWeeklySlide(1); // Swipe left = next slide
+      } else if (diff < 0 && weeklySlide > 0) {
+        setWeeklySlide(0); // Swipe right = prev slide
+      }
+    }
+    setTouchStart(null);
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -695,14 +718,638 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
 
   if (!isOpen && !isClosing) return null;
 
-  const streakCount = stats?.streak || 0;
-  const workoutCount = stats?.workouts || 0;
   const currentYear = new Date().getFullYear();
+  const currentMonth = new Date().toLocaleDateString('en-US', { month: 'long' });
 
-  // Calculate progress for the ring (assume 52 weeks max for visual)
+  // Get current week date range
+  const getWeekDateRange = () => {
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    const formatDate = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return `${formatDate(monday)} - ${formatDate(sunday)}`;
+  };
+
+  // Streak milestone badges
+  const getStreakMilestones = (streak) => {
+    const milestones = [];
+    if (streak >= 4) milestones.push({ weeks: 4, label: '1 Month', emoji: '🥉' });
+    if (streak >= 12) milestones.push({ weeks: 12, label: '3 Months', emoji: '🥈' });
+    if (streak >= 26) milestones.push({ weeks: 26, label: '6 Months', emoji: '🥇' });
+    if (streak >= 52) milestones.push({ weeks: 52, label: '1 Year', emoji: '💎' });
+    return milestones;
+  };
+
+  // Next milestone
+  const getNextMilestone = (streak) => {
+    const milestones = [4, 12, 26, 52, 104];
+    for (const m of milestones) {
+      if (streak < m) return { target: m, weeksLeft: m - streak };
+    }
+    return null;
+  };
+
+  // Dynamic motivational taglines
+  const getMotivationalTagline = (streak, allGoalsMet) => {
+    if (allGoalsMet) return "Week dominated! 💪";
+    if (streak >= 52) return "Legend status achieved!";
+    if (streak >= 26) return "Half-year warrior!";
+    if (streak >= 12) return "Consistency is key!";
+    if (streak >= 4) return "Building the habit!";
+    if (streak >= 2) return "Momentum building!";
+    return "Every week counts!";
+  };
+
+  // Analyze weekly activities
+  const analyzeWeeklyActivities = (activities) => {
+    if (!activities || activities.length === 0) return null;
+
+    // Define workout vs recovery types
+    const workoutTypes = ['Strength Training', 'Running', 'Cycle', 'Sports', 'Other'];
+    const recoveryTypes = ['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'];
+
+    // Count workouts (strength + cardio)
+    const workoutCounts = {};
+    const recoveryCounts = {};
+    activities.forEach(a => {
+      if (workoutTypes.includes(a.type)) {
+        workoutCounts[a.type] = (workoutCounts[a.type] || 0) + 1;
+      } else if (recoveryTypes.includes(a.type)) {
+        recoveryCounts[a.type] = (recoveryCounts[a.type] || 0) + 1;
+      }
+    });
+
+    const mostCommonWorkout = Object.entries(workoutCounts).sort((a, b) => b[1] - a[1])[0];
+    const mostCommonRecovery = Object.entries(recoveryCounts).sort((a, b) => b[1] - a[1])[0];
+
+    // Best single workout (highest calories)
+    const bestCalorieWorkout = activities.reduce((best, a) =>
+      (parseInt(a.calories) || 0) > (parseInt(best?.calories) || 0) ? a : best
+    , null);
+
+    // Longest workout
+    const longestWorkout = activities.reduce((longest, a) =>
+      (parseInt(a.duration) || 0) > (parseInt(longest?.duration) || 0) ? a : longest
+    , null);
+
+    // Longest distance
+    const longestDistance = activities.reduce((longest, a) =>
+      (parseFloat(a.distance) || 0) > (parseFloat(longest?.distance) || 0) ? a : longest
+    , null);
+
+    // Days worked out
+    const uniqueDays = new Set(activities.map(a => a.date)).size;
+
+    // Total duration
+    const totalMinutes = activities.reduce((sum, a) => sum + (parseInt(a.duration) || 0), 0);
+
+    return {
+      mostCommonWorkout: mostCommonWorkout ? { type: mostCommonWorkout[0], count: mostCommonWorkout[1] } : null,
+      mostCommonRecovery: mostCommonRecovery ? { type: mostCommonRecovery[0], count: mostCommonRecovery[1] } : null,
+      bestCalorieWorkout,
+      longestWorkout,
+      longestDistance: longestDistance?.distance ? longestDistance : null,
+      uniqueDays,
+      totalMinutes,
+      totalWorkouts: activities.length
+    };
+  };
+
+  // Get activity emoji
+  const getActivityEmoji = (type) => {
+    const emojis = {
+      'Strength Training': '🏋️',
+      'Running': '🏃',
+      'Cycle': '🚴',
+      'Sports': '🏀',
+      'Cold Plunge': '🧊',
+      'Sauna': '🔥',
+      'Yoga': '🧘',
+      'Pilates': '🤸',
+      'Other': '💪'
+    };
+    return emojis[type] || '💪';
+  };
+
+  // Card type configurations
+  const cardTypes = [
+    { id: 'streak', label: '🔥', name: 'Streak' },
+    { id: 'records', label: '🏆', name: 'Records' },
+    { id: 'weekly', label: '📅', name: 'Weekly' },
+    { id: 'monthly', label: '📊', name: 'Monthly' }
+  ];
+
+  // Color schemes for each card type
+  const colorSchemes = {
+    streak: {
+      primary: '#00FF94',
+      secondary: '#FF9500',
+      glow: 'rgba(0, 255, 148, 0.15)',
+      shadow: 'rgba(0, 255, 148, 0.25)'
+    },
+    records: {
+      primary: '#FFD700',
+      secondary: '#FFA500',
+      glow: 'rgba(255, 215, 0, 0.15)',
+      shadow: 'rgba(255, 215, 0, 0.25)'
+    },
+    weekly: {
+      primary: '#00FF94',
+      secondary: '#00D1FF',
+      glow: 'rgba(0, 255, 148, 0.15)',
+      shadow: 'rgba(0, 255, 148, 0.25)'
+    },
+    monthly: {
+      primary: '#8B5CF6',
+      secondary: '#06B6D4',
+      glow: 'rgba(139, 92, 246, 0.15)',
+      shadow: 'rgba(139, 92, 246, 0.25)'
+    }
+  };
+
+  const colors = colorSchemes[cardType];
+
+  // Helper to format pace
+  const formatPace = (pace) => {
+    if (!pace) return '--:--';
+    const mins = Math.floor(pace);
+    const secs = Math.round((pace - mins) * 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Helper to get record value
+  const getRecordVal = (record) => {
+    if (!record) return 0;
+    if (typeof record === 'object') return record.value || 0;
+    return record;
+  };
+
+  // Calculate progress for streak ring
+  const streakCount = stats?.streak || 0;
   const progressPercent = Math.min((streakCount / 52) * 100, 100);
-  const circumference = 2 * Math.PI * 70; // radius = 70
+  const circumference = 2 * Math.PI * 70;
   const strokeDashoffset = circumference - (progressPercent / 100) * circumference;
+
+  // Render the appropriate card content
+  const renderCardContent = () => {
+    switch (cardType) {
+      case 'streak':
+        const milestones = getStreakMilestones(streakCount);
+        const nextMilestone = getNextMilestone(streakCount);
+        return (
+          <div className="relative h-full flex flex-col items-center justify-between pt-8 pb-14 px-6">
+            <div className="text-4xl" style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>🔥</div>
+            <div className="flex-1 flex flex-col items-center justify-center">
+              <div className="relative" style={{ animation: 'ring-pulse 3s ease-in-out infinite' }}>
+                <svg width="180" height="180" className="transform -rotate-90">
+                  <circle cx="90" cy="90" r="70" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="8" />
+                  <circle cx="90" cy="90" r="70" fill="none" stroke={colors.primary} strokeWidth="8" strokeLinecap="round"
+                    strokeDasharray={circumference} strokeDashoffset={strokeDashoffset} style={{ transition: 'stroke-dashoffset 1s ease-out' }} />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <div className="font-black leading-none" style={{ fontSize: '4.5rem', color: colors.primary, textShadow: `0 0 40px ${colors.glow}, 0 0 80px ${colors.glow}` }}>
+                    {streakCount}
+                  </div>
+                  <div className="text-xs font-semibold tracking-widest text-gray-400 uppercase mt-1">Week Streak</div>
+                </div>
+              </div>
+              {/* Milestone Badges */}
+              {milestones.length > 0 && (
+                <div className="flex gap-2 mt-4">
+                  {milestones.slice(-3).map((m, i) => (
+                    <div key={i} className="px-2 py-1 rounded-full text-xs" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                      {m.emoji} {m.label}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* Next Milestone */}
+              {nextMilestone && (
+                <div className="mt-3 text-xs text-gray-500">
+                  {nextMilestone.weeksLeft} week{nextMilestone.weeksLeft !== 1 ? 's' : ''} to next milestone
+                </div>
+              )}
+              <div className="mt-4 px-4 py-2 rounded-full" style={{ background: `linear-gradient(135deg, ${colors.glow} 0%, rgba(0,212,255,0.1) 100%)`, border: `1px solid ${colors.primary}40` }}>
+                <span className="text-sm font-semibold" style={{ color: colors.primary }}>
+                  {getMotivationalTagline(streakCount, false)}
+                </span>
+              </div>
+            </div>
+            <div className="w-full">
+              <div className="grid grid-cols-2 gap-3 p-3 rounded-2xl mb-3" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                <div className="text-center">
+                  <div className="text-2xl font-black text-white">{stats?.longestStreak || streakCount}</div>
+                  <div className="text-[9px] text-gray-500 uppercase">Longest Streak</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-black text-white">{stats?.workouts || 0}</div>
+                  <div className="text-[9px] text-gray-500 uppercase">Total Workouts</div>
+                </div>
+              </div>
+              <div className="text-center mt-auto">
+                <div className="inline-block text-lg font-black tracking-wider" style={{ background: 'linear-gradient(135deg, #ffffff 0%, #888888 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
+                <div className="text-[9px] text-gray-600 tracking-widest uppercase -mt-0.5">Win the Week</div>
+              </div>
+            </div>
+          </div>
+        );
+
+      case 'records':
+        const records = stats?.records || {};
+        // Find the "star" record - highest calories is often most impressive
+        const highestCal = getRecordVal(records.highestCalories);
+        const longestDist = getRecordVal(records.longestDistance);
+        const fastestPaceVal = getRecordVal(records.fastestPace);
+        return (
+          <div className="relative h-full flex flex-col items-center justify-between pt-8 pb-14 px-6">
+            <div className="text-4xl" style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>🏆</div>
+            <div className="flex-1 flex flex-col items-center justify-center w-full">
+              <div className="text-center mb-4">
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Personal Records</div>
+                <div className="font-black text-2xl" style={{ color: colors.primary, textShadow: `0 0 30px ${colors.glow}` }}>Hall of Fame</div>
+              </div>
+              {/* Featured Record */}
+              {highestCal > 0 && (
+                <div className="w-full p-4 rounded-2xl mb-3 text-center" style={{ backgroundColor: 'rgba(255,215,0,0.1)', border: '1px solid rgba(255,215,0,0.2)' }}>
+                  <div className="text-[9px] text-gray-500 uppercase mb-1">Top Burn</div>
+                  <div className="text-3xl font-black" style={{ color: colors.primary }}>{highestCal.toLocaleString()}</div>
+                  <div className="text-xs text-gray-400">calories in one session</div>
+                </div>
+              )}
+              <div className="w-full space-y-2">
+                <div className="flex justify-between items-center p-2.5 rounded-xl" style={{ backgroundColor: 'rgba(255,215,0,0.05)' }}>
+                  <span className="text-xs text-gray-400">🏋️ Longest Strength</span>
+                  <span className="font-bold text-sm" style={{ color: colors.primary }}>{getRecordVal(records.longestStrength) ? `${getRecordVal(records.longestStrength)}m` : '--'}</span>
+                </div>
+                <div className="flex justify-between items-center p-2.5 rounded-xl" style={{ backgroundColor: 'rgba(255,215,0,0.05)' }}>
+                  <span className="text-xs text-gray-400">🏃 Longest Run</span>
+                  <span className="font-bold text-sm" style={{ color: colors.primary }}>{longestDist ? `${longestDist.toFixed(2)}mi` : '--'}</span>
+                </div>
+                <div className="flex justify-between items-center p-2.5 rounded-xl" style={{ backgroundColor: 'rgba(255,215,0,0.05)' }}>
+                  <span className="text-xs text-gray-400">⚡ Fastest Pace</span>
+                  <span className="font-bold text-sm" style={{ color: colors.primary }}>{formatPace(fastestPaceVal)}/mi</span>
+                </div>
+                <div className="flex justify-between items-center p-2.5 rounded-xl" style={{ backgroundColor: 'rgba(255,215,0,0.05)' }}>
+                  <span className="text-xs text-gray-400">🚴 Fastest Cycling</span>
+                  <span className="font-bold text-sm" style={{ color: colors.primary }}>{formatPace(getRecordVal(records.fastestCyclingPace))}/mi</span>
+                </div>
+                <div className="flex justify-between items-center p-2.5 rounded-xl" style={{ backgroundColor: 'rgba(255,215,0,0.05)' }}>
+                  <span className="text-xs text-gray-400">📅 Most Miles/Week</span>
+                  <span className="font-bold text-sm" style={{ color: colors.primary }}>{getRecordVal(records.mostMilesWeek) ? `${getRecordVal(records.mostMilesWeek).toFixed(1)}mi` : '--'}</span>
+                </div>
+              </div>
+            </div>
+            <div className="text-center mt-auto w-full">
+              <div className="inline-block text-lg font-black tracking-wider" style={{ background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
+              <div className="text-[9px] text-gray-600 tracking-widest uppercase -mt-0.5">Personal Bests</div>
+            </div>
+          </div>
+        );
+
+      case 'weekly':
+        const weeklyLifts = stats?.weeklyLifts || 0;
+        const weeklyCardio = stats?.weeklyCardio || 0;
+        const weeklyRecovery = stats?.weeklyRecovery || 0;
+        const liftsGoal = stats?.liftsGoal || 4;
+        const cardioGoal = stats?.cardioGoal || 3;
+        const recoveryGoal = stats?.recoveryGoal || 2;
+        const liftsGoalMet = weeklyLifts >= liftsGoal;
+        const cardioGoalMet = weeklyCardio >= cardioGoal;
+        const recoveryGoalMet = weeklyRecovery >= recoveryGoal;
+        const allGoalsMet = liftsGoalMet && cardioGoalMet && recoveryGoalMet;
+
+        // Calculate percentages for rings (cap at 100%)
+        const liftsPercent = liftsGoal > 0 ? Math.min((weeklyLifts / liftsGoal) * 100, 100) : 0;
+        const cardioPercent = cardioGoal > 0 ? Math.min((weeklyCardio / cardioGoal) * 100, 100) : 0;
+        const recoveryPercent = recoveryGoal > 0 ? Math.min((weeklyRecovery / recoveryGoal) * 100, 100) : 0;
+
+        // Calculate overall progress (same as home page - cap each at goal)
+        const totalGoals = liftsGoal + cardioGoal + recoveryGoal;
+        const totalCompleted = Math.min(weeklyLifts, liftsGoal) + Math.min(weeklyCardio, cardioGoal) + Math.min(weeklyRecovery, recoveryGoal);
+        const overallPercent = totalGoals > 0 ? Math.round((totalCompleted / totalGoals) * 100) : 0;
+
+        // Ring dimensions for share card
+        const ringSize = 64;
+        const ringStroke = 5;
+        const ringRadius = (ringSize - ringStroke) / 2;
+        const ringCircumference = ringRadius * 2 * Math.PI;
+
+        // Analyze weekly activities
+        const weeklyAnalysis = analyzeWeeklyActivities(stats?.weeklyActivities);
+
+        // Build achievements list
+        const achievements = [];
+        if (allGoalsMet) achievements.push({ emoji: '🏆', text: 'All goals completed!' });
+        if (weeklyAnalysis?.uniqueDays >= 5) achievements.push({ emoji: '📅', text: `Worked out ${weeklyAnalysis.uniqueDays} days` });
+        if (stats?.streak >= 2) achievements.push({ emoji: '🔥', text: `${stats.streak} week streak!` });
+        if (weeklyAnalysis?.bestCalorieWorkout && parseInt(weeklyAnalysis.bestCalorieWorkout.calories) >= 500) {
+          achievements.push({ emoji: '💥', text: `${parseInt(weeklyAnalysis.bestCalorieWorkout.calories).toLocaleString()} cal burn` });
+        }
+        if (weeklyAnalysis?.longestDistance?.distance >= 3) {
+          achievements.push({ emoji: '🏃', text: `${parseFloat(weeklyAnalysis.longestDistance.distance).toFixed(1)}mi run` });
+        }
+        if (weeklyAnalysis?.totalMinutes >= 300) {
+          achievements.push({ emoji: '⏱️', text: `${Math.round(weeklyAnalysis.totalMinutes / 60)}hrs total` });
+        }
+
+        // Slide 1: Progress
+        if (weeklySlide === 0) {
+          return (
+            <div
+              className="relative h-full flex flex-col items-center justify-between pt-8 pb-4 px-6"
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+            >
+              <div className="text-4xl" style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>📅</div>
+              <div className="flex-1 flex flex-col items-center justify-center w-full">
+                <div className="text-center mb-3">
+                  <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">{getWeekDateRange()}</div>
+                  <div className="font-black text-2xl" style={{ color: allGoalsMet ? colors.primary : 'white' }}>
+                    {allGoalsMet ? '✓ Week Complete!' : `${overallPercent}% Complete`}
+                  </div>
+                  <div className="text-xs text-gray-400 mt-1">{getMotivationalTagline(stats?.streak || 0, allGoalsMet)}</div>
+                </div>
+
+                {/* Progress bar with segmented colors */}
+                <div className="w-full mb-4">
+                  <div className="h-2 rounded-full overflow-hidden flex" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                    {weeklyLifts > 0 && (
+                      <div className="h-full transition-all duration-500" style={{ width: `${(Math.min(weeklyLifts, liftsGoal) / totalGoals) * 100}%`, backgroundColor: '#00FF94' }} />
+                    )}
+                    {weeklyCardio > 0 && (
+                      <div className="h-full transition-all duration-500" style={{ width: `${(Math.min(weeklyCardio, cardioGoal) / totalGoals) * 100}%`, backgroundColor: '#FF9500' }} />
+                    )}
+                    {weeklyRecovery > 0 && (
+                      <div className="h-full transition-all duration-500" style={{ width: `${(Math.min(weeklyRecovery, recoveryGoal) / totalGoals) * 100}%`, backgroundColor: '#00D1FF' }} />
+                    )}
+                  </div>
+                </div>
+
+                {/* Goal Rings */}
+                <div className="flex items-center justify-around w-full mb-3">
+                  <div className="text-center">
+                    <div className="relative inline-block">
+                      <svg width={ringSize} height={ringSize} className="transform -rotate-90">
+                        <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={ringStroke} />
+                        <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="#00FF94" strokeWidth={ringStroke} strokeLinecap="round"
+                          strokeDasharray={ringCircumference} strokeDashoffset={ringCircumference - (liftsPercent / 100) * ringCircumference} />
+                      </svg>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="text-sm font-black">{weeklyLifts}/{liftsGoal}</span>
+                      </div>
+                    </div>
+                    <div className="text-[10px] text-gray-400 mt-1">🏋️ Strength</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="relative inline-block">
+                      <svg width={ringSize} height={ringSize} className="transform -rotate-90">
+                        <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={ringStroke} />
+                        <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="#FF9500" strokeWidth={ringStroke} strokeLinecap="round"
+                          strokeDasharray={ringCircumference} strokeDashoffset={ringCircumference - (cardioPercent / 100) * ringCircumference} />
+                      </svg>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="text-sm font-black">{weeklyCardio}/{cardioGoal}</span>
+                      </div>
+                    </div>
+                    <div className="text-[10px] text-gray-400 mt-1">🏃 Cardio</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="relative inline-block">
+                      <svg width={ringSize} height={ringSize} className="transform -rotate-90">
+                        <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={ringStroke} />
+                        <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="#00D1FF" strokeWidth={ringStroke} strokeLinecap="round"
+                          strokeDasharray={ringCircumference} strokeDashoffset={ringCircumference - (recoveryPercent / 100) * ringCircumference} />
+                      </svg>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="text-sm font-black">{weeklyRecovery}/{recoveryGoal}</span>
+                      </div>
+                    </div>
+                    <div className="text-[10px] text-gray-400 mt-1">🧘 Recovery</div>
+                  </div>
+                </div>
+
+                {/* Most Common Workout & Recovery */}
+                {weeklyAnalysis?.mostCommonWorkout && (
+                  <div className="w-full p-2.5 rounded-xl mb-2 flex items-center justify-center gap-2" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                    <span className="text-lg">{getActivityEmoji(weeklyAnalysis.mostCommonWorkout.type)}</span>
+                    <span className="text-xs text-gray-400">Top workout:</span>
+                    <span className="text-xs font-semibold text-white">{weeklyAnalysis.mostCommonWorkout.type} ({weeklyAnalysis.mostCommonWorkout.count}x)</span>
+                  </div>
+                )}
+                {weeklyAnalysis?.mostCommonRecovery && (
+                  <div className="w-full p-2.5 rounded-xl mb-3 flex items-center justify-center gap-2" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                    <span className="text-lg">{getActivityEmoji(weeklyAnalysis.mostCommonRecovery.type)}</span>
+                    <span className="text-xs text-gray-400">Top recovery:</span>
+                    <span className="text-xs font-semibold text-white">{weeklyAnalysis.mostCommonRecovery.type} ({weeklyAnalysis.mostCommonRecovery.count}x)</span>
+                  </div>
+                )}
+
+                <div className="w-full grid grid-cols-2 gap-2">
+                  <div className="text-center p-2.5 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                    <div className="text-lg font-bold text-white">{(stats?.weeklyCalories || 0).toLocaleString()}</div>
+                    <div className="text-[9px] text-gray-500">🔥 Calories</div>
+                  </div>
+                  <div className="text-center p-2.5 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                    <div className="text-lg font-bold text-white">{(stats?.weeklyMiles || 0).toFixed(1)}</div>
+                    <div className="text-[9px] text-gray-500">🏃 Miles</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="text-center mt-auto w-full">
+                <div className="inline-block text-lg font-black tracking-wider" style={{ background: 'linear-gradient(135deg, #00FF94 0%, #00D1FF 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
+                <div className="text-[9px] text-gray-600 tracking-widest uppercase -mt-0.5">Weekly Recap</div>
+                {/* Slide indicator */}
+                <div className="flex justify-center gap-2 mt-3">
+                  <button onClick={() => setWeeklySlide(0)} className="w-2 h-2 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 0 ? colors.primary : 'rgba(255,255,255,0.2)' }} />
+                  <button onClick={() => setWeeklySlide(1)} className="w-2 h-2 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 1 ? colors.primary : 'rgba(255,255,255,0.2)' }} />
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        // Slide 2: Highlights & Achievements
+        return (
+          <div
+            className="relative h-full flex flex-col items-center justify-between pt-8 pb-4 px-6"
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+          >
+            <div className="text-3xl" style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>⭐</div>
+            <div className="flex-1 flex flex-col items-center justify-center w-full overflow-hidden">
+              <div className="text-center mb-3">
+                <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">{getWeekDateRange()}</div>
+                <div className="font-black text-xl" style={{ color: colors.primary }}>Week Highlights</div>
+              </div>
+
+              {/* Achievements as simple list */}
+              {achievements.length > 0 && (
+                <div className="w-full mb-3 text-center">
+                  <div className="flex flex-wrap justify-center gap-x-3 gap-y-1">
+                    {achievements.slice(0, 4).map((a, i) => (
+                      <span key={i} className="text-xs text-gray-300">
+                        {a.emoji} {a.text}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Best workout & longest distance in compact grid */}
+              <div className="w-full grid grid-cols-2 gap-2 mb-3">
+                {/* Best workout */}
+                {weeklyAnalysis?.bestCalorieWorkout && (
+                  <div className="p-2.5 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,149,0,0.08)' }}>
+                    <div className="text-[9px] text-gray-500 uppercase mb-1">Best Burn</div>
+                    <div className="text-lg">{getActivityEmoji(weeklyAnalysis.bestCalorieWorkout.type)}</div>
+                    <div className="text-base font-black" style={{ color: '#FF9500' }}>{parseInt(weeklyAnalysis.bestCalorieWorkout.calories).toLocaleString()}</div>
+                    <div className="text-[9px] text-gray-500">calories</div>
+                  </div>
+                )}
+                {/* Longest distance or longest workout */}
+                {weeklyAnalysis?.longestDistance && parseFloat(weeklyAnalysis.longestDistance.distance) > 0 ? (
+                  <div className="p-2.5 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,209,255,0.08)' }}>
+                    <div className="text-[9px] text-gray-500 uppercase mb-1">Longest Run</div>
+                    <div className="text-lg">{getActivityEmoji(weeklyAnalysis.longestDistance.type)}</div>
+                    <div className="text-base font-black" style={{ color: '#00D1FF' }}>{parseFloat(weeklyAnalysis.longestDistance.distance).toFixed(2)}</div>
+                    <div className="text-[9px] text-gray-500">miles</div>
+                  </div>
+                ) : weeklyAnalysis?.longestWorkout && (
+                  <div className="p-2.5 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,255,148,0.08)' }}>
+                    <div className="text-[9px] text-gray-500 uppercase mb-1">Longest Session</div>
+                    <div className="text-lg">{getActivityEmoji(weeklyAnalysis.longestWorkout.type)}</div>
+                    <div className="text-base font-black" style={{ color: '#00FF94' }}>{weeklyAnalysis.longestWorkout.duration}</div>
+                    <div className="text-[9px] text-gray-500">minutes</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Week summary stats */}
+              <div className="w-full grid grid-cols-3 gap-2 mb-3">
+                <div className="text-center p-2 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                  <div className="text-base font-bold text-white">{weeklyAnalysis?.totalWorkouts || 0}</div>
+                  <div className="text-[8px] text-gray-500">Workouts</div>
+                </div>
+                <div className="text-center p-2 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                  <div className="text-base font-bold text-white">{weeklyAnalysis?.uniqueDays || 0}</div>
+                  <div className="text-[8px] text-gray-500">Days Active</div>
+                </div>
+                <div className="text-center p-2 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                  <div className="text-base font-bold text-white">{weeklyAnalysis?.totalMinutes ? Math.round(weeklyAnalysis.totalMinutes / 60) : 0}h</div>
+                  <div className="text-[8px] text-gray-500">Total Time</div>
+                </div>
+              </div>
+
+              {/* Records broken this week */}
+              {(() => {
+                const records = stats?.records || {};
+                const weeklyPRs = [];
+
+                // Check if weekly bests match all-time records (meaning PR was set this week)
+                if (weeklyAnalysis?.bestCalorieWorkout &&
+                    parseInt(weeklyAnalysis.bestCalorieWorkout.calories) === getRecordVal(records.highestCalories)) {
+                  weeklyPRs.push({ label: 'Highest Calories', value: parseInt(weeklyAnalysis.bestCalorieWorkout.calories).toLocaleString() });
+                }
+                if (weeklyAnalysis?.longestDistance &&
+                    parseFloat(weeklyAnalysis.longestDistance.distance) === getRecordVal(records.longestDistance)) {
+                  weeklyPRs.push({ label: 'Longest Distance', value: `${parseFloat(weeklyAnalysis.longestDistance.distance).toFixed(2)}mi` });
+                }
+                if (weeklyAnalysis?.longestWorkout &&
+                    parseInt(weeklyAnalysis.longestWorkout.duration) === getRecordVal(records.longestStrength)) {
+                  weeklyPRs.push({ label: 'Longest Strength', value: `${weeklyAnalysis.longestWorkout.duration}min` });
+                }
+                if ((stats?.weeklyMiles || 0) === getRecordVal(records.mostMilesWeek) && (stats?.weeklyMiles || 0) > 0) {
+                  weeklyPRs.push({ label: 'Most Miles/Week', value: `${(stats?.weeklyMiles || 0).toFixed(1)}mi` });
+                }
+                if ((weeklyAnalysis?.totalWorkouts || 0) === getRecordVal(records.mostWorkoutsWeek) && (weeklyAnalysis?.totalWorkouts || 0) > 0) {
+                  weeklyPRs.push({ label: 'Most Workouts/Week', value: weeklyAnalysis.totalWorkouts });
+                }
+
+                if (weeklyPRs.length === 0) return null;
+
+                return (
+                  <div className="w-full">
+                    <div className="text-[9px] text-gray-500 uppercase text-center mb-1">Records Set This Week</div>
+                    <div className="flex flex-wrap justify-center gap-2">
+                      {weeklyPRs.slice(0, 3).map((pr, i) => (
+                        <div key={i} className="px-2 py-1 rounded-full text-[10px]" style={{ backgroundColor: 'rgba(255,215,0,0.1)', border: '1px solid rgba(255,215,0,0.3)' }}>
+                          <span style={{ color: '#FFD700' }}>🏆 {pr.label}: {pr.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div className="text-center mt-auto w-full">
+              <div className="inline-block text-lg font-black tracking-wider" style={{ background: 'linear-gradient(135deg, #00FF94 0%, #00D1FF 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
+              <div className="text-[9px] text-gray-600 tracking-widest uppercase -mt-0.5">Week Highlights</div>
+              {/* Slide indicator */}
+              <div className="flex justify-center gap-2 mt-3">
+                <button onClick={() => setWeeklySlide(0)} className="w-2 h-2 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 0 ? colors.primary : 'rgba(255,255,255,0.2)' }} />
+                <button onClick={() => setWeeklySlide(1)} className="w-2 h-2 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 1 ? colors.primary : 'rgba(255,255,255,0.2)' }} />
+              </div>
+            </div>
+          </div>
+        );
+
+      case 'monthly':
+        const monthlyWorkouts = stats?.monthlyWorkouts || 0;
+        const avgPerWeek = monthlyWorkouts > 0 ? (monthlyWorkouts / 4).toFixed(1) : 0;
+        const daysIntoMonth = new Date().getDate();
+        const workoutsPerDay = monthlyWorkouts > 0 ? (monthlyWorkouts / daysIntoMonth).toFixed(2) : 0;
+        return (
+          <div className="relative h-full flex flex-col items-center justify-between pt-8 pb-14 px-6">
+            <div className="text-4xl" style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>📊</div>
+            <div className="flex-1 flex flex-col items-center justify-center w-full">
+              <div className="text-center mb-4">
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">{currentMonth} {currentYear}</div>
+                <div className="font-black text-2xl" style={{ color: colors.primary, textShadow: `0 0 30px ${colors.glow}` }}>Monthly Recap</div>
+              </div>
+              <div className="w-full space-y-3">
+                <div className="text-center p-4 rounded-2xl" style={{ backgroundColor: 'rgba(139,92,246,0.1)' }}>
+                  <div className="text-4xl font-black" style={{ color: colors.primary }}>{monthlyWorkouts}</div>
+                  <div className="text-xs text-gray-400 uppercase tracking-wider mt-1">Workouts Completed</div>
+                  <div className="text-[9px] text-gray-500 mt-1">~{avgPerWeek} per week</div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="text-center p-3 rounded-xl" style={{ backgroundColor: 'rgba(139,92,246,0.05)' }}>
+                    <div className="text-2xl font-bold" style={{ color: colors.secondary }}>{(stats?.monthlyCalories || 0).toLocaleString()}</div>
+                    <div className="text-[9px] text-gray-500">🔥 Calories</div>
+                  </div>
+                  <div className="text-center p-3 rounded-xl" style={{ backgroundColor: 'rgba(139,92,246,0.05)' }}>
+                    <div className="text-2xl font-bold" style={{ color: colors.secondary }}>{(stats?.monthlyMiles || 0).toFixed(1)}</div>
+                    <div className="text-[9px] text-gray-500">🏃 Miles</div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="text-center p-3 rounded-xl" style={{ backgroundColor: 'rgba(139,92,246,0.05)' }}>
+                    <div className="text-xl font-bold text-white">{stats?.streak || 0}</div>
+                    <div className="text-[9px] text-gray-500">🔥 Week Streak</div>
+                  </div>
+                  <div className="text-center p-3 rounded-xl" style={{ backgroundColor: 'rgba(139,92,246,0.05)' }}>
+                    <div className="text-xl font-bold text-white">{daysIntoMonth}</div>
+                    <div className="text-[9px] text-gray-500">📅 Days In</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="text-center mt-auto w-full">
+              <div className="inline-block text-lg font-black tracking-wider" style={{ background: 'linear-gradient(135deg, #8B5CF6 0%, #06B6D4 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
+              <div className="text-[9px] text-gray-600 tracking-widest uppercase -mt-0.5">Monthly Stats</div>
+            </div>
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
 
   return (
     <div
@@ -717,20 +1364,38 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
           opacity: isAnimating ? 1 : 0
         }}
       >
-        {/* Share Card - Instagram Story Aspect Ratio */}
+        {/* Card Type Tabs */}
+        <div className="flex gap-1 p-1 rounded-2xl mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+          {cardTypes.map((type) => (
+            <button
+              key={type.id}
+              onClick={() => setCardType(type.id)}
+              className="flex-1 py-2 px-1 rounded-xl text-center transition-all duration-200"
+              style={{
+                backgroundColor: cardType === type.id ? colorSchemes[type.id].primary + '20' : 'transparent',
+                color: cardType === type.id ? colorSchemes[type.id].primary : 'rgba(255,255,255,0.5)'
+              }}
+            >
+              <div className="text-lg">{type.label}</div>
+              <div className="text-[9px] font-medium">{type.name}</div>
+            </button>
+          ))}
+        </div>
+
+        {/* Share Card */}
         <div
-          className="relative rounded-3xl overflow-hidden mb-6"
+          className="relative rounded-3xl overflow-hidden mb-4"
           style={{
             aspectRatio: '9/16',
             background: 'linear-gradient(180deg, #0a0a0a 0%, #0d0d0d 50%, #000000 100%)',
-            boxShadow: '0 25px 50px -12px rgba(0, 255, 148, 0.25), 0 0 100px rgba(0, 255, 148, 0.1)'
+            boxShadow: `0 25px 50px -12px ${colors.shadow}, 0 0 100px ${colors.glow}`
           }}
         >
-          {/* Aurora/Glow Effect at Top */}
+          {/* Aurora/Glow Effect */}
           <div
             className="absolute top-0 left-0 right-0 h-1/2"
             style={{
-              background: 'radial-gradient(ellipse 80% 50% at 50% 0%, rgba(0, 255, 148, 0.15) 0%, rgba(0, 255, 148, 0.05) 40%, transparent 70%)',
+              background: `radial-gradient(ellipse 80% 50% at 50% 0%, ${colors.glow} 0%, ${colors.glow.replace('0.15', '0.05')} 40%, transparent 70%)`,
               pointerEvents: 'none'
             }}
           />
@@ -759,140 +1424,8 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
             }
           `}</style>
 
-          {/* Content */}
-          <div className="relative h-full flex flex-col items-center justify-between pt-10 pb-14 px-6">
-            {/* Top Section - Fire emoji */}
-            <div className="text-4xl" style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>🔥</div>
-
-            {/* Main Achievement Section */}
-            <div className="flex-1 flex flex-col items-center justify-center">
-              {/* Circular Progress Ring */}
-              <div className="relative" style={{ animation: 'ring-pulse 3s ease-in-out infinite' }}>
-                <svg width="180" height="180" className="transform -rotate-90">
-                  {/* Background ring */}
-                  <circle
-                    cx="90"
-                    cy="90"
-                    r="70"
-                    fill="none"
-                    stroke="rgba(255,255,255,0.05)"
-                    strokeWidth="8"
-                  />
-                  {/* Progress ring */}
-                  <circle
-                    cx="90"
-                    cy="90"
-                    r="70"
-                    fill="none"
-                    stroke="url(#progressGradient)"
-                    strokeWidth="8"
-                    strokeLinecap="round"
-                    strokeDasharray={circumference}
-                    strokeDashoffset={strokeDashoffset}
-                    style={{ transition: 'stroke-dashoffset 1s ease-out' }}
-                  />
-                  <defs>
-                    <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                      <stop offset="0%" stopColor="#00FF94" />
-                      <stop offset="100%" stopColor="#00D4FF" />
-                    </linearGradient>
-                  </defs>
-                </svg>
-
-                {/* Center Content */}
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <div
-                    className="font-black leading-none"
-                    style={{
-                      fontSize: '4.5rem',
-                      color: '#00FF94',
-                      textShadow: '0 0 40px rgba(0, 255, 148, 0.5), 0 0 80px rgba(0, 255, 148, 0.3)'
-                    }}
-                  >
-                    {streakCount}
-                  </div>
-                  <div className="text-xs font-semibold tracking-widest text-gray-400 uppercase mt-1">
-                    Week Streak
-                  </div>
-                </div>
-              </div>
-
-              {/* Achievement Badge */}
-              <div
-                className="mt-6 px-4 py-2 rounded-full"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(0,255,148,0.15) 0%, rgba(0,212,255,0.1) 100%)',
-                  border: '1px solid rgba(0,255,148,0.3)'
-                }}
-              >
-                <span className="text-sm font-semibold" style={{ color: '#00FF94' }}>
-                  {streakCount >= 10 ? '🏆 Elite Streaker' : streakCount >= 5 ? '⭐ On Fire' : '💪 Building Momentum'}
-                </span>
-              </div>
-            </div>
-
-            {/* This Week's Activity Summary */}
-            <div className="w-full">
-              <div className="text-[10px] text-gray-500 uppercase tracking-wider text-center mb-2">This Week</div>
-              <div
-                className="grid grid-cols-3 gap-2 p-3 rounded-2xl mb-4"
-                style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
-              >
-                <div className="text-center">
-                  <div
-                    className="text-xl font-black"
-                    style={{ color: (stats?.weeklyLifts || 0) >= (stats?.liftsGoal || 4) ? '#00FF94' : 'rgba(0,255,148,0.5)' }}
-                  >
-                    {stats?.weeklyLifts || 0}
-                  </div>
-                  <div className="text-[9px] text-gray-500">🏋️ Strength</div>
-                </div>
-                <div className="text-center">
-                  <div
-                    className="text-xl font-black"
-                    style={{ color: (stats?.weeklyCardio || 0) >= (stats?.cardioGoal || 3) ? '#FF9500' : 'rgba(255,149,0,0.5)' }}
-                  >
-                    {stats?.weeklyCardio || 0}
-                  </div>
-                  <div className="text-[9px] text-gray-500">🏃 Cardio</div>
-                </div>
-                <div className="text-center">
-                  <div
-                    className="text-xl font-black"
-                    style={{ color: (stats?.weeklyRecovery || 0) >= (stats?.recoveryGoal || 2) ? '#00D1FF' : 'rgba(0,209,255,0.5)' }}
-                  >
-                    {stats?.weeklyRecovery || 0}
-                  </div>
-                  <div className="text-[9px] text-gray-500">🧊 Recovery</div>
-                </div>
-              </div>
-
-              {/* Year Total */}
-              <div
-                className="p-3 rounded-2xl mb-3 text-center"
-                style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
-              >
-                <div className="text-2xl font-bold text-white">{workoutCount}</div>
-                <div className="text-[10px] text-gray-500 uppercase tracking-wider">Total Workouts in {currentYear}</div>
-              </div>
-
-              {/* Branding */}
-              <div className="text-center mt-auto">
-                <div
-                  className="inline-block text-lg font-black tracking-wider"
-                  style={{
-                    background: 'linear-gradient(135deg, #ffffff 0%, #888888 100%)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    opacity: 0.7
-                  }}
-                >
-                  STREAKD
-                </div>
-                <div className="text-[9px] text-gray-600 tracking-widest uppercase -mt-0.5">Win the Week</div>
-              </div>
-            </div>
-          </div>
+          {/* Card Content */}
+          {renderCardContent()}
         </div>
 
         {/* Share Options */}
@@ -5872,14 +6405,60 @@ export default function StreakdApp() {
         isOpen={showShare}
         onClose={() => setShowShare(false)}
         stats={{
+          // Streak stats
           streak: userData.streaks.master,
-          workouts: activities.length,
+          longestStreak: userData.personalRecords.longestMasterStreak || userData.streaks.master,
+          strengthStreak: userData.streaks.lifts,
+          cardioStreak: userData.streaks.cardio,
+          // Weekly stats
           weeklyLifts: weeklyProgress.lifts.completed,
           weeklyCardio: weeklyProgress.cardio.completed,
           weeklyRecovery: weeklyProgress.recovery.completed,
           liftsGoal: userData.goals.liftsPerWeek,
           cardioGoal: userData.goals.cardioPerWeek,
-          recoveryGoal: userData.goals.recoveryPerWeek
+          recoveryGoal: userData.goals.recoveryPerWeek,
+          weeklyCalories: activities.filter(a => {
+            const today = new Date();
+            const weekStart = new Date(today);
+            weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+            const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
+            return a.date >= weekStartStr;
+          }).reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0),
+          weeklyMiles: activities.filter(a => {
+            const today = new Date();
+            const weekStart = new Date(today);
+            weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+            const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
+            return a.date >= weekStartStr && a.distance;
+          }).reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0),
+          // Weekly activities for analysis
+          weeklyActivities: activities.filter(a => {
+            const today = new Date();
+            const weekStart = new Date(today);
+            weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+            const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
+            return a.date >= weekStartStr;
+          }),
+          // Monthly stats
+          monthlyWorkouts: activities.filter(a => {
+            const today = new Date();
+            const monthStart = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+            return a.date >= monthStart;
+          }).length,
+          monthlyCalories: activities.filter(a => {
+            const today = new Date();
+            const monthStart = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+            return a.date >= monthStart;
+          }).reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0),
+          monthlyMiles: activities.filter(a => {
+            const today = new Date();
+            const monthStart = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+            return a.date >= monthStart && a.distance;
+          }).reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0),
+          // Personal records
+          records: userData.personalRecords,
+          // Totals
+          workouts: activities.length
         }}
       />
 

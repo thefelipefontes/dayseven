@@ -674,7 +674,7 @@ const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!" }) =>
 const ShareModal = ({ isOpen, onClose, stats }) => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
-  
+
   useEffect(() => {
     if (isOpen) {
       setIsClosing(false);
@@ -694,149 +694,242 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
   };
 
   if (!isOpen && !isClosing) return null;
-  
+
+  const streakCount = stats?.streak || 0;
+  const workoutCount = stats?.workouts || 0;
+  const currentYear = new Date().getFullYear();
+
+  // Calculate progress for the ring (assume 52 weeks max for visual)
+  const progressPercent = Math.min((streakCount / 52) * 100, 100);
+  const circumference = 2 * Math.PI * 70; // radius = 70
+  const strokeDashoffset = circumference - (progressPercent / 100) * circumference;
+
   return (
-    <div 
-      className="fixed inset-0 z-50 flex items-end justify-center transition-all duration-300"
-      style={{ backgroundColor: isAnimating ? 'rgba(0,0,0,0.9)' : 'rgba(0,0,0,0)' }}
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center transition-all duration-300 p-4"
+      style={{ backgroundColor: isAnimating ? 'rgba(0,0,0,0.95)' : 'rgba(0,0,0,0)' }}
       onClick={(e) => e.target === e.currentTarget && handleClose()}
     >
-      <div 
-        className="w-full max-w-sm rounded-t-2xl p-6 transition-all duration-300 ease-out"
-        style={{ 
-          backgroundColor: '#1A1A1A',
-          transform: isAnimating ? 'translateY(0)' : 'translateY(100%)'
+      <div
+        className="w-full max-w-xs transition-all duration-500 ease-out"
+        style={{
+          transform: isAnimating ? 'scale(1) translateY(0)' : 'scale(0.8) translateY(50px)',
+          opacity: isAnimating ? 1 : 0
         }}
       >
-        <h3 className="text-xl font-bold mb-4 text-center">Share Your Stats</h3>
-        
-        <div className="p-4 rounded-xl mb-4" style={{ background: 'linear-gradient(135deg, #0A0A0A 0%, #1A1A1A 100%)', border: '1px solid rgba(0,255,148,0.3)' }}>
-          <div className="text-center mb-3">
-            <span className="text-2xl font-black">STREAKD</span>
-            <div className="text-xs text-gray-500">Win the week.</div>
-          </div>
-          <div className="grid grid-cols-2 gap-3 text-center">
-            <div>
-              <div className="text-2xl font-black" style={{ color: '#00FF94' }}>{stats?.streak || 7}</div>
-              <div className="text-xs text-gray-400">Weeks Streakd 🔥</div>
-            </div>
-            <div>
-              <div className="text-2xl font-black">{stats?.workouts || 18}</div>
-              <div className="text-xs text-gray-400">Workouts in 2026</div>
-            </div>
-          </div>
-        </div>
-        
-        <div className="grid grid-cols-3 gap-3 mb-4">
-          <button 
-            className="p-3 rounded-xl text-center transition-all duration-150" 
-            style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
-            onTouchStart={(e) => {
-              e.currentTarget.style.transform = 'scale(0.92)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-            }}
-            onTouchEnd={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-            }}
-            onMouseDown={(e) => {
-              e.currentTarget.style.transform = 'scale(0.92)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-            }}
-            onMouseUp={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-            }}
-          >
-            <span className="text-2xl">📸</span>
-            <div className="text-xs mt-1">Story</div>
-          </button>
-          <button 
-            className="p-3 rounded-xl text-center transition-all duration-150" 
-            style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
-            onTouchStart={(e) => {
-              e.currentTarget.style.transform = 'scale(0.92)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-            }}
-            onTouchEnd={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-            }}
-            onMouseDown={(e) => {
-              e.currentTarget.style.transform = 'scale(0.92)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-            }}
-            onMouseUp={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-            }}
-          >
-            <span className="text-2xl">📱</span>
-            <div className="text-xs mt-1">Post</div>
-          </button>
-          <button 
-            className="p-3 rounded-xl text-center transition-all duration-150" 
-            style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
-            onTouchStart={(e) => {
-              e.currentTarget.style.transform = 'scale(0.92)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-            }}
-            onTouchEnd={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-            }}
-            onMouseDown={(e) => {
-              e.currentTarget.style.transform = 'scale(0.92)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-            }}
-            onMouseUp={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-            }}
-          >
-            <span className="text-2xl">💬</span>
-            <div className="text-xs mt-1">Message</div>
-          </button>
-        </div>
-        
-        <button
-          onClick={handleClose}
-          className="w-full py-3 rounded-xl font-medium transition-all duration-150"
-          style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
-          onTouchStart={(e) => {
-            e.currentTarget.style.transform = 'scale(0.97)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.15)';
-          }}
-          onTouchEnd={(e) => {
-            e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-          }}
-          onMouseDown={(e) => {
-            e.currentTarget.style.transform = 'scale(0.97)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.15)';
-          }}
-          onMouseUp={(e) => {
-            e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+        {/* Share Card - Instagram Story Aspect Ratio */}
+        <div
+          className="relative rounded-3xl overflow-hidden mb-6"
+          style={{
+            aspectRatio: '9/16',
+            background: 'linear-gradient(180deg, #0a0a0a 0%, #0d0d0d 50%, #000000 100%)',
+            boxShadow: '0 25px 50px -12px rgba(0, 255, 148, 0.25), 0 0 100px rgba(0, 255, 148, 0.1)'
           }}
         >
-          Cancel
+          {/* Aurora/Glow Effect at Top */}
+          <div
+            className="absolute top-0 left-0 right-0 h-1/2"
+            style={{
+              background: 'radial-gradient(ellipse 80% 50% at 50% 0%, rgba(0, 255, 148, 0.15) 0%, rgba(0, 255, 148, 0.05) 40%, transparent 70%)',
+              pointerEvents: 'none'
+            }}
+          />
+
+          {/* Shimmer Effect */}
+          <div
+            className="absolute inset-0"
+            style={{
+              background: 'linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.03) 45%, rgba(255,255,255,0.05) 50%, rgba(255,255,255,0.03) 55%, transparent 60%)',
+              animation: 'shimmer 3s infinite',
+              pointerEvents: 'none'
+            }}
+          />
+          <style>{`
+            @keyframes shimmer {
+              0% { transform: translateX(-100%); }
+              100% { transform: translateX(100%); }
+            }
+            @keyframes pulse-glow {
+              0%, 100% { opacity: 0.5; }
+              50% { opacity: 1; }
+            }
+            @keyframes ring-pulse {
+              0%, 100% { transform: scale(1); opacity: 1; }
+              50% { transform: scale(1.02); opacity: 0.8; }
+            }
+          `}</style>
+
+          {/* Content */}
+          <div className="relative h-full flex flex-col items-center justify-between pt-10 pb-14 px-6">
+            {/* Top Section - Fire emoji */}
+            <div className="text-4xl" style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>🔥</div>
+
+            {/* Main Achievement Section */}
+            <div className="flex-1 flex flex-col items-center justify-center">
+              {/* Circular Progress Ring */}
+              <div className="relative" style={{ animation: 'ring-pulse 3s ease-in-out infinite' }}>
+                <svg width="180" height="180" className="transform -rotate-90">
+                  {/* Background ring */}
+                  <circle
+                    cx="90"
+                    cy="90"
+                    r="70"
+                    fill="none"
+                    stroke="rgba(255,255,255,0.05)"
+                    strokeWidth="8"
+                  />
+                  {/* Progress ring */}
+                  <circle
+                    cx="90"
+                    cy="90"
+                    r="70"
+                    fill="none"
+                    stroke="url(#progressGradient)"
+                    strokeWidth="8"
+                    strokeLinecap="round"
+                    strokeDasharray={circumference}
+                    strokeDashoffset={strokeDashoffset}
+                    style={{ transition: 'stroke-dashoffset 1s ease-out' }}
+                  />
+                  <defs>
+                    <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stopColor="#00FF94" />
+                      <stop offset="100%" stopColor="#00D4FF" />
+                    </linearGradient>
+                  </defs>
+                </svg>
+
+                {/* Center Content */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <div
+                    className="font-black leading-none"
+                    style={{
+                      fontSize: '4.5rem',
+                      color: '#00FF94',
+                      textShadow: '0 0 40px rgba(0, 255, 148, 0.5), 0 0 80px rgba(0, 255, 148, 0.3)'
+                    }}
+                  >
+                    {streakCount}
+                  </div>
+                  <div className="text-xs font-semibold tracking-widest text-gray-400 uppercase mt-1">
+                    Week Streak
+                  </div>
+                </div>
+              </div>
+
+              {/* Achievement Badge */}
+              <div
+                className="mt-6 px-4 py-2 rounded-full"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(0,255,148,0.15) 0%, rgba(0,212,255,0.1) 100%)',
+                  border: '1px solid rgba(0,255,148,0.3)'
+                }}
+              >
+                <span className="text-sm font-semibold" style={{ color: '#00FF94' }}>
+                  {streakCount >= 10 ? '🏆 Elite Streaker' : streakCount >= 5 ? '⭐ On Fire' : '💪 Building Momentum'}
+                </span>
+              </div>
+            </div>
+
+            {/* This Week's Activity Summary */}
+            <div className="w-full">
+              <div className="text-[10px] text-gray-500 uppercase tracking-wider text-center mb-2">This Week</div>
+              <div
+                className="grid grid-cols-3 gap-2 p-3 rounded-2xl mb-4"
+                style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
+              >
+                <div className="text-center">
+                  <div
+                    className="text-xl font-black"
+                    style={{ color: (stats?.weeklyLifts || 0) >= (stats?.liftsGoal || 4) ? '#00FF94' : 'rgba(0,255,148,0.5)' }}
+                  >
+                    {stats?.weeklyLifts || 0}
+                  </div>
+                  <div className="text-[9px] text-gray-500">🏋️ Strength</div>
+                </div>
+                <div className="text-center">
+                  <div
+                    className="text-xl font-black"
+                    style={{ color: (stats?.weeklyCardio || 0) >= (stats?.cardioGoal || 3) ? '#FF9500' : 'rgba(255,149,0,0.5)' }}
+                  >
+                    {stats?.weeklyCardio || 0}
+                  </div>
+                  <div className="text-[9px] text-gray-500">🏃 Cardio</div>
+                </div>
+                <div className="text-center">
+                  <div
+                    className="text-xl font-black"
+                    style={{ color: (stats?.weeklyRecovery || 0) >= (stats?.recoveryGoal || 2) ? '#00D1FF' : 'rgba(0,209,255,0.5)' }}
+                  >
+                    {stats?.weeklyRecovery || 0}
+                  </div>
+                  <div className="text-[9px] text-gray-500">🧊 Recovery</div>
+                </div>
+              </div>
+
+              {/* Year Total */}
+              <div
+                className="p-3 rounded-2xl mb-3 text-center"
+                style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
+              >
+                <div className="text-2xl font-bold text-white">{workoutCount}</div>
+                <div className="text-[10px] text-gray-500 uppercase tracking-wider">Total Workouts in {currentYear}</div>
+              </div>
+
+              {/* Branding */}
+              <div className="text-center mt-auto">
+                <div
+                  className="inline-block text-lg font-black tracking-wider"
+                  style={{
+                    background: 'linear-gradient(135deg, #ffffff 0%, #888888 100%)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    opacity: 0.7
+                  }}
+                >
+                  STREAKD
+                </div>
+                <div className="text-[9px] text-gray-600 tracking-widest uppercase -mt-0.5">Win the Week</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Share Options */}
+        <div className="flex justify-center gap-4 mb-4">
+          <button
+            className="flex flex-col items-center gap-2 p-4 rounded-2xl transition-all duration-150"
+            style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+            onClick={() => {/* TODO: Implement share to story */}}
+          >
+            <span className="text-2xl">📸</span>
+            <span className="text-xs text-gray-400">Story</span>
+          </button>
+          <button
+            className="flex flex-col items-center gap-2 p-4 rounded-2xl transition-all duration-150"
+            style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+            onClick={() => {/* TODO: Implement save image */}}
+          >
+            <span className="text-2xl">💾</span>
+            <span className="text-xs text-gray-400">Save</span>
+          </button>
+          <button
+            className="flex flex-col items-center gap-2 p-4 rounded-2xl transition-all duration-150"
+            style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+            onClick={() => {/* TODO: Implement share */}}
+          >
+            <span className="text-2xl">📤</span>
+            <span className="text-xs text-gray-400">Share</span>
+          </button>
+        </div>
+
+        {/* Close Button */}
+        <button
+          onClick={handleClose}
+          className="w-full py-3 rounded-xl font-medium transition-all duration-150 text-gray-400"
+          style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+        >
+          Close
         </button>
       </div>
     </div>
@@ -5775,10 +5868,19 @@ export default function StreakdApp() {
         defaultDate={defaultActivityDate}
       />
 
-      <ShareModal 
+      <ShareModal
         isOpen={showShare}
         onClose={() => setShowShare(false)}
-        stats={{ streak: userData.streaks.master, workouts: activities.length }}
+        stats={{
+          streak: userData.streaks.master,
+          workouts: activities.length,
+          weeklyLifts: weeklyProgress.lifts.completed,
+          weeklyCardio: weeklyProgress.cardio.completed,
+          weeklyRecovery: weeklyProgress.recovery.completed,
+          liftsGoal: userData.goals.liftsPerWeek,
+          cardioGoal: userData.goals.cardioPerWeek,
+          recoveryGoal: userData.goals.recoveryPerWeek
+        }}
       />
 
       <CelebrationOverlay 

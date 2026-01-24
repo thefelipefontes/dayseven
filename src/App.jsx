@@ -3350,14 +3350,25 @@ const TrendsView = ({ activities = [], calendarData = {} }) => {
       {selectedBar !== null && trendData[selectedBar] && (() => {
         const selectedPoint = trendData[selectedBar];
         const dateStr = selectedPoint.date;
-        const dayActivities = calendarData[dateStr] || [];
+        // Get full activity data from activities array
+        const fullDayActivities = activities.filter(a => a.date === dateStr);
+        const lifts = fullDayActivities.filter(a => a.type === 'Strength Training');
+        const cardioActivities = fullDayActivities.filter(a =>
+          a.type === 'Running' || a.type === 'Cycle' || a.type === 'Sports'
+        );
+        const recoveryActivities = fullDayActivities.filter(a =>
+          a.type === 'Cold Plunge' || a.type === 'Sauna' || a.type === 'Yoga' || a.type === 'Pilates'
+        );
+
+        const dayCalories = fullDayActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+        const dayMiles = fullDayActivities.reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+        const totalDuration = fullDayActivities.reduce((sum, a) => sum + (a.duration || 0), 0);
 
         return (
           <div className="p-4 rounded-xl mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
             <div className="flex items-center justify-between mb-3">
               <div>
                 <div className="text-sm font-semibold text-white">{selectedPoint.label}</div>
-                <span className="text-xs text-gray-400">Activities</span>
               </div>
               <button
                 onClick={() => setSelectedBar(null)}
@@ -3367,45 +3378,69 @@ const TrendsView = ({ activities = [], calendarData = {} }) => {
               </button>
             </div>
 
-            {dayActivities.length > 0 ? (
-              <div className="space-y-2">
-                {dayActivities.map((activity, idx) => (
-                  <div key={idx} className="p-3 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm">{
-                          activity.type === 'Running' ? '🏃' :
-                          activity.type === 'Cycle' ? '🚴' :
-                          activity.type === 'Strength Training' ? '🏋️' :
-                          activity.type === 'Yoga' ? '🧘' :
-                          activity.type === 'Pilates' ? '🤸' :
-                          activity.type === 'Cold Plunge' ? '🧊' :
-                          activity.type === 'Sauna' ? '🔥' :
-                          activity.type === 'Sports' ? '⚽' : '💪'
-                        }</span>
-                        <span className="text-sm text-white font-medium">
-                          {activity.subtype || activity.type}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex gap-4 mt-2 text-xs text-gray-400">
-                      {activity.duration && <span>{activity.duration} min</span>}
-                      {activity.distance && <span>{activity.distance} mi</span>}
-                      {activity.calories && <span>{activity.calories} cal</span>}
-                      {activity.avgHr && <span>Avg HR: {activity.avgHr}</span>}
-                    </div>
+            {fullDayActivities.length > 0 ? (
+              <div className="space-y-3">
+                {/* Summary Stats */}
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
+                    <div className="text-lg font-black" style={{ color: '#00FF94' }}>{lifts.length}</div>
+                    <div className="text-[9px] text-gray-400">🏋️ Strength</div>
                   </div>
-                ))}
+                  <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
+                    <div className="text-lg font-black" style={{ color: '#FF9500' }}>{cardioActivities.length}</div>
+                    <div className="text-[9px] text-gray-400">🏃 Cardio</div>
+                  </div>
+                  <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
+                    <div className="text-lg font-black" style={{ color: '#00D1FF' }}>{recoveryActivities.length}</div>
+                    <div className="text-[9px] text-gray-400">🧊 Recovery</div>
+                  </div>
+                </div>
 
-                {/* Day Summary */}
-                <div className="pt-2 mt-2 border-t border-white/10">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-gray-400">Day Total:</span>
-                    <span className="font-bold" style={{ color: config.color }}>
-                      {metric === 'calories' && `${dayActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0)} cal`}
-                      {metric === 'miles' && `${dayActivities.filter(a => a.type === 'Running').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0).toFixed(1)} mi`}
-                      {metric === 'steps' && `${selectedPoint.value.toLocaleString()} steps`}
-                    </span>
+                {/* Daily Totals */}
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                    <div className="text-sm font-bold text-white">{dayCalories}</div>
+                    <div className="text-[9px] text-gray-400">Calories</div>
+                  </div>
+                  <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                    <div className="text-sm font-bold text-white">{dayMiles.toFixed(1)}</div>
+                    <div className="text-[9px] text-gray-400">Miles</div>
+                  </div>
+                  <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                    <div className="text-sm font-bold text-white">{totalDuration}</div>
+                    <div className="text-[9px] text-gray-400">Minutes</div>
+                  </div>
+                </div>
+
+                {/* Activities List */}
+                <div className="pt-2 border-t border-white/10">
+                  <div className="text-xs text-gray-400 mb-2">Activities</div>
+                  <div className="space-y-2">
+                    {fullDayActivities.map((activity, idx) => (
+                      <div key={idx} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">{
+                            activity.type === 'Running' ? '🏃' :
+                            activity.type === 'Cycle' ? '🚴' :
+                            activity.type === 'Strength Training' ? '🏋️' :
+                            activity.type === 'Yoga' ? '🧘' :
+                            activity.type === 'Pilates' ? '🤸' :
+                            activity.type === 'Cold Plunge' ? '🧊' :
+                            activity.type === 'Sauna' ? '🔥' :
+                            activity.type === 'Sports' ? '⚽' : '💪'
+                          }</span>
+                          <span className="text-sm text-white font-medium">
+                            {activity.subtype || activity.type}
+                          </span>
+                        </div>
+                        <div className="flex gap-3 mt-1 text-[10px] text-gray-400">
+                          {activity.duration && <span>{activity.duration} min</span>}
+                          {activity.distance && <span>{activity.distance} mi</span>}
+                          {activity.calories && <span>{activity.calories} cal</span>}
+                          {activity.avgHr && <span>HR: {activity.avgHr}</span>}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>

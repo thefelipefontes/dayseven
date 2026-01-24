@@ -56,7 +56,8 @@ const initialUserData = {
     longestStrength: { value: 0, activityType: null }, // Strength training specifically
     longestCardio: { value: 0, activityType: null }, // Any cardio
     longestDistance: { value: 0, activityType: null },
-    fastestPace: { value: null, activityType: null }, // minutes per mile
+    fastestPace: { value: null, activityType: null }, // minutes per mile (running)
+    fastestCyclingPace: { value: null, activityType: null }, // minutes per mile (cycling)
     // Weekly records
     mostWorkoutsWeek: 0,
     mostCaloriesWeek: 0,
@@ -2290,7 +2291,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               </div>
             )}
 
-            {activityType === 'Running' && (
+            {(activityType === 'Running' || activityType === 'Cycle') && (
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Distance (mi)</label>
                 <input
@@ -3156,7 +3157,7 @@ const TrendsView = ({ activities = [], calendarData = {} }) => {
           value = 0;
         } else if (metric === 'miles') {
           value = dayActivities
-            .filter(a => a.type === 'Running')
+            .filter(a => a.type === 'Running' || a.type === 'Cycle')
             .reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
         }
         
@@ -3189,13 +3190,13 @@ const TrendsView = ({ activities = [], calendarData = {} }) => {
             value += 0;
           } else if (metric === 'miles') {
             value += dayActivities
-              .filter(a => a.type === 'Running')
+              .filter(a => a.type === 'Running' || a.type === 'Cycle')
               .reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
           }
         }
-        
+
         if (metric === 'steps') value = Math.round(value);
-        
+
         // Create label with date range for weekly view
         const weekEndDate = new Date(weekStart);
         weekEndDate.setDate(weekStart.getDate() + 6);
@@ -3231,13 +3232,13 @@ const TrendsView = ({ activities = [], calendarData = {} }) => {
             value += 0;
           } else if (metric === 'miles') {
             value += dayActivities
-              .filter(a => a.type === 'Running')
+              .filter(a => a.type === 'Running' || a.type === 'Cycle')
               .reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
           }
         }
-        
+
         if (metric === 'steps') value = Math.round(value);
-        
+
         data.push({
           label: monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
           shortLabel: monthDate.toLocaleDateString('en-US', { month: 'short' }),
@@ -3715,7 +3716,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
     const lastWeekLifts = lastWeekActivities.filter(a => getActivityCategory(a) === 'lifting').length;
     const lastWeekCardio = lastWeekActivities.filter(a => getActivityCategory(a) === 'cardio').length;
     const lastWeekRecovery = lastWeekActivities.filter(a => getActivityCategory(a) === 'recovery').length;
-    const lastWeekMiles = lastWeekActivities.filter(a => a.type === 'Running').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+    const lastWeekMiles = lastWeekActivities.filter(a => a.type === 'Running' || a.type === 'Cycle').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
     
     // Calculate average from first activity to now
     let avgLifts = 0, avgCardio = 0, avgRecovery = 0, avgMiles = 0, avgCalories = 0;
@@ -3748,7 +3749,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
         const totalLifts = pastActivities.filter(a => getActivityCategory(a) === 'lifting').length;
         const totalCardio = pastActivities.filter(a => getActivityCategory(a) === 'cardio').length;
         const totalRecovery = pastActivities.filter(a => getActivityCategory(a) === 'recovery').length;
-        const totalMiles = pastActivities.filter(a => a.type === 'Running').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+        const totalMiles = pastActivities.filter(a => a.type === 'Running' || a.type === 'Cycle').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
         
         avgLifts = Math.round((totalLifts / weeksBetween) * 10) / 10;
         avgCardio = Math.round((totalCardio / weeksBetween) * 10) / 10;
@@ -3810,9 +3811,9 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
     const lifts = weekActivities.filter(a => getActivityCategory(a) === 'lifting').length;
     const cardio = weekActivities.filter(a => getActivityCategory(a) === 'cardio').length;
     const recovery = weekActivities.filter(a => getActivityCategory(a) === 'recovery').length;
-    const miles = weekActivities.filter(a => a.type === 'Running').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
-    
-    return { 
+    const miles = weekActivities.filter(a => a.type === 'Running' || a.type === 'Cycle').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+
+    return {
       workouts: lifts + cardio, 
       lifts,
       cardio,
@@ -3885,7 +3886,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
     return {
       workouts: lifts.length + cardioActs.length,
       recovery: recoveryActs.length,
-      miles: cardioActs.filter(a => a.type === 'Running').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0),
+      miles: cardioActs.filter(a => a.type === 'Running' || a.type === 'Cycle').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0),
       lifting: calcBreakdown(lifts),
       cardio: calcBreakdown(cardioActs),
       recoveryBreakdown: calcBreakdown(recoveryActs)
@@ -4850,10 +4851,10 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                     </div>
                   </div>
                   
-                  {/* Fastest Pace */}
+                  {/* Fastest Running Pace */}
                   <div className="p-3 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(255,149,0,0.05)' }}>
                     <div>
-                      <div className="text-[10px] text-gray-500">⚡ Fastest Pace</div>
+                      <div className="text-[10px] text-gray-500">🏃 Fastest Running Pace</div>
                       <div className="text-xl font-black" style={{ color: getRecordValue(records.fastestPace) ? '#FF9500' : 'rgba(255,255,255,0.3)' }}>
                         {getRecordValue(records.fastestPace) ? (() => {
                           const pace = getRecordValue(records.fastestPace);
@@ -4864,6 +4865,24 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                       </div>
                       {getRecordType(records.fastestPace) && (
                         <div className="text-[10px] text-gray-600">{getRecordType(records.fastestPace)}</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Fastest Cycling Pace */}
+                  <div className="p-3 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(0,209,255,0.05)' }}>
+                    <div>
+                      <div className="text-[10px] text-gray-500">🚴 Fastest Cycling Pace</div>
+                      <div className="text-xl font-black" style={{ color: getRecordValue(records.fastestCyclingPace) ? '#00D1FF' : 'rgba(255,255,255,0.3)' }}>
+                        {getRecordValue(records.fastestCyclingPace) ? (() => {
+                          const pace = getRecordValue(records.fastestCyclingPace);
+                          const paceMin = Math.floor(pace);
+                          const paceSec = Math.round((pace - paceMin) * 60);
+                          return `${paceMin}:${paceSec.toString().padStart(2, '0')}/mi`;
+                        })() : '—'}
+                      </div>
+                      {getRecordType(records.fastestCyclingPace) && (
+                        <div className="text-[10px] text-gray-600">{getRecordType(records.fastestCyclingPace)}</div>
                       )}
                     </div>
                   </div>
@@ -4937,8 +4956,8 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
           const lifts = weekActivities.filter(a => a.type === 'Strength Training');
           const cardioArr = weekActivities.filter(a => ['Running', 'Cycle', 'Sports'].includes(a.type));
           const recoveryArr = weekActivities.filter(a => ['Cold Plunge', 'Sauna', 'Yoga'].includes(a.type));
-          const miles = cardioArr.filter(a => a.type === 'Running').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
-          
+          const miles = cardioArr.filter(a => a.type === 'Running' || a.type === 'Cycle').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+
           return {
             lifts: lifts.length,
             cardio: cardioArr.length,
@@ -5194,26 +5213,29 @@ export default function StreakdApp() {
     
     // Check for personal records and return all broken records
     const checkAndUpdateRecords = () => {
-      const newRecords = { ...records };
+      // Only track records that are actually updated (don't spread all records to avoid overwriting other concurrent updates)
+      const updatedRecords = {};
       const recordsBroken = []; // Collect all broken records
-      
+
       // Recovery activities don't count as "workouts" for records
       const recoveryTypes = ['Cold Plunge', 'Sauna'];
       const yogaPilatesAsRecovery = ['Yoga', 'Pilates'].includes(activity.type) && (!activity.countToward || activity.countToward === 'recovery');
       const isRecovery = recoveryTypes.includes(activity.type) || yogaPilatesAsRecovery;
       const isStrength = activity.type === 'Strength Training' || activity.countToward === 'strength';
       const isCardio = ['Running', 'Cycle', 'Sports'].includes(activity.type) || activity.countToward === 'cardio';
-      
+
       // Helper to get current record value (handles both old number format and new object format)
-      const getRecordValue = (record) => {
+      // Check updatedRecords first in case we updated it earlier in this function
+      const getRecordValue = (recordKey) => {
+        const record = updatedRecords[recordKey] !== undefined ? updatedRecords[recordKey] : records[recordKey];
         if (record === null || record === undefined) return 0;
         if (typeof record === 'object') return record.value || 0;
         return record;
       };
       
       // Single activity: Highest calories (counts all activities including recovery)
-      if (activity.calories && activity.calories > getRecordValue(records.highestCalories)) {
-        newRecords.highestCalories = { value: activity.calories, activityType: activity.type };
+      if (activity.calories && activity.calories > getRecordValue('highestCalories')) {
+        updatedRecords.highestCalories = { value: activity.calories, activityType: activity.type };
         recordsBroken.push(`${activity.calories} cals (${activity.type}) 🔥`);
       }
       
@@ -5223,18 +5245,18 @@ export default function StreakdApp() {
         let setLongestWorkoutRecord = false;
         
         // Longest workout overall
-        if (activity.duration && activity.duration > getRecordValue(records.longestWorkout)) {
-          newRecords.longestWorkout = { value: activity.duration, activityType: activity.type };
+        if (activity.duration && activity.duration > getRecordValue('longestWorkout')) {
+          updatedRecords.longestWorkout = { value: activity.duration, activityType: activity.type };
           const hours = Math.floor(activity.duration / 60);
           const mins = activity.duration % 60;
           const durationStr = hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
           recordsBroken.push(`${durationStr} workout (${activity.type}) 💪`);
           setLongestWorkoutRecord = true;
         }
-        
+
         // Longest strength session
-        if (isStrength && activity.duration && activity.duration > getRecordValue(records.longestStrength)) {
-          newRecords.longestStrength = { value: activity.duration, activityType: activity.type };
+        if (isStrength && activity.duration && activity.duration > getRecordValue('longestStrength')) {
+          updatedRecords.longestStrength = { value: activity.duration, activityType: activity.type };
           // Only add to recordsBroken if it's not also the longest workout overall
           if (!setLongestWorkoutRecord) {
             const hours = Math.floor(activity.duration / 60);
@@ -5243,10 +5265,10 @@ export default function StreakdApp() {
             recordsBroken.push(`${durationStr} strength 🏋️`);
           }
         }
-        
+
         // Longest cardio session
-        if (isCardio && activity.duration && activity.duration > getRecordValue(records.longestCardio)) {
-          newRecords.longestCardio = { value: activity.duration, activityType: activity.type };
+        if (isCardio && activity.duration && activity.duration > getRecordValue('longestCardio')) {
+          updatedRecords.longestCardio = { value: activity.duration, activityType: activity.type };
           // Only add to recordsBroken if it's not also the longest workout overall
           if (!setLongestWorkoutRecord) {
             const hours = Math.floor(activity.duration / 60);
@@ -5255,10 +5277,10 @@ export default function StreakdApp() {
             recordsBroken.push(`${durationStr} cardio (${activity.type}) 🏃`);
           }
         }
-        
+
         // Longest distance
-        if (activity.distance && activity.distance > getRecordValue(records.longestDistance)) {
-          newRecords.longestDistance = { value: activity.distance, activityType: activity.type };
+        if (activity.distance && activity.distance > getRecordValue('longestDistance')) {
+          updatedRecords.longestDistance = { value: activity.distance, activityType: activity.type };
           recordsBroken.push(`${activity.distance} mi (${activity.type}) 🏃`);
         }
         
@@ -5268,22 +5290,41 @@ export default function StreakdApp() {
         if (activity.type === 'Running' && runDistance >= 0.1 && activity.duration) {
           const pace = activity.duration / runDistance; // min per mile
           if (pace >= 3 && pace <= 30) { // Reasonable running pace range
-            const currentFastest = records.fastestPace?.value ?? null;
+            // Get current fastest from updatedRecords first, then fall back to records
+            const currentRecord = updatedRecords.fastestPace || records.fastestPace;
+            const currentFastest = currentRecord?.value ?? null;
             if (currentFastest === null || pace < currentFastest) {
-              newRecords.fastestPace = { value: pace, activityType: 'Running' };
+              updatedRecords.fastestPace = { value: pace, activityType: 'Running' };
               const paceMin = Math.floor(pace);
               const paceSec = Math.round((pace - paceMin) * 60);
-              recordsBroken.push(`${paceMin}:${paceSec.toString().padStart(2, '0')}/mi pace ⚡`);
+              recordsBroken.push(`${paceMin}:${paceSec.toString().padStart(2, '0')}/mi run pace ⚡`);
+            }
+          }
+        }
+
+        // Fastest cycling pace (for cycles with distance and duration)
+        const cycleDistance = parseFloat(activity.distance);
+        if (activity.type === 'Cycle' && cycleDistance >= 0.1 && activity.duration) {
+          const pace = activity.duration / cycleDistance; // min per mile
+          if (pace > 0 && pace <= 30) { // Allow any positive pace up to 30 min/mile
+            // Get current fastest from updatedRecords first, then fall back to records
+            const currentRecord = updatedRecords.fastestCyclingPace || records.fastestCyclingPace;
+            const currentFastest = currentRecord?.value ?? null;
+            if (currentFastest === null || pace < currentFastest) {
+              updatedRecords.fastestCyclingPace = { value: pace, activityType: 'Cycle' };
+              const paceMin = Math.floor(pace);
+              const paceSec = Math.round((pace - paceMin) * 60);
+              recordsBroken.push(`${paceMin}:${paceSec.toString().padStart(2, '0')}/mi cycle pace 🚴`);
             }
           }
         }
       }
-      
+
       // Weekly records: Check total workouts this week (strength + cardio only, not recovery)
       const totalWorkoutsThisWeek = newProgress.lifts.completed + newProgress.cardio.completed;
-      const currentMostWorkouts = newRecords.mostWorkoutsWeek || records.mostWorkoutsWeek || 0;
+      const currentMostWorkouts = updatedRecords.mostWorkoutsWeek || records.mostWorkoutsWeek || 0;
       if (totalWorkoutsThisWeek > currentMostWorkouts) {
-        newRecords.mostWorkoutsWeek = totalWorkoutsThisWeek;
+        updatedRecords.mostWorkoutsWeek = totalWorkoutsThisWeek;
         // Only celebrate if it's a significant milestone (5, 10, 15, etc)
         if (totalWorkoutsThisWeek >= 5 && totalWorkoutsThisWeek % 5 === 0) {
           recordsBroken.push(`${totalWorkoutsThisWeek} workouts this week 🎯`);
@@ -5302,9 +5343,9 @@ export default function StreakdApp() {
         .filter(a => a.date >= weekStartStr && !recoveryTypes.includes(a.type))
         .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
       
-      const currentMostCalories = newRecords.mostCaloriesWeek || records.mostCaloriesWeek || 0;
+      const currentMostCalories = updatedRecords.mostCaloriesWeek || records.mostCaloriesWeek || 0;
       if (weeklyCalories > currentMostCalories) {
-        newRecords.mostCaloriesWeek = weeklyCalories;
+        updatedRecords.mostCaloriesWeek = weeklyCalories;
       }
       
       // Calculate weekly miles
@@ -5313,11 +5354,11 @@ export default function StreakdApp() {
         .reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
 
       // Always update mostMilesWeek to the current week's total if it's higher
-      // Use newRecords.mostMilesWeek if we've already updated it in this save operation
-      const currentMostMiles = newRecords.mostMilesWeek || records.mostMilesWeek || 0;
+      // Use updatedRecords.mostMilesWeek if we've already updated it in this save operation
+      const currentMostMiles = updatedRecords.mostMilesWeek || records.mostMilesWeek || 0;
 
       if (weeklyMiles > currentMostMiles) {
-        newRecords.mostMilesWeek = weeklyMiles;
+        updatedRecords.mostMilesWeek = weeklyMiles;
         // Celebrate milestone miles (10, 20, 30, etc)
         if (weeklyMiles >= 10 && Math.floor(weeklyMiles / 10) > Math.floor(currentMostMiles / 10)) {
           recordsBroken.push(`${Math.floor(weeklyMiles)} mi this week 🏆`);
@@ -5326,12 +5367,12 @@ export default function StreakdApp() {
 
       // Update records in state if any changed
       // Use functional update to merge with current state (avoids race conditions with streak updates)
-      if (JSON.stringify(newRecords) !== JSON.stringify(records)) {
+      if (Object.keys(updatedRecords).length > 0) {
         setUserData(prev => ({
           ...prev,
           personalRecords: {
             ...prev.personalRecords,
-            ...newRecords
+            ...updatedRecords
           }
         }));
       }

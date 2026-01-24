@@ -899,45 +899,71 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
       case 'streak':
         const milestones = getStreakMilestones(streakCount);
         const nextMilestone = getNextMilestone(streakCount);
+        const last4Weeks = stats?.last4Weeks || [false, false, false, false];
         return (
-          <div className="relative h-full flex flex-col items-center justify-between pt-8 pb-14 px-6">
+          <div className="relative h-full flex flex-col items-center justify-between pt-8 pb-4 px-6">
             <div className="text-4xl" style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>🔥</div>
             <div className="flex-1 flex flex-col items-center justify-center">
+              {/* Main streak number with ring */}
               <div className="relative" style={{ animation: 'ring-pulse 3s ease-in-out infinite' }}>
-                <svg width="180" height="180" className="transform -rotate-90">
-                  <circle cx="90" cy="90" r="70" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="8" />
-                  <circle cx="90" cy="90" r="70" fill="none" stroke={colors.primary} strokeWidth="8" strokeLinecap="round"
-                    strokeDasharray={circumference} strokeDashoffset={strokeDashoffset} style={{ transition: 'stroke-dashoffset 1s ease-out' }} />
+                <svg width="160" height="160" className="transform -rotate-90">
+                  <circle cx="80" cy="80" r="62" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="7" />
+                  <circle cx="80" cy="80" r="62" fill="none" stroke={colors.primary} strokeWidth="7" strokeLinecap="round"
+                    strokeDasharray={2 * Math.PI * 62} strokeDashoffset={2 * Math.PI * 62 - (Math.min(streakCount / 52, 1) * 2 * Math.PI * 62)} style={{ transition: 'stroke-dashoffset 1s ease-out' }} />
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <div className="font-black leading-none" style={{ fontSize: '4.5rem', color: colors.primary, textShadow: `0 0 40px ${colors.glow}, 0 0 80px ${colors.glow}` }}>
+                  <div className="font-black leading-none" style={{ fontSize: '4rem', color: colors.primary, textShadow: `0 0 40px ${colors.glow}, 0 0 80px ${colors.glow}` }}>
                     {streakCount}
                   </div>
-                  <div className="text-xs font-semibold tracking-widest text-gray-400 uppercase mt-1">Week Streak</div>
+                  <div className="text-[10px] font-semibold tracking-widest text-gray-400 uppercase mt-1">Week Streak</div>
                 </div>
               </div>
-              {/* Milestone Badges */}
-              {milestones.length > 0 && (
-                <div className="flex gap-2 mt-4">
-                  {milestones.slice(-3).map((m, i) => (
-                    <div key={i} className="px-2 py-1 rounded-full text-xs" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                      {m.emoji} {m.label}
-                    </div>
+
+              {/* Individual category streaks */}
+              <div className="flex justify-center gap-4 mt-4 w-full">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm">🏋️</span>
+                  <span className="text-xs font-semibold" style={{ color: '#00FF94' }}>{stats?.strengthStreak || 0}</span>
+                  <span className="text-[9px] text-gray-500">wks</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm">🏃</span>
+                  <span className="text-xs font-semibold" style={{ color: '#FF9500' }}>{stats?.cardioStreak || 0}</span>
+                  <span className="text-[9px] text-gray-500">wks</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm">🧘</span>
+                  <span className="text-xs font-semibold" style={{ color: '#00D1FF' }}>{stats?.recoveryStreak || 0}</span>
+                  <span className="text-[9px] text-gray-500">wks</span>
+                </div>
+              </div>
+
+              {/* Last 4 weeks visual */}
+              <div className="mt-4">
+                <div className="text-[9px] text-gray-500 uppercase text-center mb-2">Last 4 Weeks</div>
+                <div className="flex justify-center gap-3">
+                  {last4Weeks.map((won, i) => (
+                    <div
+                      key={i}
+                      className="w-5 h-5 rounded-full"
+                      style={{
+                        backgroundColor: won ? '#00FF94' : 'transparent',
+                        border: won ? 'none' : '2px solid rgba(255,255,255,0.2)'
+                      }}
+                    />
                   ))}
                 </div>
-              )}
-              {/* Next Milestone */}
-              {nextMilestone && (
-                <div className="mt-3 text-xs text-gray-500">
-                  {nextMilestone.weeksLeft} week{nextMilestone.weeksLeft !== 1 ? 's' : ''} to next milestone
-                </div>
-              )}
-              <div className="mt-4 px-4 py-2 rounded-full" style={{ background: `linear-gradient(135deg, ${colors.glow} 0%, rgba(0,212,255,0.1) 100%)`, border: `1px solid ${colors.primary}40` }}>
-                <span className="text-sm font-semibold" style={{ color: colors.primary }}>
+              </div>
+
+              {/* Motivational tagline */}
+              <div className="mt-4 px-4 py-1.5 rounded-full" style={{ background: `linear-gradient(135deg, ${colors.glow} 0%, rgba(0,212,255,0.1) 100%)`, border: `1px solid ${colors.primary}40` }}>
+                <span className="text-xs font-semibold" style={{ color: colors.primary }}>
                   {getMotivationalTagline(streakCount, false)}
                 </span>
               </div>
             </div>
+
+            {/* Bottom stats */}
             <div className="w-full">
               <div className="grid grid-cols-2 gap-3 p-3 rounded-2xl mb-3" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
                 <div className="text-center">
@@ -1131,30 +1157,27 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
                   </div>
                 </div>
 
-                {/* Most Common Workout & Recovery */}
-                {weeklyAnalysis?.mostCommonWorkout && (
-                  <div className="w-full p-2.5 rounded-xl mb-2 flex items-center justify-center gap-2" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-                    <span className="text-lg">{getActivityEmoji(weeklyAnalysis.mostCommonWorkout.type)}</span>
-                    <span className="text-xs text-gray-400">Top workout:</span>
-                    <span className="text-xs font-semibold text-white">{weeklyAnalysis.mostCommonWorkout.type} ({weeklyAnalysis.mostCommonWorkout.count}x)</span>
+                {/* Streaks */}
+                <div className="w-full p-3 rounded-2xl mt-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                  <div className="flex items-center justify-center gap-2">
+                    <span className="text-xl">🔥</span>
+                    <span className="text-2xl font-black" style={{ color: '#00FF94' }}>{stats?.streak || 0}</span>
+                    <span className="text-xs text-gray-400">weeks hitting all goals</span>
                   </div>
-                )}
-                {weeklyAnalysis?.mostCommonRecovery && (
-                  <div className="w-full p-2.5 rounded-xl mb-3 flex items-center justify-center gap-2" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-                    <span className="text-lg">{getActivityEmoji(weeklyAnalysis.mostCommonRecovery.type)}</span>
-                    <span className="text-xs text-gray-400">Top recovery:</span>
-                    <span className="text-xs font-semibold text-white">{weeklyAnalysis.mostCommonRecovery.type} ({weeklyAnalysis.mostCommonRecovery.count}x)</span>
-                  </div>
-                )}
-
-                <div className="w-full grid grid-cols-2 gap-2">
-                  <div className="text-center p-2.5 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-                    <div className="text-lg font-bold text-white">{(stats?.weeklyCalories || 0).toLocaleString()}</div>
-                    <div className="text-[9px] text-gray-500">🔥 Calories</div>
-                  </div>
-                  <div className="text-center p-2.5 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-                    <div className="text-lg font-bold text-white">{(stats?.weeklyMiles || 0).toFixed(1)}</div>
-                    <div className="text-[9px] text-gray-500">🏃 Miles</div>
+                  <div className="w-full h-px my-2.5" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }} />
+                  <div className="flex justify-around">
+                    <div className="text-center">
+                      <div className="text-base font-bold" style={{ color: '#00FF94' }}>{stats?.strengthStreak || 0}</div>
+                      <div className="text-[9px] text-gray-500 -mt-0.5">🏋️ weeks</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-base font-bold" style={{ color: '#FF9500' }}>{stats?.cardioStreak || 0}</div>
+                      <div className="text-[9px] text-gray-500 -mt-0.5">🏃 weeks</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-base font-bold" style={{ color: '#00D1FF' }}>{stats?.recoveryStreak || 0}</div>
+                      <div className="text-[9px] text-gray-500 -mt-0.5">🧊 weeks</div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -6410,6 +6433,29 @@ export default function StreakdApp() {
           longestStreak: userData.personalRecords.longestMasterStreak || userData.streaks.master,
           strengthStreak: userData.streaks.lifts,
           cardioStreak: userData.streaks.cardio,
+          recoveryStreak: userData.streaks.recovery,
+          // Last 4 weeks history (true = won, false = missed)
+          last4Weeks: (() => {
+            const weeks = [];
+            const goals = userData.goals;
+            for (let i = 0; i < 4; i++) {
+              const weekStart = new Date();
+              weekStart.setDate(weekStart.getDate() - weekStart.getDay() - (i * 7));
+              const weekEnd = new Date(weekStart);
+              weekEnd.setDate(weekStart.getDate() + 6);
+              const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
+              const weekEndStr = `${weekEnd.getFullYear()}-${String(weekEnd.getMonth() + 1).padStart(2, '0')}-${String(weekEnd.getDate()).padStart(2, '0')}`;
+
+              const weekActivities = activities.filter(a => a.date >= weekStartStr && a.date <= weekEndStr);
+              const lifts = weekActivities.filter(a => a.type === 'Strength Training').length;
+              const cardio = weekActivities.filter(a => ['Running', 'Cycle', 'Sports'].includes(a.type)).length;
+              const recovery = weekActivities.filter(a => ['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(a.type)).length;
+
+              const won = lifts >= goals.liftsPerWeek && cardio >= goals.cardioPerWeek && recovery >= goals.recoveryPerWeek;
+              weeks.push(won);
+            }
+            return weeks.reverse(); // oldest to newest
+          })(),
           // Weekly stats
           weeklyLifts: weeklyProgress.lifts.completed,
           weeklyCardio: weeklyProgress.cardio.completed,

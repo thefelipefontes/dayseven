@@ -1,198 +1,136 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 
-// Mock data
-const mockUserData = {
-  name: 'Alex',
+// Get today's date in YYYY-MM-DD format
+const getTodayDate = () => {
+  const today = new Date();
+  return today.toISOString().split('T')[0];
+};
+
+// Get current year
+const getCurrentYear = () => new Date().getFullYear();
+
+// Parse date string (YYYY-MM-DD) to Date object at noon local time
+// This avoids timezone issues where "2026-01-24" would be interpreted as UTC midnight
+const parseLocalDate = (dateStr) => {
+  if (!dateStr) return new Date();
+  return new Date(dateStr + 'T12:00:00');
+};
+
+// Format date as "Today", "Yesterday", or "Mon, Jan 20"
+const formatFriendlyDate = (dateStr) => {
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  
+  const todayStr = today.toISOString().split('T')[0];
+  const yesterdayStr = yesterday.toISOString().split('T')[0];
+  
+  if (dateStr === todayStr) return 'Today';
+  if (dateStr === yesterdayStr) return 'Yesterday';
+  
+  const date = new Date(dateStr + 'T12:00:00');
+  return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+};
+
+// Initial user data - zeroed out
+const initialUserData = {
+  name: '',
   goals: {
     liftsPerWeek: 4,
-    runsPerWeek: 3,
+    cardioPerWeek: 3,
     recoveryPerWeek: 2,
     stepsPerDay: 10000,
     caloriesPerWeek: 3500
   },
   streaks: {
-    master: 3,
-    lifts: 7,
-    runs: 5,
-    recovery: 4,
-    stepsGoal: 6
+    master: 0,
+    lifts: 0,
+    cardio: 0,
+    recovery: 0,
+    stepsGoal: 0
+  },
+  personalRecords: {
+    // Single workout records (with activity type that achieved it)
+    highestCalories: { value: 0, activityType: null },
+    longestWorkout: { value: 0, activityType: null }, // Any workout type
+    longestStrength: { value: 0, activityType: null }, // Strength training specifically
+    longestCardio: { value: 0, activityType: null }, // Any cardio
+    longestDistance: { value: 0, activityType: null },
+    fastestPace: { value: null, activityType: null }, // minutes per mile
+    // Weekly records
+    mostWorkoutsWeek: 0,
+    mostCaloriesWeek: 0,
+    mostMilesWeek: 0,
+    // Streak records (these get updated automatically)
+    longestMasterStreak: 0,
+    longestStrengthStreak: 0,
+    longestCardioStreak: 0,
+    longestRecoveryStreak: 0
   }
 };
 
-const mockWhoopData = {
-  recovery: 78,
-  sleep: 85,
-  strain: 12.4,
-  hrv: 62
+// Initial weekly progress - zeroed out
+const initialWeeklyProgress = {
+  lifts: { completed: 0, goal: 4, sessions: [] },
+  cardio: { completed: 0, goal: 3, sessions: [], breakdown: { running: 0, cycling: 0, sports: 0 } },
+  recovery: { completed: 0, goal: 2, sessions: [], breakdown: { coldPlunge: 0, sauna: 0, yoga: 0 } },
+  calories: { burned: 0, goal: 3500 },
+  steps: { today: 0, goal: 10000 }
 };
 
-const mockWeeklyProgress = {
-  lifts: { completed: 2, goal: 4, sessions: ['Upper', 'Lower'] },
-  runs: { completed: 1, goal: 3, miles: 4.2, targetMiles: 15 },
-  recovery: { completed: 1, goal: 2, sessions: ['Cold Plunge'] },
-  calories: { burned: 2100, goal: 3500 },
-  steps: { today: 7234, goal: 10000 }
+const initialPersonalRecords = {
+  mostStepsWeek: 0,
+  mostStepsDay: 0,
+  mostCaloriesWeek: 0,
+  mostCaloriesDay: 0,
+  longestMasterStreak: 0,
+  longestWorkoutStreak: 0,
+  longestRecoveryStreak: 0,
+  mostLiftsWeek: 0,
+  longestLiftStreak: 0,
+  highestLiftCalories: 0,
+  fastestMile: '--:--',
+  longestRun: 0,
+  mostMilesWeek: 0,
+  mostRunsWeek: 0,
+  mostRecoveryWeek: 0,
+  longestColdPlunge: 0,
+  coldestPlunge: 0,
+  mostSaunaMinutes: 0,
+  totalWorkouts2026: 0,
+  totalRecovery2026: 0,
+  totalMiles2026: 0,
+  totalWorkoutsAllTime: 0,
+  totalRecoveryAllTime: 0,
+  totalMilesAllTime: 0
 };
 
-const mockActivities = [
-  { id: 1, type: 'Lifting', subtype: 'Upper', date: '2026-01-20', time: '6:30 AM', calories: 340, avgHr: 125, maxHr: 165, duration: 55 },
-  { id: 2, type: 'Running', subtype: 'Easy Run', date: '2026-01-19', time: '7:00 AM', calories: 420, avgHr: 145, maxHr: 168, distance: 4.2, duration: 38 },
-  { id: 3, type: 'Cold Plunge', subtype: null, date: '2026-01-19', time: '7:45 AM', duration: 5, temp: 45 },
-  { id: 4, type: 'Lifting', subtype: 'Lower', date: '2026-01-18', time: '6:00 AM', calories: 380, avgHr: 130, maxHr: 172, duration: 62 }
-];
+// Initial activities - empty
+const initialActivities = [];
 
-const mockWeeklyStats = {
-  'week-3': { 
-    workouts: 5, 
-    recovery: 2, 
-    calories: 3200, 
-    steps: 72000, 
-    miles: 12.4, 
-    goalsMet: true,
-    lifts: 3,
-    runs: 2,
-    liftBreakdown: { Upper: 2, Lower: 1 },
-    runBreakdown: { Easy: 1, Long: 1 },
-    recoveryBreakdown: { 'Cold Plunge': 1, Sauna: 1 },
-    activities: [
-      { type: 'Lifting', subtype: 'Upper', date: 'Jan 6', duration: 52, calories: 380, avgHr: 125 },
-      { type: 'Running', subtype: 'Easy', date: 'Jan 7', duration: 35, calories: 320, distance: 3.2 },
-      { type: 'Lifting', subtype: 'Lower', date: 'Jan 8', duration: 48, calories: 350, avgHr: 118 },
-      { type: 'Cold Plunge', date: 'Jan 9', duration: 5, temp: 45 },
-      { type: 'Lifting', subtype: 'Upper', date: 'Jan 10', duration: 55, calories: 410, avgHr: 128 },
-      { type: 'Sauna', date: 'Jan 11', duration: 20, temp: 180 },
-      { type: 'Running', subtype: 'Long', date: 'Jan 12', duration: 68, calories: 580, distance: 6.2 }
-    ]
-  },
-  'week-2': { 
-    workouts: 4, 
-    recovery: 3, 
-    calories: 3500, 
-    steps: 68000, 
-    miles: 15.2, 
-    goalsMet: true,
-    lifts: 2,
-    runs: 2,
-    liftBreakdown: { Legs: 1, Upper: 1 },
-    runBreakdown: { Easy: 1, Tempo: 1 },
-    recoveryBreakdown: { 'Cold Plunge': 1, Sauna: 1, Yoga: 1 },
-    activities: [
-      { type: 'Lifting', subtype: 'Legs', date: 'Jan 13', duration: 50, calories: 390, avgHr: 130 },
-      { type: 'Yoga', date: 'Jan 13', duration: 45, calories: 120 },
-      { type: 'Lifting', subtype: 'Upper', date: 'Jan 15', duration: 48, calories: 360, avgHr: 122 },
-      { type: 'Running', subtype: 'Tempo', date: 'Jan 16', duration: 42, calories: 450, distance: 5.1 },
-      { type: 'Sauna', date: 'Jan 17', duration: 25, temp: 175 },
-      { type: 'Running', subtype: 'Easy', date: 'Jan 19', duration: 30, calories: 280, distance: 2.8 },
-      { type: 'Cold Plunge', date: 'Jan 19', duration: 6, temp: 42 }
-    ]
-  },
-  'week-1': { 
-    workouts: 6, 
-    recovery: 2, 
-    calories: 3800, 
-    steps: 82000, 
-    miles: 18.1, 
-    goalsMet: true,
-    lifts: 4,
-    runs: 2,
-    liftBreakdown: { Upper: 2, Lower: 1, Chest: 1 },
-    runBreakdown: { Easy: 1, Long: 1 },
-    recoveryBreakdown: { 'Cold Plunge': 2 },
-    activities: [
-      { type: 'Lifting', subtype: 'Upper', date: 'Jan 20', duration: 55, calories: 420, avgHr: 126 },
-      { type: 'Running', subtype: 'Easy', date: 'Jan 21', duration: 32, calories: 290, distance: 3.0 },
-      { type: 'Lifting', subtype: 'Lower', date: 'Jan 22', duration: 50, calories: 380, avgHr: 120 },
-      { type: 'Cold Plunge', date: 'Jan 22', duration: 5, temp: 45 },
-      { type: 'Lifting', subtype: 'Chest', date: 'Jan 24', duration: 45, calories: 340, avgHr: 118 },
-      { type: 'Running', subtype: 'Long', date: 'Jan 25', duration: 75, calories: 620, distance: 7.2 },
-      { type: 'Lifting', subtype: 'Upper', date: 'Jan 26', duration: 52, calories: 390, avgHr: 124 },
-      { type: 'Cold Plunge', date: 'Jan 26', duration: 6, temp: 43 }
-    ]
-  }
+// Initial weekly stats - empty
+const initialWeeklyStats = {};
+
+// Initial calendar data - empty (will be populated by activities)
+const initialCalendarData = {};
+
+
+// No pending syncs initially
+const initialPendingSync = [];
+
+const initialLiftingBreakdown = {
+  '2026': {},
+  'all-time': {}
 };
 
-const mockCalendarData = {
-  // January 2026
-  '2026-01-01': [{ type: 'Lifting', subtype: 'Upper' }],
-  '2026-01-02': [{ type: 'Running', subtype: 'Easy' }],
-  '2026-01-03': [{ type: 'Lifting', subtype: 'Lower' }, { type: 'Cold Plunge' }],
-  '2026-01-04': [],
-  '2026-01-05': [{ type: 'Running', subtype: 'Long' }],
-  '2026-01-06': [{ type: 'Lifting', subtype: 'Upper' }, { type: 'Cold Plunge' }],
-  '2026-01-07': [],
-  '2026-01-08': [{ type: 'Lifting', subtype: 'Lower' }],
-  '2026-01-09': [{ type: 'Running', subtype: 'Easy' }],
-  '2026-01-10': [{ type: 'Lifting', subtype: 'Upper' }],
-  '2026-01-11': [{ type: 'Cold Plunge' }],
-  '2026-01-12': [{ type: 'Running', subtype: 'Long' }],
-  '2026-01-13': [{ type: 'Lifting', subtype: 'Legs' }, { type: 'Yoga' }],
-  '2026-01-14': [],
-  '2026-01-15': [{ type: 'Lifting', subtype: 'Upper' }],
-  '2026-01-16': [{ type: 'Running', subtype: 'Tempo' }],
-  '2026-01-17': [{ type: 'Sauna' }],
-  '2026-01-18': [{ type: 'Lifting', subtype: 'Lower' }],
-  '2026-01-19': [{ type: 'Running', subtype: 'Easy' }, { type: 'Cold Plunge' }],
-  '2026-01-20': [{ type: 'Lifting', subtype: 'Upper' }],
-  // December 2025 (for context)
-  '2025-12-25': [],
-  '2025-12-26': [{ type: 'Lifting', subtype: 'Upper' }],
-  '2025-12-27': [{ type: 'Running', subtype: 'Easy' }],
-  '2025-12-28': [{ type: 'Lifting', subtype: 'Lower' }, { type: 'Sauna' }],
-  '2025-12-29': [],
-  '2025-12-30': [{ type: 'Running', subtype: 'Long' }],
-  '2025-12-31': [{ type: 'Lifting', subtype: 'Upper' }, { type: 'Cold Plunge' }, { type: 'Yoga' }]
+const initialRunningBreakdown = {
+  '2026': {},
+  'all-time': {}
 };
 
-const mockPendingSync = [
-  { source: 'Whoop', type: 'Lifting', date: '2026-01-21', time: '6:15 AM', calories: 295, avgHr: 118, maxHr: 155, duration: 48, durationHours: 0, durationMinutes: 48 }
-];
-
-const mockPersonalRecords = {
-  // General
-  mostStepsWeek: 98234,
-  mostStepsDay: 18432,
-  mostCaloriesWeek: 4200,
-  mostCaloriesDay: 890,
-  longestMasterStreak: 12,
-  longestWorkoutStreak: 15,
-  longestRecoveryStreak: 8,
-  // Lifting
-  mostLiftsWeek: 6,
-  longestLiftStreak: 8,
-  highestLiftCalories: 520,
-  // Running
-  fastestMile: '7:23',
-  longestRun: 13.1,
-  mostMilesWeek: 28.4,
-  mostRunsWeek: 5,
-  // Recovery
-  mostRecoveryWeek: 5,
-  longestColdPlunge: 8,
-  coldestPlunge: 39,
-  mostSaunaMinutes: 45,
-  // Totals 2026
-  totalWorkouts2026: 18,
-  totalRecovery2026: 8,
-  totalMiles2026: 42.6,
-  // All-time totals
-  totalWorkoutsAllTime: 847,
-  totalRecoveryAllTime: 312,
-  totalMilesAllTime: 1842.3
-};
-
-const mockLiftingBreakdown = {
-  '2026': { Upper: 6, Lower: 4, Legs: 3, Chest: 2, Back: 2, Shoulders: 1 },
-  'all-time': { Upper: 245, Lower: 198, Legs: 156, Chest: 89, Back: 87, Shoulders: 72 }
-};
-
-const mockRunningBreakdown = {
-  '2026': { Easy: 5, Tempo: 3, Long: 2, Sprints: 1, Recovery: 1 },
-  'all-time': { Easy: 312, Tempo: 156, Long: 89, Sprints: 45, Recovery: 67 }
-};
-
-const mockRecoveryBreakdown = {
-  '2026': { 'Cold Plunge': 4, 'Sauna': 2, 'Yoga': 2 },
-  'all-time': { 'Cold Plunge': 156, 'Sauna': 89, 'Yoga': 67 }
+const initialRecoveryBreakdown = {
+  '2026': {},
+  'all-time': {}
 };
 
 // Utility Components
@@ -247,13 +185,14 @@ const ProgressBar = ({ progress, color = '#00FF94', height = 4 }) => (
 
 const ActivityIcon = ({ type, size = 20 }) => {
   const icons = {
-    'Lifting': '🏋️',
+    'Strength Training': '🏋️',
     'Running': '🏃',
     'Cold Plunge': '🧊',
     'Sauna': '🔥',
     'Yoga': '🧘',
+    'Pilates': '🤸',
     'Cycle': '🚴',
-    'Sports': '⚽',
+    'Sports': '🏀',
     'Other': '💪'
   };
   return <span style={{ fontSize: size }}>{icons[type] || '💪'}</span>;
@@ -397,25 +336,229 @@ const HeatMapCalendar = ({ data, onSelectDate, selectedDate, onSelectWeek }) => 
   );
 };
 
-// Celebration Animation Component
-const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!" }) => {
+// Skeleton Loading Components
+const SkeletonPulse = ({ className = "", style = {} }) => (
+  <div 
+    className={`animate-pulse rounded-lg ${className}`}
+    style={{ backgroundColor: 'rgba(255,255,255,0.05)', ...style }}
+  />
+);
+
+const SkeletonCard = () => (
+  <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+    <div className="flex items-center gap-3 mb-4">
+      <SkeletonPulse className="w-10 h-10 rounded-full" />
+      <div className="flex-1">
+        <SkeletonPulse className="h-4 w-24 mb-2" />
+        <SkeletonPulse className="h-3 w-16" />
+      </div>
+    </div>
+    <SkeletonPulse className="h-20 w-full" />
+  </div>
+);
+
+const SkeletonActivityRow = () => (
+  <div className="p-3 rounded-xl flex items-center gap-3" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+    <SkeletonPulse className="w-8 h-8 rounded-lg" />
+    <div className="flex-1">
+      <SkeletonPulse className="h-4 w-32 mb-2" />
+      <SkeletonPulse className="h-3 w-20" />
+    </div>
+    <SkeletonPulse className="h-4 w-12" />
+  </div>
+);
+
+const SkeletonGoalRings = () => (
+  <div className="p-5 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+    <div className="flex items-center justify-around">
+      {[1, 2, 3].map(i => (
+        <div key={i} className="flex flex-col items-center">
+          <SkeletonPulse className="w-[72px] h-[72px] rounded-full" />
+          <SkeletonPulse className="h-3 w-16 mt-2" />
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+const HomeTabSkeleton = () => (
+  <div className="pb-32 animate-pulse">
+    {/* Daily Stats Skeleton */}
+    <div className="px-4 mb-4">
+      <SkeletonPulse className="h-4 w-32 mb-3" />
+      <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <SkeletonPulse className="w-6 h-6 rounded" />
+            <div className="flex-1">
+              <SkeletonPulse className="h-2 w-full rounded-full" />
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <SkeletonPulse className="w-6 h-6 rounded" />
+            <div className="flex-1">
+              <SkeletonPulse className="h-2 w-full rounded-full" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    {/* Goals Skeleton */}
+    <div className="mx-4 mb-4">
+      <SkeletonPulse className="h-4 w-40 mb-3" />
+      <SkeletonGoalRings />
+    </div>
+    
+    {/* Activities Skeleton */}
+    <div className="mx-4 mb-4">
+      <SkeletonPulse className="h-4 w-28 mb-3" />
+      <div className="space-y-2">
+        <SkeletonActivityRow />
+        <SkeletonActivityRow />
+      </div>
+    </div>
+  </div>
+);
+
+// Toast Notification Component
+const Toast = ({ show, message, onDismiss, onTap, type = 'record' }) => {
+  const [isVisible, setIsVisible] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
+
   useEffect(() => {
     if (show) {
+      setIsVisible(true);
+      setIsLeaving(false);
+      
+      // Auto dismiss after 4 seconds
       const timer = setTimeout(() => {
-        onComplete();
-      }, 2000);
+        setIsLeaving(true);
+        setTimeout(() => {
+          setIsVisible(false);
+          onDismiss && onDismiss();
+        }, 300);
+      }, 4000);
+      
       return () => clearTimeout(timer);
+    }
+  }, [show, onDismiss]);
+
+  const handleTap = () => {
+    setIsLeaving(true);
+    setTimeout(() => {
+      setIsVisible(false);
+      onDismiss && onDismiss();
+      onTap && onTap();
+    }, 300);
+  };
+
+  if (!isVisible) return null;
+
+  const bgColor = type === 'record' 
+    ? 'linear-gradient(135deg, rgba(255,215,0,0.15) 0%, rgba(255,149,0,0.1) 100%)'
+    : 'rgba(0,255,148,0.1)';
+  const borderColor = type === 'record' ? 'rgba(255,215,0,0.3)' : 'rgba(0,255,148,0.3)';
+  const icon = type === 'record' ? '🏆' : '✓';
+
+  return (
+    <div 
+      className="fixed bottom-28 left-4 right-4 z-50 transition-all duration-300"
+      style={{
+        transform: isLeaving ? 'translateY(100px)' : 'translateY(0)',
+        opacity: isLeaving ? 0 : 1
+      }}
+    >
+      <button 
+        onClick={handleTap}
+        className="w-full p-4 rounded-2xl flex items-start gap-3 shadow-lg text-left transition-all duration-150"
+        style={{ 
+          background: bgColor,
+          border: `1px solid ${borderColor}`,
+          backdropFilter: 'blur(20px)'
+        }}
+        onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.98)'}
+        onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
+        onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.98)'}
+        onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+        onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+      >
+        <span className="text-2xl">{icon}</span>
+        <div className="flex-1">
+          <div className="text-sm font-bold text-white" style={{ whiteSpace: 'pre-line' }}>{message}</div>
+          <div className="text-xs text-gray-400 mt-1">Tap to view Hall of Fame →</div>
+        </div>
+        <button 
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsLeaving(true);
+            setTimeout(() => {
+              setIsVisible(false);
+              onDismiss && onDismiss();
+            }, 300);
+          }}
+          className="text-gray-400 hover:text-white transition-colors p-1"
+        >
+          ✕
+        </button>
+      </button>
+    </div>
+  );
+};
+
+// Celebration Animation Component
+const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!" }) => {
+  const [isVisible, setIsVisible] = useState(false);
+  const [isFadingOut, setIsFadingOut] = useState(false);
+
+  useEffect(() => {
+    if (show) {
+      setIsVisible(true);
+      setIsFadingOut(false);
+      
+      // Start fade out after 2.3s
+      const fadeTimer = setTimeout(() => {
+        setIsFadingOut(true);
+      }, 2300);
+      
+      // Complete after fade out (2.3s + 0.5s fade)
+      const completeTimer = setTimeout(() => {
+        setIsVisible(false);
+        onComplete();
+      }, 2800);
+      
+      return () => {
+        clearTimeout(fadeTimer);
+        clearTimeout(completeTimer);
+      };
     }
   }, [show, onComplete]);
 
-  if (!show) return null;
+  if (!isVisible) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
-      <div className="text-center animate-bounce-in">
-        <div className="text-6xl mb-4">🎉</div>
-        <div className="text-2xl font-black" style={{ color: '#00FF94' }}>{message}</div>
-        <div className="text-gray-400 mt-2">Keep pushing!</div>
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none transition-opacity duration-400"
+      style={{ opacity: isFadingOut ? 0 : 1 }}
+    >
+      {/* Background pulse */}
+      <div 
+        className="absolute inset-0 animate-pulse-bg"
+        style={{ 
+          background: 'radial-gradient(circle at center, rgba(0,255,148,0.15) 0%, transparent 70%)'
+        }}
+      />
+      
+      {/* Main content */}
+      <div className="text-center animate-bounce-in relative z-10">
+        {/* Pulsing ring behind emoji */}
+        <div className="relative inline-block mb-4">
+          <div className="absolute inset-0 rounded-full animate-ping-slow" style={{ backgroundColor: 'rgba(0,255,148,0.3)', transform: 'scale(1.5)' }} />
+          <div className="absolute inset-0 rounded-full animate-ping-slower" style={{ backgroundColor: 'rgba(0,255,148,0.2)', transform: 'scale(2)' }} />
+          <div className="text-6xl relative z-10 animate-wiggle">🎉</div>
+        </div>
+        <div className="text-2xl font-black animate-text-glow text-center" style={{ color: '#00FF94', whiteSpace: 'pre-line' }}>{message}</div>
+        <div className="text-gray-400 mt-2 animate-fade-in-delayed">Keep pushing!</div>
       </div>
       
       {/* Confetti particles */}
@@ -423,33 +566,104 @@ const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!" }) =>
         {[...Array(20)].map((_, i) => (
           <div
             key={i}
-            className="absolute w-2 h-2 rounded-full animate-confetti"
+            className="absolute animate-confetti"
             style={{
-              backgroundColor: ['#00FF94', '#00D1FF', '#FF9500', '#BF5AF2', '#FFD700'][i % 5],
+              width: `${6 + Math.random() * 8}px`,
+              height: `${6 + Math.random() * 8}px`,
+              borderRadius: Math.random() > 0.5 ? '50%' : '2px',
+              backgroundColor: ['#00FF94', '#00D1FF', '#FF9500', '#BF5AF2', '#FFD700', '#FF453A'][i % 6],
               left: `${Math.random() * 100}%`,
-              top: '-10px',
-              animationDelay: `${Math.random() * 0.5}s`,
-              animationDuration: `${1 + Math.random() * 1}s`
+              top: '-20px',
+              animationDelay: `${Math.random() * 0.3}s`,
+              animationDuration: `${1 + Math.random() * 0.8}s`
             }}
           />
         ))}
       </div>
       
+      {/* Sparkles */}
+      <div className="absolute inset-0 overflow-hidden">
+        {[...Array(8)].map((_, i) => (
+          <div
+            key={`sparkle-${i}`}
+            className="absolute text-xl animate-sparkle"
+            style={{
+              left: `${10 + Math.random() * 80}%`,
+              top: `${10 + Math.random() * 80}%`,
+              animationDelay: `${Math.random() * 0.5}s`
+            }}
+          >
+            ✨
+          </div>
+        ))}
+      </div>
+      
       <style>{`
         @keyframes bounceIn {
-          0% { transform: scale(0); opacity: 0; }
-          50% { transform: scale(1.2); }
-          100% { transform: scale(1); opacity: 1; }
+          0% { transform: scale(0) rotate(-10deg); opacity: 0; }
+          50% { transform: scale(1.2) rotate(5deg); }
+          70% { transform: scale(0.9) rotate(-3deg); }
+          100% { transform: scale(1) rotate(0deg); opacity: 1; }
         }
         @keyframes confetti {
-          0% { transform: translateY(0) rotate(0deg); opacity: 1; }
-          100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+          0% { transform: translateY(0) rotate(0deg) scale(1); opacity: 1; }
+          100% { transform: translateY(100vh) rotate(720deg) scale(0.5); opacity: 0; }
+        }
+        @keyframes pingSlow {
+          0% { transform: scale(1.5); opacity: 0.4; }
+          100% { transform: scale(2.5); opacity: 0; }
+        }
+        @keyframes pingSlower {
+          0% { transform: scale(2); opacity: 0.3; }
+          100% { transform: scale(3); opacity: 0; }
+        }
+        @keyframes wiggle {
+          0%, 100% { transform: rotate(0deg); }
+          25% { transform: rotate(-10deg); }
+          75% { transform: rotate(10deg); }
+        }
+        @keyframes textGlow {
+          0%, 100% { text-shadow: 0 0 10px rgba(0,255,148,0.5); }
+          50% { text-shadow: 0 0 20px rgba(0,255,148,0.8), 0 0 30px rgba(0,255,148,0.4); }
+        }
+        @keyframes sparkle {
+          0%, 100% { opacity: 0; transform: scale(0) rotate(0deg); }
+          50% { opacity: 1; transform: scale(1) rotate(180deg); }
+        }
+        @keyframes fadeInDelayed {
+          0%, 20% { opacity: 0; transform: translateY(10px); }
+          100% { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes pulseBg {
+          0%, 100% { opacity: 0.5; }
+          50% { opacity: 1; }
         }
         .animate-bounce-in {
           animation: bounceIn 0.5s ease-out forwards;
         }
         .animate-confetti {
-          animation: confetti 2s ease-out forwards;
+          animation: confetti 1.5s ease-out forwards;
+        }
+        .animate-ping-slow {
+          animation: pingSlow 0.8s ease-out infinite;
+        }
+        .animate-ping-slower {
+          animation: pingSlower 1.2s ease-out infinite;
+        }
+        .animate-wiggle {
+          animation: wiggle 0.4s ease-in-out 0.2s;
+        }
+        .animate-text-glow {
+          animation: textGlow 0.8s ease-in-out infinite;
+        }
+        .animate-sparkle {
+          animation: sparkle 1s ease-in-out infinite;
+        }
+        .animate-fade-in-delayed {
+          animation: fadeInDelayed 0.5s ease-out forwards;
+        }
+        .animate-pulse-bg {
+          animation: pulseBg 0.8s ease-in-out infinite;
         }
       `}</style>
     </div>
@@ -458,11 +672,42 @@ const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!" }) =>
 
 // Share Modal
 const ShareModal = ({ isOpen, onClose, stats }) => {
-  if (!isOpen) return null;
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  
+  useEffect(() => {
+    if (isOpen) {
+      setIsClosing(false);
+      setTimeout(() => setIsAnimating(true), 10);
+    } else {
+      setIsAnimating(false);
+    }
+  }, [isOpen]);
+
+  const handleClose = () => {
+    setIsAnimating(false);
+    setIsClosing(true);
+    setTimeout(() => {
+      setIsClosing(false);
+      onClose();
+    }, 300);
+  };
+
+  if (!isOpen && !isClosing) return null;
   
   return (
-    <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-sm rounded-2xl p-6" style={{ backgroundColor: '#1A1A1A' }}>
+    <div 
+      className="fixed inset-0 z-50 flex items-end justify-center transition-all duration-300"
+      style={{ backgroundColor: isAnimating ? 'rgba(0,0,0,0.9)' : 'rgba(0,0,0,0)' }}
+      onClick={(e) => e.target === e.currentTarget && handleClose()}
+    >
+      <div 
+        className="w-full max-w-sm rounded-t-2xl p-6 transition-all duration-300 ease-out"
+        style={{ 
+          backgroundColor: '#1A1A1A',
+          transform: isAnimating ? 'translateY(0)' : 'translateY(100%)'
+        }}
+      >
         <h3 className="text-xl font-bold mb-4 text-center">Share Your Stats</h3>
         
         <div className="p-4 rounded-xl mb-4" style={{ background: 'linear-gradient(135deg, #0A0A0A 0%, #1A1A1A 100%)', border: '1px solid rgba(0,255,148,0.3)' }}>
@@ -483,24 +728,113 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
         </div>
         
         <div className="grid grid-cols-3 gap-3 mb-4">
-          <button className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+          <button 
+            className="p-3 rounded-xl text-center transition-all duration-150" 
+            style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+            onTouchStart={(e) => {
+              e.currentTarget.style.transform = 'scale(0.92)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            }}
+            onTouchEnd={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+            }}
+            onMouseDown={(e) => {
+              e.currentTarget.style.transform = 'scale(0.92)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            }}
+            onMouseUp={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+            }}
+          >
             <span className="text-2xl">📸</span>
             <div className="text-xs mt-1">Story</div>
           </button>
-          <button className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+          <button 
+            className="p-3 rounded-xl text-center transition-all duration-150" 
+            style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+            onTouchStart={(e) => {
+              e.currentTarget.style.transform = 'scale(0.92)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            }}
+            onTouchEnd={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+            }}
+            onMouseDown={(e) => {
+              e.currentTarget.style.transform = 'scale(0.92)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            }}
+            onMouseUp={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+            }}
+          >
             <span className="text-2xl">📱</span>
             <div className="text-xs mt-1">Post</div>
           </button>
-          <button className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+          <button 
+            className="p-3 rounded-xl text-center transition-all duration-150" 
+            style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+            onTouchStart={(e) => {
+              e.currentTarget.style.transform = 'scale(0.92)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            }}
+            onTouchEnd={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+            }}
+            onMouseDown={(e) => {
+              e.currentTarget.style.transform = 'scale(0.92)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            }}
+            onMouseUp={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+            }}
+          >
             <span className="text-2xl">💬</span>
             <div className="text-xs mt-1">Message</div>
           </button>
         </div>
         
         <button
-          onClick={onClose}
-          className="w-full py-3 rounded-xl font-medium"
+          onClick={handleClose}
+          className="w-full py-3 rounded-xl font-medium transition-all duration-150"
           style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+          onTouchStart={(e) => {
+            e.currentTarget.style.transform = 'scale(0.97)';
+            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.15)';
+          }}
+          onTouchEnd={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+          }}
+          onMouseDown={(e) => {
+            e.currentTarget.style.transform = 'scale(0.97)';
+            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.15)';
+          }}
+          onMouseUp={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+          }}
         >
           Cancel
         </button>
@@ -511,43 +845,122 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
 
 // Week Stats Modal
 const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel }) => {
-  if (!isOpen) return null;
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
   
-  const lifts = weekData?.activities?.filter(a => a.type === 'Lifting') || [];
-  const runs = weekData?.activities?.filter(a => a.type === 'Running') || [];
+  useEffect(() => {
+    if (isOpen) {
+      setIsClosing(false);
+      setTimeout(() => setIsAnimating(true), 10);
+    } else {
+      setIsAnimating(false);
+    }
+  }, [isOpen]);
+
+  const handleClose = () => {
+    setIsAnimating(false);
+    setIsClosing(true);
+    setTimeout(() => {
+      setIsClosing(false);
+      onClose();
+    }, 300);
+  };
+
+  if (!isOpen && !isClosing) return null;
+  
+  const lifts = weekData?.activities?.filter(a => a.type === 'Strength Training') || [];
+  const cardioActivities = weekData?.activities?.filter(a => 
+    a.type === 'Running' || a.type === 'Cycle' || a.type === 'Sports'
+  ) || [];
   const recoveryActivities = weekData?.activities?.filter(a => 
     a.type === 'Cold Plunge' || a.type === 'Sauna' || a.type === 'Yoga'
   ) || [];
 
-  const goals = mockUserData.goals;
+  const goals = initialUserData.goals;
   const liftsGoalMet = (weekData?.lifts || 0) >= goals.liftsPerWeek;
-  const runsGoalMet = (weekData?.runs || 0) >= goals.runsPerWeek;
+  const cardioGoalMet = (weekData?.cardio || 0) >= goals.cardioPerWeek;
   const recoveryGoalMet = (weekData?.recovery || 0) >= goals.recoveryPerWeek;
   
   return (
-    <div className="fixed inset-0 bg-black/95 z-50 flex flex-col">
-      <div className="flex items-center justify-between p-4 border-b border-white/10">
-        <button onClick={onClose} className="text-gray-400">← Back</button>
-        <h2 className="font-bold">{weekLabel}</h2>
-        <button 
-          className="px-3 py-1 rounded-lg text-xs font-medium flex items-center gap-1"
-          style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
-        >
-          <span>📤</span>
-          <span>Share</span>
-        </button>
-      </div>
-      
-      <div className="flex-1 overflow-auto p-4">
+    <div 
+      className="fixed inset-0 z-50 flex flex-col transition-all duration-300"
+      style={{ backgroundColor: isAnimating ? 'rgba(0,0,0,0.95)' : 'rgba(0,0,0,0)' }}
+      onClick={(e) => e.target === e.currentTarget && handleClose()}
+    >
+      <div 
+        className="flex-1 flex flex-col mt-8 rounded-t-3xl transition-all duration-300 ease-out overflow-hidden"
+        style={{ 
+          backgroundColor: '#0A0A0A',
+          transform: isAnimating ? 'translateY(0)' : 'translateY(100%)'
+        }}
+      >
+        <div className="flex items-center justify-between p-4 border-b border-white/10">
+          <button 
+            onClick={handleClose} 
+            className="text-gray-400 transition-all duration-150 px-2 py-1 rounded-lg"
+            onTouchStart={(e) => {
+              e.currentTarget.style.transform = 'scale(0.9)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            }}
+            onTouchEnd={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
+            onMouseDown={(e) => {
+              e.currentTarget.style.transform = 'scale(0.9)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            }}
+            onMouseUp={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
+          >
+            ← Back
+          </button>
+          <h2 className="font-bold">{weekLabel}</h2>
+          <button 
+            className="px-3 py-1 rounded-lg text-xs font-medium flex items-center gap-1 transition-all duration-150"
+            style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+            onTouchStart={(e) => {
+              e.currentTarget.style.transform = 'scale(0.9)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.2)';
+            }}
+            onTouchEnd={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            }}
+            onMouseDown={(e) => {
+              e.currentTarget.style.transform = 'scale(0.9)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.2)';
+            }}
+            onMouseUp={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            }}
+          >
+            <span>📤</span>
+            <span>Share</span>
+          </button>
+        </div>
+        
+        <div className="flex-1 overflow-auto p-4">
         {/* Summary Stats */}
         <div className="grid grid-cols-3 gap-2 mb-4">
           <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
             <div className="text-2xl font-black" style={{ color: '#00FF94' }}>{weekData?.lifts || 0}</div>
-            <div className="text-[10px] text-gray-400">🏋️ Lifts</div>
+            <div className="text-[10px] text-gray-400">🏋️ Strength</div>
           </div>
           <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
-            <div className="text-2xl font-black" style={{ color: '#FF9500' }}>{weekData?.runs || 0}</div>
-            <div className="text-[10px] text-gray-400">🏃 Runs</div>
+            <div className="text-2xl font-black" style={{ color: '#FF9500' }}>{weekData?.cardio || 0}</div>
+            <div className="text-[10px] text-gray-400">🏃 Cardio</div>
           </div>
           <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
             <div className="text-2xl font-black" style={{ color: '#00D1FF' }}>{weekData?.recovery || 0}</div>
@@ -600,7 +1013,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel }) => {
               border: liftsGoalMet ? '1px solid rgba(0,255,148,0.2)' : 'none'
             }}>
               <div>
-                <span className="text-xs">🏋️ Lifts</span>
+                <span className="text-xs">🏋️ Strength</span>
                 <div className="text-[10px] text-gray-500">{goals.liftsPerWeek}+ per week</div>
               </div>
               <span className="text-xs font-bold" style={{ color: liftsGoalMet ? '#00FF94' : '#FF453A' }}>
@@ -608,15 +1021,15 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel }) => {
               </span>
             </div>
             <div className="p-3 rounded-xl flex items-center justify-between" style={{ 
-              backgroundColor: runsGoalMet ? 'rgba(255,149,0,0.1)' : 'rgba(255,255,255,0.05)',
-              border: runsGoalMet ? '1px solid rgba(255,149,0,0.2)' : 'none'
+              backgroundColor: cardioGoalMet ? 'rgba(255,149,0,0.1)' : 'rgba(255,255,255,0.05)',
+              border: cardioGoalMet ? '1px solid rgba(255,149,0,0.2)' : 'none'
             }}>
               <div>
-                <span className="text-xs">🏃 Runs</span>
-                <div className="text-[10px] text-gray-500">{goals.runsPerWeek}+ per week</div>
+                <span className="text-xs">🏃 Cardio</span>
+                <div className="text-[10px] text-gray-500">{goals.cardioPerWeek}+ per week</div>
               </div>
-              <span className="text-xs font-bold" style={{ color: runsGoalMet ? '#FF9500' : '#FF453A' }}>
-                {runsGoalMet ? '✓' : '✗'}
+              <span className="text-xs font-bold" style={{ color: cardioGoalMet ? '#FF9500' : '#FF453A' }}>
+                {cardioGoalMet ? '✓' : '✗'}
               </span>
             </div>
             <div className="p-3 rounded-xl flex items-center justify-between" style={{ 
@@ -652,12 +1065,12 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel }) => {
           <p className="text-[11px] text-gray-500 mt-0.5">All sessions from this week</p>
         </div>
 
-        {/* Lifts Section */}
+        {/* Strength Section */}
         {lifts.length > 0 && (
           <div className="mb-4">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-gray-300">🏋️ Lifts</span>
+                <span className="text-xs font-medium text-gray-300">🏋️ Strength</span>
               </div>
               {weekData?.liftBreakdown && (
                 <div className="flex gap-1">
@@ -687,16 +1100,16 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel }) => {
           </div>
         )}
 
-        {/* Runs Section */}
-        {runs.length > 0 && (
+        {/* Cardio Section */}
+        {cardioActivities.length > 0 && (
           <div className="mb-4">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-gray-300">🏃 Runs</span>
+                <span className="text-xs font-medium text-gray-300">🏃 Cardio</span>
               </div>
-              {weekData?.runBreakdown && (
+              {weekData?.cardioBreakdown && (
                 <div className="flex gap-1">
-                  {Object.entries(weekData.runBreakdown).map(([type, count]) => (
+                  {Object.entries(weekData.cardioBreakdown).map(([type, count]) => (
                     <span key={type} className="px-2 py-0.5 rounded-full text-[10px]" style={{ backgroundColor: 'rgba(255,149,0,0.1)', color: '#FF9500' }}>
                       {count} {type}
                     </span>
@@ -705,14 +1118,14 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel }) => {
               )}
             </div>
             <div className="space-y-2">
-              {runs.map((activity, i) => (
+              {cardioActivities.map((activity, i) => (
                 <div key={i} className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,149,0,0.05)' }}>
                   <div className="flex items-center justify-between mb-2">
-                    <div className="font-medium text-sm">{activity.subtype}</div>
+                    <div className="font-medium text-sm">{activity.subtype || activity.type}</div>
                     <div className="text-xs text-gray-500">{activity.date}</div>
                   </div>
                   <div className="flex gap-4 text-xs text-gray-400">
-                    <span>{activity.distance} mi</span>
+                    {activity.distance && <span>{activity.distance} mi</span>}
                     <span>{activity.duration} min</span>
                     <span>{activity.calories} cal</span>
                   </div>
@@ -757,40 +1170,385 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel }) => {
           </div>
         )}
       </div>
+      </div>
+    </div>
+  );
+};
+
+// Activity Detail Modal
+const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit }) => {
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  
+  useEffect(() => {
+    if (isOpen) {
+      setIsClosing(false);
+      setShowDeleteConfirm(false);
+      setTimeout(() => setIsAnimating(true), 10);
+    } else {
+      setIsAnimating(false);
+    }
+  }, [isOpen]);
+
+  const handleClose = () => {
+    setIsAnimating(false);
+    setIsClosing(true);
+    setTimeout(() => {
+      setIsClosing(false);
+      onClose();
+    }, 300);
+  };
+
+  const handleDelete = () => {
+    onDelete(activity.id);
+    handleClose();
+  };
+
+  if (!isOpen && !isClosing) return null;
+  if (!activity) return null;
+
+  const getActivityColor = (type) => {
+    if (type === 'Strength Training') return '#00FF94';
+    if (type === 'Running' || type === 'Cycle' || type === 'Sports') return '#FF9500';
+    return '#00D1FF';
+  };
+
+  const color = getActivityColor(activity.type);
+  
+  return (
+    <div 
+      className="fixed inset-0 z-50 flex items-end justify-center transition-all duration-300"
+      style={{ backgroundColor: isAnimating ? 'rgba(0,0,0,0.9)' : 'rgba(0,0,0,0)' }}
+      onClick={(e) => e.target === e.currentTarget && handleClose()}
+    >
+      <div 
+        className="w-full max-w-lg rounded-t-3xl transition-all duration-300 ease-out overflow-hidden"
+        style={{ 
+          backgroundColor: '#0A0A0A',
+          transform: isAnimating ? 'translateY(0)' : 'translateY(100%)'
+        }}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-white/10">
+          <button 
+            onClick={handleClose}
+            className="text-gray-400 text-sm transition-all duration-150 px-2 py-1 rounded-lg"
+            onTouchStart={(e) => {
+              e.currentTarget.style.transform = 'scale(0.9)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            }}
+            onTouchEnd={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
+            onMouseDown={(e) => {
+              e.currentTarget.style.transform = 'scale(0.9)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            }}
+            onMouseUp={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
+          >
+            Close
+          </button>
+          <h2 className="font-bold">Activity Details</h2>
+          <div className="w-12" />
+        </div>
+
+        {/* Content */}
+        <div className="p-5">
+          {/* Activity Type Header */}
+          <div className="flex items-center gap-4 mb-6">
+            <div 
+              className="w-14 h-14 rounded-2xl flex items-center justify-center"
+              style={{ backgroundColor: `${color}20` }}
+            >
+              <ActivityIcon type={activity.type} size={28} />
+            </div>
+            <div className="flex-1">
+              <div className="text-xl font-bold">{activity.type}</div>
+              {activity.subtype && (
+                <div className="text-sm text-gray-400">{activity.subtype}</div>
+              )}
+              {activity.strengthType && activity.focusArea && (
+                <div className="text-sm text-gray-400">{activity.strengthType} • {activity.focusArea}</div>
+              )}
+            </div>
+          </div>
+
+          {/* Date & Time */}
+          <div className="p-4 rounded-xl mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+            <div className="flex items-center gap-3">
+              <span className="text-lg">📅</span>
+              <div>
+                <div className="text-sm font-medium">{formatFriendlyDate(activity.date)}</div>
+                <div className="text-xs text-gray-500">{activity.time}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Metrics Grid */}
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            {activity.duration && (
+              <div className="p-4 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <div className="text-xs text-gray-500 mb-1">Duration</div>
+                <div className="text-lg font-bold">
+                  {activity.duration >= 60 
+                    ? `${Math.floor(activity.duration / 60)}h ${activity.duration % 60}m` 
+                    : `${activity.duration} min`}
+                </div>
+              </div>
+            )}
+            {activity.distance && (
+              <div className="p-4 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <div className="text-xs text-gray-500 mb-1">Distance</div>
+                <div className="text-lg font-bold">{activity.distance} mi</div>
+              </div>
+            )}
+            {activity.calories && (
+              <div className="p-4 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <div className="text-xs text-gray-500 mb-1">Calories</div>
+                <div className="text-lg font-bold">{activity.calories} cal</div>
+              </div>
+            )}
+            {activity.avgHr && (
+              <div className="p-4 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <div className="text-xs text-gray-500 mb-1">Avg Heart Rate</div>
+                <div className="text-lg font-bold">{activity.avgHr} bpm</div>
+              </div>
+            )}
+            {activity.maxHr && (
+              <div className="p-4 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <div className="text-xs text-gray-500 mb-1">Max Heart Rate</div>
+                <div className="text-lg font-bold">{activity.maxHr} bpm</div>
+              </div>
+            )}
+            {parseFloat(activity.distance) > 0 && activity.duration && (
+              <div className="p-4 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <div className="text-xs text-gray-500 mb-1">Pace</div>
+                <div className="text-lg font-bold">
+                  {(() => {
+                    const pace = activity.duration / parseFloat(activity.distance);
+                    const paceMin = Math.floor(pace);
+                    const paceSec = Math.round((pace - paceMin) * 60);
+                    return `${paceMin}:${paceSec.toString().padStart(2, '0')}/mi`;
+                  })()}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Notes */}
+          {activity.notes && (
+            <div className="p-4 rounded-xl mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+              <div className="text-xs text-gray-500 mb-2">Notes</div>
+              <div className="text-sm">{activity.notes}</div>
+            </div>
+          )}
+
+          {/* Source indicator */}
+          {activity.fromAppleHealth && (
+            <div className="flex items-center gap-2 text-xs text-gray-500 mb-6">
+              <span>📱</span>
+              <span>Synced from Apple Health</span>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="space-y-2 pb-4">
+            {/* Edit Button */}
+            <button
+              onClick={() => {
+                onEdit && onEdit(activity);
+                handleClose();
+              }}
+              className="w-full py-3 rounded-xl font-medium transition-all duration-150"
+              style={{ backgroundColor: 'rgba(0,255,148,0.1)', color: '#00FF94' }}
+              onTouchStart={(e) => {
+                e.currentTarget.style.transform = 'scale(0.98)';
+                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+              }}
+              onTouchEnd={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+              }}
+              onMouseDown={(e) => {
+                e.currentTarget.style.transform = 'scale(0.98)';
+                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+              }}
+              onMouseUp={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+              }}
+            >
+              Edit Activity
+            </button>
+            
+            {!showDeleteConfirm ? (
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="w-full py-3 rounded-xl font-medium text-red-400 transition-all duration-150"
+                style={{ backgroundColor: 'rgba(255,69,58,0.1)' }}
+                onTouchStart={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.98)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,69,58,0.2)';
+                }}
+                onTouchEnd={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,69,58,0.1)';
+                }}
+                onMouseDown={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.98)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,69,58,0.2)';
+                }}
+                onMouseUp={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,69,58,0.1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,69,58,0.1)';
+                }}
+              >
+                Delete Activity
+              </button>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-center text-sm text-gray-400 mb-3">Are you sure you want to delete this activity?</p>
+                <button
+                  onClick={handleDelete}
+                  className="w-full py-3 rounded-xl font-medium text-white transition-all duration-150"
+                  style={{ backgroundColor: '#FF453A' }}
+                  onTouchStart={(e) => {
+                    e.currentTarget.style.transform = 'scale(0.98)';
+                    e.currentTarget.style.backgroundColor = '#E63E35';
+                  }}
+                  onTouchEnd={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.backgroundColor = '#FF453A';
+                  }}
+                  onMouseDown={(e) => {
+                    e.currentTarget.style.transform = 'scale(0.98)';
+                    e.currentTarget.style.backgroundColor = '#E63E35';
+                  }}
+                  onMouseUp={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.backgroundColor = '#FF453A';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.backgroundColor = '#FF453A';
+                  }}
+                >
+                  Yes, Delete
+                </button>
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="w-full py-3 rounded-xl font-medium text-gray-400 transition-all duration-150"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+                  onTouchStart={(e) => {
+                    e.currentTarget.style.transform = 'scale(0.98)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                  }}
+                  onTouchEnd={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                  }}
+                  onMouseDown={(e) => {
+                    e.currentTarget.style.transform = 'scale(0.98)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                  }}
+                  onMouseUp={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
 
 // Onboarding Survey
-const OnboardingSurvey = ({ onComplete }) => {
+const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null }) => {
   const [goals, setGoals] = useState({
-    liftsPerWeek: 3,
-    runsPerWeek: 2,
-    recoveryPerWeek: 2,
-    stepsPerDay: 10000
+    liftsPerWeek: currentGoals?.liftsPerWeek ?? 3,
+    cardioPerWeek: currentGoals?.cardioPerWeek ?? 2,
+    recoveryPerWeek: currentGoals?.recoveryPerWeek ?? 2,
+    stepsPerDay: currentGoals?.stepsPerDay ?? 10000
   });
 
+  const isEditing = currentGoals !== null;
+
   const questions = [
-    { title: "Lifts per week", key: 'liftsPerWeek', options: [2, 3, 4, 5, 6] },
-    { title: "Runs per week", key: 'runsPerWeek', options: [0, 1, 2, 3, 4, 5] },
-    { title: "Recovery sessions", key: 'recoveryPerWeek', options: [1, 2, 3, 4] },
+    { title: "Strength per week", key: 'liftsPerWeek', options: [2, 3, 4, 5, 6] },
+    { title: "Cardio per week", key: 'cardioPerWeek', options: [0, 1, 2, 3, 4, 5], subtitle: "Running, Cycling, Sports" },
+    { title: "Recovery per week", key: 'recoveryPerWeek', options: [0, 1, 2, 3, 4], subtitle: "Cold Plunge, Sauna, Yoga, Pilates" },
     { title: "Daily step goal", key: 'stepsPerDay', options: [6000, 8000, 10000, 12000, 15000], isSteps: true }
   ];
 
   return (
     <div className="min-h-screen bg-black text-white flex flex-col">
       <div className="p-6 pt-12">
+        {isEditing && onCancel && (
+          <button 
+            onClick={onCancel}
+            className="text-gray-400 text-sm mb-4 flex items-center gap-1 transition-all duration-150 px-2 py-1 rounded-lg -ml-2"
+            onTouchStart={(e) => {
+              e.currentTarget.style.transform = 'scale(0.92)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            }}
+            onTouchEnd={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
+            onMouseDown={(e) => {
+              e.currentTarget.style.transform = 'scale(0.92)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            }}
+            onMouseUp={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
+          >
+            ← Back
+          </button>
+        )}
         <h1 className="text-3xl font-black tracking-tight mb-1">STREAKD</h1>
         <p className="text-sm mb-4" style={{ color: '#00FF94' }}>Win the week.</p>
-        <h2 className="text-xl font-bold mb-2">Set Your Goals</h2>
+        <h2 className="text-xl font-bold mb-2">{isEditing ? 'Edit Your Goals' : 'Set Your Goals'}</h2>
         <p className="text-gray-500 text-sm">Be realistic. Consistency beats intensity.</p>
       </div>
 
       <div className="flex-1 px-6 py-4 space-y-6 overflow-auto pb-32">
         {questions.map((q) => (
           <div key={q.key}>
-            <label className="text-sm font-semibold mb-3 block">{q.title}</label>
-            <div className="flex gap-2">
+            <label className="text-sm font-semibold mb-1 block">{q.title}</label>
+            {q.subtitle && <p className="text-xs text-gray-500 mb-2">{q.subtitle}</p>}
+            <div className={`flex gap-2 ${!q.subtitle ? 'mt-3' : ''}`}>
               {q.options.map((option) => (
                 <button
                   key={option}
@@ -814,10 +1572,30 @@ const OnboardingSurvey = ({ onComplete }) => {
       <div className="fixed bottom-0 left-0 right-0 p-6 pb-12" style={{ background: 'linear-gradient(to top, #000 80%, transparent)' }}>
         <button
           onClick={() => onComplete(goals)}
-          className="w-full py-4 rounded-xl font-bold text-black text-lg transition-all duration-200 active:scale-98"
+          className="w-full py-4 rounded-xl font-bold text-black text-lg transition-all duration-150"
           style={{ backgroundColor: '#00FF94' }}
+          onTouchStart={(e) => {
+            e.currentTarget.style.transform = 'scale(0.97)';
+            e.currentTarget.style.backgroundColor = '#00CC77';
+          }}
+          onTouchEnd={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.backgroundColor = '#00FF94';
+          }}
+          onMouseDown={(e) => {
+            e.currentTarget.style.transform = 'scale(0.97)';
+            e.currentTarget.style.backgroundColor = '#00CC77';
+          }}
+          onMouseUp={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.backgroundColor = '#00FF94';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.backgroundColor = '#00FF94';
+          }}
         >
-          Start Streakd
+          {isEditing ? 'Save Goals' : 'Start Streakd'}
         </button>
       </div>
     </div>
@@ -864,54 +1642,249 @@ const DurationPicker = ({ hours, minutes, onChange, disabled = false }) => {
 };
 
 // Add Activity Modal
-const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null }) => {
-  const [activityType, setActivityType] = useState(pendingActivity?.type || null);
-  const [subtype, setSubtype] = useState(pendingActivity?.subtype || '');
+const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, defaultDate = null }) => {
+  const [activityType, setActivityType] = useState(null);
+  const [subtype, setSubtype] = useState('');
+  const [strengthType, setStrengthType] = useState(''); // Lifting, Bodyweight
+  const [focusArea, setFocusArea] = useState(''); // Full Body, Upper, Lower, etc.
   const [customSport, setCustomSport] = useState('');
   const [saveCustomSport, setSaveCustomSport] = useState(false);
-  const [date, setDate] = useState(pendingActivity?.date || '2026-01-21');
+  const [date, setDate] = useState(defaultDate || getTodayDate());
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [notes, setNotes] = useState('');
   const [distance, setDistance] = useState('');
-  const [durationHours, setDurationHours] = useState(pendingActivity?.durationHours || 0);
-  const [durationMinutes, setDurationMinutes] = useState(pendingActivity?.durationMinutes || 0);
+  const [durationHours, setDurationHours] = useState(1);
+  const [durationMinutes, setDurationMinutes] = useState(0);
+  // Optional metrics (auto-filled from Apple Health or manual)
+  const [calories, setCalories] = useState('');
+  const [avgHr, setAvgHr] = useState('');
+  const [maxHr, setMaxHr] = useState('');
+
+  // Reset state when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setActivityType(pendingActivity?.type || null);
+      setSubtype(pendingActivity?.subtype || '');
+      setStrengthType(pendingActivity?.strengthType || '');
+      setFocusArea(pendingActivity?.focusArea || '');
+      setCustomSport('');
+      setSaveCustomSport(false);
+      setDate(defaultDate || pendingActivity?.date || getTodayDate());
+      setShowDatePicker(false);
+      setNotes(pendingActivity?.notes || '');
+      setDistance(pendingActivity?.distance || '');
+      // Default to 1 hour for manual input, use synced duration if from Apple Health
+      setDurationHours(pendingActivity?.durationHours ?? 1);
+      setDurationMinutes(pendingActivity?.durationMinutes ?? 0);
+      setCalories(pendingActivity?.calories || '');
+      setAvgHr(pendingActivity?.avgHr || '');
+      setMaxHr(pendingActivity?.maxHr || '');
+    }
+  }, [isOpen, pendingActivity, defaultDate]);
+
+  // Generate calendar days for date picker
+  const getCalendarDays = () => {
+    const selectedDateObj = new Date(date + 'T12:00:00');
+    const year = selectedDateObj.getFullYear();
+    const month = selectedDateObj.getMonth();
+    
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    const startingDay = firstDay.getDay();
+    
+    const days = [];
+    // Add empty cells for days before first of month
+    for (let i = 0; i < startingDay; i++) {
+      days.push(null);
+    }
+    // Add days of month
+    for (let i = 1; i <= daysInMonth; i++) {
+      const dayDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+      days.push(dayDate);
+    }
+    return { days, year, month };
+  };
+
+  const changeMonth = (delta) => {
+    const currentDate = new Date(date + 'T12:00:00');
+    currentDate.setMonth(currentDate.getMonth() + delta);
+    const newDate = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-01`;
+    setDate(newDate);
+  };
 
   const activityTypes = [
-    { name: 'Lifting', icon: '🏋️', subtypes: ['Upper', 'Lower', 'Legs', 'Chest', 'Back', 'Shoulders', 'Arms', 'Full Body'] },
+    { name: 'Strength Training', icon: '🏋️', subtypes: [] }, // Handled separately
     { name: 'Running', icon: '🏃', subtypes: ['Easy', 'Tempo', 'Long', 'Sprints', 'Recovery'] },
     { name: 'Cycle', icon: '🚴', subtypes: ['Road', 'Spin', 'Mountain'] },
-    { name: 'Sports', icon: '⚽', subtypes: ['Basketball', 'Soccer', 'Tennis', 'Golf', 'Pickleball', 'Other'] },
-    { name: 'Yoga', icon: '🧘', subtypes: ['Vinyasa', 'Hot', 'Restorative', 'Power'] },
+    { name: 'Sports', icon: '🏀', subtypes: ['Basketball', 'Soccer', 'Tennis', 'Golf', 'Pickleball', 'Other'] },
+    { name: 'Yoga', icon: '🧘', subtypes: ['Vinyasa', 'Power', 'Hot', 'Yin', 'Restorative'] },
+    { name: 'Pilates', icon: '🤸', subtypes: ['Mat', 'Reformer', 'Tower', 'Chair'] },
     { name: 'Cold Plunge', icon: '🧊', subtypes: [] },
     { name: 'Sauna', icon: '🔥', subtypes: [] },
     { name: 'Other', icon: '💪', subtypes: [] }
   ];
 
+  // Strength training configuration
+  const strengthTypes = [
+    { name: 'Lifting', icon: '🏋️', hasFocusArea: true },
+    { name: 'Bodyweight', icon: '💪', hasFocusArea: true }
+  ];
+
+  const focusAreas = ['Full Body', 'Upper', 'Lower', 'Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Abs'];
+
+  // Determine default "count toward" based on activity and subtype
+  const getDefaultCountToward = (type, sub) => {
+    if (type === 'Yoga') {
+      if (['Power', 'Hot', 'Vinyasa'].includes(sub)) return 'cardio';
+      return 'recovery'; // Yin, Restorative
+    }
+    if (type === 'Pilates') {
+      return 'recovery'; // Default to recovery, user can change
+    }
+    return null;
+  };
+
+  const [countToward, setCountToward] = useState(null);
+
+  // Update countToward when subtype changes for Yoga/Pilates
+  useEffect(() => {
+    if (activityType === 'Yoga' || activityType === 'Pilates') {
+      setCountToward(getDefaultCountToward(activityType, subtype));
+    } else {
+      setCountToward(null);
+    }
+  }, [activityType, subtype]);
+
   const selectedType = activityTypes.find(t => t.name === activityType);
   const showCustomSportInput = activityType === 'Sports' && subtype === 'Other';
+  const showCountToward = activityType === 'Yoga' || activityType === 'Pilates';
+  const isFromAppleHealth = !!pendingActivity;
 
-  if (!isOpen) return null;
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  
+  useEffect(() => {
+    if (isOpen) {
+      setIsClosing(false);
+      // Trigger animation after mount
+      setTimeout(() => setIsAnimating(true), 10);
+    } else {
+      setIsAnimating(false);
+    }
+  }, [isOpen]);
+
+  const handleClose = () => {
+    setIsAnimating(false);
+    setIsClosing(true);
+    setTimeout(() => {
+      setIsClosing(false);
+      onClose();
+    }, 300);
+  };
+
+  if (!isOpen && !isClosing) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/95 z-50 flex flex-col">
-      <div className="flex items-center justify-between p-4 border-b border-white/10">
-        <button onClick={onClose} className="text-gray-400 text-sm">Cancel</button>
-        <h2 className="font-bold">Log Activity</h2>
-        <button 
+    <div 
+      className="fixed inset-0 z-50 flex flex-col transition-all duration-300"
+      style={{ 
+        backgroundColor: isAnimating ? 'rgba(0,0,0,0.95)' : 'rgba(0,0,0,0)'
+      }}
+      onClick={(e) => e.target === e.currentTarget && handleClose()}
+    >
+      <div 
+        className="flex-1 flex flex-col mt-12 rounded-t-3xl transition-all duration-300 ease-out overflow-hidden"
+        style={{ 
+          backgroundColor: '#0A0A0A',
+          transform: isAnimating ? 'translateY(0)' : 'translateY(100%)'
+        }}
+      >
+        <div className="flex items-center justify-between p-4 border-b border-white/10">
+          <button 
+            onClick={handleClose} 
+            className="text-gray-400 text-sm transition-all duration-150 px-2 py-1 rounded-lg"
+            onTouchStart={(e) => {
+              e.currentTarget.style.transform = 'scale(0.9)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            }}
+            onTouchEnd={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
+            onMouseDown={(e) => {
+              e.currentTarget.style.transform = 'scale(0.9)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            }}
+            onMouseUp={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
+          >
+            Cancel
+          </button>
+          <h2 className="font-bold">{pendingActivity?.id ? 'Edit Activity' : 'Log Activity'}</h2>
+          <button 
           onClick={() => {
+            // Build subtype for strength training
+            let finalSubtype = subtype;
+            if (activityType === 'Strength Training') {
+              finalSubtype = focusArea ? `${strengthType} - ${focusArea}` : strengthType;
+            } else if (showCustomSportInput) {
+              finalSubtype = customSport;
+            }
+            
             onSave({ 
+              id: pendingActivity?.id, // Preserve ID if editing
+              time: pendingActivity?.time, // Preserve time if editing
               type: activityType, 
-              subtype: showCustomSportInput ? customSport : subtype, 
+              subtype: finalSubtype, 
+              strengthType: activityType === 'Strength Training' ? strengthType : undefined,
+              focusArea: activityType === 'Strength Training' ? focusArea : undefined,
               date, 
               notes, 
-              distance, 
+              distance: distance ? parseFloat(distance) : undefined,
               duration: durationHours * 60 + durationMinutes,
-              saveCustomSport 
+              calories: calories ? parseInt(calories) : undefined,
+              avgHr: avgHr ? parseInt(avgHr) : undefined,
+              maxHr: maxHr ? parseInt(maxHr) : undefined,
+              saveCustomSport,
+              fromAppleHealth: isFromAppleHealth,
+              countToward: countToward || undefined
             });
-            onClose();
+            handleClose();
           }}
-          className="font-bold"
-          style={{ color: '#00FF94' }}
-          disabled={!activityType || (showCustomSportInput && !customSport)}
+          className="font-bold transition-all duration-150 px-2 py-1 rounded-lg"
+          style={{ color: !activityType || (showCustomSportInput && !customSport) || (activityType === 'Strength Training' && (!strengthType || !focusArea)) ? 'rgba(0,255,148,0.3)' : '#00FF94' }}
+          disabled={!activityType || (showCustomSportInput && !customSport) || (activityType === 'Strength Training' && (!strengthType || !focusArea))}
+          onTouchStart={(e) => {
+            if (!e.currentTarget.disabled) {
+              e.currentTarget.style.transform = 'scale(0.9)';
+              e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+            }
+          }}
+          onTouchEnd={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.backgroundColor = 'transparent';
+          }}
+          onMouseDown={(e) => {
+            if (!e.currentTarget.disabled) {
+              e.currentTarget.style.transform = 'scale(0.9)';
+              e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+            }
+          }}
+          onMouseUp={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.backgroundColor = 'transparent';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.backgroundColor = 'transparent';
+          }}
         >
           Save
         </button>
@@ -921,25 +1894,45 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null }) =
         <div className="mx-4 mt-4 p-3 rounded-xl" style={{ backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.3)' }}>
           <div className="flex items-center gap-2 text-sm">
             <span className="text-lg">📱</span>
-            <span style={{ color: '#00FF94' }}>Synced from {pendingActivity.source}</span>
+            <span style={{ color: '#00FF94' }}>Synced from Apple Health</span>
           </div>
           <div className="flex gap-4 mt-2 text-xs text-gray-400">
-            <span>{pendingActivity.calories} cal</span>
-            <span>{pendingActivity.duration} min</span>
-            <span>Avg HR: {pendingActivity.avgHr}</span>
+            {pendingActivity.calories && <span>{pendingActivity.calories} cal</span>}
+            {pendingActivity.duration && <span>{pendingActivity.duration} min</span>}
+            {pendingActivity.avgHr && <span>Avg HR: {pendingActivity.avgHr}</span>}
           </div>
         </div>
       )}
 
-      <div className="flex-1 overflow-auto p-4 pb-32">
+      <div className="flex-1 overflow-y-auto p-4 pb-32" style={{ overscrollBehavior: 'contain' }}>
         {!activityType ? (
           <div className="grid grid-cols-2 gap-3">
             {activityTypes.map((type) => (
               <button
                 key={type.name}
                 onClick={() => setActivityType(type.name)}
-                className="p-4 rounded-xl text-left transition-all duration-200 active:scale-98"
+                className="p-4 rounded-xl text-left transition-all duration-150"
                 style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+                onTouchStart={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.95)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                }}
+                onTouchEnd={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                }}
+                onMouseDown={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.95)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                }}
+                onMouseUp={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                }}
               >
                 <span className="text-2xl">{type.icon}</span>
                 <div className="mt-2 font-semibold">{type.name}</div>
@@ -948,21 +1941,135 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null }) =
           </div>
         ) : (
           <div className="space-y-6">
+            {/* Back button */}
             <button 
               onClick={() => {
                 setActivityType(null);
                 setSubtype('');
+                setStrengthType('');
+                setFocusArea('');
                 setCustomSport('');
+                setCountToward(null);
               }}
-              className="flex items-center gap-3 p-3 rounded-xl w-full"
+              className="flex items-center gap-2 text-gray-400 text-sm transition-all duration-150 px-2 py-1 rounded-lg"
+              onTouchStart={(e) => {
+                e.currentTarget.style.transform = 'scale(0.95)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+              }}
+              onTouchEnd={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+              onMouseDown={(e) => {
+                e.currentTarget.style.transform = 'scale(0.95)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+              }}
+              onMouseUp={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              <span>←</span>
+              <span>Back to activities</span>
+            </button>
+
+            {/* Selected activity display with Change option */}
+            <button 
+              onClick={() => {
+                setActivityType(null);
+                setSubtype('');
+                setStrengthType('');
+                setFocusArea('');
+                setCustomSport('');
+                setCountToward(null);
+              }}
+              className="flex items-center gap-3 p-3 rounded-xl w-full transition-all duration-150"
               style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+              onTouchStart={(e) => {
+                e.currentTarget.style.transform = 'scale(0.98)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+              }}
+              onTouchEnd={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+              }}
+              onMouseDown={(e) => {
+                e.currentTarget.style.transform = 'scale(0.98)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+              }}
+              onMouseUp={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+              }}
             >
               <span className="text-2xl">{selectedType?.icon}</span>
               <span className="font-semibold">{activityType}</span>
               <span className="ml-auto text-gray-500 text-sm">Change</span>
             </button>
 
-            {selectedType?.subtypes.length > 0 && (
+            {/* Strength Training Selection */}
+            {activityType === 'Strength Training' && (
+              <>
+                {/* Training Type Selection */}
+                <div>
+                  <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Training Type</label>
+                  <div className="flex flex-wrap gap-2">
+                    {strengthTypes.map((st) => (
+                      <button
+                        key={st.name}
+                        onClick={() => {
+                          setStrengthType(st.name);
+                          setFocusArea(''); // Reset focus area when changing type
+                        }}
+                        className="px-4 py-2 rounded-full text-sm transition-all duration-200 flex items-center gap-2"
+                        style={{
+                          backgroundColor: strengthType === st.name ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
+                          border: strengthType === st.name ? '1px solid #00FF94' : '1px solid transparent',
+                          color: strengthType === st.name ? '#00FF94' : 'white'
+                        }}
+                      >
+                        <span>{st.icon}</span>
+                        {st.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Focus Area Selection (for Lifting and Bodyweight) */}
+                {strengthType && strengthTypes.find(s => s.name === strengthType)?.hasFocusArea && (
+                  <div>
+                    <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Focus Area</label>
+                    <div className="flex flex-wrap gap-2">
+                      {focusAreas.map((area) => (
+                        <button
+                          key={area}
+                          onClick={() => setFocusArea(area)}
+                          className="px-4 py-2 rounded-full text-sm transition-all duration-200"
+                          style={{
+                            backgroundColor: focusArea === area ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
+                            border: focusArea === area ? '1px solid #00FF94' : '1px solid transparent',
+                            color: focusArea === area ? '#00FF94' : 'white'
+                          }}
+                        >
+                          {area}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Regular subtypes for non-strength activities */}
+            {activityType !== 'Strength Training' && selectedType?.subtypes.length > 0 && (
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Type</label>
                 <div className="flex flex-wrap gap-2">
@@ -981,6 +2088,51 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null }) =
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* Count Toward selector for Yoga/Pilates */}
+            {showCountToward && (
+              <div>
+                <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Count Toward Goal</label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setCountToward('lifting')}
+                    className="flex-1 p-3 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
+                    style={{
+                      backgroundColor: countToward === 'lifting' ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
+                      border: countToward === 'lifting' ? '1px solid #00FF94' : '1px solid transparent',
+                      color: countToward === 'lifting' ? '#00FF94' : 'white'
+                    }}
+                  >
+                    <span>🏋️</span> Strength
+                  </button>
+                  <button
+                    onClick={() => setCountToward('cardio')}
+                    className="flex-1 p-3 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
+                    style={{
+                      backgroundColor: countToward === 'cardio' ? 'rgba(255,149,0,0.2)' : 'rgba(255,255,255,0.05)',
+                      border: countToward === 'cardio' ? '1px solid #FF9500' : '1px solid transparent',
+                      color: countToward === 'cardio' ? '#FF9500' : 'white'
+                    }}
+                  >
+                    <span>🏃</span> Cardio
+                  </button>
+                  <button
+                    onClick={() => setCountToward('recovery')}
+                    className="flex-1 p-3 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
+                    style={{
+                      backgroundColor: countToward === 'recovery' ? 'rgba(0,209,255,0.2)' : 'rgba(255,255,255,0.05)',
+                      border: countToward === 'recovery' ? '1px solid #00D1FF' : '1px solid transparent',
+                      color: countToward === 'recovery' ? '#00D1FF' : 'white'
+                    }}
+                  >
+                    <span>🧊</span> Recovery
+                  </button>
+                </div>
+                <p className="text-[11px] text-gray-500 mt-2">
+                  💡 {activityType} can count toward different goals depending on intensity. Power and hot styles often count as cardio or lifting, while restorative sessions count as recovery.
+                </p>
               </div>
             )}
 
@@ -1026,7 +2178,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null }) =
 
             <div>
               <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">
-                Duration {pendingActivity && <span style={{ color: '#00FF94' }}>(synced)</span>}
+                Duration {isFromAppleHealth && <span style={{ color: '#00FF94' }}>(from Apple Health)</span>}
               </label>
               <DurationPicker 
                 hours={durationHours}
@@ -1035,39 +2187,253 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null }) =
                   setDurationHours(h);
                   setDurationMinutes(m);
                 }}
-                disabled={!!pendingActivity}
+                disabled={isFromAppleHealth}
               />
             </div>
 
             <div>
               <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Date</label>
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full p-3 rounded-xl bg-white/5 border border-white/10 text-white"
-              />
+              <button
+                onClick={() => setShowDatePicker(!showDatePicker)}
+                className="w-full p-3 rounded-xl bg-white/5 border border-white/10 text-white text-left flex items-center justify-between transition-all duration-150"
+                onTouchStart={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.98)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                }}
+                onTouchEnd={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                }}
+                onMouseDown={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.98)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                }}
+                onMouseUp={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                }}
+              >
+                <span>
+                  {new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                </span>
+                <span className="text-gray-400">{showDatePicker ? '▲' : '▼'}</span>
+              </button>
+              
+              {/* Calendar Dropdown */}
+              {showDatePicker && (() => {
+                const { days, year, month } = getCalendarDays();
+                const monthName = new Date(year, month).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+                const today = getTodayDate();
+                
+                return (
+                  <div className="mt-2 p-3 rounded-xl bg-white/5 border border-white/10">
+                    {/* Month Navigation */}
+                    <div className="flex items-center justify-between mb-3">
+                      <button 
+                        onClick={() => changeMonth(-1)}
+                        className="p-2 text-gray-400 hover:text-white rounded-lg transition-all duration-150"
+                        onTouchStart={(e) => {
+                          e.currentTarget.style.transform = 'scale(0.85)';
+                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                        }}
+                        onTouchEnd={(e) => {
+                          e.currentTarget.style.transform = 'scale(1)';
+                          e.currentTarget.style.backgroundColor = 'transparent';
+                        }}
+                        onMouseDown={(e) => {
+                          e.currentTarget.style.transform = 'scale(0.85)';
+                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                        }}
+                        onMouseUp={(e) => {
+                          e.currentTarget.style.transform = 'scale(1)';
+                          e.currentTarget.style.backgroundColor = 'transparent';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = 'scale(1)';
+                          e.currentTarget.style.backgroundColor = 'transparent';
+                        }}
+                      >
+                        ←
+                      </button>
+                      <span className="font-medium">{monthName}</span>
+                      <button 
+                        onClick={() => changeMonth(1)}
+                        className="p-2 text-gray-400 hover:text-white rounded-lg transition-all duration-150"
+                        onTouchStart={(e) => {
+                          e.currentTarget.style.transform = 'scale(0.85)';
+                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                        }}
+                        onTouchEnd={(e) => {
+                          e.currentTarget.style.transform = 'scale(1)';
+                          e.currentTarget.style.backgroundColor = 'transparent';
+                        }}
+                        onMouseDown={(e) => {
+                          e.currentTarget.style.transform = 'scale(0.85)';
+                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                        }}
+                        onMouseUp={(e) => {
+                          e.currentTarget.style.transform = 'scale(1)';
+                          e.currentTarget.style.backgroundColor = 'transparent';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = 'scale(1)';
+                          e.currentTarget.style.backgroundColor = 'transparent';
+                        }}
+                      >
+                        →
+                      </button>
+                    </div>
+                    
+                    {/* Day Headers */}
+                    <div className="grid grid-cols-7 gap-1 mb-2">
+                      {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+                        <div key={i} className="text-center text-[10px] text-gray-500">{d}</div>
+                      ))}
+                    </div>
+                    
+                    {/* Calendar Days */}
+                    <div className="grid grid-cols-7 gap-1">
+                      {days.map((dayDate, i) => (
+                        <button
+                          key={i}
+                          onClick={() => {
+                            if (dayDate) {
+                              setDate(dayDate);
+                              setShowDatePicker(false);
+                            }
+                          }}
+                          disabled={!dayDate}
+                          className={`aspect-square rounded-lg text-sm flex items-center justify-center transition-all ${
+                            !dayDate ? 'invisible' : 
+                            dayDate === date ? 'font-bold' : 
+                            dayDate === today ? 'border border-white/30' : 
+                            'hover:bg-white/10'
+                          }`}
+                          style={{
+                            backgroundColor: dayDate === date ? '#00FF94' : 'transparent',
+                            color: dayDate === date ? 'black' : 'white'
+                          }}
+                        >
+                          {dayDate ? parseInt(dayDate.split('-')[2]) : ''}
+                        </button>
+                      ))}
+                    </div>
+                    
+                    {/* Quick Select */}
+                    <div className="mt-3 pt-3 border-t border-white/10 flex gap-2">
+                      <button
+                        onClick={() => {
+                          setDate(today);
+                          setShowDatePicker(false);
+                        }}
+                        className="flex-1 py-2 rounded-lg text-xs font-medium transition-all duration-150"
+                        style={{ backgroundColor: 'rgba(0,255,148,0.1)', color: '#00FF94' }}
+                        onTouchStart={(e) => {
+                          e.currentTarget.style.transform = 'scale(0.95)';
+                          e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+                        }}
+                        onTouchEnd={(e) => {
+                          e.currentTarget.style.transform = 'scale(1)';
+                          e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                        }}
+                        onMouseDown={(e) => {
+                          e.currentTarget.style.transform = 'scale(0.95)';
+                          e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+                        }}
+                        onMouseUp={(e) => {
+                          e.currentTarget.style.transform = 'scale(1)';
+                          e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = 'scale(1)';
+                          e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                        }}
+                      >
+                        Today
+                      </button>
+                      <button
+                        onClick={() => {
+                          const yesterday = new Date();
+                          yesterday.setDate(yesterday.getDate() - 1);
+                          const yDate = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+                          setDate(yDate);
+                          setShowDatePicker(false);
+                        }}
+                        className="flex-1 py-2 rounded-lg text-xs font-medium bg-white/5 transition-all duration-150"
+                        onTouchStart={(e) => {
+                          e.currentTarget.style.transform = 'scale(0.95)';
+                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                        }}
+                        onTouchEnd={(e) => {
+                          e.currentTarget.style.transform = 'scale(1)';
+                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                        }}
+                        onMouseDown={(e) => {
+                          e.currentTarget.style.transform = 'scale(0.95)';
+                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                        }}
+                        onMouseUp={(e) => {
+                          e.currentTarget.style.transform = 'scale(1)';
+                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = 'scale(1)';
+                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                        }}
+                      >
+                        Yesterday
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
-            {pendingActivity && (
-              <div>
-                <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Synced Metrics</label>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                    <div className="text-xs text-gray-500">Calories</div>
-                    <div className="font-bold">{pendingActivity.calories}</div>
-                  </div>
-                  <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                    <div className="text-xs text-gray-500">Avg HR</div>
-                    <div className="font-bold">{pendingActivity.avgHr}</div>
-                  </div>
-                  <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                    <div className="text-xs text-gray-500">Max HR</div>
-                    <div className="font-bold">{pendingActivity.maxHr}</div>
-                  </div>
+            {/* Optional Metrics Section */}
+            <div>
+              <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">
+                Workout Metrics {isFromAppleHealth ? <span style={{ color: '#00FF94' }}>(from Apple Health)</span> : <span className="text-gray-600">(optional)</span>}
+              </label>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <input
+                    type="number"
+                    value={calories}
+                    onChange={(e) => setCalories(e.target.value)}
+                    className="w-full p-3 rounded-xl bg-white/5 border border-white/10 text-white text-center"
+                    placeholder="—"
+                    disabled={isFromAppleHealth}
+                  />
+                  <div className="text-[10px] text-gray-500 text-center mt-1">Calories</div>
+                </div>
+                <div>
+                  <input
+                    type="number"
+                    value={avgHr}
+                    onChange={(e) => setAvgHr(e.target.value)}
+                    className="w-full p-3 rounded-xl bg-white/5 border border-white/10 text-white text-center"
+                    placeholder="—"
+                    disabled={isFromAppleHealth}
+                  />
+                  <div className="text-[10px] text-gray-500 text-center mt-1">Avg HR</div>
+                </div>
+                <div>
+                  <input
+                    type="number"
+                    value={maxHr}
+                    onChange={(e) => setMaxHr(e.target.value)}
+                    className="w-full p-3 rounded-xl bg-white/5 border border-white/10 text-white text-center"
+                    placeholder="—"
+                    disabled={isFromAppleHealth}
+                  />
+                  <div className="text-[10px] text-gray-500 text-center mt-1">Max HR</div>
                 </div>
               </div>
-            )}
+            </div>
 
             <div>
               <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Notes (optional)</label>
@@ -1082,200 +2448,141 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null }) =
           </div>
         )}
       </div>
+      </div>
     </div>
   );
 };
 
 // Home Tab - Simplified
-const HomeTab = ({ onAddActivity, pendingSync }) => {
+const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, onDeleteActivity, onEditActivity }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
-  const [maintenanceCardIndex, setMaintenanceCardIndex] = useState(0);
-  const weekProgress = mockWeeklyProgress;
-  const whoop = mockWhoopData;
 
-  const liftsPercent = (weekProgress.lifts.completed / weekProgress.lifts.goal) * 100;
-  const runsPercent = (weekProgress.runs.completed / weekProgress.runs.goal) * 100;
-  const recoveryPercent = (weekProgress.recovery.completed / weekProgress.recovery.goal) * 100;
-  const caloriesPercent = (weekProgress.calories.burned / weekProgress.calories.goal) * 100;
-  const stepsPercent = (weekProgress.steps.today / weekProgress.steps.goal) * 100;
+  // Calculate weekly progress directly from activities to ensure it's always in sync
+  const weekProgress = useMemo(() => {
+    const goals = userData?.goals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2, caloriesPerWeek: 3500, stepsPerDay: 10000 };
 
-  const daysLeft = 4;
-  const liftsRemaining = weekProgress.lifts.goal - weekProgress.lifts.completed;
-  const runsRemaining = weekProgress.runs.goal - weekProgress.runs.completed;
-  const recoveryRemaining = weekProgress.recovery.goal - weekProgress.recovery.completed;
+    const today = new Date();
+    today.setHours(23, 59, 59, 999); // End of today
+    const startOfWeek = new Date(today);
+    startOfWeek.setDate(today.getDate() - today.getDay()); // Sunday
+    startOfWeek.setHours(0, 0, 0, 0);
 
-  // Calculate overall weekly progress
-  const totalGoals = weekProgress.lifts.goal + weekProgress.runs.goal + weekProgress.recovery.goal;
-  const totalCompleted = weekProgress.lifts.completed + weekProgress.runs.completed + weekProgress.recovery.completed;
-  const overallPercent = Math.round((totalCompleted / totalGoals) * 100);
+    const weekActivities = activities.filter(a => {
+      if (!a.date) return false;
+      const actDate = new Date(a.date + 'T12:00:00');
+      return actDate >= startOfWeek && actDate <= today;
+    });
 
-  // Handle swipe for maintenance card
-  const handleMaintenanceSwipe = (direction) => {
-    if (direction === 'left' && maintenanceCardIndex === 0) {
-      setMaintenanceCardIndex(1);
-    } else if (direction === 'right' && maintenanceCardIndex === 1) {
-      setMaintenanceCardIndex(0);
-    }
-  };
+    // Categorize activities
+    const getCategory = (activity) => {
+      if (activity.countToward) return activity.countToward;
+      if (activity.type === 'Strength Training') return 'lifting';
+      if (['Running', 'Cycle', 'Sports'].includes(activity.type)) return 'cardio';
+      if (['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
+      return 'other';
+    };
+
+    const lifts = weekActivities.filter(a => getCategory(a) === 'lifting');
+    const cardio = weekActivities.filter(a => getCategory(a) === 'cardio');
+    const recovery = weekActivities.filter(a => getCategory(a) === 'recovery');
+    const running = weekActivities.filter(a => a.type === 'Running');
+    const cycling = weekActivities.filter(a => a.type === 'Cycle');
+    const sports = weekActivities.filter(a => a.type === 'Sports');
+    const totalMiles = running.reduce((sum, r) => sum + (parseFloat(r.distance) || 0), 0);
+
+    return {
+      lifts: { completed: lifts.length, goal: goals.liftsPerWeek, sessions: lifts.map(l => l.subtype || l.type) },
+      cardio: { completed: cardio.length, goal: goals.cardioPerWeek, miles: totalMiles, sessions: cardio.map(c => c.type), breakdown: { running: running.length, cycling: cycling.length, sports: sports.length } },
+      recovery: { completed: recovery.length, goal: goals.recoveryPerWeek, sessions: recovery.map(r => r.type) },
+      calories: { burned: 0, goal: goals.caloriesPerWeek },
+      steps: { today: 0, goal: goals.stepsPerDay }
+    };
+  }, [activities, userData?.goals]);
+
+  const stepsPercent = weekProgress.steps?.goal > 0 ? Math.min((weekProgress.steps.today / weekProgress.steps.goal) * 100, 100) : 0;
+  const caloriesPercent = weekProgress.calories.goal > 0 ? Math.min((weekProgress.calories.burned / weekProgress.calories.goal) * 100, 100) : 0;
+  const liftsPercent = weekProgress.lifts.goal > 0 ? Math.min((weekProgress.lifts.completed / weekProgress.lifts.goal) * 100, 100) : 0;
+  const cardioPercent = weekProgress.cardio?.goal > 0 ? Math.min((weekProgress.cardio.completed / weekProgress.cardio.goal) * 100, 100) : 0;
+  const recoveryPercent = weekProgress.recovery?.goal > 0 ? Math.min((weekProgress.recovery.completed / weekProgress.recovery.goal) * 100, 100) : 0;
+
+  // Calculate days left in the week (until Saturday)
+  const today = new Date();
+  const dayOfWeek = today.getDay(); // 0 = Sunday, 6 = Saturday
+  const daysLeft = 6 - dayOfWeek; // Days until Saturday
+  
+  const liftsRemaining = Math.max(0, weekProgress.lifts.goal - weekProgress.lifts.completed);
+  const cardioRemaining = Math.max(0, (weekProgress.cardio?.goal || 0) - (weekProgress.cardio?.completed || 0));
+  const recoveryRemaining = Math.max(0, (weekProgress.recovery?.goal || 0) - (weekProgress.recovery?.completed || 0));
+
+  // Calculate overall weekly progress (cap each category at its goal - extra doesn't count toward Week Progress)
+  const totalGoals = weekProgress.lifts.goal + (weekProgress.cardio?.goal || 0) + (weekProgress.recovery?.goal || 0);
+  const totalCompleted = Math.min(weekProgress.lifts.completed, weekProgress.lifts.goal) + 
+    Math.min(weekProgress.cardio?.completed || 0, weekProgress.cardio?.goal || 0) + 
+    Math.min(weekProgress.recovery?.completed || 0, weekProgress.recovery?.goal || 0);
+  const overallPercent = totalGoals > 0 ? Math.round((totalCompleted / totalGoals) * 100) : 0;
+
+  // State for expanding breakdowns
+  const [showStrengthBreakdown, setShowStrengthBreakdown] = useState(false);
+  const [showCardioBreakdown, setShowCardioBreakdown] = useState(false);
+  const [showRecoveryBreakdown, setShowRecoveryBreakdown] = useState(false);
+  const [activityExpanded, setActivityExpanded] = useState(false);
+  const [selectedActivity, setSelectedActivity] = useState(null);
+
+  // Get latest activities for display
+  const allLatestActivities = activities.slice(0, 10); // Cap at 10 total
+  const latestActivities = activityExpanded ? allLatestActivities : allLatestActivities.slice(0, 2);
 
   return (
     <div className="pb-32">
-      {/* Daily Maintenance Section - Swipeable */}
+      {/* Daily Stats - Single Card */}
       <div className="px-4 mb-4">
         <div className="flex items-center justify-between mb-3">
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-white">Daily Maintenance</span>
-              <span>⛽</span>
+              <span className="text-sm font-semibold text-white">Today's Activity</span>
+              <span>📊</span>
             </div>
-            <p className="text-[11px] text-gray-500 mt-0.5">{maintenanceCardIndex === 0 ? 'Your daily vitals and readiness' : 'Whoop recovery metrics'}</p>
-          </div>
-          {/* Card indicators */}
-          <div className="flex gap-1.5">
-            <div 
-              className="w-1.5 h-1.5 rounded-full transition-all cursor-pointer"
-              style={{ backgroundColor: maintenanceCardIndex === 0 ? '#00FF94' : 'rgba(255,255,255,0.3)' }}
-              onClick={() => setMaintenanceCardIndex(0)}
-            />
-            <div 
-              className="w-1.5 h-1.5 rounded-full transition-all cursor-pointer"
-              style={{ backgroundColor: maintenanceCardIndex === 1 ? '#00FF94' : 'rgba(255,255,255,0.3)' }}
-              onClick={() => setMaintenanceCardIndex(1)}
-            />
+            <p className="text-[11px] text-gray-500 mt-0.5">Synced from Apple Health</p>
           </div>
         </div>
         
-        {/* Swipeable Card Container */}
-        <div 
-          className="relative overflow-hidden rounded-2xl"
-          onTouchStart={(e) => {
-            e.currentTarget.touchStartX = e.touches[0].clientX;
-          }}
-          onTouchEnd={(e) => {
-            const diff = e.currentTarget.touchStartX - e.changedTouches[0].clientX;
-            if (Math.abs(diff) > 50) {
-              handleMaintenanceSwipe(diff > 0 ? 'left' : 'right');
-            }
-          }}
-          onWheel={(e) => {
-            // Two-finger swipe on trackpad (deltaX for horizontal scroll)
-            if (Math.abs(e.deltaX) > 30) {
-              handleMaintenanceSwipe(e.deltaX > 0 ? 'left' : 'right');
-            }
-          }}
-        >
-          <div 
-            className="flex transition-transform duration-300 ease-out"
-            style={{ transform: `translateX(-${maintenanceCardIndex * 100}%)` }}
-          >
-            {/* Card 1: Daily Vitals */}
-            <div className="w-full flex-shrink-0 p-4 space-y-3" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-              {/* Steps */}
-              <div className="flex items-center gap-3">
-                <span className="text-lg">👟</span>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-gray-400">Steps</span>
-                    <span className="text-xs font-bold">{weekProgress.steps.today.toLocaleString()} / {(weekProgress.steps.goal/1000).toFixed(0)}k</span>
-                  </div>
-                  <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
-                    <div 
-                      className="h-full rounded-full transition-all duration-1000"
-                      style={{ 
-                        width: `${Math.min(stepsPercent, 100)}%`,
-                        backgroundColor: '#BF5AF2'
-                      }}
-                    />
-                  </div>
-                </div>
+        <div className="p-4 rounded-2xl space-y-3" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+          {/* Steps */}
+          <div className="flex items-center gap-3">
+            <span className="text-lg">👟</span>
+            <div className="flex-1">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-gray-400">Steps</span>
+                <span className="text-xs font-bold">{(weekProgress.steps?.today || 0).toLocaleString()} / {((weekProgress.steps?.goal || 10000)/1000).toFixed(0)}k</span>
               </div>
-              
-              {/* Calories */}
-              <div className="flex items-center gap-3">
-                <span className="text-lg">🔥</span>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-gray-400">Calories Burned</span>
-                    <span className="text-xs font-bold">{weekProgress.calories.burned.toLocaleString()} / {(weekProgress.calories.goal/1000).toFixed(1)}k</span>
-                  </div>
-                  <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
-                    <div 
-                      className="h-full rounded-full transition-all duration-1000"
-                      style={{ 
-                        width: `${Math.min(caloriesPercent, 100)}%`,
-                        backgroundColor: '#FF9500'
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-              
-              {/* Recovery Score */}
-              <div className="flex items-center gap-3">
-                <span className="text-lg">💚</span>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-gray-400">Recovery Score</span>
-                    <span className="text-xs font-bold" style={{ color: whoop.recovery > 66 ? '#00FF94' : whoop.recovery > 33 ? '#FFD60A' : '#FF453A' }}>
-                      {whoop.recovery}% {whoop.recovery > 66 ? 'Ready' : whoop.recovery > 33 ? 'Moderate' : 'Rest'}
-                    </span>
-                  </div>
-                  <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
-                    <div 
-                      className="h-full rounded-full transition-all duration-1000"
-                      style={{ 
-                        width: `${whoop.recovery}%`,
-                        backgroundColor: whoop.recovery > 66 ? '#00FF94' : whoop.recovery > 33 ? '#FFD60A' : '#FF453A'
-                      }}
-                    />
-                  </div>
-                </div>
+              <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
+                <div
+                  className="h-full rounded-full transition-all duration-1000"
+                  style={{
+                    width: `${Math.min(stepsPercent, 100)}%`,
+                    backgroundColor: '#BF5AF2'
+                  }}
+                />
               </div>
             </div>
+          </div>
 
-            {/* Card 2: Whoop Metrics - Same height as Card 1 */}
-            <div className="w-full flex-shrink-0 p-4 space-y-3" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-              {/* Sleep */}
-              <div className="flex items-center gap-3">
-                <span className="text-lg">😴</span>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-gray-400">Sleep Performance</span>
-                    <span className="text-xs font-bold" style={{ color: '#007AFF' }}>{whoop.sleep}%</span>
-                  </div>
-                  <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
-                    <div className="h-full rounded-full" style={{ width: `${whoop.sleep}%`, backgroundColor: '#007AFF' }} />
-                  </div>
-                </div>
+          {/* Calories */}
+          <div className="flex items-center gap-3">
+            <span className="text-lg">🔥</span>
+            <div className="flex-1">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-gray-400">Active Calories</span>
+                <span className="text-xs font-bold">{weekProgress.calories.burned.toLocaleString()}</span>
               </div>
-              
-              {/* Strain */}
-              <div className="flex items-center gap-3">
-                <span className="text-lg">⚡</span>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-gray-400">Day Strain</span>
-                    <span className="text-xs font-bold" style={{ color: '#FF9500' }}>{whoop.strain} / 21</span>
-                  </div>
-                  <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
-                    <div className="h-full rounded-full" style={{ width: `${(whoop.strain / 21) * 100}%`, backgroundColor: '#FF9500' }} />
-                  </div>
-                </div>
-              </div>
-              
-              {/* HRV & RHR Row */}
-              <div className="flex items-center gap-3">
-                <span className="text-lg">💓</span>
-                <div className="flex-1 flex items-center gap-6">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-gray-400">HRV</span>
-                    <span className="text-xs font-bold" style={{ color: '#00FF94' }}>{whoop.hrv} ms</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-gray-400">RHR</span>
-                    <span className="text-xs font-bold" style={{ color: '#FF453A' }}>52 bpm</span>
-                  </div>
-                </div>
+              <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
+                <div 
+                  className="h-full rounded-full transition-all duration-1000"
+                  style={{ 
+                    width: `${Math.min(caloriesPercent, 100)}%`,
+                    backgroundColor: '#FF9500'
+                  }}
+                />
               </div>
             </div>
           </div>
@@ -1287,13 +2594,33 @@ const HomeTab = ({ onAddActivity, pendingSync }) => {
         <div className="mx-4 mb-4">
           <button 
             onClick={() => onAddActivity(pendingSync[0])}
-            className="w-full p-3 rounded-xl flex items-center gap-3"
+            className="w-full p-3 rounded-xl flex items-center gap-3 transition-all duration-150"
             style={{ backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.3)' }}
+            onTouchStart={(e) => {
+              e.currentTarget.style.transform = 'scale(0.98)';
+              e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.15)';
+            }}
+            onTouchEnd={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+            }}
+            onMouseDown={(e) => {
+              e.currentTarget.style.transform = 'scale(0.98)';
+              e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.15)';
+            }}
+            onMouseUp={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+            }}
           >
             <span className="text-lg">📱</span>
             <div className="flex-1 text-left">
               <div className="text-xs font-semibold" style={{ color: '#00FF94' }}>New workout detected</div>
-              <div className="text-[10px] text-gray-400">{pendingSync[0].type} • {pendingSync[0].duration} min • from {pendingSync[0].source}</div>
+              <div className="text-[10px] text-gray-400">{pendingSync[0].type} • {pendingSync[0].duration} min • from Apple Health</div>
             </div>
             <span className="px-3 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: 'rgba(0,255,148,0.2)', color: '#00FF94' }}>
               Add
@@ -1303,8 +2630,30 @@ const HomeTab = ({ onAddActivity, pendingSync }) => {
                 e.stopPropagation();
                 setShowWorkoutNotification(false);
               }}
-              className="w-6 h-6 rounded-full flex items-center justify-center"
+              className="w-6 h-6 rounded-full flex items-center justify-center transition-all duration-150"
               style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+              onTouchStart={(e) => {
+                e.stopPropagation();
+                e.currentTarget.style.transform = 'scale(0.85)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.2)';
+              }}
+              onTouchEnd={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+              }}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.currentTarget.style.transform = 'scale(0.85)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.2)';
+              }}
+              onMouseUp={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+              }}
             >
               <span className="text-gray-400 text-xs">✕</span>
             </button>
@@ -1314,6 +2663,31 @@ const HomeTab = ({ onAddActivity, pendingSync }) => {
 
       {/* Weekly Goals - Hero Section */}
       <div className="mx-4 mb-4">
+        {/* Streak at Risk Warning */}
+        {daysLeft <= 2 && (liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0) && (
+          <div 
+            className="p-3 rounded-xl mb-3 flex items-center gap-3"
+            style={{ 
+              backgroundColor: 'rgba(255,69,58,0.15)', 
+              border: '1px solid rgba(255,69,58,0.3)' 
+            }}
+          >
+            <span className="text-xl">⚠️</span>
+            <div className="flex-1">
+              <div className="text-xs font-semibold" style={{ color: '#FF453A' }}>
+                {daysLeft === 0 ? 'Last day to hit your goals!' : `Only ${daysLeft} day${daysLeft === 1 ? '' : 's'} left!`}
+              </div>
+              <div className="text-[10px] text-gray-400 mt-0.5">
+                {[
+                  liftsRemaining > 0 ? `${liftsRemaining} strength` : null,
+                  cardioRemaining > 0 ? `${cardioRemaining} cardio` : null,
+                  recoveryRemaining > 0 ? `${recoveryRemaining} recovery` : null
+                ].filter(Boolean).join(', ')} remaining to keep your streak
+              </div>
+            </div>
+          </div>
+        )}
+        
         <div className="flex items-center justify-between mb-3">
           <div>
             <div className="flex items-center gap-2">
@@ -1328,39 +2702,129 @@ const HomeTab = ({ onAddActivity, pendingSync }) => {
         {/* Individual Goals - The Main Event */}
         <div className="p-5 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
           <div className="flex items-center justify-around">
-            {/* Lifts */}
-            <div className="text-center">
+            {/* Strength */}
+            <button 
+              className="text-center transition-all duration-150"
+              onClick={() => setShowStrengthBreakdown(!showStrengthBreakdown)}
+              onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.93)'}
+              onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
+              onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.93)'}
+              onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            >
               <div className="relative inline-block">
                 <ProgressRing progress={liftsPercent} size={72} strokeWidth={6} color="#00FF94" />
                 <div className="absolute inset-0 flex items-center justify-center">
                   <span className="text-xl font-black">{weekProgress.lifts.completed}/{weekProgress.lifts.goal}</span>
                 </div>
               </div>
-              <div className="text-sm font-medium mt-2">🏋️ Lifts</div>
-            </div>
+              <div className="text-sm font-medium mt-2">🏋️ Strength</div>
+              <div className="text-[10px] text-gray-500">{showStrengthBreakdown ? '▲' : '▼'}</div>
+            </button>
             
-            {/* Runs */}
-            <div className="text-center">
+            {/* Cardio */}
+            <button 
+              className="text-center transition-all duration-150"
+              onClick={() => setShowCardioBreakdown(!showCardioBreakdown)}
+              onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.93)'}
+              onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
+              onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.93)'}
+              onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            >
               <div className="relative inline-block">
-                <ProgressRing progress={runsPercent} size={72} strokeWidth={6} color="#FF9500" />
+                <ProgressRing progress={cardioPercent} size={72} strokeWidth={6} color="#FF9500" />
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-xl font-black">{weekProgress.runs.completed}/{weekProgress.runs.goal}</span>
+                  <span className="text-xl font-black">{weekProgress.cardio?.completed || 0}/{weekProgress.cardio?.goal || 0}</span>
                 </div>
               </div>
-              <div className="text-sm font-medium mt-2">🏃 Runs</div>
-            </div>
+              <div className="text-sm font-medium mt-2">🏃 Cardio</div>
+              <div className="text-[10px] text-gray-500">{showCardioBreakdown ? '▲' : '▼'}</div>
+            </button>
             
             {/* Recovery */}
-            <div className="text-center">
+            <button 
+              className="text-center transition-all duration-150"
+              onClick={() => setShowRecoveryBreakdown(!showRecoveryBreakdown)}
+              onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.93)'}
+              onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
+              onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.93)'}
+              onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            >
               <div className="relative inline-block">
                 <ProgressRing progress={recoveryPercent} size={72} strokeWidth={6} color="#00D1FF" />
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-xl font-black">{weekProgress.recovery.completed}/{weekProgress.recovery.goal}</span>
+                  <span className="text-xl font-black">{weekProgress.recovery?.completed || 0}/{weekProgress.recovery?.goal || 0}</span>
                 </div>
               </div>
               <div className="text-sm font-medium mt-2">🧊 Recovery</div>
-            </div>
+              <div className="text-[10px] text-gray-500">{showRecoveryBreakdown ? '▲' : '▼'}</div>
+            </button>
           </div>
+          
+          {/* Strength Breakdown - Expandable */}
+          {showStrengthBreakdown && (
+            <div className="mt-4 pt-4 border-t border-white/10">
+              <div className="text-xs text-gray-400 mb-2">Strength Breakdown</div>
+              <div className="grid grid-cols-2 gap-2 text-center">
+                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  <div className="text-lg font-bold">{weekProgress.lifts?.breakdown?.lifting || 0}</div>
+                  <div className="text-[10px] text-gray-400">🏋️ Lifting</div>
+                </div>
+                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  <div className="text-lg font-bold">{weekProgress.lifts?.breakdown?.bodyweight || 0}</div>
+                  <div className="text-[10px] text-gray-400">💪 Bodyweight</div>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Cardio Breakdown - Expandable */}
+          {showCardioBreakdown && (
+            <div className="mt-4 pt-4 border-t border-white/10">
+              <div className="text-xs text-gray-400 mb-2">Cardio Breakdown</div>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  <div className="text-lg font-bold">{weekProgress.cardio?.breakdown?.running || 0}</div>
+                  <div className="text-[10px] text-gray-400">🏃 Running</div>
+                </div>
+                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  <div className="text-lg font-bold">{weekProgress.cardio?.breakdown?.cycling || 0}</div>
+                  <div className="text-[10px] text-gray-400">🚴 Cycling</div>
+                </div>
+                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  <div className="text-lg font-bold">{weekProgress.cardio?.breakdown?.sports || 0}</div>
+                  <div className="text-[10px] text-gray-400">🏀 Sports</div>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Recovery Breakdown - Expandable */}
+          {showRecoveryBreakdown && (
+            <div className="mt-4 pt-4 border-t border-white/10">
+              <div className="text-xs text-gray-400 mb-2">Recovery Breakdown</div>
+              <div className="grid grid-cols-2 gap-2 text-center">
+                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.coldPlunge || 0}</div>
+                  <div className="text-[10px] text-gray-400">🧊 Cold Plunge</div>
+                </div>
+                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.sauna || 0}</div>
+                  <div className="text-[10px] text-gray-400">🔥 Sauna</div>
+                </div>
+                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.yoga || 0}</div>
+                  <div className="text-[10px] text-gray-400">🧘 Yoga</div>
+                </div>
+                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.pilates || 0}</div>
+                  <div className="text-[10px] text-gray-400">🤸 Pilates</div>
+                </div>
+              </div>
+            </div>
+          )}
           
           {/* Overall Progress Bar */}
           <div className="mt-4 pt-4 border-t border-white/10">
@@ -1373,18 +2837,18 @@ const HomeTab = ({ onAddActivity, pendingSync }) => {
         </div>
 
         {/* What's Left This Week */}
-        {(liftsRemaining > 0 || runsRemaining > 0 || recoveryRemaining > 0) && (
+        {(liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0) && (
           <div className="mt-3 p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
             <div className="text-xs text-gray-500 mb-2">Remaining:</div>
             <div className="flex gap-2 flex-wrap">
               {liftsRemaining > 0 && (
                 <span className="px-2 py-1 rounded-full text-xs" style={{ backgroundColor: 'rgba(0,255,148,0.1)', color: '#00FF94' }}>
-                  {liftsRemaining} lift{liftsRemaining > 1 ? 's' : ''}
+                  {liftsRemaining} strength
                 </span>
               )}
-              {runsRemaining > 0 && (
+              {cardioRemaining > 0 && (
                 <span className="px-2 py-1 rounded-full text-xs" style={{ backgroundColor: 'rgba(255,149,0,0.1)', color: '#FF9500' }}>
-                  {runsRemaining} run{runsRemaining > 1 ? 's' : ''}
+                  {cardioRemaining} cardio
                 </span>
               )}
               {recoveryRemaining > 0 && (
@@ -1406,82 +2870,814 @@ const HomeTab = ({ onAddActivity, pendingSync }) => {
           </div>
           <p className="text-[11px] text-gray-500 mt-0.5">Your recent workout and recovery sessions</p>
         </div>
-        <div className="space-y-2">
-          {mockActivities.slice(0, 3).map((activity) => (
-            <div key={activity.id} className="p-3 rounded-xl flex items-center gap-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              <ActivityIcon type={activity.type} size={20} />
-              <div className="flex-1">
-                <div className="text-sm font-semibold">{activity.type}{activity.subtype ? ` • ${activity.subtype}` : ''}</div>
-                <div className="text-[10px] text-gray-500">{activity.date} at {activity.time}</div>
-              </div>
-              <div className="text-right">
-                {activity.calories && <div className="text-sm font-bold">{activity.calories} cal</div>}
-                {activity.distance && <div className="text-sm font-bold">{activity.distance} mi</div>}
-              </div>
+        <div 
+          className="space-y-2 transition-all duration-300 ease-out overflow-hidden"
+        >
+          {latestActivities.length > 0 ? (
+            <>
+              {latestActivities.map((activity) => (
+                <button 
+                  key={activity.id} 
+                  onClick={() => setSelectedActivity(activity)}
+                  className="w-full p-3 rounded-xl flex items-center gap-3 text-left transition-all duration-150" 
+                  style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+                  onTouchStart={(e) => {
+                    e.currentTarget.style.transform = 'scale(0.98)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
+                  }}
+                  onTouchEnd={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                  }}
+                  onMouseDown={(e) => {
+                    e.currentTarget.style.transform = 'scale(0.98)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
+                  }}
+                  onMouseUp={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                  }}
+                >
+                  <ActivityIcon type={activity.type} size={20} />
+                  <div className="flex-1">
+                    <div className="text-sm font-semibold">{activity.type}{activity.subtype ? ` • ${activity.subtype}` : ''}</div>
+                    <div className="text-[10px] text-gray-500">{formatFriendlyDate(activity.date)} at {activity.time}</div>
+                  </div>
+                  <div className="text-right">
+                    {activity.calories && <div className="text-sm font-bold">{activity.calories} cal</div>}
+                    {activity.distance && <div className="text-sm font-bold">{activity.distance} mi</div>}
+                    {activity.duration && !activity.calories && !activity.distance && <div className="text-sm font-bold">{activity.duration} min</div>}
+                  </div>
+                  <span className="text-gray-600 text-xs">›</span>
+                </button>
+              ))}
+              {allLatestActivities.length > 2 && (
+                <button
+                  onClick={() => setActivityExpanded(!activityExpanded)}
+                  className="w-full py-2 text-center text-xs font-medium transition-all duration-150 rounded-xl"
+                  style={{ color: 'rgba(255,255,255,0.5)' }}
+                  onTouchStart={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                  }}
+                  onTouchEnd={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }}
+                  onMouseDown={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                  }}
+                  onMouseUp={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }}
+                >
+                  {activityExpanded ? 'See less' : `See ${allLatestActivities.length - 2} more`}
+                </button>
+              )}
+            </>
+          ) : (
+            <div className="p-6 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+              <div className="text-4xl mb-3">🏋️</div>
+              <p className="text-white font-medium text-sm">Your first workout is waiting!</p>
+              <p className="text-gray-500 text-xs mt-1">Tap the + button to log an activity</p>
             </div>
-          ))}
+          )}
         </div>
       </div>
+
+      {/* Activity Detail Modal */}
+      <ActivityDetailModal
+        isOpen={!!selectedActivity}
+        onClose={() => setSelectedActivity(null)}
+        activity={selectedActivity}
+        onDelete={onDeleteActivity}
+        onEdit={onEditActivity}
+      />
+    </div>
+  );
+};
+
+// Trends View Component
+const TrendsView = ({ activities = [], calendarData = {} }) => {
+  const [metric, setMetric] = useState('calories');
+  const [timeRange, setTimeRange] = useState('1M');
+  const [selectedBar, setSelectedBar] = useState(null); // { index, label, value }
+
+  // Generate data points based on time range
+  const generateTrendData = () => {
+    const today = new Date();
+    const data = [];
+    
+    let daysToShow;
+    let groupBy; // 'day', 'week', or 'month'
+    
+    switch (timeRange) {
+      case '1W':
+        daysToShow = 7;
+        groupBy = 'day';
+        break;
+      case '1M':
+        daysToShow = 30;
+        groupBy = 'day';
+        break;
+      case '3M':
+        daysToShow = 90;
+        groupBy = 'week';
+        break;
+      case '6M':
+        daysToShow = 180;
+        groupBy = 'week';
+        break;
+      case '1Y':
+        daysToShow = 365;
+        groupBy = 'month';
+        break;
+      case 'All':
+        // Find earliest activity
+        if (activities.length > 0) {
+          const dates = activities.map(a => parseLocalDate(a.date)).sort((a, b) => a - b);
+          const earliest = dates[0];
+          daysToShow = Math.ceil((today - earliest) / (1000 * 60 * 60 * 24)) + 1;
+          groupBy = daysToShow > 180 ? 'month' : daysToShow > 60 ? 'week' : 'day';
+        } else {
+          daysToShow = 30;
+          groupBy = 'day';
+        }
+        break;
+      default:
+        daysToShow = 30;
+        groupBy = 'day';
+    }
+
+    // Generate date buckets
+    if (groupBy === 'day') {
+      for (let i = daysToShow - 1; i >= 0; i--) {
+        const date = new Date(today);
+        date.setDate(date.getDate() - i);
+        const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        const dayActivities = calendarData[dateStr] || [];
+        
+        let value = 0;
+        if (metric === 'calories') {
+          value = dayActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+          // Estimate if no calories logged
+          if (value === 0 && dayActivities.length > 0) {
+            value = dayActivities.reduce((sum, a) => {
+              if (a.type === 'Strength Training') return sum + 350;
+              if (a.type === 'Running') return sum + 400;
+              if (a.type === 'Cycle') return sum + 350;
+              if (a.type === 'Sports') return sum + 300;
+              if (a.type === 'Yoga' || a.type === 'Pilates') return sum + 150;
+              return sum + 100;
+            }, 0);
+          }
+        } else if (metric === 'steps') {
+          // Steps would come from health data integration - currently not tracked
+          value = 0;
+        } else if (metric === 'miles') {
+          value = dayActivities
+            .filter(a => a.type === 'Running')
+            .reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+        }
+        
+        data.push({
+          label: date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+          shortLabel: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          value,
+          date: dateStr
+        });
+      }
+    } else if (groupBy === 'week') {
+      const weeks = Math.ceil(daysToShow / 7);
+      for (let w = weeks - 1; w >= 0; w--) {
+        const weekEnd = new Date(today);
+        weekEnd.setDate(weekEnd.getDate() - (w * 7));
+        const weekStart = new Date(weekEnd);
+        weekStart.setDate(weekStart.getDate() - 6);
+        
+        let value = 0;
+        for (let d = 0; d < 7; d++) {
+          const date = new Date(weekStart);
+          date.setDate(date.getDate() + d);
+          const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+          const dayActivities = calendarData[dateStr] || [];
+          
+          if (metric === 'calories') {
+            let dayCals = dayActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+            if (dayCals === 0 && dayActivities.length > 0) {
+              dayCals = dayActivities.reduce((sum, a) => {
+                if (a.type === 'Strength Training') return sum + 350;
+                if (a.type === 'Running') return sum + 400;
+                if (a.type === 'Cycle') return sum + 350;
+                if (a.type === 'Sports') return sum + 300;
+                if (a.type === 'Yoga' || a.type === 'Pilates') return sum + 150;
+                return sum + 100;
+              }, 0);
+            }
+            value += dayCals;
+          } else if (metric === 'steps') {
+            // Steps would come from health data integration - currently not tracked
+            value += 0;
+          } else if (metric === 'miles') {
+            value += dayActivities
+              .filter(a => a.type === 'Running')
+              .reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+          }
+        }
+        
+        if (metric === 'steps') value = Math.round(value);
+        
+        // Create label with date range for weekly view
+        const weekEndDate = new Date(weekStart);
+        weekEndDate.setDate(weekStart.getDate() + 6);
+        const startLabel = weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const endLabel = weekStart.getMonth() === weekEndDate.getMonth() 
+          ? weekEndDate.getDate() // Same month: "Dec 15 - 21"
+          : weekEndDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); // Different month: "Dec 29 - Jan 4"
+        
+        data.push({
+          label: `${startLabel} - ${endLabel}`,
+          shortLabel: weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          value,
+          date: weekStart.toISOString().split('T')[0]
+        });
+      }
+    } else if (groupBy === 'month') {
+      const months = Math.ceil(daysToShow / 30);
+      for (let m = months - 1; m >= 0; m--) {
+        const monthDate = new Date(today.getFullYear(), today.getMonth() - m, 1);
+        const monthEnd = new Date(today.getFullYear(), today.getMonth() - m + 1, 0);
+        
+        let value = 0;
+        for (let d = 1; d <= monthEnd.getDate(); d++) {
+          const date = new Date(monthDate.getFullYear(), monthDate.getMonth(), d);
+          if (date > today) break;
+          const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+          const dayActivities = calendarData[dateStr] || [];
+          
+          if (metric === 'calories') {
+            let dayCals = dayActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+            if (dayCals === 0 && dayActivities.length > 0) {
+              dayCals = dayActivities.reduce((sum, a) => {
+                if (a.type === 'Strength Training') return sum + 350;
+                if (a.type === 'Running') return sum + 400;
+                if (a.type === 'Cycle') return sum + 350;
+                if (a.type === 'Sports') return sum + 300;
+                if (a.type === 'Yoga' || a.type === 'Pilates') return sum + 150;
+                return sum + 100;
+              }, 0);
+            }
+            value += dayCals;
+          } else if (metric === 'steps') {
+            // Steps would come from health data integration - currently not tracked
+            value += 0;
+          } else if (metric === 'miles') {
+            value += dayActivities
+              .filter(a => a.type === 'Running')
+              .reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+          }
+        }
+        
+        if (metric === 'steps') value = Math.round(value);
+        
+        data.push({
+          label: monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+          shortLabel: monthDate.toLocaleDateString('en-US', { month: 'short' }),
+          value,
+          date: monthDate.toISOString().split('T')[0]
+        });
+      }
+    }
+    
+    return data;
+  };
+
+  const trendData = generateTrendData();
+  const maxValue = Math.max(...trendData.map(d => d.value), 1);
+  const total = trendData.reduce((sum, d) => sum + d.value, 0);
+  const avg = trendData.length > 0 ? total / trendData.length : 0;
+
+  const metricConfig = {
+    calories: { label: 'Calories', icon: '🔥', unit: 'cal', color: '#FF9500' },
+    steps: { label: 'Steps', icon: '👟', unit: 'steps', color: '#00D1FF' },
+    miles: { label: 'Miles', icon: '📍', unit: 'mi', color: '#00FF94' }
+  };
+
+  const config = metricConfig[metric];
+
+  return (
+    <div className="mx-4">
+      {/* Header */}
+      <div className="mb-4">
+        <div className="text-sm font-semibold text-white">Trends</div>
+        <p className="text-[11px] text-gray-500 mt-0.5">Track your progress over time</p>
+      </div>
+
+      {/* Metric Toggle */}
+      <div className="flex gap-2 p-1 rounded-xl mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+        {Object.entries(metricConfig).map(([key, cfg]) => (
+          <button
+            key={key}
+            onClick={() => {
+              setMetric(key);
+              setSelectedBar(null);
+            }}
+            className="flex-1 py-2 rounded-lg text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1"
+            style={{
+              backgroundColor: metric === key ? 'rgba(255,255,255,0.1)' : 'transparent',
+              color: metric === key ? cfg.color : 'rgba(255,255,255,0.5)'
+            }}
+          >
+            <span>{cfg.icon}</span>
+            {cfg.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Time Range Toggle */}
+      <div className="relative flex gap-1 p-1 rounded-xl mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+        {/* Sliding pill indicator */}
+        <div 
+          className="absolute top-1 bottom-1 rounded-md transition-all duration-300 ease-out"
+          style={{ 
+            backgroundColor: 'rgba(255,255,255,0.1)',
+            width: 'calc((100% - 8px) / 5)',
+            left: (() => {
+              const tabs = ['1W', '1M', '3M', '6M', '1Y'];
+              const index = tabs.indexOf(timeRange);
+              return `calc(4px + ${index} * (100% - 8px) / 5)`;
+            })()
+          }}
+        />
+        {['1W', '1M', '3M', '6M', '1Y'].map((range) => (
+          <button
+            key={range}
+            onClick={() => {
+              setTimeRange(range);
+              setSelectedBar(null);
+            }}
+            className="flex-1 py-1.5 rounded-md text-[10px] font-medium transition-colors duration-200 relative z-10"
+            style={{
+              color: timeRange === range ? 'white' : 'rgba(255,255,255,0.5)'
+            }}
+          >
+            {range}
+          </button>
+        ))}
+      </div>
+
+      {/* Chart */}
+      <div className="p-4 rounded-2xl mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+        {/* Tooltip - fixed height container to prevent layout shift */}
+        <div style={{ minHeight: '72px' }}>
+          {selectedBar !== null && trendData[selectedBar] ? (
+            <div 
+              className="p-3 rounded-xl text-center transition-all duration-200"
+              style={{ 
+                backgroundColor: `${config.color}15`,
+                border: `1px solid ${config.color}40`
+              }}
+            >
+              <div className="text-sm font-bold" style={{ color: config.color }}>
+                {trendData[selectedBar].label}
+              </div>
+              <div className="text-xl font-black text-white mt-1">
+                {metric === 'miles' 
+                  ? trendData[selectedBar].value.toFixed(1) 
+                  : trendData[selectedBar].value.toLocaleString()
+                } {config.unit}
+              </div>
+            </div>
+          ) : (
+            <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+              <div className="text-sm text-gray-500">Tap a bar to see details</div>
+              <div className="text-xl font-black text-gray-600 mt-1">—</div>
+            </div>
+          )}
+        </div>
+        
+        {/* Chart Area */}
+        <div 
+          className="h-40 flex items-end gap-0.5 mb-2" 
+          style={{ minHeight: '160px' }}
+          onMouseLeave={() => setSelectedBar(null)}
+        >
+          {trendData.length > 0 ? trendData.map((point, i) => {
+            const heightPercent = maxValue > 0 ? (point.value / maxValue) * 100 : 0;
+            const isSelected = selectedBar === i;
+            
+            return (
+              <button 
+                key={i} 
+                className="flex-1 flex flex-col justify-end h-full cursor-pointer bg-transparent border-none p-0"
+                onMouseEnter={() => setSelectedBar(i)}
+                onClick={() => setSelectedBar(selectedBar === i ? null : i)}
+                type="button"
+              >
+                {/* Visible bar */}
+                <div 
+                  className="w-full rounded-t-sm transition-all duration-200 pointer-events-none"
+                  style={{ 
+                    height: `${Math.max(heightPercent, 2)}%`,
+                    backgroundColor: config.color,
+                    opacity: isSelected ? 1 : 0.6,
+                    minHeight: point.value > 0 ? '4px' : '2px',
+                    transform: isSelected ? 'scaleX(1.1)' : 'scaleX(1)',
+                    boxShadow: isSelected ? `0 0 10px ${config.color}50` : 'none'
+                  }}
+                />
+              </button>
+            );
+          }) : (
+            <div className="w-full h-full flex items-center justify-center text-gray-500 text-sm">
+              No data available
+            </div>
+          )}
+        </div>
+        
+        {/* X-axis labels */}
+        {trendData.length > 0 && (
+          <div className="flex gap-0.5">
+            {trendData.map((point, i) => {
+              const showLabel = trendData.length <= 7 || 
+                (trendData.length <= 14 && i % 2 === 0) ||
+                (trendData.length > 14 && (i === 0 || i === trendData.length - 1 || i % Math.ceil(trendData.length / 5) === 0));
+              const isSelected = selectedBar === i;
+              
+              return (
+                <div key={i} className="flex-1 text-center">
+                  {(showLabel || isSelected) && (
+                    <span 
+                      className="text-[8px] transition-all duration-200"
+                      style={{ 
+                        color: isSelected ? config.color : 'rgba(255,255,255,0.5)',
+                        fontWeight: isSelected ? 'bold' : 'normal'
+                      }}
+                    >
+                      {point.shortLabel || point.label}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Summary Stats */}
+      {(() => {
+        // Calculate dynamic trend when a bar is selected
+        const selectedValue = selectedBar !== null && trendData[selectedBar] ? trendData[selectedBar].value : null;
+        const vsAvgPercent = selectedValue !== null && avg > 0 
+          ? Math.round(((selectedValue - avg) / avg) * 100)
+          : null;
+        
+        return (
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+              <div className="text-lg font-black" style={{ color: config.color }}>
+                {metric === 'miles' ? total.toFixed(1) : total.toLocaleString()}
+              </div>
+              <div className="text-[10px] text-gray-400">Total</div>
+            </div>
+            <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+              <div className="text-lg font-black" style={{ color: config.color }}>
+                {metric === 'miles' ? avg.toFixed(1) : Math.round(avg).toLocaleString()}
+              </div>
+              <div className="text-[10px] text-gray-400">Average</div>
+            </div>
+            <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+              {vsAvgPercent !== null ? (
+                <>
+                  <div className="text-lg font-black" style={{ color: vsAvgPercent >= 0 ? '#00FF94' : '#FF453A' }}>
+                    {vsAvgPercent >= 0 ? '+' : ''}{vsAvgPercent}%
+                  </div>
+                  <div className="text-[10px] text-gray-400">vs Avg</div>
+                </>
+              ) : (
+                <>
+                  <div className="text-lg font-black text-gray-600">—</div>
+                  <div className="text-[10px] text-gray-400">vs Avg</div>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {activities.length === 0 && (
+        <div className="p-6 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+          <div className="text-4xl mb-3">📈</div>
+          <p className="text-white font-medium text-sm">Start building your trends!</p>
+          <p className="text-gray-500 text-xs mt-1">Log workouts to see your progress over time</p>
+        </div>
+      )}
     </div>
   );
 };
 
 // History Tab
-const HistoryTab = ({ onShare }) => {
-  const [view, setView] = useState('calendar');
+const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onAddActivity, onDeleteActivity, onEditActivity, initialView = 'calendar', initialStatsSubView = 'overview' }) => {
+  const [view, setView] = useState(initialView);
+  const [statsSubView, setStatsSubView] = useState(initialStatsSubView); // 'overview' or 'records'
   const [calendarView, setCalendarView] = useState('heatmap');
-  const [selectedDate, setSelectedDate] = useState('2026-01-20');
+  const [selectedDate, setSelectedDate] = useState(getTodayDate());
+  const [selectedDayActivity, setSelectedDayActivity] = useState(null); // For activity detail modal
+  
+  // Update view when initialView prop changes
+  useEffect(() => {
+    setView(initialView);
+  }, [initialView]);
+  
+  // Update statsSubView when initialStatsSubView prop changes
+  useEffect(() => {
+    setStatsSubView(initialStatsSubView);
+  }, [initialStatsSubView]);
   const [selectedWeek, setSelectedWeek] = useState(null);
   const [showWeekStats, setShowWeekStats] = useState(false);
   const [showDayModal, setShowDayModal] = useState(false);
+  const [dayModalAnimating, setDayModalAnimating] = useState(false);
+  const [dayModalClosing, setDayModalClosing] = useState(false);
   const [compareWeek, setCompareWeek] = useState('average');
-  const [totalsView, setTotalsView] = useState('2026');
-  const records = mockPersonalRecords;
-  const streaks = mockUserData.streaks;
-  const goals = mockUserData.goals;
+  const [totalsView, setTotalsView] = useState('this-month');
+  const records = userData?.personalRecords || initialUserData.personalRecords;
+  const streaks = userData?.streaks || initialUserData.streaks;
+  const goals = userData?.goals || initialUserData.goals;
 
-  const weeks = [
-    { id: 'week-3', label: 'Jan 6-12', dates: [6,7,8,9,10,11,12], startDay: 6, endDay: 12 },
-    { id: 'week-2', label: 'Jan 13-19', dates: [13,14,15,16,17,18,19], startDay: 13, endDay: 19 },
-    { id: 'week-1', label: 'Jan 20-26', dates: [20,21,22,23,24,25,26], startDay: 20, endDay: 26, isCurrent: true }
-  ];
+  // Helper to safely get record value (handles both old number format and new object format)
+  // Returns null if no record exists (0 or null values)
+  const getRecordValue = (record) => {
+    if (record === null || record === undefined) return null;
+    if (typeof record === 'object') {
+      return record.value && record.value !== 0 ? record.value : null;
+    }
+    return record && record !== 0 ? record : null;
+  };
+  
+  // Helper to get record activity type
+  const getRecordType = (record) => {
+    if (record && typeof record === 'object') return record.activityType || null;
+    return null;
+  };
+
+  // Day modal open/close handlers
+  const openDayModal = () => {
+    setShowDayModal(true);
+    setDayModalClosing(false);
+    setTimeout(() => setDayModalAnimating(true), 10);
+  };
+
+  const closeDayModal = () => {
+    setDayModalAnimating(false);
+    setDayModalClosing(true);
+    setTimeout(() => {
+      setShowDayModal(false);
+      setDayModalClosing(false);
+    }, 150);
+  };
+
+  // Get current date info
+  const today = new Date();
+  const currentDay = today.getDate();
+  const currentMonth = today.getMonth(); // 0-indexed
+  const currentYear = today.getFullYear();
+  
+  // Generate weeks dynamically based on current date
+  const generateWeeks = () => {
+    const weeks = [];
+    // Generate last 3-4 weeks
+    for (let w = 2; w >= 0; w--) {
+      const weekStart = new Date(today);
+      weekStart.setDate(today.getDate() - today.getDay() - (w * 7)); // Start of week (Sunday)
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 6);
+      
+      const startDay = weekStart.getDate();
+      const endDay = weekEnd.getDate();
+      const monthName = weekStart.toLocaleDateString('en-US', { month: 'short' });
+      
+      weeks.push({
+        id: `week-${w + 1}`,
+        label: `${monthName} ${startDay}-${endDay}`,
+        startDay,
+        endDay,
+        startDate: weekStart,
+        endDate: weekEnd,
+        isCurrent: w === 0
+      });
+    }
+    return weeks;
+  };
+  
+  const weeks = generateWeeks();
+  
+  // Helper to determine effective category of an activity
+  const getActivityCategory = (activity) => {
+    if (activity.countToward) return activity.countToward;
+    if (activity.type === 'Strength Training') return 'lifting';
+    if (['Running', 'Cycle', 'Sports'].includes(activity.type)) return 'cardio';
+    if (['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
+    return 'other';
+  };
+  
+  // Calculate weekly stats for comparison (last week and average)
+  const calculateWeeklyStats = () => {
+    // Calculate last week's stats
+    const lastWeekStart = new Date(today);
+    lastWeekStart.setDate(today.getDate() - today.getDay() - 7); // Start of last week (Sunday)
+    lastWeekStart.setHours(0, 0, 0, 0);
+    
+    const lastWeekEnd = new Date(lastWeekStart);
+    lastWeekEnd.setDate(lastWeekStart.getDate() + 6); // End of last week (Saturday)
+    lastWeekEnd.setHours(23, 59, 59, 999);
+    
+    const lastWeekActivities = activities.filter(a => {
+      const actDate = parseLocalDate(a.date);
+      return actDate >= lastWeekStart && actDate <= lastWeekEnd;
+    });
+    
+    const lastWeekLifts = lastWeekActivities.filter(a => getActivityCategory(a) === 'lifting').length;
+    const lastWeekCardio = lastWeekActivities.filter(a => getActivityCategory(a) === 'cardio').length;
+    const lastWeekRecovery = lastWeekActivities.filter(a => getActivityCategory(a) === 'recovery').length;
+    const lastWeekMiles = lastWeekActivities.filter(a => a.type === 'Running').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+    
+    // Calculate average from first activity to now
+    let avgLifts = 0, avgCardio = 0, avgRecovery = 0, avgMiles = 0, avgCalories = 0;
+    
+    if (activities.length > 0) {
+      // Find the earliest activity date
+      const sortedDates = activities.map(a => parseLocalDate(a.date)).sort((a, b) => a - b);
+      const firstActivityDate = sortedDates[0];
+      
+      // Calculate number of complete weeks from first activity to now
+      const firstWeekStart = new Date(firstActivityDate);
+      firstWeekStart.setDate(firstActivityDate.getDate() - firstActivityDate.getDay()); // Start of that week
+      firstWeekStart.setHours(0, 0, 0, 0);
+      
+      const currentWeekStart = new Date(today);
+      currentWeekStart.setDate(today.getDate() - today.getDay());
+      currentWeekStart.setHours(0, 0, 0, 0);
+      
+      // Calculate weeks between (not including current incomplete week)
+      const msPerWeek = 7 * 24 * 60 * 60 * 1000;
+      const weeksBetween = Math.floor((currentWeekStart - firstWeekStart) / msPerWeek);
+      
+      if (weeksBetween > 0) {
+        // Get all activities before current week
+        const pastActivities = activities.filter(a => {
+          const actDate = parseLocalDate(a.date);
+          return actDate < currentWeekStart;
+        });
+        
+        const totalLifts = pastActivities.filter(a => getActivityCategory(a) === 'lifting').length;
+        const totalCardio = pastActivities.filter(a => getActivityCategory(a) === 'cardio').length;
+        const totalRecovery = pastActivities.filter(a => getActivityCategory(a) === 'recovery').length;
+        const totalMiles = pastActivities.filter(a => a.type === 'Running').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+        
+        avgLifts = Math.round((totalLifts / weeksBetween) * 10) / 10;
+        avgCardio = Math.round((totalCardio / weeksBetween) * 10) / 10;
+        avgRecovery = Math.round((totalRecovery / weeksBetween) * 10) / 10;
+        avgMiles = Math.round((totalMiles / weeksBetween) * 10) / 10;
+      }
+    }
+    
+    return {
+      'week-2': {
+        lifts: lastWeekLifts,
+        cardio: lastWeekCardio,
+        recovery: lastWeekRecovery,
+        miles: lastWeekMiles,
+        calories: 0
+      },
+      'average': {
+        lifts: avgLifts,
+        cardio: avgCardio,
+        recovery: avgRecovery,
+        miles: avgMiles,
+        calories: avgCalories
+      }
+    };
+  };
+  
+  const weeklyStats = calculateWeeklyStats();
 
   const generateCalendarDays = () => {
     const days = [];
-    for (let i = 1; i <= 31; i++) {
-      const dateStr = `2026-01-${i.toString().padStart(2, '0')}`;
+    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+    
+    for (let i = 1; i <= daysInMonth; i++) {
+      const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
       days.push({
         day: i,
         date: dateStr,
-        activities: mockCalendarData[dateStr] || [],
-        isToday: i === 21,
-        isFuture: i > 21
+        activities: calendarData[dateStr] || [],
+        isToday: i === currentDay,
+        isFuture: i > currentDay
       });
     }
     return days;
   };
 
   const calendarDays = generateCalendarDays();
-  const currentWeekStats = { workouts: 4, recovery: 1, calories: 2100, steps: 52000, miles: 4.2, goalsMet: false };
+  
+  // Calculate current week stats from activities
+  const calculateCurrentWeekStats = () => {
+    const startOfWeek = new Date(today);
+    startOfWeek.setDate(today.getDate() - today.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+    
+    const weekActivities = activities.filter(a => {
+      const actDate = parseLocalDate(a.date);
+      return actDate >= startOfWeek && actDate <= today;
+    });
+    
+    const lifts = weekActivities.filter(a => getActivityCategory(a) === 'lifting').length;
+    const cardio = weekActivities.filter(a => getActivityCategory(a) === 'cardio').length;
+    const recovery = weekActivities.filter(a => getActivityCategory(a) === 'recovery').length;
+    const miles = weekActivities.filter(a => a.type === 'Running').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+    
+    return { 
+      workouts: lifts + cardio, 
+      lifts,
+      cardio,
+      recovery, 
+      calories: 0, 
+      steps: 0, 
+      miles,
+      goalsMet: lifts >= goals.liftsPerWeek && cardio >= goals.cardioPerWeek && recovery >= goals.recoveryPerWeek
+    };
+  };
+  
+  const currentWeekStats = calculateCurrentWeekStats();
 
-  const getTotalsData = () => {
-    if (totalsView === '2026') {
-      return {
-        workouts: records.totalWorkouts2026,
-        recovery: records.totalRecovery2026,
-        miles: records.totalMiles2026,
-        lifting: mockLiftingBreakdown['2026'],
-        running: mockRunningBreakdown['2026'],
-        recoveryBreakdown: mockRecoveryBreakdown['2026']
-      };
+  // Generate list of months for the dropdown (last 12 months)
+  const getMonthOptions = () => {
+    const options = [];
+    const today = new Date();
+    for (let i = 0; i < 12; i++) {
+      const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const label = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      options.push({ value, label });
     }
+    return options;
+  };
+  
+  const monthOptions = getMonthOptions();
+
+  // Calculate totals from actual activities
+  const getTotalsData = () => {
+    const currentYearStr = String(getCurrentYear());
+    const today = new Date();
+    const thisMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const lastMonthStr = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}`;
+    
+    let filteredActivities;
+    
+    if (totalsView === 'this-month') {
+      // This month
+      filteredActivities = activities.filter(a => a.date && a.date.startsWith(thisMonthStr));
+    } else if (totalsView === 'last-month') {
+      // Last month
+      filteredActivities = activities.filter(a => a.date && a.date.startsWith(lastMonthStr));
+    } else if (totalsView.match(/^\d{4}-\d{2}$/)) {
+      // Specific month (e.g., "2026-01")
+      filteredActivities = activities.filter(a => a.date && a.date.startsWith(totalsView));
+    } else if (totalsView === currentYearStr) {
+      // Current year
+      filteredActivities = activities.filter(a => a.date && a.date.startsWith(currentYearStr));
+    } else {
+      // All-time
+      filteredActivities = activities;
+    }
+    
+    const lifts = filteredActivities.filter(a => getActivityCategory(a) === 'lifting');
+    const cardioActs = filteredActivities.filter(a => getActivityCategory(a) === 'cardio');
+    const recoveryActs = filteredActivities.filter(a => getActivityCategory(a) === 'recovery');
+    
+    // Calculate breakdowns
+    const calcBreakdown = (acts) => {
+      const breakdown = {};
+      acts.forEach(a => {
+        const key = a.subtype || a.type;
+        breakdown[key] = (breakdown[key] || 0) + 1;
+      });
+      return breakdown;
+    };
+    
     return {
-      workouts: records.totalWorkoutsAllTime,
-      recovery: records.totalRecoveryAllTime,
-      miles: records.totalMilesAllTime,
-      lifting: mockLiftingBreakdown['all-time'],
-      running: mockRunningBreakdown['all-time'],
-      recoveryBreakdown: mockRecoveryBreakdown['all-time']
+      workouts: lifts.length + cardioActs.length,
+      recovery: recoveryActs.length,
+      miles: cardioActs.filter(a => a.type === 'Running').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0),
+      lifting: calcBreakdown(lifts),
+      cardio: calcBreakdown(cardioActs),
+      recoveryBreakdown: calcBreakdown(recoveryActs)
     };
   };
 
@@ -1503,8 +3699,28 @@ const HistoryTab = ({ onShare }) => {
           </div>
           <button
             onClick={onShare}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5"
+            className="px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all duration-150"
             style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
+            onTouchStart={(e) => {
+              e.currentTarget.style.transform = 'scale(0.92)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            }}
+            onTouchEnd={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+            }}
+            onMouseDown={(e) => {
+              e.currentTarget.style.transform = 'scale(0.92)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            }}
+            onMouseUp={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+            }}
           >
             <span>📤</span>
             <span>Share Streaks</span>
@@ -1527,18 +3743,18 @@ const HistoryTab = ({ onShare }) => {
         
         {/* Sub Streaks - 2x2 Grid */}
         <div className="grid grid-cols-2 gap-2">
-          {/* Lifts Streak */}
+          {/* Strength Streak */}
           <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.2)' }}>
             <div className="text-2xl font-black" style={{ color: '#00FF94' }}>🏋️ {streaks.lifts} Weeks</div>
-            <div className="text-sm text-gray-300 mt-1">Lifts</div>
+            <div className="text-sm text-gray-300 mt-1">Strength</div>
             <div className="text-[10px] text-gray-500 mt-1">{goals.liftsPerWeek}+ per week</div>
           </div>
           
-          {/* Runs Streak */}
+          {/* Cardio Streak */}
           <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,149,0,0.1)', border: '1px solid rgba(255,149,0,0.2)' }}>
-            <div className="text-2xl font-black" style={{ color: '#FF9500' }}>🏃 {streaks.runs} Weeks</div>
-            <div className="text-sm text-gray-300 mt-1">Runs</div>
-            <div className="text-[10px] text-gray-500 mt-1">{goals.runsPerWeek}+ per week</div>
+            <div className="text-2xl font-black" style={{ color: '#FF9500' }}>🏃 {streaks.cardio} Weeks</div>
+            <div className="text-sm text-gray-300 mt-1">Cardio</div>
+            <div className="text-[10px] text-gray-500 mt-1">{goals.cardioPerWeek}+ per week</div>
           </div>
           
           {/* Recovery Streak */}
@@ -1558,18 +3774,30 @@ const HistoryTab = ({ onShare }) => {
       </div>
 
       {/* View Toggles */}
-      <div className="mx-4 mb-4 flex gap-2 p-1 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+      <div className="mx-4 mb-4 relative flex gap-2 p-1 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+        {/* Sliding pill indicator */}
+        <div 
+          className="absolute top-1 bottom-1 rounded-lg transition-all duration-300 ease-out"
+          style={{ 
+            backgroundColor: 'rgba(255,255,255,0.1)',
+            width: 'calc((100% - 8px) / 3)',
+            left: view === 'calendar' 
+              ? '4px' 
+              : view === 'stats' 
+                ? 'calc(4px + (100% - 8px) / 3)' 
+                : 'calc(4px + 2 * (100% - 8px) / 3)'
+          }}
+        />
         {[
           { key: 'calendar', label: 'Calendar' },
-          { key: 'records', label: 'My Records' },
-          { key: 'totals', label: 'Stats' }
+          { key: 'stats', label: 'Stats' },
+          { key: 'trends', label: 'Trends' }
         ].map((v) => (
           <button
             key={v.key}
             onClick={() => setView(v.key)}
-            className="flex-1 py-2 rounded-lg text-sm font-medium transition-all duration-200"
+            className="flex-1 py-2 rounded-lg text-sm font-medium transition-colors duration-200 relative z-10"
             style={{ 
-              backgroundColor: view === v.key ? 'rgba(255,255,255,0.1)' : 'transparent',
               color: view === v.key ? 'white' : 'rgba(255,255,255,0.5)'
             }}
           >
@@ -1580,13 +3808,13 @@ const HistoryTab = ({ onShare }) => {
 
       {/* Calendar View */}
       {view === 'calendar' && (
-        <div className="mx-4 mt-2">
+        <div className="mx-4 mt-2 pb-24">
           <div className="mb-4">
             <div className="text-sm font-semibold text-white">Activity Calendar</div>
             <p className="text-[11px] text-gray-500 mt-0.5">Tap any day or week to see details</p>
           </div>
           
-          <div className="text-lg font-bold mb-3">January 2026</div>
+          <div className="text-lg font-bold mb-3">{new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</div>
           
           {/* Week days header with week button column */}
           <div className="flex gap-0.5 mb-1">
@@ -1609,17 +3837,29 @@ const HistoryTab = ({ onShare }) => {
                   key={day.day}
                   onClick={() => {
                     setSelectedDate(day.date);
-                    if (mockCalendarData[day.date]?.length > 0) {
-                      setShowDayModal(true);
+                    if (calendarData[day.date]?.length > 0) {
+                      openDayModal();
+                    } else if (!day.isFuture) {
+                      // Empty day - directly open add activity with this date
+                      onAddActivity && onAddActivity(day.date);
                     }
                   }}
-                  className="flex-1 aspect-square rounded-md flex flex-col items-center justify-center relative transition-all duration-200"
+                  className="flex-1 aspect-square rounded-md flex flex-col items-center justify-center relative transition-all duration-150"
                   style={{
                     backgroundColor: selectedDate === day.date ? 'rgba(0,255,148,0.2)' : 
                                      day.activities.length > 0 ? 'rgba(255,255,255,0.05)' : 'transparent',
                     border: day.isToday ? '2px solid #00FF94' : 'none',
                     opacity: day.isFuture ? 0.3 : 1
                   }}
+                  onTouchStart={(e) => {
+                    if (!day.isFuture) e.currentTarget.style.transform = 'scale(0.92)';
+                  }}
+                  onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                  onMouseDown={(e) => {
+                    if (!day.isFuture) e.currentTarget.style.transform = 'scale(0.92)';
+                  }}
+                  onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                  onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
                 >
                   <span className={`text-[11px] ${day.activities.length > 0 ? 'font-bold' : 'text-gray-500'}`}>
                     {day.day}
@@ -1628,7 +3868,7 @@ const HistoryTab = ({ onShare }) => {
                     <div className="flex gap-0.5 mt-0.5">
                       {day.activities.slice(0, 2).map((a, i) => (
                         <div key={i} className="w-1 h-1 rounded-full"
-                          style={{ backgroundColor: a.type === 'Lifting' ? '#00FF94' : a.type === 'Running' ? '#FF9500' : '#00D1FF' }}
+                          style={{ backgroundColor: a.type === 'Strength Training' ? '#00FF94' : a.type === 'Running' ? '#FF9500' : '#00D1FF' }}
                         />
                       ))}
                     </div>
@@ -1645,8 +3885,28 @@ const HistoryTab = ({ onShare }) => {
                     setSelectedWeek(week);
                     setShowWeekStats(true);
                   }}
-                  className="w-8 h-8 rounded-md flex items-center justify-center text-[10px]"
+                  className="w-8 h-8 rounded-md flex items-center justify-center text-[10px] transition-all duration-150"
                   style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+                  onTouchStart={(e) => {
+                    e.currentTarget.style.transform = 'scale(0.85)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                  }}
+                  onTouchEnd={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                  }}
+                  onMouseDown={(e) => {
+                    e.currentTarget.style.transform = 'scale(0.85)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                  }}
+                  onMouseUp={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                  }}
                 >
                   📊
                 </button>
@@ -1655,17 +3915,28 @@ const HistoryTab = ({ onShare }) => {
                     key={day.day}
                     onClick={() => {
                       setSelectedDate(day.date);
-                      if (mockCalendarData[day.date]?.length > 0) {
-                        setShowDayModal(true);
+                      if (calendarData[day.date]?.length > 0) {
+                        openDayModal();
+                      } else if (!day.isFuture) {
+                        onAddActivity && onAddActivity(day.date);
                       }
                     }}
-                    className="flex-1 aspect-square rounded-md flex flex-col items-center justify-center relative transition-all duration-200"
+                    className="flex-1 aspect-square rounded-md flex flex-col items-center justify-center relative transition-all duration-150"
                     style={{
                       backgroundColor: selectedDate === day.date ? 'rgba(0,255,148,0.2)' : 
                                        day.activities.length > 0 ? 'rgba(255,255,255,0.05)' : 'transparent',
                       border: day.isToday ? '2px solid #00FF94' : 'none',
                       opacity: day.isFuture ? 0.3 : 1
                     }}
+                    onTouchStart={(e) => {
+                      if (!day.isFuture) e.currentTarget.style.transform = 'scale(0.92)';
+                    }}
+                    onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                    onMouseDown={(e) => {
+                      if (!day.isFuture) e.currentTarget.style.transform = 'scale(0.92)';
+                    }}
+                    onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                    onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
                   >
                     <span className={`text-[11px] ${day.activities.length > 0 ? 'font-bold' : 'text-gray-500'}`}>
                       {day.day}
@@ -1674,7 +3945,7 @@ const HistoryTab = ({ onShare }) => {
                       <div className="flex gap-0.5 mt-0.5">
                         {day.activities.slice(0, 2).map((a, i) => (
                           <div key={i} className="w-1 h-1 rounded-full"
-                            style={{ backgroundColor: a.type === 'Lifting' ? '#00FF94' : a.type === 'Running' ? '#FF9500' : '#00D1FF' }}
+                            style={{ backgroundColor: a.type === 'Strength Training' ? '#00FF94' : a.type === 'Running' ? '#FF9500' : '#00D1FF' }}
                           />
                         ))}
                       </div>
@@ -1692,16 +3963,27 @@ const HistoryTab = ({ onShare }) => {
                   key={day.day}
                   onClick={() => {
                     setSelectedDate(day.date);
-                    if (mockCalendarData[day.date]?.length > 0) {
-                      setShowDayModal(true);
+                    if (calendarData[day.date]?.length > 0) {
+                      openDayModal();
+                    } else if (!day.isFuture) {
+                      onAddActivity && onAddActivity(day.date);
                     }
                   }}
-                  className="flex-1 aspect-square rounded-md flex flex-col items-center justify-center relative transition-all duration-200"
+                  className="flex-1 aspect-square rounded-md flex flex-col items-center justify-center relative transition-all duration-150"
                   style={{
                     backgroundColor: selectedDate === day.date ? 'rgba(0,255,148,0.2)' : 
                                      day.activities.length > 0 ? 'rgba(255,255,255,0.05)' : 'transparent',
                     opacity: day.isFuture ? 0.3 : 1
                   }}
+                  onTouchStart={(e) => {
+                    if (!day.isFuture) e.currentTarget.style.transform = 'scale(0.92)';
+                  }}
+                  onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                  onMouseDown={(e) => {
+                    if (!day.isFuture) e.currentTarget.style.transform = 'scale(0.92)';
+                  }}
+                  onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                  onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
                 >
                   <span className={`text-[11px] ${day.activities.length > 0 ? 'font-bold' : 'text-gray-500'}`}>
                     {day.day}
@@ -1724,12 +4006,20 @@ const HistoryTab = ({ onShare }) => {
             </div>
             
             {/* Slider Toggle */}
-            <div className="flex p-1 rounded-lg mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+            <div className="relative flex p-1 rounded-lg mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+              {/* Sliding pill indicator */}
+              <div 
+                className="absolute top-1 bottom-1 rounded-md transition-all duration-300 ease-out"
+                style={{ 
+                  backgroundColor: 'rgba(255,255,255,0.1)',
+                  width: 'calc((100% - 8px) / 2)',
+                  left: compareWeek === 'average' ? '4px' : 'calc(4px + (100% - 8px) / 2)'
+                }}
+              />
               <button
                 onClick={() => setCompareWeek('average')}
-                className="flex-1 py-2 rounded-md text-xs font-medium transition-all"
+                className="flex-1 py-2 rounded-md text-xs font-medium transition-colors duration-200 relative z-10"
                 style={{ 
-                  backgroundColor: compareWeek === 'average' ? 'rgba(255,255,255,0.1)' : 'transparent',
                   color: compareWeek === 'average' ? 'white' : 'rgba(255,255,255,0.5)'
                 }}
               >
@@ -1737,9 +4027,8 @@ const HistoryTab = ({ onShare }) => {
               </button>
               <button
                 onClick={() => setCompareWeek('week-2')}
-                className="flex-1 py-2 rounded-md text-xs font-medium transition-all"
+                className="flex-1 py-2 rounded-md text-xs font-medium transition-colors duration-200 relative z-10"
                 style={{ 
-                  backgroundColor: compareWeek === 'week-2' ? 'rgba(255,255,255,0.1)' : 'transparent',
                   color: compareWeek === 'week-2' ? 'white' : 'rgba(255,255,255,0.5)'
                 }}
               >
@@ -1749,71 +4038,91 @@ const HistoryTab = ({ onShare }) => {
             
             {/* This Week Stats - With comparison arrows */}
             <div className="p-4 rounded-2xl mb-2" style={{ backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.2)' }}>
-              <div className="text-xs text-gray-400 mb-3">This Week (Jan 20-26)</div>
+              <div className="text-xs text-gray-400 mb-3">This Week</div>
               <div className="grid grid-cols-5 gap-2 text-center">
                 <div>
-                  <div className="text-lg font-black" style={{ color: '#00FF94' }}>2</div>
-                  <div className="text-[10px] text-gray-400">🏋️ Lifts</div>
-                  <div className="text-[10px] mt-1" style={{ color: 2 >= (compareWeek === 'average' ? 3 : mockWeeklyStats['week-2']?.lifts || 0) ? '#00FF94' : '#FF453A' }}>
-                    {2 >= (compareWeek === 'average' ? 3 : mockWeeklyStats['week-2']?.lifts || 0) ? '↑' : '↓'}
-                  </div>
+                  <div className="text-lg font-black text-white">{currentWeekStats.lifts}</div>
+                  <div className="text-[10px] text-gray-400">🏋️ Strength</div>
+                  {(() => {
+                    const compare = compareWeek === 'average' ? weeklyStats['average']?.lifts || 0 : weeklyStats['week-2']?.lifts || 0;
+                    if (currentWeekStats.lifts > compare) return <div className="text-[10px] mt-1" style={{ color: '#00FF94' }}>↑</div>;
+                    if (currentWeekStats.lifts < compare) return <div className="text-[10px] mt-1" style={{ color: '#FF453A' }}>↓</div>;
+                    return <div className="text-[10px] mt-1 opacity-0">-</div>;
+                  })()}
                 </div>
                 <div>
-                  <div className="text-lg font-black" style={{ color: '#FF9500' }}>1</div>
-                  <div className="text-[10px] text-gray-400">🏃 Runs</div>
-                  <div className="text-[10px] mt-1" style={{ color: 1 >= (compareWeek === 'average' ? 2 : mockWeeklyStats['week-2']?.runs || 0) ? '#00FF94' : '#FF453A' }}>
-                    {1 >= (compareWeek === 'average' ? 2 : mockWeeklyStats['week-2']?.runs || 0) ? '↑' : '↓'}
-                  </div>
+                  <div className="text-lg font-black text-white">{currentWeekStats.cardio}</div>
+                  <div className="text-[10px] text-gray-400">🏃 Cardio</div>
+                  {(() => {
+                    const compare = compareWeek === 'average' ? weeklyStats['average']?.cardio || 0 : weeklyStats['week-2']?.cardio || 0;
+                    if (currentWeekStats.cardio > compare) return <div className="text-[10px] mt-1" style={{ color: '#00FF94' }}>↑</div>;
+                    if (currentWeekStats.cardio < compare) return <div className="text-[10px] mt-1" style={{ color: '#FF453A' }}>↓</div>;
+                    return <div className="text-[10px] mt-1 opacity-0">-</div>;
+                  })()}
                 </div>
                 <div>
-                  <div className="text-lg font-black" style={{ color: '#00D1FF' }}>{currentWeekStats.recovery}</div>
+                  <div className="text-lg font-black text-white">{currentWeekStats.recovery}</div>
                   <div className="text-[10px] text-gray-400">🧊 Recovery</div>
-                  <div className="text-[10px] mt-1" style={{ color: currentWeekStats.recovery >= (compareWeek === 'average' ? 2 : mockWeeklyStats['week-2']?.recovery || 0) ? '#00FF94' : '#FF453A' }}>
-                    {currentWeekStats.recovery >= (compareWeek === 'average' ? 2 : mockWeeklyStats['week-2']?.recovery || 0) ? '↑' : '↓'}
-                  </div>
+                  {(() => {
+                    const compare = compareWeek === 'average' ? weeklyStats['average']?.recovery || 0 : weeklyStats['week-2']?.recovery || 0;
+                    if (currentWeekStats.recovery > compare) return <div className="text-[10px] mt-1" style={{ color: '#00FF94' }}>↑</div>;
+                    if (currentWeekStats.recovery < compare) return <div className="text-[10px] mt-1" style={{ color: '#FF453A' }}>↓</div>;
+                    return <div className="text-[10px] mt-1 opacity-0">-</div>;
+                  })()}
                 </div>
                 <div>
-                  <div className="text-lg font-black">{(currentWeekStats.calories/1000).toFixed(1)}k</div>
+                  <div className="text-lg font-black text-white">{(currentWeekStats.calories/1000).toFixed(1)}k</div>
                   <div className="text-[10px] text-gray-400">🔥 Cals</div>
-                  <div className="text-[10px] mt-1" style={{ color: currentWeekStats.calories >= (compareWeek === 'average' ? 3500 : mockWeeklyStats['week-2']?.calories || 0) ? '#00FF94' : '#FF453A' }}>
-                    {currentWeekStats.calories >= (compareWeek === 'average' ? 3500 : mockWeeklyStats['week-2']?.calories || 0) ? '↑' : '↓'}
-                  </div>
+                  {(() => {
+                    const compare = compareWeek === 'average' ? weeklyStats['average']?.calories || 0 : weeklyStats['week-2']?.calories || 0;
+                    if (currentWeekStats.calories > compare) return <div className="text-[10px] mt-1" style={{ color: '#00FF94' }}>↑</div>;
+                    if (currentWeekStats.calories < compare) return <div className="text-[10px] mt-1" style={{ color: '#FF453A' }}>↓</div>;
+                    return <div className="text-[10px] mt-1 opacity-0">-</div>;
+                  })()}
                 </div>
                 <div>
-                  <div className="text-lg font-black">{currentWeekStats.miles}</div>
+                  <div className="text-lg font-black text-white">{currentWeekStats.miles.toFixed(1)}</div>
                   <div className="text-[10px] text-gray-400">📍 Miles</div>
-                  <div className="text-[10px] mt-1" style={{ color: currentWeekStats.miles >= (compareWeek === 'average' ? 15 : mockWeeklyStats['week-2']?.miles || 0) ? '#00FF94' : '#FF453A' }}>
-                    {currentWeekStats.miles >= (compareWeek === 'average' ? 15 : mockWeeklyStats['week-2']?.miles || 0) ? '↑' : '↓'}
-                  </div>
+                  {(() => {
+                    const compare = compareWeek === 'average' ? weeklyStats['average']?.miles || 0 : weeklyStats['week-2']?.miles || 0;
+                    if (currentWeekStats.miles > compare) return <div className="text-[10px] mt-1" style={{ color: '#00FF94' }}>↑</div>;
+                    if (currentWeekStats.miles < compare) return <div className="text-[10px] mt-1" style={{ color: '#FF453A' }}>↓</div>;
+                    return <div className="text-[10px] mt-1 opacity-0">-</div>;
+                  })()}
                 </div>
               </div>
             </div>
 
-            {/* Comparison Stats - No arrows */}
+            {/* Comparison Stats - With placeholder for uniform height */}
             <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
               <div className="text-xs text-gray-400 mb-3">
-                {compareWeek === 'average' ? 'Your Average Week' : 'Last Week (Jan 13-19)'}
+                {compareWeek === 'average' ? 'Your Average Week' : 'Last Week'}
               </div>
               <div className="grid grid-cols-5 gap-2 text-center">
                 <div>
-                  <div className="text-lg font-black">{compareWeek === 'average' ? '3' : mockWeeklyStats['week-2']?.lifts || 0}</div>
-                  <div className="text-[10px] text-gray-400">🏋️ Lifts</div>
+                  <div className="text-lg font-black">{compareWeek === 'average' ? weeklyStats['average']?.lifts || 0 : weeklyStats['week-2']?.lifts || 0}</div>
+                  <div className="text-[10px] text-gray-400">🏋️ Strength</div>
+                  <div className="text-[10px] mt-1 opacity-0">-</div>
                 </div>
                 <div>
-                  <div className="text-lg font-black">{compareWeek === 'average' ? '2' : mockWeeklyStats['week-2']?.runs || 0}</div>
-                  <div className="text-[10px] text-gray-400">🏃 Runs</div>
+                  <div className="text-lg font-black">{compareWeek === 'average' ? weeklyStats['average']?.cardio || 0 : weeklyStats['week-2']?.cardio || 0}</div>
+                  <div className="text-[10px] text-gray-400">🏃 Cardio</div>
+                  <div className="text-[10px] mt-1 opacity-0">-</div>
                 </div>
                 <div>
-                  <div className="text-lg font-black">{compareWeek === 'average' ? '2' : mockWeeklyStats['week-2']?.recovery || 0}</div>
+                  <div className="text-lg font-black">{compareWeek === 'average' ? weeklyStats['average']?.recovery || 0 : weeklyStats['week-2']?.recovery || 0}</div>
                   <div className="text-[10px] text-gray-400">🧊 Recovery</div>
+                  <div className="text-[10px] mt-1 opacity-0">-</div>
                 </div>
                 <div>
-                  <div className="text-lg font-black">{compareWeek === 'average' ? '3.5k' : ((mockWeeklyStats['week-2']?.calories || 0)/1000).toFixed(1) + 'k'}</div>
+                  <div className="text-lg font-black">{compareWeek === 'average' ? ((weeklyStats['average']?.calories || 0)/1000).toFixed(1) + 'k' : ((weeklyStats['week-2']?.calories || 0)/1000).toFixed(1) + 'k'}</div>
                   <div className="text-[10px] text-gray-400">🔥 Cals</div>
+                  <div className="text-[10px] mt-1 opacity-0">-</div>
                 </div>
                 <div>
-                  <div className="text-lg font-black">{compareWeek === 'average' ? '15' : mockWeeklyStats['week-2']?.miles || 0}</div>
+                  <div className="text-lg font-black">{compareWeek === 'average' ? weeklyStats['average']?.miles || 0 : weeklyStats['week-2']?.miles || 0}</div>
                   <div className="text-[10px] text-gray-400">📍 Miles</div>
+                  <div className="text-[10px] mt-1 opacity-0">-</div>
                 </div>
               </div>
             </div>
@@ -1822,30 +4131,92 @@ const HistoryTab = ({ onShare }) => {
       )}
 
       {/* Day Stats Modal - Full screen like week review */}
-      {showDayModal && mockCalendarData[selectedDate] && (() => {
-        const dayActivities = mockCalendarData[selectedDate];
-        const lifts = dayActivities.filter(a => a.type === 'Lifting');
-        const runs = dayActivities.filter(a => a.type === 'Running');
-        const recoveryActivities = dayActivities.filter(a => 
-          a.type === 'Cold Plunge' || a.type === 'Sauna' || a.type === 'Yoga'
+      {(showDayModal || dayModalClosing) && calendarData[selectedDate] && (() => {
+        // Get full activity data from activities array (has IDs and all stats)
+        const fullDayActivities = activities.filter(a => a.date === selectedDate);
+        const lifts = fullDayActivities.filter(a => a.type === 'Strength Training');
+        const cardioActivities = fullDayActivities.filter(a => 
+          a.type === 'Running' || a.type === 'Cycle' || a.type === 'Sports'
+        );
+        const recoveryActivities = fullDayActivities.filter(a => 
+          a.type === 'Cold Plunge' || a.type === 'Sauna' || a.type === 'Yoga' || a.type === 'Pilates'
         );
         
         // Format date nicely
-        const dateObj = new Date(selectedDate);
+        const dateObj = new Date(selectedDate + 'T12:00:00');
         const formattedDate = dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
         
-        // Calculate daily totals (mock data)
-        const dayCalories = lifts.length * 380 + runs.length * 320 + recoveryActivities.filter(a => a.type === 'Yoga').length * 120;
-        const daySteps = 8500 + Math.floor(Math.random() * 4000); // Mock daily steps
-        const dayMiles = runs.length > 0 ? (runs.length * 3.2).toFixed(1) : 0;
-        const totalSessions = dayActivities.length;
+        // Calculate daily totals from actual data
+        const dayCalories = fullDayActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+        const dayMiles = fullDayActivities.reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+        const totalSessions = fullDayActivities.length;
         
         return (
-          <div className="fixed inset-0 bg-black/95 z-50 flex flex-col">
+          <div 
+            className="fixed inset-0 z-50 flex flex-col transition-opacity duration-150"
+            style={{ 
+              backgroundColor: 'rgba(0,0,0,0.95)',
+              opacity: dayModalAnimating ? 1 : 0
+            }}
+          >
             <div className="flex items-center justify-between p-4 border-b border-white/10">
-              <button onClick={() => setShowDayModal(false)} className="text-gray-400">← Back</button>
+              <button 
+                onClick={() => closeDayModal()} 
+                className="text-gray-400 transition-all duration-150 px-2 py-1 rounded-lg"
+                onTouchStart={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.9)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                }}
+                onTouchEnd={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
+                onMouseDown={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.9)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                }}
+                onMouseUp={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
+              >
+                ← Back
+              </button>
               <h2 className="font-bold">{formattedDate}</h2>
-              <div className="w-12" />
+              <button 
+                onClick={() => {
+                  closeDayModal();
+                  onAddActivity && onAddActivity(selectedDate);
+                }}
+                className="text-sm font-medium transition-all duration-150 px-2 py-1 rounded-lg"
+                style={{ color: '#00FF94' }}
+                onTouchStart={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.9)';
+                  e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+                }}
+                onTouchEnd={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
+                onMouseDown={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.9)';
+                  e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+                }}
+                onMouseUp={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
+              >
+                + Add
+              </button>
             </div>
             
             <div className="flex-1 overflow-auto p-4">
@@ -1853,11 +4224,11 @@ const HistoryTab = ({ onShare }) => {
               <div className="grid grid-cols-3 gap-2 mb-4">
                 <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
                   <div className="text-2xl font-black" style={{ color: '#00FF94' }}>{lifts.length}</div>
-                  <div className="text-[10px] text-gray-400">🏋️ Lifts</div>
+                  <div className="text-[10px] text-gray-400">🏋️ Strength</div>
                 </div>
                 <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
-                  <div className="text-2xl font-black" style={{ color: '#FF9500' }}>{runs.length}</div>
-                  <div className="text-[10px] text-gray-400">🏃 Runs</div>
+                  <div className="text-2xl font-black" style={{ color: '#FF9500' }}>{cardioActivities.length}</div>
+                  <div className="text-[10px] text-gray-400">🏃 Cardio</div>
                 </div>
                 <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
                   <div className="text-2xl font-black" style={{ color: '#00D1FF' }}>{recoveryActivities.length}</div>
@@ -1874,16 +4245,16 @@ const HistoryTab = ({ onShare }) => {
                     <div className="text-[10px] text-gray-400">Calories Burned</div>
                   </div>
                   <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                    <div className="text-lg font-black">{dayMiles} mi</div>
+                    <div className="text-lg font-black">{dayMiles ? parseFloat(dayMiles).toFixed(1) : 0} mi</div>
                     <div className="text-[10px] text-gray-400">Miles Run</div>
-                  </div>
-                  <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                    <div className="text-lg font-black">{daySteps.toLocaleString()}</div>
-                    <div className="text-[10px] text-gray-400">Steps Taken</div>
                   </div>
                   <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                     <div className="text-lg font-black">{totalSessions}</div>
                     <div className="text-[10px] text-gray-400">Total Sessions</div>
+                  </div>
+                  <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                    <div className="text-lg font-black">{fullDayActivities.reduce((sum, a) => sum + (a.duration || 0), 0)} min</div>
+                    <div className="text-[10px] text-gray-400">Total Duration</div>
                   </div>
                 </div>
               </div>
@@ -1891,53 +4262,67 @@ const HistoryTab = ({ onShare }) => {
               {/* Activities Completed Header */}
               <div className="mb-4">
                 <div className="text-sm font-semibold text-white">💪 Activities Completed</div>
-                <p className="text-[11px] text-gray-500 mt-0.5">All sessions from this day</p>
+                <p className="text-[11px] text-gray-500 mt-0.5">Tap any activity for details</p>
               </div>
 
-              {/* Lifts Section */}
+              {/* Strength Section */}
               {lifts.length > 0 && (
                 <div className="mb-4">
                   <div className="flex items-center gap-2 mb-2">
-                    <span className="text-xs font-medium text-gray-300">🏋️ Lifts</span>
+                    <span className="text-xs font-medium text-gray-300">🏋️ Strength</span>
                   </div>
                   <div className="space-y-2">
-                    {lifts.map((activity, i) => {
-                      const activityStats = mockActivities.find(a => a.type === 'Lifting') || {};
-                      return (
-                        <div key={i} className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(0,255,148,0.05)' }}>
-                          <div className="font-medium text-sm mb-2">{activity.subtype || 'Lifting'}</div>
-                          <div className="flex gap-4 text-xs text-gray-400">
-                            <span>{activityStats.duration || 45} min</span>
-                            <span>{activityStats.calories || 350} cal</span>
-                            <span>♥ {activityStats.avgHr || 120} avg</span>
-                          </div>
+                    {lifts.map((activity, i) => (
+                      <button
+                        key={activity.id || i}
+                        onClick={() => setSelectedDayActivity(activity)}
+                        className="w-full p-3 rounded-xl text-left transition-all duration-150"
+                        style={{ backgroundColor: 'rgba(0,255,148,0.05)' }}
+                        onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.98)'}
+                        onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="font-medium text-sm">{activity.strengthType && activity.focusArea ? `${activity.strengthType} • ${activity.focusArea}` : activity.subtype || 'Strength Training'}</div>
+                          <span className="text-gray-500 text-xs">›</span>
                         </div>
-                      );
-                    })}
+                        <div className="flex gap-4 text-xs text-gray-400">
+                          {activity.duration && <span>{activity.duration} min</span>}
+                          {activity.calories && <span>{activity.calories} cal</span>}
+                          {activity.avgHr && <span>♥ {activity.avgHr}</span>}
+                        </div>
+                      </button>
+                    ))}
                   </div>
                 </div>
               )}
 
-              {/* Runs Section */}
-              {runs.length > 0 && (
+              {/* Cardio Section */}
+              {cardioActivities.length > 0 && (
                 <div className="mb-4">
                   <div className="flex items-center gap-2 mb-2">
-                    <span className="text-xs font-medium text-gray-300">🏃 Runs</span>
+                    <span className="text-xs font-medium text-gray-300">🏃 Cardio</span>
                   </div>
                   <div className="space-y-2">
-                    {runs.map((activity, i) => {
-                      const activityStats = mockActivities.find(a => a.type === 'Running') || {};
-                      return (
-                        <div key={i} className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,149,0,0.05)' }}>
-                          <div className="font-medium text-sm mb-2">{activity.subtype || 'Running'}</div>
-                          <div className="flex gap-4 text-xs text-gray-400">
-                            <span>{activityStats.distance || 3.0} mi</span>
-                            <span>{activityStats.duration || 30} min</span>
-                            <span>{activityStats.calories || 300} cal</span>
-                          </div>
+                    {cardioActivities.map((activity, i) => (
+                      <button
+                        key={activity.id || i}
+                        onClick={() => setSelectedDayActivity(activity)}
+                        className="w-full p-3 rounded-xl text-left transition-all duration-150"
+                        style={{ backgroundColor: 'rgba(255,149,0,0.05)' }}
+                        onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.98)'}
+                        onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="font-medium text-sm">{activity.subtype || activity.type}</div>
+                          <span className="text-gray-500 text-xs">›</span>
                         </div>
-                      );
-                    })}
+                        <div className="flex gap-4 text-xs text-gray-400">
+                          {activity.distance && <span>{activity.distance} mi</span>}
+                          {activity.duration && <span>{activity.duration} min</span>}
+                          {activity.calories && <span>{activity.calories} cal</span>}
+                        </div>
+                      </button>
+                    ))}
                   </div>
                 </div>
               )}
@@ -1950,29 +4335,23 @@ const HistoryTab = ({ onShare }) => {
                   </div>
                   <div className="space-y-2">
                     {recoveryActivities.map((activity, i) => (
-                      <div key={i} className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(0,209,255,0.05)' }}>
-                        <div className="font-medium text-sm mb-2">{activity.type}</div>
-                        <div className="flex gap-4 text-xs text-gray-400">
-                          {activity.type === 'Cold Plunge' && (
-                            <>
-                              <span>5 min</span>
-                              <span>45°F</span>
-                            </>
-                          )}
-                          {activity.type === 'Sauna' && (
-                            <>
-                              <span>20 min</span>
-                              <span>180°F</span>
-                            </>
-                          )}
-                          {activity.type === 'Yoga' && (
-                            <>
-                              <span>45 min</span>
-                              <span>120 cal</span>
-                            </>
-                          )}
+                      <button
+                        key={activity.id || i}
+                        onClick={() => setSelectedDayActivity(activity)}
+                        className="w-full p-3 rounded-xl text-left transition-all duration-150"
+                        style={{ backgroundColor: 'rgba(0,209,255,0.05)' }}
+                        onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.98)'}
+                        onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="font-medium text-sm">{activity.subtype ? `${activity.type} • ${activity.subtype}` : activity.type}</div>
+                          <span className="text-gray-500 text-xs">›</span>
                         </div>
-                      </div>
+                        <div className="flex gap-4 text-xs text-gray-400">
+                          {activity.duration && <span>{activity.duration} min</span>}
+                          {activity.calories && <span>{activity.calories} cal</span>}
+                        </div>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -1983,280 +4362,399 @@ const HistoryTab = ({ onShare }) => {
       })()}
 
       {/* Records View */}
-      {view === 'records' && (
-        <div className="mx-4 mt-2 space-y-6">
-          {/* Hall of Fame Header */}
-          <div className="mb-4">
-            <div className="text-sm font-semibold text-white">Hall of Fame</div>
-            <p className="text-[11px] text-gray-500 mt-0.5">Your personal bests</p>
-          </div>
-
-          {/* Streaks Section */}
-          <div>
-            <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">🔥 Streak Records</div>
-            <div className="space-y-2">
-              <div className="p-4 rounded-2xl flex items-center justify-between" style={{ background: 'linear-gradient(135deg, rgba(255,215,0,0.15) 0%, rgba(255,149,0,0.1) 100%)', border: '1px solid rgba(255,215,0,0.3)' }}>
-                <div>
-                  <div className="text-sm text-gray-400">🏆 Longest Master Streak</div>
-                  <div className="text-2xl font-black" style={{ color: '#FFD700' }}>{records.longestMasterStreak} weeks</div>
-                </div>
-                <span className="text-3xl">🏆</span>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.2)' }}>
-                  <div className="text-xs text-gray-400">🏋️ Longest Lifts Streak</div>
-                  <div className="text-xl font-black" style={{ color: '#00FF94' }}>{records.longestLiftStreak} weeks</div>
-                </div>
-                <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,149,0,0.1)', border: '1px solid rgba(255,149,0,0.2)' }}>
-                  <div className="text-xs text-gray-400">🏃 Longest Runs Streak</div>
-                  <div className="text-xl font-black" style={{ color: '#FF9500' }}>{records.longestWorkoutStreak} weeks</div>
-                </div>
-                <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(0,209,255,0.1)', border: '1px solid rgba(0,209,255,0.2)' }}>
-                  <div className="text-xs text-gray-400">🧊 Longest Recovery Streak</div>
-                  <div className="text-xl font-black" style={{ color: '#00D1FF' }}>{records.longestRecoveryStreak} weeks</div>
-                </div>
-                <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(191,90,242,0.1)', border: '1px solid rgba(191,90,242,0.2)' }}>
-                  <div className="text-xs text-gray-400">👟 Longest Steps Streak</div>
-                  <div className="text-xl font-black" style={{ color: '#BF5AF2' }}>12 weeks</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Activities Section */}
-          <div>
-            <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">💪 Activity Records</div>
-            <div className="space-y-2">
-              {/* Lifting */}
-              <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(0,255,148,0.05)' }}>
-                <div className="flex items-center gap-2 mb-2">
-                  <span>🏋️</span>
-                  <span className="text-xs text-gray-400 uppercase tracking-wider">Lifting</span>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <div className="text-[10px] text-gray-500">Most Lifts (Week)</div>
-                    <div className="text-lg font-black">{records.mostLiftsWeek}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-gray-500">Most Calories (Single)</div>
-                    <div className="text-lg font-black">{records.highestLiftCalories}</div>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Running */}
-              <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,149,0,0.05)' }}>
-                <div className="flex items-center gap-2 mb-2">
-                  <span>🏃</span>
-                  <span className="text-xs text-gray-400 uppercase tracking-wider">Running</span>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <div className="text-[10px] text-gray-500">Fastest Mile</div>
-                    <div className="text-lg font-black" style={{ color: '#FF9500' }}>{records.fastestMile}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-gray-500">Longest Run</div>
-                    <div className="text-lg font-black">{records.longestRun} mi</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-gray-500">Most Miles (Week)</div>
-                    <div className="text-lg font-black">{records.mostMilesWeek} mi</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-gray-500">Most Runs (Week)</div>
-                    <div className="text-lg font-black">{records.mostRunsWeek}</div>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Recovery */}
-              <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(0,209,255,0.05)' }}>
-                <div className="flex items-center gap-2 mb-2">
-                  <span>🧊</span>
-                  <span className="text-xs text-gray-400 uppercase tracking-wider">Recovery</span>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <div className="text-[10px] text-gray-500">Most Sessions (Week)</div>
-                    <div className="text-lg font-black" style={{ color: '#00D1FF' }}>{records.mostRecoveryWeek}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-gray-500">Longest Cold Plunge</div>
-                    <div className="text-lg font-black">{records.longestColdPlunge} min</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-gray-500">Coldest Plunge</div>
-                    <div className="text-lg font-black">{records.coldestPlunge}°F</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-gray-500">Longest Sauna</div>
-                    <div className="text-lg font-black">{records.mostSaunaMinutes} min</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Daily Bests Section */}
-          <div>
-            <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">📈 Daily Bests</div>
-            <div className="space-y-2">
-              {/* Steps */}
-              <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(191,90,242,0.05)' }}>
-                <div className="flex items-center gap-2 mb-2">
-                  <span>👟</span>
-                  <span className="text-xs text-gray-400 uppercase tracking-wider">Steps</span>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <div className="text-[10px] text-gray-500">Most Steps (Day)</div>
-                    <div className="text-lg font-black" style={{ color: '#BF5AF2' }}>{records.mostStepsDay.toLocaleString()}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-gray-500">Most Steps (Week)</div>
-                    <div className="text-lg font-black">{records.mostStepsWeek.toLocaleString()}</div>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Calories */}
-              <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-                <div className="flex items-center gap-2 mb-2">
-                  <span>🔥</span>
-                  <span className="text-xs text-gray-400 uppercase tracking-wider">Calories Burned</span>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <div className="text-[10px] text-gray-500">Most Burned (Day)</div>
-                    <div className="text-lg font-black">{records.mostCaloriesDay.toLocaleString()}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-gray-500">Most Burned (Week)</div>
-                    <div className="text-lg font-black">{records.mostCaloriesWeek.toLocaleString()}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Totals View */}
-      {view === 'totals' && (
+      {/* Stats View (with mini-toggle for Overview/Records) */}
+      {view === 'stats' && (
         <div className="mx-4 mt-2">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <div className="text-sm font-semibold text-white">Your Stats</div>
-              <p className="text-[11px] text-gray-500 mt-0.5">Your totals over time</p>
-            </div>
-            <select
-              value={totalsView}
-              onChange={(e) => setTotalsView(e.target.value)}
-              className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-xs"
+          {/* Mini Toggle */}
+          <div className="relative flex gap-2 p-1 rounded-xl mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+            {/* Sliding pill indicator */}
+            <div 
+              className="absolute top-1 bottom-1 rounded-lg transition-all duration-300 ease-out"
+              style={{ 
+                backgroundColor: 'rgba(255,255,255,0.1)',
+                width: 'calc((100% - 8px) / 2)',
+                left: statsSubView === 'overview' ? '4px' : 'calc(4px + (100% - 8px) / 2)'
+              }}
+            />
+            <button
+              onClick={() => setStatsSubView('overview')}
+              className="flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors duration-200 relative z-10"
+              style={{ 
+                color: statsSubView === 'overview' ? 'white' : 'rgba(255,255,255,0.5)'
+              }}
             >
-              <option value="2026" className="bg-black">2026</option>
-              <option value="all-time" className="bg-black">All-Time</option>
-            </select>
-          </div>
-          
-          {/* Main Stats Grid */}
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            <div className="p-4 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(0,255,148,0.2) 0%, rgba(0,255,148,0.05) 100%)' }}>
-              <div className="text-4xl font-black" style={{ color: '#00FF94' }}>{totalsData.lifting?.Upper + totalsData.lifting?.Lower + totalsData.lifting?.Legs + totalsData.lifting?.Chest || 12}</div>
-              <div className="text-sm text-gray-400">🏋️ Lifts</div>
-            </div>
-            <div className="p-4 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(255,149,0,0.2) 0%, rgba(255,149,0,0.05) 100%)' }}>
-              <div className="text-4xl font-black" style={{ color: '#FF9500' }}>{totalsData.running?.Easy + totalsData.running?.Long + totalsData.running?.Tempo || 8}</div>
-              <div className="text-sm text-gray-400">🏃 Runs</div>
-            </div>
-            <div className="p-4 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(0,209,255,0.2) 0%, rgba(0,209,255,0.05) 100%)' }}>
-              <div className="text-4xl font-black" style={{ color: '#00D1FF' }}>{totalsData.recovery}</div>
-              <div className="text-sm text-gray-400">🧊 Recovery</div>
-            </div>
-            <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              <div className="text-4xl font-black">{totalsData.miles}</div>
-              <div className="text-sm text-gray-400">📍 Miles Run</div>
-            </div>
+              Overview
+            </button>
+            <button
+              onClick={() => setStatsSubView('records')}
+              className="flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors duration-200 relative z-10"
+              style={{ 
+                color: statsSubView === 'records' ? 'white' : 'rgba(255,255,255,0.5)'
+              }}
+            >
+              My Records
+            </button>
           </div>
 
-          {/* Lifting Breakdown */}
-          <div className="mb-6">
-            <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">🏋️ Lifting Breakdown</div>
-            <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              <div className="space-y-2">
-                {Object.entries(totalsData.lifting).map(([type, count]) => (
-                  <div key={type} className="flex items-center justify-between">
-                    <span className="text-gray-400">{type}</span>
-                    <span className="font-bold">{count}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Running Breakdown */}
-          <div className="mb-6">
-            <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">🏃 Running Breakdown</div>
-            <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              <div className="space-y-2">
-                {Object.entries(totalsData.running).map(([type, count]) => (
-                  <div key={type} className="flex items-center justify-between">
-                    <span className="text-gray-400">{type}</span>
-                    <span className="font-bold">{count}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Recovery Breakdown */}
-          <div className="mb-6">
-            <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">🧊 Recovery Breakdown</div>
-            <div className="space-y-2">
-              {Object.entries(totalsData.recoveryBreakdown).map(([type, count]) => (
-                <div key={type} className="p-3 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="flex items-center gap-3">
-                    <span className="text-xl">{type === 'Cold Plunge' ? '🧊' : type === 'Sauna' ? '🔥' : '🧘'}</span>
-                    <span>{type}</span>
-                  </div>
-                  <span className="font-bold">{count}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {totalsView === '2026' && (
+          {/* Overview Sub-View */}
+          {statsSubView === 'overview' && (
             <>
-              <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">January Highlights</div>
-              <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                <div className="space-y-3">
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Best Week</span>
-                    <span className="font-bold">Week 2 (5 workouts)</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Most Consistent</span>
-                    <span className="font-bold">Lifting</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Longest Run</span>
-                    <span className="font-bold">6.2 mi (Jan 12)</span>
-                  </div>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <div className="text-sm font-semibold text-white">Your Stats</div>
+                  <p className="text-[11px] text-gray-500 mt-0.5">Your totals over time</p>
                 </div>
+                <select
+                  value={totalsView}
+                  onChange={(e) => setTotalsView(e.target.value)}
+                  className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-xs"
+                >
+                  <option value="this-month" className="bg-black">This Month</option>
+                  <option value="last-month" className="bg-black">Last Month</option>
+                  <option value={String(getCurrentYear())} className="bg-black">{getCurrentYear()}</option>
+                  <option value="all-time" className="bg-black">All-Time</option>
+                  <optgroup label="Past Months" className="bg-black">
+                    {monthOptions.slice(2).map(opt => (
+                      <option key={opt.value} value={opt.value} className="bg-black">{opt.label}</option>
+                    ))}
+                  </optgroup>
+                </select>
+              </div>
+              
+              {/* Main Stats Grid */}
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="p-4 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(0,255,148,0.2) 0%, rgba(0,255,148,0.05) 100%)' }}>
+                  <div className="text-4xl font-black" style={{ color: '#00FF94' }}>{Object.values(totalsData.lifting || {}).reduce((a, b) => a + b, 0)}</div>
+                  <div className="text-sm text-gray-400">🏋️ Strength</div>
+                </div>
+                <div className="p-4 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(255,149,0,0.2) 0%, rgba(255,149,0,0.05) 100%)' }}>
+                  <div className="text-4xl font-black" style={{ color: '#FF9500' }}>{Object.values(totalsData.cardio || {}).reduce((a, b) => a + b, 0)}</div>
+                  <div className="text-sm text-gray-400">🏃 Cardio</div>
+                </div>
+                <div className="p-4 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(0,209,255,0.2) 0%, rgba(0,209,255,0.05) 100%)' }}>
+                  <div className="text-4xl font-black" style={{ color: '#00D1FF' }}>{totalsData.recovery}</div>
+                  <div className="text-sm text-gray-400">🧊 Recovery</div>
+                </div>
+                <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  <div className="text-4xl font-black">{totalsData.miles.toFixed(1)}</div>
+                  <div className="text-sm text-gray-400">📍 Miles Run</div>
+                </div>
+              </div>
+
+              {/* Strength Breakdown */}
+              <div className="mb-6">
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">🏋️ Strength Breakdown</div>
+                <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  {Object.keys(totalsData.lifting || {}).length > 0 ? (
+                    <div className="space-y-2">
+                      {Object.entries(totalsData.lifting).map(([type, count]) => (
+                        <div key={type} className="flex items-center justify-between">
+                          <span className="text-gray-400">{type}</span>
+                          <span className="font-bold">{count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-sm text-center">No strength training logged yet</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Cardio Breakdown */}
+              <div className="mb-6">
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">🏃 Cardio Breakdown</div>
+                <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  {Object.keys(totalsData.cardio || {}).length > 0 ? (
+                    <div className="space-y-2">
+                      {Object.entries(totalsData.cardio).map(([type, count]) => (
+                        <div key={type} className="flex items-center justify-between">
+                          <span className="text-gray-400">{type}</span>
+                          <span className="font-bold">{count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-sm text-center">No runs logged yet</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Recovery Breakdown */}
+              <div className="mb-6">
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">🧊 Recovery Breakdown</div>
+                {Object.keys(totalsData.recoveryBreakdown || {}).length > 0 ? (
+                  <div className="space-y-2">
+                    {Object.entries(totalsData.recoveryBreakdown).map(([type, count]) => (
+                      <div key={type} className="p-3 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xl">{type === 'Cold Plunge' ? '🧊' : type === 'Sauna' ? '🔥' : type === 'Pilates' ? '🤸' : '🧘'}</span>
+                          <span>{type}</span>
+                        </div>
+                        <span className="font-bold">{count}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                    <p className="text-gray-500 text-sm text-center">No recovery sessions logged yet</p>
+                  </div>
+                )}
               </div>
             </>
           )}
+
+          {/* Records Sub-View */}
+          {statsSubView === 'records' && (
+            <div className="space-y-6">
+              {/* Hall of Fame Header */}
+              <div className="mb-4">
+                <div className="text-sm font-semibold text-white">Hall of Fame</div>
+                <p className="text-[11px] text-gray-500 mt-0.5">Your personal bests</p>
+              </div>
+
+              {/* Streaks Section */}
+              <div>
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">🔥 Streak Records</div>
+                <div className="space-y-2">
+                  <div className="p-4 rounded-2xl flex items-center justify-between" style={{ background: 'linear-gradient(135deg, rgba(255,215,0,0.15) 0%, rgba(255,149,0,0.1) 100%)', border: '1px solid rgba(255,215,0,0.3)' }}>
+                    <div>
+                      <div className="text-sm text-gray-400">🏆 Longest Master Streak</div>
+                      <div className="text-2xl font-black" style={{ color: records.longestMasterStreak ? '#FFD700' : 'rgba(255,255,255,0.3)' }}>
+                        {records.longestMasterStreak ? `${records.longestMasterStreak} weeks` : '—'}
+                      </div>
+                    </div>
+                    <span className="text-3xl">🏆</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.2)' }}>
+                      <div className="text-xs text-gray-400">🏋️ Strength Streak</div>
+                      <div className="text-xl font-black" style={{ color: records.longestStrengthStreak ? '#00FF94' : 'rgba(255,255,255,0.3)' }}>
+                        {records.longestStrengthStreak ? `${records.longestStrengthStreak} weeks` : '—'}
+                      </div>
+                    </div>
+                    <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,149,0,0.1)', border: '1px solid rgba(255,149,0,0.2)' }}>
+                      <div className="text-xs text-gray-400">🏃 Cardio Streak</div>
+                      <div className="text-xl font-black" style={{ color: records.longestCardioStreak ? '#FF9500' : 'rgba(255,255,255,0.3)' }}>
+                        {records.longestCardioStreak ? `${records.longestCardioStreak} weeks` : '—'}
+                      </div>
+                    </div>
+                    <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(0,209,255,0.1)', border: '1px solid rgba(0,209,255,0.2)' }}>
+                      <div className="text-xs text-gray-400">🧊 Recovery Streak</div>
+                      <div className="text-xl font-black" style={{ color: records.longestRecoveryStreak ? '#00D1FF' : 'rgba(255,255,255,0.3)' }}>
+                        {records.longestRecoveryStreak ? `${records.longestRecoveryStreak} weeks` : '—'}
+                      </div>
+                    </div>
+                    <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                      <div className="text-xs text-gray-400">📊 Current Master</div>
+                      <div className="text-xl font-black" style={{ color: streaks.master ? 'white' : 'rgba(255,255,255,0.3)' }}>
+                        {streaks.master ? `${streaks.master} weeks` : '—'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Single Workout Records */}
+              <div>
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">💪 Single Workout Records</div>
+                <div className="space-y-2">
+                  {/* Highest Calories */}
+                  <div className="p-3 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(255,149,0,0.05)' }}>
+                    <div>
+                      <div className="text-[10px] text-gray-500">🔥 Highest Calories Burned</div>
+                      <div className="text-xl font-black" style={{ color: getRecordValue(records.highestCalories) ? '#FF9500' : 'rgba(255,255,255,0.3)' }}>
+                        {getRecordValue(records.highestCalories) 
+                          ? `${getRecordValue(records.highestCalories)} cal` 
+                          : '—'}
+                      </div>
+                      {getRecordType(records.highestCalories) && (
+                        <div className="text-[10px] text-gray-600">{getRecordType(records.highestCalories)}</div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* Longest Workout */}
+                  <div className="p-3 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(0,255,148,0.05)' }}>
+                    <div>
+                      <div className="text-[10px] text-gray-500">💪 Longest Workout</div>
+                      <div className="text-xl font-black" style={{ color: getRecordValue(records.longestWorkout) ? '#00FF94' : 'rgba(255,255,255,0.3)' }}>
+                        {getRecordValue(records.longestWorkout) ? (() => {
+                          const duration = getRecordValue(records.longestWorkout);
+                          const hours = Math.floor(duration / 60);
+                          const mins = duration % 60;
+                          return hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
+                        })() : '—'}
+                      </div>
+                      {getRecordType(records.longestWorkout) && (
+                        <div className="text-[10px] text-gray-600">{getRecordType(records.longestWorkout)}</div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* Longest Strength */}
+                  <div className="p-3 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(0,255,148,0.05)' }}>
+                    <div>
+                      <div className="text-[10px] text-gray-500">🏋️ Longest Strength Session</div>
+                      <div className="text-xl font-black" style={{ color: getRecordValue(records.longestStrength) ? '#00FF94' : 'rgba(255,255,255,0.3)' }}>
+                        {getRecordValue(records.longestStrength) ? (() => {
+                          const duration = getRecordValue(records.longestStrength);
+                          const hours = Math.floor(duration / 60);
+                          const mins = duration % 60;
+                          return hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
+                        })() : '—'}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Longest Cardio */}
+                  <div className="p-3 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(255,149,0,0.05)' }}>
+                    <div>
+                      <div className="text-[10px] text-gray-500">🏃 Longest Cardio Session</div>
+                      <div className="text-xl font-black" style={{ color: getRecordValue(records.longestCardio) ? '#FF9500' : 'rgba(255,255,255,0.3)' }}>
+                        {getRecordValue(records.longestCardio) ? (() => {
+                          const duration = getRecordValue(records.longestCardio);
+                          const hours = Math.floor(duration / 60);
+                          const mins = duration % 60;
+                          return hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
+                        })() : '—'}
+                      </div>
+                      {getRecordType(records.longestCardio) && (
+                        <div className="text-[10px] text-gray-600">{getRecordType(records.longestCardio)}</div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* Longest Distance */}
+                  <div className="p-3 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(255,149,0,0.05)' }}>
+                    <div>
+                      <div className="text-[10px] text-gray-500">📍 Longest Distance</div>
+                      <div className="text-xl font-black" style={{ color: getRecordValue(records.longestDistance) ? '#FF9500' : 'rgba(255,255,255,0.3)' }}>
+                        {getRecordValue(records.longestDistance) 
+                          ? `${parseFloat(getRecordValue(records.longestDistance)).toFixed(1)} mi` 
+                          : '—'}
+                      </div>
+                      {getRecordType(records.longestDistance) && (
+                        <div className="text-[10px] text-gray-600">{getRecordType(records.longestDistance)}</div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* Fastest Pace */}
+                  <div className="p-3 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(255,149,0,0.05)' }}>
+                    <div>
+                      <div className="text-[10px] text-gray-500">⚡ Fastest Pace</div>
+                      <div className="text-xl font-black" style={{ color: getRecordValue(records.fastestPace) ? '#FF9500' : 'rgba(255,255,255,0.3)' }}>
+                        {getRecordValue(records.fastestPace) ? (() => {
+                          const pace = getRecordValue(records.fastestPace);
+                          const paceMin = Math.floor(pace);
+                          const paceSec = Math.round((pace - paceMin) * 60);
+                          return `${paceMin}:${paceSec.toString().padStart(2, '0')}/mi`;
+                        })() : '—'}
+                      </div>
+                      {getRecordType(records.fastestPace) && (
+                        <div className="text-[10px] text-gray-600">{getRecordType(records.fastestPace)}</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Weekly Records */}
+              <div>
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">📅 Weekly Records</div>
+                <div className="space-y-2">
+                  {/* Most Workouts */}
+                  <div className="p-3 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                    <div>
+                      <div className="text-[10px] text-gray-500">🎯 Most Workouts in a Week</div>
+                      <div className="text-xl font-black" style={{ color: records.mostWorkoutsWeek ? 'white' : 'rgba(255,255,255,0.3)' }}>
+                        {records.mostWorkoutsWeek || '—'}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Most Calories */}
+                  <div className="p-3 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(255,149,0,0.05)' }}>
+                    <div>
+                      <div className="text-[10px] text-gray-500">🔥 Most Calories in a Week</div>
+                      <div className="text-xl font-black" style={{ color: records.mostCaloriesWeek ? '#FF9500' : 'rgba(255,255,255,0.3)' }}>
+                        {records.mostCaloriesWeek ? `${records.mostCaloriesWeek.toLocaleString()} cal` : '—'}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Most Miles */}
+                  <div className="p-3 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(255,149,0,0.05)' }}>
+                    <div>
+                      <div className="text-[10px] text-gray-500">🏃 Most Miles in a Week</div>
+                      <div className="text-xl font-black" style={{ color: records.mostMilesWeek ? '#FF9500' : 'rgba(255,255,255,0.3)' }}>
+                        {records.mostMilesWeek ? `${parseFloat(records.mostMilesWeek).toFixed(1)} mi` : '—'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
+      )}
+
+      {/* Trends View */}
+      {view === 'trends' && (
+        <TrendsView activities={activities} calendarData={calendarData} />
       )}
 
       {/* Week Stats Modal */}
       <WeekStatsModal 
         isOpen={showWeekStats}
         onClose={() => setShowWeekStats(false)}
-        weekData={selectedWeek ? mockWeeklyStats[selectedWeek.id] : null}
+        weekData={selectedWeek ? (() => {
+          // Calculate week data from calendarData
+          const weekActivities = [];
+          let currentDate = new Date(selectedWeek.startDate);
+          const endDate = new Date(selectedWeek.endDate);
+          
+          while (currentDate <= endDate) {
+            const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
+            const dayActivities = calendarData[dateStr] || [];
+            dayActivities.forEach(a => {
+              weekActivities.push({ ...a, date: dateStr });
+            });
+            currentDate.setDate(currentDate.getDate() + 1);
+          }
+          
+          const lifts = weekActivities.filter(a => a.type === 'Strength Training');
+          const cardioArr = weekActivities.filter(a => ['Running', 'Cycle', 'Sports'].includes(a.type));
+          const recoveryArr = weekActivities.filter(a => ['Cold Plunge', 'Sauna', 'Yoga'].includes(a.type));
+          const miles = cardioArr.filter(a => a.type === 'Running').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+          
+          return {
+            lifts: lifts.length,
+            cardio: cardioArr.length,
+            recovery: recoveryArr.length,
+            calories: 0,
+            steps: 0,
+            miles: miles,
+            activities: weekActivities,
+            goalsMet: lifts.length >= goals.liftsPerWeek && cardioArr.length >= goals.cardioPerWeek && recoveryArr.length >= goals.recoveryPerWeek
+          };
+        })() : null}
         weekLabel={selectedWeek?.label || ''}
+      />
+
+      {/* Activity Detail Modal for calendar day view */}
+      <ActivityDetailModal
+        isOpen={!!selectedDayActivity}
+        onClose={() => setSelectedDayActivity(null)}
+        activity={selectedDayActivity}
+        onDelete={(id) => {
+          onDeleteActivity && onDeleteActivity(id);
+          setSelectedDayActivity(null);
+        }}
+        onEdit={(activity) => {
+          onEditActivity && onEditActivity(activity);
+          setSelectedDayActivity(null);
+        }}
       />
     </div>
   );
@@ -2265,37 +4763,618 @@ const HistoryTab = ({ onShare }) => {
 // Main App
 export default function StreakdApp() {
   const [isOnboarded, setIsOnboarded] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('home');
   const [showAddActivity, setShowAddActivity] = useState(false);
   const [pendingActivity, setPendingActivity] = useState(null);
+  const [defaultActivityDate, setDefaultActivityDate] = useState(null);
   const [showShare, setShowShare] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
   const [celebrationMessage, setCelebrationMessage] = useState('');
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [historyView, setHistoryView] = useState('calendar');
+  const [historyStatsSubView, setHistoryStatsSubView] = useState('overview');
+  
+  // Navigate to Hall of Fame
+  const navigateToHallOfFame = () => {
+    setActiveTab('history');
+    setHistoryView('stats');
+    setHistoryStatsSubView('records');
+  };
+  
+  // Simulate initial load
+  useEffect(() => {
+    const timer = setTimeout(() => setIsLoading(false), 800);
+    return () => clearTimeout(timer);
+  }, []);
+  
+  // Real state management
+  const [activities, setActivities] = useState(initialActivities);
+  const [calendarData, setCalendarData] = useState(initialCalendarData);
+  const [weeklyProgress, setWeeklyProgress] = useState(initialWeeklyProgress);
+  const [userData, setUserData] = useState(initialUserData);
 
-  const handleAddActivity = (pending = null) => {
-    setPendingActivity(pending);
+  // Helper to determine effective category of an activity
+  const getActivityCategory = (activity) => {
+    // If countToward is set (for Yoga/Pilates), use that
+    if (activity.countToward) {
+      return activity.countToward;
+    }
+    // Default categorization
+    if (activity.type === 'Strength Training') return 'lifting';
+    if (['Running', 'Cycle', 'Sports'].includes(activity.type)) return 'cardio';
+    if (['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
+    return 'other';
+  };
+
+  // Calculate weekly progress from activities
+  const calculateWeeklyProgress = (allActivities) => {
+    const today = new Date();
+    today.setHours(23, 59, 59, 999); // End of today to include activities from today
+    const startOfWeek = new Date(today);
+    startOfWeek.setDate(today.getDate() - today.getDay()); // Sunday
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const weekActivities = allActivities.filter(a => {
+      const actDate = parseLocalDate(a.date);
+      return actDate >= startOfWeek && actDate <= today;
+    });
+
+    // Categorize using the helper (respects countToward)
+    const lifts = weekActivities.filter(a => getActivityCategory(a) === 'lifting');
+    const cardio = weekActivities.filter(a => getActivityCategory(a) === 'cardio');
+    const recovery = weekActivities.filter(a => getActivityCategory(a) === 'recovery');
+    
+    // For breakdown, use actual activity types
+    const running = weekActivities.filter(a => a.type === 'Running');
+    const cycling = weekActivities.filter(a => a.type === 'Cycle');
+    const sports = weekActivities.filter(a => a.type === 'Sports');
+    const coldPlunge = weekActivities.filter(a => a.type === 'Cold Plunge');
+    const sauna = weekActivities.filter(a => a.type === 'Sauna');
+    const yoga = weekActivities.filter(a => a.type === 'Yoga');
+    const pilates = weekActivities.filter(a => a.type === 'Pilates');
+    
+    const totalMiles = running.reduce((sum, r) => sum + (parseFloat(r.distance) || 0), 0);
+    
+    return {
+      lifts: { 
+        completed: lifts.length, 
+        goal: userData.goals.liftsPerWeek, 
+        sessions: lifts.map(l => l.subtype || l.type) 
+      },
+      cardio: { 
+        completed: cardio.length, 
+        goal: userData.goals.cardioPerWeek, 
+        miles: totalMiles,
+        sessions: cardio.map(c => c.type),
+        breakdown: {
+          running: running.length,
+          cycling: cycling.length,
+          sports: sports.length
+        }
+      },
+      recovery: { 
+        completed: recovery.length, 
+        goal: userData.goals.recoveryPerWeek, 
+        sessions: recovery.map(r => r.type),
+        breakdown: {
+          coldPlunge: coldPlunge.length,
+          sauna: sauna.length,
+          yoga: yoga.length,
+          pilates: pilates.length
+        }
+      },
+      calories: { burned: 0, goal: userData.goals.caloriesPerWeek },
+      steps: { today: 0, goal: userData.goals.stepsPerDay }
+    };
+  };
+
+  const handleAddActivity = (pendingOrDate = null) => {
+    // If it's a string (date), set the default date
+    if (typeof pendingOrDate === 'string') {
+      setDefaultActivityDate(pendingOrDate);
+      setPendingActivity(null);
+    } else {
+      // It's a pending activity object or null
+      setPendingActivity(pendingOrDate);
+      setDefaultActivityDate(null);
+    }
     setShowAddActivity(true);
   };
 
   const handleActivitySaved = (activity) => {
-    console.log('Saved:', activity);
-    // Trigger celebration for completing a goal (simulated)
-    if (activity.type === 'Lifting') {
-      setCelebrationMessage('Week Streakd! 🔥');
+    // Check if this is an edit (activity has existing ID) or new activity
+    const isEdit = activity.id && activities.some(a => a.id === activity.id);
+    
+    let newActivity;
+    let updatedActivities;
+    
+    if (isEdit) {
+      // Update existing activity
+      newActivity = {
+        ...activity,
+        time: activity.time || new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+      };
+      updatedActivities = activities.map(a => a.id === activity.id ? newActivity : a);
+      
+      // Also update calendar data - remove old entry and add updated one
+      const updatedCalendar = { ...calendarData };
+      // Remove from old date if date changed
+      Object.keys(updatedCalendar).forEach(dateKey => {
+        updatedCalendar[dateKey] = updatedCalendar[dateKey].filter(a => 
+          !(a.type === activity.type && a.subtype === activity.subtype)
+        );
+        if (updatedCalendar[dateKey].length === 0) {
+          delete updatedCalendar[dateKey];
+        }
+      });
+      // Add to new/current date
+      if (!updatedCalendar[activity.date]) {
+        updatedCalendar[activity.date] = [];
+      }
+      updatedCalendar[activity.date].push({ 
+        type: activity.type, 
+        subtype: activity.subtype,
+        duration: activity.duration,
+        distance: activity.distance
+      });
+      setCalendarData(updatedCalendar);
+    } else {
+      // Create new activity with ID and timestamp
+      newActivity = {
+        ...activity,
+        id: Date.now(),
+        time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+      };
+      
+      // Add to activities list
+      updatedActivities = [newActivity, ...activities];
+      
+      // Update calendar data
+      const dateKey = activity.date;
+      const updatedCalendar = { ...calendarData };
+      if (!updatedCalendar[dateKey]) {
+        updatedCalendar[dateKey] = [];
+      }
+      updatedCalendar[dateKey] = [...updatedCalendar[dateKey], { 
+        type: activity.type, 
+        subtype: activity.subtype,
+        duration: activity.duration,
+        distance: activity.distance
+      }];
+      setCalendarData(updatedCalendar);
+    }
+    
+    setActivities(updatedActivities);
+
+    // Recalculate weekly progress
+    const newProgress = calculateWeeklyProgress(updatedActivities);
+    setWeeklyProgress(newProgress);
+
+    console.log('Saved activity:', newActivity, 'Cardio count:', newProgress.cardio?.completed);
+
+    // Skip celebration for edits
+    if (isEdit) return;
+
+    // Trigger celebration for completing a goal
+    const goals = userData.goals;
+    const prevProgress = weeklyProgress;
+    const records = userData.personalRecords;
+    
+    // Get the effective category of this activity (respects countToward)
+    const activityCategory = getActivityCategory(newActivity);
+    
+    // Check for personal records and return all broken records
+    const checkAndUpdateRecords = () => {
+      const newRecords = { ...records };
+      const recordsBroken = []; // Collect all broken records
+      
+      // Recovery activities don't count as "workouts" for records
+      const recoveryTypes = ['Cold Plunge', 'Sauna'];
+      const yogaPilatesAsRecovery = ['Yoga', 'Pilates'].includes(activity.type) && (!activity.countToward || activity.countToward === 'recovery');
+      const isRecovery = recoveryTypes.includes(activity.type) || yogaPilatesAsRecovery;
+      const isStrength = activity.type === 'Strength Training' || activity.countToward === 'strength';
+      const isCardio = ['Running', 'Cycle', 'Sports'].includes(activity.type) || activity.countToward === 'cardio';
+      
+      // Helper to get current record value (handles both old number format and new object format)
+      const getRecordValue = (record) => {
+        if (record === null || record === undefined) return 0;
+        if (typeof record === 'object') return record.value || 0;
+        return record;
+      };
+      
+      // Single activity: Highest calories (counts all activities including recovery)
+      if (activity.calories && activity.calories > getRecordValue(records.highestCalories)) {
+        newRecords.highestCalories = { value: activity.calories, activityType: activity.type };
+        recordsBroken.push(`${activity.calories} cals (${activity.type}) 🔥`);
+      }
+      
+      // Single workout records (only for non-recovery activities)
+      if (!isRecovery) {
+        // Track if we set a new longest workout overall (to avoid duplicate notifications)
+        let setLongestWorkoutRecord = false;
+        
+        // Longest workout overall
+        if (activity.duration && activity.duration > getRecordValue(records.longestWorkout)) {
+          newRecords.longestWorkout = { value: activity.duration, activityType: activity.type };
+          const hours = Math.floor(activity.duration / 60);
+          const mins = activity.duration % 60;
+          const durationStr = hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
+          recordsBroken.push(`${durationStr} workout (${activity.type}) 💪`);
+          setLongestWorkoutRecord = true;
+        }
+        
+        // Longest strength session
+        if (isStrength && activity.duration && activity.duration > getRecordValue(records.longestStrength)) {
+          newRecords.longestStrength = { value: activity.duration, activityType: activity.type };
+          // Only add to recordsBroken if it's not also the longest workout overall
+          if (!setLongestWorkoutRecord) {
+            const hours = Math.floor(activity.duration / 60);
+            const mins = activity.duration % 60;
+            const durationStr = hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
+            recordsBroken.push(`${durationStr} strength 🏋️`);
+          }
+        }
+        
+        // Longest cardio session
+        if (isCardio && activity.duration && activity.duration > getRecordValue(records.longestCardio)) {
+          newRecords.longestCardio = { value: activity.duration, activityType: activity.type };
+          // Only add to recordsBroken if it's not also the longest workout overall
+          if (!setLongestWorkoutRecord) {
+            const hours = Math.floor(activity.duration / 60);
+            const mins = activity.duration % 60;
+            const durationStr = hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
+            recordsBroken.push(`${durationStr} cardio (${activity.type}) 🏃`);
+          }
+        }
+        
+        // Longest distance
+        if (activity.distance && activity.distance > getRecordValue(records.longestDistance)) {
+          newRecords.longestDistance = { value: activity.distance, activityType: activity.type };
+          recordsBroken.push(`${activity.distance} mi (${activity.type}) 🏃`);
+        }
+        
+        // Fastest pace (for runs with distance and duration)
+        // Only count if distance is at least 0.1 miles and pace is reasonable (3-30 min/mile)
+        const distance = parseFloat(activity.distance);
+        if (activity.type === 'Running' && distance >= 0.1 && activity.duration) {
+          const pace = activity.duration / distance; // min per mile
+          if (pace >= 3 && pace <= 30) { // Reasonable running pace range
+            const currentFastest = records.fastestPace?.value || records.fastestPace;
+            if (!currentFastest || pace < currentFastest) {
+              newRecords.fastestPace = { value: pace, activityType: 'Running' };
+              const paceMin = Math.floor(pace);
+              const paceSec = Math.round((pace - paceMin) * 60);
+              recordsBroken.push(`${paceMin}:${paceSec.toString().padStart(2, '0')}/mi pace ⚡`);
+            }
+          }
+        }
+      }
+      
+      // Weekly records: Check total workouts this week (strength + cardio only, not recovery)
+      const totalWorkoutsThisWeek = newProgress.lifts.completed + newProgress.cardio.completed;
+      const currentMostWorkouts = newRecords.mostWorkoutsWeek || records.mostWorkoutsWeek || 0;
+      if (totalWorkoutsThisWeek > currentMostWorkouts) {
+        newRecords.mostWorkoutsWeek = totalWorkoutsThisWeek;
+        // Only celebrate if it's a significant milestone (5, 10, 15, etc)
+        if (totalWorkoutsThisWeek >= 5 && totalWorkoutsThisWeek % 5 === 0) {
+          recordsBroken.push(`${totalWorkoutsThisWeek} workouts this week 🎯`);
+        }
+      }
+      
+      // Calculate weekly calories from activities this week (workouts only, not recovery)
+      // Use today's date consistently
+      const today = new Date();
+      today.setHours(0, 0, 0, 0); // Reset to midnight to avoid timezone issues
+      const weekStart = new Date(today);
+      weekStart.setDate(weekStart.getDate() - weekStart.getDay()); // Sunday of current week
+      const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
+      
+      const weeklyCalories = updatedActivities
+        .filter(a => a.date >= weekStartStr && !recoveryTypes.includes(a.type))
+        .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+      
+      const currentMostCalories = newRecords.mostCaloriesWeek || records.mostCaloriesWeek || 0;
+      if (weeklyCalories > currentMostCalories) {
+        newRecords.mostCaloriesWeek = weeklyCalories;
+      }
+      
+      // Calculate weekly miles
+      const weeklyMiles = updatedActivities
+        .filter(a => a.date >= weekStartStr && a.distance)
+        .reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+
+      // Always update mostMilesWeek to the current week's total if it's higher
+      // Use newRecords.mostMilesWeek if we've already updated it in this save operation
+      const currentMostMiles = newRecords.mostMilesWeek || records.mostMilesWeek || 0;
+
+      if (weeklyMiles > currentMostMiles) {
+        newRecords.mostMilesWeek = weeklyMiles;
+        // Celebrate milestone miles (10, 20, 30, etc)
+        if (weeklyMiles >= 10 && Math.floor(weeklyMiles / 10) > Math.floor(currentMostMiles / 10)) {
+          recordsBroken.push(`${Math.floor(weeklyMiles)} mi this week 🏆`);
+        }
+      }
+
+      // Update records in state if any changed
+      // Use functional update to merge with current state (avoids race conditions with streak updates)
+      if (JSON.stringify(newRecords) !== JSON.stringify(records)) {
+        setUserData(prev => ({
+          ...prev,
+          personalRecords: {
+            ...prev.personalRecords,
+            ...newRecords
+          }
+        }));
+      }
+      
+      // Return combined message if any records broken
+      if (recordsBroken.length === 0) return null;
+      if (recordsBroken.length === 1) return { message: `New Record!\n${recordsBroken[0]}` };
+      
+      const countWords = ['', '', 'Two', 'Three', 'Four', 'Five'];
+      const countWord = countWords[recordsBroken.length] || recordsBroken.length;
+      return { message: `${countWord} New Records!\n${recordsBroken.join('\n')}` };
+    };
+
+    // Check if this activity just completed a goal (wasn't complete before, is now)
+    const justCompletedLifts = activityCategory === 'lifting' && 
+      prevProgress.lifts.completed < goals.liftsPerWeek && 
+      newProgress.lifts.completed >= goals.liftsPerWeek;
+    
+    const justCompletedCardio = activityCategory === 'cardio' && 
+      prevProgress.cardio.completed < goals.cardioPerWeek && 
+      newProgress.cardio.completed >= goals.cardioPerWeek;
+    
+    const justCompletedRecovery = activityCategory === 'recovery' && 
+      prevProgress.recovery.completed < goals.recoveryPerWeek && 
+      newProgress.recovery.completed >= goals.recoveryPerWeek;
+    
+    // Check for streak milestones (every 5 weeks)
+    const checkStreakMilestone = (currentStreak) => {
+      return currentStreak > 0 && currentStreak % 5 === 0;
+    };
+    
+    // Check if streak is a new record (without updating state)
+    const isStreakRecord = (streakType, newStreak) => {
+      const recordKey = `longest${streakType.charAt(0).toUpperCase() + streakType.slice(1)}Streak`;
+      return newStreak > (records[recordKey] || 0);
+    };
+
+    // Update streaks when goals are met - combined into single setUserData call to avoid race conditions
+    if (justCompletedLifts) {
+      const newStreak = userData.streaks.lifts + 1;
+      const isNewRecord = isStreakRecord('strength', newStreak);
+      setUserData(prev => ({
+        ...prev,
+        streaks: { ...prev.streaks, lifts: newStreak },
+        personalRecords: isNewRecord
+          ? { ...prev.personalRecords, longestStrengthStreak: newStreak }
+          : prev.personalRecords
+      }));
+      if (isNewRecord) {
+        setCelebrationMessage(`New Record: ${newStreak} Week Strength Streak! 🏆`);
+      } else if (checkStreakMilestone(newStreak)) {
+        setCelebrationMessage(`${newStreak} Week Strength Streak! 💪`);
+      } else {
+        setCelebrationMessage('Strength goal complete! 🏋️');
+      }
       setShowCelebration(true);
+    } else if (justCompletedCardio) {
+      const newStreak = userData.streaks.cardio + 1;
+      const isNewRecord = isStreakRecord('cardio', newStreak);
+      setUserData(prev => ({
+        ...prev,
+        streaks: { ...prev.streaks, cardio: newStreak },
+        personalRecords: isNewRecord
+          ? { ...prev.personalRecords, longestCardioStreak: newStreak }
+          : prev.personalRecords
+      }));
+      if (isNewRecord) {
+        setCelebrationMessage(`New Record: ${newStreak} Week Cardio Streak! 🏆`);
+      } else if (checkStreakMilestone(newStreak)) {
+        setCelebrationMessage(`${newStreak} Week Cardio Streak! 🔥`);
+      } else {
+        setCelebrationMessage('Cardio goal complete! 🏃');
+      }
+      setShowCelebration(true);
+    } else if (justCompletedRecovery) {
+      const newStreak = userData.streaks.recovery + 1;
+      const isNewRecord = isStreakRecord('recovery', newStreak);
+      setUserData(prev => ({
+        ...prev,
+        streaks: { ...prev.streaks, recovery: newStreak },
+        personalRecords: isNewRecord
+          ? { ...prev.personalRecords, longestRecoveryStreak: newStreak }
+          : prev.personalRecords
+      }));
+      if (isNewRecord) {
+        setCelebrationMessage(`New Record: ${newStreak} Week Recovery Streak! 🏆`);
+      } else if (checkStreakMilestone(newStreak)) {
+        setCelebrationMessage(`${newStreak} Week Recovery Streak! ❄️`);
+      } else {
+        setCelebrationMessage('Recovery goal complete! 🧊');
+      }
+      setShowCelebration(true);
+    } else {
+      // No goal completed, check for personal records (use toast instead of full celebration)
+      const record = checkAndUpdateRecords();
+      if (record) {
+        setToastMessage(record.message);
+        setShowToast(true);
+      }
+    }
+
+    // Always check and update records (mostMilesWeek, etc.) even when a goal was completed
+    // The if/else above handles celebrations, but we still need to update distance/calorie records
+    if (justCompletedLifts || justCompletedCardio || justCompletedRecovery) {
+      checkAndUpdateRecords();
+    }
+    
+    // Check if all goals met (master streak)
+    const allGoalsMet = newProgress.lifts.completed >= goals.liftsPerWeek &&
+        newProgress.cardio.completed >= goals.cardioPerWeek &&
+        newProgress.recovery.completed >= goals.recoveryPerWeek;
+    
+    const wasAllGoalsMet = prevProgress.lifts.completed >= goals.liftsPerWeek &&
+        prevProgress.cardio.completed >= goals.cardioPerWeek &&
+        prevProgress.recovery.completed >= goals.recoveryPerWeek;
+    
+    if (allGoalsMet && !wasAllGoalsMet) {
+      // Just completed all goals - increment master streak
+      const newMasterStreak = userData.streaks.master + 1;
+      const isNewMasterRecord = newMasterStreak > (records.longestMasterStreak || 0);
+      
+      setUserData(prev => ({
+        ...prev,
+        streaks: { ...prev.streaks, master: newMasterStreak },
+        personalRecords: isNewMasterRecord 
+          ? { ...prev.personalRecords, longestMasterStreak: newMasterStreak }
+          : prev.personalRecords
+      }));
+      
+      setTimeout(() => {
+        if (isNewMasterRecord && newMasterStreak > 1) {
+          setCelebrationMessage(`New Record: ${newMasterStreak} Week Master Streak! 🏆`);
+        } else {
+          setCelebrationMessage('Week Streakd! 🔥');
+        }
+        setShowCelebration(true);
+      }, 2000);
+    }
+  };
+
+  const handleDeleteActivity = (activityId) => {
+    // Find the activity to delete
+    const activityToDelete = activities.find(a => a.id === activityId);
+    if (!activityToDelete) return;
+
+    // Remove from activities
+    const updatedActivities = activities.filter(a => a.id !== activityId);
+    setActivities(updatedActivities);
+
+    // Update calendar data
+    const dateKey = activityToDelete.date;
+    if (calendarData[dateKey]) {
+      const updatedCalendar = { ...calendarData };
+      updatedCalendar[dateKey] = updatedCalendar[dateKey].filter((calActivity) => {
+        // Remove the matching activity (simple approach - removes first match)
+        if (!calActivity) return true; // Keep if null/undefined (shouldn't happen)
+        return calActivity.type !== activityToDelete.type ||
+               (calActivity.subtype || '') !== (activityToDelete.subtype || '');
+      });
+      if (updatedCalendar[dateKey].length === 0) {
+        delete updatedCalendar[dateKey];
+      }
+      setCalendarData(updatedCalendar);
+    }
+
+    // Recalculate weekly progress
+    const newProgress = calculateWeeklyProgress(updatedActivities);
+    setWeeklyProgress(newProgress);
+
+    console.log('Deleted activity:', activityId);
+  };
+
+  // Pull to refresh handlers
+  let touchStartY = 0;
+  const handleTouchStart = (e) => {
+    if (window.scrollY === 0) {
+      touchStartY = e.touches[0].clientY;
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (window.scrollY === 0 && !isRefreshing) {
+      const touchY = e.touches[0].clientY;
+      const distance = touchY - touchStartY;
+      if (distance > 0) {
+        setPullDistance(distance * 0.5);
+      }
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (pullDistance > 60 && !isRefreshing) {
+      // Trigger refresh
+      setIsRefreshing(true);
+      setPullDistance(0);
+      
+      // Simulate refresh (in real app, would fetch data)
+      setTimeout(() => {
+        setIsRefreshing(false);
+      }, 1500);
+    } else {
+      setPullDistance(0);
     }
   };
 
   if (!isOnboarded) {
-    return <OnboardingSurvey onComplete={() => setIsOnboarded(true)} />;
+    return <OnboardingSurvey 
+      currentGoals={userData.goals}
+      onCancel={() => setIsOnboarded(true)}
+      onComplete={(goals) => {
+        // Update userData with user's chosen goals
+        setUserData(prev => ({
+          ...prev,
+          goals: {
+            ...prev.goals,
+            liftsPerWeek: goals.liftsPerWeek,
+            cardioPerWeek: goals.cardioPerWeek,
+            recoveryPerWeek: goals.recoveryPerWeek,
+            stepsPerDay: goals.stepsPerDay
+          }
+        }));
+        // Recalculate weekly progress with new goals
+        setWeeklyProgress(prev => ({
+          ...prev,
+          lifts: { ...prev.lifts, goal: goals.liftsPerWeek },
+          cardio: { ...prev.cardio, goal: goals.cardioPerWeek },
+          recovery: { ...prev.recovery, goal: goals.recoveryPerWeek },
+          steps: { ...prev.steps, goal: goals.stepsPerDay }
+        }));
+        setIsOnboarded(true);
+      }} 
+    />;
   }
 
   return (
-    <div className="min-h-screen text-white" style={{ 
-      backgroundColor: '#0A0A0A',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif'
-    }}>
-      <div className="h-12" />
+    <div 
+      className="min-h-screen text-white" 
+      style={{ 
+        backgroundColor: '#0A0A0A',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif'
+      }}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
+      {/* Pull to Refresh Indicator */}
+      <div 
+        className="fixed top-0 left-0 right-0 flex justify-center items-center transition-all duration-300 z-30"
+        style={{ 
+          height: isRefreshing ? '60px' : `${Math.min(pullDistance, 80)}px`,
+          opacity: isRefreshing ? 1 : Math.min(pullDistance / 60, 1)
+        }}
+      >
+        <div 
+          className={`text-2xl ${isRefreshing ? 'animate-spin' : ''}`}
+          style={{ 
+            transform: isRefreshing ? 'none' : `rotate(${pullDistance * 3}deg)`,
+            transition: isRefreshing ? 'none' : 'transform 0.1s'
+          }}
+        >
+          {isRefreshing ? '⟳' : '↓'}
+        </div>
+      </div>
+
+      <div 
+        className="h-12" 
+        style={{ marginTop: isRefreshing ? '48px' : '0', transition: 'margin 0.3s' }}
+      />
       
       <div className="px-4 py-4 flex items-center justify-between">
         <div>
@@ -2304,28 +5383,110 @@ export default function StreakdApp() {
         </div>
         <button 
           onClick={() => setIsOnboarded(false)}
-          className="w-10 h-10 rounded-full flex items-center justify-center text-xl"
+          className="w-10 h-10 rounded-full flex items-center justify-center text-xl transition-all duration-150"
           style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+          onTouchStart={(e) => {
+            e.currentTarget.style.transform = 'scale(0.85)';
+            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.2)';
+          }}
+          onTouchEnd={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+          }}
+          onMouseDown={(e) => {
+            e.currentTarget.style.transform = 'scale(0.85)';
+            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.2)';
+          }}
+          onMouseUp={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+          }}
         >
           ⚙️
         </button>
       </div>
 
       <div className="mt-2">
-        {activeTab === 'home' && (
-          <HomeTab 
-            onAddActivity={handleAddActivity} 
-            pendingSync={mockPendingSync}
-          />
-        )}
-        {activeTab === 'history' && <HistoryTab onShare={() => setShowShare(true)} />}
+        <div 
+          key={activeTab}
+          className="animate-fade-in"
+          style={{
+            animation: 'fadeIn 100ms ease-out'
+          }}
+        >
+          {isLoading ? (
+            <HomeTabSkeleton />
+          ) : (
+            <>
+              {activeTab === 'home' && (
+                <HomeTab 
+                  onAddActivity={handleAddActivity} 
+                  pendingSync={initialPendingSync}
+                  activities={activities}
+                  weeklyProgress={weeklyProgress}
+                  userData={userData}
+                  onDeleteActivity={handleDeleteActivity}
+                  onEditActivity={(activity) => {
+                    setPendingActivity({
+                      ...activity,
+                      durationHours: Math.floor((activity.duration || 0) / 60),
+                      durationMinutes: (activity.duration || 0) % 60
+                    });
+                    setShowAddActivity(true);
+                  }}
+                />
+              )}
+              {activeTab === 'history' && (
+                <HistoryTab 
+                  onShare={() => setShowShare(true)} 
+                  activities={activities}
+                  calendarData={calendarData}
+                  userData={userData}
+                  onAddActivity={handleAddActivity}
+                  onDeleteActivity={handleDeleteActivity}
+                  onEditActivity={(activity) => {
+                    // Open add activity modal with existing activity data for editing
+                    setPendingActivity({
+                      ...activity,
+                      durationHours: Math.floor((activity.duration || 0) / 60),
+                      durationMinutes: (activity.duration || 0) % 60
+                    });
+                    setShowAddActivity(true);
+                  }}
+                  initialView={historyView}
+                  initialStatsSubView={historyStatsSubView}
+                />
+              )}
+            </>
+          )}
+        </div>
+        <style>{`
+          @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+          }
+          @keyframes hapticPulse {
+            0% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(1.5); opacity: 0; }
+          }
+        `}</style>
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 px-4 pb-8 pt-4" style={{ background: 'linear-gradient(to top, #0A0A0A 80%, transparent)' }}>
+      <div className="fixed bottom-0 left-0 right-0 px-4 pb-6 pt-2 z-40" style={{ background: 'linear-gradient(to top, #0A0A0A 0%, #0A0A0A 70%, transparent 100%)' }}>
         <div className="flex items-center justify-around p-2 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(20px)' }}>
           <button 
             onClick={() => setActiveTab('home')}
-            className="flex-1 py-3 flex flex-col items-center gap-1"
+            className="flex-1 py-3 flex flex-col items-center gap-1 transition-all duration-150"
+            style={{ transform: 'scale(1)' }}
+            onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.92)'}
+            onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.92)'}
+            onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
           >
             <span className="text-xl">👤</span>
             <span className={`text-xs ${activeTab === 'home' ? 'text-white' : 'text-gray-500'}`}>Profile</span>
@@ -2333,15 +5494,58 @@ export default function StreakdApp() {
           
           <button 
             onClick={() => handleAddActivity()}
-            className="w-14 h-14 rounded-full flex items-center justify-center -mt-6 shadow-lg"
-            style={{ backgroundColor: '#00FF94' }}
+            className="w-16 h-16 rounded-full flex items-center justify-center -mt-12 shadow-xl transition-all duration-150 relative"
+            style={{ 
+              backgroundColor: '#00FF94',
+              boxShadow: '0 4px 20px rgba(0, 255, 148, 0.4)',
+              transform: 'scale(1)'
+            }}
+            onTouchStart={(e) => {
+              e.currentTarget.style.transform = 'scale(0.85)';
+              e.currentTarget.style.boxShadow = '0 2px 10px rgba(0, 255, 148, 0.6)';
+              // Add haptic pulse ring
+              const ring = document.createElement('div');
+              ring.className = 'haptic-ring';
+              ring.style.cssText = `
+                position: absolute;
+                inset: -4px;
+                border-radius: 50%;
+                border: 2px solid rgba(0, 255, 148, 0.6);
+                animation: hapticPulse 0.3s ease-out forwards;
+                pointer-events: none;
+              `;
+              e.currentTarget.appendChild(ring);
+              setTimeout(() => ring.remove(), 300);
+            }}
+            onTouchEnd={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.boxShadow = '0 4px 20px rgba(0, 255, 148, 0.4)';
+            }}
+            onMouseDown={(e) => {
+              e.currentTarget.style.transform = 'scale(0.85)';
+              e.currentTarget.style.boxShadow = '0 2px 10px rgba(0, 255, 148, 0.6)';
+            }}
+            onMouseUp={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.boxShadow = '0 4px 20px rgba(0, 255, 148, 0.4)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.boxShadow = '0 4px 20px rgba(0, 255, 148, 0.4)';
+            }}
           >
-            <span className="text-2xl text-black font-bold">+</span>
+            <span className="text-3xl text-black font-bold leading-none" style={{ marginTop: '-2px' }}>+</span>
           </button>
           
           <button 
             onClick={() => setActiveTab('history')}
-            className="flex-1 py-3 flex flex-col items-center gap-1"
+            className="flex-1 py-3 flex flex-col items-center gap-1 transition-all duration-150"
+            style={{ transform: 'scale(1)' }}
+            onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.92)'}
+            onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.92)'}
+            onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
           >
             <span className="text-xl">📊</span>
             <span className={`text-xs ${activeTab === 'history' ? 'text-white' : 'text-gray-500'}`}>History</span>
@@ -2354,21 +5558,31 @@ export default function StreakdApp() {
         onClose={() => {
           setShowAddActivity(false);
           setPendingActivity(null);
+          setDefaultActivityDate(null);
         }}
         onSave={handleActivitySaved}
         pendingActivity={pendingActivity}
+        defaultDate={defaultActivityDate}
       />
 
       <ShareModal 
         isOpen={showShare}
         onClose={() => setShowShare(false)}
-        stats={{ streak: 7, workouts: 18 }}
+        stats={{ streak: userData.streaks.master, workouts: activities.length }}
       />
 
       <CelebrationOverlay 
         show={showCelebration}
         message={celebrationMessage}
         onComplete={() => setShowCelebration(false)}
+      />
+
+      <Toast 
+        show={showToast}
+        message={toastMessage}
+        onDismiss={() => setShowToast(false)}
+        onTap={navigateToHallOfFame}
+        type="record"
       />
     </div>
   );

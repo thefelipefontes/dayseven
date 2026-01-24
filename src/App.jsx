@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 
 // Get today's date in YYYY-MM-DD format
 const getTodayDate = () => {
@@ -1604,39 +1604,167 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null }) 
 
 // Duration Picker Component
 const DurationPicker = ({ hours, minutes, onChange, disabled = false }) => {
-  const hourOptions = Array.from({ length: 6 }, (_, i) => i);
-  const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5);
-  
+  const hourOptions = Array.from({ length: 6 }, (_, i) => i); // 0-5 hours
+  const minuteOptions = Array.from({ length: 60 }, (_, i) => i); // 0-59 minutes
+
+  const hoursRef = useRef(null);
+  const minutesRef = useRef(null);
+
+  const itemHeight = 32;
+  const visibleItems = 3;
+
+  useEffect(() => {
+    // Scroll to initial values
+    if (hoursRef.current) {
+      hoursRef.current.scrollTop = hours * itemHeight;
+    }
+    if (minutesRef.current) {
+      minutesRef.current.scrollTop = minutes * itemHeight;
+    }
+  }, []);
+
+  const handleScroll = (ref, options, type) => {
+    if (!ref.current) return;
+    const scrollTop = ref.current.scrollTop;
+    const index = Math.round(scrollTop / itemHeight);
+    const clampedIndex = Math.max(0, Math.min(options.length - 1, index));
+
+    if (type === 'hours' && clampedIndex !== hours) {
+      onChange(clampedIndex, minutes);
+    } else if (type === 'minutes' && clampedIndex !== minutes) {
+      onChange(hours, clampedIndex);
+    }
+  };
+
+  const scrollToValue = (ref, value) => {
+    if (ref.current) {
+      ref.current.scrollTo({
+        top: value * itemHeight,
+        behavior: 'smooth'
+      });
+    }
+  };
+
   return (
-    <div className="flex gap-2">
-      <div className="flex-1">
-        <label className="text-xs text-gray-500 mb-1 block">Hours</label>
-        <select
-          value={hours}
-          onChange={(e) => onChange(parseInt(e.target.value), minutes)}
-          disabled={disabled}
-          className="w-full p-3 rounded-xl bg-white/5 border border-white/10 text-white appearance-none"
-          style={{ opacity: disabled ? 0.5 : 1 }}
+    <div className="flex items-center justify-start gap-1" style={{ opacity: disabled ? 0.5 : 1 }}>
+      {/* Hours wheel */}
+      <div className="relative" style={{ height: itemHeight * visibleItems, width: '60px' }}>
+        {/* Fade overlays */}
+        <div
+          className="absolute top-0 left-0 right-0 z-10 pointer-events-none"
+          style={{
+            height: itemHeight,
+            background: 'linear-gradient(to bottom, rgba(10,10,10,1) 0%, rgba(10,10,10,0) 100%)'
+          }}
+        />
+        <div
+          className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none"
+          style={{
+            height: itemHeight,
+            background: 'linear-gradient(to top, rgba(10,10,10,1) 0%, rgba(10,10,10,0) 100%)'
+          }}
+        />
+        {/* Selection highlight */}
+        <div
+          className="absolute left-0 right-0 z-5 pointer-events-none rounded-lg"
+          style={{
+            top: itemHeight,
+            height: itemHeight,
+            backgroundColor: 'rgba(0,255,148,0.1)',
+            border: '1px solid rgba(0,255,148,0.3)'
+          }}
+        />
+        {/* Scrollable list */}
+        <div
+          ref={hoursRef}
+          className="h-full overflow-y-scroll scrollbar-hide"
+          style={{ scrollSnapType: 'y mandatory' }}
+          onScroll={() => handleScroll(hoursRef, hourOptions, 'hours')}
         >
+          <div style={{ height: itemHeight }} /> {/* Top padding */}
           {hourOptions.map((h) => (
-            <option key={h} value={h} className="bg-black">{h}h</option>
+            <div
+              key={h}
+              onClick={() => scrollToValue(hoursRef, h)}
+              className="flex items-center justify-center cursor-pointer transition-all duration-150"
+              style={{
+                height: itemHeight,
+                scrollSnapAlign: 'center',
+                color: hours === h ? '#00FF94' : 'rgba(255,255,255,0.5)',
+                fontWeight: hours === h ? 'bold' : 'normal',
+                fontSize: hours === h ? '18px' : '14px'
+              }}
+            >
+              {h}
+            </div>
           ))}
-        </select>
+          <div style={{ height: itemHeight }} /> {/* Bottom padding */}
+        </div>
       </div>
-      <div className="flex-1">
-        <label className="text-xs text-gray-500 mb-1 block">Minutes</label>
-        <select
-          value={minutes}
-          onChange={(e) => onChange(hours, parseInt(e.target.value))}
-          disabled={disabled}
-          className="w-full p-3 rounded-xl bg-white/5 border border-white/10 text-white appearance-none"
-          style={{ opacity: disabled ? 0.5 : 1 }}
+
+      {/* Hours label */}
+      <div className="text-xs text-gray-400">hr</div>
+
+      {/* Separator */}
+      <div className="text-xl font-bold text-gray-500">:</div>
+
+      {/* Minutes wheel */}
+      <div className="relative" style={{ height: itemHeight * visibleItems, width: '60px' }}>
+        {/* Fade overlays */}
+        <div
+          className="absolute top-0 left-0 right-0 z-10 pointer-events-none"
+          style={{
+            height: itemHeight,
+            background: 'linear-gradient(to bottom, rgba(10,10,10,1) 0%, rgba(10,10,10,0) 100%)'
+          }}
+        />
+        <div
+          className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none"
+          style={{
+            height: itemHeight,
+            background: 'linear-gradient(to top, rgba(10,10,10,1) 0%, rgba(10,10,10,0) 100%)'
+          }}
+        />
+        {/* Selection highlight */}
+        <div
+          className="absolute left-0 right-0 z-5 pointer-events-none rounded-lg"
+          style={{
+            top: itemHeight,
+            height: itemHeight,
+            backgroundColor: 'rgba(0,255,148,0.1)',
+            border: '1px solid rgba(0,255,148,0.3)'
+          }}
+        />
+        {/* Scrollable list */}
+        <div
+          ref={minutesRef}
+          className="h-full overflow-y-scroll scrollbar-hide"
+          style={{ scrollSnapType: 'y mandatory' }}
+          onScroll={() => handleScroll(minutesRef, minuteOptions, 'minutes')}
         >
+          <div style={{ height: itemHeight }} /> {/* Top padding */}
           {minuteOptions.map((m) => (
-            <option key={m} value={m} className="bg-black">{m}m</option>
+            <div
+              key={m}
+              onClick={() => scrollToValue(minutesRef, m)}
+              className="flex items-center justify-center cursor-pointer transition-all duration-150"
+              style={{
+                height: itemHeight,
+                scrollSnapAlign: 'center',
+                color: minutes === m ? '#00FF94' : 'rgba(255,255,255,0.5)',
+                fontWeight: minutes === m ? 'bold' : 'normal',
+                fontSize: minutes === m ? '18px' : '14px'
+              }}
+            >
+              {String(m).padStart(2, '0')}
+            </div>
           ))}
-        </select>
+          <div style={{ height: itemHeight }} /> {/* Bottom padding */}
+        </div>
       </div>
+
+      {/* Minutes label */}
+      <div className="text-xs text-gray-400">min</div>
     </div>
   );
 };

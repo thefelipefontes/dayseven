@@ -897,87 +897,81 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
   const renderCardContent = () => {
     switch (cardType) {
       case 'streak':
-        const milestones = getStreakMilestones(streakCount);
-        const nextMilestone = getNextMilestone(streakCount);
-        const last4Weeks = stats?.last4Weeks || [false, false, false, false];
+        // Calculate total weeks won (weeks where master streak was maintained)
+        const weeksWon = stats?.last4Weeks?.filter(w => w).length || 0;
         return (
-          <div className="relative h-full flex flex-col items-center justify-between pt-8 pb-4 px-6">
-            <div className="text-4xl" style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>🔥</div>
-            <div className="flex-1 flex flex-col items-center justify-center">
-              {/* Main streak number with ring */}
-              <div className="relative" style={{ animation: 'ring-pulse 3s ease-in-out infinite' }}>
-                <svg width="160" height="160" className="transform -rotate-90">
-                  <circle cx="80" cy="80" r="62" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="7" />
-                  <circle cx="80" cy="80" r="62" fill="none" stroke={colors.primary} strokeWidth="7" strokeLinecap="round"
-                    strokeDasharray={2 * Math.PI * 62} strokeDashoffset={2 * Math.PI * 62 - (Math.min(streakCount / 52, 1) * 2 * Math.PI * 62)} style={{ transition: 'stroke-dashoffset 1s ease-out' }} />
-                </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <div className="font-black leading-none" style={{ fontSize: '4rem', color: colors.primary, textShadow: `0 0 40px ${colors.glow}, 0 0 80px ${colors.glow}` }}>
-                    {streakCount}
+          <div className="relative h-full flex flex-col items-center justify-between pt-6 pb-3 px-5">
+            <div className="text-3xl" style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>🔥</div>
+            <div className="flex-1 flex flex-col items-center justify-center w-full -mt-2">
+              {/* Main master streak number */}
+              <div className="text-center">
+                <div className="font-black leading-none" style={{ fontSize: '4rem', color: colors.primary, textShadow: `0 0 40px ${colors.glow}, 0 0 80px ${colors.glow}`, animation: 'ring-pulse 3s ease-in-out infinite' }}>
+                  {streakCount}
+                </div>
+                <div className="text-[10px] font-semibold tracking-widest text-gray-400 uppercase mt-1">Master Streak</div>
+                <div className="text-[8px] text-gray-500 mt-0.5">weeks hitting all goals</div>
+              </div>
+
+              {/* Active Streaks */}
+              <div className="w-full p-2 rounded-xl mt-2" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                <div className="flex items-center justify-center mb-0.5">
+                  <span className="text-[9px] text-gray-400 uppercase tracking-wider">Active Streaks</span>
+                </div>
+                <div className="w-full h-px mb-1.5" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }} />
+                <div className="flex justify-around">
+                  <div className="text-center">
+                    <div className="text-sm font-bold" style={{ color: '#00FF94' }}>{stats?.strengthStreak || 0}</div>
+                    <div className="text-[8px] text-gray-500 -mt-0.5">🏋️ weeks</div>
                   </div>
-                  <div className="text-[10px] font-semibold tracking-widest text-gray-400 uppercase mt-1">Week Streak</div>
+                  <div className="text-center">
+                    <div className="text-sm font-bold" style={{ color: '#FF9500' }}>{stats?.cardioStreak || 0}</div>
+                    <div className="text-[8px] text-gray-500 -mt-0.5">🏃 weeks</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-sm font-bold" style={{ color: '#00D1FF' }}>{stats?.recoveryStreak || 0}</div>
+                    <div className="text-[8px] text-gray-500 -mt-0.5">🧊 weeks</div>
+                  </div>
                 </div>
               </div>
 
-              {/* Individual category streaks */}
-              <div className="flex justify-center gap-4 mt-4 w-full">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm">🏋️</span>
-                  <span className="text-xs font-semibold" style={{ color: '#00FF94' }}>{stats?.strengthStreak || 0}</span>
-                  <span className="text-[9px] text-gray-500">wks</span>
+              {/* Streak Records */}
+              <div className="w-full p-2 rounded-xl mt-1.5" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                <div className="flex items-center justify-center mb-0.5">
+                  <span className="text-[9px] text-gray-400 uppercase tracking-wider">Streak Records</span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm">🏃</span>
-                  <span className="text-xs font-semibold" style={{ color: '#FF9500' }}>{stats?.cardioStreak || 0}</span>
-                  <span className="text-[9px] text-gray-500">wks</span>
+                <div className="w-full h-px mb-1.5" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }} />
+                <div className="flex justify-around">
+                  <div className="text-center">
+                    <div className="text-sm font-bold" style={{ color: '#00FF94' }}>{stats?.longestStrengthStreak || 0}</div>
+                    <div className="text-[8px] text-gray-500 -mt-0.5">🏋️ weeks</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-sm font-bold" style={{ color: '#FF9500' }}>{stats?.longestCardioStreak || 0}</div>
+                    <div className="text-[8px] text-gray-500 -mt-0.5">🏃 weeks</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-sm font-bold" style={{ color: '#00D1FF' }}>{stats?.longestRecoveryStreak || 0}</div>
+                    <div className="text-[8px] text-gray-500 -mt-0.5">🧊 weeks</div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm">🧘</span>
-                  <span className="text-xs font-semibold" style={{ color: '#00D1FF' }}>{stats?.recoveryStreak || 0}</span>
-                  <span className="text-[9px] text-gray-500">wks</span>
-                </div>
-              </div>
-
-              {/* Last 4 weeks visual */}
-              <div className="mt-4">
-                <div className="text-[9px] text-gray-500 uppercase text-center mb-2">Last 4 Weeks</div>
-                <div className="flex justify-center gap-3">
-                  {last4Weeks.map((won, i) => (
-                    <div
-                      key={i}
-                      className="w-5 h-5 rounded-full"
-                      style={{
-                        backgroundColor: won ? '#00FF94' : 'transparent',
-                        border: won ? 'none' : '2px solid rgba(255,255,255,0.2)'
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              {/* Motivational tagline */}
-              <div className="mt-4 px-4 py-1.5 rounded-full" style={{ background: `linear-gradient(135deg, ${colors.glow} 0%, rgba(0,212,255,0.1) 100%)`, border: `1px solid ${colors.primary}40` }}>
-                <span className="text-xs font-semibold" style={{ color: colors.primary }}>
-                  {getMotivationalTagline(streakCount, false)}
-                </span>
               </div>
             </div>
 
             {/* Bottom stats */}
             <div className="w-full">
-              <div className="grid grid-cols-2 gap-3 p-3 rounded-2xl mb-3" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+              <div className="grid grid-cols-2 gap-2 p-2 rounded-xl mb-2" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
                 <div className="text-center">
-                  <div className="text-2xl font-black text-white">{stats?.longestStreak || streakCount}</div>
-                  <div className="text-[9px] text-gray-500 uppercase">Longest Streak</div>
+                  <div className="text-xl font-black text-white">{stats?.longestStreak || streakCount}</div>
+                  <div className="text-[8px] text-gray-500 uppercase">Streak Record</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-black text-white">{stats?.workouts || 0}</div>
-                  <div className="text-[9px] text-gray-500 uppercase">Total Workouts</div>
+                  <div className="text-xl font-black text-white">{stats?.weeksWon || 0}</div>
+                  <div className="text-[8px] text-gray-500 uppercase">Weeks Won</div>
                 </div>
               </div>
-              <div className="text-center mt-auto">
-                <div className="inline-block text-lg font-black tracking-wider" style={{ background: 'linear-gradient(135deg, #ffffff 0%, #888888 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
-                <div className="text-[9px] text-gray-600 tracking-widest uppercase -mt-0.5">Win the Week</div>
+              <div className="text-center">
+                <div className="inline-block text-base font-black tracking-wider" style={{ background: 'linear-gradient(135deg, #ffffff 0%, #888888 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
+                <div className="text-[8px] text-gray-600 tracking-widest uppercase -mt-0.5">Win the Week</div>
               </div>
             </div>
           </div>
@@ -6434,6 +6428,9 @@ export default function StreakdApp() {
           strengthStreak: userData.streaks.lifts,
           cardioStreak: userData.streaks.cardio,
           recoveryStreak: userData.streaks.recovery,
+          longestStrengthStreak: userData.personalRecords.longestStrengthStreak || 0,
+          longestCardioStreak: userData.personalRecords.longestCardioStreak || 0,
+          longestRecoveryStreak: userData.personalRecords.longestRecoveryStreak || 0,
           // Last 4 weeks history (true = won, false = missed)
           last4Weeks: (() => {
             const weeks = [];
@@ -6455,6 +6452,34 @@ export default function StreakdApp() {
               weeks.push(won);
             }
             return weeks.reverse(); // oldest to newest
+          })(),
+          // Total weeks won (all time)
+          weeksWon: (() => {
+            const goals = userData.goals;
+            const weekMap = {};
+
+            // Group activities by week
+            activities.forEach(a => {
+              const date = new Date(a.date + 'T12:00:00');
+              const weekStart = new Date(date);
+              weekStart.setDate(date.getDate() - date.getDay());
+              const weekKey = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
+
+              if (!weekMap[weekKey]) {
+                weekMap[weekKey] = { lifts: 0, cardio: 0, recovery: 0 };
+              }
+
+              if (a.type === 'Strength Training') weekMap[weekKey].lifts++;
+              else if (['Running', 'Cycle', 'Sports'].includes(a.type)) weekMap[weekKey].cardio++;
+              else if (['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(a.type)) weekMap[weekKey].recovery++;
+            });
+
+            // Count weeks where all goals were met
+            return Object.values(weekMap).filter(w =>
+              w.lifts >= goals.liftsPerWeek &&
+              w.cardio >= goals.cardioPerWeek &&
+              w.recovery >= goals.recoveryPerWeek
+            ).length;
           })(),
           // Weekly stats
           weeklyLifts: weeklyProgress.lifts.completed,

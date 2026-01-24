@@ -52,7 +52,6 @@ const initialUserData = {
   personalRecords: {
     // Single workout records (with activity type that achieved it)
     highestCalories: { value: 0, activityType: null },
-    longestWorkout: { value: 0, activityType: null }, // Any workout type
     longestStrength: { value: 0, activityType: null }, // Strength training specifically
     longestCardio: { value: 0, activityType: null }, // Any cardio
     longestDistance: { value: 0, activityType: null },
@@ -3284,7 +3283,7 @@ const TrendsView = ({ activities = [], calendarData = {} }) => {
       </div>
 
       {/* Metric Toggle */}
-      <div className="flex gap-2 p-1 rounded-xl mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+      <div className="flex gap-2 p-1 rounded-xl mb-4 max-w-md mx-auto" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
         {Object.entries(metricConfig).map(([key, cfg]) => (
           <button
             key={key}
@@ -3305,7 +3304,7 @@ const TrendsView = ({ activities = [], calendarData = {} }) => {
       </div>
 
       {/* Time Range Toggle */}
-      <div className="relative flex gap-1 p-1 rounded-xl mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+      <div className="relative flex gap-1 p-1 rounded-xl mb-4 max-w-sm mx-auto" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
         {/* Sliding pill indicator */}
         <div 
           className="absolute top-1 bottom-1 rounded-md transition-all duration-300 ease-out"
@@ -4578,7 +4577,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
       {view === 'stats' && (
         <div className="mx-4 mt-2">
           {/* Mini Toggle */}
-          <div className="relative flex gap-2 p-1 rounded-xl mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+          <div className="relative flex gap-2 p-1 rounded-xl mb-4 mx-auto" style={{ backgroundColor: 'rgba(255,255,255,0.05)', width: '65%' }}>
             {/* Sliding pill indicator */}
             <div 
               className="absolute top-1 bottom-1 rounded-lg transition-all duration-300 ease-out"
@@ -4781,24 +4780,6 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                       </div>
                       {getRecordType(records.highestCalories) && (
                         <div className="text-[10px] text-gray-600">{getRecordType(records.highestCalories)}</div>
-                      )}
-                    </div>
-                  </div>
-                  
-                  {/* Longest Workout */}
-                  <div className="p-3 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(0,255,148,0.05)' }}>
-                    <div>
-                      <div className="text-[10px] text-gray-500">💪 Longest Workout</div>
-                      <div className="text-xl font-black" style={{ color: getRecordValue(records.longestWorkout) ? '#00FF94' : 'rgba(255,255,255,0.3)' }}>
-                        {getRecordValue(records.longestWorkout) ? (() => {
-                          const duration = getRecordValue(records.longestWorkout);
-                          const hours = Math.floor(duration / 60);
-                          const mins = duration % 60;
-                          return hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
-                        })() : '—'}
-                      </div>
-                      {getRecordType(records.longestWorkout) && (
-                        <div className="text-[10px] text-gray-600">{getRecordType(records.longestWorkout)}</div>
                       )}
                     </div>
                   </div>
@@ -5241,41 +5222,22 @@ export default function StreakdApp() {
       
       // Single workout records (only for non-recovery activities)
       if (!isRecovery) {
-        // Track if we set a new longest workout overall (to avoid duplicate notifications)
-        let setLongestWorkoutRecord = false;
-        
-        // Longest workout overall
-        if (activity.duration && activity.duration > getRecordValue('longestWorkout')) {
-          updatedRecords.longestWorkout = { value: activity.duration, activityType: activity.type };
-          const hours = Math.floor(activity.duration / 60);
-          const mins = activity.duration % 60;
-          const durationStr = hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
-          recordsBroken.push(`${durationStr} workout (${activity.type}) 💪`);
-          setLongestWorkoutRecord = true;
-        }
-
         // Longest strength session
         if (isStrength && activity.duration && activity.duration > getRecordValue('longestStrength')) {
           updatedRecords.longestStrength = { value: activity.duration, activityType: activity.type };
-          // Only add to recordsBroken if it's not also the longest workout overall
-          if (!setLongestWorkoutRecord) {
-            const hours = Math.floor(activity.duration / 60);
-            const mins = activity.duration % 60;
-            const durationStr = hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
-            recordsBroken.push(`${durationStr} strength 🏋️`);
-          }
+          const hours = Math.floor(activity.duration / 60);
+          const mins = activity.duration % 60;
+          const durationStr = hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
+          recordsBroken.push(`${durationStr} strength 🏋️`);
         }
 
         // Longest cardio session
         if (isCardio && activity.duration && activity.duration > getRecordValue('longestCardio')) {
           updatedRecords.longestCardio = { value: activity.duration, activityType: activity.type };
-          // Only add to recordsBroken if it's not also the longest workout overall
-          if (!setLongestWorkoutRecord) {
-            const hours = Math.floor(activity.duration / 60);
-            const mins = activity.duration % 60;
-            const durationStr = hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
-            recordsBroken.push(`${durationStr} cardio (${activity.type}) 🏃`);
-          }
+          const hours = Math.floor(activity.duration / 60);
+          const mins = activity.duration % 60;
+          const durationStr = hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
+          recordsBroken.push(`${durationStr} cardio (${activity.type}) 🏃`);
         }
 
         // Longest distance

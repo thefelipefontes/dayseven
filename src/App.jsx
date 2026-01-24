@@ -3910,31 +3910,14 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
           </div>
           <button
             onClick={onShare}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all duration-150"
-            style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
-            onTouchStart={(e) => {
-              e.currentTarget.style.transform = 'scale(0.92)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-            }}
-            onTouchEnd={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-            }}
-            onMouseDown={(e) => {
-              e.currentTarget.style.transform = 'scale(0.92)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-            }}
-            onMouseUp={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-            }}
+            className="p-1.5 transition-colors duration-150 hover:text-white"
+            style={{ color: 'rgba(255,255,255,0.4)' }}
           >
-            <span>📤</span>
-            <span>Share Streaks</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+              <polyline points="16 6 12 2 8 6" />
+              <line x1="12" y1="2" x2="12" y2="15" />
+            </svg>
           </button>
         </div>
         
@@ -5284,7 +5267,7 @@ export default function StreakdApp() {
 
       // Weekly records: Check total workouts this week (strength + cardio only, not recovery)
       const totalWorkoutsThisWeek = newProgress.lifts.completed + newProgress.cardio.completed;
-      const currentMostWorkouts = updatedRecords.mostWorkoutsWeek || records.mostWorkoutsWeek || 0;
+      const currentMostWorkouts = getRecordValue('mostWorkoutsWeek');
       if (totalWorkoutsThisWeek > currentMostWorkouts) {
         updatedRecords.mostWorkoutsWeek = totalWorkoutsThisWeek;
         // Only celebrate if it's a significant milestone (5, 10, 15, etc)
@@ -5305,7 +5288,7 @@ export default function StreakdApp() {
         .filter(a => a.date >= weekStartStr && !recoveryTypes.includes(a.type))
         .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
       
-      const currentMostCalories = updatedRecords.mostCaloriesWeek || records.mostCaloriesWeek || 0;
+      const currentMostCalories = getRecordValue('mostCaloriesWeek');
       if (weeklyCalories > currentMostCalories) {
         updatedRecords.mostCaloriesWeek = weeklyCalories;
       }
@@ -5316,8 +5299,7 @@ export default function StreakdApp() {
         .reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
 
       // Always update mostMilesWeek to the current week's total if it's higher
-      // Use updatedRecords.mostMilesWeek if we've already updated it in this save operation
-      const currentMostMiles = updatedRecords.mostMilesWeek || records.mostMilesWeek || 0;
+      const currentMostMiles = getRecordValue('mostMilesWeek');
 
       if (weeklyMiles > currentMostMiles) {
         updatedRecords.mostMilesWeek = weeklyMiles;

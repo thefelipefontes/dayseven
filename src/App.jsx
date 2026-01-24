@@ -3808,7 +3808,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
 
       {/* Calendar View */}
       {view === 'calendar' && (
-        <div className="mx-4 mt-2 pb-24">
+        <div className="mx-4 mt-2">
           <div className="mb-4">
             <div className="text-sm font-semibold text-white">Activity Calendar</div>
             <p className="text-[11px] text-gray-500 mt-0.5">Tap any day or week to see details</p>

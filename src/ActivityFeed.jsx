@@ -1084,11 +1084,11 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         {segmentedControl}
 
         {/* Leaderboard content */}
-        <div className="px-4 pb-4">
-          {/* Time Range Toggle - now with 4 options */}
-          <div className="relative flex p-1 rounded-xl mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+        <div className="px-4 pb-32">
+          {/* Time Range Toggle - smaller secondary style */}
+          <div className="relative flex p-1 rounded-lg mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
             <div
-              className="absolute top-1 bottom-1 rounded-lg transition-all duration-300 ease-out"
+              className="absolute top-1 bottom-1 rounded-md transition-all duration-300 ease-out"
               style={{
                 backgroundColor: 'rgba(255,255,255,0.1)',
                 width: 'calc((100% - 8px) / 4)',
@@ -1108,7 +1108,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               <button
                 key={range.key}
                 onClick={() => setLeaderboardTimeRange(range.key)}
-                className="flex-1 py-2 rounded-lg text-xs font-medium transition-colors duration-200 relative z-10"
+                className="flex-1 py-1.5 rounded-md text-xs font-medium transition-colors duration-200 relative z-10"
                 style={{
                   color: leaderboardTimeRange === range.key ? 'white' : 'rgba(255,255,255,0.5)'
                 }}
@@ -1195,16 +1195,21 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                 />
               )}
 
-              {/* Share button */}
-              <button
-                onClick={() => setShowShareModal(true)}
-                className="w-full py-2 mb-4 rounded-lg bg-zinc-800 text-gray-400 text-sm font-medium flex items-center justify-center gap-2 hover:bg-zinc-700 transition-colors"
-              >
-                <span>📤</span> Share Leaderboard
-              </button>
-
-              {/* Rankings label */}
-              <p className="text-gray-500 text-xs mb-3 uppercase tracking-wide">{getCategoryLabel()} Rankings</p>
+              {/* Rankings label with share button */}
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-gray-500 text-xs uppercase tracking-wide">{getCategoryLabel()} Rankings</p>
+                <button
+                  onClick={() => setShowShareModal(true)}
+                  className="p-1.5 transition-colors duration-150 hover:text-white"
+                  style={{ color: 'rgba(255,255,255,0.4)' }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+                    <polyline points="16 6 12 2 8 6" />
+                    <line x1="12" y1="2" x2="12" y2="15" />
+                  </svg>
+                </button>
+              </div>
 
               {/* Top 3 in list form (compact) */}
               {topThree.map((userData, index) => (
@@ -1346,7 +1351,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         {segmentedControl}
 
       {/* Feed content */}
-      <div className="px-4 pb-4">
+      <div className="px-4 pb-32">
         {feedActivities.map((activity, index) => (
           <ActivityCard key={`${activity.friend.uid}-${activity.id || index}`} activity={activity} />
         ))}

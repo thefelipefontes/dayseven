@@ -6,7 +6,7 @@ import UsernameSetup from './UsernameSetup';
 import Friends from './Friends';
 import ActivityFeed from './ActivityFeed';
 import { createUserProfile, getUserProfile, saveUserActivities, getUserActivities } from './services/userService';
-import { getFriends, getReactions } from './services/friendService';
+import { getFriends, getReactions, getFriendRequests } from './services/friendService';
 
 // Get today's date in YYYY-MM-DD format
 const getTodayDate = () => {
@@ -1659,24 +1659,84 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
         <div className="flex justify-center gap-4 mb-4">
           <button
             className="flex flex-col items-center gap-2 p-4 rounded-2xl transition-all duration-150"
-            style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+            style={{ backgroundColor: 'rgba(255,255,255,0.05)', transform: 'scale(1)' }}
             onClick={() => {/* TODO: Implement share to story */}}
+            onTouchStart={(e) => {
+              e.currentTarget.style.transform = 'scale(0.92)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            }}
+            onTouchEnd={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+            }}
+            onMouseDown={(e) => {
+              e.currentTarget.style.transform = 'scale(0.92)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            }}
+            onMouseUp={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+            }}
           >
             <span className="text-2xl">📸</span>
             <span className="text-xs text-gray-400">Story</span>
           </button>
           <button
             className="flex flex-col items-center gap-2 p-4 rounded-2xl transition-all duration-150"
-            style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+            style={{ backgroundColor: 'rgba(255,255,255,0.05)', transform: 'scale(1)' }}
             onClick={() => {/* TODO: Implement save image */}}
+            onTouchStart={(e) => {
+              e.currentTarget.style.transform = 'scale(0.92)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            }}
+            onTouchEnd={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+            }}
+            onMouseDown={(e) => {
+              e.currentTarget.style.transform = 'scale(0.92)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            }}
+            onMouseUp={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+            }}
           >
             <span className="text-2xl">💾</span>
             <span className="text-xs text-gray-400">Save</span>
           </button>
           <button
             className="flex flex-col items-center gap-2 p-4 rounded-2xl transition-all duration-150"
-            style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+            style={{ backgroundColor: 'rgba(255,255,255,0.05)', transform: 'scale(1)' }}
             onClick={() => {/* TODO: Implement share */}}
+            onTouchStart={(e) => {
+              e.currentTarget.style.transform = 'scale(0.92)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            }}
+            onTouchEnd={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+            }}
+            onMouseDown={(e) => {
+              e.currentTarget.style.transform = 'scale(0.92)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            }}
+            onMouseUp={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+            }}
           >
             <span className="text-2xl">📤</span>
             <span className="text-xs text-gray-400">Share</span>
@@ -1687,7 +1747,27 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
         <button
           onClick={handleClose}
           className="w-full py-3 rounded-xl font-medium transition-all duration-150 text-gray-400"
-          style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+          style={{ backgroundColor: 'rgba(255,255,255,0.05)', transform: 'scale(1)' }}
+          onTouchStart={(e) => {
+            e.currentTarget.style.transform = 'scale(0.98)';
+            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+          }}
+          onTouchEnd={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+          }}
+          onMouseDown={(e) => {
+            e.currentTarget.style.transform = 'scale(0.98)';
+            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+          }}
+          onMouseUp={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+          }}
         >
           Close
         </button>
@@ -2409,7 +2489,23 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null }) 
                   className="flex-1 py-3 rounded-xl text-center transition-all duration-200 border-2"
                   style={{
                     backgroundColor: goals[q.key] === option ? 'rgba(0,255,148,0.15)' : 'rgba(255,255,255,0.05)',
-                    borderColor: goals[q.key] === option ? '#00FF94' : 'transparent'
+                    borderColor: goals[q.key] === option ? '#00FF94' : 'transparent',
+                    transform: 'scale(1)'
+                  }}
+                  onTouchStart={(e) => {
+                    e.currentTarget.style.transform = 'scale(0.92)';
+                  }}
+                  onTouchEnd={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                  }}
+                  onMouseDown={(e) => {
+                    e.currentTarget.style.transform = 'scale(0.92)';
+                  }}
+                  onMouseUp={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
                   }}
                 >
                   <span className="font-bold" style={{ color: goals[q.key] === option ? '#00FF94' : 'white' }}>
@@ -3431,7 +3527,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 };
 
 // Home Tab - Simplified
-const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, onDeleteActivity, onEditActivity, user, onOpenSettings }) => {
+const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, onDeleteActivity, onEditActivity, user }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [activityReactions, setActivityReactions] = useState({});
 
@@ -3553,39 +3649,10 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
 
   return (
     <div className="pb-32">
-      {/* Header with Settings */}
-      <div className="px-4 pt-2 pb-3 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-white">STREAKD</h1>
-          <p className="text-xs" style={{ color: '#00FF94' }}>Win the week.</p>
-        </div>
-        <button
-          onClick={onOpenSettings}
-          className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-150"
-          style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
-          onTouchStart={(e) => {
-            e.currentTarget.style.transform = 'scale(0.9)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-          }}
-          onTouchEnd={(e) => {
-            e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-          }}
-          onMouseDown={(e) => {
-            e.currentTarget.style.transform = 'scale(0.9)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-          }}
-          onMouseUp={(e) => {
-            e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-          }}
-        >
-          <span className="text-xl">⚙️</span>
-        </button>
+      {/* Header */}
+      <div className="px-4 pt-2 pb-3">
+        <h1 className="text-xl font-bold text-white">STREAKD</h1>
+        <p className="text-xs" style={{ color: '#00FF94' }}>Win the week.</p>
       </div>
 
       {/* Daily Stats - Single Card */}
@@ -5902,32 +5969,8 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
   );
 };
 
-// Settings Modal Component
-const SettingsModal = ({ isOpen, onClose, user, userProfile, userData, onSignOut, onEditGoals }) => {
-  const [isAnimating, setIsAnimating] = useState(false);
-  const [isVisible, setIsVisible] = useState(false);
-
-  useEffect(() => {
-    if (isOpen) {
-      setIsVisible(true);
-      // Small delay to trigger animation after mount
-      const timer = setTimeout(() => setIsAnimating(true), 10);
-      return () => clearTimeout(timer);
-    } else {
-      setIsAnimating(false);
-      // Wait for animation to complete before hiding
-      const timer = setTimeout(() => setIsVisible(false), 250);
-      return () => clearTimeout(timer);
-    }
-  }, [isOpen]);
-
-  const handleClose = () => {
-    setIsAnimating(false);
-    setTimeout(onClose, 250);
-  };
-
-  if (!isVisible) return null;
-
+// Profile Tab Component
+const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals }) => {
   const goalLabels = {
     liftsPerWeek: { label: 'Strength', icon: '🏋️', suffix: '/week' },
     cardioPerWeek: { label: 'Cardio', icon: '🏃', suffix: '/week' },
@@ -5936,142 +5979,149 @@ const SettingsModal = ({ isOpen, onClose, user, userProfile, userData, onSignOut
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      onClick={handleClose}
-    >
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-        style={{
-          opacity: isAnimating ? 1 : 0,
-          transition: 'opacity 250ms ease-out'
-        }}
-      />
+    <div className="pb-32">
+      {/* Header */}
+      <div className="px-4 pt-2 pb-4">
+        <h1 className="text-xl font-bold text-white">Profile</h1>
+      </div>
 
-      {/* Modal */}
-      <div
-        className="relative w-full max-w-md bg-zinc-900 rounded-3xl max-h-[80vh] flex flex-col"
-        style={{
-          transform: isAnimating ? 'scale(1)' : 'scale(0.95)',
-          opacity: isAnimating ? 1 : 0,
-          transition: 'transform 250ms ease-out, opacity 250ms ease-out'
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="px-6 pt-6 pb-4 border-b border-zinc-800 flex-shrink-0">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold">Settings</h2>
+      <div className="px-4">
+        {/* Profile Section */}
+        <div className="mb-6">
+          <h3 className="text-sm font-semibold text-gray-400 mb-3">PROFILE</h3>
+          <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+            {/* Profile Photo & Name */}
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-16 h-16 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden">
+                {userProfile?.photoURL ? (
+                  <img src={userProfile.photoURL} alt="Profile" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-2xl text-white">
+                    {userProfile?.displayName?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || '?'}
+                  </span>
+                )}
+              </div>
+              <div className="flex-1">
+                <div className="text-lg font-semibold text-white">
+                  {userProfile?.displayName || 'User'}
+                </div>
+                {userProfile?.username && (
+                  <div className="text-sm text-gray-400">@{userProfile.username}</div>
+                )}
+              </div>
+            </div>
+
+            {/* Profile Details */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between py-2 border-t border-zinc-700/50">
+                <span className="text-sm text-gray-400">Email</span>
+                <span className="text-sm text-white">{user?.email || 'Not set'}</span>
+              </div>
+              <div className="flex items-center justify-between py-2 border-t border-zinc-700/50">
+                <span className="text-sm text-gray-400">Username</span>
+                <span className="text-sm text-white">@{userProfile?.username || 'Not set'}</span>
+              </div>
+              <div className="flex items-center justify-between py-2 border-t border-zinc-700/50">
+                <span className="text-sm text-gray-400">Member since</span>
+                <span className="text-sm text-white">
+                  {user?.metadata?.creationTime
+                    ? new Date(user.metadata.creationTime).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+                    : 'Unknown'}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Goals Section */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-400">WEEKLY GOALS</h3>
             <button
-              onClick={handleClose}
-              className="w-8 h-8 rounded-full flex items-center justify-center transition-colors duration-150"
-              style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+              onClick={onEditGoals}
+              className="text-sm font-medium px-3 py-1 rounded-full transition-all duration-150"
+              style={{ color: '#00FF94', backgroundColor: 'rgba(0,255,148,0.1)', transform: 'scale(1)' }}
+              onTouchStart={(e) => {
+                e.currentTarget.style.transform = 'scale(0.92)';
+                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+              }}
+              onTouchEnd={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+              }}
+              onMouseDown={(e) => {
+                e.currentTarget.style.transform = 'scale(0.92)';
+                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+              }}
+              onMouseUp={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+              }}
             >
-              <span className="text-gray-400">✕</span>
+              Edit
             </button>
           </div>
+          <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+            <div className="grid grid-cols-2 gap-3">
+              {Object.entries(goalLabels).map(([key, { label, icon, suffix, format }]) => (
+                <div key={key} className="bg-zinc-700/30 rounded-xl p-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span>{icon}</span>
+                    <span className="text-xs text-gray-400">{label}</span>
+                  </div>
+                  <div className="text-lg font-bold text-white">
+                    {format ? format(userData?.goals?.[key] || 0) : userData?.goals?.[key] || 0}
+                    <span className="text-xs text-gray-500 font-normal ml-1">{suffix}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
-        {/* Content */}
-        <div className="px-6 py-4 overflow-y-auto flex-1 overscroll-contain">
-          {/* Profile Section */}
-          <div className="mb-6">
-            <h3 className="text-sm font-semibold text-gray-400 mb-3">PROFILE</h3>
-            <div className="bg-zinc-800/50 rounded-2xl p-4">
-              {/* Profile Photo & Name */}
-              <div className="flex items-center gap-4 mb-4">
-                <div className="w-16 h-16 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden">
-                  {userProfile?.photoURL ? (
-                    <img src={userProfile.photoURL} alt="Profile" className="w-full h-full object-cover" />
-                  ) : (
-                    <span className="text-2xl text-white">
-                      {userProfile?.displayName?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || '?'}
-                    </span>
-                  )}
-                </div>
-                <div className="flex-1">
-                  <div className="text-lg font-semibold text-white">
-                    {userProfile?.displayName || 'User'}
-                  </div>
-                  {userProfile?.username && (
-                    <div className="text-sm text-gray-400">@{userProfile.username}</div>
-                  )}
-                </div>
-              </div>
-
-              {/* Profile Details */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between py-2 border-t border-zinc-700/50">
-                  <span className="text-sm text-gray-400">Email</span>
-                  <span className="text-sm text-white">{user?.email || 'Not set'}</span>
-                </div>
-                <div className="flex items-center justify-between py-2 border-t border-zinc-700/50">
-                  <span className="text-sm text-gray-400">Username</span>
-                  <span className="text-sm text-white">@{userProfile?.username || 'Not set'}</span>
-                </div>
-                <div className="flex items-center justify-between py-2 border-t border-zinc-700/50">
-                  <span className="text-sm text-gray-400">Member since</span>
-                  <span className="text-sm text-white">
-                    {user?.metadata?.creationTime
-                      ? new Date(user.metadata.creationTime).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
-                      : 'Unknown'}
-                  </span>
-                </div>
-              </div>
+        {/* App Info Section */}
+        <div className="mb-6">
+          <h3 className="text-sm font-semibold text-gray-400 mb-3">APP</h3>
+          <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+            <div className="flex items-center justify-between py-2">
+              <span className="text-sm text-gray-400">Version</span>
+              <span className="text-sm text-white">1.0.0</span>
             </div>
           </div>
-
-          {/* Goals Section */}
-          <div className="mb-6">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-gray-400">WEEKLY GOALS</h3>
-              <button
-                onClick={onEditGoals}
-                className="text-sm font-medium px-3 py-1 rounded-full transition-all duration-150"
-                style={{ color: '#00FF94', backgroundColor: 'rgba(0,255,148,0.1)' }}
-              >
-                Edit
-              </button>
-            </div>
-            <div className="bg-zinc-800/50 rounded-2xl p-4">
-              <div className="grid grid-cols-2 gap-3">
-                {Object.entries(goalLabels).map(([key, { label, icon, suffix, format }]) => (
-                  <div key={key} className="bg-zinc-700/30 rounded-xl p-3">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span>{icon}</span>
-                      <span className="text-xs text-gray-400">{label}</span>
-                    </div>
-                    <div className="text-lg font-bold text-white">
-                      {format ? format(userData?.goals?.[key] || 0) : userData?.goals?.[key] || 0}
-                      <span className="text-xs text-gray-500 font-normal ml-1">{suffix}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* App Info Section */}
-          <div className="mb-6">
-            <h3 className="text-sm font-semibold text-gray-400 mb-3">APP</h3>
-            <div className="bg-zinc-800/50 rounded-2xl p-4">
-              <div className="flex items-center justify-between py-2">
-                <span className="text-sm text-gray-400">Version</span>
-                <span className="text-sm text-white">1.0.0</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Sign Out Button */}
-          <button
-            onClick={onSignOut}
-            className="w-full py-4 rounded-xl font-semibold text-red-500 transition-all duration-150 mb-8"
-            style={{ backgroundColor: 'rgba(255,69,58,0.1)' }}
-          >
-            Sign Out
-          </button>
         </div>
+
+        {/* Sign Out Button */}
+        <button
+          onClick={onSignOut}
+          className="w-full py-4 rounded-xl font-semibold text-red-500 transition-all duration-150 mb-8"
+          style={{ backgroundColor: 'rgba(255,69,58,0.1)', transform: 'scale(1)' }}
+          onTouchStart={(e) => {
+            e.currentTarget.style.transform = 'scale(0.98)';
+            e.currentTarget.style.backgroundColor = 'rgba(255,69,58,0.2)';
+          }}
+          onTouchEnd={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.backgroundColor = 'rgba(255,69,58,0.1)';
+          }}
+          onMouseDown={(e) => {
+            e.currentTarget.style.transform = 'scale(0.98)';
+            e.currentTarget.style.backgroundColor = 'rgba(255,69,58,0.2)';
+          }}
+          onMouseUp={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.backgroundColor = 'rgba(255,69,58,0.1)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.backgroundColor = 'rgba(255,69,58,0.1)';
+          }}
+        >
+          Sign Out
+        </button>
       </div>
     </div>
   );
@@ -6100,8 +6150,8 @@ export default function StreakdApp() {
   const [pullDistance, setPullDistance] = useState(0);
   const [historyView, setHistoryView] = useState('calendar');
   const [historyStatsSubView, setHistoryStatsSubView] = useState('overview');
-  const [showSettings, setShowSettings] = useState(false);
   const [showEditGoals, setShowEditGoals] = useState(false);
+  const [pendingFriendRequests, setPendingFriendRequests] = useState(0);
   
   // Navigate to Hall of Fame
   const navigateToHallOfFame = () => {
@@ -6114,7 +6164,7 @@ export default function StreakdApp() {
   const handleSignOut = async () => {
     try {
       await signOut(auth);
-      setShowSettings(false);
+      setActiveTab('home');
     } catch (error) {
       console.error('Error signing out:', error);
     }
@@ -6159,9 +6209,14 @@ export default function StreakdApp() {
         // Load friends list
         const friendsList = await getFriends(user.uid);
         setFriends(friendsList);
+
+        // Load pending friend requests count
+        const requests = await getFriendRequests(user.uid);
+        setPendingFriendRequests(requests.length);
       } else {
         setUserProfile(null);
         setFriends([]);
+        setPendingFriendRequests(0);
       }
       setAuthLoading(false);
     });
@@ -6852,7 +6907,6 @@ export default function StreakdApp() {
                     setShowAddActivity(true);
                   }}
                   user={user}
-                  onOpenSettings={() => setShowSettings(true)}
                 />
               )}
               {activeTab === 'history' && (
@@ -6877,7 +6931,22 @@ export default function StreakdApp() {
                 />
               )}
               {activeTab === 'feed' && (
-                <ActivityFeed user={user} userProfile={userProfile} friends={friends} />
+                <ActivityFeed
+                  user={user}
+                  userProfile={userProfile}
+                  friends={friends}
+                  onOpenFriends={() => setShowFriends(true)}
+                  pendingRequestsCount={pendingFriendRequests}
+                />
+              )}
+              {activeTab === 'profile' && (
+                <ProfileTab
+                  user={user}
+                  userProfile={userProfile}
+                  userData={userData}
+                  onSignOut={handleSignOut}
+                  onEditGoals={() => setShowEditGoals(true)}
+                />
               )}
             </>
           )}
@@ -6895,7 +6964,53 @@ export default function StreakdApp() {
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 px-4 pb-6 pt-2 z-40" style={{ background: 'linear-gradient(to top, #0A0A0A 0%, #0A0A0A 70%, transparent 100%)' }}>
+        {/* Floating + button - centered, overlapping nav */}
+        <button
+          onClick={() => handleAddActivity()}
+          className="absolute left-1/2 -translate-x-1/2 w-20 h-20 rounded-full flex items-center justify-center shadow-xl transition-all duration-150 z-50"
+          style={{
+            bottom: 'calc(100% - 60px)',
+            backgroundColor: '#00FF94',
+            boxShadow: '0 8px 32px rgba(0, 255, 148, 0.5)',
+            transform: 'translateX(-50%) scale(1)'
+          }}
+          onTouchStart={(e) => {
+            e.currentTarget.style.transform = 'translateX(-50%) scale(0.9)';
+            e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 255, 148, 0.7)';
+            const ring = document.createElement('div');
+            ring.style.cssText = `
+              position: absolute;
+              inset: -8px;
+              border-radius: 50%;
+              border: 3px solid rgba(0, 255, 148, 0.6);
+              animation: hapticPulse 0.3s ease-out forwards;
+              pointer-events: none;
+            `;
+            e.currentTarget.appendChild(ring);
+            setTimeout(() => ring.remove(), 300);
+          }}
+          onTouchEnd={(e) => {
+            e.currentTarget.style.transform = 'translateX(-50%) scale(1)';
+            e.currentTarget.style.boxShadow = '0 8px 32px rgba(0, 255, 148, 0.5)';
+          }}
+          onMouseDown={(e) => {
+            e.currentTarget.style.transform = 'translateX(-50%) scale(0.9)';
+            e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 255, 148, 0.7)';
+          }}
+          onMouseUp={(e) => {
+            e.currentTarget.style.transform = 'translateX(-50%) scale(1)';
+            e.currentTarget.style.boxShadow = '0 8px 32px rgba(0, 255, 148, 0.5)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateX(-50%) scale(1)';
+            e.currentTarget.style.boxShadow = '0 8px 32px rgba(0, 255, 148, 0.5)';
+          }}
+        >
+          <span className="text-4xl text-black font-bold leading-none" style={{ marginTop: '-2px' }}>+</span>
+        </button>
+
         <div className="flex items-center justify-around p-2 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(20px)' }}>
+          {/* Home */}
           <button
             onClick={() => setActiveTab('home')}
             className="flex-1 py-3 flex flex-col items-center gap-1 transition-all duration-150"
@@ -6906,83 +7021,13 @@ export default function StreakdApp() {
             onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
             onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
           >
-            <span className="text-xl">👤</span>
-            <span className={`text-xs ${activeTab === 'home' ? 'text-white' : 'text-gray-500'}`}>Profile</span>
+            <svg className="w-6 h-6" fill="none" stroke={activeTab === 'home' ? 'white' : '#6b7280'} viewBox="0 0 24 24" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
+            </svg>
+            <span className={`text-xs ${activeTab === 'home' ? 'text-white' : 'text-gray-500'}`}>Home</span>
           </button>
 
-          <button
-            onClick={() => setShowFriends(true)}
-            className="flex-1 py-3 flex flex-col items-center gap-1 transition-all duration-150"
-            style={{ transform: 'scale(1)' }}
-            onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.92)'}
-            onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
-            onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.92)'}
-            onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
-            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-          >
-            <span className="text-xl">👥</span>
-            <span className="text-xs text-gray-500">Friends</span>
-          </button>
-
-          <button
-            onClick={() => handleAddActivity()}
-            className="w-16 h-16 rounded-full flex items-center justify-center -mt-12 shadow-xl transition-all duration-150 relative"
-            style={{ 
-              backgroundColor: '#00FF94',
-              boxShadow: '0 4px 20px rgba(0, 255, 148, 0.4)',
-              transform: 'scale(1)'
-            }}
-            onTouchStart={(e) => {
-              e.currentTarget.style.transform = 'scale(0.85)';
-              e.currentTarget.style.boxShadow = '0 2px 10px rgba(0, 255, 148, 0.6)';
-              // Add haptic pulse ring
-              const ring = document.createElement('div');
-              ring.className = 'haptic-ring';
-              ring.style.cssText = `
-                position: absolute;
-                inset: -4px;
-                border-radius: 50%;
-                border: 2px solid rgba(0, 255, 148, 0.6);
-                animation: hapticPulse 0.3s ease-out forwards;
-                pointer-events: none;
-              `;
-              e.currentTarget.appendChild(ring);
-              setTimeout(() => ring.remove(), 300);
-            }}
-            onTouchEnd={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.boxShadow = '0 4px 20px rgba(0, 255, 148, 0.4)';
-            }}
-            onMouseDown={(e) => {
-              e.currentTarget.style.transform = 'scale(0.85)';
-              e.currentTarget.style.boxShadow = '0 2px 10px rgba(0, 255, 148, 0.6)';
-            }}
-            onMouseUp={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.boxShadow = '0 4px 20px rgba(0, 255, 148, 0.4)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.boxShadow = '0 4px 20px rgba(0, 255, 148, 0.4)';
-            }}
-          >
-            <span className="text-3xl text-black font-bold leading-none" style={{ marginTop: '-2px' }}>+</span>
-          </button>
-          
-          <button
-            onClick={() => setActiveTab('feed')}
-            className="flex-1 py-3 flex flex-col items-center gap-1 transition-all duration-150"
-            style={{ transform: 'scale(1)' }}
-            onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.92)'}
-            onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
-            onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.92)'}
-            onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
-            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-          >
-            <span className="text-xl">📱</span>
-            <span className={`text-xs ${activeTab === 'feed' ? 'text-white' : 'text-gray-500'}`}>Feed</span>
-          </button>
-
+          {/* History */}
           <button
             onClick={() => setActiveTab('history')}
             className="flex-1 py-3 flex flex-col items-center gap-1 transition-all duration-150"
@@ -6993,8 +7038,53 @@ export default function StreakdApp() {
             onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
             onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
           >
-            <span className="text-xl">📊</span>
+            <svg className="w-6 h-6" fill="none" stroke={activeTab === 'history' ? 'white' : '#6b7280'} viewBox="0 0 24 24" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
+            </svg>
             <span className={`text-xs ${activeTab === 'history' ? 'text-white' : 'text-gray-500'}`}>History</span>
+          </button>
+
+          {/* Center spacer for the floating button */}
+          <div className="w-16" />
+
+          {/* Friends */}
+          <button
+            onClick={() => setActiveTab('feed')}
+            className="flex-1 py-3 flex flex-col items-center gap-1 transition-all duration-150 relative"
+            style={{ transform: 'scale(1)' }}
+            onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.92)'}
+            onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.92)'}
+            onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+          >
+            <svg className="w-6 h-6" fill="none" stroke={activeTab === 'feed' ? 'white' : '#6b7280'} viewBox="0 0 24 24" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" />
+            </svg>
+            <span className={`text-xs ${activeTab === 'feed' ? 'text-white' : 'text-gray-500'}`}>Friends</span>
+            {pendingFriendRequests > 0 && (
+              <span
+                className="absolute top-1 right-1/4 w-2 h-2 rounded-full"
+                style={{ backgroundColor: '#FF453A' }}
+              />
+            )}
+          </button>
+
+          {/* Profile */}
+          <button
+            onClick={() => setActiveTab('profile')}
+            className="flex-1 py-3 flex flex-col items-center gap-1 transition-all duration-150"
+            style={{ transform: 'scale(1)' }}
+            onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.92)'}
+            onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.92)'}
+            onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+          >
+            <svg className="w-6 h-6" fill="none" stroke={activeTab === 'profile' ? 'white' : '#6b7280'} viewBox="0 0 24 24" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
+            </svg>
+            <span className={`text-xs ${activeTab === 'profile' ? 'text-white' : 'text-gray-500'}`}>Profile</span>
           </button>
         </div>
       </div>
@@ -7153,23 +7243,18 @@ export default function StreakdApp() {
         <Friends
           user={user}
           userProfile={userProfile}
-          onClose={() => setShowFriends(false)}
+          onClose={async () => {
+            setShowFriends(false);
+            // Refresh friends and pending requests after modal closes
+            if (user) {
+              const friendsList = await getFriends(user.uid);
+              setFriends(friendsList);
+              const requests = await getFriendRequests(user.uid);
+              setPendingFriendRequests(requests.length);
+            }
+          }}
         />
       )}
-
-      {/* Settings Modal */}
-      <SettingsModal
-        isOpen={showSettings}
-        onClose={() => setShowSettings(false)}
-        user={user}
-        userProfile={userProfile}
-        userData={userData}
-        onSignOut={handleSignOut}
-        onEditGoals={() => {
-          setShowSettings(false);
-          setShowEditGoals(true);
-        }}
-      />
 
       {/* Edit Goals Screen */}
       {showEditGoals && (

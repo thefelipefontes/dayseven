@@ -515,18 +515,18 @@ const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!" }) =>
     if (show) {
       setIsVisible(true);
       setIsFadingOut(false);
-      
-      // Start fade out after 2.3s
+
+      // Start fade out after 2.5s
       const fadeTimer = setTimeout(() => {
         setIsFadingOut(true);
-      }, 2300);
-      
-      // Complete after fade out (2.3s + 0.5s fade)
+      }, 2500);
+
+      // Complete after fade out (2.5s + 0.8s fade)
       const completeTimer = setTimeout(() => {
         setIsVisible(false);
         onComplete();
-      }, 2800);
-      
+      }, 3300);
+
       return () => {
         clearTimeout(fadeTimer);
         clearTimeout(completeTimer);
@@ -537,9 +537,13 @@ const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!" }) =>
   if (!isVisible) return null;
 
   return (
-    <div 
-      className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none transition-opacity duration-400"
-      style={{ opacity: isFadingOut ? 0 : 1 }}
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none"
+      style={{
+        opacity: isFadingOut ? 0 : 1,
+        transform: isFadingOut ? 'scale(1.1)' : 'scale(1)',
+        transition: 'opacity 0.8s ease-out, transform 0.8s ease-out'
+      }}
     >
       {/* Background pulse */}
       <div 
@@ -670,6 +674,151 @@ const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!" }) =>
   );
 };
 
+// Week Streak Celebration Modal - shown when user completes all goals for the week
+const WeekStreakCelebration = ({ show, onClose, onShare }) => {
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    if (show) {
+      setIsVisible(true);
+    }
+  }, [show]);
+
+  const handleClose = () => {
+    setIsVisible(false);
+    setTimeout(onClose, 300);
+  };
+
+  const handleShare = () => {
+    setIsVisible(false);
+    setTimeout(onShare, 300);
+  };
+
+  if (!show && !isVisible) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 transition-opacity duration-300"
+      style={{
+        backgroundColor: 'rgba(0,0,0,0.9)',
+        opacity: isVisible ? 1 : 0
+      }}
+    >
+      {/* Radial glow background */}
+      <div
+        className="absolute inset-0"
+        style={{
+          background: 'radial-gradient(circle at center, rgba(255,215,0,0.15) 0%, rgba(0,255,148,0.1) 30%, transparent 70%)',
+          animation: 'pulseBg 2s ease-in-out infinite'
+        }}
+      />
+
+      {/* Confetti particles */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        {[...Array(30)].map((_, i) => (
+          <div
+            key={i}
+            className="absolute"
+            style={{
+              width: `${8 + Math.random() * 10}px`,
+              height: `${8 + Math.random() * 10}px`,
+              borderRadius: Math.random() > 0.5 ? '50%' : '2px',
+              backgroundColor: ['#00FF94', '#00D1FF', '#FF9500', '#FFD700', '#FF453A', '#BF5AF2'][i % 6],
+              left: `${Math.random() * 100}%`,
+              top: '-20px',
+              animation: `confetti ${2 + Math.random()}s ease-out forwards`,
+              animationDelay: `${Math.random() * 0.5}s`
+            }}
+          />
+        ))}
+      </div>
+
+      {/* Sparkles */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        {[...Array(12)].map((_, i) => (
+          <div
+            key={`sparkle-${i}`}
+            className="absolute text-2xl"
+            style={{
+              left: `${10 + Math.random() * 80}%`,
+              top: `${10 + Math.random() * 80}%`,
+              animation: 'sparkle 1.5s ease-in-out infinite',
+              animationDelay: `${Math.random() * 1}s`
+            }}
+          >
+            ✨
+          </div>
+        ))}
+      </div>
+
+      {/* Main content */}
+      <div
+        className="relative z-10 text-center transition-all duration-500"
+        style={{
+          transform: isVisible ? 'scale(1) translateY(0)' : 'scale(0.8) translateY(20px)',
+          opacity: isVisible ? 1 : 0
+        }}
+      >
+        {/* Fire emoji with glow rings */}
+        <div className="relative inline-block mb-6">
+          <div
+            className="absolute inset-0 rounded-full"
+            style={{
+              background: 'radial-gradient(circle, rgba(255,215,0,0.4) 0%, transparent 70%)',
+              transform: 'scale(3)',
+              animation: 'pingSlow 1.5s ease-out infinite'
+            }}
+          />
+          <div
+            className="absolute inset-0 rounded-full"
+            style={{
+              background: 'radial-gradient(circle, rgba(0,255,148,0.3) 0%, transparent 70%)',
+              transform: 'scale(4)',
+              animation: 'pingSlower 2s ease-out infinite'
+            }}
+          />
+          <div className="text-7xl relative z-10" style={{ animation: 'wiggle 0.5s ease-in-out' }}>🔥</div>
+        </div>
+
+        {/* Title with gradient */}
+        <div
+          className="text-3xl font-black mb-2"
+          style={{
+            background: 'linear-gradient(135deg, #FFD700 0%, #00FF94 100%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            animation: 'textGlow 1s ease-in-out infinite'
+          }}
+        >
+          You Streaked the Week!
+        </div>
+        <div className="text-gray-400 mb-8">All goals crushed. 💪</div>
+
+        {/* Buttons */}
+        <div className="flex flex-col gap-3 w-64 mx-auto">
+          <button
+            onClick={handleShare}
+            className="w-full py-3 px-6 rounded-xl font-bold text-black transition-all active:scale-95"
+            style={{
+              background: 'linear-gradient(135deg, #FFD700 0%, #00FF94 100%)',
+              boxShadow: '0 4px 20px rgba(255, 215, 0, 0.4)'
+            }}
+          >
+            Share My Week
+          </button>
+          <button
+            onClick={handleClose}
+            className="w-full py-3 px-6 rounded-xl font-medium text-gray-400 transition-all active:scale-95"
+            style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // Share Modal
 const ShareModal = ({ isOpen, onClose, stats }) => {
   const [isAnimating, setIsAnimating] = useState(false);
@@ -754,7 +903,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
 
   // Dynamic motivational taglines
   const getMotivationalTagline = (streak, allGoalsMet) => {
-    if (allGoalsMet) return "Week dominated! 💪";
+    if (allGoalsMet) return "Crushed it! 💪";
     if (streak >= 52) return "Legend status achieved!";
     if (streak >= 26) return "Half-year warrior!";
     if (streak >= 12) return "Consistency is key!";
@@ -836,9 +985,9 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
 
   // Card type configurations
   const cardTypes = [
-    { id: 'weekly', label: '📅', name: 'Weekly' },
-    { id: 'records', label: '🏆', name: 'Records' },
-    { id: 'monthly', label: '📊', name: 'Monthly' }
+    { id: 'weekly', label: '📅', name: 'My Week' },
+    { id: 'records', label: '🏆', name: 'My Records' },
+    { id: 'monthly', label: '📊', name: 'My Month' }
   ];
 
   // Color schemes for each card type
@@ -1022,11 +1171,24 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
         if (weeklySlide === 0) {
           return (
             <div
-              className="relative h-full flex flex-col items-center justify-between pt-8 pb-4 px-6"
+              className="relative h-full flex flex-col items-center justify-between pt-4 pb-4 px-6"
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
             >
-              <div className="text-4xl" style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>📅</div>
+              {/* Celebratory banner when week is streaked */}
+              {allGoalsMet ? (
+                <div
+                  className="w-full py-2 px-4 rounded-xl text-center mb-2"
+                  style={{
+                    background: 'linear-gradient(135deg, #FFD700 0%, #00FF94 100%)',
+                    boxShadow: '0 4px 15px rgba(255, 215, 0, 0.3)'
+                  }}
+                >
+                  <div className="font-black text-sm text-black tracking-wide">WEEK STREAKED! 🔥</div>
+                </div>
+              ) : (
+                <div className="text-4xl" style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>📅</div>
+              )}
               <div className="flex-1 flex flex-col items-center justify-center w-full">
                 <div className="text-center mb-3">
                   <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">{getWeekDateRange()}</div>
@@ -5648,6 +5810,7 @@ export default function StreakdApp() {
   const [showShare, setShowShare] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
   const [celebrationMessage, setCelebrationMessage] = useState('');
+  const [showWeekStreakCelebration, setShowWeekStreakCelebration] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -6129,13 +6292,9 @@ export default function StreakdApp() {
           : prev.personalRecords
       }));
       
+      // Show the week streak celebration modal after a short delay
       setTimeout(() => {
-        if (isNewMasterRecord && newMasterStreak > 1) {
-          setCelebrationMessage(`New Record: ${newMasterStreak} Week Master Streak! 🏆`);
-        } else {
-          setCelebrationMessage('Week Streakd! 🔥');
-        }
-        setShowCelebration(true);
+        setShowWeekStreakCelebration(true);
       }, 2000);
     }
   };
@@ -6573,10 +6732,19 @@ export default function StreakdApp() {
         }}
       />
 
-      <CelebrationOverlay 
+      <CelebrationOverlay
         show={showCelebration}
         message={celebrationMessage}
         onComplete={() => setShowCelebration(false)}
+      />
+
+      <WeekStreakCelebration
+        show={showWeekStreakCelebration}
+        onClose={() => setShowWeekStreakCelebration(false)}
+        onShare={() => {
+          setShowWeekStreakCelebration(false);
+          setShowShare(true);
+        }}
       />
 
       <Toast 

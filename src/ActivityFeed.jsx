@@ -131,6 +131,20 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         stats: {
           calories: { week: 4850, month: 18200, year: 198000, all: 485000 },
           steps: { week: 68000, month: 285000, year: 3200000, all: 9500000 }
+        },
+        volume: {
+          runs: { week: 4, month: 16, year: 180, all: 420 },
+          miles: { week: 18.5, month: 72, year: 820, all: 1950 },
+          runMinutes: { week: 180, month: 720, year: 8200, all: 19500 },
+          strengthSessions: { week: 5, month: 20, year: 220, all: 520 },
+          liftingMinutes: { week: 300, month: 1200, year: 13200, all: 31200 },
+          recoverySessions: { week: 2, month: 8, year: 90, all: 210 },
+          coldPlunges: { week: 1, month: 4, year: 45, all: 108 },
+          saunaSessions: { week: 1, month: 3, year: 35, all: 84 },
+          yogaSessions: { week: 0, month: 1, year: 10, all: 18 },
+          rides: { week: 3, month: 12, year: 140, all: 336 },
+          cycleMiles: { week: 45, month: 180, year: 2100, all: 5040 },
+          cycleMinutes: { week: 150, month: 600, year: 7000, all: 16800 }
         }
       },
       {
@@ -147,6 +161,20 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         stats: {
           calories: { week: 5200, month: 21500, year: 245000, all: 620000 },
           steps: { week: 92000, month: 380000, year: 4100000, all: 12000000 }
+        },
+        volume: {
+          runs: { week: 6, month: 24, year: 280, all: 680 },
+          miles: { week: 32, month: 128, year: 1480, all: 3600 },
+          runMinutes: { week: 320, month: 1280, year: 14800, all: 36000 },
+          strengthSessions: { week: 2, month: 8, year: 96, all: 230 },
+          liftingMinutes: { week: 90, month: 360, year: 4320, all: 10350 },
+          recoverySessions: { week: 3, month: 12, year: 140, all: 340 },
+          coldPlunges: { week: 1, month: 4, year: 46, all: 112 },
+          saunaSessions: { week: 1, month: 4, year: 48, all: 116 },
+          yogaSessions: { week: 1, month: 4, year: 46, all: 112 },
+          rides: { week: 2, month: 8, year: 96, all: 230 },
+          cycleMiles: { week: 30, month: 120, year: 1440, all: 3450 },
+          cycleMinutes: { week: 100, month: 400, year: 4800, all: 11500 }
         }
       },
       {
@@ -163,6 +191,20 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         stats: {
           calories: { week: 3800, month: 15600, year: 172000, all: 380000 },
           steps: { week: 42000, month: 175000, year: 1900000, all: 5200000 }
+        },
+        volume: {
+          runs: { week: 1, month: 4, year: 48, all: 115 },
+          miles: { week: 3, month: 12, year: 144, all: 345 },
+          runMinutes: { week: 30, month: 120, year: 1440, all: 3450 },
+          strengthSessions: { week: 6, month: 24, year: 288, all: 690 },
+          liftingMinutes: { week: 420, month: 1680, year: 20160, all: 48300 },
+          recoverySessions: { week: 3, month: 12, year: 144, all: 345 },
+          coldPlunges: { week: 2, month: 8, year: 96, all: 230 },
+          saunaSessions: { week: 1, month: 4, year: 48, all: 115 },
+          yogaSessions: { week: 0, month: 0, year: 0, all: 0 },
+          rides: { week: 1, month: 4, year: 48, all: 115 },
+          cycleMiles: { week: 15, month: 60, year: 720, all: 1725 },
+          cycleMinutes: { week: 50, month: 200, year: 2400, all: 5750 }
         }
       },
       {
@@ -179,6 +221,20 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         stats: {
           calories: { week: 2900, month: 12400, year: 142000, all: 340000 },
           steps: { week: 55000, month: 230000, year: 2600000, all: 7800000 }
+        },
+        volume: {
+          runs: { week: 3, month: 12, year: 140, all: 336 },
+          miles: { week: 12, month: 48, year: 560, all: 1344 },
+          runMinutes: { week: 120, month: 480, year: 5600, all: 13440 },
+          strengthSessions: { week: 3, month: 12, year: 144, all: 345 },
+          liftingMinutes: { week: 135, month: 540, year: 6480, all: 15525 },
+          recoverySessions: { week: 7, month: 28, year: 336, all: 806 },
+          coldPlunges: { week: 1, month: 4, year: 48, all: 115 },
+          saunaSessions: { week: 1, month: 4, year: 48, all: 115 },
+          yogaSessions: { week: 5, month: 20, year: 240, all: 576 },
+          rides: { week: 4, month: 16, year: 192, all: 460 },
+          cycleMiles: { week: 60, month: 240, year: 2880, all: 6900 },
+          cycleMinutes: { week: 200, month: 800, year: 9600, all: 23000 }
         }
       },
       {
@@ -195,6 +251,20 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         stats: {
           calories: { week: 6100, month: 24800, year: 285000, all: 720000 },
           steps: { week: 78000, month: 320000, year: 3600000, all: 10500000 }
+        },
+        volume: {
+          runs: { week: 5, month: 20, year: 240, all: 576 },
+          miles: { week: 28, month: 112, year: 1344, all: 3225 },
+          runMinutes: { week: 280, month: 1120, year: 13440, all: 32250 },
+          strengthSessions: { week: 5, month: 20, year: 240, all: 576 },
+          liftingMinutes: { week: 350, month: 1400, year: 16800, all: 40320 },
+          recoverySessions: { week: 2, month: 8, year: 96, all: 230 },
+          coldPlunges: { week: 1, month: 4, year: 48, all: 115 },
+          saunaSessions: { week: 1, month: 4, year: 48, all: 115 },
+          yogaSessions: { week: 0, month: 0, year: 0, all: 0 },
+          rides: { week: 5, month: 20, year: 240, all: 576 },
+          cycleMiles: { week: 75, month: 300, year: 3600, all: 8640 },
+          cycleMinutes: { week: 250, month: 1000, year: 12000, all: 28800 }
         }
       },
       {
@@ -211,6 +281,20 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         stats: {
           calories: { week: 4200, month: 17500, year: 195000, all: 465000 },
           steps: { week: 105000, month: 420000, year: 4800000, all: 14000000 }
+        },
+        volume: {
+          runs: { week: 7, month: 28, year: 336, all: 806 },
+          miles: { week: 35, month: 140, year: 1680, all: 4032 },
+          runMinutes: { week: 350, month: 1400, year: 16800, all: 40320 },
+          strengthSessions: { week: 1, month: 4, year: 48, all: 115 },
+          liftingMinutes: { week: 45, month: 180, year: 2160, all: 5175 },
+          recoverySessions: { week: 2, month: 8, year: 96, all: 230 },
+          coldPlunges: { week: 0, month: 2, year: 24, all: 58 },
+          saunaSessions: { week: 1, month: 4, year: 48, all: 115 },
+          yogaSessions: { week: 1, month: 2, year: 24, all: 57 },
+          rides: { week: 6, month: 24, year: 288, all: 690 },
+          cycleMiles: { week: 90, month: 360, year: 4320, all: 10350 },
+          cycleMinutes: { week: 300, month: 1200, year: 14400, all: 34500 }
         }
       }
     ];
@@ -286,6 +370,20 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               year: currentUserData.yearlySteps || 2800000,
               all: currentUserData.allTimeSteps || 8500000
             }
+          },
+          volume: {
+            runs: { week: 4, month: 15, year: 175, all: 420 },
+            miles: { week: 20, month: 78, year: 910, all: 2184 },
+            runMinutes: { week: 200, month: 780, year: 9100, all: 21840 },
+            strengthSessions: { week: 4, month: 16, year: 192, all: 460 },
+            liftingMinutes: { week: 240, month: 960, year: 11520, all: 27600 },
+            recoverySessions: { week: 2, month: 9, year: 105, all: 252 },
+            coldPlunges: { week: 1, month: 3, year: 35, all: 84 },
+            saunaSessions: { week: 1, month: 4, year: 45, all: 108 },
+            yogaSessions: { week: 0, month: 2, year: 25, all: 60 },
+            rides: { week: 3, month: 11, year: 130, all: 312 },
+            cycleMiles: { week: 40, month: 150, year: 1750, all: 4200 },
+            cycleMinutes: { week: 130, month: 500, year: 5800, all: 13900 }
           },
           isCurrentUser: true
         }
@@ -925,8 +1023,8 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     </div>
   );
 
-  // Segmented control as a separate element (not recreated on state change)
-  const segmentedControl = (
+  // Segmented control component
+  const SegmentedControl = () => (
     <div className="px-4 pb-4">
       <div className="relative flex p-1 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
         {/* Sliding pill indicator */}
@@ -939,36 +1037,21 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             transition: 'left 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
           }}
         />
-        <button
-          onClick={() => setActiveView('feed')}
-          className="flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors duration-200 relative z-10"
-          style={{
-            color: activeView === 'feed' ? 'white' : 'rgba(255,255,255,0.5)',
-            transform: 'scale(1)'
-          }}
-          onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.95)'}
-          onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
-          onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.95)'}
-          onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
-          onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-        >
-          Feed
-        </button>
-        <button
-          onClick={() => setActiveView('leaderboard')}
-          className="flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors duration-200 relative z-10"
-          style={{
-            color: activeView === 'leaderboard' ? 'white' : 'rgba(255,255,255,0.5)',
-            transform: 'scale(1)'
-          }}
-          onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.95)'}
-          onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
-          onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.95)'}
-          onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
-          onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-        >
-          Leaderboard
-        </button>
+        {[
+          { key: 'feed', label: 'Feed' },
+          { key: 'leaderboard', label: 'Leaderboard' }
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveView(tab.key)}
+            className="flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors duration-200 relative z-10"
+            style={{
+              color: activeView === tab.key ? 'white' : 'rgba(255,255,255,0.5)'
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -977,7 +1060,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     return (
       <div>
         <FriendsHeaderTop />
-        {segmentedControl}
+        <SegmentedControl />
         <div className="flex items-center justify-center py-12">
           <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
         </div>
@@ -989,7 +1072,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     return (
       <div>
         <FriendsHeaderTop />
-        {segmentedControl}
+        <SegmentedControl />
         <div className="text-center py-12 px-6">
           <div className="text-5xl mb-4">👥</div>
           <p className="text-white font-medium mb-2">Find your workout buddies</p>
@@ -1081,12 +1164,18 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         </div>
 
         <FriendsHeaderTop />
-        {segmentedControl}
+        <SegmentedControl />
 
         {/* Leaderboard content */}
         <div className="px-4 pb-32">
-          {/* Time Range Toggle - smaller secondary style */}
-          <div className="relative flex p-1 rounded-lg mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+          {/* Leaderboard headline */}
+          <div className="mb-4">
+            <div className="text-sm font-semibold text-white">Leaderboard</div>
+            <p className="text-[11px] text-gray-500 mt-0.5">See how you rank among friends</p>
+          </div>
+
+          {/* Time Range Toggle - smaller secondary style, centered and narrower */}
+          <div className="relative flex p-1 rounded-lg mb-4 max-w-sm mx-auto" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
             <div
               className="absolute top-1 bottom-1 rounded-md transition-all duration-300 ease-out"
               style={{
@@ -1236,6 +1325,226 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                   onTap={setSelectedFriend}
                 />
               ))}
+
+              {/* Category Leaders - Volume Stats */}
+              <div className="mt-8">
+                <div className="mb-4">
+                  <div className="text-sm font-semibold text-white">Category Leaders</div>
+                  <p className="text-[11px] text-gray-500 mt-0.5">Top performers by volume this {leaderboardTimeRange === 'all' ? 'all time' : leaderboardTimeRange}</p>
+                </div>
+
+                {/* Running Leaders */}
+                <div className="mb-4">
+                  <div className="text-xs text-gray-400 uppercase tracking-wide mb-2">🏃 Running</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {/* Most Runs */}
+                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(78, 205, 196, 0.1)' }}>
+                      <div className="text-[10px] text-gray-500 uppercase mb-1">Most Runs</div>
+                      {[...sortedLeaderboard]
+                        .sort((a, b) => (b.volume?.runs?.[leaderboardTimeRange] || 0) - (a.volume?.runs?.[leaderboardTimeRange] || 0))
+                        .slice(0, 3)
+                        .map((user, i) => (
+                          <div key={user.uid} className="flex items-center gap-1.5 mb-1">
+                            <span className="text-[10px] text-gray-500">{i + 1}.</span>
+                            <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
+                            <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
+                            <span className="text-[11px] font-bold" style={{ color: '#4ECDC4' }}>{user.volume?.runs?.[leaderboardTimeRange] || 0}</span>
+                          </div>
+                        ))}
+                    </div>
+
+                    {/* Most Miles */}
+                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(78, 205, 196, 0.1)' }}>
+                      <div className="text-[10px] text-gray-500 uppercase mb-1">Most Miles</div>
+                      {[...sortedLeaderboard]
+                        .sort((a, b) => (b.volume?.miles?.[leaderboardTimeRange] || 0) - (a.volume?.miles?.[leaderboardTimeRange] || 0))
+                        .slice(0, 3)
+                        .map((user, i) => (
+                          <div key={user.uid} className="flex items-center gap-1.5 mb-1">
+                            <span className="text-[10px] text-gray-500">{i + 1}.</span>
+                            <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
+                            <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
+                            <span className="text-[11px] font-bold" style={{ color: '#4ECDC4' }}>{user.volume?.miles?.[leaderboardTimeRange]?.toFixed(0) || 0}</span>
+                          </div>
+                        ))}
+                    </div>
+
+                    {/* Most Time */}
+                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(78, 205, 196, 0.1)' }}>
+                      <div className="text-[10px] text-gray-500 uppercase mb-1">Most Time</div>
+                      {[...sortedLeaderboard]
+                        .sort((a, b) => (b.volume?.runMinutes?.[leaderboardTimeRange] || 0) - (a.volume?.runMinutes?.[leaderboardTimeRange] || 0))
+                        .slice(0, 3)
+                        .map((user, i) => {
+                          const mins = user.volume?.runMinutes?.[leaderboardTimeRange] || 0;
+                          const hrs = Math.floor(mins / 60);
+                          return (
+                            <div key={user.uid} className="flex items-center gap-1.5 mb-1">
+                              <span className="text-[10px] text-gray-500">{i + 1}.</span>
+                              <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
+                              <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
+                              <span className="text-[11px] font-bold" style={{ color: '#4ECDC4' }}>{hrs}h</span>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Strength Leaders */}
+                <div className="mb-4">
+                  <div className="text-xs text-gray-400 uppercase tracking-wide mb-2">💪 Strength</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* Most Sessions */}
+                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(255, 107, 107, 0.1)' }}>
+                      <div className="text-[10px] text-gray-500 uppercase mb-1">Most Sessions</div>
+                      {[...sortedLeaderboard]
+                        .sort((a, b) => (b.volume?.strengthSessions?.[leaderboardTimeRange] || 0) - (a.volume?.strengthSessions?.[leaderboardTimeRange] || 0))
+                        .slice(0, 3)
+                        .map((user, i) => (
+                          <div key={user.uid} className="flex items-center gap-1.5 mb-1">
+                            <span className="text-[10px] text-gray-500">{i + 1}.</span>
+                            <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
+                            <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
+                            <span className="text-[11px] font-bold" style={{ color: '#FF6B6B' }}>{user.volume?.strengthSessions?.[leaderboardTimeRange] || 0}</span>
+                          </div>
+                        ))}
+                    </div>
+
+                    {/* Most Time */}
+                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(255, 107, 107, 0.1)' }}>
+                      <div className="text-[10px] text-gray-500 uppercase mb-1">Most Time</div>
+                      {[...sortedLeaderboard]
+                        .sort((a, b) => (b.volume?.liftingMinutes?.[leaderboardTimeRange] || 0) - (a.volume?.liftingMinutes?.[leaderboardTimeRange] || 0))
+                        .slice(0, 3)
+                        .map((user, i) => {
+                          const mins = user.volume?.liftingMinutes?.[leaderboardTimeRange] || 0;
+                          const hrs = Math.floor(mins / 60);
+                          return (
+                            <div key={user.uid} className="flex items-center gap-1.5 mb-1">
+                              <span className="text-[10px] text-gray-500">{i + 1}.</span>
+                              <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
+                              <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
+                              <span className="text-[11px] font-bold" style={{ color: '#FF6B6B' }}>{hrs}h</span>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Recovery Leaders */}
+                <div className="mb-4">
+                  <div className="text-xs text-gray-400 uppercase tracking-wide mb-2">🧘 Recovery</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {/* Cold Plunge */}
+                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(155, 89, 182, 0.1)' }}>
+                      <div className="text-[10px] text-gray-500 uppercase mb-1">🧊 Cold Plunge</div>
+                      {[...sortedLeaderboard]
+                        .sort((a, b) => (b.volume?.coldPlunges?.[leaderboardTimeRange] || 0) - (a.volume?.coldPlunges?.[leaderboardTimeRange] || 0))
+                        .slice(0, 3)
+                        .map((user, i) => (
+                          <div key={user.uid} className="flex items-center gap-1.5 mb-1">
+                            <span className="text-[10px] text-gray-500">{i + 1}.</span>
+                            <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
+                            <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
+                            <span className="text-[11px] font-bold" style={{ color: '#9B59B6' }}>{user.volume?.coldPlunges?.[leaderboardTimeRange] || 0}</span>
+                          </div>
+                        ))}
+                    </div>
+
+                    {/* Sauna */}
+                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(155, 89, 182, 0.1)' }}>
+                      <div className="text-[10px] text-gray-500 uppercase mb-1">🔥 Sauna</div>
+                      {[...sortedLeaderboard]
+                        .sort((a, b) => (b.volume?.saunaSessions?.[leaderboardTimeRange] || 0) - (a.volume?.saunaSessions?.[leaderboardTimeRange] || 0))
+                        .slice(0, 3)
+                        .map((user, i) => (
+                          <div key={user.uid} className="flex items-center gap-1.5 mb-1">
+                            <span className="text-[10px] text-gray-500">{i + 1}.</span>
+                            <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
+                            <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
+                            <span className="text-[11px] font-bold" style={{ color: '#9B59B6' }}>{user.volume?.saunaSessions?.[leaderboardTimeRange] || 0}</span>
+                          </div>
+                        ))}
+                    </div>
+
+                    {/* Yoga */}
+                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(155, 89, 182, 0.1)' }}>
+                      <div className="text-[10px] text-gray-500 uppercase mb-1">🧘 Yoga</div>
+                      {[...sortedLeaderboard]
+                        .sort((a, b) => (b.volume?.yogaSessions?.[leaderboardTimeRange] || 0) - (a.volume?.yogaSessions?.[leaderboardTimeRange] || 0))
+                        .slice(0, 3)
+                        .map((user, i) => (
+                          <div key={user.uid} className="flex items-center gap-1.5 mb-1">
+                            <span className="text-[10px] text-gray-500">{i + 1}.</span>
+                            <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
+                            <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
+                            <span className="text-[11px] font-bold" style={{ color: '#9B59B6' }}>{user.volume?.yogaSessions?.[leaderboardTimeRange] || 0}</span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Cycling Leaders */}
+                <div className="mb-4">
+                  <div className="text-xs text-gray-400 uppercase tracking-wide mb-2">🚴 Cycling</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {/* Most Rides */}
+                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(52, 152, 219, 0.1)' }}>
+                      <div className="text-[10px] text-gray-500 uppercase mb-1">Most Rides</div>
+                      {[...sortedLeaderboard]
+                        .sort((a, b) => (b.volume?.rides?.[leaderboardTimeRange] || 0) - (a.volume?.rides?.[leaderboardTimeRange] || 0))
+                        .slice(0, 3)
+                        .map((user, i) => (
+                          <div key={user.uid} className="flex items-center gap-1.5 mb-1">
+                            <span className="text-[10px] text-gray-500">{i + 1}.</span>
+                            <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
+                            <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
+                            <span className="text-[11px] font-bold" style={{ color: '#3498DB' }}>{user.volume?.rides?.[leaderboardTimeRange] || 0}</span>
+                          </div>
+                        ))}
+                    </div>
+
+                    {/* Most Miles */}
+                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(52, 152, 219, 0.1)' }}>
+                      <div className="text-[10px] text-gray-500 uppercase mb-1">Most Miles</div>
+                      {[...sortedLeaderboard]
+                        .sort((a, b) => (b.volume?.cycleMiles?.[leaderboardTimeRange] || 0) - (a.volume?.cycleMiles?.[leaderboardTimeRange] || 0))
+                        .slice(0, 3)
+                        .map((user, i) => (
+                          <div key={user.uid} className="flex items-center gap-1.5 mb-1">
+                            <span className="text-[10px] text-gray-500">{i + 1}.</span>
+                            <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
+                            <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
+                            <span className="text-[11px] font-bold" style={{ color: '#3498DB' }}>{user.volume?.cycleMiles?.[leaderboardTimeRange]?.toFixed(0) || 0}</span>
+                          </div>
+                        ))}
+                    </div>
+
+                    {/* Most Time */}
+                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(52, 152, 219, 0.1)' }}>
+                      <div className="text-[10px] text-gray-500 uppercase mb-1">Most Time</div>
+                      {[...sortedLeaderboard]
+                        .sort((a, b) => (b.volume?.cycleMinutes?.[leaderboardTimeRange] || 0) - (a.volume?.cycleMinutes?.[leaderboardTimeRange] || 0))
+                        .slice(0, 3)
+                        .map((user, i) => {
+                          const mins = user.volume?.cycleMinutes?.[leaderboardTimeRange] || 0;
+                          const hrs = Math.floor(mins / 60);
+                          return (
+                            <div key={user.uid} className="flex items-center gap-1.5 mb-1">
+                              <span className="text-[10px] text-gray-500">{i + 1}.</span>
+                              <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
+                              <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
+                              <span className="text-[11px] font-bold" style={{ color: '#3498DB' }}>{hrs}h</span>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </>
           )}
         </div>
@@ -1311,7 +1620,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     return (
       <div>
         <FriendsHeaderTop />
-        {segmentedControl}
+        <SegmentedControl />
         <div className="text-center py-12 px-6">
           <div className="text-5xl mb-4">📭</div>
           <p className="text-white font-medium mb-2">No activity yet</p>
@@ -1348,10 +1657,16 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       </div>
 
       <FriendsHeaderTop />
-        {segmentedControl}
+        <SegmentedControl />
 
       {/* Feed content */}
       <div className="px-4 pb-32">
+        {/* Feed headline */}
+        <div className="mb-4">
+          <div className="text-sm font-semibold text-white">Feed</div>
+          <p className="text-[11px] text-gray-500 mt-0.5">Recent activity from friends</p>
+        </div>
+
         {feedActivities.map((activity, index) => (
           <ActivityCard key={`${activity.friend.uid}-${activity.id || index}`} activity={activity} />
         ))}

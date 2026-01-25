@@ -5574,62 +5574,69 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
       {/* Stats View (with mini-toggle for Overview/Records) */}
       {view === 'stats' && (
         <div className="mx-4 mt-2">
-          {/* Mini Toggle */}
-          <div className="relative flex gap-2 p-1 rounded-xl mb-4 mx-auto" style={{ backgroundColor: 'rgba(255,255,255,0.05)', width: '65%' }}>
-            {/* Sliding pill indicator */}
-            <div 
-              className="absolute top-1 bottom-1 rounded-lg transition-all duration-300 ease-out"
-              style={{ 
-                backgroundColor: 'rgba(255,255,255,0.1)',
-                width: 'calc((100% - 8px) / 2)',
-                left: statsSubView === 'overview' ? '4px' : 'calc(4px + (100% - 8px) / 2)'
-              }}
-            />
-            <button
-              onClick={() => setStatsSubView('overview')}
-              className="flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors duration-200 relative z-10"
-              style={{ 
-                color: statsSubView === 'overview' ? 'white' : 'rgba(255,255,255,0.5)'
-              }}
-            >
-              Overview
-            </button>
-            <button
-              onClick={() => setStatsSubView('records')}
-              className="flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors duration-200 relative z-10"
-              style={{ 
-                color: statsSubView === 'records' ? 'white' : 'rgba(255,255,255,0.5)'
-              }}
-            >
-              My Records
-            </button>
+          {/* Stats Headline */}
+          <div className="mb-4">
+            <div className="text-sm font-semibold text-white">Your Stats</div>
+            <p className="text-[11px] text-gray-500 mt-0.5">Your totals over time</p>
+          </div>
+
+          {/* Toggle and Dropdown Row */}
+          <div className="relative flex items-center justify-center mb-4">
+            {/* Mini Toggle - centered */}
+            <div className="relative flex p-1 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)', width: '50%' }}>
+              {/* Sliding pill indicator */}
+              <div
+                className="absolute top-1 bottom-1 rounded-md transition-all duration-300 ease-out"
+                style={{
+                  backgroundColor: 'rgba(255,255,255,0.1)',
+                  width: 'calc((100% - 8px) / 2)',
+                  left: statsSubView === 'overview' ? '4px' : 'calc(4px + (100% - 8px) / 2)'
+                }}
+              />
+              <button
+                onClick={() => setStatsSubView('overview')}
+                className="flex-1 py-1 rounded-md text-xs font-medium transition-colors duration-200 relative z-10"
+                style={{
+                  color: statsSubView === 'overview' ? 'white' : 'rgba(255,255,255,0.5)'
+                }}
+              >
+                Overview
+              </button>
+              <button
+                onClick={() => setStatsSubView('records')}
+                className="flex-1 py-1 rounded-md text-xs font-medium transition-colors duration-200 relative z-10"
+                style={{
+                  color: statsSubView === 'records' ? 'white' : 'rgba(255,255,255,0.5)'
+                }}
+              >
+                My Records
+              </button>
+            </div>
+
+            {/* Time Period Dropdown - positioned on right, only show for overview */}
+            {statsSubView === 'overview' && (
+              <select
+                value={totalsView}
+                onChange={(e) => setTotalsView(e.target.value)}
+                className="absolute right-0 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-xs"
+              >
+                <option value="this-month" className="bg-black">This Month</option>
+                <option value="last-month" className="bg-black">Last Month</option>
+                <option value={String(getCurrentYear())} className="bg-black">{getCurrentYear()}</option>
+                <option value="all-time" className="bg-black">All-Time</option>
+                <optgroup label="Past Months" className="bg-black">
+                  {monthOptions.slice(2).map(opt => (
+                    <option key={opt.value} value={opt.value} className="bg-black">{opt.label}</option>
+                  ))}
+                </optgroup>
+              </select>
+            )}
           </div>
 
           {/* Overview Sub-View */}
           {statsSubView === 'overview' && (
             <>
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <div className="text-sm font-semibold text-white">Your Stats</div>
-                  <p className="text-[11px] text-gray-500 mt-0.5">Your totals over time</p>
-                </div>
-                <select
-                  value={totalsView}
-                  onChange={(e) => setTotalsView(e.target.value)}
-                  className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-xs"
-                >
-                  <option value="this-month" className="bg-black">This Month</option>
-                  <option value="last-month" className="bg-black">Last Month</option>
-                  <option value={String(getCurrentYear())} className="bg-black">{getCurrentYear()}</option>
-                  <option value="all-time" className="bg-black">All-Time</option>
-                  <optgroup label="Past Months" className="bg-black">
-                    {monthOptions.slice(2).map(opt => (
-                      <option key={opt.value} value={opt.value} className="bg-black">{opt.label}</option>
-                    ))}
-                  </optgroup>
-                </select>
-              </div>
-              
+
               {/* Main Stats Grid */}
               <div className="grid grid-cols-2 gap-3 mb-4">
                 <div className="p-4 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(0,255,148,0.2) 0%, rgba(0,255,148,0.05) 100%)' }}>

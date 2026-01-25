@@ -1,4 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { auth } from './firebase';
+import Login from './Login';
+import UsernameSetup from './UsernameSetup';
+import Friends from './Friends';
+import ActivityFeed from './ActivityFeed';
+import { createUserProfile, getUserProfile, saveUserActivities, getUserActivities } from './services/userService';
+import { getFriends, getReactions } from './services/friendService';
 
 // Get today's date in YYYY-MM-DD format
 const getTodayDate = () => {
@@ -3423,8 +3431,9 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 };
 
 // Home Tab - Simplified
-const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, onDeleteActivity, onEditActivity }) => {
+const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, onDeleteActivity, onEditActivity, user, onOpenSettings }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
+  const [activityReactions, setActivityReactions] = useState({});
 
   // Calculate weekly progress directly from activities to ensure it's always in sync
   const weekProgress = useMemo(() => {
@@ -3502,8 +3511,83 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
   const allLatestActivities = activities.slice(0, 10); // Cap at 10 total
   const latestActivities = activityExpanded ? allLatestActivities : allLatestActivities.slice(0, 2);
 
+  // Fetch reactions for user's activities
+  useEffect(() => {
+    const fetchReactions = async () => {
+      if (!user?.uid || activities.length === 0) return;
+
+      const reactionsMap = {};
+      await Promise.all(
+        allLatestActivities.map(async (activity) => {
+          if (activity.id) {
+            try {
+              const reactions = await getReactions(user.uid, activity.id);
+              if (reactions.length > 0) {
+                reactionsMap[activity.id] = reactions;
+              }
+            } catch (error) {
+              console.error('Error fetching reactions for activity:', activity.id, error);
+            }
+          }
+        })
+      );
+      setActivityReactions(reactionsMap);
+    };
+
+    fetchReactions();
+  }, [user?.uid, activities]);
+
+  // Helper to get reaction summary for an activity
+  const getReactionSummary = (activityId) => {
+    const reactions = activityReactions[activityId] || [];
+    if (reactions.length === 0) return null;
+
+    // Count by emoji type
+    const counts = {};
+    reactions.forEach(r => {
+      counts[r.reactionType] = (counts[r.reactionType] || 0) + 1;
+    });
+
+    return { counts, total: reactions.length };
+  };
+
   return (
     <div className="pb-32">
+      {/* Header with Settings */}
+      <div className="px-4 pt-2 pb-3 flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-white">STREAKD</h1>
+          <p className="text-xs" style={{ color: '#00FF94' }}>Win the week.</p>
+        </div>
+        <button
+          onClick={onOpenSettings}
+          className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-150"
+          style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+          onTouchStart={(e) => {
+            e.currentTarget.style.transform = 'scale(0.9)';
+            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+          }}
+          onTouchEnd={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+          }}
+          onMouseDown={(e) => {
+            e.currentTarget.style.transform = 'scale(0.9)';
+            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+          }}
+          onMouseUp={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+          }}
+        >
+          <span className="text-xl">⚙️</span>
+        </button>
+      </div>
+
       {/* Daily Stats - Single Card */}
       <div className="px-4 mb-4">
         <div className="flex items-center justify-between mb-3">
@@ -3873,8 +3957,27 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                   }}
                 >
                   <ActivityIcon type={activity.type} size={20} />
-                  <div className="flex-1">
-                    <div className="text-sm font-semibold">{activity.type}{activity.subtype ? ` • ${activity.subtype}` : ''}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold truncate">{activity.type}{activity.subtype ? ` • ${activity.subtype}` : ''}</span>
+                      {(() => {
+                        const summary = getReactionSummary(activity.id);
+                        if (!summary) return null;
+                        return (
+                          <span
+                            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+                          >
+                            {Object.entries(summary.counts).slice(0, 4).map(([emoji, count]) => (
+                              <span key={emoji} className="flex items-center text-xs">
+                                <span>{emoji}</span>
+                                {count > 1 && <span className="text-gray-300 text-[10px] ml-0.5">{count}</span>}
+                              </span>
+                            ))}
+                          </span>
+                        );
+                      })()}
+                    </div>
                     <div className="text-[10px] text-gray-500">{formatFriendlyDate(activity.date)} at {activity.time}</div>
                   </div>
                   <div className="text-right">
@@ -5799,8 +5902,186 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
   );
 };
 
+// Settings Modal Component
+const SettingsModal = ({ isOpen, onClose, user, userProfile, userData, onSignOut, onEditGoals }) => {
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setIsVisible(true);
+      // Small delay to trigger animation after mount
+      const timer = setTimeout(() => setIsAnimating(true), 10);
+      return () => clearTimeout(timer);
+    } else {
+      setIsAnimating(false);
+      // Wait for animation to complete before hiding
+      const timer = setTimeout(() => setIsVisible(false), 250);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen]);
+
+  const handleClose = () => {
+    setIsAnimating(false);
+    setTimeout(onClose, 250);
+  };
+
+  if (!isVisible) return null;
+
+  const goalLabels = {
+    liftsPerWeek: { label: 'Strength', icon: '🏋️', suffix: '/week' },
+    cardioPerWeek: { label: 'Cardio', icon: '🏃', suffix: '/week' },
+    recoveryPerWeek: { label: 'Recovery', icon: '🧊', suffix: '/week' },
+    stepsPerDay: { label: 'Steps', icon: '👟', suffix: '/day', format: (v) => `${(v/1000).toFixed(0)}k` }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      onClick={handleClose}
+    >
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        style={{
+          opacity: isAnimating ? 1 : 0,
+          transition: 'opacity 250ms ease-out'
+        }}
+      />
+
+      {/* Modal */}
+      <div
+        className="relative w-full max-w-md bg-zinc-900 rounded-3xl max-h-[80vh] flex flex-col"
+        style={{
+          transform: isAnimating ? 'scale(1)' : 'scale(0.95)',
+          opacity: isAnimating ? 1 : 0,
+          transition: 'transform 250ms ease-out, opacity 250ms ease-out'
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="px-6 pt-6 pb-4 border-b border-zinc-800 flex-shrink-0">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold">Settings</h2>
+            <button
+              onClick={handleClose}
+              className="w-8 h-8 rounded-full flex items-center justify-center transition-colors duration-150"
+              style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+            >
+              <span className="text-gray-400">✕</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="px-6 py-4 overflow-y-auto flex-1 overscroll-contain">
+          {/* Profile Section */}
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold text-gray-400 mb-3">PROFILE</h3>
+            <div className="bg-zinc-800/50 rounded-2xl p-4">
+              {/* Profile Photo & Name */}
+              <div className="flex items-center gap-4 mb-4">
+                <div className="w-16 h-16 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden">
+                  {userProfile?.photoURL ? (
+                    <img src={userProfile.photoURL} alt="Profile" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-2xl text-white">
+                      {userProfile?.displayName?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || '?'}
+                    </span>
+                  )}
+                </div>
+                <div className="flex-1">
+                  <div className="text-lg font-semibold text-white">
+                    {userProfile?.displayName || 'User'}
+                  </div>
+                  {userProfile?.username && (
+                    <div className="text-sm text-gray-400">@{userProfile.username}</div>
+                  )}
+                </div>
+              </div>
+
+              {/* Profile Details */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between py-2 border-t border-zinc-700/50">
+                  <span className="text-sm text-gray-400">Email</span>
+                  <span className="text-sm text-white">{user?.email || 'Not set'}</span>
+                </div>
+                <div className="flex items-center justify-between py-2 border-t border-zinc-700/50">
+                  <span className="text-sm text-gray-400">Username</span>
+                  <span className="text-sm text-white">@{userProfile?.username || 'Not set'}</span>
+                </div>
+                <div className="flex items-center justify-between py-2 border-t border-zinc-700/50">
+                  <span className="text-sm text-gray-400">Member since</span>
+                  <span className="text-sm text-white">
+                    {user?.metadata?.creationTime
+                      ? new Date(user.metadata.creationTime).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+                      : 'Unknown'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Goals Section */}
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-gray-400">WEEKLY GOALS</h3>
+              <button
+                onClick={onEditGoals}
+                className="text-sm font-medium px-3 py-1 rounded-full transition-all duration-150"
+                style={{ color: '#00FF94', backgroundColor: 'rgba(0,255,148,0.1)' }}
+              >
+                Edit
+              </button>
+            </div>
+            <div className="bg-zinc-800/50 rounded-2xl p-4">
+              <div className="grid grid-cols-2 gap-3">
+                {Object.entries(goalLabels).map(([key, { label, icon, suffix, format }]) => (
+                  <div key={key} className="bg-zinc-700/30 rounded-xl p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span>{icon}</span>
+                      <span className="text-xs text-gray-400">{label}</span>
+                    </div>
+                    <div className="text-lg font-bold text-white">
+                      {format ? format(userData?.goals?.[key] || 0) : userData?.goals?.[key] || 0}
+                      <span className="text-xs text-gray-500 font-normal ml-1">{suffix}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* App Info Section */}
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold text-gray-400 mb-3">APP</h3>
+            <div className="bg-zinc-800/50 rounded-2xl p-4">
+              <div className="flex items-center justify-between py-2">
+                <span className="text-sm text-gray-400">Version</span>
+                <span className="text-sm text-white">1.0.0</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Sign Out Button */}
+          <button
+            onClick={onSignOut}
+            className="w-full py-4 rounded-xl font-semibold text-red-500 transition-all duration-150 mb-8"
+            style={{ backgroundColor: 'rgba(255,69,58,0.1)' }}
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // Main App
 export default function StreakdApp() {
+  const [user, setUser] = useState(null);
+  const [userProfile, setUserProfile] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [isOnboarded, setIsOnboarded] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('home');
@@ -5808,6 +6089,8 @@ export default function StreakdApp() {
   const [pendingActivity, setPendingActivity] = useState(null);
   const [defaultActivityDate, setDefaultActivityDate] = useState(null);
   const [showShare, setShowShare] = useState(false);
+  const [showFriends, setShowFriends] = useState(false);
+  const [friends, setFriends] = useState([]);
   const [showCelebration, setShowCelebration] = useState(false);
   const [celebrationMessage, setCelebrationMessage] = useState('');
   const [showWeekStreakCelebration, setShowWeekStreakCelebration] = useState(false);
@@ -5817,6 +6100,8 @@ export default function StreakdApp() {
   const [pullDistance, setPullDistance] = useState(0);
   const [historyView, setHistoryView] = useState('calendar');
   const [historyStatsSubView, setHistoryStatsSubView] = useState('overview');
+  const [showSettings, setShowSettings] = useState(false);
+  const [showEditGoals, setShowEditGoals] = useState(false);
   
   // Navigate to Hall of Fame
   const navigateToHallOfFame = () => {
@@ -5824,13 +6109,71 @@ export default function StreakdApp() {
     setHistoryView('stats');
     setHistoryStatsSubView('records');
   };
+
+  // Handle sign out
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+      setShowSettings(false);
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+  };
   
+  // Listen to auth state
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setUser(user);
+      if (user) {
+        // Check if user profile exists, create if not
+        let profile = await getUserProfile(user.uid);
+        if (!profile) {
+          await createUserProfile(user);
+          profile = await getUserProfile(user.uid);
+        }
+        setUserProfile(profile);
+        // Load user's activities from Firestore
+        const userActivities = await getUserActivities(user.uid);
+        if (userActivities.length > 0) {
+          setActivities(userActivities);
+          // Build calendar data from loaded activities
+          const calendarMap = {};
+          userActivities.forEach(activity => {
+            if (activity.date) {
+              if (!calendarMap[activity.date]) {
+                calendarMap[activity.date] = [];
+              }
+              calendarMap[activity.date].push({
+                type: activity.type,
+                subtype: activity.subtype,
+                duration: activity.duration,
+                distance: activity.distance,
+                calories: activity.calories,
+                avgHr: activity.avgHr,
+                maxHr: activity.maxHr
+              });
+            }
+          });
+          setCalendarData(calendarMap);
+        }
+        // Load friends list
+        const friendsList = await getFriends(user.uid);
+        setFriends(friendsList);
+      } else {
+        setUserProfile(null);
+        setFriends([]);
+      }
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
   // Simulate initial load
   useEffect(() => {
     const timer = setTimeout(() => setIsLoading(false), 800);
     return () => clearTimeout(timer);
   }, []);
-  
+
   // Real state management
   const [activities, setActivities] = useState(initialActivities);
   const [calendarData, setCalendarData] = useState(initialCalendarData);
@@ -5842,6 +6185,34 @@ export default function StreakdApp() {
   useEffect(() => {
     userDataRef.current = userData;
   }, [userData]);
+
+  // Track if initial load is complete to avoid saving on mount
+  const hasLoadedActivities = useRef(false);
+
+  // Save activities to Firestore when they change
+  useEffect(() => {
+    console.log('Activities effect triggered:', { user: !!user, activitiesCount: activities.length, hasLoaded: hasLoadedActivities.current });
+
+    if (!user) {
+      console.log('No user, skipping save');
+      return;
+    }
+
+    // Skip the initial load - only save after user makes changes
+    if (!hasLoadedActivities.current) {
+      console.log('Initial load, marking as loaded');
+      hasLoadedActivities.current = true;
+      return;
+    }
+
+    // Debounce the save to avoid too many writes
+    const timeoutId = setTimeout(() => {
+      console.log('Saving activities:', activities);
+      saveUserActivities(user.uid, activities);
+    }, 1000);
+
+    return () => clearTimeout(timeoutId);
+  }, [activities, user]);
 
   // Helper to determine effective category of an activity
   const getActivityCategory = (activity) => {
@@ -6364,6 +6735,30 @@ export default function StreakdApp() {
     }
   };
 
+  // Show loading spinner while checking auth
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // Show login if no user
+  if (!user) {
+    return <Login onLogin={() => {}} />;
+  }
+
+  // Show username setup if user doesn't have a username
+  if (!userProfile?.username) {
+    return (
+      <UsernameSetup
+        user={user}
+        onComplete={(username) => setUserProfile(prev => ({ ...prev, username }))}
+      />
+    );
+  }
+
   if (!isOnboarded) {
     return <OnboardingSurvey 
       currentGoals={userData.goals}
@@ -6423,44 +6818,10 @@ export default function StreakdApp() {
         </div>
       </div>
 
-      <div 
-        className="h-12" 
+      <div
+        className="h-12"
         style={{ marginTop: isRefreshing ? '48px' : '0', transition: 'margin 0.3s' }}
       />
-      
-      <div className="px-4 py-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-black tracking-tight">STREAKD</h1>
-          <p className="text-xs text-gray-500">Win the week.</p>
-        </div>
-        <button 
-          onClick={() => setIsOnboarded(false)}
-          className="w-10 h-10 rounded-full flex items-center justify-center text-xl transition-all duration-150"
-          style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
-          onTouchStart={(e) => {
-            e.currentTarget.style.transform = 'scale(0.85)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.2)';
-          }}
-          onTouchEnd={(e) => {
-            e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-          }}
-          onMouseDown={(e) => {
-            e.currentTarget.style.transform = 'scale(0.85)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.2)';
-          }}
-          onMouseUp={(e) => {
-            e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-          }}
-        >
-          ⚙️
-        </button>
-      </div>
 
       <div className="mt-2">
         <div 
@@ -6475,8 +6836,8 @@ export default function StreakdApp() {
           ) : (
             <>
               {activeTab === 'home' && (
-                <HomeTab 
-                  onAddActivity={handleAddActivity} 
+                <HomeTab
+                  onAddActivity={handleAddActivity}
                   pendingSync={initialPendingSync}
                   activities={activities}
                   weeklyProgress={weeklyProgress}
@@ -6490,6 +6851,8 @@ export default function StreakdApp() {
                     });
                     setShowAddActivity(true);
                   }}
+                  user={user}
+                  onOpenSettings={() => setShowSettings(true)}
                 />
               )}
               {activeTab === 'history' && (
@@ -6513,6 +6876,9 @@ export default function StreakdApp() {
                   initialStatsSubView={historyStatsSubView}
                 />
               )}
+              {activeTab === 'feed' && (
+                <ActivityFeed user={user} userProfile={userProfile} friends={friends} />
+              )}
             </>
           )}
         </div>
@@ -6530,7 +6896,7 @@ export default function StreakdApp() {
 
       <div className="fixed bottom-0 left-0 right-0 px-4 pb-6 pt-2 z-40" style={{ background: 'linear-gradient(to top, #0A0A0A 0%, #0A0A0A 70%, transparent 100%)' }}>
         <div className="flex items-center justify-around p-2 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(20px)' }}>
-          <button 
+          <button
             onClick={() => setActiveTab('home')}
             className="flex-1 py-3 flex flex-col items-center gap-1 transition-all duration-150"
             style={{ transform: 'scale(1)' }}
@@ -6543,8 +6909,22 @@ export default function StreakdApp() {
             <span className="text-xl">👤</span>
             <span className={`text-xs ${activeTab === 'home' ? 'text-white' : 'text-gray-500'}`}>Profile</span>
           </button>
-          
-          <button 
+
+          <button
+            onClick={() => setShowFriends(true)}
+            className="flex-1 py-3 flex flex-col items-center gap-1 transition-all duration-150"
+            style={{ transform: 'scale(1)' }}
+            onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.92)'}
+            onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.92)'}
+            onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+          >
+            <span className="text-xl">👥</span>
+            <span className="text-xs text-gray-500">Friends</span>
+          </button>
+
+          <button
             onClick={() => handleAddActivity()}
             className="w-16 h-16 rounded-full flex items-center justify-center -mt-12 shadow-xl transition-all duration-150 relative"
             style={{ 
@@ -6589,7 +6969,21 @@ export default function StreakdApp() {
             <span className="text-3xl text-black font-bold leading-none" style={{ marginTop: '-2px' }}>+</span>
           </button>
           
-          <button 
+          <button
+            onClick={() => setActiveTab('feed')}
+            className="flex-1 py-3 flex flex-col items-center gap-1 transition-all duration-150"
+            style={{ transform: 'scale(1)' }}
+            onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.92)'}
+            onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.92)'}
+            onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+          >
+            <span className="text-xl">📱</span>
+            <span className={`text-xs ${activeTab === 'feed' ? 'text-white' : 'text-gray-500'}`}>Feed</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('history')}
             className="flex-1 py-3 flex flex-col items-center gap-1 transition-all duration-150"
             style={{ transform: 'scale(1)' }}
@@ -6747,13 +7141,65 @@ export default function StreakdApp() {
         }}
       />
 
-      <Toast 
+      <Toast
         show={showToast}
         message={toastMessage}
         onDismiss={() => setShowToast(false)}
         onTap={navigateToHallOfFame}
         type="record"
       />
+
+      {showFriends && (
+        <Friends
+          user={user}
+          userProfile={userProfile}
+          onClose={() => setShowFriends(false)}
+        />
+      )}
+
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        user={user}
+        userProfile={userProfile}
+        userData={userData}
+        onSignOut={handleSignOut}
+        onEditGoals={() => {
+          setShowSettings(false);
+          setShowEditGoals(true);
+        }}
+      />
+
+      {/* Edit Goals Screen */}
+      {showEditGoals && (
+        <div className="fixed inset-0 z-50 bg-black">
+          <OnboardingSurvey
+            currentGoals={userData.goals}
+            onCancel={() => setShowEditGoals(false)}
+            onComplete={(goals) => {
+              setUserData(prev => ({
+                ...prev,
+                goals: {
+                  ...prev.goals,
+                  liftsPerWeek: goals.liftsPerWeek,
+                  cardioPerWeek: goals.cardioPerWeek,
+                  recoveryPerWeek: goals.recoveryPerWeek,
+                  stepsPerDay: goals.stepsPerDay
+                }
+              }));
+              setWeeklyProgress(prev => ({
+                ...prev,
+                lifts: { ...prev.lifts, goal: goals.liftsPerWeek },
+                cardio: { ...prev.cardio, goal: goals.cardioPerWeek },
+                recovery: { ...prev.recovery, goal: goals.recoveryPerWeek },
+                steps: { ...prev.steps, goal: goals.stepsPerDay }
+              }));
+              setShowEditGoals(false);
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

@@ -897,52 +897,77 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
     switch (cardType) {
       case 'records':
         const records = stats?.records || {};
-        // Find the "star" record - highest calories is often most impressive
-        const highestCal = getRecordVal(records.highestCalories);
         const longestDist = getRecordVal(records.longestDistance);
-        const fastestPaceVal = getRecordVal(records.fastestPace);
         return (
-          <div className="relative h-full flex flex-col items-center justify-between pt-8 pb-14 px-6">
-            <div className="text-4xl" style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>🏆</div>
+          <div className="relative h-full flex flex-col items-center justify-between pt-6 pb-3 px-5">
+            <div className="text-3xl" style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>🏆</div>
             <div className="flex-1 flex flex-col items-center justify-center w-full">
-              <div className="text-center mb-4">
-                <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Personal Records</div>
-                <div className="font-black text-2xl" style={{ color: colors.primary, textShadow: `0 0 30px ${colors.glow}` }}>Hall of Fame</div>
+              <div className="text-center mb-3">
+                <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Personal Records</div>
+                <div className="font-black text-xl" style={{ color: colors.primary, textShadow: `0 0 30px ${colors.glow}` }}>Hall of Fame</div>
               </div>
-              {/* Featured Record */}
-              {highestCal > 0 && (
-                <div className="w-full p-4 rounded-2xl mb-3 text-center" style={{ backgroundColor: 'rgba(255,215,0,0.1)', border: '1px solid rgba(255,215,0,0.2)' }}>
-                  <div className="text-[9px] text-gray-500 uppercase mb-1">Top Burn</div>
-                  <div className="text-3xl font-black" style={{ color: colors.primary }}>{highestCal.toLocaleString()}</div>
-                  <div className="text-xs text-gray-400">calories in one session</div>
+
+              {/* Streaks Section */}
+              <div className="w-full p-2.5 rounded-xl mb-2" style={{ backgroundColor: 'rgba(255,215,0,0.05)' }}>
+                <div className="text-[9px] text-gray-500 uppercase tracking-wider text-center mb-2">🔥 Streak Records</div>
+                <div className="flex justify-around">
+                  <div className="text-center">
+                    <div className="text-lg font-black" style={{ color: colors.primary }}>{records.longestMasterStreak || 0}</div>
+                    <div className="text-[8px] text-gray-500">Master</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-lg font-black" style={{ color: '#00FF94' }}>{records.longestStrengthStreak || 0}</div>
+                    <div className="text-[8px] text-gray-500">Strength</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-lg font-black" style={{ color: '#FF9500' }}>{records.longestCardioStreak || 0}</div>
+                    <div className="text-[8px] text-gray-500">Cardio</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-lg font-black" style={{ color: '#00D1FF' }}>{records.longestRecoveryStreak || 0}</div>
+                    <div className="text-[8px] text-gray-500">Recovery</div>
+                  </div>
                 </div>
-              )}
-              <div className="w-full space-y-2">
-                <div className="flex justify-between items-center p-2.5 rounded-xl" style={{ backgroundColor: 'rgba(255,215,0,0.05)' }}>
-                  <span className="text-xs text-gray-400">🏋️ Longest Strength</span>
-                  <span className="font-bold text-sm" style={{ color: colors.primary }}>{getRecordVal(records.longestStrength) ? `${getRecordVal(records.longestStrength)}m` : '--'}</span>
-                </div>
-                <div className="flex justify-between items-center p-2.5 rounded-xl" style={{ backgroundColor: 'rgba(255,215,0,0.05)' }}>
-                  <span className="text-xs text-gray-400">🏃 Longest Run</span>
-                  <span className="font-bold text-sm" style={{ color: colors.primary }}>{longestDist ? `${longestDist.toFixed(2)}mi` : '--'}</span>
-                </div>
-                <div className="flex justify-between items-center p-2.5 rounded-xl" style={{ backgroundColor: 'rgba(255,215,0,0.05)' }}>
-                  <span className="text-xs text-gray-400">⚡ Fastest Pace</span>
-                  <span className="font-bold text-sm" style={{ color: colors.primary }}>{formatPace(fastestPaceVal)}/mi</span>
-                </div>
-                <div className="flex justify-between items-center p-2.5 rounded-xl" style={{ backgroundColor: 'rgba(255,215,0,0.05)' }}>
-                  <span className="text-xs text-gray-400">🚴 Fastest Cycling</span>
-                  <span className="font-bold text-sm" style={{ color: colors.primary }}>{formatPace(getRecordVal(records.fastestCyclingPace))}/mi</span>
-                </div>
-                <div className="flex justify-between items-center p-2.5 rounded-xl" style={{ backgroundColor: 'rgba(255,215,0,0.05)' }}>
-                  <span className="text-xs text-gray-400">📅 Most Miles/Week</span>
-                  <span className="font-bold text-sm" style={{ color: colors.primary }}>{getRecordVal(records.mostMilesWeek) ? `${getRecordVal(records.mostMilesWeek).toFixed(1)}mi` : '--'}</span>
+              </div>
+
+              {/* Totals Section */}
+              <div className="w-full p-2.5 rounded-xl" style={{ backgroundColor: 'rgba(255,215,0,0.05)' }}>
+                <div className="text-[9px] text-gray-500 uppercase tracking-wider text-center mb-2">📊 All-Time Bests</div>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] text-gray-400">🏃 Longest Distance</span>
+                    <span className="font-bold text-xs" style={{ color: colors.primary }}>{longestDist ? `${longestDist.toFixed(2)} mi` : '--'}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] text-gray-400">🏃 Most Runs/Week</span>
+                    <span className="font-bold text-xs" style={{ color: colors.primary }}>{records.mostRunsWeek || 0}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] text-gray-400">🏋️ Most Lifts/Week</span>
+                    <span className="font-bold text-xs" style={{ color: colors.primary }}>{records.mostLiftsWeek || 0}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] text-gray-400">💪 Most Workouts/Week</span>
+                    <span className="font-bold text-xs" style={{ color: colors.primary }}>{records.mostWorkoutsWeek || 0}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] text-gray-400">🧊 Most Recovery/Week</span>
+                    <span className="font-bold text-xs" style={{ color: colors.primary }}>{records.mostRecoveryWeek || 0}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] text-gray-400">🔥 Most Calories/Day</span>
+                    <span className="font-bold text-xs" style={{ color: colors.primary }}>{records.mostCaloriesDay ? records.mostCaloriesDay.toLocaleString() : (getRecordVal(records.highestCalories) || '--')}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] text-gray-400">📍 Most Miles/Week</span>
+                    <span className="font-bold text-xs" style={{ color: colors.primary }}>{records.mostMilesWeek ? `${records.mostMilesWeek.toFixed(1)} mi` : '--'}</span>
+                  </div>
                 </div>
               </div>
             </div>
-            <div className="text-center mt-auto w-full">
-              <div className="inline-block text-lg font-black tracking-wider" style={{ background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
-              <div className="text-[9px] text-gray-600 tracking-widest uppercase -mt-0.5">Personal Bests</div>
+            <div className="text-center w-full">
+              <div className="inline-block text-base font-black tracking-wider" style={{ background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
+              <div className="text-[8px] text-gray-600 tracking-widest uppercase -mt-0.5">Personal Bests</div>
             </div>
           </div>
         );

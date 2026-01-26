@@ -51,7 +51,16 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   const [leaderboardCategory, setLeaderboardCategory] = useState('master'); // 'master', 'strength', 'cardio', 'recovery', 'calories', 'steps'
   const [leaderboardTimeRange, setLeaderboardTimeRange] = useState('week'); // 'week', 'month', 'year', 'all'
   const [selectedFriend, setSelectedFriend] = useState(null); // For viewing friend profile
-  const [showShareModal, setShowShareModal] = useState(false);
+  const [isFriendProfileClosing, setIsFriendProfileClosing] = useState(false); // For fade out animation
+
+  // Handler for closing friend profile with animation
+  const handleCloseFriendProfile = () => {
+    setIsFriendProfileClosing(true);
+    setTimeout(() => {
+      setSelectedFriend(null);
+      setIsFriendProfileClosing(false);
+    }, 200);
+  };
 
   const reactionEmojis = ['💪', '🔥', '👏', '❤️'];
 
@@ -945,63 +954,104 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   };
 
   // Friend Profile Modal
-  const FriendProfileModal = ({ friend, onClose }) => {
+  const FriendProfileModal = ({ friend, onClose, isClosing }) => {
     if (!friend) return null;
 
     return (
-      <div className="fixed inset-0 bg-black/80 z-50 flex items-end justify-center" onClick={onClose}>
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center px-6"
+        onClick={onClose}
+        style={{
+          animation: isClosing ? 'fade-out 0.2s ease-in forwards' : 'fade-in 0.2s ease-out forwards'
+        }}
+      >
+        {/* Backdrop */}
+        <div className="absolute inset-0 bg-black/70 backdrop-blur-md" />
+
+        {/* Modal */}
         <div
-          className="w-full max-w-lg bg-zinc-900 rounded-t-3xl p-6 pb-8"
-          onClick={e => e.stopPropagation()}
+          className="relative w-full max-w-sm rounded-3xl overflow-hidden"
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            backgroundColor: '#1C1C1E',
+            border: '1px solid rgba(255,255,255,0.1)',
+            animation: isClosing ? 'scale-fade-out 0.2s ease-in forwards' : 'scale-fade-in 0.2s ease-out forwards'
+          }}
         >
-          {/* Header */}
-          <div className="flex items-center gap-4 mb-6">
-            <ProfilePhoto photoURL={friend.photoURL} displayName={friend.displayName} size={64} />
-            <div>
-              <p className="text-white font-bold text-lg">{friend.displayName || friend.username}</p>
-              <p className="text-gray-400">@{friend.username}</p>
+          {/* Header with profile photo */}
+          <div className="relative pt-8 pb-4 px-6">
+            {/* Background gradient */}
+            <div
+              className="absolute inset-0 opacity-30"
+              style={{
+                background: 'linear-gradient(180deg, rgba(0,255,148,0.3) 0%, transparent 100%)'
+              }}
+            />
+
+            {/* Profile Photo */}
+            <div className="relative flex flex-col items-center">
+              <div className="w-24 h-24 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden border-4 border-zinc-800 mb-3">
+                {friend.photoURL ? (
+                  <img src={friend.photoURL} alt={friend.displayName} className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-3xl text-white">{friend.displayName?.[0]?.toUpperCase() || '?'}</span>
+                )}
+              </div>
+              <h3 className="text-xl font-bold text-white">{friend.displayName || friend.username}</h3>
+              <p className="text-gray-400 text-sm">@{friend.username}</p>
             </div>
           </div>
 
-          {/* Stats grid */}
-          <div className="grid grid-cols-3 gap-3 mb-6">
-            <div className="bg-zinc-800 rounded-xl p-3 text-center">
-              <p className="text-2xl font-bold text-white">{friend.masterStreak || 0}</p>
-              <p className="text-gray-500 text-xs">Week Streak</p>
+          {/* Stats */}
+          <div className="px-6 pb-4">
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <p className="text-2xl font-bold text-white">{friend.masterStreak || 0}</p>
+                <p className="text-gray-500 text-xs">Week Streak</p>
+              </div>
+              <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <p className="text-2xl font-bold text-white">{friend.weeksWon || 0}</p>
+                <p className="text-gray-500 text-xs">Weeks Won</p>
+              </div>
+              <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <p className="text-2xl font-bold text-white">{friend.totalWorkouts || 0}</p>
+                <p className="text-gray-500 text-xs">Workouts</p>
+              </div>
             </div>
-            <div className="bg-zinc-800 rounded-xl p-3 text-center">
-              <p className="text-2xl font-bold text-white">{friend.weeksWon || 0}</p>
-              <p className="text-gray-500 text-xs">Weeks Won</p>
-            </div>
-            <div className="bg-zinc-800 rounded-xl p-3 text-center">
-              <p className="text-2xl font-bold text-white">{friend.totalWorkouts || 0}</p>
-              <p className="text-gray-500 text-xs">Workouts</p>
-            </div>
-          </div>
 
-          {/* Streak breakdown */}
-          <div className="space-y-2 mb-6">
-            <div className="flex items-center justify-between bg-zinc-800 rounded-lg p-3">
-              <span className="text-gray-400">💪 Strength Streak</span>
-              <span className="text-white font-bold">{friend.strengthStreak || 0}</span>
-            </div>
-            <div className="flex items-center justify-between bg-zinc-800 rounded-lg p-3">
-              <span className="text-gray-400">🏃 Cardio Streak</span>
-              <span className="text-white font-bold">{friend.cardioStreak || 0}</span>
-            </div>
-            <div className="flex items-center justify-between bg-zinc-800 rounded-lg p-3">
-              <span className="text-gray-400">🧘 Recovery Streak</span>
-              <span className="text-white font-bold">{friend.recoveryStreak || 0}</span>
+            {/* Streak breakdown */}
+            <div className="space-y-2 mb-4">
+              <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <span className="text-gray-400 flex items-center gap-2">
+                  <span style={{ color: '#00FF94' }}>💪</span> Strength Streak
+                </span>
+                <span className="text-white font-bold">{friend.strengthStreak || 0}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <span className="text-gray-400 flex items-center gap-2">
+                  <span style={{ color: '#FF9500' }}>🏃</span> Cardio Streak
+                </span>
+                <span className="text-white font-bold">{friend.cardioStreak || 0}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <span className="text-gray-400 flex items-center gap-2">
+                  <span style={{ color: '#00D1FF' }}>🧊</span> Recovery Streak
+                </span>
+                <span className="text-white font-bold">{friend.recoveryStreak || 0}</span>
+              </div>
             </div>
           </div>
 
           {/* Close button */}
-          <button
-            onClick={onClose}
-            className="w-full py-3 rounded-full bg-zinc-800 text-white font-medium"
-          >
-            Close
-          </button>
+          <div className="px-6 pb-6">
+            <button
+              onClick={onClose}
+              className="w-full py-3 rounded-xl text-gray-400 font-medium transition-all duration-150 active:scale-98"
+              style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
+            >
+              Close
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -1095,6 +1145,26 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
 
   // Single unified return - keeps SegmentedControl mounted for animations
   return (
+      <>
+      {/* Animation keyframes */}
+      <style>{`
+        @keyframes fade-in {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes fade-out {
+          from { opacity: 1; }
+          to { opacity: 0; }
+        }
+        @keyframes scale-fade-in {
+          from { opacity: 0; transform: scale(0.95); }
+          to { opacity: 1; transform: scale(1); }
+        }
+        @keyframes scale-fade-out {
+          from { opacity: 1; transform: scale(1); }
+          to { opacity: 0; transform: scale(0.95); }
+        }
+      `}</style>
       <div
         className="h-full overflow-y-auto"
         onTouchStart={handleTouchStart}
@@ -1270,21 +1340,8 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                 />
               )}
 
-              {/* Rankings label with share button */}
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-gray-500 text-xs uppercase tracking-wide">{getCategoryLabel()} Rankings</p>
-                <button
-                  onClick={() => setShowShareModal(true)}
-                  className="p-1.5 transition-colors duration-150 hover:text-white"
-                  style={{ color: 'rgba(255,255,255,0.4)' }}
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-                    <polyline points="16 6 12 2 8 6" />
-                    <line x1="12" y1="2" x2="12" y2="15" />
-                  </svg>
-                </button>
-              </div>
+              {/* Rankings label */}
+              <p className="text-gray-500 text-xs uppercase tracking-wide mb-3">{getCategoryLabel()} Rankings</p>
 
               {/* Top 3 in list form (compact) */}
               {topThree.map((userData, index) => (
@@ -1537,67 +1594,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         )}
 
         {/* Friend Profile Modal */}
-        <FriendProfileModal friend={selectedFriend} onClose={() => setSelectedFriend(null)} />
-
-        {/* Share Modal */}
-        {showShareModal && (
-          <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setShowShareModal(false)}>
-            <div className="bg-zinc-900 rounded-2xl p-6 max-w-sm w-full" onClick={e => e.stopPropagation()}>
-              <div className="text-center mb-6">
-                <div className="text-4xl mb-2">🏆</div>
-                <h3 className="text-white font-bold text-lg">Share Leaderboard</h3>
-                <p className="text-gray-400 text-sm mt-1">Show off your ranking!</p>
-              </div>
-
-              {/* Preview card */}
-              <div className="bg-gradient-to-br from-zinc-800 to-zinc-900 rounded-xl p-4 mb-6 border border-zinc-700">
-                <p className="text-gray-400 text-xs mb-2">{getCategoryLabel()}</p>
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center">
-                    <span className="text-green-400 font-bold text-lg">#{currentUserRank}</span>
-                  </div>
-                  <div>
-                    <p className="text-white font-bold">{userProfile?.displayName || 'You'}</p>
-                    <p className="text-gray-400 text-sm">
-                      {(() => {
-                        const userData = sortedLeaderboard.find(u => u.isCurrentUser);
-                        const val = getSortValue(userData);
-                        return (leaderboardCategory === 'calories' || leaderboardCategory === 'steps')
-                          ? (val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val)
-                          : val;
-                      })()} {leaderboardCategory === 'calories' ? 'cal' : leaderboardCategory === 'steps' ? 'steps' : 'streak'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowShareModal(false)}
-                  className="flex-1 py-3 rounded-full bg-zinc-800 text-white font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => {
-                    // In a real app, this would trigger native share
-                    if (navigator.share) {
-                      navigator.share({
-                        title: 'My Streakd Ranking',
-                        text: `I'm ranked #${currentUserRank} on the ${getCategoryLabel()} leaderboard! 🏆`
-                      });
-                    }
-                    setShowShareModal(false);
-                  }}
-                  className="flex-1 py-3 rounded-full font-medium text-black"
-                  style={{ backgroundColor: '#00FF94' }}
-                >
-                  Share
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        <FriendProfileModal friend={selectedFriend} onClose={handleCloseFriendProfile} isClosing={isFriendProfileClosing} />
 
         {/* Feed View - Empty State */}
         {!isLoading && friends && friends.length > 0 && activeView === 'feed' && feedActivities.length === 0 && (
@@ -1623,6 +1620,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           </div>
         )}
       </div>
+      </>
     );
 };
 

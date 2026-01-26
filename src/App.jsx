@@ -1818,30 +1818,44 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
         )}
 
         {/* Format Selection */}
-        <div className="flex justify-center gap-2 mb-2">
+        <div className="flex justify-center gap-3 mb-3">
           <button
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all duration-200"
+            className="flex items-center gap-2 px-4 py-2 rounded-full transition-all duration-200"
             style={{
               backgroundColor: cardFormat === 'story' ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.05)',
-              border: cardFormat === 'story' ? '1px solid rgba(255,255,255,0.2)' : '1px solid transparent'
+              border: cardFormat === 'story' ? '1px solid rgba(255,255,255,0.2)' : '1px solid rgba(255,255,255,0.1)'
             }}
             onClick={() => setCardFormat('story')}
           >
             <svg width="12" height="18" viewBox="0 0 16 24" fill="none">
-              <rect x="1" y="1" width="14" height="22" rx="3" stroke={cardFormat === 'story' ? '#E1306C' : 'rgba(255,255,255,0.5)'} strokeWidth="1.5"/>
+              <defs>
+                <linearGradient id="igGradientStory" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#F58529" />
+                  <stop offset="50%" stopColor="#DD2A7B" />
+                  <stop offset="100%" stopColor="#515BD4" />
+                </linearGradient>
+              </defs>
+              <rect x="1" y="1" width="14" height="22" rx="3" stroke={cardFormat === 'story' ? 'url(#igGradientStory)' : 'rgba(255,255,255,0.5)'} strokeWidth="1.5"/>
             </svg>
             <span className={`text-xs font-medium ${cardFormat === 'story' ? 'text-white' : 'text-gray-500'}`}>Story</span>
           </button>
           <button
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all duration-200"
+            className="flex items-center gap-2 px-4 py-2 rounded-full transition-all duration-200"
             style={{
               backgroundColor: cardFormat === 'post' ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.05)',
-              border: cardFormat === 'post' ? '1px solid rgba(255,255,255,0.2)' : '1px solid transparent'
+              border: cardFormat === 'post' ? '1px solid rgba(255,255,255,0.2)' : '1px solid rgba(255,255,255,0.1)'
             }}
             onClick={() => setCardFormat('post')}
           >
             <svg width="14" height="16" viewBox="0 0 20 24" fill="none">
-              <rect x="1" y="2" width="18" height="20" rx="3" stroke={cardFormat === 'post' ? '#E1306C' : 'rgba(255,255,255,0.5)'} strokeWidth="1.5"/>
+              <defs>
+                <linearGradient id="igGradientPost" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#F58529" />
+                  <stop offset="50%" stopColor="#DD2A7B" />
+                  <stop offset="100%" stopColor="#515BD4" />
+                </linearGradient>
+              </defs>
+              <rect x="1" y="2" width="18" height="20" rx="3" stroke={cardFormat === 'post' ? 'url(#igGradientPost)' : 'rgba(255,255,255,0.5)'} strokeWidth="1.5"/>
             </svg>
             <span className={`text-xs font-medium ${cardFormat === 'post' ? 'text-white' : 'text-gray-500'}`}>Post</span>
           </button>

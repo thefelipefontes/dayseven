@@ -1728,35 +1728,35 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
       onClick={(e) => e.target === e.currentTarget && handleClose()}
     >
       <div
-        className="w-full max-w-xs transition-all duration-500 ease-out"
+        className="w-full max-w-md transition-all duration-500 ease-out"
         style={{
           transform: isAnimating ? 'scale(1) translateY(0)' : 'scale(0.8) translateY(50px)',
           opacity: isAnimating ? 1 : 0
         }}
       >
         {/* Card Type Tabs */}
-        <div className="flex gap-1 p-1 rounded-2xl mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+        <div className="flex gap-1.5 p-1.5 rounded-2xl mb-5" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
           {cardTypes.map((type) => (
             <button
               key={type.id}
               onClick={() => setCardType(type.id)}
-              className="flex-1 py-2 px-1 rounded-xl text-center transition-all duration-200"
+              className="flex-1 py-3 px-2 rounded-xl text-center transition-all duration-200"
               style={{
                 backgroundColor: cardType === type.id ? colorSchemes[type.id].primary + '20' : 'transparent',
                 color: cardType === type.id ? colorSchemes[type.id].primary : 'rgba(255,255,255,0.5)'
               }}
             >
-              <div className="text-lg">{type.label}</div>
-              <div className="text-[9px] font-medium">{type.name}</div>
+              <div className="text-xl">{type.label}</div>
+              <div className="text-[10px] font-medium">{type.name}</div>
             </button>
           ))}
         </div>
 
         {/* Card Preview Container */}
         <div
-          className="relative mb-3 flex justify-center"
+          className="relative mb-4 flex justify-center"
           style={{
-            height: cardFormat === 'story' ? '384px' : '300px',
+            height: cardFormat === 'story' ? '520px' : '440px',
             transition: 'height 0.3s ease'
           }}
         >
@@ -1767,7 +1767,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
             style={{
               width: cardFormat === 'story' ? '270px' : '320px',
               height: cardFormat === 'story' ? '480px' : '400px',
-              transform: cardFormat === 'story' ? 'scale(0.8)' : 'scale(0.75)',
+              transform: cardFormat === 'story' ? 'scale(1.08)' : 'scale(1.1)',
               transformOrigin: 'top center',
               background: 'linear-gradient(180deg, #0a0a0a 0%, #0d0d0d 50%, #000000 100%)',
               boxShadow: `0 25px 50px -12px ${colors.shadow}, 0 0 100px ${colors.glow}`
@@ -1813,24 +1813,24 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
 
         {/* Weekly Slide Navigation */}
         {cardType === 'weekly' && (
-          <div className="flex justify-center gap-1.5 mb-2">
-            <button onClick={() => setWeeklySlide(0)} className="w-1.5 h-1.5 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 0 ? '#00FF94' : 'rgba(255,255,255,0.2)' }} />
-            <button onClick={() => setWeeklySlide(1)} className="w-1.5 h-1.5 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 1 ? '#00FF94' : 'rgba(255,255,255,0.2)' }} />
-            <button onClick={() => setWeeklySlide(2)} className="w-1.5 h-1.5 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 2 ? '#00FF94' : 'rgba(255,255,255,0.2)' }} />
+          <div className="flex justify-center gap-2 mb-4">
+            <button onClick={() => setWeeklySlide(0)} className="w-2.5 h-2.5 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 0 ? '#00FF94' : 'rgba(255,255,255,0.2)' }} />
+            <button onClick={() => setWeeklySlide(1)} className="w-2.5 h-2.5 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 1 ? '#00FF94' : 'rgba(255,255,255,0.2)' }} />
+            <button onClick={() => setWeeklySlide(2)} className="w-2.5 h-2.5 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 2 ? '#00FF94' : 'rgba(255,255,255,0.2)' }} />
           </div>
         )}
 
         {/* Format Selection */}
-        <div className="flex justify-center gap-3 mb-3">
+        <div className="flex justify-center gap-4 mb-4">
           <button
-            className="flex items-center gap-2 px-4 py-2 rounded-full transition-all duration-200"
+            className="flex items-center gap-2.5 px-5 py-2.5 rounded-full transition-all duration-200"
             style={{
               backgroundColor: cardFormat === 'story' ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.05)',
               border: cardFormat === 'story' ? '1px solid rgba(255,255,255,0.2)' : '1px solid rgba(255,255,255,0.1)'
             }}
             onClick={() => setCardFormat('story')}
           >
-            <svg width="12" height="18" viewBox="0 0 16 24" fill="none">
+            <svg width="14" height="21" viewBox="0 0 16 24" fill="none">
               <defs>
                 <linearGradient id="igGradientStory" x1="0%" y1="0%" x2="100%" y2="100%">
                   <stop offset="0%" stopColor="#F58529" />
@@ -1840,17 +1840,17 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
               </defs>
               <rect x="1" y="1" width="14" height="22" rx="3" stroke={cardFormat === 'story' ? 'url(#igGradientStory)' : 'rgba(255,255,255,0.5)'} strokeWidth="1.5"/>
             </svg>
-            <span className={`text-xs font-medium ${cardFormat === 'story' ? 'text-white' : 'text-gray-500'}`}>Story</span>
+            <span className={`text-sm font-medium ${cardFormat === 'story' ? 'text-white' : 'text-gray-500'}`}>Story</span>
           </button>
           <button
-            className="flex items-center gap-2 px-4 py-2 rounded-full transition-all duration-200"
+            className="flex items-center gap-2.5 px-5 py-2.5 rounded-full transition-all duration-200"
             style={{
               backgroundColor: cardFormat === 'post' ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.05)',
               border: cardFormat === 'post' ? '1px solid rgba(255,255,255,0.2)' : '1px solid rgba(255,255,255,0.1)'
             }}
             onClick={() => setCardFormat('post')}
           >
-            <svg width="14" height="16" viewBox="0 0 20 24" fill="none">
+            <svg width="16" height="19" viewBox="0 0 20 24" fill="none">
               <defs>
                 <linearGradient id="igGradientPost" x1="0%" y1="0%" x2="100%" y2="100%">
                   <stop offset="0%" stopColor="#F58529" />
@@ -1860,14 +1860,14 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
               </defs>
               <rect x="1" y="2" width="18" height="20" rx="3" stroke={cardFormat === 'post' ? 'url(#igGradientPost)' : 'rgba(255,255,255,0.5)'} strokeWidth="1.5"/>
             </svg>
-            <span className={`text-xs font-medium ${cardFormat === 'post' ? 'text-white' : 'text-gray-500'}`}>Post</span>
+            <span className={`text-sm font-medium ${cardFormat === 'post' ? 'text-white' : 'text-gray-500'}`}>Post</span>
           </button>
         </div>
 
         {/* Share and Save Buttons */}
-        <div className="flex gap-2 mb-2">
+        <div className="flex justify-center gap-3 mb-3">
           <button
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-semibold transition-all duration-200 active:scale-[0.98]"
+            className="flex items-center justify-center gap-2.5 px-8 py-3.5 rounded-xl font-semibold transition-all duration-200 active:scale-[0.98]"
             style={{
               background: 'linear-gradient(135deg, #E1306C 0%, #833AB4 50%, #405DE6 100%)',
               opacity: isGenerating ? 0.7 : 1,
@@ -1877,24 +1877,24 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
           >
             {isGenerating ? (
               <>
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span className="text-white text-sm">Generating...</span>
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <span className="text-white text-base">Generating...</span>
               </>
             ) : (
               <>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="18" cy="5" r="3"/>
                   <circle cx="6" cy="12" r="3"/>
                   <circle cx="18" cy="19" r="3"/>
                   <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
                   <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
                 </svg>
-                <span className="text-white text-sm">Share {cardFormat === 'story' ? 'Story' : 'Post'}</span>
+                <span className="text-white text-base">Share {cardFormat === 'story' ? 'Story' : 'Post'}</span>
               </>
             )}
           </button>
           <button
-            className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl font-medium transition-all duration-200"
+            className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-medium transition-all duration-200"
             style={{
               backgroundColor: 'rgba(255,255,255,0.08)',
               border: '1px solid rgba(255,255,255,0.1)',
@@ -1903,19 +1903,19 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
             }}
             onClick={handleSaveImage}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
               <polyline points="7 10 12 15 17 10"/>
               <line x1="12" y1="15" x2="12" y2="3"/>
             </svg>
-            <span className="text-gray-300 text-sm">Save</span>
+            <span className="text-gray-300 text-base">Save</span>
           </button>
         </div>
 
         {/* Close Button */}
         <button
           onClick={handleClose}
-          className="w-full py-2 font-medium text-gray-500 text-sm"
+          className="w-full py-3 font-medium text-gray-500 text-base"
         >
           Close
         </button>

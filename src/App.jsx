@@ -942,8 +942,17 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
               // Apply to text elements (not containers with many children)
               if (text && el.children.length === 0) {
                 const currentTransform = el.style.transform || '';
+                const isPostFormat = actualWidth / actualHeight > 0.7;
                 if (!currentTransform.includes('translateY')) {
-                  el.style.transform = currentTransform + ' translateY(-6px)';
+                  // Move "Master Streak" and "weeks hitting all goals" - different for post vs story
+                  if (text === 'Master Streak' || text === 'weeks hitting all goals') {
+                    el.style.transform = currentTransform + ` translateY(${isPostFormat ? '2px' : '6px'})`;
+                  // Move big hero numbers up higher (large font size numbers)
+                  } else if (/^\d+$/.test(text) && el.style.fontSize && (el.style.fontSize.includes('3rem') || el.style.fontSize.includes('4rem'))) {
+                    el.style.transform = currentTransform + ' translateY(-12px)';
+                  } else {
+                    el.style.transform = currentTransform + ' translateY(-6px)';
+                  }
                 }
               }
             }
@@ -1402,7 +1411,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
               {/* Main content wrapper */}
               <div className={isPostFormat ? 'flex-1' : ''}>
               {/* Header */}
-              <div className="text-center">
+              <div className={`text-center ${isPostFormat ? '' : 'mt-6'}`}>
                 {allGoalsMet ? (
                   <div
                     className={`${isPostFormat ? 'py-1.5 px-4' : 'py-2 px-5'} rounded-xl inline-block`}
@@ -1709,7 +1718,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
             </div>
 
             {/* Bottom stats */}
-            <div className="w-full">
+            <div className={`w-full ${isPostFormat ? 'mt-2' : 'mt-2.5'}`}>
               <div className={`grid grid-cols-2 ${isPostFormat ? 'gap-1.5 p-2' : 'gap-2 p-2.5'} rounded-xl ${isPostFormat ? 'mb-1.5' : 'mb-2'}`} style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
                 <div className="text-center">
                   <div className={`${isPostFormat ? 'text-base' : 'text-xl'} font-black text-white`}>{stats?.longestStreak || stats?.streak || 0}</div>
@@ -1720,7 +1729,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
                   <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500 uppercase`}>Weeks Won</div>
                 </div>
               </div>
-              <div className="text-center">
+              <div className={`text-center ${isPostFormat ? '-mt-0.5' : 'mt-0.5'}`}>
                 <StreakdLogo gradient={['#ffffff', '#888888']} size={isPostFormat ? 'sm' : 'base'} />
                 <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-600 tracking-widest uppercase -mt-0.5`}>Streak Stats</div>
               </div>

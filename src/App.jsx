@@ -7,6 +7,7 @@ import Friends from './Friends';
 import ActivityFeed from './ActivityFeed';
 import { createUserProfile, getUserProfile, saveUserActivities, getUserActivities, uploadProfilePhoto } from './services/userService';
 import { getFriends, getReactions, getFriendRequests } from './services/friendService';
+import html2canvas from 'html2canvas';
 
 // Get today's date in YYYY-MM-DD format
 const getTodayDate = () => {
@@ -834,6 +835,155 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
   const [cardType, setCardType] = useState('weekly');
   const [weeklySlide, setWeeklySlide] = useState(0); // 0 = progress, 1 = highlights
   const [touchStart, setTouchStart] = useState(null);
+  const [cardFormat, setCardFormat] = useState('story'); // 'story' (9:16) or 'post' (4:5)
+  const [isGenerating, setIsGenerating] = useState(false);
+  const cardRef = useRef(null);
+
+  // Generate image from card
+  const generateImage = async () => {
+    if (!cardRef.current) return null;
+
+    try {
+      const isStory = cardFormat === 'story';
+      const actualWidth = isStory ? 270 : 320;
+      const actualHeight = isStory ? 480 : 400;
+
+      const canvas = await html2canvas(cardRef.current, {
+        backgroundColor: null,
+        scale: 3,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        width: actualWidth,
+        height: actualHeight,
+        onclone: (clonedDoc, clonedElement) => {
+          clonedElement.style.transform = 'none';
+          clonedElement.style.width = `${actualWidth}px`;
+          clonedElement.style.height = `${actualHeight}px`;
+          clonedElement.style.borderRadius = '0';
+          clonedElement.style.overflow = 'hidden';
+          clonedElement.style.background = 'linear-gradient(180deg, #0a0a0a 0%, #0d0d0d 50%, #000000 100%)';
+
+          // Fix all elements
+          const allElements = clonedElement.querySelectorAll('*');
+          allElements.forEach(el => {
+            // Pause animations
+            el.style.animation = 'none';
+            el.style.transition = 'none';
+
+            // Fix gradient text - html2canvas doesn't support background-clip: text
+            // So we replace gradient text with solid color
+            const computedStyle = window.getComputedStyle(el);
+            if (computedStyle.webkitBackgroundClip === 'text' ||
+                computedStyle.backgroundClip === 'text' ||
+                el.style.webkitBackgroundClip === 'text' ||
+                el.style.WebkitBackgroundClip === 'text') {
+              el.style.background = 'none';
+              el.style.webkitBackgroundClip = 'unset';
+              el.style.WebkitBackgroundClip = 'unset';
+              el.style.backgroundClip = 'unset';
+              el.style.webkitTextFillColor = 'unset';
+              el.style.WebkitTextFillColor = 'unset';
+              // Set a visible color based on the text content
+              el.style.color = 'rgba(255, 255, 255, 0.7)';
+            }
+          });
+        }
+      });
+
+      // Apply rounded corners by drawing on a new canvas
+      const roundedCanvas = document.createElement('canvas');
+      roundedCanvas.width = canvas.width;
+      roundedCanvas.height = canvas.height;
+      const ctx = roundedCanvas.getContext('2d');
+
+      // Draw rounded rectangle clip path
+      const radius = 16 * 3; // 16px border-radius * scale
+      ctx.beginPath();
+      ctx.moveTo(radius, 0);
+      ctx.lineTo(canvas.width - radius, 0);
+      ctx.quadraticCurveTo(canvas.width, 0, canvas.width, radius);
+      ctx.lineTo(canvas.width, canvas.height - radius);
+      ctx.quadraticCurveTo(canvas.width, canvas.height, canvas.width - radius, canvas.height);
+      ctx.lineTo(radius, canvas.height);
+      ctx.quadraticCurveTo(0, canvas.height, 0, canvas.height - radius);
+      ctx.lineTo(0, radius);
+      ctx.quadraticCurveTo(0, 0, radius, 0);
+      ctx.closePath();
+      ctx.clip();
+
+      // Draw the original canvas onto the rounded one
+      ctx.drawImage(canvas, 0, 0);
+
+      return roundedCanvas;
+      return canvas;
+    } catch (error) {
+      console.error('Error generating image:', error);
+      return null;
+    }
+  };
+
+  // Save image to device
+  const handleSaveImage = async () => {
+    setIsGenerating(true);
+    try {
+      const canvas = await generateImage();
+      if (!canvas) {
+        alert('Failed to generate image. Please try again.');
+        return;
+      }
+      const link = document.createElement('a');
+      link.download = `streakd-${cardType}-${Date.now()}.png`;
+      link.href = canvas.toDataURL('image/png', 1.0);
+      link.click();
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // Share image
+  const executeShare = async () => {
+    setIsGenerating(true);
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+    try {
+      const canvas = await generateImage();
+      if (!canvas) {
+        alert('Failed to generate image. Please try again.');
+        setIsGenerating(false);
+        return;
+      }
+
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png', 1.0));
+      const file = new File([blob], `streakd-${cardFormat}.png`, { type: 'image/png' });
+
+      let shared = false;
+      if (navigator.share && navigator.canShare) {
+        try {
+          if (navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file] });
+            shared = true;
+          }
+        } catch (e) {
+          if (e.name === 'AbortError') {
+            shared = true;
+          }
+        }
+      }
+
+      if (!shared) {
+        const link = document.createElement('a');
+        link.download = `streakd-${cardType}-${Date.now()}.png`;
+        link.href = canvas.toDataURL('image/png', 1.0);
+        link.click();
+      }
+    } catch (error) {
+      console.error('Error in executeShare:', error);
+      alert('Failed to generate image. Please try again.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   // Swipe handlers for weekly slides
   const handleTouchStart = (e) => {
@@ -1051,80 +1201,86 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
 
   // Render the appropriate card content
   const renderCardContent = () => {
+    const isPostFormat = cardFormat === 'post';
+
     switch (cardType) {
       case 'records':
         const records = stats?.records || {};
         const longestDist = getRecordVal(records.longestDistance);
         return (
-          <div className="relative h-full flex flex-col items-center justify-between pt-6 pb-3 px-5">
-            <div className="text-3xl" style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>🏆</div>
-            <div className="flex-1 flex flex-col items-center justify-center w-full">
-              <div className="text-center mb-3">
-                <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Personal Records</div>
-                <div className="font-black text-xl" style={{ color: colors.primary, textShadow: `0 0 30px ${colors.glow}` }}>Hall of Fame</div>
-              </div>
+          <div className={`relative h-full flex flex-col ${isPostFormat ? 'py-3 px-3' : 'py-4 px-4'}`}>
+            {/* Header */}
+            <div className="text-center">
+              <div className={isPostFormat ? 'text-xl' : 'text-2xl'} style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>🏆</div>
+              <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500 uppercase tracking-wider mt-0.5`}>Personal Records</div>
+              <div className={`font-black ${isPostFormat ? 'text-base' : 'text-lg'}`} style={{ color: colors.primary, textShadow: `0 0 30px ${colors.glow}` }}>Hall of Fame</div>
+            </div>
 
+            {/* Content */}
+            <div className={`flex-1 flex flex-col justify-center ${isPostFormat ? 'py-1' : 'py-2'}`}>
               {/* Streaks Section */}
-              <div className="w-full p-2.5 rounded-xl mb-2" style={{ backgroundColor: 'rgba(255,215,0,0.05)' }}>
-                <div className="text-[9px] text-gray-500 uppercase tracking-wider text-center mb-2">🔥 Streak Records</div>
+              <div className={`w-full ${isPostFormat ? 'py-1.5 px-2' : 'py-2 px-3'} rounded-xl ${isPostFormat ? 'mb-1.5' : 'mb-2'}`} style={{ backgroundColor: 'rgba(255,215,0,0.05)' }}>
+                <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500 uppercase tracking-wider text-center ${isPostFormat ? 'mb-1' : 'mb-1.5'}`}>🔥 Streak Records</div>
                 <div className="flex justify-around">
                   <div className="text-center">
-                    <div className="text-lg font-black" style={{ color: colors.primary }}>{records.longestMasterStreak || 0}</div>
-                    <div className="text-[8px] text-gray-500">Master</div>
+                    <div className={`${isPostFormat ? 'text-base' : 'text-lg'} font-black`} style={{ color: colors.primary }}>{records.longestMasterStreak || 0}</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>Master</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-lg font-black" style={{ color: '#00FF94' }}>{records.longestStrengthStreak || 0}</div>
-                    <div className="text-[8px] text-gray-500">Strength</div>
+                    <div className={`${isPostFormat ? 'text-base' : 'text-lg'} font-black`} style={{ color: '#00FF94' }}>{records.longestStrengthStreak || 0}</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>Strength</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-lg font-black" style={{ color: '#FF9500' }}>{records.longestCardioStreak || 0}</div>
-                    <div className="text-[8px] text-gray-500">Cardio</div>
+                    <div className={`${isPostFormat ? 'text-base' : 'text-lg'} font-black`} style={{ color: '#FF9500' }}>{records.longestCardioStreak || 0}</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>Cardio</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-lg font-black" style={{ color: '#00D1FF' }}>{records.longestRecoveryStreak || 0}</div>
-                    <div className="text-[8px] text-gray-500">Recovery</div>
+                    <div className={`${isPostFormat ? 'text-base' : 'text-lg'} font-black`} style={{ color: '#00D1FF' }}>{records.longestRecoveryStreak || 0}</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>Recovery</div>
                   </div>
                 </div>
               </div>
 
               {/* Totals Section */}
-              <div className="w-full p-2.5 rounded-xl" style={{ backgroundColor: 'rgba(255,215,0,0.05)' }}>
-                <div className="text-[9px] text-gray-500 uppercase tracking-wider text-center mb-2">📊 All-Time Bests</div>
-                <div className="space-y-1.5">
+              <div className={`w-full ${isPostFormat ? 'py-1.5 px-2' : 'py-3 px-3'} rounded-xl`} style={{ backgroundColor: 'rgba(255,215,0,0.05)' }}>
+                <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500 uppercase tracking-wider text-center ${isPostFormat ? 'mb-1' : 'mb-2'}`}>📊 All-Time Bests</div>
+                <div className={`${isPostFormat ? 'space-y-1' : 'space-y-1.5'}`}>
                   <div className="flex justify-between items-center">
-                    <span className="text-[10px] text-gray-400">🏃 Longest Distance</span>
-                    <span className="font-bold text-xs" style={{ color: colors.primary }}>{longestDist ? `${longestDist.toFixed(2)} mi` : '--'}</span>
+                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}>🏃 Longest Distance</span>
+                    <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{longestDist ? `${longestDist.toFixed(2)} mi` : '--'}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-[10px] text-gray-400">🏃 Most Runs/Week</span>
-                    <span className="font-bold text-xs" style={{ color: colors.primary }}>{records.mostRunsWeek || 0}</span>
+                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}>🏃 Most Runs/Week</span>
+                    <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{records.mostRunsWeek || 0}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-[10px] text-gray-400">🏋️ Most Lifts/Week</span>
-                    <span className="font-bold text-xs" style={{ color: colors.primary }}>{records.mostLiftsWeek || 0}</span>
+                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}>🏋️ Most Lifts/Week</span>
+                    <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{records.mostLiftsWeek || 0}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-[10px] text-gray-400">💪 Most Workouts/Week</span>
-                    <span className="font-bold text-xs" style={{ color: colors.primary }}>{records.mostWorkoutsWeek || 0}</span>
+                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}>💪 Most Workouts/Week</span>
+                    <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{records.mostWorkoutsWeek || 0}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-[10px] text-gray-400">🧊 Most Recovery/Week</span>
-                    <span className="font-bold text-xs" style={{ color: colors.primary }}>{records.mostRecoveryWeek || 0}</span>
+                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}>🧊 Most Recovery/Week</span>
+                    <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{records.mostRecoveryWeek || 0}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-[10px] text-gray-400">🔥 Most Calories/Day</span>
-                    <span className="font-bold text-xs" style={{ color: colors.primary }}>{records.mostCaloriesDay ? records.mostCaloriesDay.toLocaleString() : (getRecordVal(records.highestCalories) || '--')}</span>
+                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}>🔥 Most Calories/Day</span>
+                    <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{records.mostCaloriesDay ? records.mostCaloriesDay.toLocaleString() : (getRecordVal(records.highestCalories) || '--')}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-[10px] text-gray-400">📍 Most Miles/Week</span>
-                    <span className="font-bold text-xs" style={{ color: colors.primary }}>{records.mostMilesWeek ? `${records.mostMilesWeek.toFixed(1)} mi` : '--'}</span>
+                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}>📍 Most Miles/Week</span>
+                    <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{records.mostMilesWeek ? `${records.mostMilesWeek.toFixed(1)} mi` : '--'}</span>
                   </div>
                 </div>
               </div>
             </div>
-            <div className="text-center w-full">
-              <div className="inline-block text-base font-black tracking-wider" style={{ background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
-              <div className="text-[8px] text-gray-600 tracking-widest uppercase -mt-0.5">Personal Bests</div>
+
+            {/* Footer */}
+            <div className="text-center mt-1">
+              <div className={`inline-block ${isPostFormat ? 'text-sm' : 'text-sm'} font-black tracking-wider`} style={{ background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
+              <div className={`${isPostFormat ? 'text-[8px]' : 'text-[8px]'} text-gray-600 tracking-widest uppercase`}>Personal Bests</div>
             </div>
           </div>
         );
@@ -1152,8 +1308,8 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
         const overallPercent = totalGoals > 0 ? Math.round((totalCompleted / totalGoals) * 100) : 0;
 
         // Ring dimensions for share card
-        const ringSize = 64;
-        const ringStroke = 5;
+        const ringSize = isPostFormat ? 56 : 64;
+        const ringStroke = isPostFormat ? 5 : 5;
         const ringRadius = (ringSize - ringStroke) / 2;
         const ringCircumference = ringRadius * 2 * Math.PI;
 
@@ -1179,36 +1335,37 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
         if (weeklySlide === 0) {
           return (
             <div
-              className="relative h-full flex flex-col items-center justify-between pt-4 pb-4 px-6"
+              className={`relative h-full flex flex-col ${isPostFormat ? 'py-4 px-4' : 'py-5 px-5'}`}
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
             >
-              {/* Celebratory banner when week is streaked */}
-              {allGoalsMet ? (
-                <div
-                  className="w-full py-2 px-4 rounded-xl text-center mb-2"
-                  style={{
-                    background: 'linear-gradient(135deg, #FFD700 0%, #00FF94 100%)',
-                    boxShadow: '0 4px 15px rgba(255, 215, 0, 0.3)'
-                  }}
-                >
-                  <div className="font-black text-sm text-black tracking-wide">WEEK STREAKED! 🔥</div>
-                </div>
-              ) : (
-                <div className="text-4xl" style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>📅</div>
-              )}
-              <div className="flex-1 flex flex-col items-center justify-center w-full">
-                <div className="text-center mb-3">
-                  <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">{getWeekDateRange()}</div>
-                  <div className="font-black text-2xl" style={{ color: allGoalsMet ? colors.primary : 'white' }}>
-                    {allGoalsMet ? '✓ Week Complete!' : `${overallPercent}% Complete`}
+              {/* Header */}
+              <div className="text-center">
+                {allGoalsMet ? (
+                  <div
+                    className={`${isPostFormat ? 'py-1.5 px-4' : 'py-2 px-5'} rounded-xl inline-block`}
+                    style={{
+                      background: 'linear-gradient(135deg, #FFD700 0%, #00FF94 100%)',
+                      boxShadow: '0 4px 15px rgba(255, 215, 0, 0.3)'
+                    }}
+                  >
+                    <div className={`font-black ${isPostFormat ? 'text-xs' : 'text-sm'} text-black tracking-wide`}>WEEK STREAKED! 🔥</div>
                   </div>
-                  <div className="text-xs text-gray-400 mt-1">{getMotivationalTagline(stats?.streak || 0, allGoalsMet)}</div>
+                ) : (
+                  <div className={isPostFormat ? 'text-2xl' : 'text-3xl'} style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>📅</div>
+                )}
+                <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-500 uppercase tracking-wider mt-1.5`}>{getWeekDateRange()}</div>
+                <div className={`font-black ${isPostFormat ? 'text-xl' : 'text-2xl'}`} style={{ color: allGoalsMet ? colors.primary : 'white' }}>
+                  {allGoalsMet ? '✓ Week Complete!' : `${overallPercent}% Complete`}
                 </div>
+                <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-400 mt-0.5`}>{getMotivationalTagline(stats?.streak || 0, allGoalsMet)}</div>
+              </div>
 
-                {/* Progress bar with segmented colors */}
-                <div className="w-full mb-4">
-                  <div className="h-2 rounded-full overflow-hidden flex" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+              {/* Content */}
+              <div className={`flex-1 flex flex-col justify-center ${isPostFormat ? 'py-3' : 'py-4'}`}>
+                {/* Progress bar */}
+                <div className={`w-full ${isPostFormat ? 'mb-4' : 'mb-5'}`}>
+                  <div className={`${isPostFormat ? 'h-1.5' : 'h-2'} rounded-full overflow-hidden flex`} style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                     {weeklyLifts > 0 && (
                       <div className="h-full transition-all duration-500" style={{ width: `${(Math.min(weeklyLifts, liftsGoal) / totalGoals) * 100}%`, backgroundColor: '#00FF94' }} />
                     )}
@@ -1222,7 +1379,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
                 </div>
 
                 {/* Goal Rings */}
-                <div className="flex items-center justify-around w-full mb-3">
+                <div className={`flex items-center justify-around w-full ${isPostFormat ? 'mb-4' : 'mb-5'}`}>
                   <div className="text-center">
                     <div className="relative inline-block">
                       <svg width={ringSize} height={ringSize} className="transform -rotate-90">
@@ -1231,10 +1388,10 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
                           strokeDasharray={ringCircumference} strokeDashoffset={ringCircumference - (liftsPercent / 100) * ringCircumference} />
                       </svg>
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <span className="text-sm font-black">{weeklyLifts}/{liftsGoal}</span>
+                        <span className={`${isPostFormat ? 'text-xs' : 'text-sm'} font-black`}>{weeklyLifts}/{liftsGoal}</span>
                       </div>
                     </div>
-                    <div className="text-[10px] text-gray-400 mt-1">🏋️ Strength</div>
+                    <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-400 mt-1`}>🏋️ Strength</div>
                   </div>
                   <div className="text-center">
                     <div className="relative inline-block">
@@ -1244,10 +1401,10 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
                           strokeDasharray={ringCircumference} strokeDashoffset={ringCircumference - (cardioPercent / 100) * ringCircumference} />
                       </svg>
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <span className="text-sm font-black">{weeklyCardio}/{cardioGoal}</span>
+                        <span className={`${isPostFormat ? 'text-xs' : 'text-sm'} font-black`}>{weeklyCardio}/{cardioGoal}</span>
                       </div>
                     </div>
-                    <div className="text-[10px] text-gray-400 mt-1">🏃 Cardio</div>
+                    <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-400 mt-1`}>🏃 Cardio</div>
                   </div>
                   <div className="text-center">
                     <div className="relative inline-block">
@@ -1257,47 +1414,42 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
                           strokeDasharray={ringCircumference} strokeDashoffset={ringCircumference - (recoveryPercent / 100) * ringCircumference} />
                       </svg>
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <span className="text-sm font-black">{weeklyRecovery}/{recoveryGoal}</span>
+                        <span className={`${isPostFormat ? 'text-xs' : 'text-sm'} font-black`}>{weeklyRecovery}/{recoveryGoal}</span>
                       </div>
                     </div>
-                    <div className="text-[10px] text-gray-400 mt-1">🧘 Recovery</div>
+                    <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-400 mt-1`}>🧘 Recovery</div>
                   </div>
                 </div>
 
                 {/* Streaks */}
-                <div className="w-full p-3 rounded-2xl mt-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                <div className={`w-full ${isPostFormat ? 'py-2 px-3' : 'py-3 px-4'} rounded-2xl`} style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
                   <div className="flex items-center justify-center gap-2">
-                    <span className="text-xl">🔥</span>
-                    <span className="text-2xl font-black" style={{ color: '#00FF94' }}>{stats?.streak || 0}</span>
-                    <span className="text-xs text-gray-400">weeks hitting all goals</span>
+                    <span className={isPostFormat ? 'text-lg' : 'text-xl'}>🔥</span>
+                    <span className={`${isPostFormat ? 'text-xl' : 'text-2xl'} font-black`} style={{ color: '#00FF94' }}>{stats?.streak || 0}</span>
+                    <span className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-400`}>weeks hitting all goals</span>
                   </div>
-                  <div className="w-full h-px my-2.5" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }} />
+                  <div className={`w-full h-px ${isPostFormat ? 'my-2' : 'my-3'}`} style={{ backgroundColor: 'rgba(255,255,255,0.05)' }} />
                   <div className="flex justify-around">
                     <div className="text-center">
-                      <div className="text-base font-bold" style={{ color: '#00FF94' }}>{stats?.strengthStreak || 0}</div>
-                      <div className="text-[9px] text-gray-500 -mt-0.5">🏋️ weeks</div>
+                      <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#00FF94' }}>{stats?.strengthStreak || 0}</div>
+                      <div className={`${isPostFormat ? 'text-[9px]' : 'text-xs'} text-gray-500`}>🏋️ weeks</div>
                     </div>
                     <div className="text-center">
-                      <div className="text-base font-bold" style={{ color: '#FF9500' }}>{stats?.cardioStreak || 0}</div>
-                      <div className="text-[9px] text-gray-500 -mt-0.5">🏃 weeks</div>
+                      <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#FF9500' }}>{stats?.cardioStreak || 0}</div>
+                      <div className={`${isPostFormat ? 'text-[9px]' : 'text-xs'} text-gray-500`}>🏃 weeks</div>
                     </div>
                     <div className="text-center">
-                      <div className="text-base font-bold" style={{ color: '#00D1FF' }}>{stats?.recoveryStreak || 0}</div>
-                      <div className="text-[9px] text-gray-500 -mt-0.5">🧊 weeks</div>
+                      <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#00D1FF' }}>{stats?.recoveryStreak || 0}</div>
+                      <div className={`${isPostFormat ? 'text-[9px]' : 'text-xs'} text-gray-500`}>🧊 weeks</div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="text-center mt-auto w-full">
-                <div className="inline-block text-lg font-black tracking-wider" style={{ background: 'linear-gradient(135deg, #00FF94 0%, #00D1FF 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
-                <div className="text-[9px] text-gray-600 tracking-widest uppercase -mt-0.5">Weekly Recap</div>
-                {/* Slide indicator */}
-                <div className="flex justify-center gap-2 mt-3">
-                  <button onClick={() => setWeeklySlide(0)} className="w-2 h-2 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 0 ? colors.primary : 'rgba(255,255,255,0.2)' }} />
-                  <button onClick={() => setWeeklySlide(1)} className="w-2 h-2 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 1 ? colors.primary : 'rgba(255,255,255,0.2)' }} />
-                  <button onClick={() => setWeeklySlide(2)} className="w-2 h-2 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 2 ? colors.primary : 'rgba(255,255,255,0.2)' }} />
-                </div>
+              {/* Footer */}
+              <div className="text-center mt-1">
+                <div className={`inline-block ${isPostFormat ? 'text-sm' : 'text-base'} font-black tracking-wider`} style={{ background: 'linear-gradient(135deg, #00FF94 0%, #00D1FF 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
+                <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-600 tracking-widest uppercase`}>Weekly Recap</div>
               </div>
             </div>
           );
@@ -1307,23 +1459,23 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
         if (weeklySlide === 1) {
         return (
           <div
-            className="relative h-full flex flex-col items-center justify-between pt-8 pb-4 px-6"
+            className={`relative h-full flex flex-col items-center justify-between ${isPostFormat ? 'py-4 px-4' : 'py-6 px-5'}`}
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
           >
-            <div className="text-3xl" style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>⭐</div>
+            <div className={isPostFormat ? 'text-2xl' : 'text-3xl'} style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>⭐</div>
             <div className="flex-1 flex flex-col items-center justify-center w-full overflow-hidden">
-              <div className="text-center mb-3">
-                <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">{getWeekDateRange()}</div>
-                <div className="font-black text-xl" style={{ color: colors.primary }}>Week Highlights</div>
+              <div className={`text-center ${isPostFormat ? 'mb-2' : 'mb-3'}`}>
+                <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-500 uppercase tracking-wider mb-0.5`}>{getWeekDateRange()}</div>
+                <div className={`font-black ${isPostFormat ? 'text-lg' : 'text-xl'}`} style={{ color: colors.primary }}>Week Highlights</div>
               </div>
 
               {/* Achievements as simple list */}
               {achievements.length > 0 && (
-                <div className="w-full mb-3 text-center">
-                  <div className="flex flex-wrap justify-center gap-x-3 gap-y-1">
+                <div className={`w-full ${isPostFormat ? 'mb-2' : 'mb-3'} text-center`}>
+                  <div className={`flex flex-wrap justify-center ${isPostFormat ? 'gap-x-1.5 gap-y-0.5' : 'gap-x-2 gap-y-1'}`}>
                     {achievements.slice(0, 4).map((a, i) => (
-                      <span key={i} className="text-xs text-gray-300">
+                      <span key={i} className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-300`}>
                         {a.emoji} {a.text}
                       </span>
                     ))}
@@ -1332,47 +1484,47 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
               )}
 
               {/* Best workout & longest distance in compact grid */}
-              <div className="w-full grid grid-cols-2 gap-2 mb-3">
+              <div className={`w-full grid grid-cols-2 ${isPostFormat ? 'gap-1.5 mb-2' : 'gap-2 mb-3'}`}>
                 {/* Best workout */}
                 {weeklyAnalysis?.bestCalorieWorkout && (
-                  <div className="p-2.5 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,149,0,0.08)' }}>
-                    <div className="text-[9px] text-gray-500 uppercase mb-1">Best Burn</div>
-                    <div className="text-lg">{getActivityEmoji(weeklyAnalysis.bestCalorieWorkout.type)}</div>
-                    <div className="text-base font-black" style={{ color: '#FF9500' }}>{parseInt(weeklyAnalysis.bestCalorieWorkout.calories).toLocaleString()}</div>
-                    <div className="text-[9px] text-gray-500">calories</div>
+                  <div className={`${isPostFormat ? 'p-2' : 'p-2.5'} rounded-xl text-center`} style={{ backgroundColor: 'rgba(255,149,0,0.08)' }}>
+                    <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500 uppercase mb-0.5`}>Best Burn</div>
+                    <div className={isPostFormat ? 'text-base' : 'text-lg'}>{getActivityEmoji(weeklyAnalysis.bestCalorieWorkout.type)}</div>
+                    <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-black`} style={{ color: '#FF9500' }}>{parseInt(weeklyAnalysis.bestCalorieWorkout.calories).toLocaleString()}</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>calories</div>
                   </div>
                 )}
                 {/* Longest distance or longest workout */}
                 {weeklyAnalysis?.longestDistance && parseFloat(weeklyAnalysis.longestDistance.distance) > 0 ? (
-                  <div className="p-2.5 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,209,255,0.08)' }}>
-                    <div className="text-[9px] text-gray-500 uppercase mb-1">Longest Run</div>
-                    <div className="text-lg">{getActivityEmoji(weeklyAnalysis.longestDistance.type)}</div>
-                    <div className="text-base font-black" style={{ color: '#00D1FF' }}>{parseFloat(weeklyAnalysis.longestDistance.distance).toFixed(2)}</div>
-                    <div className="text-[9px] text-gray-500">miles</div>
+                  <div className={`${isPostFormat ? 'p-2' : 'p-2.5'} rounded-xl text-center`} style={{ backgroundColor: 'rgba(0,209,255,0.08)' }}>
+                    <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500 uppercase mb-0.5`}>Longest Run</div>
+                    <div className={isPostFormat ? 'text-base' : 'text-lg'}>{getActivityEmoji(weeklyAnalysis.longestDistance.type)}</div>
+                    <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-black`} style={{ color: '#00D1FF' }}>{parseFloat(weeklyAnalysis.longestDistance.distance).toFixed(2)}</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>miles</div>
                   </div>
                 ) : weeklyAnalysis?.longestWorkout && (
-                  <div className="p-2.5 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,255,148,0.08)' }}>
-                    <div className="text-[9px] text-gray-500 uppercase mb-1">Longest Session</div>
-                    <div className="text-lg">{getActivityEmoji(weeklyAnalysis.longestWorkout.type)}</div>
-                    <div className="text-base font-black" style={{ color: '#00FF94' }}>{weeklyAnalysis.longestWorkout.duration}</div>
-                    <div className="text-[9px] text-gray-500">minutes</div>
+                  <div className={`${isPostFormat ? 'p-2' : 'p-2.5'} rounded-xl text-center`} style={{ backgroundColor: 'rgba(0,255,148,0.08)' }}>
+                    <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500 uppercase mb-0.5`}>Longest Session</div>
+                    <div className={isPostFormat ? 'text-base' : 'text-lg'}>{getActivityEmoji(weeklyAnalysis.longestWorkout.type)}</div>
+                    <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-black`} style={{ color: '#00FF94' }}>{weeklyAnalysis.longestWorkout.duration}</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>minutes</div>
                   </div>
                 )}
               </div>
 
               {/* Week summary stats */}
-              <div className="w-full grid grid-cols-3 gap-2 mb-3">
-                <div className="text-center p-2 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-                  <div className="text-base font-bold text-white">{weeklyAnalysis?.totalWorkouts || 0}</div>
-                  <div className="text-[8px] text-gray-500">Workouts</div>
+              <div className={`w-full grid grid-cols-3 ${isPostFormat ? 'gap-1.5 mb-2' : 'gap-2 mb-3'}`}>
+                <div className={`text-center ${isPostFormat ? 'p-1.5' : 'p-2'} rounded-xl`} style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                  <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold text-white`}>{weeklyAnalysis?.totalWorkouts || 0}</div>
+                  <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>Workouts</div>
                 </div>
-                <div className="text-center p-2 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-                  <div className="text-base font-bold text-white">{weeklyAnalysis?.uniqueDays || 0}</div>
-                  <div className="text-[8px] text-gray-500">Days Active</div>
+                <div className={`text-center ${isPostFormat ? 'p-1.5' : 'p-2'} rounded-xl`} style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                  <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold text-white`}>{weeklyAnalysis?.uniqueDays || 0}</div>
+                  <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>Days Active</div>
                 </div>
-                <div className="text-center p-2 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-                  <div className="text-base font-bold text-white">{weeklyAnalysis?.totalMinutes ? Math.round(weeklyAnalysis.totalMinutes / 60) : 0}h</div>
-                  <div className="text-[8px] text-gray-500">Total Time</div>
+                <div className={`text-center ${isPostFormat ? 'p-1.5' : 'p-2'} rounded-xl`} style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                  <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold text-white`}>{weeklyAnalysis?.totalMinutes ? Math.round(weeklyAnalysis.totalMinutes / 60) : 0}h</div>
+                  <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>Total Time</div>
                 </div>
               </div>
 
@@ -1409,10 +1561,10 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
 
                 return (
                   <div className="w-full">
-                    <div className="text-[9px] text-gray-500 uppercase text-center mb-1">Records Set This Week</div>
-                    <div className="flex flex-wrap justify-center gap-2">
+                    <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500 uppercase text-center mb-1`}>Records Set This Week</div>
+                    <div className={`flex flex-wrap justify-center ${isPostFormat ? 'gap-1' : 'gap-1.5'}`}>
                       {topPRs.map((pr, i) => (
-                        <div key={i} className="px-2 py-1 rounded-full text-[10px]" style={{ backgroundColor: 'rgba(255,215,0,0.1)', border: '1px solid rgba(255,215,0,0.3)' }}>
+                        <div key={i} className={`${isPostFormat ? 'px-1.5 py-0.5' : 'px-2 py-0.5'} rounded-full ${isPostFormat ? 'text-[8px]' : 'text-[9px]'}`} style={{ backgroundColor: 'rgba(255,215,0,0.1)', border: '1px solid rgba(255,215,0,0.3)' }}>
                           <span style={{ color: '#FFD700' }}>🏆 {pr.label}: {pr.value}</span>
                         </div>
                       ))}
@@ -1423,14 +1575,8 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
             </div>
 
             <div className="text-center mt-auto w-full">
-              <div className="inline-block text-lg font-black tracking-wider" style={{ background: 'linear-gradient(135deg, #00FF94 0%, #00D1FF 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
-              <div className="text-[9px] text-gray-600 tracking-widest uppercase -mt-0.5">Week Highlights</div>
-              {/* Slide indicator */}
-              <div className="flex justify-center gap-2 mt-3">
-                <button onClick={() => setWeeklySlide(0)} className="w-2 h-2 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 0 ? colors.primary : 'rgba(255,255,255,0.2)' }} />
-                <button onClick={() => setWeeklySlide(1)} className="w-2 h-2 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 1 ? colors.primary : 'rgba(255,255,255,0.2)' }} />
-                <button onClick={() => setWeeklySlide(2)} className="w-2 h-2 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 2 ? colors.primary : 'rgba(255,255,255,0.2)' }} />
-              </div>
+              <div className={`inline-block ${isPostFormat ? 'text-sm' : 'text-base'} font-black tracking-wider`} style={{ background: 'linear-gradient(135deg, #00FF94 0%, #00D1FF 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
+              <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-600 tracking-widest uppercase -mt-0.5`}>Week Highlights</div>
             </div>
           </div>
         );
@@ -1439,61 +1585,61 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
         // Slide 3: Streaks
         return (
           <div
-            className="relative h-full flex flex-col items-center justify-between pt-6 pb-3 px-5"
+            className={`relative h-full flex flex-col items-center justify-between ${isPostFormat ? 'py-4 px-4' : 'py-5 px-5'}`}
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
           >
-            <div className="text-3xl" style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>🔥</div>
-            <div className="flex-1 flex flex-col items-center justify-center w-full -mt-2">
+            <div className={isPostFormat ? 'text-2xl' : 'text-3xl'} style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>🔥</div>
+            <div className="flex-1 flex flex-col items-center justify-center w-full">
               {/* Main master streak number */}
               <div className="text-center">
-                <div className="font-black leading-none" style={{ fontSize: '4rem', color: colors.primary, textShadow: `0 0 40px ${colors.glow}, 0 0 80px ${colors.glow}`, animation: 'ring-pulse 3s ease-in-out infinite' }}>
+                <div className="font-black leading-none" style={{ fontSize: isPostFormat ? '3rem' : '4rem', color: colors.primary, textShadow: `0 0 40px ${colors.glow}, 0 0 80px ${colors.glow}`, animation: 'ring-pulse 3s ease-in-out infinite' }}>
                   {stats?.streak || 0}
                 </div>
-                <div className="text-[10px] font-semibold tracking-widest text-gray-400 uppercase mt-1">Master Streak</div>
-                <div className="text-[8px] text-gray-500 mt-0.5">weeks hitting all goals</div>
+                <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} font-semibold tracking-widest text-gray-400 uppercase mt-1`}>Master Streak</div>
+                <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500`}>weeks hitting all goals</div>
               </div>
 
               {/* Active Streaks */}
-              <div className="w-full p-2 rounded-xl mt-2" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-                <div className="flex items-center justify-center mb-0.5">
-                  <span className="text-[9px] text-gray-400 uppercase tracking-wider">Active Streaks</span>
+              <div className={`w-full ${isPostFormat ? 'p-2' : 'p-2.5'} rounded-xl ${isPostFormat ? 'mt-3' : 'mt-4'}`} style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                <div className="flex items-center justify-center mb-1">
+                  <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400 uppercase tracking-wider`}>Active Streaks</span>
                 </div>
-                <div className="w-full h-px mb-1.5" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }} />
+                <div className={`w-full h-px ${isPostFormat ? 'mb-1.5' : 'mb-2'}`} style={{ backgroundColor: 'rgba(255,255,255,0.05)' }} />
                 <div className="flex justify-around">
                   <div className="text-center">
-                    <div className="text-sm font-bold" style={{ color: '#00FF94' }}>{stats?.strengthStreak || 0}</div>
-                    <div className="text-[8px] text-gray-500 -mt-0.5">🏋️ weeks</div>
+                    <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#00FF94' }}>{stats?.strengthStreak || 0}</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>🏋️ weeks</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-sm font-bold" style={{ color: '#FF9500' }}>{stats?.cardioStreak || 0}</div>
-                    <div className="text-[8px] text-gray-500 -mt-0.5">🏃 weeks</div>
+                    <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#FF9500' }}>{stats?.cardioStreak || 0}</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>🏃 weeks</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-sm font-bold" style={{ color: '#00D1FF' }}>{stats?.recoveryStreak || 0}</div>
-                    <div className="text-[8px] text-gray-500 -mt-0.5">🧊 weeks</div>
+                    <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#00D1FF' }}>{stats?.recoveryStreak || 0}</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>🧊 weeks</div>
                   </div>
                 </div>
               </div>
 
               {/* Streak Records */}
-              <div className="w-full p-2 rounded-xl mt-1.5" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-                <div className="flex items-center justify-center mb-0.5">
-                  <span className="text-[9px] text-gray-400 uppercase tracking-wider">Streak Records</span>
+              <div className={`w-full ${isPostFormat ? 'p-2' : 'p-2.5'} rounded-xl ${isPostFormat ? 'mt-2' : 'mt-2.5'}`} style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                <div className="flex items-center justify-center mb-1">
+                  <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400 uppercase tracking-wider`}>Streak Records</span>
                 </div>
-                <div className="w-full h-px mb-1.5" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }} />
+                <div className={`w-full h-px ${isPostFormat ? 'mb-1.5' : 'mb-2'}`} style={{ backgroundColor: 'rgba(255,255,255,0.05)' }} />
                 <div className="flex justify-around">
                   <div className="text-center">
-                    <div className="text-sm font-bold" style={{ color: '#00FF94' }}>{stats?.longestStrengthStreak || 0}</div>
-                    <div className="text-[8px] text-gray-500 -mt-0.5">🏋️ weeks</div>
+                    <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#00FF94' }}>{stats?.longestStrengthStreak || 0}</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>🏋️ weeks</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-sm font-bold" style={{ color: '#FF9500' }}>{stats?.longestCardioStreak || 0}</div>
-                    <div className="text-[8px] text-gray-500 -mt-0.5">🏃 weeks</div>
+                    <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#FF9500' }}>{stats?.longestCardioStreak || 0}</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>🏃 weeks</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-sm font-bold" style={{ color: '#00D1FF' }}>{stats?.longestRecoveryStreak || 0}</div>
-                    <div className="text-[8px] text-gray-500 -mt-0.5">🧊 weeks</div>
+                    <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#00D1FF' }}>{stats?.longestRecoveryStreak || 0}</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>🧊 weeks</div>
                   </div>
                 </div>
               </div>
@@ -1501,25 +1647,19 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
 
             {/* Bottom stats */}
             <div className="w-full">
-              <div className="grid grid-cols-2 gap-2 p-2 rounded-xl mb-2" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+              <div className={`grid grid-cols-2 ${isPostFormat ? 'gap-1.5 p-2' : 'gap-2 p-2.5'} rounded-xl ${isPostFormat ? 'mb-1.5' : 'mb-2'}`} style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
                 <div className="text-center">
-                  <div className="text-xl font-black text-white">{stats?.longestStreak || stats?.streak || 0}</div>
-                  <div className="text-[8px] text-gray-500 uppercase">Streak Record</div>
+                  <div className={`${isPostFormat ? 'text-base' : 'text-xl'} font-black text-white`}>{stats?.longestStreak || stats?.streak || 0}</div>
+                  <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500 uppercase`}>Streak Record</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-xl font-black text-white">{stats?.weeksWon || 0}</div>
-                  <div className="text-[8px] text-gray-500 uppercase">Weeks Won</div>
+                  <div className={`${isPostFormat ? 'text-base' : 'text-xl'} font-black text-white`}>{stats?.weeksWon || 0}</div>
+                  <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500 uppercase`}>Weeks Won</div>
                 </div>
               </div>
               <div className="text-center">
-                <div className="inline-block text-base font-black tracking-wider" style={{ background: 'linear-gradient(135deg, #ffffff 0%, #888888 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
-                <div className="text-[8px] text-gray-600 tracking-widest uppercase -mt-0.5">Streak Stats</div>
-                {/* Slide indicator */}
-                <div className="flex justify-center gap-2 mt-3">
-                  <button onClick={() => setWeeklySlide(0)} className="w-2 h-2 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 0 ? colors.primary : 'rgba(255,255,255,0.2)' }} />
-                  <button onClick={() => setWeeklySlide(1)} className="w-2 h-2 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 1 ? colors.primary : 'rgba(255,255,255,0.2)' }} />
-                  <button onClick={() => setWeeklySlide(2)} className="w-2 h-2 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 2 ? colors.primary : 'rgba(255,255,255,0.2)' }} />
-                </div>
+                <div className={`inline-block ${isPostFormat ? 'text-sm' : 'text-base'} font-black tracking-wider`} style={{ background: 'linear-gradient(135deg, #ffffff 0%, #888888 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
+                <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-600 tracking-widest uppercase -mt-0.5`}>Streak Stats</div>
               </div>
             </div>
           </div>
@@ -1531,44 +1671,44 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
         const daysIntoMonth = new Date().getDate();
         const workoutsPerDay = monthlyWorkouts > 0 ? (monthlyWorkouts / daysIntoMonth).toFixed(2) : 0;
         return (
-          <div className="relative h-full flex flex-col items-center justify-between pt-8 pb-14 px-6">
-            <div className="text-4xl" style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>📊</div>
+          <div className={`relative h-full flex flex-col items-center justify-between ${isPostFormat ? 'py-4 px-4' : 'py-6 px-5'}`}>
+            <div className={isPostFormat ? 'text-2xl' : 'text-3xl'} style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>📊</div>
             <div className="flex-1 flex flex-col items-center justify-center w-full">
-              <div className="text-center mb-4">
-                <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">{currentMonth} {currentYear}</div>
-                <div className="font-black text-2xl" style={{ color: colors.primary, textShadow: `0 0 30px ${colors.glow}` }}>Monthly Recap</div>
+              <div className={`text-center ${isPostFormat ? 'mb-2' : 'mb-3'}`}>
+                <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-500 uppercase tracking-wider mb-1`}>{currentMonth} {currentYear}</div>
+                <div className={`font-black ${isPostFormat ? 'text-xl' : 'text-2xl'}`} style={{ color: colors.primary, textShadow: `0 0 30px ${colors.glow}` }}>Monthly Recap</div>
               </div>
-              <div className="w-full space-y-3">
-                <div className="text-center p-4 rounded-2xl" style={{ backgroundColor: 'rgba(139,92,246,0.1)' }}>
-                  <div className="text-4xl font-black" style={{ color: colors.primary }}>{monthlyWorkouts}</div>
-                  <div className="text-xs text-gray-400 uppercase tracking-wider mt-1">Workouts Completed</div>
-                  <div className="text-[9px] text-gray-500 mt-1">~{avgPerWeek} per week</div>
+              <div className={`w-full ${isPostFormat ? 'space-y-2' : 'space-y-3'}`}>
+                <div className={`text-center ${isPostFormat ? 'p-2.5' : 'p-4'} rounded-2xl`} style={{ backgroundColor: 'rgba(139,92,246,0.1)' }}>
+                  <div className={`${isPostFormat ? 'text-2xl' : 'text-4xl'} font-black`} style={{ color: colors.primary }}>{monthlyWorkouts}</div>
+                  <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-400 uppercase tracking-wider mt-0.5`}>Workouts Completed</div>
+                  <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500 mt-0.5`}>~{avgPerWeek} per week</div>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="text-center p-3 rounded-xl" style={{ backgroundColor: 'rgba(139,92,246,0.05)' }}>
-                    <div className="text-2xl font-bold" style={{ color: colors.secondary }}>{(stats?.monthlyCalories || 0).toLocaleString()}</div>
-                    <div className="text-[9px] text-gray-500">🔥 Calories</div>
+                <div className={`grid grid-cols-2 ${isPostFormat ? 'gap-1.5' : 'gap-2'}`}>
+                  <div className={`text-center ${isPostFormat ? 'p-2' : 'p-3'} rounded-xl`} style={{ backgroundColor: 'rgba(139,92,246,0.05)' }}>
+                    <div className={`${isPostFormat ? 'text-lg' : 'text-2xl'} font-bold`} style={{ color: colors.secondary }}>{(stats?.monthlyCalories || 0).toLocaleString()}</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>🔥 Calories</div>
                   </div>
-                  <div className="text-center p-3 rounded-xl" style={{ backgroundColor: 'rgba(139,92,246,0.05)' }}>
-                    <div className="text-2xl font-bold" style={{ color: colors.secondary }}>{(stats?.monthlyMiles || 0).toFixed(1)}</div>
-                    <div className="text-[9px] text-gray-500">🏃 Miles</div>
+                  <div className={`text-center ${isPostFormat ? 'p-2' : 'p-3'} rounded-xl`} style={{ backgroundColor: 'rgba(139,92,246,0.05)' }}>
+                    <div className={`${isPostFormat ? 'text-lg' : 'text-2xl'} font-bold`} style={{ color: colors.secondary }}>{(stats?.monthlyMiles || 0).toFixed(1)}</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>🏃 Miles</div>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="text-center p-3 rounded-xl" style={{ backgroundColor: 'rgba(139,92,246,0.05)' }}>
-                    <div className="text-xl font-bold text-white">{stats?.streak || 0}</div>
-                    <div className="text-[9px] text-gray-500">🔥 Week Streak</div>
+                <div className={`grid grid-cols-2 ${isPostFormat ? 'gap-1.5' : 'gap-2'}`}>
+                  <div className={`text-center ${isPostFormat ? 'p-2' : 'p-3'} rounded-xl`} style={{ backgroundColor: 'rgba(139,92,246,0.05)' }}>
+                    <div className={`${isPostFormat ? 'text-base' : 'text-xl'} font-bold text-white`}>{stats?.streak || 0}</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>🔥 Week Streak</div>
                   </div>
-                  <div className="text-center p-3 rounded-xl" style={{ backgroundColor: 'rgba(139,92,246,0.05)' }}>
-                    <div className="text-xl font-bold text-white">{daysIntoMonth}</div>
-                    <div className="text-[9px] text-gray-500">📅 Days In</div>
+                  <div className={`text-center ${isPostFormat ? 'p-2' : 'p-3'} rounded-xl`} style={{ backgroundColor: 'rgba(139,92,246,0.05)' }}>
+                    <div className={`${isPostFormat ? 'text-base' : 'text-xl'} font-bold text-white`}>{daysIntoMonth}</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>📅 Days In</div>
                   </div>
                 </div>
               </div>
             </div>
-            <div className="text-center mt-auto w-full">
-              <div className="inline-block text-lg font-black tracking-wider" style={{ background: 'linear-gradient(135deg, #8B5CF6 0%, #06B6D4 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
-              <div className="text-[9px] text-gray-600 tracking-widest uppercase -mt-0.5">Monthly Stats</div>
+            <div className="text-center mt-auto w-full mt-1">
+              <div className={`inline-block ${isPostFormat ? 'text-sm' : 'text-base'} font-black tracking-wider`} style={{ background: 'linear-gradient(135deg, #8B5CF6 0%, #06B6D4 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
+              <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-600 tracking-widest uppercase -mt-0.5`}>Monthly Stats</div>
             </div>
           </div>
         );
@@ -1609,23 +1749,35 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
           ))}
         </div>
 
-        {/* Share Card */}
+        {/* Card Preview Container */}
         <div
-          className="relative rounded-3xl overflow-hidden mb-4"
+          className="relative mb-3 flex justify-center"
           style={{
-            aspectRatio: '9/16',
-            background: 'linear-gradient(180deg, #0a0a0a 0%, #0d0d0d 50%, #000000 100%)',
-            boxShadow: `0 25px 50px -12px ${colors.shadow}, 0 0 100px ${colors.glow}`
+            height: cardFormat === 'story' ? '384px' : '300px',
+            transition: 'height 0.3s ease'
           }}
         >
-          {/* Aurora/Glow Effect */}
+          {/* Actual card that gets captured */}
           <div
-            className="absolute top-0 left-0 right-0 h-1/2"
+            ref={cardRef}
+            className="absolute rounded-2xl overflow-hidden transition-all duration-300"
             style={{
-              background: `radial-gradient(ellipse 80% 50% at 50% 0%, ${colors.glow} 0%, ${colors.glow.replace('0.15', '0.05')} 40%, transparent 70%)`,
-              pointerEvents: 'none'
+              width: cardFormat === 'story' ? '270px' : '320px',
+              height: cardFormat === 'story' ? '480px' : '400px',
+              transform: cardFormat === 'story' ? 'scale(0.8)' : 'scale(0.75)',
+              transformOrigin: 'top center',
+              background: 'linear-gradient(180deg, #0a0a0a 0%, #0d0d0d 50%, #000000 100%)',
+              boxShadow: `0 25px 50px -12px ${colors.shadow}, 0 0 100px ${colors.glow}`
             }}
-          />
+          >
+            {/* Aurora/Glow Effect */}
+            <div
+              className="absolute top-0 left-0 right-0 h-1/2"
+              style={{
+                background: `radial-gradient(ellipse 80% 50% at 50% 0%, ${colors.glow} 0%, ${colors.glow.replace('0.15', '0.05')} 40%, transparent 70%)`,
+                pointerEvents: 'none'
+              }}
+            />
 
           {/* Shimmer Effect */}
           <div
@@ -1651,123 +1803,102 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
             }
           `}</style>
 
-          {/* Card Content */}
-          {renderCardContent()}
+            {/* Card Content */}
+            {renderCardContent()}
+          </div>
         </div>
 
-        {/* Share Options */}
-        <div className="flex justify-center gap-4 mb-4">
+        {/* Weekly Slide Navigation */}
+        {cardType === 'weekly' && (
+          <div className="flex justify-center gap-1.5 mb-2">
+            <button onClick={() => setWeeklySlide(0)} className="w-1.5 h-1.5 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 0 ? '#00FF94' : 'rgba(255,255,255,0.2)' }} />
+            <button onClick={() => setWeeklySlide(1)} className="w-1.5 h-1.5 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 1 ? '#00FF94' : 'rgba(255,255,255,0.2)' }} />
+            <button onClick={() => setWeeklySlide(2)} className="w-1.5 h-1.5 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 2 ? '#00FF94' : 'rgba(255,255,255,0.2)' }} />
+          </div>
+        )}
+
+        {/* Format Selection */}
+        <div className="flex justify-center gap-2 mb-2">
           <button
-            className="flex flex-col items-center gap-2 p-4 rounded-2xl transition-all duration-150"
-            style={{ backgroundColor: 'rgba(255,255,255,0.05)', transform: 'scale(1)' }}
-            onClick={() => {/* TODO: Implement share to story */}}
-            onTouchStart={(e) => {
-              e.currentTarget.style.transform = 'scale(0.92)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all duration-200"
+            style={{
+              backgroundColor: cardFormat === 'story' ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.05)',
+              border: cardFormat === 'story' ? '1px solid rgba(255,255,255,0.2)' : '1px solid transparent'
             }}
-            onTouchEnd={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-            }}
-            onMouseDown={(e) => {
-              e.currentTarget.style.transform = 'scale(0.92)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-            }}
-            onMouseUp={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-            }}
+            onClick={() => setCardFormat('story')}
           >
-            <span className="text-2xl">📸</span>
-            <span className="text-xs text-gray-400">Story</span>
+            <svg width="12" height="18" viewBox="0 0 16 24" fill="none">
+              <rect x="1" y="1" width="14" height="22" rx="3" stroke={cardFormat === 'story' ? '#E1306C' : 'rgba(255,255,255,0.5)'} strokeWidth="1.5"/>
+            </svg>
+            <span className={`text-xs font-medium ${cardFormat === 'story' ? 'text-white' : 'text-gray-500'}`}>Story</span>
           </button>
           <button
-            className="flex flex-col items-center gap-2 p-4 rounded-2xl transition-all duration-150"
-            style={{ backgroundColor: 'rgba(255,255,255,0.05)', transform: 'scale(1)' }}
-            onClick={() => {/* TODO: Implement save image */}}
-            onTouchStart={(e) => {
-              e.currentTarget.style.transform = 'scale(0.92)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all duration-200"
+            style={{
+              backgroundColor: cardFormat === 'post' ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.05)',
+              border: cardFormat === 'post' ? '1px solid rgba(255,255,255,0.2)' : '1px solid transparent'
             }}
-            onTouchEnd={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-            }}
-            onMouseDown={(e) => {
-              e.currentTarget.style.transform = 'scale(0.92)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-            }}
-            onMouseUp={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-            }}
+            onClick={() => setCardFormat('post')}
           >
-            <span className="text-2xl">💾</span>
-            <span className="text-xs text-gray-400">Save</span>
+            <svg width="14" height="16" viewBox="0 0 20 24" fill="none">
+              <rect x="1" y="2" width="18" height="20" rx="3" stroke={cardFormat === 'post' ? '#E1306C' : 'rgba(255,255,255,0.5)'} strokeWidth="1.5"/>
+            </svg>
+            <span className={`text-xs font-medium ${cardFormat === 'post' ? 'text-white' : 'text-gray-500'}`}>Post</span>
+          </button>
+        </div>
+
+        {/* Share and Save Buttons */}
+        <div className="flex gap-2 mb-2">
+          <button
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-semibold transition-all duration-200 active:scale-[0.98]"
+            style={{
+              background: 'linear-gradient(135deg, #E1306C 0%, #833AB4 50%, #405DE6 100%)',
+              opacity: isGenerating ? 0.7 : 1,
+              pointerEvents: isGenerating ? 'none' : 'auto'
+            }}
+            onClick={executeShare}
+          >
+            {isGenerating ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <span className="text-white text-sm">Generating...</span>
+              </>
+            ) : (
+              <>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="18" cy="5" r="3"/>
+                  <circle cx="6" cy="12" r="3"/>
+                  <circle cx="18" cy="19" r="3"/>
+                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                  <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                </svg>
+                <span className="text-white text-sm">Share {cardFormat === 'story' ? 'Story' : 'Post'}</span>
+              </>
+            )}
           </button>
           <button
-            className="flex flex-col items-center gap-2 p-4 rounded-2xl transition-all duration-150"
-            style={{ backgroundColor: 'rgba(255,255,255,0.05)', transform: 'scale(1)' }}
-            onClick={() => {/* TODO: Implement share */}}
-            onTouchStart={(e) => {
-              e.currentTarget.style.transform = 'scale(0.92)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl font-medium transition-all duration-200"
+            style={{
+              backgroundColor: 'rgba(255,255,255,0.08)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              opacity: isGenerating ? 0.5 : 1,
+              pointerEvents: isGenerating ? 'none' : 'auto'
             }}
-            onTouchEnd={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-            }}
-            onMouseDown={(e) => {
-              e.currentTarget.style.transform = 'scale(0.92)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-            }}
-            onMouseUp={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-            }}
+            onClick={handleSaveImage}
           >
-            <span className="text-2xl">📤</span>
-            <span className="text-xs text-gray-400">Share</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            <span className="text-gray-300 text-sm">Save</span>
           </button>
         </div>
 
         {/* Close Button */}
         <button
           onClick={handleClose}
-          className="w-full py-3 rounded-xl font-medium transition-all duration-150 text-gray-400"
-          style={{ backgroundColor: 'rgba(255,255,255,0.05)', transform: 'scale(1)' }}
-          onTouchStart={(e) => {
-            e.currentTarget.style.transform = 'scale(0.98)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-          }}
-          onTouchEnd={(e) => {
-            e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-          }}
-          onMouseDown={(e) => {
-            e.currentTarget.style.transform = 'scale(0.98)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-          }}
-          onMouseUp={(e) => {
-            e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-          }}
+          className="w-full py-2 font-medium text-gray-500 text-sm"
         >
           Close
         </button>

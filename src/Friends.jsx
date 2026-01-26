@@ -22,12 +22,22 @@ const Friends = ({ user, userProfile, onClose }) => {
   const [sendingTo, setSendingTo] = useState(null); // Track which user we're sending request to
   const [justSent, setJustSent] = useState(new Set()); // Track recently sent requests for animation
   const [isClosing, setIsClosing] = useState(false); // Track closing animation
+  const [selectedProfile, setSelectedProfile] = useState(null); // Track selected user profile to view
+  const [isProfileClosing, setIsProfileClosing] = useState(false); // Track profile card fade out
 
   const handleClose = () => {
     setIsClosing(true);
     setTimeout(() => {
       onClose();
     }, 250); // Match animation duration
+  };
+
+  const handleCloseProfile = () => {
+    setIsProfileClosing(true);
+    setTimeout(() => {
+      setSelectedProfile(null);
+      setIsProfileClosing(false);
+    }, 200);
   };
 
   // Load friends and requests on mount
@@ -171,15 +181,18 @@ const Friends = ({ user, userProfile, onClose }) => {
     </div>
   );
 
-  const UserRow = ({ userData, rightContent }) => (
+  const UserRow = ({ userData, rightContent, onProfileClick }) => (
     <div className="flex items-center justify-between py-3 px-4">
-      <div className="flex items-center gap-3">
+      <button
+        className="flex items-center gap-3 text-left transition-all duration-150 active:opacity-70"
+        onClick={() => onProfileClick && onProfileClick(userData)}
+      >
         <ProfilePhoto photoURL={userData.photoURL} displayName={userData.displayName} />
         <div>
           <p className="text-white font-medium">{userData.displayName || userData.username}</p>
           <p className="text-gray-400 text-sm">@{userData.username}</p>
         </div>
-      </div>
+      </button>
       {rightContent}
     </div>
   );
@@ -290,6 +303,7 @@ const Friends = ({ user, userProfile, onClose }) => {
                         <UserRow
                           key={friend.uid}
                           userData={friend}
+                          onProfileClick={setSelectedProfile}
                           rightContent={
                             <ActionButton
                               onClick={() => handleRemoveFriend(friend.uid)}
@@ -320,6 +334,7 @@ const Friends = ({ user, userProfile, onClose }) => {
                         <UserRow
                           key={request.id}
                           userData={request.fromUser}
+                          onProfileClick={setSelectedProfile}
                           rightContent={
                             <div className="flex gap-2">
                               <ActionButton
@@ -353,6 +368,7 @@ const Friends = ({ user, userProfile, onClose }) => {
                         <UserRow
                           key={request.id}
                           userData={request.toUser}
+                          onProfileClick={setSelectedProfile}
                           rightContent={
                             <ActionButton
                               onClick={() => handleCancelRequest(request.id)}
@@ -415,6 +431,7 @@ const Friends = ({ user, userProfile, onClose }) => {
                           <UserRow
                             key={result.uid}
                             userData={result}
+                            onProfileClick={setSelectedProfile}
                             rightContent={
                               buttonState === 'friends' ? (
                                 <span className="text-green-400 text-sm flex items-center gap-1">
@@ -502,14 +519,223 @@ const Friends = ({ user, userProfile, onClose }) => {
               transform: translateY(100%);
             }
           }
+          @keyframes fade-in {
+            from {
+              opacity: 0;
+            }
+            to {
+              opacity: 1;
+            }
+          }
+          @keyframes fade-out {
+            from {
+              opacity: 1;
+            }
+            to {
+              opacity: 0;
+            }
+          }
+          @keyframes scale-fade-in {
+            from {
+              opacity: 0;
+              transform: scale(0.95);
+            }
+            to {
+              opacity: 1;
+              transform: scale(1);
+            }
+          }
+          @keyframes scale-fade-out {
+            from {
+              opacity: 1;
+              transform: scale(1);
+            }
+            to {
+              opacity: 0;
+              transform: scale(0.95);
+            }
+          }
           .animate-slide-up {
             animation: slide-up 0.3s ease-out forwards;
           }
           .animate-slide-down {
             animation: slide-down 0.25s ease-in forwards;
           }
+          .animate-fade-in {
+            animation: fade-in 0.2s ease-out forwards;
+          }
+          .animate-fade-out {
+            animation: fade-out 0.2s ease-in forwards;
+          }
+          .animate-scale-fade-in {
+            animation: scale-fade-in 0.2s ease-out forwards;
+          }
+          .animate-scale-fade-out {
+            animation: scale-fade-out 0.2s ease-in forwards;
+          }
         `}</style>
       </div>
+
+      {/* Profile Card Modal */}
+      {selectedProfile && (
+        <div
+          className={`fixed inset-0 z-[60] flex items-center justify-center px-6 ${isProfileClosing ? 'animate-fade-out' : 'animate-fade-in'}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleCloseProfile();
+          }}
+        >
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-md" />
+
+          {/* Modal */}
+          <div
+            className={`relative w-full max-w-sm rounded-3xl overflow-hidden ${isProfileClosing ? 'animate-scale-fade-out' : 'animate-scale-fade-in'}`}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: '#1C1C1E',
+              border: '1px solid rgba(255,255,255,0.1)'
+            }}
+          >
+            {/* Header with profile photo */}
+            <div className="relative pt-8 pb-4 px-6">
+              {/* Background gradient */}
+              <div
+                className="absolute inset-0 opacity-30"
+                style={{
+                  background: 'linear-gradient(180deg, rgba(0,255,148,0.3) 0%, transparent 100%)'
+                }}
+              />
+
+              {/* Profile Photo */}
+              <div className="relative flex flex-col items-center">
+                <div className="w-24 h-24 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden border-4 border-zinc-800 mb-3">
+                  {selectedProfile.photoURL ? (
+                    <img src={selectedProfile.photoURL} alt={selectedProfile.displayName} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-3xl text-white">{selectedProfile.displayName?.[0]?.toUpperCase() || '?'}</span>
+                  )}
+                </div>
+                <h3 className="text-xl font-bold text-white">{selectedProfile.displayName || selectedProfile.username}</h3>
+                <p className="text-gray-400 text-sm">@{selectedProfile.username}</p>
+              </div>
+            </div>
+
+            {/* Stats */}
+            <div className="px-6 pb-4">
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  <p className="text-2xl font-bold text-white">{selectedProfile.masterStreak || 0}</p>
+                  <p className="text-gray-500 text-xs">Week Streak</p>
+                </div>
+                <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  <p className="text-2xl font-bold text-white">{selectedProfile.weeksWon || 0}</p>
+                  <p className="text-gray-500 text-xs">Weeks Won</p>
+                </div>
+                <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  <p className="text-2xl font-bold text-white">{selectedProfile.totalWorkouts || 0}</p>
+                  <p className="text-gray-500 text-xs">Workouts</p>
+                </div>
+              </div>
+
+              {/* Streak breakdown */}
+              <div className="space-y-2 mb-4">
+                <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  <span className="text-gray-400 flex items-center gap-2">
+                    <span style={{ color: '#00FF94' }}>💪</span> Strength Streak
+                  </span>
+                  <span className="text-white font-bold">{selectedProfile.strengthStreak || 0}</span>
+                </div>
+                <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  <span className="text-gray-400 flex items-center gap-2">
+                    <span style={{ color: '#FF9500' }}>🏃</span> Cardio Streak
+                  </span>
+                  <span className="text-white font-bold">{selectedProfile.cardioStreak || 0}</span>
+                </div>
+                <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  <span className="text-gray-400 flex items-center gap-2">
+                    <span style={{ color: '#00D1FF' }}>🧊</span> Recovery Streak
+                  </span>
+                  <span className="text-white font-bold">{selectedProfile.recoveryStreak || 0}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Action buttons based on relationship */}
+            <div className="px-6 pb-6">
+              {isFriend(selectedProfile.uid) ? (
+                <button
+                  onClick={() => {
+                    handleRemoveFriend(selectedProfile.uid);
+                    setSelectedProfile(null);
+                  }}
+                  className="w-full py-3 rounded-xl font-medium transition-all duration-150 active:scale-98 text-red-400"
+                  style={{ backgroundColor: 'rgba(255,69,58,0.1)' }}
+                >
+                  Remove Friend
+                </button>
+              ) : hasSentRequest(selectedProfile.uid) ? (
+                <button
+                  className="w-full py-3 rounded-xl font-medium text-gray-400"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+                  disabled
+                >
+                  Request Pending
+                </button>
+              ) : hasReceivedRequest(selectedProfile.uid) ? (
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => {
+                      const request = requests.find(r => r.fromUid === selectedProfile.uid);
+                      if (request) {
+                        handleAcceptRequest(request);
+                        setSelectedProfile(null);
+                      }
+                    }}
+                    className="flex-1 py-3 rounded-xl font-semibold transition-all duration-150 active:scale-98"
+                    style={{ backgroundColor: '#00FF94', color: 'black' }}
+                  >
+                    Accept
+                  </button>
+                  <button
+                    onClick={() => {
+                      const request = requests.find(r => r.fromUid === selectedProfile.uid);
+                      if (request) {
+                        handleDeclineRequest(request.id);
+                        setSelectedProfile(null);
+                      }
+                    }}
+                    className="flex-1 py-3 rounded-xl font-medium text-white transition-all duration-150 active:scale-98"
+                    style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+                  >
+                    Decline
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => {
+                    handleSendRequest(selectedProfile.uid);
+                    setSelectedProfile(null);
+                  }}
+                  className="w-full py-3 rounded-xl font-semibold transition-all duration-150 active:scale-98"
+                  style={{ backgroundColor: '#00FF94', color: 'black' }}
+                >
+                  Add Friend
+                </button>
+              )}
+
+              {/* Close button */}
+              <button
+                onClick={handleCloseProfile}
+                className="w-full py-3 mt-2 rounded-xl text-gray-400 font-medium transition-all duration-150 active:scale-98"
+                style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

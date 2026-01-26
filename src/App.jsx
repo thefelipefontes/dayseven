@@ -1335,10 +1335,12 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
         if (weeklySlide === 0) {
           return (
             <div
-              className={`relative h-full flex flex-col ${isPostFormat ? 'py-4 px-4' : 'py-5 px-5'}`}
+              className={`relative h-full flex flex-col ${isPostFormat ? 'pt-4 pb-6 px-4' : 'py-5 px-5'}`}
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
             >
+              {/* Main content wrapper */}
+              <div className={isPostFormat ? 'flex-1' : ''}>
               {/* Header */}
               <div className="text-center">
                 {allGoalsMet ? (
@@ -1349,23 +1351,23 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
                       boxShadow: '0 4px 15px rgba(255, 215, 0, 0.3)'
                     }}
                   >
-                    <div className={`font-black ${isPostFormat ? 'text-xs' : 'text-sm'} text-black tracking-wide`}>WEEK STREAKED! 🔥</div>
+                    <div className={`font-black ${isPostFormat ? 'text-sm' : 'text-sm'} text-black tracking-wide`}>WEEK STREAKED! 🔥</div>
                   </div>
                 ) : (
                   <div className={isPostFormat ? 'text-2xl' : 'text-3xl'} style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>📅</div>
                 )}
-                <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-500 uppercase tracking-wider mt-1.5`}>{getWeekDateRange()}</div>
-                <div className={`font-black ${isPostFormat ? 'text-xl' : 'text-2xl'}`} style={{ color: allGoalsMet ? colors.primary : 'white' }}>
+                <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-500 uppercase tracking-wider mt-1.5`}>{getWeekDateRange()}</div>
+                <div className={`font-black ${isPostFormat ? 'text-2xl' : 'text-2xl'}`} style={{ color: allGoalsMet ? colors.primary : 'white' }}>
                   {allGoalsMet ? '✓ Week Complete!' : `${overallPercent}% Complete`}
                 </div>
-                <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-400 mt-0.5`}>{getMotivationalTagline(stats?.streak || 0, allGoalsMet)}</div>
+                <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-0.5`}>{getMotivationalTagline(stats?.streak || 0, allGoalsMet)}</div>
               </div>
 
               {/* Content */}
-              <div className={`flex-1 flex flex-col justify-center ${isPostFormat ? 'py-3' : 'py-4'}`}>
+              <div className={`${isPostFormat ? 'flex-none py-2' : 'flex-1 py-4'} flex flex-col justify-center`}>
                 {/* Progress bar */}
                 <div className={`w-full ${isPostFormat ? 'mb-4' : 'mb-5'}`}>
-                  <div className={`${isPostFormat ? 'h-1.5' : 'h-2'} rounded-full overflow-hidden flex`} style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  <div className={`${isPostFormat ? 'h-2' : 'h-2'} rounded-full overflow-hidden flex`} style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                     {weeklyLifts > 0 && (
                       <div className="h-full transition-all duration-500" style={{ width: `${(Math.min(weeklyLifts, liftsGoal) / totalGoals) * 100}%`, backgroundColor: '#00FF94' }} />
                     )}
@@ -1379,7 +1381,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
                 </div>
 
                 {/* Goal Rings */}
-                <div className={`flex items-center justify-around w-full ${isPostFormat ? 'mb-4' : 'mb-5'}`}>
+                <div className={`flex items-center ${isPostFormat ? 'justify-center gap-6' : 'justify-around'} w-full ${isPostFormat ? 'mb-4' : 'mb-5'}`}>
                   <div className="text-center">
                     <div className="relative inline-block">
                       <svg width={ringSize} height={ringSize} className="transform -rotate-90">
@@ -1388,10 +1390,10 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
                           strokeDasharray={ringCircumference} strokeDashoffset={ringCircumference - (liftsPercent / 100) * ringCircumference} />
                       </svg>
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <span className={`${isPostFormat ? 'text-xs' : 'text-sm'} font-black`}>{weeklyLifts}/{liftsGoal}</span>
+                        <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`}>{weeklyLifts}/{liftsGoal}</span>
                       </div>
                     </div>
-                    <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-400 mt-1`}>🏋️ Strength</div>
+                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`}>🏋️ Strength</div>
                   </div>
                   <div className="text-center">
                     <div className="relative inline-block">
@@ -1401,10 +1403,10 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
                           strokeDasharray={ringCircumference} strokeDashoffset={ringCircumference - (cardioPercent / 100) * ringCircumference} />
                       </svg>
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <span className={`${isPostFormat ? 'text-xs' : 'text-sm'} font-black`}>{weeklyCardio}/{cardioGoal}</span>
+                        <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`}>{weeklyCardio}/{cardioGoal}</span>
                       </div>
                     </div>
-                    <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-400 mt-1`}>🏃 Cardio</div>
+                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`}>🏃 Cardio</div>
                   </div>
                   <div className="text-center">
                     <div className="relative inline-block">
@@ -1414,10 +1416,10 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
                           strokeDasharray={ringCircumference} strokeDashoffset={ringCircumference - (recoveryPercent / 100) * ringCircumference} />
                       </svg>
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <span className={`${isPostFormat ? 'text-xs' : 'text-sm'} font-black`}>{weeklyRecovery}/{recoveryGoal}</span>
+                        <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`}>{weeklyRecovery}/{recoveryGoal}</span>
                       </div>
                     </div>
-                    <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-400 mt-1`}>🧘 Recovery</div>
+                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`}>🧘 Recovery</div>
                   </div>
                 </div>
 
@@ -1426,30 +1428,31 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
                   <div className="flex items-center justify-center gap-2">
                     <span className={isPostFormat ? 'text-lg' : 'text-xl'}>🔥</span>
                     <span className={`${isPostFormat ? 'text-xl' : 'text-2xl'} font-black`} style={{ color: '#00FF94' }}>{stats?.streak || 0}</span>
-                    <span className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-400`}>weeks hitting all goals</span>
+                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-xs'} text-gray-400`}>weeks hitting all goals</span>
                   </div>
-                  <div className={`w-full h-px ${isPostFormat ? 'my-2' : 'my-3'}`} style={{ backgroundColor: 'rgba(255,255,255,0.05)' }} />
+                  <div className={`w-full h-px ${isPostFormat ? 'my-1.5' : 'my-3'}`} style={{ backgroundColor: 'rgba(255,255,255,0.05)' }} />
                   <div className="flex justify-around">
                     <div className="text-center">
-                      <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#00FF94' }}>{stats?.strengthStreak || 0}</div>
-                      <div className={`${isPostFormat ? 'text-[9px]' : 'text-xs'} text-gray-500`}>🏋️ weeks</div>
+                      <div className={`${isPostFormat ? 'text-[15px]' : 'text-base'} font-bold`} style={{ color: '#00FF94' }}>{stats?.strengthStreak || 0}</div>
+                      <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-500`}>🏋️ weeks</div>
                     </div>
                     <div className="text-center">
-                      <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#FF9500' }}>{stats?.cardioStreak || 0}</div>
-                      <div className={`${isPostFormat ? 'text-[9px]' : 'text-xs'} text-gray-500`}>🏃 weeks</div>
+                      <div className={`${isPostFormat ? 'text-[15px]' : 'text-base'} font-bold`} style={{ color: '#FF9500' }}>{stats?.cardioStreak || 0}</div>
+                      <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-500`}>🏃 weeks</div>
                     </div>
                     <div className="text-center">
-                      <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#00D1FF' }}>{stats?.recoveryStreak || 0}</div>
-                      <div className={`${isPostFormat ? 'text-[9px]' : 'text-xs'} text-gray-500`}>🧊 weeks</div>
+                      <div className={`${isPostFormat ? 'text-[15px]' : 'text-base'} font-bold`} style={{ color: '#00D1FF' }}>{stats?.recoveryStreak || 0}</div>
+                      <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-500`}>🧊 weeks</div>
                     </div>
                   </div>
                 </div>
               </div>
+              </div>
 
               {/* Footer */}
-              <div className="text-center mt-1">
-                <div className={`inline-block ${isPostFormat ? 'text-sm' : 'text-base'} font-black tracking-wider`} style={{ background: 'linear-gradient(135deg, #00FF94 0%, #00D1FF 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
-                <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-600 tracking-widest uppercase`}>Weekly Recap</div>
+              <div className={`text-center ${isPostFormat ? 'mt-0' : 'mt-1'}`}>
+                <div className={`inline-block ${isPostFormat ? 'text-base' : 'text-base'} font-black tracking-wider`} style={{ background: 'linear-gradient(135deg, #00FF94 0%, #00D1FF 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
+                <div className={`${isPostFormat ? 'text-[10px] -mt-0.5' : 'text-[10px]'} text-gray-600 tracking-widest uppercase`}>Weekly Recap</div>
               </div>
             </div>
           );

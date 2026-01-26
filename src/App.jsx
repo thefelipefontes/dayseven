@@ -3530,6 +3530,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, onDeleteActivity, onEditActivity, user }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [activityReactions, setActivityReactions] = useState({});
+  const [reactionDetailModal, setReactionDetailModal] = useState(null); // { activityId, reactions, selectedEmoji }
 
   // Calculate weekly progress directly from activities to ensure it's always in sync
   const weekProgress = useMemo(() => {
@@ -3644,7 +3645,56 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
       counts[r.reactionType] = (counts[r.reactionType] || 0) + 1;
     });
 
-    return { counts, total: reactions.length };
+    return { counts, total: reactions.length, reactions };
+  };
+
+  // Reactions Detail Modal
+  const ReactionsDetailModal = ({ data, onClose }) => {
+    if (!data) return null;
+
+    const { reactions, selectedEmoji } = data;
+
+    // Filter reactions by selected emoji
+    const filteredReactions = reactions.filter(r => r.reactionType === selectedEmoji);
+
+    return (
+      <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={onClose}>
+        <div
+          className="w-full max-w-sm bg-zinc-900 rounded-2xl p-5 max-h-[60vh] overflow-y-auto"
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">{selectedEmoji}</span>
+              <span className="text-gray-400 text-sm">{filteredReactions.length} {filteredReactions.length === 1 ? 'reaction' : 'reactions'}</span>
+            </div>
+            <button onClick={onClose} className="text-gray-400 p-1">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Reactors list */}
+          <div className="space-y-2">
+            {filteredReactions.map((reactor, idx) => (
+              <div key={reactor.reactorUid || idx} className="flex items-center gap-3 p-3 rounded-xl bg-zinc-800">
+                <div className="w-10 h-10 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {reactor.reactorPhoto ? (
+                    <img src={reactor.reactorPhoto} alt={reactor.reactorName} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-white text-sm">{reactor.reactorName?.[0]?.toUpperCase() || '?'}</span>
+                  )}
+                </div>
+                <span className="text-white text-sm font-medium">{reactor.reactorName}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -4032,14 +4082,46 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                         if (!summary) return null;
                         return (
                           <span
-                            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full flex-shrink-0"
+                            className="flex items-center gap-0.5 px-1 py-0.5 rounded-full flex-shrink-0 transition-all duration-150 hover:scale-105"
                             style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.15)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                            }}
                           >
                             {Object.entries(summary.counts).slice(0, 4).map(([emoji, count]) => (
-                              <span key={emoji} className="flex items-center text-xs">
+                              <button
+                                key={emoji}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setReactionDetailModal({ activityId: activity.id, reactions: summary.reactions, selectedEmoji: emoji });
+                                }}
+                                onTouchStart={(e) => {
+                                  e.stopPropagation();
+                                  e.currentTarget.style.transform = 'scale(0.85)';
+                                }}
+                                onTouchEnd={(e) => {
+                                  e.stopPropagation();
+                                  e.currentTarget.style.transform = 'scale(1)';
+                                }}
+                                onMouseDown={(e) => {
+                                  e.stopPropagation();
+                                  e.currentTarget.style.transform = 'scale(0.85)';
+                                }}
+                                onMouseUp={(e) => {
+                                  e.stopPropagation();
+                                  e.currentTarget.style.transform = 'scale(1)';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.transform = 'scale(1)';
+                                }}
+                                className="flex items-center text-xs px-0.5 rounded transition-all duration-150"
+                              >
                                 <span>{emoji}</span>
                                 {count > 1 && <span className="text-gray-300 text-[10px] ml-0.5">{count}</span>}
-                              </span>
+                              </button>
                             ))}
                           </span>
                         );
@@ -4097,6 +4179,12 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         activity={selectedActivity}
         onDelete={onDeleteActivity}
         onEdit={onEditActivity}
+      />
+
+      {/* Reactions Detail Modal */}
+      <ReactionsDetailModal
+        data={reactionDetailModal}
+        onClose={() => setReactionDetailModal(null)}
       />
     </div>
   );
@@ -5985,11 +6073,16 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals }) => 
     stepsPerDay: { label: 'Steps', icon: '👟', suffix: '/day', format: (v) => `${(v/1000).toFixed(0)}k` }
   };
 
+  // Check if today is Monday (0 = Sunday, 1 = Monday)
+  const isMonday = new Date().getDay() === 1;
+  const canEditGoals = isMonday;
+
   return (
     <div className="pb-32">
       {/* Header */}
       <div className="px-4 pt-2 pb-4">
         <h1 className="text-xl font-bold text-white">Profile</h1>
+        <p className="text-sm text-gray-500">Set Your Standards. Earn Your Streaks.</p>
       </div>
 
       <div className="px-4">
@@ -6042,36 +6135,50 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals }) => 
 
         {/* Goals Section */}
         <div className="mb-6">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-1">
             <h3 className="text-sm font-semibold text-gray-400">WEEKLY GOALS</h3>
-            <button
-              onClick={onEditGoals}
-              className="text-sm font-medium px-3 py-1 rounded-full transition-all duration-150"
-              style={{ color: '#00FF94', backgroundColor: 'rgba(0,255,148,0.1)', transform: 'scale(1)' }}
-              onTouchStart={(e) => {
-                e.currentTarget.style.transform = 'scale(0.92)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
-              }}
-              onTouchEnd={(e) => {
-                e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
-              }}
-              onMouseDown={(e) => {
-                e.currentTarget.style.transform = 'scale(0.92)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
-              }}
-              onMouseUp={(e) => {
-                e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
-              }}
-            >
-              Edit
-            </button>
+            {canEditGoals ? (
+              <button
+                onClick={onEditGoals}
+                className="text-sm font-medium px-3 py-1 rounded-full transition-all duration-150"
+                style={{ color: '#00FF94', backgroundColor: 'rgba(0,255,148,0.1)', transform: 'scale(1)' }}
+                onTouchStart={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.92)';
+                  e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+                }}
+                onTouchEnd={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                }}
+                onMouseDown={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.92)';
+                  e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+                }}
+                onMouseUp={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                }}
+              >
+                Edit
+              </button>
+            ) : (
+              <span
+                className="text-xs font-medium px-3 py-1 rounded-full flex items-center gap-1"
+                style={{ color: 'rgba(255,255,255,0.4)', backgroundColor: 'rgba(255,255,255,0.05)' }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+                Mondays only
+              </span>
+            )}
           </div>
+          <p className="text-[11px] text-gray-500 mb-3">Goals can only be edited on Mondays to keep your streaks honest</p>
           <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
             <div className="grid grid-cols-2 gap-3">
               {Object.entries(goalLabels).map(([key, { label, icon, suffix, format }]) => (

@@ -19,7 +19,7 @@ const Login = ({ onLogin }) => {
         <h1 className="text-5xl font-bold text-white tracking-tight mb-2">
           STREAKD
         </h1>
-        <p className="text-gray-400 text-lg">Track your fitness journey</p>
+        <p className="text-gray-400 text-lg">Set Your Standards. Earn Your Streaks.</p>
       </div>
 
       {/* Sign in button */}

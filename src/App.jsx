@@ -885,6 +885,9 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const cardRef = useRef(null);
 
+  // Detect mobile for responsive sizing
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
   // Generate image from card
   const generateImage = async () => {
     if (!cardRef.current) return null;
@@ -1001,6 +1004,24 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
         alert('Failed to generate image. Please try again.');
         return;
       }
+
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png', 1.0));
+      const file = new File([blob], `streakd-${cardType}-${Date.now()}.png`, { type: 'image/png' });
+
+      // On mobile, use share API with "Save Image" intent if available
+      if (isMobile && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file] });
+          return;
+        } catch (e) {
+          if (e.name === 'AbortError') {
+            return; // User cancelled
+          }
+          // Fall through to download
+        }
+      }
+
+      // Fallback: trigger download
       const link = document.createElement('a');
       link.download = `streakd-${cardType}-${Date.now()}.png`;
       link.href = canvas.toDataURL('image/png', 1.0);
@@ -1026,26 +1047,42 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
       const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png', 1.0));
       const file = new File([blob], `streakd-${cardFormat}.png`, { type: 'image/png' });
 
-      let shared = false;
-      if (navigator.share && navigator.canShare) {
+      // Try native share API (mobile)
+      if (navigator.share) {
         try {
-          if (navigator.canShare({ files: [file] })) {
+          // Check if we can share files
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
             await navigator.share({ files: [file] });
-            shared = true;
+            setIsGenerating(false);
+            return;
           }
+          // Fallback: share without file (just URL/text if available)
+          await navigator.share({
+            title: 'STREAKD',
+            text: 'Check out my STREAKD stats!'
+          });
+          // Still download the image since we couldn't share the file
+          const link = document.createElement('a');
+          link.download = `streakd-${cardType}-${Date.now()}.png`;
+          link.href = canvas.toDataURL('image/png', 1.0);
+          link.click();
+          setIsGenerating(false);
+          return;
         } catch (e) {
+          // User cancelled or share failed - if AbortError, user cancelled so don't download
           if (e.name === 'AbortError') {
-            shared = true;
+            setIsGenerating(false);
+            return;
           }
+          console.log('Share failed, falling back to download:', e);
         }
       }
 
-      if (!shared) {
-        const link = document.createElement('a');
-        link.download = `streakd-${cardType}-${Date.now()}.png`;
-        link.href = canvas.toDataURL('image/png', 1.0);
-        link.click();
-      }
+      // Fallback: download the image
+      const link = document.createElement('a');
+      link.download = `streakd-${cardType}-${Date.now()}.png`;
+      link.href = canvas.toDataURL('image/png', 1.0);
+      link.click();
     } catch (error) {
       console.error('Error in executeShare:', error);
       alert('Failed to generate image. Please try again.');
@@ -1804,19 +1841,19 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
         }}
       >
         {/* Card Type Tabs */}
-        <div className="flex gap-1.5 p-1.5 rounded-2xl mb-5" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+        <div className={`flex gap-1.5 p-1.5 rounded-2xl ${isMobile ? 'mb-3' : 'mb-5'}`} style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
           {cardTypes.map((type) => (
             <button
               key={type.id}
               onClick={() => setCardType(type.id)}
-              className="flex-1 py-3 px-2 rounded-xl text-center transition-all duration-200"
+              className={`flex-1 ${isMobile ? 'py-2 px-1.5' : 'py-3 px-2'} rounded-xl text-center transition-all duration-200`}
               style={{
                 backgroundColor: cardType === type.id ? colorSchemes[type.id].primary + '20' : 'transparent',
                 color: cardType === type.id ? colorSchemes[type.id].primary : 'rgba(255,255,255,0.5)'
               }}
             >
-              <div className="text-xl">{type.label}</div>
-              <div className="text-[10px] font-medium">{type.name}</div>
+              <div className={isMobile ? 'text-base' : 'text-xl'}>{type.label}</div>
+              <div className={`${isMobile ? 'text-[8px]' : 'text-[10px]'} font-medium`}>{type.name}</div>
             </button>
           ))}
         </div>
@@ -1825,7 +1862,9 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
         <div
           className="relative mb-4 flex justify-center"
           style={{
-            height: cardFormat === 'story' ? '520px' : '440px',
+            height: cardFormat === 'story'
+              ? (isMobile ? '460px' : '520px')
+              : (isMobile ? '390px' : '440px'),
             transition: 'height 0.3s ease'
           }}
         >
@@ -1836,7 +1875,9 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
             style={{
               width: cardFormat === 'story' ? '270px' : '320px',
               height: cardFormat === 'story' ? '480px' : '400px',
-              transform: cardFormat === 'story' ? 'scale(1.08)' : 'scale(1.1)',
+              transform: cardFormat === 'story'
+                ? (isMobile ? 'scale(0.93)' : 'scale(1.08)')
+                : (isMobile ? 'scale(0.95)' : 'scale(1.1)'),
               transformOrigin: 'top center',
               background: 'linear-gradient(180deg, #0a0a0a 0%, #0d0d0d 50%, #000000 100%)',
               boxShadow: `0 25px 50px -12px ${colors.shadow}, 0 0 100px ${colors.glow}`

@@ -9,6 +9,52 @@ import { createUserProfile, getUserProfile, saveUserActivities, getUserActivitie
 import { getFriends, getReactions, getFriendRequests } from './services/friendService';
 import html2canvas from 'html2canvas';
 
+// STREAKD Logo component with gradient - uses individual colored letters for html2canvas compatibility
+const StreakdLogo = ({ gradient = ['#00FF94', '#00D1FF'], size = 'base', opacity = 0.7 }) => {
+  const sizeMap = {
+    'sm': 'text-sm',
+    'base': 'text-base',
+  };
+  const textClass = sizeMap[size] || sizeMap['base'];
+  const letters = 'STREAKD'.split('');
+
+  // Calculate color for each letter position (0-6)
+  const getColorAtPosition = (index, total) => {
+    const ratio = index / (total - 1);
+    const startColor = gradient[0];
+    const endColor = gradient[1];
+
+    // Parse hex colors
+    const start = {
+      r: parseInt(startColor.slice(1, 3), 16),
+      g: parseInt(startColor.slice(3, 5), 16),
+      b: parseInt(startColor.slice(5, 7), 16),
+    };
+    const end = {
+      r: parseInt(endColor.slice(1, 3), 16),
+      g: parseInt(endColor.slice(3, 5), 16),
+      b: parseInt(endColor.slice(5, 7), 16),
+    };
+
+    // Interpolate
+    const r = Math.round(start.r + (end.r - start.r) * ratio);
+    const g = Math.round(start.g + (end.g - start.g) * ratio);
+    const b = Math.round(start.b + (end.b - start.b) * ratio);
+
+    return `rgb(${r}, ${g}, ${b})`;
+  };
+
+  return (
+    <span className={`${textClass} font-black tracking-wider inline-flex items-center justify-center leading-none`} style={{ opacity }}>
+      {letters.map((letter, index) => (
+        <span key={index} style={{ color: getColorAtPosition(index, letters.length) }}>
+          {letter}
+        </span>
+      ))}
+    </span>
+  );
+};
+
 // Get today's date in YYYY-MM-DD format
 const getTodayDate = () => {
   const today = new Date();
@@ -887,6 +933,29 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
               // Set a visible color based on the text content
               el.style.color = 'rgba(255, 255, 255, 0.7)';
             }
+
+            // Fix vertical text alignment for html2canvas export
+            // Text renders slightly lower in html2canvas, so we push it up
+            const tagName = el.tagName.toLowerCase();
+            if (tagName === 'span' || tagName === 'div') {
+              const text = el.textContent?.trim();
+              // Apply to text elements (not containers with many children)
+              if (text && el.children.length === 0) {
+                const currentTransform = el.style.transform || '';
+                const isPostFormat = actualWidth / actualHeight > 0.7;
+                if (!currentTransform.includes('translateY')) {
+                  // Move "Master Streak" and "weeks hitting all goals" - different for post vs story
+                  if (text === 'Master Streak' || text === 'weeks hitting all goals') {
+                    el.style.transform = currentTransform + ` translateY(${isPostFormat ? '2px' : '6px'})`;
+                  // Move big hero numbers up higher (large font size numbers)
+                  } else if (/^\d+$/.test(text) && el.style.fontSize && (el.style.fontSize.includes('3rem') || el.style.fontSize.includes('4rem'))) {
+                    el.style.transform = currentTransform + ' translateY(-12px)';
+                  } else {
+                    el.style.transform = currentTransform + ' translateY(-6px)';
+                  }
+                }
+              }
+            }
           });
         }
       });
@@ -1279,7 +1348,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
 
             {/* Footer */}
             <div className="text-center mt-1">
-              <div className={`inline-block ${isPostFormat ? 'text-sm' : 'text-sm'} font-black tracking-wider`} style={{ background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
+              <StreakdLogo gradient={['#FFD700', '#FFA500']} size="sm" />
               <div className={`${isPostFormat ? 'text-[8px]' : 'text-[8px]'} text-gray-600 tracking-widest uppercase`}>Personal Bests</div>
             </div>
           </div>
@@ -1342,7 +1411,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
               {/* Main content wrapper */}
               <div className={isPostFormat ? 'flex-1' : ''}>
               {/* Header */}
-              <div className="text-center">
+              <div className={`text-center ${isPostFormat ? '' : 'mt-6'}`}>
                 {allGoalsMet ? (
                   <div
                     className={`${isPostFormat ? 'py-1.5 px-4' : 'py-2 px-5'} rounded-xl inline-block`}
@@ -1381,68 +1450,68 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
                 </div>
 
                 {/* Goal Rings */}
-                <div className={`flex items-center ${isPostFormat ? 'justify-center gap-6' : 'justify-around'} w-full ${isPostFormat ? 'mb-4' : 'mb-5'}`}>
-                  <div className="text-center">
-                    <div className="relative inline-block">
-                      <svg width={ringSize} height={ringSize} className="transform -rotate-90">
+                <div className={`w-full flex items-center ${isPostFormat ? 'justify-center gap-6' : 'justify-around'} ${isPostFormat ? 'mb-4' : 'mb-5'}`}>
+                  <div className="flex flex-col items-center text-center">
+                    <div className="relative">
+                      <svg width={ringSize} height={ringSize} className="transform -rotate-90 block">
                         <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={ringStroke} />
                         <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="#00FF94" strokeWidth={ringStroke} strokeLinecap="round"
                           strokeDasharray={ringCircumference} strokeDashoffset={ringCircumference - (liftsPercent / 100) * ringCircumference} />
                       </svg>
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`}>{weeklyLifts}/{liftsGoal}</span>
+                      <div className="absolute inset-0 flex items-center justify-center" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`} style={{ lineHeight: 1 }}>{weeklyLifts}/{liftsGoal}</span>
                       </div>
                     </div>
-                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`}>🏋️ Strength</div>
+                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><span style={{ fontSize: '0.9em' }}>🏋️</span><span>Strength</span></div>
                   </div>
-                  <div className="text-center">
-                    <div className="relative inline-block">
-                      <svg width={ringSize} height={ringSize} className="transform -rotate-90">
+                  <div className="flex flex-col items-center text-center">
+                    <div className="relative">
+                      <svg width={ringSize} height={ringSize} className="transform -rotate-90 block">
                         <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={ringStroke} />
                         <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="#FF9500" strokeWidth={ringStroke} strokeLinecap="round"
                           strokeDasharray={ringCircumference} strokeDashoffset={ringCircumference - (cardioPercent / 100) * ringCircumference} />
                       </svg>
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`}>{weeklyCardio}/{cardioGoal}</span>
+                      <div className="absolute inset-0 flex items-center justify-center" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`} style={{ lineHeight: 1 }}>{weeklyCardio}/{cardioGoal}</span>
                       </div>
                     </div>
-                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`}>🏃 Cardio</div>
+                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><span style={{ fontSize: '0.9em' }}>🏃</span><span>Cardio</span></div>
                   </div>
-                  <div className="text-center">
-                    <div className="relative inline-block">
-                      <svg width={ringSize} height={ringSize} className="transform -rotate-90">
+                  <div className="flex flex-col items-center text-center">
+                    <div className="relative">
+                      <svg width={ringSize} height={ringSize} className="transform -rotate-90 block">
                         <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={ringStroke} />
                         <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="#00D1FF" strokeWidth={ringStroke} strokeLinecap="round"
                           strokeDasharray={ringCircumference} strokeDashoffset={ringCircumference - (recoveryPercent / 100) * ringCircumference} />
                       </svg>
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`}>{weeklyRecovery}/{recoveryGoal}</span>
+                      <div className="absolute inset-0 flex items-center justify-center" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`} style={{ lineHeight: 1 }}>{weeklyRecovery}/{recoveryGoal}</span>
                       </div>
                     </div>
-                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`}>🧘 Recovery</div>
+                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><span style={{ fontSize: '0.9em' }}>🧘</span><span>Recovery</span></div>
                   </div>
                 </div>
 
                 {/* Streaks */}
                 <div className={`w-full ${isPostFormat ? 'py-2 px-3' : 'py-3 px-4'} rounded-2xl`} style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-                  <div className="flex items-center justify-center gap-2">
-                    <span className={isPostFormat ? 'text-lg' : 'text-xl'}>🔥</span>
-                    <span className={`${isPostFormat ? 'text-xl' : 'text-2xl'} font-black`} style={{ color: '#00FF94' }}>{stats?.streak || 0}</span>
-                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-xs'} text-gray-400`}>weeks hitting all goals</span>
+                  <div className="w-full" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                    <span className={isPostFormat ? 'text-lg' : 'text-xl'} style={{ lineHeight: '1.2' }}>🔥</span>
+                    <span className={`${isPostFormat ? 'text-xl' : 'text-2xl'} font-black`} style={{ color: '#00FF94', lineHeight: '1.2' }}>{stats?.streak || 0}</span>
+                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-xs'} text-gray-400`} style={{ lineHeight: '1.2' }}>weeks hitting all goals</span>
                   </div>
                   <div className={`w-full h-px ${isPostFormat ? 'my-1.5' : 'my-3'}`} style={{ backgroundColor: 'rgba(255,255,255,0.05)' }} />
-                  <div className="flex justify-around">
-                    <div className="text-center">
-                      <div className={`${isPostFormat ? 'text-[15px]' : 'text-base'} font-bold`} style={{ color: '#00FF94' }}>{stats?.strengthStreak || 0}</div>
-                      <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-500`}>🏋️ weeks</div>
+                  <div className="w-full" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around' }}>
+                    <div style={{ textAlign: 'center' }}>
+                      <div className={`${isPostFormat ? 'text-[15px]' : 'text-base'} font-bold`} style={{ color: '#00FF94', lineHeight: '1.2' }}>{stats?.strengthStreak || 0}</div>
+                      <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-500 mt-0.5`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><span style={{ fontSize: '0.9em' }}>🏋️</span><span>weeks</span></div>
                     </div>
-                    <div className="text-center">
-                      <div className={`${isPostFormat ? 'text-[15px]' : 'text-base'} font-bold`} style={{ color: '#FF9500' }}>{stats?.cardioStreak || 0}</div>
-                      <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-500`}>🏃 weeks</div>
+                    <div style={{ textAlign: 'center' }}>
+                      <div className={`${isPostFormat ? 'text-[15px]' : 'text-base'} font-bold`} style={{ color: '#FF9500', lineHeight: '1.2' }}>{stats?.cardioStreak || 0}</div>
+                      <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-500 mt-0.5`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><span style={{ fontSize: '0.9em' }}>🏃</span><span>weeks</span></div>
                     </div>
-                    <div className="text-center">
-                      <div className={`${isPostFormat ? 'text-[15px]' : 'text-base'} font-bold`} style={{ color: '#00D1FF' }}>{stats?.recoveryStreak || 0}</div>
-                      <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-500`}>🧊 weeks</div>
+                    <div style={{ textAlign: 'center' }}>
+                      <div className={`${isPostFormat ? 'text-[15px]' : 'text-base'} font-bold`} style={{ color: '#00D1FF', lineHeight: '1.2' }}>{stats?.recoveryStreak || 0}</div>
+                      <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-500 mt-0.5`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><span style={{ fontSize: '0.9em' }}>🧊</span><span>weeks</span></div>
                     </div>
                   </div>
                 </div>
@@ -1451,7 +1520,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
 
               {/* Footer */}
               <div className={`text-center ${isPostFormat ? 'mt-0' : 'mt-1'}`}>
-                <div className={`inline-block ${isPostFormat ? 'text-base' : 'text-base'} font-black tracking-wider`} style={{ background: 'linear-gradient(135deg, #00FF94 0%, #00D1FF 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
+                <StreakdLogo gradient={['#00FF94', '#00D1FF']} size={isPostFormat ? 'base' : 'base'} />
                 <div className={`${isPostFormat ? 'text-[10px] -mt-0.5' : 'text-[10px]'} text-gray-600 tracking-widest uppercase`}>Weekly Recap</div>
               </div>
             </div>
@@ -1578,7 +1647,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
             </div>
 
             <div className="text-center mt-auto w-full">
-              <div className={`inline-block ${isPostFormat ? 'text-sm' : 'text-base'} font-black tracking-wider`} style={{ background: 'linear-gradient(135deg, #00FF94 0%, #00D1FF 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
+              <StreakdLogo gradient={['#00FF94', '#00D1FF']} size={isPostFormat ? 'sm' : 'base'} />
               <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-600 tracking-widest uppercase -mt-0.5`}>Week Highlights</div>
             </div>
           </div>
@@ -1649,7 +1718,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
             </div>
 
             {/* Bottom stats */}
-            <div className="w-full">
+            <div className={`w-full ${isPostFormat ? 'mt-2' : 'mt-2.5'}`}>
               <div className={`grid grid-cols-2 ${isPostFormat ? 'gap-1.5 p-2' : 'gap-2 p-2.5'} rounded-xl ${isPostFormat ? 'mb-1.5' : 'mb-2'}`} style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
                 <div className="text-center">
                   <div className={`${isPostFormat ? 'text-base' : 'text-xl'} font-black text-white`}>{stats?.longestStreak || stats?.streak || 0}</div>
@@ -1660,8 +1729,8 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
                   <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500 uppercase`}>Weeks Won</div>
                 </div>
               </div>
-              <div className="text-center">
-                <div className={`inline-block ${isPostFormat ? 'text-sm' : 'text-base'} font-black tracking-wider`} style={{ background: 'linear-gradient(135deg, #ffffff 0%, #888888 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
+              <div className={`text-center ${isPostFormat ? '-mt-0.5' : 'mt-0.5'}`}>
+                <StreakdLogo gradient={['#ffffff', '#888888']} size={isPostFormat ? 'sm' : 'base'} />
                 <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-600 tracking-widest uppercase -mt-0.5`}>Streak Stats</div>
               </div>
             </div>
@@ -1710,7 +1779,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
               </div>
             </div>
             <div className="text-center mt-auto w-full mt-1">
-              <div className={`inline-block ${isPostFormat ? 'text-sm' : 'text-base'} font-black tracking-wider`} style={{ background: 'linear-gradient(135deg, #8B5CF6 0%, #06B6D4 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
+              <StreakdLogo gradient={['#8B5CF6', '#06B6D4']} size={isPostFormat ? 'sm' : 'base'} />
               <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-600 tracking-widest uppercase -mt-0.5`}>Monthly Stats</div>
             </div>
           </div>

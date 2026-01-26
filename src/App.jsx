@@ -5,7 +5,7 @@ import Login from './Login';
 import UsernameSetup from './UsernameSetup';
 import Friends from './Friends';
 import ActivityFeed from './ActivityFeed';
-import { createUserProfile, getUserProfile, saveUserActivities, getUserActivities } from './services/userService';
+import { createUserProfile, getUserProfile, saveUserActivities, getUserActivities, uploadProfilePhoto } from './services/userService';
 import { getFriends, getReactions, getFriendRequests } from './services/friendService';
 
 // Get today's date in YYYY-MM-DD format
@@ -3530,6 +3530,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, onDeleteActivity, onEditActivity, user }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [activityReactions, setActivityReactions] = useState({});
+  const [reactionDetailModal, setReactionDetailModal] = useState(null); // { activityId, reactions, selectedEmoji }
 
   // Calculate weekly progress directly from activities to ensure it's always in sync
   const weekProgress = useMemo(() => {
@@ -3644,7 +3645,56 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
       counts[r.reactionType] = (counts[r.reactionType] || 0) + 1;
     });
 
-    return { counts, total: reactions.length };
+    return { counts, total: reactions.length, reactions };
+  };
+
+  // Reactions Detail Modal
+  const ReactionsDetailModal = ({ data, onClose }) => {
+    if (!data) return null;
+
+    const { reactions, selectedEmoji } = data;
+
+    // Filter reactions by selected emoji
+    const filteredReactions = reactions.filter(r => r.reactionType === selectedEmoji);
+
+    return (
+      <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={onClose}>
+        <div
+          className="w-full max-w-sm bg-zinc-900 rounded-2xl p-5 max-h-[60vh] overflow-y-auto"
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">{selectedEmoji}</span>
+              <span className="text-gray-400 text-sm">{filteredReactions.length} {filteredReactions.length === 1 ? 'reaction' : 'reactions'}</span>
+            </div>
+            <button onClick={onClose} className="text-gray-400 p-1">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Reactors list */}
+          <div className="space-y-2">
+            {filteredReactions.map((reactor, idx) => (
+              <div key={reactor.reactorUid || idx} className="flex items-center gap-3 p-3 rounded-xl bg-zinc-800">
+                <div className="w-10 h-10 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {reactor.reactorPhoto ? (
+                    <img src={reactor.reactorPhoto} alt={reactor.reactorName} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-white text-sm">{reactor.reactorName?.[0]?.toUpperCase() || '?'}</span>
+                  )}
+                </div>
+                <span className="text-white text-sm font-medium">{reactor.reactorName}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -4032,14 +4082,46 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                         if (!summary) return null;
                         return (
                           <span
-                            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full flex-shrink-0"
+                            className="flex items-center gap-0.5 px-1 py-0.5 rounded-full flex-shrink-0 transition-all duration-150 hover:scale-105"
                             style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.15)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                            }}
                           >
                             {Object.entries(summary.counts).slice(0, 4).map(([emoji, count]) => (
-                              <span key={emoji} className="flex items-center text-xs">
+                              <button
+                                key={emoji}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setReactionDetailModal({ activityId: activity.id, reactions: summary.reactions, selectedEmoji: emoji });
+                                }}
+                                onTouchStart={(e) => {
+                                  e.stopPropagation();
+                                  e.currentTarget.style.transform = 'scale(0.85)';
+                                }}
+                                onTouchEnd={(e) => {
+                                  e.stopPropagation();
+                                  e.currentTarget.style.transform = 'scale(1)';
+                                }}
+                                onMouseDown={(e) => {
+                                  e.stopPropagation();
+                                  e.currentTarget.style.transform = 'scale(0.85)';
+                                }}
+                                onMouseUp={(e) => {
+                                  e.stopPropagation();
+                                  e.currentTarget.style.transform = 'scale(1)';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.transform = 'scale(1)';
+                                }}
+                                className="flex items-center text-xs px-0.5 rounded transition-all duration-150"
+                              >
                                 <span>{emoji}</span>
                                 {count > 1 && <span className="text-gray-300 text-[10px] ml-0.5">{count}</span>}
-                              </span>
+                              </button>
                             ))}
                           </span>
                         );
@@ -4097,6 +4179,12 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         activity={selectedActivity}
         onDelete={onDeleteActivity}
         onEdit={onEditActivity}
+      />
+
+      {/* Reactions Detail Modal */}
+      <ReactionsDetailModal
+        data={reactionDetailModal}
+        onClose={() => setReactionDetailModal(null)}
       />
     </div>
   );
@@ -5977,7 +6065,15 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
 };
 
 // Profile Tab Component
-const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals }) => {
+const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpdatePhoto, onShare }) => {
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [showPhotoOptions, setShowPhotoOptions] = useState(false);
+  const [showPhotoPreview, setShowPhotoPreview] = useState(false);
+  const [previewImage, setPreviewImage] = useState(null);
+  const [capturedFile, setCapturedFile] = useState(null);
+  const fileInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
+
   const goalLabels = {
     liftsPerWeek: { label: 'Strength', icon: '🏋️', suffix: '/week' },
     cardioPerWeek: { label: 'Cardio', icon: '🏃', suffix: '/week' },
@@ -5985,11 +6081,132 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals }) => 
     stepsPerDay: { label: 'Steps', icon: '👟', suffix: '/day', format: (v) => `${(v/1000).toFixed(0)}k` }
   };
 
+  // Check if today is Monday (0 = Sunday, 1 = Monday)
+  const isMonday = new Date().getDay() === 1;
+  const canEditGoals = isMonday;
+
+  // Detect if user is on mobile device
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+  const handlePhotoClick = () => {
+    setShowPhotoOptions(true);
+  };
+
+  const handleChooseFromLibrary = () => {
+    setShowPhotoOptions(false);
+    fileInputRef.current?.click();
+  };
+
+  const handleTakePhoto = () => {
+    setShowPhotoOptions(false);
+    cameraInputRef.current?.click();
+  };
+
+  const handleCameraCapture = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file');
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image must be less than 5MB');
+      return;
+    }
+
+    // Create preview URL
+    const imageUrl = URL.createObjectURL(file);
+    setPreviewImage(imageUrl);
+    setCapturedFile(file);
+    setShowPhotoPreview(true);
+
+    // Reset input for potential retake
+    e.target.value = '';
+  };
+
+  const handleRetakePhoto = () => {
+    // Clean up preview URL
+    if (previewImage) {
+      URL.revokeObjectURL(previewImage);
+    }
+    setPreviewImage(null);
+    setCapturedFile(null);
+    setShowPhotoPreview(false);
+    // Trigger camera again
+    setTimeout(() => {
+      cameraInputRef.current?.click();
+    }, 100);
+  };
+
+  const handleSavePhoto = async () => {
+    if (!capturedFile) return;
+
+    setIsUploadingPhoto(true);
+    try {
+      await onUpdatePhoto(capturedFile);
+      // Clean up
+      if (previewImage) {
+        URL.revokeObjectURL(previewImage);
+      }
+      setPreviewImage(null);
+      setCapturedFile(null);
+      setShowPhotoPreview(false);
+    } catch (error) {
+      console.error('Error uploading photo:', error);
+      alert('Failed to upload photo. Please try again.');
+    }
+    setIsUploadingPhoto(false);
+  };
+
+  const handleCancelPreview = () => {
+    // Clean up preview URL
+    if (previewImage) {
+      URL.revokeObjectURL(previewImage);
+    }
+    setPreviewImage(null);
+    setCapturedFile(null);
+    setShowPhotoPreview(false);
+  };
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file');
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image must be less than 5MB');
+      return;
+    }
+
+    setIsUploadingPhoto(true);
+    try {
+      await onUpdatePhoto(file);
+    } catch (error) {
+      console.error('Error uploading photo:', error);
+      alert('Failed to upload photo. Please try again.');
+    }
+    setIsUploadingPhoto(false);
+
+    // Reset input
+    e.target.value = '';
+  };
+
   return (
     <div className="pb-32">
       {/* Header */}
       <div className="px-4 pt-2 pb-4">
         <h1 className="text-xl font-bold text-white">Profile</h1>
+        <p className="text-sm text-gray-500">Set Your Standards. Earn Your Streaks.</p>
       </div>
 
       <div className="px-4">
@@ -5997,9 +6214,30 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals }) => 
         <div className="mb-6">
           <h3 className="text-sm font-semibold text-gray-400 mb-3">PROFILE</h3>
           <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+            {/* Hidden file inputs */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              accept="image/*"
+              className="hidden"
+            />
+            <input
+              type="file"
+              ref={cameraInputRef}
+              onChange={handleCameraCapture}
+              accept="image/*;capture=camera"
+              capture
+              className="hidden"
+            />
+
             {/* Profile Photo & Name */}
             <div className="flex items-center gap-4 mb-4">
-              <div className="w-16 h-16 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden">
+              <button
+                onClick={handlePhotoClick}
+                disabled={isUploadingPhoto}
+                className="relative w-16 h-16 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden group transition-all duration-150 active:scale-95"
+              >
                 {userProfile?.photoURL ? (
                   <img src={userProfile.photoURL} alt="Profile" className="w-full h-full object-cover" />
                 ) : (
@@ -6007,7 +6245,18 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals }) => 
                     {userProfile?.displayName?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || '?'}
                   </span>
                 )}
-              </div>
+                {/* Camera overlay */}
+                <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  {isUploadingPhoto ? (
+                    <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                      <circle cx="12" cy="13" r="4" />
+                    </svg>
+                  )}
+                </div>
+              </button>
               <div className="flex-1">
                 <div className="text-lg font-semibold text-white">
                   {userProfile?.displayName || 'User'}
@@ -6040,38 +6289,112 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals }) => 
           </div>
         </div>
 
+        {/* Share Your Wins Section */}
+        <div className="mb-6">
+          <h3 className="text-sm font-semibold text-gray-400 mb-3">CELEBRATE</h3>
+          <button
+            onClick={onShare}
+            className="w-full rounded-2xl p-4 transition-all duration-150"
+            style={{
+              background: 'linear-gradient(135deg, rgba(0,255,148,0.1) 0%, rgba(0,209,255,0.1) 100%)',
+              border: '1px solid rgba(0,255,148,0.2)',
+              transform: 'scale(1)'
+            }}
+            onTouchStart={(e) => {
+              e.currentTarget.style.transform = 'scale(0.98)';
+              e.currentTarget.style.borderColor = 'rgba(0,255,148,0.4)';
+            }}
+            onTouchEnd={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.borderColor = 'rgba(0,255,148,0.2)';
+            }}
+            onMouseDown={(e) => {
+              e.currentTarget.style.transform = 'scale(0.98)';
+              e.currentTarget.style.borderColor = 'rgba(0,255,148,0.4)';
+            }}
+            onMouseUp={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.borderColor = 'rgba(0,255,148,0.2)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.borderColor = 'rgba(0,255,148,0.2)';
+            }}
+          >
+            <div className="flex items-center gap-4">
+              <div
+                className="w-12 h-12 rounded-xl flex items-center justify-center"
+                style={{ backgroundColor: 'rgba(0,255,148,0.15)' }}
+              >
+                <span className="text-2xl">🏆</span>
+              </div>
+              <div className="flex-1 text-left">
+                <div className="text-white font-semibold mb-0.5">Share Your Wins</div>
+                <div className="text-gray-400 text-sm">Create a card to show off your streaks</div>
+              </div>
+              <svg
+                className="w-5 h-5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#00FF94"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+                <polyline points="16 6 12 2 8 6" />
+                <line x1="12" y1="2" x2="12" y2="15" />
+              </svg>
+            </div>
+          </button>
+        </div>
+
         {/* Goals Section */}
         <div className="mb-6">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-1">
             <h3 className="text-sm font-semibold text-gray-400">WEEKLY GOALS</h3>
-            <button
-              onClick={onEditGoals}
-              className="text-sm font-medium px-3 py-1 rounded-full transition-all duration-150"
-              style={{ color: '#00FF94', backgroundColor: 'rgba(0,255,148,0.1)', transform: 'scale(1)' }}
-              onTouchStart={(e) => {
-                e.currentTarget.style.transform = 'scale(0.92)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
-              }}
-              onTouchEnd={(e) => {
-                e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
-              }}
-              onMouseDown={(e) => {
-                e.currentTarget.style.transform = 'scale(0.92)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
-              }}
-              onMouseUp={(e) => {
-                e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
-              }}
-            >
-              Edit
-            </button>
+            {canEditGoals ? (
+              <button
+                onClick={onEditGoals}
+                className="text-sm font-medium px-3 py-1 rounded-full transition-all duration-150"
+                style={{ color: '#00FF94', backgroundColor: 'rgba(0,255,148,0.1)', transform: 'scale(1)' }}
+                onTouchStart={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.92)';
+                  e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+                }}
+                onTouchEnd={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                }}
+                onMouseDown={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.92)';
+                  e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+                }}
+                onMouseUp={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                }}
+              >
+                Edit
+              </button>
+            ) : (
+              <span
+                className="text-xs font-medium px-3 py-1 rounded-full flex items-center gap-1"
+                style={{ color: 'rgba(255,255,255,0.4)', backgroundColor: 'rgba(255,255,255,0.05)' }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+                Mondays only
+              </span>
+            )}
           </div>
+          <p className="text-[11px] text-gray-500 mb-3">Goals can only be edited on Mondays to keep your streaks honest</p>
           <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
             <div className="grid grid-cols-2 gap-3">
               {Object.entries(goalLabels).map(([key, { label, icon, suffix, format }]) => (
@@ -6130,6 +6453,173 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals }) => 
           Sign Out
         </button>
       </div>
+
+      {/* Photo Options Popup */}
+      {showPhotoOptions && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          onClick={() => setShowPhotoOptions(false)}
+        >
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-md" />
+
+          {/* Modal */}
+          <div
+            className="relative w-full max-w-sm mx-6 rounded-3xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: '#1C1C1E',
+              border: '1px solid rgba(255,255,255,0.1)'
+            }}
+          >
+            {/* Header */}
+            <div className="px-6 pt-6 pb-4 text-center border-b border-zinc-800">
+              <div className="w-12 h-12 mx-auto mb-3 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(0,255,148,0.15)' }}>
+                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="#00FF94" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-white">Change Profile Picture</h3>
+              <p className="text-sm text-gray-500 mt-1">
+                {isMobile ? 'Choose how to update your photo' : 'Select a photo from your files, or use the mobile app to take one'}
+              </p>
+            </div>
+
+            {/* Options */}
+            <div className="p-4 space-y-2">
+              {isMobile && (
+                <button
+                  onClick={handleTakePhoto}
+                  className="w-full py-3.5 px-4 rounded-xl flex items-center gap-3 transition-all duration-150 active:scale-98"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+                  onMouseDown={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'}
+                  onMouseUp={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)'}
+                >
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="#00FF94" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                      <circle cx="12" cy="13" r="4" />
+                    </svg>
+                  </div>
+                  <div className="flex-1 text-left">
+                    <div className="text-white font-medium">Take Photo</div>
+                    <div className="text-xs text-gray-500">Use your camera</div>
+                  </div>
+                  <svg className="w-5 h-5 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                </button>
+              )}
+
+              <button
+                onClick={handleChooseFromLibrary}
+                className="w-full py-3.5 px-4 rounded-xl flex items-center gap-3 transition-all duration-150 active:scale-98"
+                style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+                onMouseDown={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'}
+                onMouseUp={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)'}
+              >
+                <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="#FF9500" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                    <circle cx="8.5" cy="8.5" r="1.5" />
+                    <polyline points="21 15 16 10 5 21" />
+                  </svg>
+                </div>
+                <div className="flex-1 text-left">
+                  <div className="text-white font-medium">Choose from Library</div>
+                  <div className="text-xs text-gray-500">Select an existing photo</div>
+                </div>
+                <svg className="w-5 h-5 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Cancel */}
+            <div className="px-4 pb-4">
+              <button
+                onClick={() => setShowPhotoOptions(false)}
+                className="w-full py-3 rounded-xl text-gray-400 font-medium transition-all duration-150 active:scale-98"
+                style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
+                onMouseDown={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)'}
+                onMouseUp={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.03)'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.03)'}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Photo Preview Modal */}
+      {showPhotoPreview && previewImage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black">
+          {/* Preview Image */}
+          <div className="relative w-full h-full flex flex-col">
+            {/* Header */}
+            <div className="absolute top-0 left-0 right-0 z-10 px-4 py-4 flex items-center justify-between" style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.8) 0%, transparent 100%)' }}>
+              <button
+                onClick={handleCancelPreview}
+                className="w-10 h-10 rounded-full flex items-center justify-center"
+                style={{ backgroundColor: 'rgba(255,255,255,0.2)' }}
+              >
+                <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+              <span className="text-white font-semibold text-lg">Preview</span>
+              <div className="w-10" />
+            </div>
+
+            {/* Image Container */}
+            <div className="flex-1 flex items-center justify-center p-4">
+              <div className="relative w-64 h-64 rounded-full overflow-hidden border-4 border-white/20">
+                <img
+                  src={previewImage}
+                  alt="Preview"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="absolute bottom-0 left-0 right-0 z-10 px-6 pb-10 pt-6" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, transparent 100%)' }}>
+              <p className="text-center text-gray-400 text-sm mb-4">This is how your profile picture will look</p>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={handleRetakePhoto}
+                  disabled={isUploadingPhoto}
+                  className="flex-1 py-3.5 rounded-xl font-semibold transition-all duration-150 active:scale-98"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.1)', color: 'white' }}
+                >
+                  Retake
+                </button>
+                <button
+                  onClick={handleSavePhoto}
+                  disabled={isUploadingPhoto}
+                  className="flex-1 py-3.5 rounded-xl font-semibold transition-all duration-150 active:scale-98 flex items-center justify-center gap-2"
+                  style={{ backgroundColor: '#00FF94', color: 'black' }}
+                >
+                  {isUploadingPhoto ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Use Photo'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -6175,6 +6665,13 @@ export default function StreakdApp() {
     } catch (error) {
       console.error('Error signing out:', error);
     }
+  };
+
+  // Handle profile photo update
+  const handleUpdatePhoto = async (file) => {
+    if (!user) return;
+    const newPhotoURL = await uploadProfilePhoto(user.uid, file);
+    setUserProfile(prev => ({ ...prev, photoURL: newPhotoURL }));
   };
   
   // Listen to auth state
@@ -6953,6 +7450,8 @@ export default function StreakdApp() {
                   userData={userData}
                   onSignOut={handleSignOut}
                   onEditGoals={() => setShowEditGoals(true)}
+                  onUpdatePhoto={handleUpdatePhoto}
+                  onShare={() => setShowShare(true)}
                 />
               )}
             </>

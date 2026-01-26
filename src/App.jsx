@@ -946,9 +946,23 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
               if (text && el.children.length === 0) {
                 const currentTransform = el.style.transform || '';
                 const isPostFormat = actualWidth / actualHeight > 0.7;
-                if (!currentTransform.includes('translateY')) {
-                  // Move "Master Streak" and "weeks hitting all goals" - different for post vs story
-                  if (text === 'Master Streak' || text === 'weeks hitting all goals') {
+
+                // Slide 1 specific: Move streak category numbers to the right (colored numbers: #00FF94, #FF9500, #00D1FF)
+                const elColor = el.style.color?.toLowerCase();
+                const isStreakColor = elColor === '#00ff94' || elColor === '#ff9500' || elColor === '#00d1ff' ||
+                  elColor === 'rgb(0, 255, 148)' || elColor === 'rgb(255, 149, 0)' || elColor === 'rgb(0, 209, 255)';
+                // Streak category numbers are single/double digit numbers with streak colors and lineHeight 1.2
+                const isStreakCategoryNumber = /^\d+$/.test(text) && isStreakColor && el.style.lineHeight === '1.2' &&
+                  tagName === 'div' && el.classList.contains('font-bold');
+
+                if (isStreakCategoryNumber) {
+                  el.style.transform = currentTransform + ' translateX(5.5px) translateY(-6px)';
+                } else if (!currentTransform.includes('translateY')) {
+                  // Slide 1: Move "weeks hitting all goals" up (in the main streak row, not slide 3)
+                  if (text === 'weeks hitting all goals' && el.style.lineHeight === '1.2') {
+                    el.style.transform = currentTransform + ' translateY(-4px)';
+                  // Move "Master Streak" and "weeks hitting all goals" on slide 3 - different for post vs story
+                  } else if (text === 'Master Streak') {
                     el.style.transform = currentTransform + ` translateY(${isPostFormat ? '2px' : '6px'})`;
                   // Move big hero numbers up higher (large font size numbers)
                   } else if (/^\d+$/.test(text) && el.style.fontSize && (el.style.fontSize.includes('3rem') || el.style.fontSize.includes('4rem'))) {
@@ -1173,7 +1187,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
     if (streak >= 12) return "Consistency is key!";
     if (streak >= 4) return "Building the habit!";
     if (streak >= 2) return "Momentum building!";
-    return "Every week counts!";
+    return "Earn your streaks.";
   };
 
   // Analyze weekly activities
@@ -1219,6 +1233,12 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
     // Total duration
     const totalMinutes = activities.reduce((sum, a) => sum + (parseInt(a.duration) || 0), 0);
 
+    // Total calories
+    const totalCalories = activities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+
+    // Total distance
+    const totalDistance = activities.reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+
     return {
       mostCommonWorkout: mostCommonWorkout ? { type: mostCommonWorkout[0], count: mostCommonWorkout[1] } : null,
       mostCommonRecovery: mostCommonRecovery ? { type: mostCommonRecovery[0], count: mostCommonRecovery[1] } : null,
@@ -1227,6 +1247,8 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
       longestDistance: longestDistance?.distance ? longestDistance : null,
       uniqueDays,
       totalMinutes,
+      totalCalories,
+      totalDistance,
       totalWorkouts: activities.length
     };
   };
@@ -1427,13 +1449,16 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
         if (allGoalsMet) achievements.push({ emoji: '🏆', text: 'All goals completed!' });
         if (weeklyAnalysis?.uniqueDays >= 5) achievements.push({ emoji: '📅', text: `Worked out ${weeklyAnalysis.uniqueDays} days` });
         if (stats?.streak >= 2) achievements.push({ emoji: '🔥', text: `${stats.streak} week streak!` });
-        if (weeklyAnalysis?.bestCalorieWorkout && parseInt(weeklyAnalysis.bestCalorieWorkout.calories) >= 500) {
-          achievements.push({ emoji: '💥', text: `${parseInt(weeklyAnalysis.bestCalorieWorkout.calories).toLocaleString()} cal burn` });
+        // Show total distance if > 0
+        if (weeklyAnalysis?.totalDistance > 0) {
+          achievements.push({ emoji: '🏃', text: `${parseFloat(weeklyAnalysis.totalDistance).toFixed(1)}mi run` });
         }
-        if (weeklyAnalysis?.longestDistance?.distance >= 3) {
-          achievements.push({ emoji: '🏃', text: `${parseFloat(weeklyAnalysis.longestDistance.distance).toFixed(1)}mi run` });
+        // Show total calories if > 0
+        if (weeklyAnalysis?.totalCalories > 0) {
+          achievements.push({ emoji: '🔥', text: `${weeklyAnalysis.totalCalories.toLocaleString()} cal` });
         }
-        if (weeklyAnalysis?.totalMinutes >= 300) {
+        // Show total hours if >= 1 hour
+        if (weeklyAnalysis?.totalMinutes >= 60) {
           achievements.push({ emoji: '⏱️', text: `${Math.round(weeklyAnalysis.totalMinutes / 60)}hrs total` });
         }
 
@@ -1470,7 +1495,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
               </div>
 
               {/* Content */}
-              <div className={`${isPostFormat ? 'flex-none py-2' : 'flex-1 py-4'} flex flex-col justify-center`}>
+              <div className={`${isPostFormat ? 'flex-none py-2' : 'flex-1 pt-3 pb-4'} flex flex-col justify-center`}>
                 {/* Progress bar */}
                 <div className={`w-full ${isPostFormat ? 'mb-4' : 'mb-5'}`}>
                   <div className={`${isPostFormat ? 'h-2' : 'h-2'} rounded-full overflow-hidden flex`} style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
@@ -1525,7 +1550,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
                         <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`} style={{ lineHeight: 1 }}>{weeklyRecovery}/{recoveryGoal}</span>
                       </div>
                     </div>
-                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><span style={{ fontSize: '0.9em' }}>🧘</span><span>Recovery</span></div>
+                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><span style={{ fontSize: '0.9em' }}>🧊</span><span>Recovery</span></div>
                   </div>
                 </div>
 

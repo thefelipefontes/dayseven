@@ -73,3 +73,19 @@ export async function saveUsername(uid, username) {
   const usernameRef = doc(db, 'usernames', lowerUsername);
   await setDoc(usernameRef, { uid });
 }
+
+export async function saveCustomActivities(uid, customActivities) {
+  const userRef = doc(db, 'users', uid);
+  await updateDoc(userRef, { customActivities });
+}
+
+export async function getCustomActivities(uid) {
+  const userRef = doc(db, 'users', uid);
+  const userDoc = await getDoc(userRef);
+
+  if (userDoc.exists()) {
+    return userDoc.data().customActivities || [];
+  }
+
+  return [];
+}

@@ -555,13 +555,21 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       <div className="bg-zinc-900 rounded-xl p-4 mb-3">
         {/* Header - Friend info */}
         <div className="flex items-center gap-3 mb-3">
-          <ProfilePhoto photoURL={friend.photoURL} displayName={friend.displayName} />
-          <div className="flex-1 min-w-0">
+          <button
+            onClick={() => setSelectedFriend(friend)}
+            className="flex-shrink-0 transition-transform active:scale-95"
+          >
+            <ProfilePhoto photoURL={friend.photoURL} displayName={friend.displayName} />
+          </button>
+          <button
+            onClick={() => setSelectedFriend(friend)}
+            className="flex-1 min-w-0 text-left"
+          >
             <p className="text-white font-medium truncate">
               {friend.displayName || friend.username}
             </p>
             <p className="text-gray-500 text-xs">@{friend.username}</p>
-          </div>
+          </button>
           <span className="text-gray-500 text-xs">{formatTimeAgo(date)}</span>
         </div>
 
@@ -910,37 +918,69 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     );
   };
 
-  // Friend Profile Modal
+  // Friend Profile Modal with animations
   const FriendProfileModal = ({ friend, onClose }) => {
-    if (!friend) return null;
+    const [isAnimating, setIsAnimating] = useState(false);
+    const [isClosing, setIsClosing] = useState(false);
+
+    useEffect(() => {
+      if (friend) {
+        setIsClosing(false);
+        // Trigger animation after mount
+        setTimeout(() => setIsAnimating(true), 10);
+      } else {
+        setIsAnimating(false);
+      }
+    }, [friend]);
+
+    const handleClose = () => {
+      setIsAnimating(false);
+      setIsClosing(true);
+      setTimeout(() => {
+        setIsClosing(false);
+        onClose();
+      }, 300);
+    };
+
+    if (!friend && !isClosing) return null;
 
     return (
-      <div className="fixed inset-0 bg-black/80 z-50 flex items-end justify-center" onClick={onClose}>
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 transition-all duration-300"
+        style={{
+          backgroundColor: isAnimating ? 'rgba(0,0,0,0.8)' : 'rgba(0,0,0,0)'
+        }}
+        onClick={handleClose}
+      >
         <div
-          className="w-full max-w-lg bg-zinc-900 rounded-t-3xl p-6 pb-8"
+          className="w-full max-w-sm bg-zinc-900 rounded-2xl p-6 transition-all duration-300 ease-out"
+          style={{
+            transform: isAnimating ? 'scale(1) translateY(0)' : 'scale(0.95) translateY(20px)',
+            opacity: isAnimating ? 1 : 0
+          }}
           onClick={e => e.stopPropagation()}
         >
           {/* Header */}
           <div className="flex items-center gap-4 mb-6">
-            <ProfilePhoto photoURL={friend.photoURL} displayName={friend.displayName} size={64} />
+            <ProfilePhoto photoURL={friend?.photoURL} displayName={friend?.displayName} size={64} />
             <div>
-              <p className="text-white font-bold text-lg">{friend.displayName || friend.username}</p>
-              <p className="text-gray-400">@{friend.username}</p>
+              <p className="text-white font-bold text-lg">{friend?.displayName || friend?.username}</p>
+              <p className="text-gray-400">@{friend?.username}</p>
             </div>
           </div>
 
           {/* Stats grid */}
           <div className="grid grid-cols-3 gap-3 mb-6">
             <div className="bg-zinc-800 rounded-xl p-3 text-center">
-              <p className="text-2xl font-bold text-white">{friend.masterStreak || 0}</p>
+              <p className="text-2xl font-bold text-white">{friend?.masterStreak || 0}</p>
               <p className="text-gray-500 text-xs">Week Streak</p>
             </div>
             <div className="bg-zinc-800 rounded-xl p-3 text-center">
-              <p className="text-2xl font-bold text-white">{friend.weeksWon || 0}</p>
+              <p className="text-2xl font-bold text-white">{friend?.weeksWon || 0}</p>
               <p className="text-gray-500 text-xs">Weeks Won</p>
             </div>
             <div className="bg-zinc-800 rounded-xl p-3 text-center">
-              <p className="text-2xl font-bold text-white">{friend.totalWorkouts || 0}</p>
+              <p className="text-2xl font-bold text-white">{friend?.totalWorkouts || 0}</p>
               <p className="text-gray-500 text-xs">Workouts</p>
             </div>
           </div>
@@ -949,22 +989,22 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           <div className="space-y-2 mb-6">
             <div className="flex items-center justify-between bg-zinc-800 rounded-lg p-3">
               <span className="text-gray-400">💪 Strength Streak</span>
-              <span className="text-white font-bold">{friend.strengthStreak || 0}</span>
+              <span className="text-white font-bold">{friend?.strengthStreak || 0}</span>
             </div>
             <div className="flex items-center justify-between bg-zinc-800 rounded-lg p-3">
               <span className="text-gray-400">🏃 Cardio Streak</span>
-              <span className="text-white font-bold">{friend.cardioStreak || 0}</span>
+              <span className="text-white font-bold">{friend?.cardioStreak || 0}</span>
             </div>
             <div className="flex items-center justify-between bg-zinc-800 rounded-lg p-3">
               <span className="text-gray-400">🧘 Recovery Streak</span>
-              <span className="text-white font-bold">{friend.recoveryStreak || 0}</span>
+              <span className="text-white font-bold">{friend?.recoveryStreak || 0}</span>
             </div>
           </div>
 
           {/* Close button */}
           <button
-            onClick={onClose}
-            className="w-full py-3 rounded-full bg-zinc-800 text-white font-medium"
+            onClick={handleClose}
+            className="w-full py-3 rounded-full bg-zinc-800 text-white font-medium transition-all duration-150 active:scale-95"
           >
             Close
           </button>
@@ -1671,6 +1711,9 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           <ActivityCard key={`${activity.friend.uid}-${activity.id || index}`} activity={activity} />
         ))}
       </div>
+
+      {/* Friend Profile Modal */}
+      <FriendProfileModal friend={selectedFriend} onClose={() => setSelectedFriend(null)} />
     </div>
   );
 };

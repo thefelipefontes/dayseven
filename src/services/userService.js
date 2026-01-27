@@ -75,6 +75,22 @@ export async function saveUsername(uid, username) {
   await setDoc(usernameRef, { uid });
 }
 
+export async function saveCustomActivities(uid, customActivities) {
+  const userRef = doc(db, 'users', uid);
+  await updateDoc(userRef, { customActivities });
+}
+
+export async function getCustomActivities(uid) {
+  const userRef = doc(db, 'users', uid);
+  const userDoc = await getDoc(userRef);
+
+  if (userDoc.exists()) {
+    return userDoc.data().customActivities || [];
+  }
+
+  return [];
+}
+
 export async function uploadProfilePhoto(uid, file) {
   // Create a reference to the profile photo location
   const photoRef = ref(storage, `profilePhotos/${uid}`);

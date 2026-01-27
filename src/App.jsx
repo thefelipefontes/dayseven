@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, createContext, useContext } from 'react';
 import * as Sentry from '@sentry/react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from './firebase';
@@ -6,7 +6,7 @@ import Login from './Login';
 import UsernameSetup from './UsernameSetup';
 import Friends from './Friends';
 import ActivityFeed from './ActivityFeed';
-import { createUserProfile, getUserProfile, saveUserActivities, getUserActivities, uploadProfilePhoto } from './services/userService';
+import { createUserProfile, getUserProfile, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto } from './services/userService';
 import { getFriends, getReactions, getFriendRequests } from './services/friendService';
 import html2canvas from 'html2canvas';
 
@@ -108,6 +108,7 @@ const initialUserData = {
     recovery: 0,
     stepsGoal: 0
   },
+  customActivities: [], // User-saved custom activity types
   personalRecords: {
     // Single workout records (with activity type that achieved it)
     highestCalories: { value: 0, activityType: null },
@@ -242,7 +243,7 @@ const ProgressBar = ({ progress, color = '#00FF94', height = 4 }) => (
   </div>
 );
 
-const ActivityIcon = ({ type, size = 20 }) => {
+const ActivityIcon = ({ type, size = 20, sportEmoji, customEmoji }) => {
   const icons = {
     'Strength Training': '🏋️',
     'Running': '🏃',
@@ -252,9 +253,18 @@ const ActivityIcon = ({ type, size = 20 }) => {
     'Pilates': '🤸',
     'Cycle': '🚴',
     'Sports': '🏀',
-    'Other': '💪'
+    'Other': '🏊'
   };
-  return <span style={{ fontSize: size }}>{icons[type] || '💪'}</span>;
+
+  // Use custom emoji for Sports or Other if provided
+  let icon = icons[type] || '🏊';
+  if (type === 'Sports' && sportEmoji) {
+    icon = sportEmoji;
+  } else if (type === 'Other' && customEmoji) {
+    icon = customEmoji;
+  }
+
+  return <span style={{ fontSize: size }}>{icon}</span>;
 };
 
 // Heat Map Calendar Component
@@ -1268,9 +1278,9 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
       'Sauna': '🔥',
       'Yoga': '🧘',
       'Pilates': '🤸',
-      'Other': '💪'
+      'Other': '🏊'
     };
-    return emojis[type] || '💪';
+    return emojis[type] || '🏊';
   };
 
   // Card type configurations
@@ -2489,7 +2499,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit }) =>
               className="w-14 h-14 rounded-2xl flex items-center justify-center"
               style={{ backgroundColor: `${color}20` }}
             >
-              <ActivityIcon type={activity.type} size={28} />
+              <ActivityIcon type={activity.type} size={28} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} />
             </div>
             <div className="flex-1">
               <div className="text-xl font-bold">{activity.type}</div>
@@ -3005,14 +3015,249 @@ const DurationPicker = ({ hours, minutes, onChange, disabled = false }) => {
   );
 };
 
+// Context to track which swipeable item is currently open
+const SwipeableContext = createContext({ openId: null, setOpenId: () => {} });
+
+// Provider component to wrap lists of swipeable items
+const SwipeableProvider = ({ children }) => {
+  const [openId, setOpenId] = useState(null);
+  return (
+    <SwipeableContext.Provider value={{ openId, setOpenId }}>
+      {children}
+    </SwipeableContext.Provider>
+  );
+};
+
+// Swipeable Activity Item Component for swipe-to-delete
+const SwipeableActivityItem = ({ children, onDelete, activity }) => {
+  const { openId, setOpenId } = useContext(SwipeableContext);
+  const [swipeX, setSwipeX] = useState(0);
+  const [startX, setStartX] = useState(null);
+  const [startSwipeX, setStartSwipeX] = useState(0);
+  const [isSwiping, setIsSwiping] = useState(false);
+  const [isBouncing, setIsBouncing] = useState(false);
+  const [isPressed, setIsPressed] = useState(false);
+  const [hasMoved, setHasMoved] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const deleteButtonWidth = 100;
+  const snapThreshold = 40;
+  const itemId = activity.id;
+
+  // Close this item if another one becomes the open one
+  useEffect(() => {
+    if (openId !== null && openId !== itemId && swipeX !== 0) {
+      setSwipeX(0);
+      setIsBouncing(false);
+    }
+  }, [openId, itemId, swipeX]);
+
+  const handleTouchStart = (e) => {
+    setStartX(e.touches[0].clientX);
+    setStartSwipeX(swipeX);
+    setIsSwiping(true);
+    setIsBouncing(false);
+    setHasMoved(false);
+    // Only show press effect if card is closed
+    if (swipeX === 0) {
+      setIsPressed(true);
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (startX === null) return;
+    const currentX = e.touches[0].clientX;
+    const diff = currentX - startX;
+
+    // If moved more than 5px, cancel the press effect and enable swiping
+    if (Math.abs(diff) > 5) {
+      setHasMoved(true);
+      setIsPressed(false);
+      // Notify context that this item is being swiped (close others)
+      if (diff < 0) {
+        setOpenId(itemId);
+      }
+    }
+
+    // Allow slight overswipe for bounce effect
+    const newSwipeX = Math.max(-deleteButtonWidth - 30, Math.min(0, startSwipeX + diff));
+    setSwipeX(newSwipeX);
+  };
+
+  const handleTouchEnd = () => {
+    setIsSwiping(false);
+    setStartX(null);
+    setIsPressed(false);
+
+    if (swipeX < -snapThreshold) {
+      // Snap open with bounce
+      setIsBouncing(true);
+      setSwipeX(-deleteButtonWidth);
+      setOpenId(itemId);
+      setTimeout(() => setIsBouncing(false), 500);
+    } else {
+      setSwipeX(0);
+      // If closing, clear the open id
+      if (openId === itemId) {
+        setOpenId(null);
+      }
+    }
+  };
+
+  const handleDeleteClick = (e) => {
+    e.stopPropagation();
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDelete = () => {
+    setShowDeleteConfirm(false);
+    setSwipeX(0);
+    setOpenId(null);
+    onDelete(activity);
+  };
+
+  const handleCancelDelete = () => {
+    setShowDeleteConfirm(false);
+    setSwipeX(0);
+    setOpenId(null);
+  };
+
+  const resetSwipe = () => {
+    setSwipeX(0);
+    setOpenId(null);
+  };
+
+  // Get transition style based on state
+  const getTransition = () => {
+    if (isSwiping) return 'none';
+    if (isBouncing) return 'transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)'; // Stronger bounce easing
+    return 'transform 0.3s ease-out';
+  };
+
+  // Only show delete button when actually swiped left (not just touched)
+  const showDeleteButton = swipeX < 0 || hasMoved;
+
+  return (
+    <>
+      <div
+        className="relative overflow-hidden rounded-xl"
+        style={{ backgroundColor: showDeleteButton ? '#FF453A' : 'transparent' }}
+      >
+        {/* Delete button - positioned on right, only visible when swiping */}
+        {showDeleteButton && (
+          <div
+            className="absolute right-0 top-0 bottom-0 flex items-center justify-center"
+            style={{ width: deleteButtonWidth }}
+          >
+          <button
+            onClick={handleDeleteClick}
+            className="h-full w-full flex items-center justify-center gap-2 text-white font-medium transition-transform duration-150"
+            onTouchStart={(e) => {
+              e.currentTarget.style.transform = 'scale(0.9)';
+            }}
+            onTouchEnd={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+            }}
+            onMouseDown={(e) => {
+              e.currentTarget.style.transform = 'scale(0.9)';
+            }}
+            onMouseUp={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+            }}
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+        </div>
+        )}
+
+        {/* Main content with swipe */}
+        <div
+          className="relative bg-zinc-900"
+          style={{
+            transform: `translateX(${swipeX}px)${isPressed ? ' scale(0.98)' : ''}`,
+            transition: getTransition()
+          }}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onClick={() => swipeX !== 0 && resetSwipe()}
+        >
+          {children}
+        </div>
+      </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.8)' }}
+          onClick={handleCancelDelete}
+        >
+          <div
+            className="w-full max-w-xs bg-zinc-900 rounded-2xl overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="p-6 text-center">
+              <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-4">
+                <svg className="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </div>
+              <h3 className="text-white font-bold text-lg mb-2">Delete Activity?</h3>
+              <p className="text-gray-400 text-sm mb-1">
+                {activity.type}{activity.subtype ? ` • ${activity.subtype}` : ''}
+              </p>
+              <p className="text-gray-500 text-xs">
+                This action cannot be undone.
+              </p>
+            </div>
+            <div className="flex border-t border-zinc-800">
+              <button
+                onClick={handleCancelDelete}
+                className="flex-1 py-4 text-white font-medium border-r border-zinc-800 transition-colors active:bg-zinc-800"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                className="flex-1 py-4 text-red-500 font-medium transition-colors active:bg-zinc-800"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
 // Add Activity Modal
-const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, defaultDate = null }) => {
+const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, defaultDate = null, userData = null, onSaveCustomActivity = null }) => {
   const [activityType, setActivityType] = useState(null);
   const [subtype, setSubtype] = useState('');
   const [strengthType, setStrengthType] = useState(''); // Lifting, Bodyweight
   const [focusArea, setFocusArea] = useState(''); // Full Body, Upper, Lower, etc.
   const [customSport, setCustomSport] = useState('');
+  const [customSportEmoji, setCustomSportEmoji] = useState('⚽');
+  const [showSportEmojiPicker, setShowSportEmojiPicker] = useState(false);
   const [saveCustomSport, setSaveCustomSport] = useState(false);
+  // Custom "Other" activity state
+  const [customActivityName, setCustomActivityName] = useState('');
+  const [customActivityEmoji, setCustomActivityEmoji] = useState('🏊');
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [saveCustomActivity, setSaveCustomActivity] = useState(false);
+  const [customActivityCategory, setCustomActivityCategory] = useState(''); // 'strength', 'cardio', or 'recovery'
+
+  // Common activity emojis for picker
+  const activityEmojis = ['💪', '🏃', '🚴', '🏊', '⛷️', '🧗', '🥊', '🎾', '⚽', '🏀', '🏈', '⚾', '🎯', '🏋️', '🤸', '🧘', '🥋', '🏇', '🚣', '🛹', '⛸️', '🎿', '🏌️', '🤾', '🏸', '🥏', '🎳', '🧊', '🔥', '⭐', '🌟', '✨', '💫', '🎉', '🏆', '🥇', '❤️', '💚', '💙', '🧠', '🦵', '💨', '⚡'];
+
+  // Sports-specific emojis for picker
+  const sportsEmojis = ['⚽', '🏀', '🏈', '⚾', '🥎', '🎾', '🏐', '🏉', '🥏', '🎱', '🪀', '🏓', '🏸', '🏒', '🏑', '🥍', '🏏', '🪃', '🥅', '⛳', '🪁', '🏹', '🎣', '🤿', '🥊', '🥋', '🎽', '🛹', '🛼', '🛷', '⛸️', '🥌', '🎿', '⛷️', '🏂', '🪂', '🏋️', '🤼', '🤸', '⛹️', '🤺', '🏇', '🧘', '🏄', '🚣', '🧗', '🚵', '🚴', '🤾', '🤽', '🏊', '🏌️'];
   const [date, setDate] = useState(defaultDate || getTodayDate());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [notes, setNotes] = useState('');
@@ -3032,7 +3277,14 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       setStrengthType(pendingActivity?.strengthType || '');
       setFocusArea(pendingActivity?.focusArea || '');
       setCustomSport('');
+      setCustomSportEmoji('⚽');
+      setShowSportEmojiPicker(false);
       setSaveCustomSport(false);
+      setCustomActivityName('');
+      setCustomActivityEmoji('🏊');
+      setShowEmojiPicker(false);
+      setSaveCustomActivity(false);
+      setCustomActivityCategory('');
       setDate(defaultDate || pendingActivity?.date || getTodayDate());
       setShowDatePicker(false);
       setNotes(pendingActivity?.notes || '');
@@ -3081,12 +3333,19 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
     { name: 'Strength Training', icon: '🏋️', subtypes: [] }, // Handled separately
     { name: 'Running', icon: '🏃', subtypes: ['Easy', 'Tempo', 'Long', 'Sprints', 'Recovery'] },
     { name: 'Cycle', icon: '🚴', subtypes: ['Road', 'Spin', 'Mountain'] },
-    { name: 'Sports', icon: '🏀', subtypes: ['Basketball', 'Soccer', 'Tennis', 'Golf', 'Pickleball', 'Other'] },
+    { name: 'Sports', icon: '🏀', subtypes: [
+      { name: 'Basketball', icon: '🏀' },
+      { name: 'Soccer', icon: '⚽' },
+      { name: 'Football', icon: '🏈' },
+      { name: 'Tennis', icon: '🎾' },
+      { name: 'Golf', icon: '⛳' },
+      { name: 'Other', icon: '🏆' }
+    ]},
     { name: 'Yoga', icon: '🧘', subtypes: ['Vinyasa', 'Power', 'Hot', 'Yin', 'Restorative'] },
     { name: 'Pilates', icon: '🤸', subtypes: ['Mat', 'Reformer', 'Tower', 'Chair'] },
     { name: 'Cold Plunge', icon: '🧊', subtypes: [] },
     { name: 'Sauna', icon: '🔥', subtypes: [] },
-    { name: 'Other', icon: '💪', subtypes: [] }
+    { name: 'Other', icon: '🏊', subtypes: [] }
   ];
 
   // Strength training configuration
@@ -3122,8 +3381,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 
   const selectedType = activityTypes.find(t => t.name === activityType);
   const showCustomSportInput = activityType === 'Sports' && subtype === 'Other';
+  const showCustomActivityInput = activityType === 'Other';
   const showCountToward = activityType === 'Yoga' || activityType === 'Pilates';
   const isFromAppleHealth = !!pendingActivity?.fromAppleHealth;
+
+  // Get user's custom activities
+  const customActivities = userData?.customActivities || [];
 
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
@@ -3192,39 +3455,61 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             Cancel
           </button>
           <h2 className="font-bold">{pendingActivity?.id ? 'Edit Activity' : 'Log Activity'}</h2>
-          <button 
+          <button
           onClick={() => {
             // Build subtype for strength training
             let finalSubtype = subtype;
+            let finalType = activityType;
             if (activityType === 'Strength Training') {
               finalSubtype = focusArea ? `${strengthType} - ${focusArea}` : strengthType;
             } else if (showCustomSportInput) {
               finalSubtype = customSport;
+            } else if (showCustomActivityInput && customActivityName) {
+              // For "Other" activity, store the custom name as subtype
+              finalSubtype = customActivityName;
             }
-            
-            onSave({ 
+
+            // Save custom activity to user profile if requested
+            if (showCustomActivityInput && saveCustomActivity && customActivityName && onSaveCustomActivity) {
+              onSaveCustomActivity({ name: customActivityName, emoji: customActivityEmoji, category: customActivityCategory });
+            }
+
+            // Get the sport emoji (either custom or from predefined sport)
+            let sportEmoji = undefined;
+            if (activityType === 'Sports') {
+              if (showCustomSportInput) {
+                sportEmoji = customSportEmoji;
+              } else if (subtype) {
+                const sportSubtype = selectedType?.subtypes?.find(st => typeof st === 'object' && st.name === subtype);
+                sportEmoji = sportSubtype?.icon;
+              }
+            }
+
+            onSave({
               id: pendingActivity?.id, // Preserve ID if editing
               time: pendingActivity?.time, // Preserve time if editing
-              type: activityType, 
-              subtype: finalSubtype, 
+              type: finalType,
+              subtype: finalSubtype,
               strengthType: activityType === 'Strength Training' ? strengthType : undefined,
               focusArea: activityType === 'Strength Training' ? focusArea : undefined,
-              date, 
-              notes, 
+              date,
+              notes,
               distance: distance ? parseFloat(distance) : undefined,
               duration: durationHours * 60 + durationMinutes,
               calories: calories ? parseInt(calories) : undefined,
               avgHr: avgHr ? parseInt(avgHr) : undefined,
               maxHr: maxHr ? parseInt(maxHr) : undefined,
               saveCustomSport,
+              sportEmoji,
               fromAppleHealth: isFromAppleHealth,
-              countToward: countToward || undefined
+              countToward: showCustomActivityInput ? customActivityCategory : (countToward || undefined),
+              customActivityCategory: showCustomActivityInput ? customActivityCategory : undefined
             });
             handleClose();
           }}
           className="font-bold transition-all duration-150 px-2 py-1 rounded-lg"
-          style={{ color: !activityType || (showCustomSportInput && !customSport) || (activityType === 'Strength Training' && (!strengthType || !focusArea)) ? 'rgba(0,255,148,0.3)' : '#00FF94' }}
-          disabled={!activityType || (showCustomSportInput && !customSport) || (activityType === 'Strength Training' && (!strengthType || !focusArea))}
+          style={{ color: !activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && (!customActivityName || !customActivityCategory)) || (activityType === 'Strength Training' && (!strengthType || !focusArea)) ? 'rgba(0,255,148,0.3)' : '#00FF94' }}
+          disabled={!activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && (!customActivityName || !customActivityCategory)) || (activityType === 'Strength Training' && (!strengthType || !focusArea))}
           onTouchStart={(e) => {
             if (!e.currentTarget.disabled) {
               e.currentTarget.style.transform = 'scale(0.9)';
@@ -3271,7 +3556,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       <div className="flex-1 overflow-y-auto p-4 pb-32" style={{ overscrollBehavior: 'contain' }}>
         {!activityType ? (
           <div className="grid grid-cols-2 gap-3">
-            {activityTypes.map((type) => (
+            {/* Standard activity types (excluding "Other" which will be shown last) */}
+            {activityTypes.filter(t => t.name !== 'Other').map((type) => (
               <button
                 key={type.name}
                 onClick={() => setActivityType(type.name)}
@@ -3302,17 +3588,91 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 <div className="mt-2 font-semibold">{type.name}</div>
               </button>
             ))}
+            {/* User's saved custom activities */}
+            {customActivities.map((customItem) => {
+              // Support both old string format and new object format { name, emoji }
+              const activityName = typeof customItem === 'string' ? customItem : customItem.name;
+              const activityEmoji = typeof customItem === 'string' ? '⭐' : (customItem.emoji || '⭐');
+              return (
+                <button
+                  key={`custom-${activityName}`}
+                  onClick={() => {
+                    setActivityType('Other');
+                    setCustomActivityName(activityName);
+                    setCustomActivityEmoji(activityEmoji);
+                  }}
+                  className="p-4 rounded-xl text-left transition-all duration-150"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(0,255,148,0.2)' }}
+                  onTouchStart={(e) => {
+                    e.currentTarget.style.transform = 'scale(0.95)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                  }}
+                  onTouchEnd={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                  }}
+                  onMouseDown={(e) => {
+                    e.currentTarget.style.transform = 'scale(0.95)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                  }}
+                  onMouseUp={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                  }}
+                >
+                  <span className="text-2xl">{activityEmoji}</span>
+                  <div className="mt-2 font-semibold">{activityName}</div>
+                </button>
+              );
+            })}
+            {/* "Other" option always shown last */}
+            <button
+              key="Other"
+              onClick={() => setActivityType('Other')}
+              className="p-4 rounded-xl text-left transition-all duration-150"
+              style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+              onTouchStart={(e) => {
+                e.currentTarget.style.transform = 'scale(0.95)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+              }}
+              onTouchEnd={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+              }}
+              onMouseDown={(e) => {
+                e.currentTarget.style.transform = 'scale(0.95)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+              }}
+              onMouseUp={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+              }}
+            >
+              <span className="text-2xl">🏊</span>
+              <div className="mt-2 font-semibold">Other</div>
+            </button>
           </div>
         ) : (
           <div className="space-y-6">
             {/* Back button */}
-            <button 
+            <button
               onClick={() => {
                 setActivityType(null);
                 setSubtype('');
                 setStrengthType('');
                 setFocusArea('');
                 setCustomSport('');
+                setCustomActivityName('');
+                setCustomActivityEmoji('🏊');
+                setShowEmojiPicker(false);
                 setCountToward(null);
               }}
               className="flex items-center gap-2 text-gray-400 text-sm transition-all duration-150 px-2 py-1 rounded-lg"
@@ -3342,13 +3702,16 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             </button>
 
             {/* Selected activity display with Change option */}
-            <button 
+            <button
               onClick={() => {
                 setActivityType(null);
                 setSubtype('');
                 setStrengthType('');
                 setFocusArea('');
                 setCustomSport('');
+                setCustomActivityName('');
+                setCustomActivityEmoji('🏊');
+                setShowEmojiPicker(false);
                 setCountToward(null);
               }}
               className="flex items-center gap-3 p-3 rounded-xl w-full transition-all duration-150"
@@ -3374,8 +3737,15 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
               }}
             >
-              <span className="text-2xl">{selectedType?.icon}</span>
-              <span className="font-semibold">{activityType}</span>
+              <span className="text-2xl">{
+                activityType === 'Other' ? customActivityEmoji :
+                activityType === 'Sports' && subtype ? (
+                  subtype === 'Other' ? customSportEmoji :
+                  (selectedType?.subtypes?.find(st => typeof st === 'object' && st.name === subtype)?.icon || selectedType?.icon)
+                ) :
+                selectedType?.icon || '🏊'
+              }</span>
+              <span className="font-semibold">{activityType === 'Other' && customActivityName ? customActivityName : activityType}</span>
               <span className="ml-auto text-gray-500 text-sm">Change</span>
             </button>
 
@@ -3437,20 +3807,26 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Type</label>
                 <div className="flex flex-wrap gap-2">
-                  {selectedType.subtypes.map((st) => (
-                    <button
-                      key={st}
-                      onClick={() => setSubtype(st)}
-                      className="px-4 py-2 rounded-full text-sm transition-all duration-200"
-                      style={{
-                        backgroundColor: subtype === st ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
-                        border: subtype === st ? '1px solid #00FF94' : '1px solid transparent',
-                        color: subtype === st ? '#00FF94' : 'white'
-                      }}
-                    >
-                      {st}
-                    </button>
-                  ))}
+                  {selectedType.subtypes.map((st) => {
+                    // Handle both string and object subtypes
+                    const stName = typeof st === 'object' ? st.name : st;
+                    const stIcon = typeof st === 'object' ? st.icon : null;
+                    return (
+                      <button
+                        key={stName}
+                        onClick={() => setSubtype(stName)}
+                        className="px-4 py-2 rounded-full text-sm transition-all duration-200 flex items-center gap-1.5"
+                        style={{
+                          backgroundColor: subtype === stName ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
+                          border: subtype === stName ? '1px solid #00FF94' : '1px solid transparent',
+                          color: subtype === stName ? '#00FF94' : 'white'
+                        }}
+                      >
+                        {stIcon && <span>{stIcon}</span>}
+                        {stName}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -3503,23 +3879,173 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             {showCustomSportInput && (
               <div className="p-4 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                 <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Sport Name</label>
-                <input
-                  type="text"
-                  value={customSport}
-                  onChange={(e) => setCustomSport(e.target.value)}
-                  className="w-full p-3 rounded-xl bg-white/5 border border-white/10 text-white mb-3"
-                  placeholder="Enter sport name..."
-                />
+                <div className="flex gap-2 mb-3">
+                  {/* Sport Emoji Picker Button */}
+                  <button
+                    type="button"
+                    onClick={() => setShowSportEmojiPicker(!showSportEmojiPicker)}
+                    className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl transition-all"
+                    style={{
+                      backgroundColor: showSportEmojiPicker ? 'rgba(255,149,0,0.2)' : 'rgba(255,255,255,0.05)',
+                      border: showSportEmojiPicker ? '1px solid #FF9500' : '1px solid rgba(255,255,255,0.1)'
+                    }}
+                  >
+                    {customSportEmoji}
+                  </button>
+                  <input
+                    type="text"
+                    value={customSport}
+                    onChange={(e) => setCustomSport(e.target.value)}
+                    className="flex-1 p-3 rounded-xl bg-white/5 border border-white/10 text-white"
+                    placeholder="Enter sport name..."
+                  />
+                </div>
+
+                {/* Sport Emoji Picker Grid */}
+                {showSportEmojiPicker && (
+                  <div className="mb-3 p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                    <div className="flex flex-wrap gap-2">
+                      {sportsEmojis.map((emoji) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          onClick={() => {
+                            setCustomSportEmoji(emoji);
+                            setShowSportEmojiPicker(false);
+                          }}
+                          className="w-10 h-10 rounded-lg flex items-center justify-center text-xl transition-all hover:bg-white/10"
+                          style={{
+                            backgroundColor: customSportEmoji === emoji ? 'rgba(255,149,0,0.2)' : 'transparent',
+                            border: customSportEmoji === emoji ? '1px solid #FF9500' : '1px solid transparent'
+                          }}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <label className="flex items-center gap-3 cursor-pointer">
-                  <div 
+                  <div
                     className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all"
-                    style={{ 
+                    style={{
                       borderColor: saveCustomSport ? '#00FF94' : 'rgba(255,255,255,0.3)',
                       backgroundColor: saveCustomSport ? 'rgba(0,255,148,0.2)' : 'transparent'
                     }}
                     onClick={() => setSaveCustomSport(!saveCustomSport)}
                   >
                     {saveCustomSport && <span style={{ color: '#00FF94' }}>✓</span>}
+                  </div>
+                  <span className="text-sm text-gray-400">Save as option for future</span>
+                </label>
+              </div>
+            )}
+
+            {/* Custom "Other" Activity Input */}
+            {showCustomActivityInput && (
+              <div className="p-4 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Activity Name</label>
+                <div className="flex gap-2 mb-3">
+                  {/* Emoji Picker Button */}
+                  <button
+                    type="button"
+                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                    className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl transition-all"
+                    style={{
+                      backgroundColor: showEmojiPicker ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
+                      border: showEmojiPicker ? '1px solid #00FF94' : '1px solid rgba(255,255,255,0.1)'
+                    }}
+                  >
+                    {customActivityEmoji}
+                  </button>
+                  <input
+                    type="text"
+                    value={customActivityName}
+                    onChange={(e) => setCustomActivityName(e.target.value)}
+                    className="flex-1 p-3 rounded-xl bg-white/5 border border-white/10 text-white"
+                    placeholder="Enter activity name..."
+                  />
+                </div>
+
+                {/* Emoji Picker Grid */}
+                {showEmojiPicker && (
+                  <div className="mb-3 p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                    <div className="flex flex-wrap gap-2">
+                      {activityEmojis.map((emoji) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          onClick={() => {
+                            setCustomActivityEmoji(emoji);
+                            setShowEmojiPicker(false);
+                          }}
+                          className="w-10 h-10 rounded-lg flex items-center justify-center text-xl transition-all hover:bg-white/10"
+                          style={{
+                            backgroundColor: customActivityEmoji === emoji ? 'rgba(0,255,148,0.2)' : 'transparent',
+                            border: customActivityEmoji === emoji ? '1px solid #00FF94' : '1px solid transparent'
+                          }}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Category Selection */}
+                <div className="mt-4">
+                  <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Count Toward</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCustomActivityCategory('strength')}
+                      className="p-3 rounded-xl text-center transition-all"
+                      style={{
+                        backgroundColor: customActivityCategory === 'strength' ? 'rgba(0,255,148,0.15)' : 'rgba(255,255,255,0.05)',
+                        border: customActivityCategory === 'strength' ? '1px solid #00FF94' : '1px solid transparent'
+                      }}
+                    >
+                      <span className="text-lg">🏋️</span>
+                      <div className="text-xs mt-1" style={{ color: customActivityCategory === 'strength' ? '#00FF94' : 'rgba(255,255,255,0.6)' }}>Strength</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCustomActivityCategory('cardio')}
+                      className="p-3 rounded-xl text-center transition-all"
+                      style={{
+                        backgroundColor: customActivityCategory === 'cardio' ? 'rgba(255,149,0,0.15)' : 'rgba(255,255,255,0.05)',
+                        border: customActivityCategory === 'cardio' ? '1px solid #FF9500' : '1px solid transparent'
+                      }}
+                    >
+                      <span className="text-lg">🏃</span>
+                      <div className="text-xs mt-1" style={{ color: customActivityCategory === 'cardio' ? '#FF9500' : 'rgba(255,255,255,0.6)' }}>Cardio</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCustomActivityCategory('recovery')}
+                      className="p-3 rounded-xl text-center transition-all"
+                      style={{
+                        backgroundColor: customActivityCategory === 'recovery' ? 'rgba(0,209,255,0.15)' : 'rgba(255,255,255,0.05)',
+                        border: customActivityCategory === 'recovery' ? '1px solid #00D1FF' : '1px solid transparent'
+                      }}
+                    >
+                      <span className="text-lg">🧊</span>
+                      <div className="text-xs mt-1" style={{ color: customActivityCategory === 'recovery' ? '#00D1FF' : 'rgba(255,255,255,0.6)' }}>Recovery</div>
+                    </button>
+                  </div>
+                </div>
+
+                <label className="flex items-center gap-3 cursor-pointer mt-4">
+                  <div
+                    className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all"
+                    style={{
+                      borderColor: saveCustomActivity ? '#00FF94' : 'rgba(255,255,255,0.3)',
+                      backgroundColor: saveCustomActivity ? 'rgba(0,255,148,0.2)' : 'transparent'
+                    }}
+                    onClick={() => setSaveCustomActivity(!saveCustomActivity)}
+                  >
+                    {saveCustomActivity && <span style={{ color: '#00FF94' }}>✓</span>}
                   </div>
                   <span className="text-sm text-gray-400">Save as option for future</span>
                 </label>
@@ -4341,102 +4867,56 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
           </div>
           <p className="text-[11px] text-gray-500 mt-0.5">Your recent workout and recovery sessions</p>
         </div>
-        <div 
-          className="space-y-2 transition-all duration-300 ease-out overflow-hidden"
-        >
-          {latestActivities.length > 0 ? (
-            <>
-              {latestActivities.map((activity) => (
-                <button 
-                  key={activity.id} 
-                  onClick={() => setSelectedActivity(activity)}
-                  className="w-full p-3 rounded-xl flex items-center gap-3 text-left transition-all duration-150" 
-                  style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
-                  onTouchStart={(e) => {
-                    e.currentTarget.style.transform = 'scale(0.98)';
-                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
-                  }}
-                  onTouchEnd={(e) => {
-                    e.currentTarget.style.transform = 'scale(1)';
-                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-                  }}
-                  onMouseDown={(e) => {
-                    e.currentTarget.style.transform = 'scale(0.98)';
-                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
-                  }}
-                  onMouseUp={(e) => {
-                    e.currentTarget.style.transform = 'scale(1)';
-                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'scale(1)';
-                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-                  }}
-                >
-                  <ActivityIcon type={activity.type} size={20} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold truncate">{activity.type}{activity.subtype ? ` • ${activity.subtype}` : ''}</span>
-                      {(() => {
-                        const summary = getReactionSummary(activity.id);
-                        if (!summary) return null;
-                        return (
-                          <span
-                            className="flex items-center gap-0.5 px-1 py-0.5 rounded-full flex-shrink-0 transition-all duration-150 hover:scale-105"
-                            style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.15)';
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-                            }}
-                          >
-                            {Object.entries(summary.counts).slice(0, 4).map(([emoji, count]) => (
-                              <button
-                                key={emoji}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setReactionDetailModal({ activityId: activity.id, reactions: summary.reactions, selectedEmoji: emoji });
-                                }}
-                                onTouchStart={(e) => {
-                                  e.stopPropagation();
-                                  e.currentTarget.style.transform = 'scale(0.85)';
-                                }}
-                                onTouchEnd={(e) => {
-                                  e.stopPropagation();
-                                  e.currentTarget.style.transform = 'scale(1)';
-                                }}
-                                onMouseDown={(e) => {
-                                  e.stopPropagation();
-                                  e.currentTarget.style.transform = 'scale(0.85)';
-                                }}
-                                onMouseUp={(e) => {
-                                  e.stopPropagation();
-                                  e.currentTarget.style.transform = 'scale(1)';
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.transform = 'scale(1)';
-                                }}
-                                className="flex items-center text-xs px-0.5 rounded transition-all duration-150"
+        <SwipeableProvider>
+          <div
+            className="space-y-2 transition-all duration-300 ease-out overflow-hidden"
+          >
+            {latestActivities.length > 0 ? (
+              <>
+                {latestActivities.map((activity) => (
+                  <SwipeableActivityItem
+                    key={activity.id}
+                    activity={activity}
+                    onDelete={(act) => onDeleteActivity && onDeleteActivity(act.id)}
+                  >
+                    <div
+                      onClick={() => setSelectedActivity(activity)}
+                      className="w-full p-3 flex items-center gap-3 text-left cursor-pointer"
+                      style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+                    >
+                      <ActivityIcon type={activity.type} size={20} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold truncate">{activity.type}{activity.subtype ? ` • ${activity.subtype}` : ''}</span>
+                          {(() => {
+                            const summary = getReactionSummary(activity.id);
+                            if (!summary) return null;
+                            return (
+                              <span
+                                className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
                               >
-                                <span>{emoji}</span>
-                                {count > 1 && <span className="text-gray-300 text-[10px] ml-0.5">{count}</span>}
-                              </button>
-                            ))}
-                          </span>
-                        );
-                      })()}
+                                {Object.entries(summary.counts).slice(0, 4).map(([emoji, count]) => (
+                                  <span key={emoji} className="flex items-center text-xs">
+                                    <span>{emoji}</span>
+                                    {count > 1 && <span className="text-gray-300 text-[10px] ml-0.5">{count}</span>}
+                                  </span>
+                                ))}
+                              </span>
+                            );
+                          })()}
+                        </div>
+                        <div className="text-[10px] text-gray-500">{formatFriendlyDate(activity.date)} at {activity.time}</div>
+                      </div>
+                      <div className="text-right">
+                        {activity.calories && <div className="text-sm font-bold">{activity.calories} cal</div>}
+                        {activity.distance && <div className="text-sm font-bold">{activity.distance} mi</div>}
+                        {activity.duration && !activity.calories && !activity.distance && <div className="text-sm font-bold">{activity.duration} min</div>}
+                      </div>
+                      <span className="text-gray-600 text-xs">›</span>
                     </div>
-                    <div className="text-[10px] text-gray-500">{formatFriendlyDate(activity.date)} at {activity.time}</div>
-                  </div>
-                  <div className="text-right">
-                    {activity.calories && <div className="text-sm font-bold">{activity.calories} cal</div>}
-                    {activity.distance && <div className="text-sm font-bold">{activity.distance} mi</div>}
-                    {activity.duration && !activity.calories && !activity.distance && <div className="text-sm font-bold">{activity.duration} min</div>}
-                  </div>
-                  <span className="text-gray-600 text-xs">›</span>
-                </button>
-              ))}
+                  </SwipeableActivityItem>
+                ))}
               {allLatestActivities.length > 2 && (
                 <button
                   onClick={() => setActivityExpanded(!activityExpanded)}
@@ -4469,7 +4949,8 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
               <p className="text-gray-500 text-xs mt-1">Tap the + button to log an activity</p>
             </div>
           )}
-        </div>
+          </div>
+        </SwipeableProvider>
       </div>
 
       {/* Activity Detail Modal */}
@@ -5092,7 +5573,16 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
   
   // Helper to determine effective category of an activity
   const getActivityCategory = (activity) => {
-    if (activity.countToward) return activity.countToward;
+    // If countToward is set (for Yoga/Pilates or custom activities), use that
+    if (activity.countToward) {
+      if (activity.countToward === 'strength') return 'lifting';
+      return activity.countToward;
+    }
+    // Check customActivityCategory for "Other" activities
+    if (activity.customActivityCategory) {
+      if (activity.customActivityCategory === 'strength') return 'lifting';
+      return activity.customActivityCategory;
+    }
     if (activity.type === 'Strength Training') return 'lifting';
     if (['Running', 'Cycle', 'Sports'].includes(activity.type)) return 'cardio';
     if (['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
@@ -5859,9 +6349,10 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
               {/* Activities Completed Header */}
               <div className="mb-4">
                 <div className="text-sm font-semibold text-white">💪 Activities Completed</div>
-                <p className="text-[11px] text-gray-500 mt-0.5">Tap any activity for details</p>
+                <p className="text-[11px] text-gray-500 mt-0.5">Swipe left to delete, tap for details</p>
               </div>
 
+              <SwipeableProvider>
               {/* Strength Section */}
               {lifts.length > 0 && (
                 <div className="mb-4">
@@ -5870,24 +6361,27 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                   </div>
                   <div className="space-y-2">
                     {lifts.map((activity, i) => (
-                      <button
+                      <SwipeableActivityItem
                         key={activity.id || i}
-                        onClick={() => setSelectedDayActivity(activity)}
-                        className="w-full p-3 rounded-xl text-left transition-all duration-150"
-                        style={{ backgroundColor: 'rgba(0,255,148,0.05)' }}
-                        onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.98)'}
-                        onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                        activity={activity}
+                        onDelete={(act) => onDeleteActivity && onDeleteActivity(act.id)}
                       >
-                        <div className="flex justify-between items-start mb-2">
-                          <div className="font-medium text-sm">{activity.strengthType && activity.focusArea ? `${activity.strengthType} • ${activity.focusArea}` : activity.subtype || 'Strength Training'}</div>
-                          <span className="text-gray-500 text-xs">›</span>
+                        <div
+                          onClick={() => setSelectedDayActivity(activity)}
+                          className="w-full p-3 text-left cursor-pointer"
+                          style={{ backgroundColor: 'rgba(0,255,148,0.05)' }}
+                        >
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="font-medium text-sm">{activity.strengthType && activity.focusArea ? `${activity.strengthType} • ${activity.focusArea}` : activity.subtype || 'Strength Training'}</div>
+                            <span className="text-gray-500 text-xs">›</span>
+                          </div>
+                          <div className="flex gap-4 text-xs text-gray-400">
+                            {activity.duration && <span>{activity.duration} min</span>}
+                            {activity.calories && <span>{activity.calories} cal</span>}
+                            {activity.avgHr && <span>♥ {activity.avgHr}</span>}
+                          </div>
                         </div>
-                        <div className="flex gap-4 text-xs text-gray-400">
-                          {activity.duration && <span>{activity.duration} min</span>}
-                          {activity.calories && <span>{activity.calories} cal</span>}
-                          {activity.avgHr && <span>♥ {activity.avgHr}</span>}
-                        </div>
-                      </button>
+                      </SwipeableActivityItem>
                     ))}
                   </div>
                 </div>
@@ -5901,24 +6395,27 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                   </div>
                   <div className="space-y-2">
                     {cardioActivities.map((activity, i) => (
-                      <button
+                      <SwipeableActivityItem
                         key={activity.id || i}
-                        onClick={() => setSelectedDayActivity(activity)}
-                        className="w-full p-3 rounded-xl text-left transition-all duration-150"
-                        style={{ backgroundColor: 'rgba(255,149,0,0.05)' }}
-                        onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.98)'}
-                        onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                        activity={activity}
+                        onDelete={(act) => onDeleteActivity && onDeleteActivity(act.id)}
                       >
-                        <div className="flex justify-between items-start mb-2">
-                          <div className="font-medium text-sm">{activity.subtype || activity.type}</div>
-                          <span className="text-gray-500 text-xs">›</span>
+                        <div
+                          onClick={() => setSelectedDayActivity(activity)}
+                          className="w-full p-3 text-left cursor-pointer"
+                          style={{ backgroundColor: 'rgba(255,149,0,0.05)' }}
+                        >
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="font-medium text-sm">{activity.subtype || activity.type}</div>
+                            <span className="text-gray-500 text-xs">›</span>
+                          </div>
+                          <div className="flex gap-4 text-xs text-gray-400">
+                            {activity.distance && <span>{activity.distance} mi</span>}
+                            {activity.duration && <span>{activity.duration} min</span>}
+                            {activity.calories && <span>{activity.calories} cal</span>}
+                          </div>
                         </div>
-                        <div className="flex gap-4 text-xs text-gray-400">
-                          {activity.distance && <span>{activity.distance} mi</span>}
-                          {activity.duration && <span>{activity.duration} min</span>}
-                          {activity.calories && <span>{activity.calories} cal</span>}
-                        </div>
-                      </button>
+                      </SwipeableActivityItem>
                     ))}
                   </div>
                 </div>
@@ -5932,27 +6429,31 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                   </div>
                   <div className="space-y-2">
                     {recoveryActivities.map((activity, i) => (
-                      <button
+                      <SwipeableActivityItem
                         key={activity.id || i}
-                        onClick={() => setSelectedDayActivity(activity)}
-                        className="w-full p-3 rounded-xl text-left transition-all duration-150"
-                        style={{ backgroundColor: 'rgba(0,209,255,0.05)' }}
-                        onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.98)'}
-                        onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                        activity={activity}
+                        onDelete={(act) => onDeleteActivity && onDeleteActivity(act.id)}
                       >
-                        <div className="flex justify-between items-start mb-2">
-                          <div className="font-medium text-sm">{activity.subtype ? `${activity.type} • ${activity.subtype}` : activity.type}</div>
-                          <span className="text-gray-500 text-xs">›</span>
+                        <div
+                          onClick={() => setSelectedDayActivity(activity)}
+                          className="w-full p-3 text-left cursor-pointer"
+                          style={{ backgroundColor: 'rgba(0,209,255,0.05)' }}
+                        >
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="font-medium text-sm">{activity.subtype ? `${activity.type} • ${activity.subtype}` : activity.type}</div>
+                            <span className="text-gray-500 text-xs">›</span>
+                          </div>
+                          <div className="flex gap-4 text-xs text-gray-400">
+                            {activity.duration && <span>{activity.duration} min</span>}
+                            {activity.calories && <span>{activity.calories} cal</span>}
+                          </div>
                         </div>
-                        <div className="flex gap-4 text-xs text-gray-400">
-                          {activity.duration && <span>{activity.duration} min</span>}
-                          {activity.calories && <span>{activity.calories} cal</span>}
-                        </div>
-                      </button>
+                      </SwipeableActivityItem>
                     ))}
                   </div>
                 </div>
               )}
+              </SwipeableProvider>
             </div>
           </div>
         );
@@ -7017,6 +7518,15 @@ export default function StreakdApp() {
         // Load pending friend requests count
         const requests = await getFriendRequests(user.uid);
         setPendingFriendRequests(requests.length);
+
+        // Load user's custom activities
+        const userCustomActivities = await getCustomActivities(user.uid);
+        if (userCustomActivities.length > 0) {
+          setUserData(prev => ({
+            ...prev,
+            customActivities: userCustomActivities
+          }));
+        }
       } else {
         setUserProfile(null);
         setFriends([]);
@@ -7073,11 +7583,39 @@ export default function StreakdApp() {
     return () => clearTimeout(timeoutId);
   }, [activities, user]);
 
+  // Save custom activities to Firestore when they change
+  const hasLoadedCustomActivities = useRef(false);
+  useEffect(() => {
+    if (!user) return;
+
+    // Skip the initial load
+    if (!hasLoadedCustomActivities.current) {
+      hasLoadedCustomActivities.current = true;
+      return;
+    }
+
+    // Only save if customActivities exists and has items
+    if (userData.customActivities && userData.customActivities.length > 0) {
+      const timeoutId = setTimeout(() => {
+        saveCustomActivities(user.uid, userData.customActivities);
+      }, 500);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [userData.customActivities, user]);
+
   // Helper to determine effective category of an activity
   const getActivityCategory = (activity) => {
-    // If countToward is set (for Yoga/Pilates), use that
+    // If countToward is set (for Yoga/Pilates or custom activities), use that
     if (activity.countToward) {
+      // Map 'strength' to 'lifting' for consistency
+      if (activity.countToward === 'strength') return 'lifting';
       return activity.countToward;
+    }
+    // Check customActivityCategory for "Other" activities
+    if (activity.customActivityCategory) {
+      if (activity.customActivityCategory === 'strength') return 'lifting';
+      return activity.customActivityCategory;
     }
     // Default categorization
     if (activity.type === 'Strength Training') return 'lifting';
@@ -7895,7 +8433,7 @@ export default function StreakdApp() {
         </div>
       </div>
 
-      <AddActivityModal 
+      <AddActivityModal
         isOpen={showAddActivity}
         onClose={() => {
           setShowAddActivity(false);
@@ -7905,6 +8443,21 @@ export default function StreakdApp() {
         onSave={handleActivitySaved}
         pendingActivity={pendingActivity}
         defaultDate={defaultActivityDate}
+        userData={userData}
+        onSaveCustomActivity={(customActivity) => {
+          // Add custom activity to user's saved list (if not already saved)
+          // customActivity is now an object: { name: string, emoji: string }
+          const currentCustomActivities = userData.customActivities || [];
+          const alreadyExists = currentCustomActivities.some(
+            a => (typeof a === 'string' ? a : a.name) === customActivity.name
+          );
+          if (!alreadyExists) {
+            setUserData(prev => ({
+              ...prev,
+              customActivities: [...(prev.customActivities || []), customActivity]
+            }));
+          }
+        }}
       />
 
       <ShareModal

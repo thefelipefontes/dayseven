@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   searchUsers,
   sendFriendRequest,
@@ -159,15 +159,6 @@ const Friends = ({ user, userProfile, onClose }) => {
     return 'add';
   };
 
-  // Haptic button press handlers
-  const handlePressIn = (e) => {
-    e.currentTarget.style.transform = 'scale(0.95)';
-  };
-
-  const handlePressOut = (e) => {
-    e.currentTarget.style.transform = 'scale(1)';
-  };
-
   const ProfilePhoto = ({ photoURL, displayName, size = 48 }) => (
     <div
       className="rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden"
@@ -197,32 +188,121 @@ const Friends = ({ user, userProfile, onClose }) => {
     </div>
   );
 
-  // Reusable button component with haptic feedback
-  const ActionButton = ({ onClick, className, children, disabled = false }) => (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={`transition-all duration-150 ${className}`}
-      style={{ transform: 'scale(1)' }}
-      onTouchStart={handlePressIn}
-      onTouchEnd={handlePressOut}
-      onMouseDown={handlePressIn}
-      onMouseUp={handlePressOut}
-      onMouseLeave={handlePressOut}
-    >
-      {children}
-    </button>
-  );
+  // Reliable touch button that fires on touchend to avoid iOS click miss issues
+  const ActionButton = ({ onClick, className, children, disabled = false, style = {} }) => {
+    const touchStartPos = useRef(null);
+    const hasMoved = useRef(false);
+    const touchHandled = useRef(false); // Prevent double-fire from click after touchend
+    const buttonRef = useRef(null);
+
+    const handleTouchStart = (e) => {
+      if (disabled) return;
+      touchStartPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      hasMoved.current = false;
+      touchHandled.current = false;
+      if (buttonRef.current) {
+        buttonRef.current.style.transform = 'scale(0.95)';
+      }
+    };
+
+    const handleTouchMove = (e) => {
+      if (!touchStartPos.current) return;
+      const dx = Math.abs(e.touches[0].clientX - touchStartPos.current.x);
+      const dy = Math.abs(e.touches[0].clientY - touchStartPos.current.y);
+      if (dx > 10 || dy > 10) {
+        hasMoved.current = true;
+        if (buttonRef.current) {
+          buttonRef.current.style.transform = '';
+        }
+      }
+    };
+
+    const handleTouchEnd = (e) => {
+      if (buttonRef.current) {
+        buttonRef.current.style.transform = '';
+      }
+      if (disabled || hasMoved.current || !touchStartPos.current) {
+        touchStartPos.current = null;
+        return;
+      }
+      if (onClick) {
+        e.preventDefault();
+        touchHandled.current = true;
+        onClick(e);
+      }
+      touchStartPos.current = null;
+    };
+
+    const handleTouchCancel = () => {
+      if (buttonRef.current) {
+        buttonRef.current.style.transform = '';
+      }
+      touchStartPos.current = null;
+      hasMoved.current = false;
+    };
+
+    const handleClick = (e) => {
+      if (disabled || touchHandled.current) {
+        touchHandled.current = false;
+        return;
+      }
+      onClick && onClick(e);
+    };
+
+    const handleMouseDown = () => {
+      if (disabled) return;
+      if (buttonRef.current) {
+        buttonRef.current.style.transform = 'scale(0.95)';
+      }
+    };
+
+    const handleMouseUp = () => {
+      if (buttonRef.current) {
+        buttonRef.current.style.transform = '';
+      }
+    };
+
+    return (
+      <button
+        ref={buttonRef}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchCancel}
+        onMouseDown={handleMouseDown}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onClick={handleClick}
+        disabled={disabled}
+        className={`transition-all duration-150 ${className}`}
+        style={style}
+      >
+        {children}
+      </button>
+    );
+  };
+
+  // Handle backdrop tap to close - works reliably on both touch and mouse
+  const handleBackdropInteraction = (e) => {
+    if (e.target === e.currentTarget) {
+      handleClose();
+    }
+  };
 
   return (
     <div
       className={`fixed inset-0 z-50 flex items-end justify-center transition-all duration-250 ${isClosing ? 'bg-black/0' : 'bg-black/80'}`}
-      onClick={handleClose}
+      onClick={handleBackdropInteraction}
+      onTouchEnd={(e) => {
+        if (e.target === e.currentTarget) {
+          e.preventDefault();
+          handleClose();
+        }
+      }}
     >
       <div
         className={`w-full bg-zinc-900 rounded-t-3xl flex flex-col ${isClosing ? 'animate-slide-down' : 'animate-slide-up'}`}
         style={{ height: '50vh' }}
-        onClick={e => e.stopPropagation()}
       >
         {/* Handle bar */}
         <div className="flex justify-center pt-3 pb-2">
@@ -263,16 +343,15 @@ const Friends = ({ user, userProfile, onClose }) => {
             { key: 'requests', label: 'Requests' },
             { key: 'add', label: 'Add Friends' }
           ].map((tab) => (
-            <button
+            <ActionButton
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className="flex-1 py-2 rounded-lg text-sm font-medium transition-colors duration-200 relative z-10"
-              style={{
-                color: activeTab === tab.key ? 'white' : 'rgba(255,255,255,0.5)'
-              }}
+              className="flex-1 py-2 rounded-lg text-sm font-medium transition-colors duration-200 relative z-10 text-center"
             >
-              {tab.label}
-            </button>
+              <span style={{ color: activeTab === tab.key ? 'white' : 'rgba(255,255,255,0.5)' }}>
+                {tab.label}
+              </span>
+            </ActionButton>
           ))}
         </div>
 

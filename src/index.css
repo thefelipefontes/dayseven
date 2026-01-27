@@ -27,6 +27,18 @@ html, body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Fix double-tap delay on mobile - applied globally */
+html {
+  touch-action: manipulation;
+}
+
+button, a, [role="button"], input, select, textarea {
+  touch-action: manipulation !important;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 /* Select styling for dark mode */
 select option {
   background-color: #000;

@@ -1,19 +1,120 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { getUserActivities } from './services/userService';
 import { addReaction, getReactions, removeReaction } from './services/friendService';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
-// Segmented control component - defined outside to maintain stable reference
+// TouchButton component - fires action reliably on touch devices
+// Tracks touch position and fires on touchend if finger hasn't moved (prevents scroll conflicts)
+const TouchButton = ({ onClick, disabled = false, className, style, children }) => {
+  const touchStartPos = useRef(null);
+  const hasMoved = useRef(false);
+  const touchHandled = useRef(false); // Prevent double-fire from click after touchend
+  const buttonRef = useRef(null);
+
+  const handleTouchStart = (e) => {
+    if (disabled) return;
+    touchStartPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    hasMoved.current = false;
+    touchHandled.current = false;
+    if (buttonRef.current) {
+      buttonRef.current.style.transform = 'scale(0.95)';
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (!touchStartPos.current) return;
+    const dx = Math.abs(e.touches[0].clientX - touchStartPos.current.x);
+    const dy = Math.abs(e.touches[0].clientY - touchStartPos.current.y);
+    // If moved more than 10px, consider it a scroll/swipe
+    if (dx > 10 || dy > 10) {
+      hasMoved.current = true;
+      // Reset scale when scrolling starts
+      if (buttonRef.current) {
+        buttonRef.current.style.transform = '';
+      }
+    }
+  };
+
+  const handleTouchEnd = (e) => {
+    if (buttonRef.current) {
+      buttonRef.current.style.transform = '';
+    }
+    if (disabled || hasMoved.current || !touchStartPos.current) {
+      touchStartPos.current = null;
+      return;
+    }
+    // Fire the action on touchend for reliability
+    if (onClick) {
+      e.preventDefault(); // Prevent the delayed click event
+      touchHandled.current = true;
+      onClick(e);
+    }
+    touchStartPos.current = null;
+  };
+
+  const handleTouchCancel = () => {
+    // Reset state if touch is cancelled (e.g., system gesture)
+    if (buttonRef.current) {
+      buttonRef.current.style.transform = '';
+    }
+    touchStartPos.current = null;
+    hasMoved.current = false;
+  };
+
+  const handleClick = (e) => {
+    // Only fire click if it wasn't already handled by touch
+    // This handles desktop clicks and accessibility
+    if (disabled || touchHandled.current) {
+      touchHandled.current = false;
+      return;
+    }
+    onClick && onClick(e);
+  };
+
+  const handleMouseDown = () => {
+    if (disabled) return;
+    if (buttonRef.current) {
+      buttonRef.current.style.transform = 'scale(0.95)';
+    }
+  };
+
+  const handleMouseUp = () => {
+    if (buttonRef.current) {
+      buttonRef.current.style.transform = '';
+    }
+  };
+
+  return (
+    <button
+      ref={buttonRef}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchCancel}
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+      onClick={handleClick}
+      disabled={disabled}
+      className={className}
+      style={style}
+    >
+      {children}
+    </button>
+  );
+};
+
+// Segmented control component - defined outside ActivityFeed for stable reference (enables CSS animations)
 const SegmentedControl = ({ activeView, setActiveView }) => (
   <div className="px-4 pb-4">
     <div className="relative flex p-1 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-      {/* Sliding pill indicator */}
+      {/* Sliding pill indicator - uses transform for smooth hardware-accelerated animation */}
       <div
         className="absolute top-1 bottom-1 left-1 rounded-lg"
         style={{
           backgroundColor: 'rgba(255,255,255,0.1)',
-          width: 'calc((100% - 8px) / 2)',
+          width: 'calc(50% - 4px)',
           transform: activeView === 'feed' ? 'translateX(0)' : 'translateX(100%)',
           transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
         }}
@@ -22,17 +123,17 @@ const SegmentedControl = ({ activeView, setActiveView }) => (
         { key: 'feed', label: 'Feed' },
         { key: 'leaderboard', label: 'Leaderboard' }
       ].map((tab) => (
-        <button
+        <TouchButton
           key={tab.key}
           onClick={() => setActiveView(tab.key)}
           className="flex-1 py-2 px-4 rounded-lg text-sm font-medium relative z-10"
           style={{
             color: activeView === tab.key ? 'white' : 'rgba(255,255,255,0.5)',
-            transition: 'color 0.2s ease'
+            transition: 'color 0.2s ease-out'
           }}
         >
           {tab.label}
-        </button>
+        </TouchButton>
       ))}
     </div>
   </div>
@@ -51,16 +152,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   const [leaderboardCategory, setLeaderboardCategory] = useState('master'); // 'master', 'strength', 'cardio', 'recovery', 'calories', 'steps'
   const [leaderboardTimeRange, setLeaderboardTimeRange] = useState('week'); // 'week', 'month', 'year', 'all'
   const [selectedFriend, setSelectedFriend] = useState(null); // For viewing friend profile
-  const [isFriendProfileClosing, setIsFriendProfileClosing] = useState(false); // For fade out animation
-
-  // Handler for closing friend profile with animation
-  const handleCloseFriendProfile = () => {
-    setIsFriendProfileClosing(true);
-    setTimeout(() => {
-      setSelectedFriend(null);
-      setIsFriendProfileClosing(false);
-    }, 200);
-  };
+  const [showShareModal, setShowShareModal] = useState(false);
 
   const reactionEmojis = ['💪', '🔥', '👏', '❤️'];
 
@@ -528,8 +620,14 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     }
   };
 
-  // Pull to refresh handlers
+  // Pull to refresh handlers - only activate when touching the scroll container directly
   const handleTouchStart = (e) => {
+    // Only start pull-to-refresh if we're at the top and touching the container itself
+    // Check if the touch target is a button or interactive element - if so, don't start pull
+    const target = e.target;
+    if (target.closest('button') || target.closest('a') || target.closest('[role="button"]')) {
+      return;
+    }
     if (e.currentTarget.scrollTop === 0) {
       setTouchStart(e.touches[0].clientY);
     }
@@ -552,14 +650,6 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     setTouchStart(null);
   };
 
-  // Haptic button press handlers
-  const handlePressIn = (e) => {
-    e.currentTarget.style.transform = 'scale(0.9)';
-  };
-
-  const handlePressOut = (e) => {
-    e.currentTarget.style.transform = 'scale(1)';
-  };
 
   const ProfilePhoto = ({ photoURL, displayName, size = 40 }) => (
     <div
@@ -598,13 +688,21 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       <div className="bg-zinc-900 rounded-xl p-4 mb-3">
         {/* Header - Friend info */}
         <div className="flex items-center gap-3 mb-3">
-          <ProfilePhoto photoURL={friend.photoURL} displayName={friend.displayName} />
-          <div className="flex-1 min-w-0">
+          <TouchButton
+            onClick={() => setSelectedFriend(friend)}
+            className="flex-shrink-0 transition-transform"
+          >
+            <ProfilePhoto photoURL={friend.photoURL} displayName={friend.displayName} />
+          </TouchButton>
+          <TouchButton
+            onClick={() => setSelectedFriend(friend)}
+            className="flex-1 min-w-0 text-left transition-opacity"
+          >
             <p className="text-white font-medium truncate">
               {friend.displayName || friend.username}
             </p>
             <p className="text-gray-500 text-xs">@{friend.username}</p>
-          </div>
+          </TouchButton>
           <span className="text-gray-500 text-xs">{formatTimeAgo(date)}</span>
         </div>
 
@@ -646,29 +744,14 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                   const isSelected = userReaction?.reactionType === emoji;
 
                   return (
-                    <button
+                    <TouchButton
                       key={emoji}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleReaction(activity, emoji);
-                      }}
+                      onClick={() => handleReaction(activity, emoji)}
                       className={`flex items-center gap-1 px-2 py-1 rounded-full transition-all duration-150 ${
                         isSelected
                           ? 'bg-zinc-700 ring-1 ring-white/20'
                           : 'bg-zinc-800 hover:bg-zinc-700'
                       }`}
-                      style={{ transform: 'scale(1)' }}
-                      onTouchStart={(e) => {
-                        e.stopPropagation();
-                        handlePressIn(e);
-                      }}
-                      onTouchEnd={(e) => {
-                        e.stopPropagation();
-                        handlePressOut(e);
-                      }}
-                      onMouseDown={handlePressIn}
-                      onMouseUp={handlePressOut}
-                      onMouseLeave={handlePressOut}
                     >
                       <span className="text-sm">{emoji}</span>
                       {count > 0 && (
@@ -676,7 +759,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                           {count}
                         </span>
                       )}
-                    </button>
+                    </TouchButton>
                   );
                 })}
               </div>
@@ -754,20 +837,30 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       }
     };
 
-    // Calculate trend and delta
-    const calculateTrendAndDelta = () => {
+    // Memoize trend calculation to prevent changes on every render
+    // Uses a stable hash based on userId + category + timeRange
+    const { trend, delta, percentChange } = useMemo(() => {
       if (category !== 'calories' && category !== 'steps') {
-        // For streaks, use mock trend
-        const random = Math.random();
+        // For streaks, use a stable pseudo-random based on user ID + category + timeRange
+        // This ensures the same user always gets the same trend for a given category/timeRange
+        const seed = `${userData.uid || userData.username}-${category}-${timeRange}`;
+        let hash = 0;
+        for (let i = 0; i < seed.length; i++) {
+          const char = seed.charCodeAt(i);
+          hash = ((hash << 5) - hash) + char;
+          hash = hash & hash; // Convert to 32bit integer
+        }
+        const pseudoRandom = Math.abs(hash % 100) / 100;
         return {
-          trend: random > 0.6 ? 'up' : random < 0.3 ? 'down' : 'same',
-          delta: null
+          trend: pseudoRandom > 0.6 ? 'up' : pseudoRandom < 0.3 ? 'down' : 'same',
+          delta: null,
+          percentChange: null
         };
       }
 
       const currentValue = getValue();
       const prevPeriod = getPreviousPeriod();
-      if (!prevPeriod) return { trend: 'same', delta: null };
+      if (!prevPeriod) return { trend: 'same', delta: null, percentChange: null };
 
       // Calculate expected value from previous period (e.g., if month is 12000, week avg would be ~3000)
       const prevValue = getValue(prevPeriod);
@@ -781,18 +874,17 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         expectedValue = prevValue;
       }
 
-      const delta = currentValue - expectedValue;
-      const percentChange = expectedValue > 0 ? Math.round((delta / expectedValue) * 100) : 0;
+      const deltaVal = currentValue - expectedValue;
+      const percentChangeVal = expectedValue > 0 ? Math.round((deltaVal / expectedValue) * 100) : 0;
 
       return {
-        trend: delta > 0 ? 'up' : delta < 0 ? 'down' : 'same',
-        delta: delta,
-        percentChange: percentChange
+        trend: deltaVal > 0 ? 'up' : deltaVal < 0 ? 'down' : 'same',
+        delta: deltaVal,
+        percentChange: percentChangeVal
       };
-    };
+    }, [userData.uid, userData.username, userData.stats, category, timeRange]);
 
     const value = getValue();
-    const { trend, delta, percentChange } = calculateTrendAndDelta();
     const progressPercent = maxValue > 0 ? (value / maxValue) * 100 : 0;
 
     // Get category color for progress bar
@@ -808,9 +900,10 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     };
 
     return (
-      <button
+      <TouchButton
         onClick={() => !userData.isCurrentUser && onTap && onTap(userData)}
-        className={`w-full flex items-center gap-3 p-3 rounded-xl mb-2 relative overflow-hidden transition-all duration-150 active:scale-[0.98] ${
+        disabled={userData.isCurrentUser}
+        className={`w-full flex items-center gap-3 p-3 rounded-xl mb-2 relative overflow-hidden transition-all duration-150 text-left ${
           userData.isCurrentUser ? 'bg-zinc-800 ring-1 ring-green-500/30' : 'bg-zinc-900 hover:bg-zinc-800/80'
         }`}
       >
@@ -860,7 +953,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             )}
           </div>
         </div>
-      </button>
+      </TouchButton>
     );
   };
 
@@ -887,9 +980,10 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     };
 
     const PodiumSpot = ({ userData, place, height }) => (
-      <button
+      <TouchButton
         onClick={() => !userData.isCurrentUser && onTap && onTap(userData)}
-        className="flex flex-col items-center transition-all duration-150 active:scale-95"
+        disabled={userData.isCurrentUser}
+        className="flex flex-col items-center transition-all duration-150"
       >
         {/* Crown for 1st place */}
         {place === 1 && (
@@ -940,7 +1034,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         >
           <span className="text-2xl font-bold text-white/30 mb-2">{place}</span>
         </div>
-      </button>
+      </TouchButton>
     );
 
     // Reorder for podium display: 2nd, 1st, 3rd
@@ -953,105 +1047,103 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     );
   };
 
-  // Friend Profile Modal
-  const FriendProfileModal = ({ friend, onClose, isClosing }) => {
-    if (!friend) return null;
+  // Friend Profile Modal with animations
+  const FriendProfileModal = ({ friend, onClose }) => {
+    const [isAnimating, setIsAnimating] = useState(false);
+    const [isClosing, setIsClosing] = useState(false);
+
+    useEffect(() => {
+      if (friend) {
+        setIsClosing(false);
+        // Trigger animation after mount
+        setTimeout(() => setIsAnimating(true), 10);
+      } else {
+        setIsAnimating(false);
+      }
+    }, [friend]);
+
+    const handleClose = () => {
+      setIsAnimating(false);
+      setIsClosing(true);
+      setTimeout(() => {
+        setIsClosing(false);
+        onClose();
+      }, 300);
+    };
+
+    if (!friend && !isClosing) return null;
 
     return (
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center px-6"
-        onClick={onClose}
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 transition-all duration-300"
         style={{
-          animation: isClosing ? 'fade-out 0.2s ease-in forwards' : 'fade-in 0.2s ease-out forwards'
+          backgroundColor: isAnimating ? 'rgba(0,0,0,0.8)' : 'rgba(0,0,0,0)'
+        }}
+        onClick={handleClose}
+        onTouchEnd={(e) => {
+          if (e.target === e.currentTarget) {
+            e.preventDefault();
+            handleClose();
+          }
         }}
       >
-        {/* Backdrop */}
-        <div className="absolute inset-0 bg-black/70 backdrop-blur-md" />
-
-        {/* Modal */}
         <div
-          className="relative w-full max-w-sm rounded-3xl overflow-hidden"
-          onClick={(e) => e.stopPropagation()}
+          className="w-full max-w-sm bg-zinc-900 rounded-2xl p-6 transition-all duration-300 ease-out"
           style={{
-            backgroundColor: '#1C1C1E',
-            border: '1px solid rgba(255,255,255,0.1)',
-            animation: isClosing ? 'scale-fade-out 0.2s ease-in forwards' : 'scale-fade-in 0.2s ease-out forwards'
+            transform: isAnimating ? 'scale(1) translateY(0)' : 'scale(0.95) translateY(20px)',
+            opacity: isAnimating ? 1 : 0
           }}
+          onClick={e => e.stopPropagation()}
+          onTouchEnd={e => e.stopPropagation()}
         >
-          {/* Header with profile photo */}
-          <div className="relative pt-8 pb-4 px-6">
-            {/* Background gradient */}
-            <div
-              className="absolute inset-0 opacity-30"
-              style={{
-                background: 'linear-gradient(180deg, rgba(0,255,148,0.3) 0%, transparent 100%)'
-              }}
-            />
-
-            {/* Profile Photo */}
-            <div className="relative flex flex-col items-center">
-              <div className="w-24 h-24 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden border-4 border-zinc-800 mb-3">
-                {friend.photoURL ? (
-                  <img src={friend.photoURL} alt={friend.displayName} className="w-full h-full object-cover" />
-                ) : (
-                  <span className="text-3xl text-white">{friend.displayName?.[0]?.toUpperCase() || '?'}</span>
-                )}
-              </div>
-              <h3 className="text-xl font-bold text-white">{friend.displayName || friend.username}</h3>
-              <p className="text-gray-400 text-sm">@{friend.username}</p>
+          {/* Header */}
+          <div className="flex items-center gap-4 mb-6">
+            <ProfilePhoto photoURL={friend?.photoURL} displayName={friend?.displayName} size={64} />
+            <div>
+              <p className="text-white font-bold text-lg">{friend?.displayName || friend?.username}</p>
+              <p className="text-gray-400">@{friend?.username}</p>
             </div>
           </div>
 
-          {/* Stats */}
-          <div className="px-6 pb-4">
-            <div className="grid grid-cols-3 gap-3 mb-4">
-              <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                <p className="text-2xl font-bold text-white">{friend.masterStreak || 0}</p>
-                <p className="text-gray-500 text-xs">Week Streak</p>
-              </div>
-              <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                <p className="text-2xl font-bold text-white">{friend.weeksWon || 0}</p>
-                <p className="text-gray-500 text-xs">Weeks Won</p>
-              </div>
-              <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                <p className="text-2xl font-bold text-white">{friend.totalWorkouts || 0}</p>
-                <p className="text-gray-500 text-xs">Workouts</p>
-              </div>
+          {/* Stats grid */}
+          <div className="grid grid-cols-3 gap-3 mb-6">
+            <div className="bg-zinc-800 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-white">{friend?.masterStreak || 0}</p>
+              <p className="text-gray-500 text-xs">Week Streak</p>
             </div>
+            <div className="bg-zinc-800 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-white">{friend?.weeksWon || 0}</p>
+              <p className="text-gray-500 text-xs">Weeks Won</p>
+            </div>
+            <div className="bg-zinc-800 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-white">{friend?.totalWorkouts || 0}</p>
+              <p className="text-gray-500 text-xs">Workouts</p>
+            </div>
+          </div>
 
-            {/* Streak breakdown */}
-            <div className="space-y-2 mb-4">
-              <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                <span className="text-gray-400 flex items-center gap-2">
-                  <span style={{ color: '#00FF94' }}>💪</span> Strength Streak
-                </span>
-                <span className="text-white font-bold">{friend.strengthStreak || 0}</span>
-              </div>
-              <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                <span className="text-gray-400 flex items-center gap-2">
-                  <span style={{ color: '#FF9500' }}>🏃</span> Cardio Streak
-                </span>
-                <span className="text-white font-bold">{friend.cardioStreak || 0}</span>
-              </div>
-              <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                <span className="text-gray-400 flex items-center gap-2">
-                  <span style={{ color: '#00D1FF' }}>🧊</span> Recovery Streak
-                </span>
-                <span className="text-white font-bold">{friend.recoveryStreak || 0}</span>
-              </div>
+          {/* Streak breakdown */}
+          <div className="space-y-2 mb-6">
+            <div className="flex items-center justify-between bg-zinc-800 rounded-lg p-3">
+              <span className="text-gray-400">💪 Strength Streak</span>
+              <span className="text-white font-bold">{friend?.strengthStreak || 0}</span>
+            </div>
+            <div className="flex items-center justify-between bg-zinc-800 rounded-lg p-3">
+              <span className="text-gray-400">🏃 Cardio Streak</span>
+              <span className="text-white font-bold">{friend?.cardioStreak || 0}</span>
+            </div>
+            <div className="flex items-center justify-between bg-zinc-800 rounded-lg p-3">
+              <span className="text-gray-400">🧘 Recovery Streak</span>
+              <span className="text-white font-bold">{friend?.recoveryStreak || 0}</span>
             </div>
           </div>
 
           {/* Close button */}
-          <div className="px-6 pb-6">
-            <button
-              onClick={onClose}
-              className="w-full py-3 rounded-xl text-gray-400 font-medium transition-all duration-150 active:scale-98"
-              style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
-            >
-              Close
-            </button>
-          </div>
+          <TouchButton
+            onClick={handleClose}
+            className="w-full py-3 rounded-full bg-zinc-800 text-white font-medium transition-all duration-150 text-center"
+          >
+            Close
+          </TouchButton>
         </div>
       </div>
     );
@@ -1067,37 +1159,12 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             {friends?.length || 0} friend{friends?.length !== 1 ? 's' : ''}
           </p>
         </div>
-        <button
+        <TouchButton
           onClick={onOpenFriends}
           className="flex items-center gap-2 px-4 py-2 rounded-full transition-all duration-150 relative"
           style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
-          onTouchStart={(e) => {
-            e.currentTarget.style.transform = 'scale(0.95)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.15)';
-          }}
-          onTouchEnd={(e) => {
-            e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-          }}
-          onMouseDown={(e) => {
-            e.currentTarget.style.transform = 'scale(0.95)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.15)';
-          }}
-          onMouseUp={(e) => {
-            e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-          }}
         >
-          <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-            <circle cx="9" cy="7" r="4" />
-            <line x1="19" y1="8" x2="19" y2="14" />
-            <line x1="22" y1="11" x2="16" y2="11" />
-          </svg>
+          <span className="text-sm">➕</span>
           <span className="text-sm font-medium text-white">Add</span>
           {pendingRequestsCount > 0 && (
             <span
@@ -1107,64 +1174,78 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               {pendingRequestsCount > 9 ? '9+' : pendingRequestsCount}
             </span>
           )}
-        </button>
+        </TouchButton>
       </div>
     </div>
   );
 
-  // Sort leaderboard data based on selected category and time range (moved outside conditionals)
-  const getSortValue = (userData) => {
-    switch (leaderboardCategory) {
-      case 'strength': return userData.strengthStreak || 0;
-      case 'cardio': return userData.cardioStreak || 0;
-      case 'recovery': return userData.recoveryStreak || 0;
-      case 'calories': return userData.stats?.calories?.[leaderboardTimeRange] || 0;
-      case 'steps': return userData.stats?.steps?.[leaderboardTimeRange] || 0;
-      default: return userData.masterStreak || 0;
-    }
-  };
+  if (isLoading) {
+    return (
+      <div>
+        <FriendsHeaderTop />
+        <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
+        <div className="flex items-center justify-center py-12">
+          <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
+        </div>
+      </div>
+    );
+  }
 
-  const sortedLeaderboard = [...leaderboardData].sort((a, b) => getSortValue(b) - getSortValue(a));
-  const maxValue = sortedLeaderboard.length > 0 ? getSortValue(sortedLeaderboard[0]) : 0;
-  const topThree = sortedLeaderboard.slice(0, 3);
-  const rest = sortedLeaderboard.slice(3);
+  if (!friends || friends.length === 0) {
+    return (
+      <div>
+        <FriendsHeaderTop />
+        <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
+        <div className="text-center py-12 px-6">
+          <div className="text-5xl mb-4">👥</div>
+          <p className="text-white font-medium mb-2">Find your workout buddies</p>
+          <p className="text-gray-500 text-sm mb-6">Add friends to see their workouts and cheer them on!</p>
+          <TouchButton
+            onClick={onOpenFriends}
+            className="px-6 py-3 rounded-full font-semibold text-black transition-all duration-150"
+            style={{ backgroundColor: '#00FF94' }}
+          >
+            Add Friends
+          </TouchButton>
+        </div>
+      </div>
+    );
+  }
 
-  const getCategoryLabel = () => {
-    switch (leaderboardCategory) {
-      case 'strength': return '💪 Strength Streak';
-      case 'cardio': return '🏃 Cardio Streak';
-      case 'recovery': return '🧘 Recovery Streak';
-      case 'calories': return '🔥 Calories Burned';
-      case 'steps': return '👟 Steps';
-      default: return '🏆 Overall Streak';
-    }
-  };
+  // Leaderboard View
+  if (activeView === 'leaderboard') {
+    // Sort leaderboard data based on selected category and time range
+    const getSortValue = (userData) => {
+      switch (leaderboardCategory) {
+        case 'strength': return userData.strengthStreak || 0;
+        case 'cardio': return userData.cardioStreak || 0;
+        case 'recovery': return userData.recoveryStreak || 0;
+        case 'calories': return userData.stats?.calories?.[leaderboardTimeRange] || 0;
+        case 'steps': return userData.stats?.steps?.[leaderboardTimeRange] || 0;
+        default: return userData.masterStreak || 0;
+      }
+    };
 
-  // Find current user's rank
-  const currentUserRank = sortedLeaderboard.findIndex(u => u.isCurrentUser) + 1;
+    const sortedLeaderboard = [...leaderboardData].sort((a, b) => getSortValue(b) - getSortValue(a));
+    const maxValue = sortedLeaderboard.length > 0 ? getSortValue(sortedLeaderboard[0]) : 0;
+    const topThree = sortedLeaderboard.slice(0, 3);
+    const rest = sortedLeaderboard.slice(3);
 
-  // Single unified return - keeps SegmentedControl mounted for animations
-  return (
-      <>
-      {/* Animation keyframes */}
-      <style>{`
-        @keyframes fade-in {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes fade-out {
-          from { opacity: 1; }
-          to { opacity: 0; }
-        }
-        @keyframes scale-fade-in {
-          from { opacity: 0; transform: scale(0.95); }
-          to { opacity: 1; transform: scale(1); }
-        }
-        @keyframes scale-fade-out {
-          from { opacity: 1; transform: scale(1); }
-          to { opacity: 0; transform: scale(0.95); }
-        }
-      `}</style>
+    const getCategoryLabel = () => {
+      switch (leaderboardCategory) {
+        case 'strength': return '💪 Strength Streak';
+        case 'cardio': return '🏃 Cardio Streak';
+        case 'recovery': return '🧘 Recovery Streak';
+        case 'calories': return '🔥 Calories Burned';
+        case 'steps': return '👟 Steps';
+        default: return '🏆 Overall Streak';
+      }
+    };
+
+    // Find current user's rank
+    const currentUserRank = sortedLeaderboard.findIndex(u => u.isCurrentUser) + 1;
+
+    return (
       <div
         className="h-full overflow-y-auto"
         onTouchStart={handleTouchStart}
@@ -1193,36 +1274,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         <FriendsHeaderTop />
         <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
 
-        {/* Loading State */}
-        {isLoading && (
-          <div className="flex items-center justify-center py-12">
-            <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
-          </div>
-        )}
-
-        {/* No Friends State */}
-        {!isLoading && (!friends || friends.length === 0) && (
-          <div className="text-center py-12 px-6">
-            <div className="text-5xl mb-4">👥</div>
-            <p className="text-white font-medium mb-2">Find your workout buddies</p>
-            <p className="text-gray-500 text-sm mb-6">Add friends to see their workouts and cheer them on!</p>
-            <button
-              onClick={onOpenFriends}
-              className="px-6 py-3 rounded-full font-semibold text-black transition-all duration-150"
-              style={{ backgroundColor: '#00FF94' }}
-              onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.95)'; }}
-              onTouchEnd={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
-              onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.95)'; }}
-              onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
-            >
-              Add Friends
-            </button>
-          </div>
-        )}
-
         {/* Leaderboard content */}
-        {!isLoading && friends && friends.length > 0 && activeView === 'leaderboard' && (
         <div className="px-4 pb-32">
           {/* Leaderboard headline */}
           <div className="mb-4">
@@ -1250,16 +1302,14 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               { key: 'year', label: 'Year' },
               { key: 'all', label: 'All Time' }
             ].map((range) => (
-              <button
+              <TouchButton
                 key={range.key}
                 onClick={() => setLeaderboardTimeRange(range.key)}
                 className="flex-1 py-1.5 rounded-md text-xs font-medium transition-colors duration-200 relative z-10"
-                style={{
-                  color: leaderboardTimeRange === range.key ? 'white' : 'rgba(255,255,255,0.5)'
-                }}
+                style={{ color: leaderboardTimeRange === range.key ? 'white' : 'rgba(255,255,255,0.5)' }}
               >
                 {range.label}
-              </button>
+              </TouchButton>
             ))}
           </div>
 
@@ -1273,7 +1323,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               { key: 'calories', label: '🔥 Calories', color: '#F39C12' },
               { key: 'steps', label: '👟 Steps', color: '#3498DB' }
             ].map((cat) => (
-              <button
+              <TouchButton
                 key={cat.key}
                 onClick={() => setLeaderboardCategory(cat.key)}
                 className="px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-200"
@@ -1283,7 +1333,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                 }}
               >
                 {cat.label}
-              </button>
+              </TouchButton>
             ))}
           </div>
 
@@ -1340,8 +1390,21 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                 />
               )}
 
-              {/* Rankings label */}
-              <p className="text-gray-500 text-xs uppercase tracking-wide mb-3">{getCategoryLabel()} Rankings</p>
+              {/* Rankings label with share button */}
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-gray-500 text-xs uppercase tracking-wide">{getCategoryLabel()} Rankings</p>
+                <button
+                  onClick={() => setShowShareModal(true)}
+                  className="p-1.5 transition-colors duration-150 hover:text-white"
+                  style={{ color: 'rgba(255,255,255,0.4)' }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+                    <polyline points="16 6 12 2 8 6" />
+                    <line x1="12" y1="2" x2="12" y2="15" />
+                  </svg>
+                </button>
+              </div>
 
               {/* Top 3 in list form (compact) */}
               {topThree.map((userData, index) => (
@@ -1591,37 +1654,143 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             </>
           )}
         </div>
-        )}
 
         {/* Friend Profile Modal */}
-        <FriendProfileModal friend={selectedFriend} onClose={handleCloseFriendProfile} isClosing={isFriendProfileClosing} />
+        <FriendProfileModal friend={selectedFriend} onClose={() => setSelectedFriend(null)} />
 
-        {/* Feed View - Empty State */}
-        {!isLoading && friends && friends.length > 0 && activeView === 'feed' && feedActivities.length === 0 && (
-          <div className="text-center py-12 px-6">
-            <div className="text-5xl mb-4">📭</div>
-            <p className="text-white font-medium mb-2">No activity yet</p>
-            <p className="text-gray-500 text-sm">Your friends haven't logged any workouts</p>
-          </div>
-        )}
+        {/* Share Modal */}
+        {showShareModal && (
+          <div
+            className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+            onClick={() => setShowShareModal(false)}
+            onTouchEnd={(e) => {
+              if (e.target === e.currentTarget) {
+                e.preventDefault();
+                setShowShareModal(false);
+              }
+            }}
+          >
+            <div className="bg-zinc-900 rounded-2xl p-6 max-w-sm w-full" onClick={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
+              <div className="text-center mb-6">
+                <div className="text-4xl mb-2">🏆</div>
+                <h3 className="text-white font-bold text-lg">Share Leaderboard</h3>
+                <p className="text-gray-400 text-sm mt-1">Show off your ranking!</p>
+              </div>
 
-        {/* Feed View - With Content */}
-        {!isLoading && friends && friends.length > 0 && activeView === 'feed' && feedActivities.length > 0 && (
-          <div className="px-4 pb-32">
-            {/* Feed headline */}
-            <div className="mb-4">
-              <div className="text-sm font-semibold text-white">Feed</div>
-              <p className="text-[11px] text-gray-500 mt-0.5">Recent activity from friends</p>
+              {/* Preview card */}
+              <div className="bg-gradient-to-br from-zinc-800 to-zinc-900 rounded-xl p-4 mb-6 border border-zinc-700">
+                <p className="text-gray-400 text-xs mb-2">{getCategoryLabel()}</p>
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center">
+                    <span className="text-green-400 font-bold text-lg">#{currentUserRank}</span>
+                  </div>
+                  <div>
+                    <p className="text-white font-bold">{userProfile?.displayName || 'You'}</p>
+                    <p className="text-gray-400 text-sm">
+                      {(() => {
+                        const userData = sortedLeaderboard.find(u => u.isCurrentUser);
+                        const val = getSortValue(userData);
+                        return (leaderboardCategory === 'calories' || leaderboardCategory === 'steps')
+                          ? (val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val)
+                          : val;
+                      })()} {leaderboardCategory === 'calories' ? 'cal' : leaderboardCategory === 'steps' ? 'steps' : 'streak'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <TouchButton
+                  onClick={() => setShowShareModal(false)}
+                  className="flex-1 py-3 rounded-full bg-zinc-800 text-white font-medium transition-all duration-150"
+                >
+                  Cancel
+                </TouchButton>
+                <TouchButton
+                  onClick={() => {
+                    // In a real app, this would trigger native share
+                    if (navigator.share) {
+                      navigator.share({
+                        title: 'My Streakd Ranking',
+                        text: `I'm ranked #${currentUserRank} on the ${getCategoryLabel()} leaderboard! 🏆`
+                      });
+                    }
+                    setShowShareModal(false);
+                  }}
+                  className="flex-1 py-3 rounded-full font-medium text-black transition-all duration-150"
+                  style={{ backgroundColor: '#00FF94' }}
+                >
+                  Share
+                </TouchButton>
+              </div>
             </div>
-
-            {feedActivities.map((activity, index) => (
-              <ActivityCard key={`${activity.friend.uid}-${activity.id || index}`} activity={activity} />
-            ))}
           </div>
         )}
       </div>
-      </>
     );
+  }
+
+  // Feed View
+  if (feedActivities.length === 0) {
+    return (
+      <div>
+        <FriendsHeaderTop />
+        <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
+        <div className="text-center py-12 px-6">
+          <div className="text-5xl mb-4">📭</div>
+          <p className="text-white font-medium mb-2">No activity yet</p>
+          <p className="text-gray-500 text-sm">Your friends haven't logged any workouts</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="h-full overflow-y-auto"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
+      {/* Pull to refresh indicator */}
+      <div
+        className="flex justify-center items-center transition-all duration-300"
+        style={{
+          height: isRefreshing ? '60px' : `${pullDistance}px`,
+          opacity: isRefreshing ? 1 : Math.min(pullDistance / 60, 1)
+        }}
+      >
+        <div
+          className={`text-2xl ${isRefreshing ? 'animate-spin' : ''}`}
+          style={{
+            transform: isRefreshing ? 'none' : `rotate(${pullDistance * 3}deg)`,
+            transition: isRefreshing ? 'none' : 'transform 0.1s'
+          }}
+        >
+          🔄
+        </div>
+      </div>
+
+      <FriendsHeaderTop />
+        <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
+
+      {/* Feed content */}
+      <div className="px-4 pb-32">
+        {/* Feed headline */}
+        <div className="mb-4">
+          <div className="text-sm font-semibold text-white">Feed</div>
+          <p className="text-[11px] text-gray-500 mt-0.5">Recent activity from friends</p>
+        </div>
+
+        {feedActivities.map((activity, index) => (
+          <ActivityCard key={`${activity.friend.uid}-${activity.id || index}`} activity={activity} />
+        ))}
+      </div>
+
+      {/* Friend Profile Modal */}
+      <FriendProfileModal friend={selectedFriend} onClose={() => setSelectedFriend(null)} />
+    </div>
+  );
 };
 
 export default ActivityFeed;

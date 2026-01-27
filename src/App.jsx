@@ -2717,10 +2717,10 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null }) 
   const isEditing = currentGoals !== null;
 
   const questions = [
-    { title: "Strength per week", key: 'liftsPerWeek', options: [2, 3, 4, 5, 6] },
-    { title: "Cardio per week", key: 'cardioPerWeek', options: [0, 1, 2, 3, 4, 5], subtitle: "Running, Cycling, Sports" },
-    { title: "Recovery per week", key: 'recoveryPerWeek', options: [0, 1, 2, 3, 4], subtitle: "Cold Plunge, Sauna, Yoga, Pilates" },
-    { title: "Daily step goal", key: 'stepsPerDay', options: [6000, 8000, 10000, 12000, 15000], isSteps: true }
+    { title: "Strength training sessions per week", key: 'liftsPerWeek', options: [2, 3, 4, 5, 6], subtitle: "Weightlifting, calisthenics, or any resistance training. Recommended: 2+ per week." },
+    { title: "Cardio sessions per week", key: 'cardioPerWeek', options: [1, 2, 3, 4, 5], subtitle: "Running, cycling, sports, etc. Recommended: 1+ per week." },
+    { title: "Recovery sessions per week", key: 'recoveryPerWeek', options: [1, 2, 3, 4], subtitle: "Cold plunge, sauna, yoga, pilates, etc. Recommended: 1+ per week." },
+    { title: "Daily step goal", key: 'stepsPerDay', options: [6000, 8000, 10000, 12000, 15000], isSteps: true, subtitle: "Recommended: 10k+ per day for fat loss and general heart health." }
   ];
 
   return (
@@ -6924,7 +6924,7 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
 
   // Check if today is Monday (0 = Sunday, 1 = Monday)
   const isMonday = new Date().getDay() === 1;
-  const canEditGoals = isMonday;
+  const canEditGoals = true; // TODO: change back to isMonday after testing
 
   // Detect if user is on mobile device
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);

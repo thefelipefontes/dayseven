@@ -2490,11 +2490,10 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit }) =>
             </div>
             <div className="flex-1">
               <div className="text-xl font-bold">{activity.type}</div>
-              {activity.subtype && (
-                <div className="text-sm text-gray-400">{activity.subtype}</div>
-              )}
-              {activity.strengthType && activity.focusArea && (
+              {activity.strengthType && activity.focusArea ? (
                 <div className="text-sm text-gray-400">{activity.strengthType} • {activity.focusArea}</div>
+              ) : activity.subtype && (
+                <div className="text-sm text-gray-400">{activity.subtype}</div>
               )}
             </div>
           </div>
@@ -4436,8 +4435,17 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState(null);
 
-  // Get latest activities for display
-  const allLatestActivities = activities.slice(0, 10); // Cap at 10 total
+  // Get latest activities for display (sorted by date/time, most recent first)
+  const allLatestActivities = [...activities]
+    .sort((a, b) => {
+      // Sort by date first (most recent first)
+      const dateCompare = b.date.localeCompare(a.date);
+      if (dateCompare !== 0) return dateCompare;
+      // If same date, sort by time (most recent first)
+      if (a.time && b.time) return b.time.localeCompare(a.time);
+      return 0;
+    })
+    .slice(0, 10); // Cap at 10 total
   const latestActivities = activityExpanded ? allLatestActivities : allLatestActivities.slice(0, 2);
 
   // Fetch reactions for user's activities
@@ -6510,9 +6518,9 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
           </div>
 
           {/* Toggle and Dropdown Row */}
-          <div className="relative flex items-center justify-center mb-4">
-            {/* Mini Toggle - centered */}
-            <div className="relative flex p-1 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)', width: '50%' }}>
+          <div className="flex items-center justify-between mb-4 gap-3">
+            {/* Mini Toggle - left aligned */}
+            <div className="relative flex p-1 rounded-lg flex-1" style={{ backgroundColor: 'rgba(255,255,255,0.05)', maxWidth: '180px' }}>
               {/* Sliding pill indicator */}
               <div
                 className="absolute top-1 bottom-1 rounded-md transition-all duration-300 ease-out"
@@ -6542,12 +6550,12 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
               </button>
             </div>
 
-            {/* Time Period Dropdown - positioned on right, only show for overview */}
+            {/* Time Period Dropdown - right aligned, only show for overview */}
             {statsSubView === 'overview' && (
               <select
                 value={totalsView}
                 onChange={(e) => setTotalsView(e.target.value)}
-                className="absolute right-0 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-xs"
+                className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-xs flex-shrink-0"
               >
                 <option value="this-month" className="bg-black">This Month</option>
                 <option value="last-month" className="bg-black">Last Month</option>
@@ -6868,6 +6876,14 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
             currentDate.setDate(currentDate.getDate() + 1);
           }
           
+          // Sort by date and time (most recent first)
+          weekActivities.sort((a, b) => {
+            const dateCompare = b.date.localeCompare(a.date);
+            if (dateCompare !== 0) return dateCompare;
+            if (a.time && b.time) return b.time.localeCompare(a.time);
+            return 0;
+          });
+
           const lifts = weekActivities.filter(a => a.type === 'Strength Training');
           const cardioArr = weekActivities.filter(a => ['Running', 'Cycle', 'Sports'].includes(a.type));
           const recoveryArr = weekActivities.filter(a => ['Cold Plunge', 'Sauna', 'Yoga'].includes(a.type));

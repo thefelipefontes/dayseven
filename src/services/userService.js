@@ -12,7 +12,9 @@ export async function createUserProfile(user) {
       email: user.email,
       displayName: user.displayName,
       photoURL: user.photoURL,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      hasCompletedOnboarding: false,
+      goals: null
     });
   }
 
@@ -89,6 +91,27 @@ export async function getCustomActivities(uid) {
   }
 
   return [];
+}
+
+export async function saveUserGoals(uid, goals) {
+  const userRef = doc(db, 'users', uid);
+  await updateDoc(userRef, { goals });
+}
+
+export async function getUserGoals(uid) {
+  const userRef = doc(db, 'users', uid);
+  const userDoc = await getDoc(userRef);
+
+  if (userDoc.exists()) {
+    return userDoc.data().goals || null;
+  }
+
+  return null;
+}
+
+export async function setOnboardingComplete(uid) {
+  const userRef = doc(db, 'users', uid);
+  await updateDoc(userRef, { hasCompletedOnboarding: true });
 }
 
 export async function uploadProfilePhoto(uid, file) {

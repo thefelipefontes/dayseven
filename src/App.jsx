@@ -6,7 +6,7 @@ import Login from './Login';
 import UsernameSetup from './UsernameSetup';
 import Friends from './Friends';
 import ActivityFeed from './ActivityFeed';
-import { createUserProfile, getUserProfile, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto } from './services/userService';
+import { createUserProfile, getUserProfile, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, saveUserGoals, getUserGoals, setOnboardingComplete } from './services/userService';
 import { getFriends, getReactions, getFriendRequests } from './services/friendService';
 import html2canvas from 'html2canvas';
 
@@ -7470,7 +7470,7 @@ export default function StreakdApp() {
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [isOnboarded, setIsOnboarded] = useState(true);
+  const [isOnboarded, setIsOnboarded] = useState(null); // null = loading, true = onboarded, false = needs onboarding
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('home');
   const [showAddActivity, setShowAddActivity] = useState(false);
@@ -7528,6 +7528,20 @@ export default function StreakdApp() {
           profile = await getUserProfile(user.uid);
         }
         setUserProfile(profile);
+
+        // Check onboarding status
+        const hasCompletedOnboarding = profile?.hasCompletedOnboarding === true;
+        setIsOnboarded(hasCompletedOnboarding);
+
+        // Load user's goals from Firestore (if they exist)
+        const userGoals = await getUserGoals(user.uid);
+        if (userGoals) {
+          setUserData(prev => ({
+            ...prev,
+            goals: userGoals
+          }));
+        }
+
         // Load user's activities from Firestore
         const userActivities = await getUserActivities(user.uid);
         if (userActivities.length > 0) {
@@ -7572,6 +7586,7 @@ export default function StreakdApp() {
         setUserProfile(null);
         setFriends([]);
         setPendingFriendRequests(0);
+        setIsOnboarded(null);
       }
       setAuthLoading(false);
     });
@@ -8217,21 +8232,29 @@ export default function StreakdApp() {
     );
   }
 
-  if (!isOnboarded) {
-    return <OnboardingSurvey 
+  if (isOnboarded === false) {
+    return <OnboardingSurvey
       currentGoals={userData.goals}
-      onCancel={() => setIsOnboarded(true)}
-      onComplete={(goals) => {
+      onCancel={null}
+      onComplete={async (goals) => {
+        const goalsToSave = {
+          liftsPerWeek: goals.liftsPerWeek,
+          cardioPerWeek: goals.cardioPerWeek,
+          recoveryPerWeek: goals.recoveryPerWeek,
+          stepsPerDay: goals.stepsPerDay,
+          caloriesPerWeek: userData.goals.caloriesPerWeek // Keep existing value
+        };
+
+        // Save goals to Firestore
+        await saveUserGoals(user.uid, goalsToSave);
+
+        // Mark onboarding as complete
+        await setOnboardingComplete(user.uid);
+
         // Update userData with user's chosen goals
         setUserData(prev => ({
           ...prev,
-          goals: {
-            ...prev.goals,
-            liftsPerWeek: goals.liftsPerWeek,
-            cardioPerWeek: goals.cardioPerWeek,
-            recoveryPerWeek: goals.recoveryPerWeek,
-            stepsPerDay: goals.stepsPerDay
-          }
+          goals: goalsToSave
         }));
         // Recalculate weekly progress with new goals
         setWeeklyProgress(prev => ({
@@ -8242,7 +8265,7 @@ export default function StreakdApp() {
           steps: { ...prev.steps, goal: goals.stepsPerDay }
         }));
         setIsOnboarded(true);
-      }} 
+      }}
     />;
   }
 
@@ -8698,16 +8721,21 @@ export default function StreakdApp() {
           <OnboardingSurvey
             currentGoals={userData.goals}
             onCancel={() => setShowEditGoals(false)}
-            onComplete={(goals) => {
+            onComplete={async (goals) => {
+              const goalsToSave = {
+                liftsPerWeek: goals.liftsPerWeek,
+                cardioPerWeek: goals.cardioPerWeek,
+                recoveryPerWeek: goals.recoveryPerWeek,
+                stepsPerDay: goals.stepsPerDay,
+                caloriesPerWeek: userData.goals.caloriesPerWeek
+              };
+
+              // Save goals to Firestore
+              await saveUserGoals(user.uid, goalsToSave);
+
               setUserData(prev => ({
                 ...prev,
-                goals: {
-                  ...prev.goals,
-                  liftsPerWeek: goals.liftsPerWeek,
-                  cardioPerWeek: goals.cardioPerWeek,
-                  recoveryPerWeek: goals.recoveryPerWeek,
-                  stepsPerDay: goals.stepsPerDay
-                }
+                goals: goalsToSave
               }));
               setWeeklyProgress(prev => ({
                 ...prev,

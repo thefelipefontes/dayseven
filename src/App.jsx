@@ -5591,33 +5591,57 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
   const currentYear = today.getFullYear();
   
   // Generate weeks dynamically based on current date
-  const generateWeeks = () => {
+  const generateMonthWeeks = () => {
     const weeks = [];
-    // Generate last 3-4 weeks
-    for (let w = 2; w >= 0; w--) {
-      const weekStart = new Date(today);
-      weekStart.setDate(today.getDate() - today.getDay() - (w * 7)); // Start of week (Sunday)
-      const weekEnd = new Date(weekStart);
-      weekEnd.setDate(weekStart.getDate() + 6);
-      
-      const startDay = weekStart.getDate();
-      const endDay = weekEnd.getDate();
-      const monthName = weekStart.toLocaleDateString('en-US', { month: 'short' });
-      
+    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+    const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay(); // 0 = Sunday
+
+    // First partial week (if month doesn't start on Sunday)
+    let currentDay = 1;
+    if (firstDayOfMonth > 0) {
       weeks.push({
-        id: `week-${w + 1}`,
-        label: `${monthName} ${startDay}-${endDay}`,
-        startDay,
-        endDay,
+        id: 'week-0',
+        startDay: 1,
+        endDay: 7 - firstDayOfMonth,
+        isPartial: true,
+        emptyBefore: firstDayOfMonth
+      });
+      currentDay = 8 - firstDayOfMonth;
+    }
+
+    // Full weeks
+    let weekNum = 1;
+    while (currentDay + 6 <= daysInMonth) {
+      const weekStart = new Date(currentYear, currentMonth, currentDay);
+      const weekEnd = new Date(currentYear, currentMonth, currentDay + 6);
+      weeks.push({
+        id: `week-${weekNum}`,
+        label: `${weekStart.toLocaleDateString('en-US', { month: 'short' })} ${currentDay}-${currentDay + 6}`,
+        startDay: currentDay,
+        endDay: currentDay + 6,
         startDate: weekStart,
         endDate: weekEnd,
-        isCurrent: w === 0
+        isPartial: false
+      });
+      currentDay += 7;
+      weekNum++;
+    }
+
+    // Last partial week (if there are remaining days)
+    if (currentDay <= daysInMonth) {
+      weeks.push({
+        id: `week-${weekNum}`,
+        startDay: currentDay,
+        endDay: daysInMonth,
+        isPartial: true,
+        emptyAfter: 7 - (daysInMonth - currentDay + 1)
       });
     }
+
     return weeks;
   };
-  
-  const weeks = generateWeeks();
+
+  const weeks = generateMonthWeeks();
   
   // Helper to determine effective category of an activity
   const getActivityCategory = (activity) => {
@@ -5961,60 +5985,9 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
           
           {/* Calendar with week buttons */}
           <div className="space-y-0.5">
-            {/* First partial week (days 1-4) */}
-            <div className="flex gap-0.5">
-              <div className="w-8" />
-              {[...Array(4)].map((_, i) => (
-                <div key={`empty-${i}`} className="flex-1 aspect-square" />
-              ))}
-              {calendarDays.slice(0, 4).map((day) => (
-                <button
-                  key={day.day}
-                  onClick={() => {
-                    setSelectedDate(day.date);
-                    if (calendarData[day.date]?.length > 0) {
-                      openDayModal();
-                    } else if (!day.isFuture) {
-                      // Empty day - directly open add activity with this date
-                      onAddActivity && onAddActivity(day.date);
-                    }
-                  }}
-                  className="flex-1 aspect-square rounded-md flex flex-col items-center justify-center relative transition-all duration-150"
-                  style={{
-                    backgroundColor: selectedDate === day.date ? 'rgba(0,255,148,0.2)' : 
-                                     day.activities.length > 0 ? 'rgba(255,255,255,0.05)' : 'transparent',
-                    border: day.isToday ? '2px solid #00FF94' : 'none',
-                    opacity: day.isFuture ? 0.3 : 1
-                  }}
-                  onTouchStart={(e) => {
-                    if (!day.isFuture) e.currentTarget.style.transform = 'scale(0.92)';
-                  }}
-                  onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                  onMouseDown={(e) => {
-                    if (!day.isFuture) e.currentTarget.style.transform = 'scale(0.92)';
-                  }}
-                  onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                  onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                >
-                  <span className={`text-[11px] ${day.activities.length > 0 ? 'font-bold' : 'text-gray-500'}`}>
-                    {day.day}
-                  </span>
-                  {day.activities.length > 0 && (
-                    <div className="flex gap-0.5 mt-0.5">
-                      {day.activities.slice(0, 2).map((a, i) => (
-                        <div key={i} className="w-1 h-1 rounded-full"
-                          style={{ backgroundColor: a.type === 'Strength Training' ? '#00FF94' : a.type === 'Running' ? '#FF9500' : '#00D1FF' }}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </button>
-              ))}
-            </div>
-
-            {/* Full weeks */}
             {weeks.map((week) => (
               <div key={week.id} className="flex gap-0.5">
+                {/* Week stats button */}
                 <button
                   onClick={() => {
                     setSelectedWeek(week);
@@ -6045,6 +6018,11 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                 >
                   📊
                 </button>
+                {/* Empty cells before first day of month (for partial weeks) */}
+                {week.emptyBefore > 0 && [...Array(week.emptyBefore)].map((_, i) => (
+                  <div key={`empty-before-${i}`} className="flex-1 aspect-square" />
+                ))}
+                {/* Day cells */}
                 {calendarDays.slice(week.startDay - 1, week.endDay).map((day) => (
                   <button
                     key={day.day}
@@ -6058,7 +6036,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                     }}
                     className="flex-1 aspect-square rounded-md flex flex-col items-center justify-center relative transition-all duration-150"
                     style={{
-                      backgroundColor: selectedDate === day.date ? 'rgba(0,255,148,0.2)' : 
+                      backgroundColor: selectedDate === day.date ? 'rgba(0,255,148,0.2)' :
                                        day.activities.length > 0 ? 'rgba(255,255,255,0.05)' : 'transparent',
                       border: day.isToday ? '2px solid #00FF94' : 'none',
                       opacity: day.isFuture ? 0.3 : 1
@@ -6087,48 +6065,12 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                     )}
                   </button>
                 ))}
+                {/* Empty cells after last day of month (for partial weeks) */}
+                {week.emptyAfter > 0 && [...Array(week.emptyAfter)].map((_, i) => (
+                  <div key={`empty-after-${i}`} className="flex-1 aspect-square" />
+                ))}
               </div>
             ))}
-
-            {/* Last partial week (days 27-31) */}
-            <div className="flex gap-0.5">
-              <div className="w-8" />
-              {calendarDays.slice(26, 31).map((day) => (
-                <button
-                  key={day.day}
-                  onClick={() => {
-                    setSelectedDate(day.date);
-                    if (calendarData[day.date]?.length > 0) {
-                      openDayModal();
-                    } else if (!day.isFuture) {
-                      onAddActivity && onAddActivity(day.date);
-                    }
-                  }}
-                  className="flex-1 aspect-square rounded-md flex flex-col items-center justify-center relative transition-all duration-150"
-                  style={{
-                    backgroundColor: selectedDate === day.date ? 'rgba(0,255,148,0.2)' : 
-                                     day.activities.length > 0 ? 'rgba(255,255,255,0.05)' : 'transparent',
-                    opacity: day.isFuture ? 0.3 : 1
-                  }}
-                  onTouchStart={(e) => {
-                    if (!day.isFuture) e.currentTarget.style.transform = 'scale(0.92)';
-                  }}
-                  onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                  onMouseDown={(e) => {
-                    if (!day.isFuture) e.currentTarget.style.transform = 'scale(0.92)';
-                  }}
-                  onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                  onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                >
-                  <span className={`text-[11px] ${day.activities.length > 0 ? 'font-bold' : 'text-gray-500'}`}>
-                    {day.day}
-                  </span>
-                </button>
-              ))}
-              {[...Array(2)].map((_, i) => (
-                <div key={`end-empty-${i}`} className="flex-1 aspect-square" />
-              ))}
-            </div>
           </div>
 
           {/* How This Week Compares Section */}

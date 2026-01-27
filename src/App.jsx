@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, createContext, useContext } from 'react';
+import React, { useState, useEffect, useMemo, useRef, createContext, useContext, useCallback } from 'react';
 import * as Sentry from '@sentry/react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from './firebase';
@@ -2737,10 +2737,10 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null }) 
   ];
 
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col">
-      <div className="p-6 pt-12">
+    <div className="fixed inset-0 bg-black text-white flex flex-col overflow-hidden">
+      <div className="flex-shrink-0 p-6 pt-12">
         {isEditing && onCancel && (
-          <button 
+          <button
             onClick={onCancel}
             className="text-gray-400 text-sm mb-4 flex items-center gap-1 transition-all duration-150 px-2 py-1 rounded-lg -ml-2"
             onTouchStart={(e) => {
@@ -2770,10 +2770,13 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null }) 
         <h1 className="text-3xl font-black tracking-tight mb-1">STREAKD</h1>
         <p className="text-sm mb-4" style={{ color: '#00FF94' }}>Win the week.</p>
         <h2 className="text-xl font-bold mb-2">{isEditing ? 'Edit Your Goals' : 'Set Your Goals'}</h2>
-        <p className="text-gray-500 text-sm">Be realistic. Consistency beats intensity.</p>
+        <p className="text-gray-500 text-sm">Set your standards. Earn your streaks.</p>
       </div>
 
-      <div className="flex-1 px-6 py-4 space-y-6 overflow-auto pb-32">
+      <div
+        className="flex-1 px-6 py-4 space-y-6 pb-32 overflow-y-auto"
+        style={{ WebkitOverflowScrolling: 'touch' }}
+      >
         {questions.map((q) => (
           <div key={q.key}>
             <label className="text-sm font-semibold mb-1 block">{q.title}</label>
@@ -3016,14 +3019,30 @@ const DurationPicker = ({ hours, minutes, onChange, disabled = false }) => {
 };
 
 // Context to track which swipeable item is currently open
-const SwipeableContext = createContext({ openId: null, setOpenId: () => {} });
+const SwipeableContext = createContext({ openId: null, setOpenId: () => {}, closeAll: () => {} });
 
 // Provider component to wrap lists of swipeable items
 const SwipeableProvider = ({ children }) => {
   const [openId, setOpenId] = useState(null);
+  const closeAll = useCallback(() => {
+    setOpenId(null);
+  }, []);
   return (
-    <SwipeableContext.Provider value={{ openId, setOpenId }}>
-      {children}
+    <SwipeableContext.Provider value={{ openId, setOpenId, closeAll }}>
+      {/* Invisible overlay to catch taps outside swiped item */}
+      {openId !== null && (
+        <div
+          className="fixed inset-0 z-30"
+          onClick={closeAll}
+          onTouchEnd={(e) => {
+            e.preventDefault();
+            closeAll();
+          }}
+        />
+      )}
+      <div className="relative z-40">
+        {children}
+      </div>
     </SwipeableContext.Provider>
   );
 };
@@ -3043,9 +3062,9 @@ const SwipeableActivityItem = ({ children, onDelete, activity }) => {
   const snapThreshold = 40;
   const itemId = activity.id;
 
-  // Close this item if another one becomes the open one
+  // Close this item if another one becomes the open one, or if closeAll is triggered (openId becomes null)
   useEffect(() => {
-    if (openId !== null && openId !== itemId && swipeX !== 0) {
+    if (openId !== itemId && swipeX !== 0) {
       setSwipeX(0);
       setIsBouncing(false);
     }
@@ -4484,10 +4503,20 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     const filteredReactions = reactions.filter(r => r.reactionType === selectedEmoji);
 
     return (
-      <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+        onClick={onClose}
+        onTouchEnd={(e) => {
+          if (e.target === e.currentTarget) {
+            e.preventDefault();
+            onClose();
+          }
+        }}
+      >
         <div
           className="w-full max-w-sm bg-zinc-900 rounded-2xl p-5 max-h-[60vh] overflow-y-auto"
           onClick={e => e.stopPropagation()}
+          onTouchEnd={e => e.stopPropagation()}
         >
           {/* Header */}
           <div className="flex items-center justify-between mb-4">
@@ -4893,14 +4922,38 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                             if (!summary) return null;
                             return (
                               <span
-                                className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full flex-shrink-0"
-                                style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+                                className="flex items-center gap-0.5 rounded-full flex-shrink-0"
                               >
                                 {Object.entries(summary.counts).slice(0, 4).map(([emoji, count]) => (
-                                  <span key={emoji} className="flex items-center text-xs">
+                                  <button
+                                    key={emoji}
+                                    className="flex items-center text-xs px-1.5 py-0.5 rounded-full transition-all duration-150 active:scale-95"
+                                    style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      // Trigger haptic feedback
+                                      if (navigator.vibrate) {
+                                        navigator.vibrate(10);
+                                      }
+                                      setReactionDetailModal({
+                                        activityId: activity.id,
+                                        reactions: summary.reactions,
+                                        selectedEmoji: emoji
+                                      });
+                                    }}
+                                    onTouchStart={(e) => {
+                                      e.stopPropagation();
+                                      e.currentTarget.style.transform = 'scale(0.9)';
+                                      e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.2)';
+                                    }}
+                                    onTouchEnd={(e) => {
+                                      e.currentTarget.style.transform = '';
+                                      e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                                    }}
+                                  >
                                     <span>{emoji}</span>
                                     {count > 1 && <span className="text-gray-300 text-[10px] ml-0.5">{count}</span>}
-                                  </span>
+                                  </button>
                                 ))}
                               </span>
                             );
@@ -7007,7 +7060,7 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
       {/* Header */}
       <div className="px-4 pt-2 pb-4">
         <h1 className="text-xl font-bold text-white">Profile</h1>
-        <p className="text-sm text-gray-500">Set Your Standards. Earn Your Streaks.</p>
+        <p className="text-sm text-gray-500">Set your standards. Earn your streaks.</p>
       </div>
 
       <div className="px-4">
@@ -8315,12 +8368,10 @@ export default function StreakdApp() {
           style={{
             bottom: 'calc(100% - 60px)',
             backgroundColor: '#00FF94',
-            boxShadow: '0 8px 32px rgba(0, 255, 148, 0.5)',
             transform: 'translateX(-50%) scale(1)'
           }}
           onTouchStart={(e) => {
             e.currentTarget.style.transform = 'translateX(-50%) scale(0.9)';
-            e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 255, 148, 0.7)';
             const ring = document.createElement('div');
             ring.style.cssText = `
               position: absolute;
@@ -8335,19 +8386,15 @@ export default function StreakdApp() {
           }}
           onTouchEnd={(e) => {
             e.currentTarget.style.transform = 'translateX(-50%) scale(1)';
-            e.currentTarget.style.boxShadow = '0 8px 32px rgba(0, 255, 148, 0.5)';
           }}
           onMouseDown={(e) => {
             e.currentTarget.style.transform = 'translateX(-50%) scale(0.9)';
-            e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 255, 148, 0.7)';
           }}
           onMouseUp={(e) => {
             e.currentTarget.style.transform = 'translateX(-50%) scale(1)';
-            e.currentTarget.style.boxShadow = '0 8px 32px rgba(0, 255, 148, 0.5)';
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.transform = 'translateX(-50%) scale(1)';
-            e.currentTarget.style.boxShadow = '0 8px 32px rgba(0, 255, 148, 0.5)';
           }}
         >
           <span className="text-4xl text-black font-bold leading-none" style={{ marginTop: '-2px' }}>+</span>

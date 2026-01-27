@@ -56,10 +56,13 @@ const StreakdLogo = ({ gradient = ['#00FF94', '#00D1FF'], size = 'base', opacity
   );
 };
 
-// Get today's date in YYYY-MM-DD format
+// Get today's date in YYYY-MM-DD format (local timezone)
 const getTodayDate = () => {
   const today = new Date();
-  return today.toISOString().split('T')[0];
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 // Get current year
@@ -3844,16 +3847,29 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     const lifts = weekActivities.filter(a => getCategory(a) === 'lifting');
     const cardio = weekActivities.filter(a => getCategory(a) === 'cardio');
     const recovery = weekActivities.filter(a => getCategory(a) === 'recovery');
+
+    // Cardio breakdown
     const running = weekActivities.filter(a => a.type === 'Running');
     const cycling = weekActivities.filter(a => a.type === 'Cycle');
     const sports = weekActivities.filter(a => a.type === 'Sports');
+
+    // Strength breakdown - check strengthType field or if subtype starts with the type name
+    const lifting = lifts.filter(a => a.strengthType === 'Lifting' || a.subtype?.startsWith('Lifting') || (!a.subtype && !a.strengthType));
+    const bodyweight = lifts.filter(a => a.strengthType === 'Bodyweight' || a.subtype?.startsWith('Bodyweight'));
+
+    // Recovery breakdown
+    const coldPlunge = weekActivities.filter(a => a.type === 'Cold Plunge');
+    const sauna = weekActivities.filter(a => a.type === 'Sauna');
+    const yoga = weekActivities.filter(a => a.type === 'Yoga');
+    const pilates = weekActivities.filter(a => a.type === 'Pilates');
+
     const totalMiles = running.reduce((sum, r) => sum + (parseFloat(r.distance) || 0), 0);
     const totalCalories = weekActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
 
     return {
-      lifts: { completed: lifts.length, goal: goals.liftsPerWeek, sessions: lifts.map(l => l.subtype || l.type) },
+      lifts: { completed: lifts.length, goal: goals.liftsPerWeek, sessions: lifts.map(l => l.subtype || l.type), breakdown: { lifting: lifting.length, bodyweight: bodyweight.length } },
       cardio: { completed: cardio.length, goal: goals.cardioPerWeek, miles: totalMiles, sessions: cardio.map(c => c.type), breakdown: { running: running.length, cycling: cycling.length, sports: sports.length } },
-      recovery: { completed: recovery.length, goal: goals.recoveryPerWeek, sessions: recovery.map(r => r.type) },
+      recovery: { completed: recovery.length, goal: goals.recoveryPerWeek, sessions: recovery.map(r => r.type), breakdown: { coldPlunge: coldPlunge.length, sauna: sauna.length, yoga: yoga.length, pilates: pilates.length } },
       calories: { burned: totalCalories, goal: goals.caloriesPerWeek },
       steps: { today: 0, goal: goals.stepsPerDay }
     };

@@ -531,8 +531,8 @@ const Toast = ({ show, message, onDismiss, onTap, type = 'record' }) => {
   const icon = type === 'record' ? '🏆' : '✓';
 
   return (
-    <div 
-      className="fixed bottom-28 left-4 right-4 z-50 transition-all duration-300"
+    <div
+      className="fixed bottom-6 left-4 right-4 z-50 transition-all duration-300"
       style={{
         transform: isLeaving ? 'translateY(100px)' : 'translateY(0)',
         opacity: isLeaving ? 0 : 1
@@ -1195,7 +1195,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
 
   // Dynamic motivational taglines
   const getMotivationalTagline = (streak, allGoalsMet) => {
-    if (allGoalsMet) return "Crushed it! 💪";
+    if (allGoalsMet) return "All goals complete ✓";
     if (streak >= 52) return "Legend status achieved!";
     if (streak >= 26) return "Half-year warrior!";
     if (streak >= 12) return "Consistency is key!";
@@ -1488,22 +1488,10 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
               <div className={isPostFormat ? 'flex-1' : ''}>
               {/* Header */}
               <div className={`text-center ${isPostFormat ? '' : 'mt-6'}`}>
-                {allGoalsMet ? (
-                  <div
-                    className={`${isPostFormat ? 'py-1.5 px-4' : 'py-2 px-5'} rounded-xl inline-block`}
-                    style={{
-                      background: 'linear-gradient(135deg, #FFD700 0%, #00FF94 100%)',
-                      boxShadow: '0 4px 15px rgba(255, 215, 0, 0.3)'
-                    }}
-                  >
-                    <div className={`font-black ${isPostFormat ? 'text-sm' : 'text-sm'} text-black tracking-wide`}>WEEK STREAKED! 🔥</div>
-                  </div>
-                ) : (
-                  <div className={isPostFormat ? 'text-2xl' : 'text-3xl'} style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>📅</div>
-                )}
+                <div className={isPostFormat ? 'text-2xl' : 'text-3xl'} style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>📅</div>
                 <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-500 uppercase tracking-wider mt-1.5`}>{getWeekDateRange()}</div>
                 <div className={`font-black ${isPostFormat ? 'text-2xl' : 'text-2xl'}`} style={{ color: allGoalsMet ? colors.primary : 'white' }}>
-                  {allGoalsMet ? '✓ Week Complete!' : `${overallPercent}% Complete`}
+                  {allGoalsMet ? 'Week Streaked!' : `${overallPercent}% Complete`}
                 </div>
                 <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-0.5`}>{getMotivationalTagline(stats?.streak || 0, allGoalsMet)}</div>
               </div>
@@ -1737,14 +1725,13 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
           >
-            <div className={isPostFormat ? 'text-2xl' : 'text-3xl'} style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>🔥</div>
             <div className="flex-1 flex flex-col items-center justify-center w-full">
               {/* Main master streak number */}
               <div className="text-center">
                 <div className="font-black leading-none" style={{ fontSize: isPostFormat ? '3rem' : '4rem', color: colors.primary, textShadow: `0 0 40px ${colors.glow}, 0 0 80px ${colors.glow}`, animation: 'ring-pulse 3s ease-in-out infinite' }}>
                   {stats?.streak || 0}
                 </div>
-                <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} font-semibold tracking-widest text-gray-400 uppercase mt-1`}>Master Streak</div>
+                <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} font-semibold tracking-widest text-gray-400 uppercase mt-1`}>🔥 Master Streak</div>
                 <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500`}>weeks hitting all goals</div>
               </div>
 
@@ -7497,6 +7484,7 @@ export default function StreakdApp() {
   const [showWeekStreakCelebration, setShowWeekStreakCelebration] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+  const [pendingToast, setPendingToast] = useState(null); // Queue toast to show after celebration
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
   const [historyView, setHistoryView] = useState('calendar');
@@ -8021,7 +8009,19 @@ export default function StreakdApp() {
       return newStreak > (records[recordKey] || 0);
     };
 
+    // Check if all goals will be met after this activity (for week streak priority)
+    const willCompleteAllGoals = newProgress.lifts.completed >= goals.liftsPerWeek &&
+        newProgress.cardio.completed >= goals.cardioPerWeek &&
+        newProgress.recovery.completed >= goals.recoveryPerWeek;
+
+    const wasAllGoalsMet = prevProgress.lifts.completed >= goals.liftsPerWeek &&
+        prevProgress.cardio.completed >= goals.cardioPerWeek &&
+        prevProgress.recovery.completed >= goals.recoveryPerWeek;
+
+    const willStreakWeek = willCompleteAllGoals && !wasAllGoalsMet;
+
     // Update streaks when goals are met - combined into single setUserData call to avoid race conditions
+    // If week will be streaked, skip individual celebration (week streak takes priority)
     if (justCompletedLifts) {
       const newStreak = userData.streaks.lifts + 1;
       const isNewRecord = isStreakRecord('strength', newStreak);
@@ -8032,14 +8032,17 @@ export default function StreakdApp() {
           ? { ...prev.personalRecords, longestStrengthStreak: newStreak }
           : prev.personalRecords
       }));
-      if (isNewRecord) {
-        setCelebrationMessage(`New Record: ${newStreak} Week Strength Streak! 🏆`);
-      } else if (checkStreakMilestone(newStreak)) {
-        setCelebrationMessage(`${newStreak} Week Strength Streak! 💪`);
-      } else {
-        setCelebrationMessage('Strength goal complete! 🏋️');
+      // Only show individual celebration if NOT about to streak the week
+      if (!willStreakWeek) {
+        if (isNewRecord) {
+          setCelebrationMessage(`New Record: ${newStreak} Week Strength Streak! 🏆`);
+        } else if (checkStreakMilestone(newStreak)) {
+          setCelebrationMessage(`${newStreak} Week Strength Streak! 💪`);
+        } else {
+          setCelebrationMessage('Strength goal complete! 🏋️');
+        }
+        setShowCelebration(true);
       }
-      setShowCelebration(true);
     } else if (justCompletedCardio) {
       const newStreak = userData.streaks.cardio + 1;
       const isNewRecord = isStreakRecord('cardio', newStreak);
@@ -8050,14 +8053,17 @@ export default function StreakdApp() {
           ? { ...prev.personalRecords, longestCardioStreak: newStreak }
           : prev.personalRecords
       }));
-      if (isNewRecord) {
-        setCelebrationMessage(`New Record: ${newStreak} Week Cardio Streak! 🏆`);
-      } else if (checkStreakMilestone(newStreak)) {
-        setCelebrationMessage(`${newStreak} Week Cardio Streak! 🔥`);
-      } else {
-        setCelebrationMessage('Cardio goal complete! 🏃');
+      // Only show individual celebration if NOT about to streak the week
+      if (!willStreakWeek) {
+        if (isNewRecord) {
+          setCelebrationMessage(`New Record: ${newStreak} Week Cardio Streak! 🏆`);
+        } else if (checkStreakMilestone(newStreak)) {
+          setCelebrationMessage(`${newStreak} Week Cardio Streak! 🔥`);
+        } else {
+          setCelebrationMessage('Cardio goal complete! 🏃');
+        }
+        setShowCelebration(true);
       }
-      setShowCelebration(true);
     } else if (justCompletedRecovery) {
       const newStreak = userData.streaks.recovery + 1;
       const isNewRecord = isStreakRecord('recovery', newStreak);
@@ -8068,14 +8074,17 @@ export default function StreakdApp() {
           ? { ...prev.personalRecords, longestRecoveryStreak: newStreak }
           : prev.personalRecords
       }));
-      if (isNewRecord) {
-        setCelebrationMessage(`New Record: ${newStreak} Week Recovery Streak! 🏆`);
-      } else if (checkStreakMilestone(newStreak)) {
-        setCelebrationMessage(`${newStreak} Week Recovery Streak! ❄️`);
-      } else {
-        setCelebrationMessage('Recovery goal complete! 🧊');
+      // Only show individual celebration if NOT about to streak the week
+      if (!willStreakWeek) {
+        if (isNewRecord) {
+          setCelebrationMessage(`New Record: ${newStreak} Week Recovery Streak! 🏆`);
+        } else if (checkStreakMilestone(newStreak)) {
+          setCelebrationMessage(`${newStreak} Week Recovery Streak! ❄️`);
+        } else {
+          setCelebrationMessage('Recovery goal complete! 🧊');
+        }
+        setShowCelebration(true);
       }
-      setShowCelebration(true);
     } else {
       // No goal completed, check for personal records (use toast instead of full celebration)
       const record = checkAndUpdateRecords();
@@ -8088,35 +8097,34 @@ export default function StreakdApp() {
     // Always check and update records (mostMilesWeek, etc.) even when a goal was completed
     // The if/else above handles celebrations, but we still need to update distance/calorie records
     if (justCompletedLifts || justCompletedCardio || justCompletedRecovery) {
-      checkAndUpdateRecords();
+      const record = checkAndUpdateRecords();
+      // If there's a record and week is being streaked, queue the toast for after celebration
+      if (record && willStreakWeek) {
+        setPendingToast(record.message);
+      } else if (record && !willStreakWeek) {
+        // Show record toast after the individual celebration completes
+        setPendingToast(record.message);
+      }
     }
-    
-    // Check if all goals met (master streak)
-    const allGoalsMet = newProgress.lifts.completed >= goals.liftsPerWeek &&
-        newProgress.cardio.completed >= goals.cardioPerWeek &&
-        newProgress.recovery.completed >= goals.recoveryPerWeek;
-    
-    const wasAllGoalsMet = prevProgress.lifts.completed >= goals.liftsPerWeek &&
-        prevProgress.cardio.completed >= goals.cardioPerWeek &&
-        prevProgress.recovery.completed >= goals.recoveryPerWeek;
-    
-    if (allGoalsMet && !wasAllGoalsMet) {
+
+    // Check if all goals met (master streak) - week streak celebration takes priority
+    if (willStreakWeek) {
       // Just completed all goals - increment master streak
       const newMasterStreak = userData.streaks.master + 1;
       const isNewMasterRecord = newMasterStreak > (records.longestMasterStreak || 0);
-      
+
       setUserData(prev => ({
         ...prev,
         streaks: { ...prev.streaks, master: newMasterStreak },
-        personalRecords: isNewMasterRecord 
+        personalRecords: isNewMasterRecord
           ? { ...prev.personalRecords, longestMasterStreak: newMasterStreak }
           : prev.personalRecords
       }));
-      
-      // Show the week streak celebration modal after a short delay
+
+      // Show the week streak celebration modal immediately (no delay needed since we skipped individual celebration)
       setTimeout(() => {
         setShowWeekStreakCelebration(true);
-      }, 2000);
+      }, 500);
     }
   };
 
@@ -8625,15 +8633,37 @@ export default function StreakdApp() {
       <CelebrationOverlay
         show={showCelebration}
         message={celebrationMessage}
-        onComplete={() => setShowCelebration(false)}
+        onComplete={() => {
+          setShowCelebration(false);
+          // Show pending toast after celebration completes
+          if (pendingToast) {
+            setTimeout(() => {
+              setToastMessage(pendingToast);
+              setShowToast(true);
+              setPendingToast(null);
+            }, 300);
+          }
+        }}
       />
 
       <WeekStreakCelebration
         show={showWeekStreakCelebration}
-        onClose={() => setShowWeekStreakCelebration(false)}
+        onClose={() => {
+          setShowWeekStreakCelebration(false);
+          // Show pending toast after week streak celebration closes
+          if (pendingToast) {
+            setTimeout(() => {
+              setToastMessage(pendingToast);
+              setShowToast(true);
+              setPendingToast(null);
+            }, 300);
+          }
+        }}
         onShare={() => {
           setShowWeekStreakCelebration(false);
           setShowShare(true);
+          // Clear pending toast if user shares (don't interrupt share flow)
+          setPendingToast(null);
         }}
       />
 

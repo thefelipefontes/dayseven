@@ -4,6 +4,40 @@ import { addReaction, getReactions, removeReaction } from './services/friendServ
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
+// Segmented control component - defined outside to maintain stable reference
+const SegmentedControl = ({ activeView, setActiveView }) => (
+  <div className="px-4 pb-4">
+    <div className="relative flex p-1 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+      {/* Sliding pill indicator */}
+      <div
+        className="absolute top-1 bottom-1 left-1 rounded-lg"
+        style={{
+          backgroundColor: 'rgba(255,255,255,0.1)',
+          width: 'calc((100% - 8px) / 2)',
+          transform: activeView === 'feed' ? 'translateX(0)' : 'translateX(100%)',
+          transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+        }}
+      />
+      {[
+        { key: 'feed', label: 'Feed' },
+        { key: 'leaderboard', label: 'Leaderboard' }
+      ].map((tab) => (
+        <button
+          key={tab.key}
+          onClick={() => setActiveView(tab.key)}
+          className="flex-1 py-2 px-4 rounded-lg text-sm font-medium relative z-10"
+          style={{
+            color: activeView === tab.key ? 'white' : 'rgba(255,255,255,0.5)',
+            transition: 'color 0.2s ease'
+          }}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  </div>
+);
+
 const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingRequestsCount = 0 }) => {
   const [feedActivities, setFeedActivities] = useState([]);
   const [activityReactions, setActivityReactions] = useState({});
@@ -17,7 +51,16 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   const [leaderboardCategory, setLeaderboardCategory] = useState('master'); // 'master', 'strength', 'cardio', 'recovery', 'calories', 'steps'
   const [leaderboardTimeRange, setLeaderboardTimeRange] = useState('week'); // 'week', 'month', 'year', 'all'
   const [selectedFriend, setSelectedFriend] = useState(null); // For viewing friend profile
-  const [showShareModal, setShowShareModal] = useState(false);
+  const [isFriendProfileClosing, setIsFriendProfileClosing] = useState(false); // For fade out animation
+
+  // Handler for closing friend profile with animation
+  const handleCloseFriendProfile = () => {
+    setIsFriendProfileClosing(true);
+    setTimeout(() => {
+      setSelectedFriend(null);
+      setIsFriendProfileClosing(false);
+    }, 200);
+  };
 
   const reactionEmojis = ['💪', '🔥', '👏', '❤️'];
 
@@ -911,63 +954,104 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   };
 
   // Friend Profile Modal
-  const FriendProfileModal = ({ friend, onClose }) => {
+  const FriendProfileModal = ({ friend, onClose, isClosing }) => {
     if (!friend) return null;
 
     return (
-      <div className="fixed inset-0 bg-black/80 z-50 flex items-end justify-center" onClick={onClose}>
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center px-6"
+        onClick={onClose}
+        style={{
+          animation: isClosing ? 'fade-out 0.2s ease-in forwards' : 'fade-in 0.2s ease-out forwards'
+        }}
+      >
+        {/* Backdrop */}
+        <div className="absolute inset-0 bg-black/70 backdrop-blur-md" />
+
+        {/* Modal */}
         <div
-          className="w-full max-w-lg bg-zinc-900 rounded-t-3xl p-6 pb-8"
-          onClick={e => e.stopPropagation()}
+          className="relative w-full max-w-sm rounded-3xl overflow-hidden"
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            backgroundColor: '#1C1C1E',
+            border: '1px solid rgba(255,255,255,0.1)',
+            animation: isClosing ? 'scale-fade-out 0.2s ease-in forwards' : 'scale-fade-in 0.2s ease-out forwards'
+          }}
         >
-          {/* Header */}
-          <div className="flex items-center gap-4 mb-6">
-            <ProfilePhoto photoURL={friend.photoURL} displayName={friend.displayName} size={64} />
-            <div>
-              <p className="text-white font-bold text-lg">{friend.displayName || friend.username}</p>
-              <p className="text-gray-400">@{friend.username}</p>
+          {/* Header with profile photo */}
+          <div className="relative pt-8 pb-4 px-6">
+            {/* Background gradient */}
+            <div
+              className="absolute inset-0 opacity-30"
+              style={{
+                background: 'linear-gradient(180deg, rgba(0,255,148,0.3) 0%, transparent 100%)'
+              }}
+            />
+
+            {/* Profile Photo */}
+            <div className="relative flex flex-col items-center">
+              <div className="w-24 h-24 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden border-4 border-zinc-800 mb-3">
+                {friend.photoURL ? (
+                  <img src={friend.photoURL} alt={friend.displayName} className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-3xl text-white">{friend.displayName?.[0]?.toUpperCase() || '?'}</span>
+                )}
+              </div>
+              <h3 className="text-xl font-bold text-white">{friend.displayName || friend.username}</h3>
+              <p className="text-gray-400 text-sm">@{friend.username}</p>
             </div>
           </div>
 
-          {/* Stats grid */}
-          <div className="grid grid-cols-3 gap-3 mb-6">
-            <div className="bg-zinc-800 rounded-xl p-3 text-center">
-              <p className="text-2xl font-bold text-white">{friend.masterStreak || 0}</p>
-              <p className="text-gray-500 text-xs">Week Streak</p>
+          {/* Stats */}
+          <div className="px-6 pb-4">
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <p className="text-2xl font-bold text-white">{friend.masterStreak || 0}</p>
+                <p className="text-gray-500 text-xs">Week Streak</p>
+              </div>
+              <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <p className="text-2xl font-bold text-white">{friend.weeksWon || 0}</p>
+                <p className="text-gray-500 text-xs">Weeks Won</p>
+              </div>
+              <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <p className="text-2xl font-bold text-white">{friend.totalWorkouts || 0}</p>
+                <p className="text-gray-500 text-xs">Workouts</p>
+              </div>
             </div>
-            <div className="bg-zinc-800 rounded-xl p-3 text-center">
-              <p className="text-2xl font-bold text-white">{friend.weeksWon || 0}</p>
-              <p className="text-gray-500 text-xs">Weeks Won</p>
-            </div>
-            <div className="bg-zinc-800 rounded-xl p-3 text-center">
-              <p className="text-2xl font-bold text-white">{friend.totalWorkouts || 0}</p>
-              <p className="text-gray-500 text-xs">Workouts</p>
-            </div>
-          </div>
 
-          {/* Streak breakdown */}
-          <div className="space-y-2 mb-6">
-            <div className="flex items-center justify-between bg-zinc-800 rounded-lg p-3">
-              <span className="text-gray-400">💪 Strength Streak</span>
-              <span className="text-white font-bold">{friend.strengthStreak || 0}</span>
-            </div>
-            <div className="flex items-center justify-between bg-zinc-800 rounded-lg p-3">
-              <span className="text-gray-400">🏃 Cardio Streak</span>
-              <span className="text-white font-bold">{friend.cardioStreak || 0}</span>
-            </div>
-            <div className="flex items-center justify-between bg-zinc-800 rounded-lg p-3">
-              <span className="text-gray-400">🧘 Recovery Streak</span>
-              <span className="text-white font-bold">{friend.recoveryStreak || 0}</span>
+            {/* Streak breakdown */}
+            <div className="space-y-2 mb-4">
+              <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <span className="text-gray-400 flex items-center gap-2">
+                  <span style={{ color: '#00FF94' }}>💪</span> Strength Streak
+                </span>
+                <span className="text-white font-bold">{friend.strengthStreak || 0}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <span className="text-gray-400 flex items-center gap-2">
+                  <span style={{ color: '#FF9500' }}>🏃</span> Cardio Streak
+                </span>
+                <span className="text-white font-bold">{friend.cardioStreak || 0}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <span className="text-gray-400 flex items-center gap-2">
+                  <span style={{ color: '#00D1FF' }}>🧊</span> Recovery Streak
+                </span>
+                <span className="text-white font-bold">{friend.recoveryStreak || 0}</span>
+              </div>
             </div>
           </div>
 
           {/* Close button */}
-          <button
-            onClick={onClose}
-            className="w-full py-3 rounded-full bg-zinc-800 text-white font-medium"
-          >
-            Close
-          </button>
+          <div className="px-6 pb-6">
+            <button
+              onClick={onClose}
+              className="w-full py-3 rounded-xl text-gray-400 font-medium transition-all duration-150 active:scale-98"
+              style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
+            >
+              Close
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -1008,7 +1092,12 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
           }}
         >
-          <span className="text-sm">➕</span>
+          <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+            <line x1="19" y1="8" x2="19" y2="14" />
+            <line x1="22" y1="11" x2="16" y2="11" />
+          </svg>
           <span className="text-sm font-medium text-white">Add</span>
           {pendingRequestsCount > 0 && (
             <span
@@ -1023,121 +1112,59 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     </div>
   );
 
-  // Segmented control component
-  const SegmentedControl = () => (
-    <div className="px-4 pb-4">
-      <div className="relative flex p-1 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-        {/* Sliding pill indicator */}
-        <div
-          className="absolute top-1 bottom-1 rounded-lg"
-          style={{
-            backgroundColor: 'rgba(255,255,255,0.1)',
-            width: 'calc((100% - 8px) / 2)',
-            left: activeView === 'feed' ? '4px' : 'calc(4px + (100% - 8px) / 2)',
-            transition: 'left 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
-          }}
-        />
-        {[
-          { key: 'feed', label: 'Feed' },
-          { key: 'leaderboard', label: 'Leaderboard' }
-        ].map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveView(tab.key)}
-            className="flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors duration-200 relative z-10"
-            style={{
-              color: activeView === tab.key ? 'white' : 'rgba(255,255,255,0.5)'
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
+  // Sort leaderboard data based on selected category and time range (moved outside conditionals)
+  const getSortValue = (userData) => {
+    switch (leaderboardCategory) {
+      case 'strength': return userData.strengthStreak || 0;
+      case 'cardio': return userData.cardioStreak || 0;
+      case 'recovery': return userData.recoveryStreak || 0;
+      case 'calories': return userData.stats?.calories?.[leaderboardTimeRange] || 0;
+      case 'steps': return userData.stats?.steps?.[leaderboardTimeRange] || 0;
+      default: return userData.masterStreak || 0;
+    }
+  };
 
-  if (isLoading) {
-    return (
-      <div>
-        <FriendsHeaderTop />
-        <SegmentedControl />
-        <div className="flex items-center justify-center py-12">
-          <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
-        </div>
-      </div>
-    );
-  }
+  const sortedLeaderboard = [...leaderboardData].sort((a, b) => getSortValue(b) - getSortValue(a));
+  const maxValue = sortedLeaderboard.length > 0 ? getSortValue(sortedLeaderboard[0]) : 0;
+  const topThree = sortedLeaderboard.slice(0, 3);
+  const rest = sortedLeaderboard.slice(3);
 
-  if (!friends || friends.length === 0) {
-    return (
-      <div>
-        <FriendsHeaderTop />
-        <SegmentedControl />
-        <div className="text-center py-12 px-6">
-          <div className="text-5xl mb-4">👥</div>
-          <p className="text-white font-medium mb-2">Find your workout buddies</p>
-          <p className="text-gray-500 text-sm mb-6">Add friends to see their workouts and cheer them on!</p>
-          <button
-            onClick={onOpenFriends}
-            className="px-6 py-3 rounded-full font-semibold text-black transition-all duration-150"
-            style={{ backgroundColor: '#00FF94' }}
-            onTouchStart={(e) => {
-              e.currentTarget.style.transform = 'scale(0.95)';
-            }}
-            onTouchEnd={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-            }}
-            onMouseDown={(e) => {
-              e.currentTarget.style.transform = 'scale(0.95)';
-            }}
-            onMouseUp={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-            }}
-          >
-            Add Friends
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const getCategoryLabel = () => {
+    switch (leaderboardCategory) {
+      case 'strength': return '💪 Strength Streak';
+      case 'cardio': return '🏃 Cardio Streak';
+      case 'recovery': return '🧘 Recovery Streak';
+      case 'calories': return '🔥 Calories Burned';
+      case 'steps': return '👟 Steps';
+      default: return '🏆 Overall Streak';
+    }
+  };
 
-  // Leaderboard View
-  if (activeView === 'leaderboard') {
-    // Sort leaderboard data based on selected category and time range
-    const getSortValue = (userData) => {
-      switch (leaderboardCategory) {
-        case 'strength': return userData.strengthStreak || 0;
-        case 'cardio': return userData.cardioStreak || 0;
-        case 'recovery': return userData.recoveryStreak || 0;
-        case 'calories': return userData.stats?.calories?.[leaderboardTimeRange] || 0;
-        case 'steps': return userData.stats?.steps?.[leaderboardTimeRange] || 0;
-        default: return userData.masterStreak || 0;
-      }
-    };
+  // Find current user's rank
+  const currentUserRank = sortedLeaderboard.findIndex(u => u.isCurrentUser) + 1;
 
-    const sortedLeaderboard = [...leaderboardData].sort((a, b) => getSortValue(b) - getSortValue(a));
-    const maxValue = sortedLeaderboard.length > 0 ? getSortValue(sortedLeaderboard[0]) : 0;
-    const topThree = sortedLeaderboard.slice(0, 3);
-    const rest = sortedLeaderboard.slice(3);
-
-    const getCategoryLabel = () => {
-      switch (leaderboardCategory) {
-        case 'strength': return '💪 Strength Streak';
-        case 'cardio': return '🏃 Cardio Streak';
-        case 'recovery': return '🧘 Recovery Streak';
-        case 'calories': return '🔥 Calories Burned';
-        case 'steps': return '👟 Steps';
-        default: return '🏆 Overall Streak';
-      }
-    };
-
-    // Find current user's rank
-    const currentUserRank = sortedLeaderboard.findIndex(u => u.isCurrentUser) + 1;
-
-    return (
+  // Single unified return - keeps SegmentedControl mounted for animations
+  return (
+      <>
+      {/* Animation keyframes */}
+      <style>{`
+        @keyframes fade-in {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes fade-out {
+          from { opacity: 1; }
+          to { opacity: 0; }
+        }
+        @keyframes scale-fade-in {
+          from { opacity: 0; transform: scale(0.95); }
+          to { opacity: 1; transform: scale(1); }
+        }
+        @keyframes scale-fade-out {
+          from { opacity: 1; transform: scale(1); }
+          to { opacity: 0; transform: scale(0.95); }
+        }
+      `}</style>
       <div
         className="h-full overflow-y-auto"
         onTouchStart={handleTouchStart}
@@ -1164,9 +1191,38 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         </div>
 
         <FriendsHeaderTop />
-        <SegmentedControl />
+        <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
+
+        {/* Loading State */}
+        {isLoading && (
+          <div className="flex items-center justify-center py-12">
+            <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
+
+        {/* No Friends State */}
+        {!isLoading && (!friends || friends.length === 0) && (
+          <div className="text-center py-12 px-6">
+            <div className="text-5xl mb-4">👥</div>
+            <p className="text-white font-medium mb-2">Find your workout buddies</p>
+            <p className="text-gray-500 text-sm mb-6">Add friends to see their workouts and cheer them on!</p>
+            <button
+              onClick={onOpenFriends}
+              className="px-6 py-3 rounded-full font-semibold text-black transition-all duration-150"
+              style={{ backgroundColor: '#00FF94' }}
+              onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.95)'; }}
+              onTouchEnd={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+              onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.95)'; }}
+              onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+            >
+              Add Friends
+            </button>
+          </div>
+        )}
 
         {/* Leaderboard content */}
+        {!isLoading && friends && friends.length > 0 && activeView === 'leaderboard' && (
         <div className="px-4 pb-32">
           {/* Leaderboard headline */}
           <div className="mb-4">
@@ -1284,21 +1340,8 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                 />
               )}
 
-              {/* Rankings label with share button */}
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-gray-500 text-xs uppercase tracking-wide">{getCategoryLabel()} Rankings</p>
-                <button
-                  onClick={() => setShowShareModal(true)}
-                  className="p-1.5 transition-colors duration-150 hover:text-white"
-                  style={{ color: 'rgba(255,255,255,0.4)' }}
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-                    <polyline points="16 6 12 2 8 6" />
-                    <line x1="12" y1="2" x2="12" y2="15" />
-                  </svg>
-                </button>
-              </div>
+              {/* Rankings label */}
+              <p className="text-gray-500 text-xs uppercase tracking-wide mb-3">{getCategoryLabel()} Rankings</p>
 
               {/* Top 3 in list form (compact) */}
               {topThree.map((userData, index) => (
@@ -1548,131 +1591,37 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             </>
           )}
         </div>
+        )}
 
         {/* Friend Profile Modal */}
-        <FriendProfileModal friend={selectedFriend} onClose={() => setSelectedFriend(null)} />
+        <FriendProfileModal friend={selectedFriend} onClose={handleCloseFriendProfile} isClosing={isFriendProfileClosing} />
 
-        {/* Share Modal */}
-        {showShareModal && (
-          <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setShowShareModal(false)}>
-            <div className="bg-zinc-900 rounded-2xl p-6 max-w-sm w-full" onClick={e => e.stopPropagation()}>
-              <div className="text-center mb-6">
-                <div className="text-4xl mb-2">🏆</div>
-                <h3 className="text-white font-bold text-lg">Share Leaderboard</h3>
-                <p className="text-gray-400 text-sm mt-1">Show off your ranking!</p>
-              </div>
+        {/* Feed View - Empty State */}
+        {!isLoading && friends && friends.length > 0 && activeView === 'feed' && feedActivities.length === 0 && (
+          <div className="text-center py-12 px-6">
+            <div className="text-5xl mb-4">📭</div>
+            <p className="text-white font-medium mb-2">No activity yet</p>
+            <p className="text-gray-500 text-sm">Your friends haven't logged any workouts</p>
+          </div>
+        )}
 
-              {/* Preview card */}
-              <div className="bg-gradient-to-br from-zinc-800 to-zinc-900 rounded-xl p-4 mb-6 border border-zinc-700">
-                <p className="text-gray-400 text-xs mb-2">{getCategoryLabel()}</p>
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center">
-                    <span className="text-green-400 font-bold text-lg">#{currentUserRank}</span>
-                  </div>
-                  <div>
-                    <p className="text-white font-bold">{userProfile?.displayName || 'You'}</p>
-                    <p className="text-gray-400 text-sm">
-                      {(() => {
-                        const userData = sortedLeaderboard.find(u => u.isCurrentUser);
-                        const val = getSortValue(userData);
-                        return (leaderboardCategory === 'calories' || leaderboardCategory === 'steps')
-                          ? (val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val)
-                          : val;
-                      })()} {leaderboardCategory === 'calories' ? 'cal' : leaderboardCategory === 'steps' ? 'steps' : 'streak'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowShareModal(false)}
-                  className="flex-1 py-3 rounded-full bg-zinc-800 text-white font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => {
-                    // In a real app, this would trigger native share
-                    if (navigator.share) {
-                      navigator.share({
-                        title: 'My Streakd Ranking',
-                        text: `I'm ranked #${currentUserRank} on the ${getCategoryLabel()} leaderboard! 🏆`
-                      });
-                    }
-                    setShowShareModal(false);
-                  }}
-                  className="flex-1 py-3 rounded-full font-medium text-black"
-                  style={{ backgroundColor: '#00FF94' }}
-                >
-                  Share
-                </button>
-              </div>
+        {/* Feed View - With Content */}
+        {!isLoading && friends && friends.length > 0 && activeView === 'feed' && feedActivities.length > 0 && (
+          <div className="px-4 pb-32">
+            {/* Feed headline */}
+            <div className="mb-4">
+              <div className="text-sm font-semibold text-white">Feed</div>
+              <p className="text-[11px] text-gray-500 mt-0.5">Recent activity from friends</p>
             </div>
+
+            {feedActivities.map((activity, index) => (
+              <ActivityCard key={`${activity.friend.uid}-${activity.id || index}`} activity={activity} />
+            ))}
           </div>
         )}
       </div>
+      </>
     );
-  }
-
-  // Feed View
-  if (feedActivities.length === 0) {
-    return (
-      <div>
-        <FriendsHeaderTop />
-        <SegmentedControl />
-        <div className="text-center py-12 px-6">
-          <div className="text-5xl mb-4">📭</div>
-          <p className="text-white font-medium mb-2">No activity yet</p>
-          <p className="text-gray-500 text-sm">Your friends haven't logged any workouts</p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className="h-full overflow-y-auto"
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-    >
-      {/* Pull to refresh indicator */}
-      <div
-        className="flex justify-center items-center transition-all duration-300"
-        style={{
-          height: isRefreshing ? '60px' : `${pullDistance}px`,
-          opacity: isRefreshing ? 1 : Math.min(pullDistance / 60, 1)
-        }}
-      >
-        <div
-          className={`text-2xl ${isRefreshing ? 'animate-spin' : ''}`}
-          style={{
-            transform: isRefreshing ? 'none' : `rotate(${pullDistance * 3}deg)`,
-            transition: isRefreshing ? 'none' : 'transform 0.1s'
-          }}
-        >
-          🔄
-        </div>
-      </div>
-
-      <FriendsHeaderTop />
-        <SegmentedControl />
-
-      {/* Feed content */}
-      <div className="px-4 pb-32">
-        {/* Feed headline */}
-        <div className="mb-4">
-          <div className="text-sm font-semibold text-white">Feed</div>
-          <p className="text-[11px] text-gray-500 mt-0.5">Recent activity from friends</p>
-        </div>
-
-        {feedActivities.map((activity, index) => (
-          <ActivityCard key={`${activity.friend.uid}-${activity.id || index}`} activity={activity} />
-        ))}
-      </div>
-    </div>
-  );
 };
 
 export default ActivityFeed;

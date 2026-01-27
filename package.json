@@ -9,7 +9,9 @@
   },
   "dependencies": {
     "@sentry/react": "^10.36.0",
+    "dom-to-image-more": "^3.7.2",
     "firebase": "^12.8.0",
+    "html2canvas": "^1.4.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },

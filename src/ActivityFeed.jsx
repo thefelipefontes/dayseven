@@ -152,7 +152,6 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   const [leaderboardCategory, setLeaderboardCategory] = useState('master'); // 'master', 'strength', 'cardio', 'recovery', 'calories', 'steps'
   const [leaderboardTimeRange, setLeaderboardTimeRange] = useState('week'); // 'week', 'month', 'year', 'all'
   const [selectedFriend, setSelectedFriend] = useState(null); // For viewing friend profile
-  const [showShareModal, setShowShareModal] = useState(false);
 
   const reactionEmojis = ['💪', '🔥', '👏', '❤️'];
 
@@ -1390,20 +1389,9 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                 />
               )}
 
-              {/* Rankings label with share button */}
-              <div className="flex items-center justify-between mb-3">
+              {/* Rankings label */}
+              <div className="mb-3">
                 <p className="text-gray-500 text-xs uppercase tracking-wide">{getCategoryLabel()} Rankings</p>
-                <button
-                  onClick={() => setShowShareModal(true)}
-                  className="p-1.5 transition-colors duration-150 hover:text-white"
-                  style={{ color: 'rgba(255,255,255,0.4)' }}
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-                    <polyline points="16 6 12 2 8 6" />
-                    <line x1="12" y1="2" x2="12" y2="15" />
-                  </svg>
-                </button>
               </div>
 
               {/* Top 3 in list form (compact) */}
@@ -1657,75 +1645,6 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
 
         {/* Friend Profile Modal */}
         <FriendProfileModal friend={selectedFriend} onClose={() => setSelectedFriend(null)} />
-
-        {/* Share Modal */}
-        {showShareModal && (
-          <div
-            className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
-            onClick={() => setShowShareModal(false)}
-            onTouchEnd={(e) => {
-              if (e.target === e.currentTarget) {
-                e.preventDefault();
-                setShowShareModal(false);
-              }
-            }}
-          >
-            <div className="bg-zinc-900 rounded-2xl p-6 max-w-sm w-full" onClick={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
-              <div className="text-center mb-6">
-                <div className="text-4xl mb-2">🏆</div>
-                <h3 className="text-white font-bold text-lg">Share Leaderboard</h3>
-                <p className="text-gray-400 text-sm mt-1">Show off your ranking!</p>
-              </div>
-
-              {/* Preview card */}
-              <div className="bg-gradient-to-br from-zinc-800 to-zinc-900 rounded-xl p-4 mb-6 border border-zinc-700">
-                <p className="text-gray-400 text-xs mb-2">{getCategoryLabel()}</p>
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center">
-                    <span className="text-green-400 font-bold text-lg">#{currentUserRank}</span>
-                  </div>
-                  <div>
-                    <p className="text-white font-bold">{userProfile?.displayName || 'You'}</p>
-                    <p className="text-gray-400 text-sm">
-                      {(() => {
-                        const userData = sortedLeaderboard.find(u => u.isCurrentUser);
-                        const val = getSortValue(userData);
-                        return (leaderboardCategory === 'calories' || leaderboardCategory === 'steps')
-                          ? (val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val)
-                          : val;
-                      })()} {leaderboardCategory === 'calories' ? 'cal' : leaderboardCategory === 'steps' ? 'steps' : 'streak'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex gap-3">
-                <TouchButton
-                  onClick={() => setShowShareModal(false)}
-                  className="flex-1 py-3 rounded-full bg-zinc-800 text-white font-medium transition-all duration-150"
-                >
-                  Cancel
-                </TouchButton>
-                <TouchButton
-                  onClick={() => {
-                    // In a real app, this would trigger native share
-                    if (navigator.share) {
-                      navigator.share({
-                        title: 'My Streakd Ranking',
-                        text: `I'm ranked #${currentUserRank} on the ${getCategoryLabel()} leaderboard! 🏆`
-                      });
-                    }
-                    setShowShareModal(false);
-                  }}
-                  className="flex-1 py-3 rounded-full font-medium text-black transition-all duration-150"
-                  style={{ backgroundColor: '#00FF94' }}
-                >
-                  Share
-                </TouchButton>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     );
   }

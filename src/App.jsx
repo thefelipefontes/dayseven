@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, createContext, useContext } from 'react';
+import React, { useState, useEffect, useMemo, useRef, createContext, useContext, useCallback } from 'react';
 import * as Sentry from '@sentry/react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from './firebase';
@@ -6,7 +6,7 @@ import Login from './Login';
 import UsernameSetup from './UsernameSetup';
 import Friends from './Friends';
 import ActivityFeed from './ActivityFeed';
-import { createUserProfile, getUserProfile, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto } from './services/userService';
+import { createUserProfile, getUserProfile, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, saveUserGoals, getUserGoals, setOnboardingComplete } from './services/userService';
 import { getFriends, getReactions, getFriendRequests } from './services/friendService';
 import html2canvas from 'html2canvas';
 
@@ -531,8 +531,8 @@ const Toast = ({ show, message, onDismiss, onTap, type = 'record' }) => {
   const icon = type === 'record' ? '🏆' : '✓';
 
   return (
-    <div 
-      className="fixed bottom-28 left-4 right-4 z-50 transition-all duration-300"
+    <div
+      className="fixed bottom-6 left-4 right-4 z-50 transition-all duration-300"
       style={{
         transform: isLeaving ? 'translateY(100px)' : 'translateY(0)',
         opacity: isLeaving ? 0 : 1
@@ -1195,7 +1195,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
 
   // Dynamic motivational taglines
   const getMotivationalTagline = (streak, allGoalsMet) => {
-    if (allGoalsMet) return "Crushed it! 💪";
+    if (allGoalsMet) return "All goals complete ✓";
     if (streak >= 52) return "Legend status achieved!";
     if (streak >= 26) return "Half-year warrior!";
     if (streak >= 12) return "Consistency is key!";
@@ -1488,22 +1488,10 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
               <div className={isPostFormat ? 'flex-1' : ''}>
               {/* Header */}
               <div className={`text-center ${isPostFormat ? '' : 'mt-6'}`}>
-                {allGoalsMet ? (
-                  <div
-                    className={`${isPostFormat ? 'py-1.5 px-4' : 'py-2 px-5'} rounded-xl inline-block`}
-                    style={{
-                      background: 'linear-gradient(135deg, #FFD700 0%, #00FF94 100%)',
-                      boxShadow: '0 4px 15px rgba(255, 215, 0, 0.3)'
-                    }}
-                  >
-                    <div className={`font-black ${isPostFormat ? 'text-sm' : 'text-sm'} text-black tracking-wide`}>WEEK STREAKED! 🔥</div>
-                  </div>
-                ) : (
-                  <div className={isPostFormat ? 'text-2xl' : 'text-3xl'} style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>📅</div>
-                )}
+                <div className={isPostFormat ? 'text-2xl' : 'text-3xl'} style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>📅</div>
                 <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-500 uppercase tracking-wider mt-1.5`}>{getWeekDateRange()}</div>
                 <div className={`font-black ${isPostFormat ? 'text-2xl' : 'text-2xl'}`} style={{ color: allGoalsMet ? colors.primary : 'white' }}>
-                  {allGoalsMet ? '✓ Week Complete!' : `${overallPercent}% Complete`}
+                  {allGoalsMet ? 'Week Streaked!' : `${overallPercent}% Complete`}
                 </div>
                 <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-0.5`}>{getMotivationalTagline(stats?.streak || 0, allGoalsMet)}</div>
               </div>
@@ -1737,14 +1725,13 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
           >
-            <div className={isPostFormat ? 'text-2xl' : 'text-3xl'} style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>🔥</div>
             <div className="flex-1 flex flex-col items-center justify-center w-full">
               {/* Main master streak number */}
               <div className="text-center">
                 <div className="font-black leading-none" style={{ fontSize: isPostFormat ? '3rem' : '4rem', color: colors.primary, textShadow: `0 0 40px ${colors.glow}, 0 0 80px ${colors.glow}`, animation: 'ring-pulse 3s ease-in-out infinite' }}>
                   {stats?.streak || 0}
                 </div>
-                <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} font-semibold tracking-widest text-gray-400 uppercase mt-1`}>Master Streak</div>
+                <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} font-semibold tracking-widest text-gray-400 uppercase mt-1`}>🔥 Master Streak</div>
                 <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500`}>weeks hitting all goals</div>
               </div>
 
@@ -2730,17 +2717,17 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null }) 
   const isEditing = currentGoals !== null;
 
   const questions = [
-    { title: "Strength per week", key: 'liftsPerWeek', options: [2, 3, 4, 5, 6] },
-    { title: "Cardio per week", key: 'cardioPerWeek', options: [0, 1, 2, 3, 4, 5], subtitle: "Running, Cycling, Sports" },
-    { title: "Recovery per week", key: 'recoveryPerWeek', options: [0, 1, 2, 3, 4], subtitle: "Cold Plunge, Sauna, Yoga, Pilates" },
-    { title: "Daily step goal", key: 'stepsPerDay', options: [6000, 8000, 10000, 12000, 15000], isSteps: true }
+    { title: "Strength training sessions per week", key: 'liftsPerWeek', options: [2, 3, 4, 5, 6], subtitle: "Weightlifting, calisthenics, or any resistance training. Recommended: 2+ per week." },
+    { title: "Cardio sessions per week", key: 'cardioPerWeek', options: [1, 2, 3, 4, 5], subtitle: "Running, cycling, sports, etc. Recommended: 1+ per week." },
+    { title: "Recovery sessions per week", key: 'recoveryPerWeek', options: [1, 2, 3, 4], subtitle: "Cold plunge, sauna, yoga, pilates, etc. Recommended: 1+ per week." },
+    { title: "Daily step goal", key: 'stepsPerDay', options: [6000, 8000, 10000, 12000, 15000], isSteps: true, subtitle: "Recommended: 10k+ per day for fat loss and general heart health." }
   ];
 
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col">
-      <div className="p-6 pt-12">
+    <div className="fixed inset-0 bg-black text-white flex flex-col overflow-hidden">
+      <div className="flex-shrink-0 p-6 pt-12">
         {isEditing && onCancel && (
-          <button 
+          <button
             onClick={onCancel}
             className="text-gray-400 text-sm mb-4 flex items-center gap-1 transition-all duration-150 px-2 py-1 rounded-lg -ml-2"
             onTouchStart={(e) => {
@@ -2770,10 +2757,13 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null }) 
         <h1 className="text-3xl font-black tracking-tight mb-1">STREAKD</h1>
         <p className="text-sm mb-4" style={{ color: '#00FF94' }}>Win the week.</p>
         <h2 className="text-xl font-bold mb-2">{isEditing ? 'Edit Your Goals' : 'Set Your Goals'}</h2>
-        <p className="text-gray-500 text-sm">Be realistic. Consistency beats intensity.</p>
+        <p className="text-gray-500 text-sm">Set your standards. Earn your streaks.</p>
       </div>
 
-      <div className="flex-1 px-6 py-4 space-y-6 overflow-auto pb-32">
+      <div
+        className="flex-1 px-6 py-4 space-y-6 pb-32 overflow-y-auto"
+        style={{ WebkitOverflowScrolling: 'touch' }}
+      >
         {questions.map((q) => (
           <div key={q.key}>
             <label className="text-sm font-semibold mb-1 block">{q.title}</label>
@@ -3016,14 +3006,30 @@ const DurationPicker = ({ hours, minutes, onChange, disabled = false }) => {
 };
 
 // Context to track which swipeable item is currently open
-const SwipeableContext = createContext({ openId: null, setOpenId: () => {} });
+const SwipeableContext = createContext({ openId: null, setOpenId: () => {}, closeAll: () => {} });
 
 // Provider component to wrap lists of swipeable items
 const SwipeableProvider = ({ children }) => {
   const [openId, setOpenId] = useState(null);
+  const closeAll = useCallback(() => {
+    setOpenId(null);
+  }, []);
   return (
-    <SwipeableContext.Provider value={{ openId, setOpenId }}>
-      {children}
+    <SwipeableContext.Provider value={{ openId, setOpenId, closeAll }}>
+      {/* Invisible overlay to catch taps outside swiped item */}
+      {openId !== null && (
+        <div
+          className="fixed inset-0 z-30"
+          onClick={closeAll}
+          onTouchEnd={(e) => {
+            e.preventDefault();
+            closeAll();
+          }}
+        />
+      )}
+      <div className="relative z-40">
+        {children}
+      </div>
     </SwipeableContext.Provider>
   );
 };
@@ -3043,9 +3049,9 @@ const SwipeableActivityItem = ({ children, onDelete, activity }) => {
   const snapThreshold = 40;
   const itemId = activity.id;
 
-  // Close this item if another one becomes the open one
+  // Close this item if another one becomes the open one, or if closeAll is triggered (openId becomes null)
   useEffect(() => {
-    if (openId !== null && openId !== itemId && swipeX !== 0) {
+    if (openId !== itemId && swipeX !== 0) {
       setSwipeX(0);
       setIsBouncing(false);
     }
@@ -4484,10 +4490,20 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     const filteredReactions = reactions.filter(r => r.reactionType === selectedEmoji);
 
     return (
-      <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+        onClick={onClose}
+        onTouchEnd={(e) => {
+          if (e.target === e.currentTarget) {
+            e.preventDefault();
+            onClose();
+          }
+        }}
+      >
         <div
           className="w-full max-w-sm bg-zinc-900 rounded-2xl p-5 max-h-[60vh] overflow-y-auto"
           onClick={e => e.stopPropagation()}
+          onTouchEnd={e => e.stopPropagation()}
         >
           {/* Header */}
           <div className="flex items-center justify-between mb-4">
@@ -4893,14 +4909,38 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                             if (!summary) return null;
                             return (
                               <span
-                                className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full flex-shrink-0"
-                                style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+                                className="flex items-center gap-0.5 rounded-full flex-shrink-0"
                               >
                                 {Object.entries(summary.counts).slice(0, 4).map(([emoji, count]) => (
-                                  <span key={emoji} className="flex items-center text-xs">
+                                  <button
+                                    key={emoji}
+                                    className="flex items-center text-xs px-1.5 py-0.5 rounded-full transition-all duration-150 active:scale-95"
+                                    style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      // Trigger haptic feedback
+                                      if (navigator.vibrate) {
+                                        navigator.vibrate(10);
+                                      }
+                                      setReactionDetailModal({
+                                        activityId: activity.id,
+                                        reactions: summary.reactions,
+                                        selectedEmoji: emoji
+                                      });
+                                    }}
+                                    onTouchStart={(e) => {
+                                      e.stopPropagation();
+                                      e.currentTarget.style.transform = 'scale(0.9)';
+                                      e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.2)';
+                                    }}
+                                    onTouchEnd={(e) => {
+                                      e.currentTarget.style.transform = '';
+                                      e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                                    }}
+                                  >
                                     <span>{emoji}</span>
                                     {count > 1 && <span className="text-gray-300 text-[10px] ml-0.5">{count}</span>}
-                                  </span>
+                                  </button>
                                 ))}
                               </span>
                             );
@@ -6884,7 +6924,7 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
 
   // Check if today is Monday (0 = Sunday, 1 = Monday)
   const isMonday = new Date().getDay() === 1;
-  const canEditGoals = isMonday;
+  const canEditGoals = true; // TODO: change back to isMonday after testing
 
   // Detect if user is on mobile device
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -7007,7 +7047,7 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
       {/* Header */}
       <div className="px-4 pt-2 pb-4">
         <h1 className="text-xl font-bold text-white">Profile</h1>
-        <p className="text-sm text-gray-500">Set Your Standards. Earn Your Streaks.</p>
+        <p className="text-sm text-gray-500">Set your standards. Earn your streaks.</p>
       </div>
 
       <div className="px-4">
@@ -7430,7 +7470,7 @@ export default function StreakdApp() {
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [isOnboarded, setIsOnboarded] = useState(true);
+  const [isOnboarded, setIsOnboarded] = useState(null); // null = loading, true = onboarded, false = needs onboarding
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('home');
   const [showAddActivity, setShowAddActivity] = useState(false);
@@ -7444,6 +7484,7 @@ export default function StreakdApp() {
   const [showWeekStreakCelebration, setShowWeekStreakCelebration] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+  const [pendingToast, setPendingToast] = useState(null); // Queue toast to show after celebration
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
   const [historyView, setHistoryView] = useState('calendar');
@@ -7487,6 +7528,20 @@ export default function StreakdApp() {
           profile = await getUserProfile(user.uid);
         }
         setUserProfile(profile);
+
+        // Check onboarding status
+        const hasCompletedOnboarding = profile?.hasCompletedOnboarding === true;
+        setIsOnboarded(hasCompletedOnboarding);
+
+        // Load user's goals from Firestore (if they exist)
+        const userGoals = await getUserGoals(user.uid);
+        if (userGoals) {
+          setUserData(prev => ({
+            ...prev,
+            goals: userGoals
+          }));
+        }
+
         // Load user's activities from Firestore
         const userActivities = await getUserActivities(user.uid);
         if (userActivities.length > 0) {
@@ -7531,6 +7586,7 @@ export default function StreakdApp() {
         setUserProfile(null);
         setFriends([]);
         setPendingFriendRequests(0);
+        setIsOnboarded(null);
       }
       setAuthLoading(false);
     });
@@ -7968,7 +8024,19 @@ export default function StreakdApp() {
       return newStreak > (records[recordKey] || 0);
     };
 
+    // Check if all goals will be met after this activity (for week streak priority)
+    const willCompleteAllGoals = newProgress.lifts.completed >= goals.liftsPerWeek &&
+        newProgress.cardio.completed >= goals.cardioPerWeek &&
+        newProgress.recovery.completed >= goals.recoveryPerWeek;
+
+    const wasAllGoalsMet = prevProgress.lifts.completed >= goals.liftsPerWeek &&
+        prevProgress.cardio.completed >= goals.cardioPerWeek &&
+        prevProgress.recovery.completed >= goals.recoveryPerWeek;
+
+    const willStreakWeek = willCompleteAllGoals && !wasAllGoalsMet;
+
     // Update streaks when goals are met - combined into single setUserData call to avoid race conditions
+    // If week will be streaked, skip individual celebration (week streak takes priority)
     if (justCompletedLifts) {
       const newStreak = userData.streaks.lifts + 1;
       const isNewRecord = isStreakRecord('strength', newStreak);
@@ -7979,14 +8047,17 @@ export default function StreakdApp() {
           ? { ...prev.personalRecords, longestStrengthStreak: newStreak }
           : prev.personalRecords
       }));
-      if (isNewRecord) {
-        setCelebrationMessage(`New Record: ${newStreak} Week Strength Streak! 🏆`);
-      } else if (checkStreakMilestone(newStreak)) {
-        setCelebrationMessage(`${newStreak} Week Strength Streak! 💪`);
-      } else {
-        setCelebrationMessage('Strength goal complete! 🏋️');
+      // Only show individual celebration if NOT about to streak the week
+      if (!willStreakWeek) {
+        if (isNewRecord) {
+          setCelebrationMessage(`New Record: ${newStreak} Week Strength Streak! 🏆`);
+        } else if (checkStreakMilestone(newStreak)) {
+          setCelebrationMessage(`${newStreak} Week Strength Streak! 💪`);
+        } else {
+          setCelebrationMessage('Strength goal complete! 🏋️');
+        }
+        setShowCelebration(true);
       }
-      setShowCelebration(true);
     } else if (justCompletedCardio) {
       const newStreak = userData.streaks.cardio + 1;
       const isNewRecord = isStreakRecord('cardio', newStreak);
@@ -7997,14 +8068,17 @@ export default function StreakdApp() {
           ? { ...prev.personalRecords, longestCardioStreak: newStreak }
           : prev.personalRecords
       }));
-      if (isNewRecord) {
-        setCelebrationMessage(`New Record: ${newStreak} Week Cardio Streak! 🏆`);
-      } else if (checkStreakMilestone(newStreak)) {
-        setCelebrationMessage(`${newStreak} Week Cardio Streak! 🔥`);
-      } else {
-        setCelebrationMessage('Cardio goal complete! 🏃');
+      // Only show individual celebration if NOT about to streak the week
+      if (!willStreakWeek) {
+        if (isNewRecord) {
+          setCelebrationMessage(`New Record: ${newStreak} Week Cardio Streak! 🏆`);
+        } else if (checkStreakMilestone(newStreak)) {
+          setCelebrationMessage(`${newStreak} Week Cardio Streak! 🔥`);
+        } else {
+          setCelebrationMessage('Cardio goal complete! 🏃');
+        }
+        setShowCelebration(true);
       }
-      setShowCelebration(true);
     } else if (justCompletedRecovery) {
       const newStreak = userData.streaks.recovery + 1;
       const isNewRecord = isStreakRecord('recovery', newStreak);
@@ -8015,14 +8089,17 @@ export default function StreakdApp() {
           ? { ...prev.personalRecords, longestRecoveryStreak: newStreak }
           : prev.personalRecords
       }));
-      if (isNewRecord) {
-        setCelebrationMessage(`New Record: ${newStreak} Week Recovery Streak! 🏆`);
-      } else if (checkStreakMilestone(newStreak)) {
-        setCelebrationMessage(`${newStreak} Week Recovery Streak! ❄️`);
-      } else {
-        setCelebrationMessage('Recovery goal complete! 🧊');
+      // Only show individual celebration if NOT about to streak the week
+      if (!willStreakWeek) {
+        if (isNewRecord) {
+          setCelebrationMessage(`New Record: ${newStreak} Week Recovery Streak! 🏆`);
+        } else if (checkStreakMilestone(newStreak)) {
+          setCelebrationMessage(`${newStreak} Week Recovery Streak! ❄️`);
+        } else {
+          setCelebrationMessage('Recovery goal complete! 🧊');
+        }
+        setShowCelebration(true);
       }
-      setShowCelebration(true);
     } else {
       // No goal completed, check for personal records (use toast instead of full celebration)
       const record = checkAndUpdateRecords();
@@ -8035,35 +8112,34 @@ export default function StreakdApp() {
     // Always check and update records (mostMilesWeek, etc.) even when a goal was completed
     // The if/else above handles celebrations, but we still need to update distance/calorie records
     if (justCompletedLifts || justCompletedCardio || justCompletedRecovery) {
-      checkAndUpdateRecords();
+      const record = checkAndUpdateRecords();
+      // If there's a record and week is being streaked, queue the toast for after celebration
+      if (record && willStreakWeek) {
+        setPendingToast(record.message);
+      } else if (record && !willStreakWeek) {
+        // Show record toast after the individual celebration completes
+        setPendingToast(record.message);
+      }
     }
-    
-    // Check if all goals met (master streak)
-    const allGoalsMet = newProgress.lifts.completed >= goals.liftsPerWeek &&
-        newProgress.cardio.completed >= goals.cardioPerWeek &&
-        newProgress.recovery.completed >= goals.recoveryPerWeek;
-    
-    const wasAllGoalsMet = prevProgress.lifts.completed >= goals.liftsPerWeek &&
-        prevProgress.cardio.completed >= goals.cardioPerWeek &&
-        prevProgress.recovery.completed >= goals.recoveryPerWeek;
-    
-    if (allGoalsMet && !wasAllGoalsMet) {
+
+    // Check if all goals met (master streak) - week streak celebration takes priority
+    if (willStreakWeek) {
       // Just completed all goals - increment master streak
       const newMasterStreak = userData.streaks.master + 1;
       const isNewMasterRecord = newMasterStreak > (records.longestMasterStreak || 0);
-      
+
       setUserData(prev => ({
         ...prev,
         streaks: { ...prev.streaks, master: newMasterStreak },
-        personalRecords: isNewMasterRecord 
+        personalRecords: isNewMasterRecord
           ? { ...prev.personalRecords, longestMasterStreak: newMasterStreak }
           : prev.personalRecords
       }));
-      
-      // Show the week streak celebration modal after a short delay
+
+      // Show the week streak celebration modal immediately (no delay needed since we skipped individual celebration)
       setTimeout(() => {
         setShowWeekStreakCelebration(true);
-      }, 2000);
+      }, 500);
     }
   };
 
@@ -8156,21 +8232,29 @@ export default function StreakdApp() {
     );
   }
 
-  if (!isOnboarded) {
-    return <OnboardingSurvey 
+  if (isOnboarded === false) {
+    return <OnboardingSurvey
       currentGoals={userData.goals}
-      onCancel={() => setIsOnboarded(true)}
-      onComplete={(goals) => {
+      onCancel={null}
+      onComplete={async (goals) => {
+        const goalsToSave = {
+          liftsPerWeek: goals.liftsPerWeek,
+          cardioPerWeek: goals.cardioPerWeek,
+          recoveryPerWeek: goals.recoveryPerWeek,
+          stepsPerDay: goals.stepsPerDay,
+          caloriesPerWeek: userData.goals.caloriesPerWeek // Keep existing value
+        };
+
+        // Save goals to Firestore
+        await saveUserGoals(user.uid, goalsToSave);
+
+        // Mark onboarding as complete
+        await setOnboardingComplete(user.uid);
+
         // Update userData with user's chosen goals
         setUserData(prev => ({
           ...prev,
-          goals: {
-            ...prev.goals,
-            liftsPerWeek: goals.liftsPerWeek,
-            cardioPerWeek: goals.cardioPerWeek,
-            recoveryPerWeek: goals.recoveryPerWeek,
-            stepsPerDay: goals.stepsPerDay
-          }
+          goals: goalsToSave
         }));
         // Recalculate weekly progress with new goals
         setWeeklyProgress(prev => ({
@@ -8181,7 +8265,7 @@ export default function StreakdApp() {
           steps: { ...prev.steps, goal: goals.stepsPerDay }
         }));
         setIsOnboarded(true);
-      }} 
+      }}
     />;
   }
 
@@ -8315,12 +8399,10 @@ export default function StreakdApp() {
           style={{
             bottom: 'calc(100% - 60px)',
             backgroundColor: '#00FF94',
-            boxShadow: '0 8px 32px rgba(0, 255, 148, 0.5)',
             transform: 'translateX(-50%) scale(1)'
           }}
           onTouchStart={(e) => {
             e.currentTarget.style.transform = 'translateX(-50%) scale(0.9)';
-            e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 255, 148, 0.7)';
             const ring = document.createElement('div');
             ring.style.cssText = `
               position: absolute;
@@ -8335,19 +8417,15 @@ export default function StreakdApp() {
           }}
           onTouchEnd={(e) => {
             e.currentTarget.style.transform = 'translateX(-50%) scale(1)';
-            e.currentTarget.style.boxShadow = '0 8px 32px rgba(0, 255, 148, 0.5)';
           }}
           onMouseDown={(e) => {
             e.currentTarget.style.transform = 'translateX(-50%) scale(0.9)';
-            e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 255, 148, 0.7)';
           }}
           onMouseUp={(e) => {
             e.currentTarget.style.transform = 'translateX(-50%) scale(1)';
-            e.currentTarget.style.boxShadow = '0 8px 32px rgba(0, 255, 148, 0.5)';
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.transform = 'translateX(-50%) scale(1)';
-            e.currentTarget.style.boxShadow = '0 8px 32px rgba(0, 255, 148, 0.5)';
           }}
         >
           <span className="text-4xl text-black font-bold leading-none" style={{ marginTop: '-2px' }}>+</span>
@@ -8578,15 +8656,37 @@ export default function StreakdApp() {
       <CelebrationOverlay
         show={showCelebration}
         message={celebrationMessage}
-        onComplete={() => setShowCelebration(false)}
+        onComplete={() => {
+          setShowCelebration(false);
+          // Show pending toast after celebration completes
+          if (pendingToast) {
+            setTimeout(() => {
+              setToastMessage(pendingToast);
+              setShowToast(true);
+              setPendingToast(null);
+            }, 300);
+          }
+        }}
       />
 
       <WeekStreakCelebration
         show={showWeekStreakCelebration}
-        onClose={() => setShowWeekStreakCelebration(false)}
+        onClose={() => {
+          setShowWeekStreakCelebration(false);
+          // Show pending toast after week streak celebration closes
+          if (pendingToast) {
+            setTimeout(() => {
+              setToastMessage(pendingToast);
+              setShowToast(true);
+              setPendingToast(null);
+            }, 300);
+          }
+        }}
         onShare={() => {
           setShowWeekStreakCelebration(false);
           setShowShare(true);
+          // Clear pending toast if user shares (don't interrupt share flow)
+          setPendingToast(null);
         }}
       />
 
@@ -8621,16 +8721,21 @@ export default function StreakdApp() {
           <OnboardingSurvey
             currentGoals={userData.goals}
             onCancel={() => setShowEditGoals(false)}
-            onComplete={(goals) => {
+            onComplete={async (goals) => {
+              const goalsToSave = {
+                liftsPerWeek: goals.liftsPerWeek,
+                cardioPerWeek: goals.cardioPerWeek,
+                recoveryPerWeek: goals.recoveryPerWeek,
+                stepsPerDay: goals.stepsPerDay,
+                caloriesPerWeek: userData.goals.caloriesPerWeek
+              };
+
+              // Save goals to Firestore
+              await saveUserGoals(user.uid, goalsToSave);
+
               setUserData(prev => ({
                 ...prev,
-                goals: {
-                  ...prev.goals,
-                  liftsPerWeek: goals.liftsPerWeek,
-                  cardioPerWeek: goals.cardioPerWeek,
-                  recoveryPerWeek: goals.recoveryPerWeek,
-                  stepsPerDay: goals.stepsPerDay
-                }
+                goals: goalsToSave
               }));
               setWeeklyProgress(prev => ({
                 ...prev,

@@ -1,5 +1,6 @@
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../firebase';
 
 export async function createUserProfile(user) {
   const userRef = doc(db, 'users', user.uid);
@@ -88,4 +89,21 @@ export async function getCustomActivities(uid) {
   }
 
   return [];
+}
+
+export async function uploadProfilePhoto(uid, file) {
+  // Create a reference to the profile photo location
+  const photoRef = ref(storage, `profilePhotos/${uid}`);
+
+  // Upload the file
+  await uploadBytes(photoRef, file);
+
+  // Get the download URL
+  const downloadURL = await getDownloadURL(photoRef);
+
+  // Update the user's profile with the new photo URL
+  const userRef = doc(db, 'users', uid);
+  await updateDoc(userRef, { photoURL: downloadURL });
+
+  return downloadURL;
 }

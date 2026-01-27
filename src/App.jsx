@@ -5586,55 +5586,165 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
 
   // Get current date info
   const today = new Date();
-  const currentDay = today.getDate();
-  const currentMonth = today.getMonth(); // 0-indexed
-  const currentYear = today.getFullYear();
+  const todayDay = today.getDate();
+  const todayMonth = today.getMonth(); // 0-indexed
+  const todayYear = today.getFullYear();
+
+  // State for displayed month (for navigation)
+  const [displayedMonth, setDisplayedMonth] = useState(todayMonth);
+  const [displayedYear, setDisplayedYear] = useState(todayYear);
+
+  // Navigation functions
+  const goToPreviousMonth = () => {
+    if (displayedMonth === 0) {
+      setDisplayedMonth(11);
+      setDisplayedYear(displayedYear - 1);
+    } else {
+      setDisplayedMonth(displayedMonth - 1);
+    }
+  };
+
+  const goToNextMonth = () => {
+    if (displayedMonth === 11) {
+      setDisplayedMonth(0);
+      setDisplayedYear(displayedYear + 1);
+    } else {
+      setDisplayedMonth(displayedMonth + 1);
+    }
+  };
+
+  const goToToday = () => {
+    setDisplayedMonth(todayMonth);
+    setDisplayedYear(todayYear);
+  };
+
+  // Check if we're viewing the current month
+  const isCurrentMonth = displayedMonth === todayMonth && displayedYear === todayYear;
+
+  // Limit navigation (12 months back, 2 months forward)
+  const minDate = new Date(todayYear, todayMonth - 12, 1);
+  const maxDate = new Date(todayYear, todayMonth + 2, 1);
+  const canGoBack = new Date(displayedYear, displayedMonth - 1, 1) >= minDate;
+  const canGoForward = new Date(displayedYear, displayedMonth + 1, 1) <= maxDate;
   
-  // Generate weeks dynamically based on current date
+  // Generate weeks dynamically based on displayed month (includes overflow days from adjacent months)
   const generateMonthWeeks = () => {
     const weeks = [];
-    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-    const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay(); // 0 = Sunday
+    const daysInMonth = new Date(displayedYear, displayedMonth + 1, 0).getDate();
+    const firstDayOfMonth = new Date(displayedYear, displayedMonth, 1).getDay(); // 0 = Sunday
+    const lastDayOfMonth = new Date(displayedYear, displayedMonth, daysInMonth).getDay(); // 0 = Sunday
 
-    // First partial week (if month doesn't start on Sunday)
-    let currentDay = 1;
-    if (firstDayOfMonth > 0) {
-      weeks.push({
-        id: 'week-0',
-        startDay: 1,
-        endDay: 7 - firstDayOfMonth,
-        isPartial: true,
-        emptyBefore: firstDayOfMonth
-      });
-      currentDay = 8 - firstDayOfMonth;
-    }
+    // Previous month info for overflow days
+    const prevMonthDays = new Date(displayedYear, displayedMonth, 0).getDate();
 
-    // Full weeks
-    let weekNum = 1;
-    while (currentDay + 6 <= daysInMonth) {
-      const weekStart = new Date(currentYear, currentMonth, currentDay);
-      const weekEnd = new Date(currentYear, currentMonth, currentDay + 6);
+    let weekNum = 0;
+    let currentDayInMonth = 1;
+
+    // First week (may include days from previous month)
+    if (firstDayOfMonth > 0 || currentDayInMonth === 1) {
+      const weekDays = [];
+      // Add overflow days from previous month
+      for (let i = firstDayOfMonth - 1; i >= 0; i--) {
+        const prevDay = prevMonthDays - i;
+        const prevMonth = displayedMonth === 0 ? 11 : displayedMonth - 1;
+        const prevYear = displayedMonth === 0 ? displayedYear - 1 : displayedYear;
+        const dateStr = `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}-${String(prevDay).padStart(2, '0')}`;
+        weekDays.push({
+          day: prevDay,
+          date: dateStr,
+          isOverflow: true,
+          overflowMonth: 'prev'
+        });
+      }
+      // Add days from current month until end of week
+      const daysToAdd = 7 - firstDayOfMonth;
+      for (let i = 0; i < daysToAdd; i++) {
+        const dateStr = `${displayedYear}-${String(displayedMonth + 1).padStart(2, '0')}-${String(currentDayInMonth).padStart(2, '0')}`;
+        weekDays.push({
+          day: currentDayInMonth,
+          date: dateStr,
+          isOverflow: false
+        });
+        currentDayInMonth++;
+      }
+
+      // Calculate week date range for stats
+      const weekStartDate = new Date(weekDays[0].date + 'T12:00:00');
+      const weekEndDate = new Date(weekDays[6].date + 'T12:00:00');
+
       weeks.push({
         id: `week-${weekNum}`,
-        label: `${weekStart.toLocaleDateString('en-US', { month: 'short' })} ${currentDay}-${currentDay + 6}`,
-        startDay: currentDay,
-        endDay: currentDay + 6,
-        startDate: weekStart,
-        endDate: weekEnd,
-        isPartial: false
+        days: weekDays,
+        startDate: weekStartDate,
+        endDate: weekEndDate,
+        label: `${weekStartDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEndDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
       });
-      currentDay += 7;
       weekNum++;
     }
 
-    // Last partial week (if there are remaining days)
-    if (currentDay <= daysInMonth) {
+    // Middle full weeks
+    while (currentDayInMonth + 6 <= daysInMonth) {
+      const weekDays = [];
+      for (let i = 0; i < 7; i++) {
+        const dateStr = `${displayedYear}-${String(displayedMonth + 1).padStart(2, '0')}-${String(currentDayInMonth).padStart(2, '0')}`;
+        weekDays.push({
+          day: currentDayInMonth,
+          date: dateStr,
+          isOverflow: false
+        });
+        currentDayInMonth++;
+      }
+
+      const weekStartDate = new Date(weekDays[0].date + 'T12:00:00');
+      const weekEndDate = new Date(weekDays[6].date + 'T12:00:00');
+
       weeks.push({
         id: `week-${weekNum}`,
-        startDay: currentDay,
-        endDay: daysInMonth,
-        isPartial: true,
-        emptyAfter: 7 - (daysInMonth - currentDay + 1)
+        days: weekDays,
+        startDate: weekStartDate,
+        endDate: weekEndDate,
+        label: `${weekStartDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEndDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+      });
+      weekNum++;
+    }
+
+    // Last week (may include days from next month)
+    if (currentDayInMonth <= daysInMonth) {
+      const weekDays = [];
+      // Add remaining days from current month
+      while (currentDayInMonth <= daysInMonth) {
+        const dateStr = `${displayedYear}-${String(displayedMonth + 1).padStart(2, '0')}-${String(currentDayInMonth).padStart(2, '0')}`;
+        weekDays.push({
+          day: currentDayInMonth,
+          date: dateStr,
+          isOverflow: false
+        });
+        currentDayInMonth++;
+      }
+      // Add overflow days from next month
+      const nextMonth = displayedMonth === 11 ? 0 : displayedMonth + 1;
+      const nextYear = displayedMonth === 11 ? displayedYear + 1 : displayedYear;
+      let nextDay = 1;
+      while (weekDays.length < 7) {
+        const dateStr = `${nextYear}-${String(nextMonth + 1).padStart(2, '0')}-${String(nextDay).padStart(2, '0')}`;
+        weekDays.push({
+          day: nextDay,
+          date: dateStr,
+          isOverflow: true,
+          overflowMonth: 'next'
+        });
+        nextDay++;
+      }
+
+      const weekStartDate = new Date(weekDays[0].date + 'T12:00:00');
+      const weekEndDate = new Date(weekDays[6].date + 'T12:00:00');
+
+      weeks.push({
+        id: `week-${weekNum}`,
+        days: weekDays,
+        startDate: weekStartDate,
+        endDate: weekEndDate,
+        label: `${weekStartDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEndDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
       });
     }
 
@@ -5744,16 +5854,20 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
 
   const generateCalendarDays = () => {
     const days = [];
-    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-    
+    const daysInMonth = new Date(displayedYear, displayedMonth + 1, 0).getDate();
+
     for (let i = 1; i <= daysInMonth; i++) {
-      const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+      const dateStr = `${displayedYear}-${String(displayedMonth + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+      const isToday = isCurrentMonth && i === todayDay;
+      const isFuture = displayedYear > todayYear ||
+                       (displayedYear === todayYear && displayedMonth > todayMonth) ||
+                       (isCurrentMonth && i > todayDay);
       days.push({
         day: i,
         date: dateStr,
         activities: calendarData[dateStr] || [],
-        isToday: i === currentDay,
-        isFuture: i > currentDay
+        isToday,
+        isFuture
       });
     }
     return days;
@@ -5973,7 +6087,42 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
             <p className="text-[11px] text-gray-500 mt-0.5">Tap any day or week to see details</p>
           </div>
           
-          <div className="text-lg font-bold mb-3">{new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</div>
+          {/* Month navigation */}
+          <div className="flex items-center justify-between mb-3">
+            <button
+              onClick={goToPreviousMonth}
+              disabled={!canGoBack}
+              className="p-2 rounded-lg transition-all duration-150"
+              style={{
+                backgroundColor: canGoBack ? 'rgba(255,255,255,0.05)' : 'transparent',
+                opacity: canGoBack ? 1 : 0.3
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+            </button>
+            <button
+              onClick={goToToday}
+              className="text-lg font-bold transition-all duration-150"
+              style={{ color: isCurrentMonth ? 'white' : '#00FF94' }}
+            >
+              {new Date(displayedYear, displayedMonth).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+            </button>
+            <button
+              onClick={goToNextMonth}
+              disabled={!canGoForward}
+              className="p-2 rounded-lg transition-all duration-150"
+              style={{
+                backgroundColor: canGoForward ? 'rgba(255,255,255,0.05)' : 'transparent',
+                opacity: canGoForward ? 1 : 0.3
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M9 18l6-6-6-6" />
+              </svg>
+            </button>
+          </div>
           
           {/* Week days header with week button column */}
           <div className="flex gap-0.5 mb-1">
@@ -6018,57 +6167,55 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                 >
                   📊
                 </button>
-                {/* Empty cells before first day of month (for partial weeks) */}
-                {week.emptyBefore > 0 && [...Array(week.emptyBefore)].map((_, i) => (
-                  <div key={`empty-before-${i}`} className="flex-1 aspect-square" />
-                ))}
-                {/* Day cells */}
-                {calendarDays.slice(week.startDay - 1, week.endDay).map((day) => (
-                  <button
-                    key={day.day}
-                    onClick={() => {
-                      setSelectedDate(day.date);
-                      if (calendarData[day.date]?.length > 0) {
-                        openDayModal();
-                      } else if (!day.isFuture) {
-                        onAddActivity && onAddActivity(day.date);
-                      }
-                    }}
-                    className="flex-1 aspect-square rounded-md flex flex-col items-center justify-center relative transition-all duration-150"
-                    style={{
-                      backgroundColor: selectedDate === day.date ? 'rgba(0,255,148,0.2)' :
-                                       day.activities.length > 0 ? 'rgba(255,255,255,0.05)' : 'transparent',
-                      border: day.isToday ? '2px solid #00FF94' : 'none',
-                      opacity: day.isFuture ? 0.3 : 1
-                    }}
-                    onTouchStart={(e) => {
-                      if (!day.isFuture) e.currentTarget.style.transform = 'scale(0.92)';
-                    }}
-                    onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                    onMouseDown={(e) => {
-                      if (!day.isFuture) e.currentTarget.style.transform = 'scale(0.92)';
-                    }}
-                    onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                    onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                  >
-                    <span className={`text-[11px] ${day.activities.length > 0 ? 'font-bold' : 'text-gray-500'}`}>
-                      {day.day}
-                    </span>
-                    {day.activities.length > 0 && (
-                      <div className="flex gap-0.5 mt-0.5">
-                        {day.activities.slice(0, 2).map((a, i) => (
-                          <div key={i} className="w-1 h-1 rounded-full"
-                            style={{ backgroundColor: a.type === 'Strength Training' ? '#00FF94' : a.type === 'Running' ? '#FF9500' : '#00D1FF' }}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </button>
-                ))}
-                {/* Empty cells after last day of month (for partial weeks) */}
-                {week.emptyAfter > 0 && [...Array(week.emptyAfter)].map((_, i) => (
-                  <div key={`empty-after-${i}`} className="flex-1 aspect-square" />
-                ))}
+                {/* Day cells (includes overflow days from adjacent months) */}
+                {week.days.map((day) => {
+                  const dayActivities = calendarData[day.date] || [];
+                  const isToday = day.date === getTodayDate();
+                  const isFuture = new Date(day.date + 'T12:00:00') > today;
+
+                  return (
+                    <button
+                      key={day.date}
+                      onClick={() => {
+                        setSelectedDate(day.date);
+                        if (dayActivities.length > 0) {
+                          openDayModal();
+                        } else if (!isFuture) {
+                          onAddActivity && onAddActivity(day.date);
+                        }
+                      }}
+                      className="flex-1 aspect-square rounded-md flex flex-col items-center justify-center relative transition-all duration-150"
+                      style={{
+                        backgroundColor: selectedDate === day.date ? 'rgba(0,255,148,0.2)' :
+                                         dayActivities.length > 0 ? 'rgba(255,255,255,0.05)' : 'transparent',
+                        border: isToday ? '2px solid #00FF94' : 'none',
+                        opacity: day.isOverflow ? 0.35 : (isFuture ? 0.3 : 1)
+                      }}
+                      onTouchStart={(e) => {
+                        if (!isFuture) e.currentTarget.style.transform = 'scale(0.92)';
+                      }}
+                      onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                      onMouseDown={(e) => {
+                        if (!isFuture) e.currentTarget.style.transform = 'scale(0.92)';
+                      }}
+                      onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                      onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                    >
+                      <span className={`text-[11px] ${dayActivities.length > 0 && !day.isOverflow ? 'font-bold' : 'text-gray-500'}`}>
+                        {day.day}
+                      </span>
+                      {dayActivities.length > 0 && (
+                        <div className="flex gap-0.5 mt-0.5">
+                          {dayActivities.slice(0, 2).map((a, i) => (
+                            <div key={i} className="w-1 h-1 rounded-full"
+                              style={{ backgroundColor: a.type === 'Strength Training' ? '#00FF94' : a.type === 'Running' ? '#FF9500' : '#00D1FF' }}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             ))}
           </div>

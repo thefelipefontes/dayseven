@@ -1,8 +1,143 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { getUserActivities } from './services/userService';
 import { addReaction, getReactions, removeReaction } from './services/friendService';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
+
+// TouchButton component - fires action reliably on touch devices
+// Tracks touch position and fires on touchend if finger hasn't moved (prevents scroll conflicts)
+const TouchButton = ({ onClick, disabled = false, className, style, children }) => {
+  const touchStartPos = useRef(null);
+  const hasMoved = useRef(false);
+  const touchHandled = useRef(false); // Prevent double-fire from click after touchend
+  const buttonRef = useRef(null);
+
+  const handleTouchStart = (e) => {
+    if (disabled) return;
+    touchStartPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    hasMoved.current = false;
+    touchHandled.current = false;
+    if (buttonRef.current) {
+      buttonRef.current.style.transform = 'scale(0.95)';
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (!touchStartPos.current) return;
+    const dx = Math.abs(e.touches[0].clientX - touchStartPos.current.x);
+    const dy = Math.abs(e.touches[0].clientY - touchStartPos.current.y);
+    // If moved more than 10px, consider it a scroll/swipe
+    if (dx > 10 || dy > 10) {
+      hasMoved.current = true;
+      // Reset scale when scrolling starts
+      if (buttonRef.current) {
+        buttonRef.current.style.transform = '';
+      }
+    }
+  };
+
+  const handleTouchEnd = (e) => {
+    if (buttonRef.current) {
+      buttonRef.current.style.transform = '';
+    }
+    if (disabled || hasMoved.current || !touchStartPos.current) {
+      touchStartPos.current = null;
+      return;
+    }
+    // Fire the action on touchend for reliability
+    if (onClick) {
+      e.preventDefault(); // Prevent the delayed click event
+      touchHandled.current = true;
+      onClick(e);
+    }
+    touchStartPos.current = null;
+  };
+
+  const handleTouchCancel = () => {
+    // Reset state if touch is cancelled (e.g., system gesture)
+    if (buttonRef.current) {
+      buttonRef.current.style.transform = '';
+    }
+    touchStartPos.current = null;
+    hasMoved.current = false;
+  };
+
+  const handleClick = (e) => {
+    // Only fire click if it wasn't already handled by touch
+    // This handles desktop clicks and accessibility
+    if (disabled || touchHandled.current) {
+      touchHandled.current = false;
+      return;
+    }
+    onClick && onClick(e);
+  };
+
+  const handleMouseDown = () => {
+    if (disabled) return;
+    if (buttonRef.current) {
+      buttonRef.current.style.transform = 'scale(0.95)';
+    }
+  };
+
+  const handleMouseUp = () => {
+    if (buttonRef.current) {
+      buttonRef.current.style.transform = '';
+    }
+  };
+
+  return (
+    <button
+      ref={buttonRef}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchCancel}
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+      onClick={handleClick}
+      disabled={disabled}
+      className={className}
+      style={style}
+    >
+      {children}
+    </button>
+  );
+};
+
+// Segmented control component - defined outside ActivityFeed for stable reference (enables CSS animations)
+const SegmentedControl = ({ activeView, setActiveView }) => (
+  <div className="px-4 pb-4">
+    <div className="relative flex p-1 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+      {/* Sliding pill indicator - uses transform for smooth hardware-accelerated animation */}
+      <div
+        className="absolute top-1 bottom-1 left-1 rounded-lg"
+        style={{
+          backgroundColor: 'rgba(255,255,255,0.1)',
+          width: 'calc(50% - 4px)',
+          transform: activeView === 'feed' ? 'translateX(0)' : 'translateX(100%)',
+          transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+        }}
+      />
+      {[
+        { key: 'feed', label: 'Feed' },
+        { key: 'leaderboard', label: 'Leaderboard' }
+      ].map((tab) => (
+        <TouchButton
+          key={tab.key}
+          onClick={() => setActiveView(tab.key)}
+          className="flex-1 py-2 px-4 rounded-lg text-sm font-medium relative z-10"
+          style={{
+            color: activeView === tab.key ? 'white' : 'rgba(255,255,255,0.5)',
+            transition: 'color 0.2s ease-out'
+          }}
+        >
+          {tab.label}
+        </TouchButton>
+      ))}
+    </div>
+  </div>
+);
 
 const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingRequestsCount = 0 }) => {
   const [feedActivities, setFeedActivities] = useState([]);
@@ -485,8 +620,14 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     }
   };
 
-  // Pull to refresh handlers
+  // Pull to refresh handlers - only activate when touching the scroll container directly
   const handleTouchStart = (e) => {
+    // Only start pull-to-refresh if we're at the top and touching the container itself
+    // Check if the touch target is a button or interactive element - if so, don't start pull
+    const target = e.target;
+    if (target.closest('button') || target.closest('a') || target.closest('[role="button"]')) {
+      return;
+    }
     if (e.currentTarget.scrollTop === 0) {
       setTouchStart(e.touches[0].clientY);
     }
@@ -509,14 +650,6 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     setTouchStart(null);
   };
 
-  // Haptic button press handlers
-  const handlePressIn = (e) => {
-    e.currentTarget.style.transform = 'scale(0.9)';
-  };
-
-  const handlePressOut = (e) => {
-    e.currentTarget.style.transform = 'scale(1)';
-  };
 
   const ProfilePhoto = ({ photoURL, displayName, size = 40 }) => (
     <div
@@ -555,21 +688,21 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       <div className="bg-zinc-900 rounded-xl p-4 mb-3">
         {/* Header - Friend info */}
         <div className="flex items-center gap-3 mb-3">
-          <button
+          <TouchButton
             onClick={() => setSelectedFriend(friend)}
-            className="flex-shrink-0 transition-transform active:scale-95"
+            className="flex-shrink-0 transition-transform"
           >
             <ProfilePhoto photoURL={friend.photoURL} displayName={friend.displayName} />
-          </button>
-          <button
+          </TouchButton>
+          <TouchButton
             onClick={() => setSelectedFriend(friend)}
-            className="flex-1 min-w-0 text-left"
+            className="flex-1 min-w-0 text-left transition-opacity"
           >
             <p className="text-white font-medium truncate">
               {friend.displayName || friend.username}
             </p>
             <p className="text-gray-500 text-xs">@{friend.username}</p>
-          </button>
+          </TouchButton>
           <span className="text-gray-500 text-xs">{formatTimeAgo(date)}</span>
         </div>
 
@@ -611,29 +744,14 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                   const isSelected = userReaction?.reactionType === emoji;
 
                   return (
-                    <button
+                    <TouchButton
                       key={emoji}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleReaction(activity, emoji);
-                      }}
+                      onClick={() => handleReaction(activity, emoji)}
                       className={`flex items-center gap-1 px-2 py-1 rounded-full transition-all duration-150 ${
                         isSelected
                           ? 'bg-zinc-700 ring-1 ring-white/20'
                           : 'bg-zinc-800 hover:bg-zinc-700'
                       }`}
-                      style={{ transform: 'scale(1)' }}
-                      onTouchStart={(e) => {
-                        e.stopPropagation();
-                        handlePressIn(e);
-                      }}
-                      onTouchEnd={(e) => {
-                        e.stopPropagation();
-                        handlePressOut(e);
-                      }}
-                      onMouseDown={handlePressIn}
-                      onMouseUp={handlePressOut}
-                      onMouseLeave={handlePressOut}
                     >
                       <span className="text-sm">{emoji}</span>
                       {count > 0 && (
@@ -641,7 +759,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                           {count}
                         </span>
                       )}
-                    </button>
+                    </TouchButton>
                   );
                 })}
               </div>
@@ -719,20 +837,30 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       }
     };
 
-    // Calculate trend and delta
-    const calculateTrendAndDelta = () => {
+    // Memoize trend calculation to prevent changes on every render
+    // Uses a stable hash based on userId + category + timeRange
+    const { trend, delta, percentChange } = useMemo(() => {
       if (category !== 'calories' && category !== 'steps') {
-        // For streaks, use mock trend
-        const random = Math.random();
+        // For streaks, use a stable pseudo-random based on user ID + category + timeRange
+        // This ensures the same user always gets the same trend for a given category/timeRange
+        const seed = `${userData.uid || userData.username}-${category}-${timeRange}`;
+        let hash = 0;
+        for (let i = 0; i < seed.length; i++) {
+          const char = seed.charCodeAt(i);
+          hash = ((hash << 5) - hash) + char;
+          hash = hash & hash; // Convert to 32bit integer
+        }
+        const pseudoRandom = Math.abs(hash % 100) / 100;
         return {
-          trend: random > 0.6 ? 'up' : random < 0.3 ? 'down' : 'same',
-          delta: null
+          trend: pseudoRandom > 0.6 ? 'up' : pseudoRandom < 0.3 ? 'down' : 'same',
+          delta: null,
+          percentChange: null
         };
       }
 
       const currentValue = getValue();
       const prevPeriod = getPreviousPeriod();
-      if (!prevPeriod) return { trend: 'same', delta: null };
+      if (!prevPeriod) return { trend: 'same', delta: null, percentChange: null };
 
       // Calculate expected value from previous period (e.g., if month is 12000, week avg would be ~3000)
       const prevValue = getValue(prevPeriod);
@@ -746,18 +874,17 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         expectedValue = prevValue;
       }
 
-      const delta = currentValue - expectedValue;
-      const percentChange = expectedValue > 0 ? Math.round((delta / expectedValue) * 100) : 0;
+      const deltaVal = currentValue - expectedValue;
+      const percentChangeVal = expectedValue > 0 ? Math.round((deltaVal / expectedValue) * 100) : 0;
 
       return {
-        trend: delta > 0 ? 'up' : delta < 0 ? 'down' : 'same',
-        delta: delta,
-        percentChange: percentChange
+        trend: deltaVal > 0 ? 'up' : deltaVal < 0 ? 'down' : 'same',
+        delta: deltaVal,
+        percentChange: percentChangeVal
       };
-    };
+    }, [userData.uid, userData.username, userData.stats, category, timeRange]);
 
     const value = getValue();
-    const { trend, delta, percentChange } = calculateTrendAndDelta();
     const progressPercent = maxValue > 0 ? (value / maxValue) * 100 : 0;
 
     // Get category color for progress bar
@@ -773,9 +900,10 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     };
 
     return (
-      <button
+      <TouchButton
         onClick={() => !userData.isCurrentUser && onTap && onTap(userData)}
-        className={`w-full flex items-center gap-3 p-3 rounded-xl mb-2 relative overflow-hidden transition-all duration-150 active:scale-[0.98] ${
+        disabled={userData.isCurrentUser}
+        className={`w-full flex items-center gap-3 p-3 rounded-xl mb-2 relative overflow-hidden transition-all duration-150 text-left ${
           userData.isCurrentUser ? 'bg-zinc-800 ring-1 ring-green-500/30' : 'bg-zinc-900 hover:bg-zinc-800/80'
         }`}
       >
@@ -825,7 +953,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             )}
           </div>
         </div>
-      </button>
+      </TouchButton>
     );
   };
 
@@ -852,9 +980,10 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     };
 
     const PodiumSpot = ({ userData, place, height }) => (
-      <button
+      <TouchButton
         onClick={() => !userData.isCurrentUser && onTap && onTap(userData)}
-        className="flex flex-col items-center transition-all duration-150 active:scale-95"
+        disabled={userData.isCurrentUser}
+        className="flex flex-col items-center transition-all duration-150"
       >
         {/* Crown for 1st place */}
         {place === 1 && (
@@ -905,7 +1034,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         >
           <span className="text-2xl font-bold text-white/30 mb-2">{place}</span>
         </div>
-      </button>
+      </TouchButton>
     );
 
     // Reorder for podium display: 2nd, 1st, 3rd
@@ -951,6 +1080,12 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           backgroundColor: isAnimating ? 'rgba(0,0,0,0.8)' : 'rgba(0,0,0,0)'
         }}
         onClick={handleClose}
+        onTouchEnd={(e) => {
+          if (e.target === e.currentTarget) {
+            e.preventDefault();
+            handleClose();
+          }
+        }}
       >
         <div
           className="w-full max-w-sm bg-zinc-900 rounded-2xl p-6 transition-all duration-300 ease-out"
@@ -959,6 +1094,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             opacity: isAnimating ? 1 : 0
           }}
           onClick={e => e.stopPropagation()}
+          onTouchEnd={e => e.stopPropagation()}
         >
           {/* Header */}
           <div className="flex items-center gap-4 mb-6">
@@ -1002,12 +1138,12 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           </div>
 
           {/* Close button */}
-          <button
+          <TouchButton
             onClick={handleClose}
-            className="w-full py-3 rounded-full bg-zinc-800 text-white font-medium transition-all duration-150 active:scale-95"
+            className="w-full py-3 rounded-full bg-zinc-800 text-white font-medium transition-all duration-150 text-center"
           >
             Close
-          </button>
+          </TouchButton>
         </div>
       </div>
     );
@@ -1023,30 +1159,10 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             {friends?.length || 0} friend{friends?.length !== 1 ? 's' : ''}
           </p>
         </div>
-        <button
+        <TouchButton
           onClick={onOpenFriends}
           className="flex items-center gap-2 px-4 py-2 rounded-full transition-all duration-150 relative"
           style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
-          onTouchStart={(e) => {
-            e.currentTarget.style.transform = 'scale(0.95)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.15)';
-          }}
-          onTouchEnd={(e) => {
-            e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-          }}
-          onMouseDown={(e) => {
-            e.currentTarget.style.transform = 'scale(0.95)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.15)';
-          }}
-          onMouseUp={(e) => {
-            e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-          }}
         >
           <span className="text-sm">➕</span>
           <span className="text-sm font-medium text-white">Add</span>
@@ -1058,40 +1174,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               {pendingRequestsCount > 9 ? '9+' : pendingRequestsCount}
             </span>
           )}
-        </button>
-      </div>
-    </div>
-  );
-
-  // Segmented control component
-  const SegmentedControl = () => (
-    <div className="px-4 pb-4">
-      <div className="relative flex p-1 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-        {/* Sliding pill indicator */}
-        <div
-          className="absolute top-1 bottom-1 rounded-lg"
-          style={{
-            backgroundColor: 'rgba(255,255,255,0.1)',
-            width: 'calc((100% - 8px) / 2)',
-            left: activeView === 'feed' ? '4px' : 'calc(4px + (100% - 8px) / 2)',
-            transition: 'left 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
-          }}
-        />
-        {[
-          { key: 'feed', label: 'Feed' },
-          { key: 'leaderboard', label: 'Leaderboard' }
-        ].map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveView(tab.key)}
-            className="flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors duration-200 relative z-10"
-            style={{
-              color: activeView === tab.key ? 'white' : 'rgba(255,255,255,0.5)'
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
+        </TouchButton>
       </div>
     </div>
   );
@@ -1100,7 +1183,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     return (
       <div>
         <FriendsHeaderTop />
-        <SegmentedControl />
+        <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
         <div className="flex items-center justify-center py-12">
           <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
         </div>
@@ -1112,33 +1195,18 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     return (
       <div>
         <FriendsHeaderTop />
-        <SegmentedControl />
+        <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
         <div className="text-center py-12 px-6">
           <div className="text-5xl mb-4">👥</div>
           <p className="text-white font-medium mb-2">Find your workout buddies</p>
           <p className="text-gray-500 text-sm mb-6">Add friends to see their workouts and cheer them on!</p>
-          <button
+          <TouchButton
             onClick={onOpenFriends}
             className="px-6 py-3 rounded-full font-semibold text-black transition-all duration-150"
             style={{ backgroundColor: '#00FF94' }}
-            onTouchStart={(e) => {
-              e.currentTarget.style.transform = 'scale(0.95)';
-            }}
-            onTouchEnd={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-            }}
-            onMouseDown={(e) => {
-              e.currentTarget.style.transform = 'scale(0.95)';
-            }}
-            onMouseUp={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-            }}
           >
             Add Friends
-          </button>
+          </TouchButton>
         </div>
       </div>
     );
@@ -1204,7 +1272,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         </div>
 
         <FriendsHeaderTop />
-        <SegmentedControl />
+        <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
 
         {/* Leaderboard content */}
         <div className="px-4 pb-32">
@@ -1234,16 +1302,14 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               { key: 'year', label: 'Year' },
               { key: 'all', label: 'All Time' }
             ].map((range) => (
-              <button
+              <TouchButton
                 key={range.key}
                 onClick={() => setLeaderboardTimeRange(range.key)}
                 className="flex-1 py-1.5 rounded-md text-xs font-medium transition-colors duration-200 relative z-10"
-                style={{
-                  color: leaderboardTimeRange === range.key ? 'white' : 'rgba(255,255,255,0.5)'
-                }}
+                style={{ color: leaderboardTimeRange === range.key ? 'white' : 'rgba(255,255,255,0.5)' }}
               >
                 {range.label}
-              </button>
+              </TouchButton>
             ))}
           </div>
 
@@ -1257,7 +1323,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               { key: 'calories', label: '🔥 Calories', color: '#F39C12' },
               { key: 'steps', label: '👟 Steps', color: '#3498DB' }
             ].map((cat) => (
-              <button
+              <TouchButton
                 key={cat.key}
                 onClick={() => setLeaderboardCategory(cat.key)}
                 className="px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-200"
@@ -1267,7 +1333,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                 }}
               >
                 {cat.label}
-              </button>
+              </TouchButton>
             ))}
           </div>
 
@@ -1594,8 +1660,17 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
 
         {/* Share Modal */}
         {showShareModal && (
-          <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setShowShareModal(false)}>
-            <div className="bg-zinc-900 rounded-2xl p-6 max-w-sm w-full" onClick={e => e.stopPropagation()}>
+          <div
+            className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+            onClick={() => setShowShareModal(false)}
+            onTouchEnd={(e) => {
+              if (e.target === e.currentTarget) {
+                e.preventDefault();
+                setShowShareModal(false);
+              }
+            }}
+          >
+            <div className="bg-zinc-900 rounded-2xl p-6 max-w-sm w-full" onClick={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
               <div className="text-center mb-6">
                 <div className="text-4xl mb-2">🏆</div>
                 <h3 className="text-white font-bold text-lg">Share Leaderboard</h3>
@@ -1625,13 +1700,13 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               </div>
 
               <div className="flex gap-3">
-                <button
+                <TouchButton
                   onClick={() => setShowShareModal(false)}
-                  className="flex-1 py-3 rounded-full bg-zinc-800 text-white font-medium"
+                  className="flex-1 py-3 rounded-full bg-zinc-800 text-white font-medium transition-all duration-150"
                 >
                   Cancel
-                </button>
-                <button
+                </TouchButton>
+                <TouchButton
                   onClick={() => {
                     // In a real app, this would trigger native share
                     if (navigator.share) {
@@ -1642,11 +1717,11 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                     }
                     setShowShareModal(false);
                   }}
-                  className="flex-1 py-3 rounded-full font-medium text-black"
+                  className="flex-1 py-3 rounded-full font-medium text-black transition-all duration-150"
                   style={{ backgroundColor: '#00FF94' }}
                 >
                   Share
-                </button>
+                </TouchButton>
               </div>
             </div>
           </div>
@@ -1660,7 +1735,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     return (
       <div>
         <FriendsHeaderTop />
-        <SegmentedControl />
+        <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
         <div className="text-center py-12 px-6">
           <div className="text-5xl mb-4">📭</div>
           <p className="text-white font-medium mb-2">No activity yet</p>
@@ -1697,7 +1772,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       </div>
 
       <FriendsHeaderTop />
-        <SegmentedControl />
+        <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
 
       {/* Feed content */}
       <div className="px-4 pb-32">

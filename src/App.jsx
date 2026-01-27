@@ -192,7 +192,7 @@ const ProgressBar = ({ progress, color = '#00FF94', height = 4 }) => (
   </div>
 );
 
-const ActivityIcon = ({ type, size = 20 }) => {
+const ActivityIcon = ({ type, size = 20, sportEmoji, customEmoji }) => {
   const icons = {
     'Strength Training': '🏋️',
     'Running': '🏃',
@@ -204,7 +204,16 @@ const ActivityIcon = ({ type, size = 20 }) => {
     'Sports': '🏀',
     'Other': '🏊'
   };
-  return <span style={{ fontSize: size }}>{icons[type] || '🏊'}</span>;
+
+  // Use custom emoji for Sports or Other if provided
+  let icon = icons[type] || '🏊';
+  if (type === 'Sports' && sportEmoji) {
+    icon = sportEmoji;
+  } else if (type === 'Other' && customEmoji) {
+    icon = customEmoji;
+  }
+
+  return <span style={{ fontSize: size }}>{icon}</span>;
 };
 
 // Heat Map Calendar Component
@@ -2203,7 +2212,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit }) =>
               className="w-14 h-14 rounded-2xl flex items-center justify-center"
               style={{ backgroundColor: `${color}20` }}
             >
-              <ActivityIcon type={activity.type} size={28} />
+              <ActivityIcon type={activity.type} size={28} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} />
             </div>
             <div className="flex-1">
               <div className="text-xl font-bold">{activity.type}</div>
@@ -2947,6 +2956,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   const [strengthType, setStrengthType] = useState(''); // Lifting, Bodyweight
   const [focusArea, setFocusArea] = useState(''); // Full Body, Upper, Lower, etc.
   const [customSport, setCustomSport] = useState('');
+  const [customSportEmoji, setCustomSportEmoji] = useState('⚽');
+  const [showSportEmojiPicker, setShowSportEmojiPicker] = useState(false);
   const [saveCustomSport, setSaveCustomSport] = useState(false);
   // Custom "Other" activity state
   const [customActivityName, setCustomActivityName] = useState('');
@@ -2957,6 +2968,9 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 
   // Common activity emojis for picker
   const activityEmojis = ['💪', '🏃', '🚴', '🏊', '⛷️', '🧗', '🥊', '🎾', '⚽', '🏀', '🏈', '⚾', '🎯', '🏋️', '🤸', '🧘', '🥋', '🏇', '🚣', '🛹', '⛸️', '🎿', '🏌️', '🤾', '🏸', '🥏', '🎳', '🧊', '🔥', '⭐', '🌟', '✨', '💫', '🎉', '🏆', '🥇', '❤️', '💚', '💙', '🧠', '🦵', '💨', '⚡'];
+
+  // Sports-specific emojis for picker
+  const sportsEmojis = ['⚽', '🏀', '🏈', '⚾', '🥎', '🎾', '🏐', '🏉', '🥏', '🎱', '🪀', '🏓', '🏸', '🏒', '🏑', '🥍', '🏏', '🪃', '🥅', '⛳', '🪁', '🏹', '🎣', '🤿', '🥊', '🥋', '🎽', '🛹', '🛼', '🛷', '⛸️', '🥌', '🎿', '⛷️', '🏂', '🪂', '🏋️', '🤼', '🤸', '⛹️', '🤺', '🏇', '🧘', '🏄', '🚣', '🧗', '🚵', '🚴', '🤾', '🤽', '🏊', '🏌️'];
   const [date, setDate] = useState(defaultDate || getTodayDate());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [notes, setNotes] = useState('');
@@ -2976,6 +2990,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       setStrengthType(pendingActivity?.strengthType || '');
       setFocusArea(pendingActivity?.focusArea || '');
       setCustomSport('');
+      setCustomSportEmoji('⚽');
+      setShowSportEmojiPicker(false);
       setSaveCustomSport(false);
       setCustomActivityName('');
       setCustomActivityEmoji('🏊');
@@ -3030,7 +3046,14 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
     { name: 'Strength Training', icon: '🏋️', subtypes: [] }, // Handled separately
     { name: 'Running', icon: '🏃', subtypes: ['Easy', 'Tempo', 'Long', 'Sprints', 'Recovery'] },
     { name: 'Cycle', icon: '🚴', subtypes: ['Road', 'Spin', 'Mountain'] },
-    { name: 'Sports', icon: '🏀', subtypes: ['Basketball', 'Soccer', 'Tennis', 'Golf', 'Pickleball', 'Other'] },
+    { name: 'Sports', icon: '🏀', subtypes: [
+      { name: 'Basketball', icon: '🏀' },
+      { name: 'Soccer', icon: '⚽' },
+      { name: 'Football', icon: '🏈' },
+      { name: 'Tennis', icon: '🎾' },
+      { name: 'Golf', icon: '⛳' },
+      { name: 'Other', icon: '🏆' }
+    ]},
     { name: 'Yoga', icon: '🧘', subtypes: ['Vinyasa', 'Power', 'Hot', 'Yin', 'Restorative'] },
     { name: 'Pilates', icon: '🤸', subtypes: ['Mat', 'Reformer', 'Tower', 'Chair'] },
     { name: 'Cold Plunge', icon: '🧊', subtypes: [] },
@@ -3164,6 +3187,17 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               onSaveCustomActivity({ name: customActivityName, emoji: customActivityEmoji, category: customActivityCategory });
             }
 
+            // Get the sport emoji (either custom or from predefined sport)
+            let sportEmoji = undefined;
+            if (activityType === 'Sports') {
+              if (showCustomSportInput) {
+                sportEmoji = customSportEmoji;
+              } else if (subtype) {
+                const sportSubtype = selectedType?.subtypes?.find(st => typeof st === 'object' && st.name === subtype);
+                sportEmoji = sportSubtype?.icon;
+              }
+            }
+
             onSave({
               id: pendingActivity?.id, // Preserve ID if editing
               time: pendingActivity?.time, // Preserve time if editing
@@ -3179,6 +3213,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               avgHr: avgHr ? parseInt(avgHr) : undefined,
               maxHr: maxHr ? parseInt(maxHr) : undefined,
               saveCustomSport,
+              sportEmoji,
               fromAppleHealth: isFromAppleHealth,
               countToward: showCustomActivityInput ? customActivityCategory : (countToward || undefined),
               customActivityCategory: showCustomActivityInput ? customActivityCategory : undefined
@@ -3415,7 +3450,14 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
               }}
             >
-              <span className="text-2xl">{selectedType?.icon || (activityType === 'Other' ? customActivityEmoji : '🏊')}</span>
+              <span className="text-2xl">{
+                activityType === 'Other' ? customActivityEmoji :
+                activityType === 'Sports' && subtype ? (
+                  subtype === 'Other' ? customSportEmoji :
+                  (selectedType?.subtypes?.find(st => typeof st === 'object' && st.name === subtype)?.icon || selectedType?.icon)
+                ) :
+                selectedType?.icon || '🏊'
+              }</span>
               <span className="font-semibold">{activityType === 'Other' && customActivityName ? customActivityName : activityType}</span>
               <span className="ml-auto text-gray-500 text-sm">Change</span>
             </button>
@@ -3478,20 +3520,26 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Type</label>
                 <div className="flex flex-wrap gap-2">
-                  {selectedType.subtypes.map((st) => (
-                    <button
-                      key={st}
-                      onClick={() => setSubtype(st)}
-                      className="px-4 py-2 rounded-full text-sm transition-all duration-200"
-                      style={{
-                        backgroundColor: subtype === st ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
-                        border: subtype === st ? '1px solid #00FF94' : '1px solid transparent',
-                        color: subtype === st ? '#00FF94' : 'white'
-                      }}
-                    >
-                      {st}
-                    </button>
-                  ))}
+                  {selectedType.subtypes.map((st) => {
+                    // Handle both string and object subtypes
+                    const stName = typeof st === 'object' ? st.name : st;
+                    const stIcon = typeof st === 'object' ? st.icon : null;
+                    return (
+                      <button
+                        key={stName}
+                        onClick={() => setSubtype(stName)}
+                        className="px-4 py-2 rounded-full text-sm transition-all duration-200 flex items-center gap-1.5"
+                        style={{
+                          backgroundColor: subtype === stName ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
+                          border: subtype === stName ? '1px solid #00FF94' : '1px solid transparent',
+                          color: subtype === stName ? '#00FF94' : 'white'
+                        }}
+                      >
+                        {stIcon && <span>{stIcon}</span>}
+                        {stName}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -3544,13 +3592,53 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             {showCustomSportInput && (
               <div className="p-4 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                 <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Sport Name</label>
-                <input
-                  type="text"
-                  value={customSport}
-                  onChange={(e) => setCustomSport(e.target.value)}
-                  className="w-full p-3 rounded-xl bg-white/5 border border-white/10 text-white mb-3"
-                  placeholder="Enter sport name..."
-                />
+                <div className="flex gap-2 mb-3">
+                  {/* Sport Emoji Picker Button */}
+                  <button
+                    type="button"
+                    onClick={() => setShowSportEmojiPicker(!showSportEmojiPicker)}
+                    className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl transition-all"
+                    style={{
+                      backgroundColor: showSportEmojiPicker ? 'rgba(255,149,0,0.2)' : 'rgba(255,255,255,0.05)',
+                      border: showSportEmojiPicker ? '1px solid #FF9500' : '1px solid rgba(255,255,255,0.1)'
+                    }}
+                  >
+                    {customSportEmoji}
+                  </button>
+                  <input
+                    type="text"
+                    value={customSport}
+                    onChange={(e) => setCustomSport(e.target.value)}
+                    className="flex-1 p-3 rounded-xl bg-white/5 border border-white/10 text-white"
+                    placeholder="Enter sport name..."
+                  />
+                </div>
+
+                {/* Sport Emoji Picker Grid */}
+                {showSportEmojiPicker && (
+                  <div className="mb-3 p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                    <div className="flex flex-wrap gap-2">
+                      {sportsEmojis.map((emoji) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          onClick={() => {
+                            setCustomSportEmoji(emoji);
+                            setShowSportEmojiPicker(false);
+                          }}
+                          className="w-10 h-10 rounded-lg flex items-center justify-center text-xl transition-all hover:bg-white/10"
+                          style={{
+                            backgroundColor: customSportEmoji === emoji ? 'rgba(255,149,0,0.2)' : 'transparent',
+                            border: customSportEmoji === emoji ? '1px solid #FF9500' : '1px solid transparent'
+                          }}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <label className="flex items-center gap-3 cursor-pointer">
                   <div
                     className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all"
@@ -4446,7 +4534,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                       className="w-full p-3 flex items-center gap-3 text-left cursor-pointer"
                       style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
                     >
-                      <ActivityIcon type={activity.type} size={20} />
+                      <ActivityIcon type={activity.type} size={20} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-semibold truncate">{activity.type}{activity.subtype ? ` • ${activity.subtype}` : ''}</span>

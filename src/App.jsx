@@ -202,9 +202,9 @@ const ActivityIcon = ({ type, size = 20 }) => {
     'Pilates': '🤸',
     'Cycle': '🚴',
     'Sports': '🏀',
-    'Other': '💪'
+    'Other': '🏊'
   };
-  return <span style={{ fontSize: size }}>{icons[type] || '💪'}</span>;
+  return <span style={{ fontSize: size }}>{icons[type] || '🏊'}</span>;
 };
 
 // Heat Map Calendar Component
@@ -987,9 +987,9 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
       'Sauna': '🔥',
       'Yoga': '🧘',
       'Pilates': '🤸',
-      'Other': '💪'
+      'Other': '🏊'
     };
-    return emojis[type] || '💪';
+    return emojis[type] || '🏊';
   };
 
   // Card type configurations
@@ -2950,9 +2950,10 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   const [saveCustomSport, setSaveCustomSport] = useState(false);
   // Custom "Other" activity state
   const [customActivityName, setCustomActivityName] = useState('');
-  const [customActivityEmoji, setCustomActivityEmoji] = useState('💪');
+  const [customActivityEmoji, setCustomActivityEmoji] = useState('🏊');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [saveCustomActivity, setSaveCustomActivity] = useState(false);
+  const [customActivityCategory, setCustomActivityCategory] = useState(''); // 'strength', 'cardio', or 'recovery'
 
   // Common activity emojis for picker
   const activityEmojis = ['💪', '🏃', '🚴', '🏊', '⛷️', '🧗', '🥊', '🎾', '⚽', '🏀', '🏈', '⚾', '🎯', '🏋️', '🤸', '🧘', '🥋', '🏇', '🚣', '🛹', '⛸️', '🎿', '🏌️', '🤾', '🏸', '🥏', '🎳', '🧊', '🔥', '⭐', '🌟', '✨', '💫', '🎉', '🏆', '🥇', '❤️', '💚', '💙', '🧠', '🦵', '💨', '⚡'];
@@ -2977,9 +2978,10 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       setCustomSport('');
       setSaveCustomSport(false);
       setCustomActivityName('');
-      setCustomActivityEmoji('💪');
+      setCustomActivityEmoji('🏊');
       setShowEmojiPicker(false);
       setSaveCustomActivity(false);
+      setCustomActivityCategory('');
       setDate(defaultDate || pendingActivity?.date || getTodayDate());
       setShowDatePicker(false);
       setNotes(pendingActivity?.notes || '');
@@ -3033,7 +3035,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
     { name: 'Pilates', icon: '🤸', subtypes: ['Mat', 'Reformer', 'Tower', 'Chair'] },
     { name: 'Cold Plunge', icon: '🧊', subtypes: [] },
     { name: 'Sauna', icon: '🔥', subtypes: [] },
-    { name: 'Other', icon: '💪', subtypes: [] }
+    { name: 'Other', icon: '🏊', subtypes: [] }
   ];
 
   // Strength training configuration
@@ -3159,7 +3161,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 
             // Save custom activity to user profile if requested
             if (showCustomActivityInput && saveCustomActivity && customActivityName && onSaveCustomActivity) {
-              onSaveCustomActivity({ name: customActivityName, emoji: customActivityEmoji });
+              onSaveCustomActivity({ name: customActivityName, emoji: customActivityEmoji, category: customActivityCategory });
             }
 
             onSave({
@@ -3178,13 +3180,14 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               maxHr: maxHr ? parseInt(maxHr) : undefined,
               saveCustomSport,
               fromAppleHealth: isFromAppleHealth,
-              countToward: countToward || undefined
+              countToward: showCustomActivityInput ? customActivityCategory : (countToward || undefined),
+              customActivityCategory: showCustomActivityInput ? customActivityCategory : undefined
             });
             handleClose();
           }}
           className="font-bold transition-all duration-150 px-2 py-1 rounded-lg"
-          style={{ color: !activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !customActivityName) || (activityType === 'Strength Training' && (!strengthType || !focusArea)) ? 'rgba(0,255,148,0.3)' : '#00FF94' }}
-          disabled={!activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !customActivityName) || (activityType === 'Strength Training' && (!strengthType || !focusArea))}
+          style={{ color: !activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && (!customActivityName || !customActivityCategory)) || (activityType === 'Strength Training' && (!strengthType || !focusArea)) ? 'rgba(0,255,148,0.3)' : '#00FF94' }}
+          disabled={!activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && (!customActivityName || !customActivityCategory)) || (activityType === 'Strength Training' && (!strengthType || !focusArea))}
           onTouchStart={(e) => {
             if (!e.currentTarget.disabled) {
               e.currentTarget.style.transform = 'scale(0.9)';
@@ -3331,7 +3334,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
               }}
             >
-              <span className="text-2xl">💪</span>
+              <span className="text-2xl">🏊</span>
               <div className="mt-2 font-semibold">Other</div>
             </button>
           </div>
@@ -3346,7 +3349,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 setFocusArea('');
                 setCustomSport('');
                 setCustomActivityName('');
-                setCustomActivityEmoji('💪');
+                setCustomActivityEmoji('🏊');
                 setShowEmojiPicker(false);
                 setCountToward(null);
               }}
@@ -3385,7 +3388,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 setFocusArea('');
                 setCustomSport('');
                 setCustomActivityName('');
-                setCustomActivityEmoji('💪');
+                setCustomActivityEmoji('🏊');
                 setShowEmojiPicker(false);
                 setCountToward(null);
               }}
@@ -3412,7 +3415,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
               }}
             >
-              <span className="text-2xl">{selectedType?.icon || (activityType === 'Other' ? customActivityEmoji : '💪')}</span>
+              <span className="text-2xl">{selectedType?.icon || (activityType === 'Other' ? customActivityEmoji : '🏊')}</span>
               <span className="font-semibold">{activityType === 'Other' && customActivityName ? customActivityName : activityType}</span>
               <span className="ml-auto text-gray-500 text-sm">Change</span>
             </button>
@@ -3615,7 +3618,50 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                   </div>
                 )}
 
-                <label className="flex items-center gap-3 cursor-pointer">
+                {/* Category Selection */}
+                <div className="mt-4">
+                  <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Count Toward</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCustomActivityCategory('strength')}
+                      className="p-3 rounded-xl text-center transition-all"
+                      style={{
+                        backgroundColor: customActivityCategory === 'strength' ? 'rgba(0,255,148,0.15)' : 'rgba(255,255,255,0.05)',
+                        border: customActivityCategory === 'strength' ? '1px solid #00FF94' : '1px solid transparent'
+                      }}
+                    >
+                      <span className="text-lg">🏋️</span>
+                      <div className="text-xs mt-1" style={{ color: customActivityCategory === 'strength' ? '#00FF94' : 'rgba(255,255,255,0.6)' }}>Strength</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCustomActivityCategory('cardio')}
+                      className="p-3 rounded-xl text-center transition-all"
+                      style={{
+                        backgroundColor: customActivityCategory === 'cardio' ? 'rgba(255,149,0,0.15)' : 'rgba(255,255,255,0.05)',
+                        border: customActivityCategory === 'cardio' ? '1px solid #FF9500' : '1px solid transparent'
+                      }}
+                    >
+                      <span className="text-lg">🏃</span>
+                      <div className="text-xs mt-1" style={{ color: customActivityCategory === 'cardio' ? '#FF9500' : 'rgba(255,255,255,0.6)' }}>Cardio</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCustomActivityCategory('recovery')}
+                      className="p-3 rounded-xl text-center transition-all"
+                      style={{
+                        backgroundColor: customActivityCategory === 'recovery' ? 'rgba(0,209,255,0.15)' : 'rgba(255,255,255,0.05)',
+                        border: customActivityCategory === 'recovery' ? '1px solid #00D1FF' : '1px solid transparent'
+                      }}
+                    >
+                      <span className="text-lg">🧊</span>
+                      <div className="text-xs mt-1" style={{ color: customActivityCategory === 'recovery' ? '#00D1FF' : 'rgba(255,255,255,0.6)' }}>Recovery</div>
+                    </button>
+                  </div>
+                </div>
+
+                <label className="flex items-center gap-3 cursor-pointer mt-4">
                   <div
                     className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all"
                     style={{
@@ -5083,7 +5129,16 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
   
   // Helper to determine effective category of an activity
   const getActivityCategory = (activity) => {
-    if (activity.countToward) return activity.countToward;
+    // If countToward is set (for Yoga/Pilates or custom activities), use that
+    if (activity.countToward) {
+      if (activity.countToward === 'strength') return 'lifting';
+      return activity.countToward;
+    }
+    // Check customActivityCategory for "Other" activities
+    if (activity.customActivityCategory) {
+      if (activity.customActivityCategory === 'strength') return 'lifting';
+      return activity.customActivityCategory;
+    }
     if (activity.type === 'Strength Training') return 'lifting';
     if (['Running', 'Cycle', 'Sports'].includes(activity.type)) return 'cardio';
     if (['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
@@ -6698,9 +6753,16 @@ export default function StreakdApp() {
 
   // Helper to determine effective category of an activity
   const getActivityCategory = (activity) => {
-    // If countToward is set (for Yoga/Pilates), use that
+    // If countToward is set (for Yoga/Pilates or custom activities), use that
     if (activity.countToward) {
+      // Map 'strength' to 'lifting' for consistency
+      if (activity.countToward === 'strength') return 'lifting';
       return activity.countToward;
+    }
+    // Check customActivityCategory for "Other" activities
+    if (activity.customActivityCategory) {
+      if (activity.customActivityCategory === 'strength') return 'lifting';
+      return activity.customActivityCategory;
     }
     // Default categorization
     if (activity.type === 'Strength Training') return 'lifting';

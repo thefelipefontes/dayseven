@@ -18,7 +18,26 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Initial loading screen (shown before React mounts) -->
+      <div id="initial-loader" style="min-height: 100vh; background: #000; display: flex; align-items: center; justify-content: center;">
+        <div style="position: relative; width: 60px; height: 60px;">
+          <!-- Spinning circle -->
+          <svg style="position: absolute; top: 0; left: 0; width: 60px; height: 60px; animation: spin 1.5s linear infinite;" viewBox="0 0 60 60">
+            <circle cx="30" cy="30" r="26" fill="none" stroke="#333" stroke-width="5"/>
+            <circle cx="30" cy="30" r="26" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-dasharray="130 360" style="transform-origin: center;"/>
+          </svg>
+          <!-- Number 7 -->
+          <span style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif; font-size: 24px; font-weight: 700; color: #fff;">7</span>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
+    <style>
+      @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+    </style>
   </body>
 </html>

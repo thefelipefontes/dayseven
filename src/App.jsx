@@ -8289,7 +8289,15 @@ export default function DaySevenApp() {
   if (authLoading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
+        <div className="relative w-[60px] h-[60px]">
+          {/* Spinning circle */}
+          <svg className="absolute top-0 left-0 w-[60px] h-[60px] animate-spin" viewBox="0 0 60 60" style={{ animationDuration: '1.5s' }}>
+            <circle cx="30" cy="30" r="26" fill="none" stroke="#333" strokeWidth="5"/>
+            <circle cx="30" cy="30" r="26" fill="none" stroke="#fff" strokeWidth="5" strokeLinecap="round" strokeDasharray="130 360"/>
+          </svg>
+          {/* Number 7 */}
+          <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-2xl font-bold text-white">7</span>
+        </div>
       </div>
     );
   }

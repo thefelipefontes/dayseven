@@ -3317,11 +3317,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       setCustomSportEmoji('⚽');
       setShowSportEmojiPicker(false);
       setSaveCustomSport(false);
-      setCustomActivityName('');
-      setCustomActivityEmoji('🏊');
+      // For "Other" activities, load the saved custom name and emoji
+      setCustomActivityName(pendingActivity?.type === 'Other' ? (pendingActivity?.subtype || '') : '');
+      setCustomActivityEmoji(pendingActivity?.type === 'Other' ? (pendingActivity?.customEmoji || '🏊') : '🏊');
       setShowEmojiPicker(false);
       setSaveCustomActivity(false);
-      setCustomActivityCategory('');
+      setCustomActivityCategory(pendingActivity?.type === 'Other' ? (pendingActivity?.customActivityCategory || '') : '');
       setDate(defaultDate || pendingActivity?.date || getTodayDate());
       setShowDatePicker(false);
       setNotes(pendingActivity?.notes || '');
@@ -3543,6 +3544,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               maxHr: maxHr ? parseInt(maxHr) : undefined,
               saveCustomSport,
               sportEmoji,
+              customEmoji: showCustomActivityInput ? customActivityEmoji : undefined, // Store emoji for "Other" activities
               fromAppleHealth: isFromAppleHealth,
               countToward: showCustomActivityInput ? customActivityCategory : (countToward || undefined),
               customActivityCategory: showCustomActivityInput ? customActivityCategory : undefined,
@@ -5841,6 +5843,12 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
   const [dayModalClosing, setDayModalClosing] = useState(false);
   const [compareWeek, setCompareWeek] = useState('average');
   const [totalsView, setTotalsView] = useState('this-month');
+  // Progress photo comparison state
+  const [selectedPhotos, setSelectedPhotos] = useState([]);
+  const [showCompareModal, setShowCompareModal] = useState(false);
+  const [photoFilter, setPhotoFilter] = useState('all');
+  const [expandedMonths, setExpandedMonths] = useState({}); // { monthKey: true/false }
+  const [isShareGenerating, setIsShareGenerating] = useState(false);
   const records = userData?.personalRecords || initialUserData.personalRecords;
   const streaks = userData?.streaks || initialUserData.streaks;
   const goals = userData?.goals || initialUserData.goals;
@@ -6342,28 +6350,31 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
       {/* View Toggles */}
       <div className="mx-4 mb-4 relative flex gap-2 p-1 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
         {/* Sliding pill indicator */}
-        <div 
+        <div
           className="absolute top-1 bottom-1 rounded-lg transition-all duration-300 ease-out"
-          style={{ 
+          style={{
             backgroundColor: 'rgba(255,255,255,0.1)',
-            width: 'calc((100% - 8px) / 3)',
-            left: view === 'calendar' 
-              ? '4px' 
-              : view === 'stats' 
-                ? 'calc(4px + (100% - 8px) / 3)' 
-                : 'calc(4px + 2 * (100% - 8px) / 3)'
+            width: 'calc((100% - 8px) / 4)',
+            left: view === 'calendar'
+              ? '4px'
+              : view === 'stats'
+                ? 'calc(4px + (100% - 8px) / 4)'
+                : view === 'trends'
+                  ? 'calc(4px + 2 * (100% - 8px) / 4)'
+                  : 'calc(4px + 3 * (100% - 8px) / 4)'
           }}
         />
         {[
           { key: 'calendar', label: 'Calendar' },
           { key: 'stats', label: 'Stats' },
-          { key: 'trends', label: 'Trends' }
+          { key: 'trends', label: 'Trends' },
+          { key: 'progress', label: 'Progress' }
         ].map((v) => (
           <button
             key={v.key}
             onClick={() => setView(v.key)}
             className="flex-1 py-2 rounded-lg text-sm font-medium transition-colors duration-200 relative z-10"
-            style={{ 
+            style={{
               color: view === v.key ? 'white' : 'rgba(255,255,255,0.5)'
             }}
           >
@@ -7238,6 +7249,674 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
       {view === 'trends' && (
         <TrendsView activities={activities} calendarData={calendarData} />
       )}
+
+      {/* Progress View - Photo Comparison */}
+      {view === 'progress' && (() => {
+        // Filter activities that have photos
+        const activitiesWithPhotos = activities.filter(a => a.photoURL);
+
+        // Apply category filter
+        const filteredActivities = photoFilter === 'all'
+          ? activitiesWithPhotos
+          : activitiesWithPhotos.filter(a => {
+              const category = getActivityCategory(a);
+              if (photoFilter === 'strength') return category === 'lifting';
+              return category === photoFilter;
+            });
+
+        // Sort by date (newest first)
+        const sortedActivities = [...filteredActivities].sort((a, b) =>
+          b.date.localeCompare(a.date)
+        );
+
+        const handlePhotoSelect = (activityId) => {
+          setSelectedPhotos(prev => {
+            if (prev.includes(activityId)) {
+              return prev.filter(id => id !== activityId);
+            }
+            if (prev.length >= 2) {
+              return [prev[1], activityId];
+            }
+            return [...prev, activityId];
+          });
+        };
+
+        const formatDate = (dateStr) => {
+          const date = new Date(dateStr + 'T12:00:00');
+          return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        };
+
+        const getActivityIcon = (activity) => {
+          const icons = {
+            'Strength Training': '💪',
+            'Running': '🏃',
+            'Cycle': '🚴',
+            'Sports': '🏀',
+            'Cold Plunge': '🧊',
+            'Sauna': '🔥',
+            'Yoga': '🧘',
+            'Pilates': '🤸',
+            'Other': '⭐'
+          };
+          // Use custom emoji for "Other" activities
+          if (activity.type === 'Other' && activity.customEmoji) {
+            return activity.customEmoji;
+          }
+          // Use sport emoji for Sports activities
+          if (activity.type === 'Sports' && activity.sportEmoji) {
+            return activity.sportEmoji;
+          }
+          return icons[activity.type] || '💪';
+        };
+
+        // Get selected activities sorted by date for comparison
+        const getCompareActivities = () => {
+          const selected = selectedPhotos.map(id => activities.find(a => a.id === id)).filter(Boolean);
+          return selected.sort((a, b) => a.date.localeCompare(b.date));
+        };
+
+        const calculateDaysBetween = (date1, date2) => {
+          const d1 = new Date(date1 + 'T12:00:00');
+          const d2 = new Date(date2 + 'T12:00:00');
+          const diffTime = Math.abs(d2 - d1);
+          return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        };
+
+        // Group activities by month
+        const groupByMonth = (activities) => {
+          const groups = {};
+          activities.forEach(activity => {
+            const date = new Date(activity.date + 'T12:00:00');
+            const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            const monthLabel = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+            if (!groups[monthKey]) {
+              groups[monthKey] = { label: monthLabel, activities: [] };
+            }
+            groups[monthKey].activities.push(activity);
+          });
+          // Sort by month key descending (newest first)
+          return Object.entries(groups)
+            .sort(([a], [b]) => b.localeCompare(a))
+            .map(([key, value]) => ({ key, ...value }));
+        };
+
+        const monthGroups = groupByMonth(sortedActivities);
+
+        const clearSelection = () => {
+          setSelectedPhotos([]);
+        };
+
+        return (
+          <div className="px-4 pb-32">
+            {/* Header */}
+            <div className="mb-4">
+              <h2 className="text-lg font-bold text-white">Progress Photos</h2>
+              <p className="text-xs text-gray-500">Compare your fitness journey over time</p>
+            </div>
+
+            {/* Filter pills */}
+            <div className="flex gap-2 mb-4 overflow-x-auto pb-2 -mx-4 px-4 no-scrollbar">
+              {[
+                { key: 'all', label: 'All Photos' },
+                { key: 'strength', label: '💪 Strength' },
+                { key: 'cardio', label: '🏃 Cardio' },
+                { key: 'recovery', label: '🧘 Recovery' }
+              ].map(filter => (
+                <button
+                  key={filter.key}
+                  onClick={() => {
+                    setPhotoFilter(filter.key);
+                    setSelectedPhotos([]);
+                  }}
+                  className="px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-200"
+                  style={{
+                    backgroundColor: photoFilter === filter.key ? '#00FF94' : 'rgba(255,255,255,0.05)',
+                    color: photoFilter === filter.key ? 'black' : 'rgba(255,255,255,0.5)'
+                  }}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Photo Grid or Empty State */}
+            {sortedActivities.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="text-5xl mb-4">📸</div>
+                <p className="text-white font-medium mb-2">
+                  {activitiesWithPhotos.length === 0
+                    ? 'No progress photos yet'
+                    : 'No photos in this category'}
+                </p>
+                <p className="text-gray-500 text-sm">
+                  {activitiesWithPhotos.length === 0
+                    ? 'Add photos to your workouts to track your progress'
+                    : 'Try selecting a different filter'}
+                </p>
+              </div>
+            ) : (
+              <>
+                {/* Selected Photos Preview */}
+                {selectedPhotos.length > 0 && (
+                  <div className="mb-4 p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs text-gray-400">
+                        {selectedPhotos.length === 1 ? 'Selected photo - choose another to compare' : 'Ready to compare'}
+                      </span>
+                      <button
+                        onClick={clearSelection}
+                        className="text-xs text-gray-500 hover:text-white transition-colors"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                    <div className="flex gap-3">
+                      {/* First selected photo */}
+                      {selectedPhotos[0] && (() => {
+                        const activity = activities.find(a => a.id === selectedPhotos[0]);
+                        if (!activity) return null;
+                        return (
+                          <div className="flex-1">
+                            <div className="relative aspect-square rounded-xl overflow-hidden" style={{ boxShadow: '0 0 0 2px #00FF94' }}>
+                              <img src={activity.photoURL} alt={activity.type} className="w-full h-full object-cover" />
+                              <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-900/80 text-white">
+                                {selectedPhotos.length === 2 ? 'BEFORE' : '1'}
+                              </div>
+                            </div>
+                            <p className="text-[10px] text-gray-400 mt-1 text-center">{formatDate(activity.date)}</p>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Arrow or placeholder */}
+                      <div className="flex items-center justify-center">
+                        {selectedPhotos.length === 2 ? (
+                          <svg className="w-6 h-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                          </svg>
+                        ) : (
+                          <div className="w-16 h-16 rounded-xl border-2 border-dashed border-gray-600 flex items-center justify-center">
+                            <span className="text-gray-500 text-xs">+</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Second selected photo or placeholder */}
+                      {selectedPhotos[1] ? (() => {
+                        const activity = activities.find(a => a.id === selectedPhotos[1]);
+                        if (!activity) return null;
+                        return (
+                          <div className="flex-1">
+                            <div className="relative aspect-square rounded-xl overflow-hidden" style={{ boxShadow: '0 0 0 2px #00FF94' }}>
+                              <img src={activity.photoURL} alt={activity.type} className="w-full h-full object-cover" />
+                              <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-medium bg-green-500 text-black">
+                                AFTER
+                              </div>
+                            </div>
+                            <p className="text-[10px] text-gray-400 mt-1 text-center">{formatDate(activity.date)}</p>
+                          </div>
+                        );
+                      })() : (
+                        <div className="flex-1">
+                          <div className="aspect-square rounded-xl border-2 border-dashed border-gray-600 flex items-center justify-center">
+                            <span className="text-gray-500 text-xs">Select 2nd</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Compare Button - inside preview section */}
+                    {selectedPhotos.length === 2 && (
+                      <button
+                        onClick={() => setShowCompareModal(true)}
+                        className="w-full mt-3 py-2.5 rounded-xl font-semibold text-center transition-all duration-150 active:scale-98"
+                        style={{ backgroundColor: '#00FF94', color: 'black' }}
+                      >
+                        Compare Photos
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Selection status */}
+                <p className="text-xs text-gray-500 mb-3">
+                  {selectedPhotos.length === 0
+                    ? 'Select a photo to start comparing'
+                    : selectedPhotos.length === 1
+                      ? 'Now select another photo from below'
+                      : 'Tap "Compare" to see your progress'}
+                </p>
+
+                {/* Month-grouped photos (collapsible) */}
+                {monthGroups.map((group, groupIndex) => {
+                  // First month is expanded by default, others are collapsed
+                  const isExpanded = expandedMonths[group.key] !== undefined
+                    ? expandedMonths[group.key]
+                    : groupIndex === 0;
+
+                  const toggleMonth = () => {
+                    setExpandedMonths(prev => ({
+                      ...prev,
+                      [group.key]: !isExpanded
+                    }));
+                  };
+
+                  // Check if any photos in this month are selected
+                  const selectedInMonth = group.activities.filter(a => selectedPhotos.includes(a.id)).length;
+
+                  return (
+                    <div key={group.key} className="mb-3">
+                      {/* Month header - clickable */}
+                      <button
+                        onClick={toggleMonth}
+                        className="w-full flex items-center justify-between p-3 rounded-xl transition-all duration-150 active:scale-98"
+                        style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+                      >
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-semibold text-white">{group.label}</h3>
+                          <span className="text-xs text-gray-500">
+                            {group.activities.length} photo{group.activities.length !== 1 ? 's' : ''}
+                          </span>
+                          {selectedInMonth > 0 && (
+                            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-green-500 text-black">
+                              {selectedInMonth} selected
+                            </span>
+                          )}
+                        </div>
+                        <svg
+                          className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+
+                      {/* Photo grid for this month - collapsible */}
+                      {isExpanded && (
+                        <div className="grid grid-cols-3 gap-2 mt-3">
+                          {group.activities.map(activity => {
+                            const isSelected = selectedPhotos.includes(activity.id);
+                            const selectionIndex = selectedPhotos.indexOf(activity.id);
+
+                            return (
+                              <button
+                                key={activity.id}
+                                onClick={() => handlePhotoSelect(activity.id)}
+                                className="relative aspect-square rounded-xl overflow-hidden transition-all duration-150"
+                                style={{
+                                  boxShadow: isSelected ? '0 0 0 2px #00FF94' : 'none'
+                                }}
+                              >
+                                <img
+                                  src={activity.photoURL}
+                                  alt={activity.type}
+                                  className="w-full h-full object-cover"
+                                />
+                                {/* Overlay with date */}
+                                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2">
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-xs">{getActivityIcon(activity)}</span>
+                                    <span className="text-[10px] text-white truncate">{formatDate(activity.date)}</span>
+                                  </div>
+                                </div>
+                                {/* Selection indicator */}
+                                {isSelected && (
+                                  <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-green-500 flex items-center justify-center">
+                                    <span className="text-black text-xs font-bold">{selectionIndex + 1}</span>
+                                  </div>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </>
+            )}
+
+            {/* Comparison Modal */}
+            {showCompareModal && (() => {
+              const [before, after] = getCompareActivities();
+              if (!before || !after) return null;
+
+              const daysBetween = calculateDaysBetween(before.date, after.date);
+
+              // Calculate aggregate stats between the two dates
+              const activitiesBetween = activities.filter(a => {
+                return a.date >= before.date && a.date <= after.date;
+              });
+
+              const totalCalories = activitiesBetween.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+              const strengthSessions = activitiesBetween.filter(a => getActivityCategory(a) === 'lifting').length;
+              const cardioSessions = activitiesBetween.filter(a => getActivityCategory(a) === 'cardio').length;
+              const recoverySessions = activitiesBetween.filter(a => getActivityCategory(a) === 'recovery').length;
+
+              return (
+                <div
+                  className="fixed inset-0 z-50 bg-black/90 flex flex-col"
+                  onClick={() => setShowCompareModal(false)}
+                >
+                  <div
+                    className="flex-1 flex flex-col max-h-full overflow-y-auto"
+                    onClick={e => e.stopPropagation()}
+                  >
+                    {/* Header */}
+                    <div className="flex items-center justify-between p-4 border-b border-zinc-800">
+                      <h3 className="text-white font-semibold text-lg">Progress Comparison</h3>
+                      <button
+                        onClick={() => setShowCompareModal(false)}
+                        className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center"
+                      >
+                        <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+
+                    {/* Side by side photos */}
+                    <div className="flex-1 p-4">
+                      <div className="flex gap-3">
+                        {/* Before */}
+                        <div className="flex-1">
+                          <div className="text-center mb-2">
+                            <span className="text-xs font-medium px-2 py-1 rounded-full bg-zinc-800 text-gray-300">BEFORE</span>
+                          </div>
+                          <div className="aspect-[3/4] rounded-xl overflow-hidden bg-zinc-900">
+                            <img
+                              src={before.photoURL}
+                              alt="Before"
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                          <p className="text-gray-400 text-xs mt-2 text-center">{formatDate(before.date)}</p>
+                        </div>
+
+                        {/* After */}
+                        <div className="flex-1">
+                          <div className="text-center mb-2">
+                            <span className="text-xs font-medium px-2 py-1 rounded-full bg-green-500/20 text-green-400">AFTER</span>
+                          </div>
+                          <div className="aspect-[3/4] rounded-xl overflow-hidden bg-zinc-900">
+                            <img
+                              src={after.photoURL}
+                              alt="After"
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                          <p className="text-gray-400 text-xs mt-2 text-center">{formatDate(after.date)}</p>
+                        </div>
+                      </div>
+
+                      {/* Journey Stats */}
+                      <div className="mt-6 p-4 rounded-xl bg-zinc-900">
+                        <div className="text-center mb-4">
+                          <span className="text-2xl font-bold text-white">{daysBetween}</span>
+                          <span className="text-gray-400 text-sm ml-1">days apart</span>
+                        </div>
+
+                        {/* Aggregate stats grid */}
+                        <div className="grid grid-cols-2 gap-3">
+                          {/* Calories */}
+                          <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
+                            <p className="text-xl">🔥</p>
+                            <p className="text-2xl font-bold" style={{ color: '#FF9500' }}>{totalCalories.toLocaleString()}</p>
+                            <p className="text-xs text-gray-400 mt-1">calories burned</p>
+                          </div>
+
+                          {/* Strength */}
+                          <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
+                            <p className="text-xl">💪</p>
+                            <p className="text-2xl font-bold" style={{ color: '#00FF94' }}>{strengthSessions}</p>
+                            <p className="text-xs text-gray-400 mt-1">strength sessions</p>
+                          </div>
+
+                          {/* Cardio */}
+                          <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
+                            <p className="text-xl">🏃</p>
+                            <p className="text-2xl font-bold" style={{ color: '#00D1FF' }}>{cardioSessions}</p>
+                            <p className="text-xs text-gray-400 mt-1">cardio sessions</p>
+                          </div>
+
+                          {/* Recovery */}
+                          <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(191,90,242,0.1)' }}>
+                            <p className="text-xl">🧘</p>
+                            <p className="text-2xl font-bold" style={{ color: '#BF5AF2' }}>{recoverySessions}</p>
+                            <p className="text-xs text-gray-400 mt-1">recovery sessions</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="p-4 border-t border-zinc-800 flex gap-3">
+                      <button
+                        disabled={isShareGenerating}
+                        onClick={async () => {
+                          setIsShareGenerating(true);
+
+                          try {
+                            // Generate a canvas with the progress comparison
+                            const canvas = document.createElement('canvas');
+                            const ctx = canvas.getContext('2d');
+                            const width = 1080;
+                            const height = 1920;
+                            canvas.width = width;
+                            canvas.height = height;
+
+                            // Background
+                            ctx.fillStyle = '#0A0A0A';
+                            ctx.fillRect(0, 0, width, height);
+
+                            // Load image as blob to avoid CORS issues with Firebase Storage
+                            const loadImageAsBlob = async (src) => {
+                              try {
+                                const response = await fetch(src);
+                                const blob = await response.blob();
+                                const objectUrl = URL.createObjectURL(blob);
+                                return new Promise((resolve, reject) => {
+                                  const img = new Image();
+                                  img.onload = () => {
+                                    URL.revokeObjectURL(objectUrl);
+                                    resolve(img);
+                                  };
+                                  img.onerror = () => {
+                                    URL.revokeObjectURL(objectUrl);
+                                    reject(new Error('Failed to load image'));
+                                  };
+                                  img.src = objectUrl;
+                                });
+                              } catch (err) {
+                                console.error('Fetch failed, trying direct load:', err);
+                                // Fallback to direct load
+                                return new Promise((resolve, reject) => {
+                                  const img = new Image();
+                                  img.crossOrigin = 'anonymous';
+                                  img.onload = () => resolve(img);
+                                  img.onerror = () => reject(new Error('Failed to load image'));
+                                  img.src = src;
+                                });
+                              }
+                            };
+
+                            try {
+                              const [beforeImg, afterImg] = await Promise.all([
+                                loadImageAsBlob(before.photoURL),
+                                loadImageAsBlob(after.photoURL)
+                              ]);
+
+                              // Title
+                              ctx.fillStyle = '#FFFFFF';
+                              ctx.font = 'bold 48px -apple-system, BlinkMacSystemFont, sans-serif';
+                              ctx.textAlign = 'center';
+                              ctx.fillText('My Progress', width / 2, 80);
+
+                              // Days subtitle
+                              ctx.fillStyle = '#00FF94';
+                              ctx.font = 'bold 36px -apple-system, BlinkMacSystemFont, sans-serif';
+                              ctx.fillText(`${daysBetween} days apart`, width / 2, 130);
+
+                              // Before/After labels
+                              ctx.font = 'bold 28px -apple-system, BlinkMacSystemFont, sans-serif';
+                              ctx.fillStyle = '#888888';
+                              ctx.fillText('BEFORE', width * 0.25, 190);
+                              ctx.fillStyle = '#00FF94';
+                              ctx.fillText('AFTER', width * 0.75, 190);
+
+                              // Draw photos (side by side)
+                              const photoWidth = 480;
+                              const photoHeight = 640;
+                              const photoY = 210;
+
+                              // Before photo
+                              ctx.save();
+                              ctx.beginPath();
+                              ctx.roundRect(40, photoY, photoWidth, photoHeight, 20);
+                              ctx.clip();
+                              ctx.drawImage(beforeImg, 40, photoY, photoWidth, photoHeight);
+                              ctx.restore();
+
+                              // After photo
+                              ctx.save();
+                              ctx.beginPath();
+                              ctx.roundRect(width - 40 - photoWidth, photoY, photoWidth, photoHeight, 20);
+                              ctx.clip();
+                              ctx.drawImage(afterImg, width - 40 - photoWidth, photoY, photoWidth, photoHeight);
+                              ctx.restore();
+
+                              // Dates under photos
+                              ctx.font = '24px -apple-system, BlinkMacSystemFont, sans-serif';
+                              ctx.fillStyle = '#888888';
+                              ctx.fillText(formatDate(before.date), 40 + photoWidth / 2, photoY + photoHeight + 40);
+                              ctx.fillText(formatDate(after.date), width - 40 - photoWidth / 2, photoY + photoHeight + 40);
+
+                              // Stats section
+                              const statsY = photoY + photoHeight + 100;
+
+                              // Stats background
+                              ctx.fillStyle = '#1A1A1A';
+                              ctx.beginPath();
+                              ctx.roundRect(40, statsY, width - 80, 400, 20);
+                              ctx.fill();
+
+                              // Stats grid (2x2)
+                              const statItems = [
+                                { emoji: '🔥', value: totalCalories.toLocaleString(), label: 'calories burned', color: '#FF9500' },
+                                { emoji: '💪', value: strengthSessions.toString(), label: 'strength sessions', color: '#00FF94' },
+                                { emoji: '🏃', value: cardioSessions.toString(), label: 'cardio sessions', color: '#00D1FF' },
+                                { emoji: '🧘', value: recoverySessions.toString(), label: 'recovery sessions', color: '#BF5AF2' }
+                              ];
+
+                              const cellWidth = (width - 80) / 2;
+                              const cellHeight = 200;
+
+                              statItems.forEach((stat, i) => {
+                                const col = i % 2;
+                                const row = Math.floor(i / 2);
+                                const x = 40 + col * cellWidth + cellWidth / 2;
+                                const y = statsY + row * cellHeight + 60;
+
+                                ctx.font = '48px -apple-system, BlinkMacSystemFont, sans-serif';
+                                ctx.fillText(stat.emoji, x, y);
+
+                                ctx.font = 'bold 56px -apple-system, BlinkMacSystemFont, sans-serif';
+                                ctx.fillStyle = stat.color;
+                                ctx.fillText(stat.value, x, y + 70);
+
+                                ctx.font = '24px -apple-system, BlinkMacSystemFont, sans-serif';
+                                ctx.fillStyle = '#888888';
+                                ctx.fillText(stat.label, x, y + 110);
+                              });
+
+                              // Day Seven branding
+                              ctx.fillStyle = '#444444';
+                              ctx.font = '24px -apple-system, BlinkMacSystemFont, sans-serif';
+                              ctx.fillText('Tracked with Day Seven', width / 2, height - 60);
+
+                              // Create blob and share
+                              const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png', 1.0));
+                              const file = new File([blob], `dayseven-progress-${Date.now()}.png`, { type: 'image/png' });
+
+                              if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                                try {
+                                  await navigator.share({ files: [file] });
+                                  return;
+                                } catch (e) {
+                                  if (e.name === 'AbortError') return;
+                                }
+                              }
+
+                              // Fallback: download
+                              const link = document.createElement('a');
+                              link.download = `dayseven-progress-${Date.now()}.png`;
+                              link.href = canvas.toDataURL('image/png', 1.0);
+                              link.click();
+                            } catch (err) {
+                              console.error('Failed to generate share image:', err);
+                              // Fallback to text share
+                              const shareText = `My fitness progress over ${daysBetween} days!\n\n🔥 ${totalCalories.toLocaleString()} calories burned\n💪 ${strengthSessions} strength sessions\n🏃 ${cardioSessions} cardio sessions\n🧘 ${recoverySessions} recovery sessions\n\nTracked with Day Seven`;
+                              if (navigator.share) {
+                                try {
+                                  await navigator.share({ title: 'My Fitness Progress', text: shareText });
+                                } catch (e) {
+                                  if (e.name !== 'AbortError') {
+                                    await navigator.clipboard.writeText(shareText);
+                                    alert('Progress copied to clipboard!');
+                                  }
+                                }
+                              } else {
+                                await navigator.clipboard.writeText(shareText);
+                                alert('Progress copied to clipboard!');
+                              }
+                            }
+                          } finally {
+                            setIsShareGenerating(false);
+                          }
+                        }}
+                        className="flex-1 py-3 rounded-xl font-medium text-center flex items-center justify-center gap-2 transition-opacity"
+                        style={{
+                          backgroundColor: '#00FF94',
+                          color: 'black',
+                          opacity: isShareGenerating ? 0.7 : 1
+                        }}
+                      >
+                        {isShareGenerating ? (
+                          <>
+                            <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                            </svg>
+                            Generating...
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                            </svg>
+                            Share Progress
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowCompareModal(false);
+                          setSelectedPhotos([]);
+                        }}
+                        className="py-3 px-6 rounded-xl font-medium text-center bg-zinc-800 text-white"
+                      >
+                        Done
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        );
+      })()}
 
       {/* Week Stats Modal */}
       <WeekStatsModal 

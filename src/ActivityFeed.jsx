@@ -741,8 +741,14 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   );
 
   const ActivityCard = ({ activity }) => {
-    const { friend, type, duration, calories, distance, date, id } = activity;
-    const icon = activityIcons[type] || '💪';
+    const { friend, type, duration, calories, distance, date, id, customEmoji, sportEmoji } = activity;
+    // Use custom emoji for "Other" activities, sport emoji for Sports, otherwise use default icons
+    let icon = activityIcons[type] || '💪';
+    if (type === 'Other' && customEmoji) {
+      icon = customEmoji;
+    } else if (type === 'Sports' && sportEmoji) {
+      icon = sportEmoji;
+    }
     const key = `${friend.uid}-${id}`;
     const reactions = activityReactions[key] || [];
     const comments = activityComments[key] || [];

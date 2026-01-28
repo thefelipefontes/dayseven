@@ -1,5 +1,6 @@
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../firebase';
 
 export async function createUserProfile(user) {
   const userRef = doc(db, 'users', user.uid);
@@ -11,7 +12,9 @@ export async function createUserProfile(user) {
       email: user.email,
       displayName: user.displayName,
       photoURL: user.photoURL,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      hasCompletedOnboarding: false,
+      goals: null
     });
   }
 
@@ -72,4 +75,58 @@ export async function saveUsername(uid, username) {
   // Create username document for fast lookups
   const usernameRef = doc(db, 'usernames', lowerUsername);
   await setDoc(usernameRef, { uid });
+}
+
+export async function saveCustomActivities(uid, customActivities) {
+  const userRef = doc(db, 'users', uid);
+  await updateDoc(userRef, { customActivities });
+}
+
+export async function getCustomActivities(uid) {
+  const userRef = doc(db, 'users', uid);
+  const userDoc = await getDoc(userRef);
+
+  if (userDoc.exists()) {
+    return userDoc.data().customActivities || [];
+  }
+
+  return [];
+}
+
+export async function saveUserGoals(uid, goals) {
+  const userRef = doc(db, 'users', uid);
+  await updateDoc(userRef, { goals });
+}
+
+export async function getUserGoals(uid) {
+  const userRef = doc(db, 'users', uid);
+  const userDoc = await getDoc(userRef);
+
+  if (userDoc.exists()) {
+    return userDoc.data().goals || null;
+  }
+
+  return null;
+}
+
+export async function setOnboardingComplete(uid) {
+  const userRef = doc(db, 'users', uid);
+  await updateDoc(userRef, { hasCompletedOnboarding: true });
+}
+
+export async function uploadProfilePhoto(uid, file) {
+  // Create a reference to the profile photo location
+  const photoRef = ref(storage, `profilePhotos/${uid}`);
+
+  // Upload the file
+  await uploadBytes(photoRef, file);
+
+  // Get the download URL
+  const downloadURL = await getDownloadURL(photoRef);
+
+  // Update the user's profile with the new photo URL
+  const userRef = doc(db, 'users', uid);
+  await updateDoc(userRef, { photoURL: downloadURL });
+
+  return downloadURL;
 }

@@ -502,7 +502,6 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   const [activityComments, setActivityComments] = useState({});
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [pullDistance, setPullDistance] = useState(0);
   const [activeView, setActiveView] = useState('feed'); // 'feed' or 'leaderboard'
   const [leaderboardData, setLeaderboardData] = useState([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
@@ -1036,52 +1035,6 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     }
   };
 
-  // Pull to refresh handlers - only activate when pulling down from top
-  const touchStartRef = useRef(null);
-  const pullDistanceRef = useRef(0);
-
-  const handleTouchStart = (e) => {
-    // Skip if touching interactive elements
-    const target = e.target;
-    if (target.closest('button') || target.closest('a') || target.closest('[role="button"]') || target.closest('input')) {
-      touchStartRef.current = null;
-      return;
-    }
-    // Only track if at the top of scroll
-    if (e.currentTarget.scrollTop === 0) {
-      touchStartRef.current = e.touches[0].clientY;
-    } else {
-      touchStartRef.current = null;
-    }
-  };
-
-  const handleTouchMove = (e) => {
-    if (touchStartRef.current === null) return;
-    const currentTouch = e.touches[0].clientY;
-    const diff = currentTouch - touchStartRef.current;
-    // Only pull down (positive diff) and only when at top
-    if (diff > 10 && e.currentTarget.scrollTop === 0) {
-      const newDistance = Math.min((diff - 10) * 0.5, 80);
-      pullDistanceRef.current = newDistance;
-      setPullDistance(newDistance);
-    } else if (diff <= 10 && pullDistanceRef.current > 0) {
-      // Reset if scrolling back up
-      pullDistanceRef.current = 0;
-      setPullDistance(0);
-    }
-  };
-
-  const handleTouchEnd = () => {
-    if (pullDistanceRef.current > 60) {
-      handleRefresh();
-    }
-    if (pullDistanceRef.current > 0) {
-      setPullDistance(0);
-    }
-    pullDistanceRef.current = 0;
-    touchStartRef.current = null;
-  };
-
   // Use refs for comment inputs to avoid re-renders on typing
   const commentInputRefs = useRef({});
   const submittingRef = useRef({});
@@ -1570,31 +1523,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     const currentUserRank = sortedLeaderboard.findIndex(u => u.isCurrentUser) + 1;
 
     return (
-      <div
-        className="h-full overflow-y-auto"
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-      >
-        {/* Pull to refresh indicator */}
-        <div
-          className="flex justify-center items-center transition-all duration-300"
-          style={{
-            height: isRefreshing ? '60px' : `${pullDistance}px`,
-            opacity: isRefreshing ? 1 : Math.min(pullDistance / 60, 1)
-          }}
-        >
-          <div
-            className={`text-2xl ${isRefreshing ? 'animate-spin' : ''}`}
-            style={{
-              transform: isRefreshing ? 'none' : `rotate(${pullDistance * 3}deg)`,
-              transition: isRefreshing ? 'none' : 'transform 0.1s'
-            }}
-          >
-            🔄
-          </div>
-        </div>
-
+      <div className="h-full overflow-y-auto">
         <FriendsHeaderTop />
         <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
 
@@ -1990,33 +1919,9 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   }
 
   return (
-    <div
-      className="h-full overflow-y-auto"
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-    >
-      {/* Pull to refresh indicator */}
-      <div
-        className="flex justify-center items-center transition-all duration-300"
-        style={{
-          height: isRefreshing ? '60px' : `${pullDistance}px`,
-          opacity: isRefreshing ? 1 : Math.min(pullDistance / 60, 1)
-        }}
-      >
-        <div
-          className={`text-2xl ${isRefreshing ? 'animate-spin' : ''}`}
-          style={{
-            transform: isRefreshing ? 'none' : `rotate(${pullDistance * 3}deg)`,
-            transition: isRefreshing ? 'none' : 'transform 0.1s'
-          }}
-        >
-          🔄
-        </div>
-      </div>
-
+    <div className="h-full overflow-y-auto">
       <FriendsHeaderTop />
-        <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
+      <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
 
       {/* Feed content */}
       <div className="px-4 pb-32">

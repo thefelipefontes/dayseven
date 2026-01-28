@@ -130,3 +130,17 @@ export async function uploadProfilePhoto(uid, file) {
 
   return downloadURL;
 }
+
+export async function uploadActivityPhoto(uid, activityId, file) {
+  // Create a unique filename with timestamp
+  const timestamp = Date.now();
+  const photoRef = ref(storage, `activityPhotos/${uid}/${activityId}/${timestamp}`);
+
+  // Upload the file
+  await uploadBytes(photoRef, file);
+
+  // Get the download URL
+  const downloadURL = await getDownloadURL(photoRef);
+
+  return downloadURL;
+}

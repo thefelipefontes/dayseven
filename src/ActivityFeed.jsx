@@ -732,6 +732,17 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           </div>
         </div>
 
+        {/* Activity Photo - only show if not private */}
+        {activity.photoURL && !activity.isPhotoPrivate && (
+          <div className="mt-3 rounded-xl overflow-hidden">
+            <img
+              src={activity.photoURL}
+              alt="Activity"
+              className="w-full h-auto max-h-80 object-cover"
+            />
+          </div>
+        )}
+
         {/* Reactions section */}
         {id && (
           <div className="mt-3 pt-3 border-t border-zinc-800">

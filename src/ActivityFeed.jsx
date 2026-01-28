@@ -344,19 +344,29 @@ const MemoizedActivityCard = React.memo(({
       {/* Activity Photo */}
       {activity.photoURL && !activity.isPhotoPrivate && (
         <>
-          <button onClick={() => setShowFullscreenPhoto(true)} className="mt-3 rounded-xl overflow-hidden w-full relative group">
+          <TouchButton onClick={() => setShowFullscreenPhoto(true)} className="mt-3 rounded-xl overflow-hidden w-full relative group block">
             <img src={activity.photoURL} alt="Activity" className="w-full h-auto max-h-80 object-cover" />
-          </button>
-          {showFullscreenPhoto && (
-            <div className="fixed inset-0 z-[100] bg-black flex items-center justify-center" onClick={() => setShowFullscreenPhoto(false)}>
-              <button onClick={() => setShowFullscreenPhoto(false)} className="absolute top-4 right-4 w-10 h-10 bg-white/10 rounded-full flex items-center justify-center z-10">
-                <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-              <img src={activity.photoURL} alt="Activity fullscreen" className="max-w-full max-h-full object-contain" onClick={(e) => e.stopPropagation()} />
-            </div>
-          )}
+          </TouchButton>
+          {/* Fullscreen modal - always rendered but hidden to prevent flash */}
+          <div
+            className="fixed inset-0 z-[100] bg-black flex items-center justify-center transition-opacity duration-150"
+            style={{
+              opacity: showFullscreenPhoto ? 1 : 0,
+              pointerEvents: showFullscreenPhoto ? 'auto' : 'none',
+              visibility: showFullscreenPhoto ? 'visible' : 'hidden'
+            }}
+            onClick={() => setShowFullscreenPhoto(false)}
+            onTouchStart={(e) => e.stopPropagation()}
+            onTouchMove={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => e.stopPropagation()}
+          >
+            <TouchButton onClick={() => setShowFullscreenPhoto(false)} className="absolute top-4 right-4 w-10 h-10 bg-white/10 rounded-full flex items-center justify-center z-10">
+              <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </TouchButton>
+            <img src={activity.photoURL} alt="Activity fullscreen" className="max-w-full max-h-full object-contain" onClick={(e) => e.stopPropagation()} />
+          </div>
         </>
       )}
 

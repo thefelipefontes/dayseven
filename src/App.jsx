@@ -10,14 +10,14 @@ import { createUserProfile, getUserProfile, saveUserActivities, getUserActivitie
 import { getFriends, getReactions, getFriendRequests } from './services/friendService';
 import html2canvas from 'html2canvas';
 
-// STREAKD Logo component with gradient - uses individual colored letters for html2canvas compatibility
-const StreakdLogo = ({ gradient = ['#00FF94', '#00D1FF'], size = 'base', opacity = 0.7 }) => {
+// DAY SEVEN Logo component with gradient - uses individual colored letters for html2canvas compatibility
+const DaySevenLogo = ({ gradient = ['#00FF94', '#00D1FF'], size = 'base', opacity = 0.7 }) => {
   const sizeMap = {
     'sm': 'text-sm',
     'base': 'text-base',
   };
   const textClass = sizeMap[size] || sizeMap['base'];
-  const letters = 'STREAKD'.split('');
+  const letters = 'DAY SEVEN'.split('');
 
   // Calculate color for each letter position (0-6)
   const getColorAtPosition = (index, total) => {
@@ -1034,7 +1034,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
       }
 
       const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png', 1.0));
-      const file = new File([blob], `streakd-${cardType}-${Date.now()}.png`, { type: 'image/png' });
+      const file = new File([blob], `dayseven-${cardType}-${Date.now()}.png`, { type: 'image/png' });
 
       // On mobile, use share API with "Save Image" intent if available
       if (isMobile && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -1051,7 +1051,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
 
       // Fallback: trigger download
       const link = document.createElement('a');
-      link.download = `streakd-${cardType}-${Date.now()}.png`;
+      link.download = `dayseven-${cardType}-${Date.now()}.png`;
       link.href = canvas.toDataURL('image/png', 1.0);
       link.click();
     } finally {
@@ -1073,7 +1073,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
       }
 
       const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png', 1.0));
-      const file = new File([blob], `streakd-${cardFormat}.png`, { type: 'image/png' });
+      const file = new File([blob], `dayseven-${cardFormat}.png`, { type: 'image/png' });
 
       // Try native share API (mobile)
       if (navigator.share) {
@@ -1086,12 +1086,12 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
           }
           // Fallback: share without file (just URL/text if available)
           await navigator.share({
-            title: 'STREAKD',
-            text: 'Check out my STREAKD stats!'
+            title: 'Day Seven',
+            text: 'Check out my Day Seven stats!'
           });
           // Still download the image since we couldn't share the file
           const link = document.createElement('a');
-          link.download = `streakd-${cardType}-${Date.now()}.png`;
+          link.download = `dayseven-${cardType}-${Date.now()}.png`;
           link.href = canvas.toDataURL('image/png', 1.0);
           link.click();
           setIsGenerating(false);
@@ -1108,7 +1108,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
 
       // Fallback: download the image
       const link = document.createElement('a');
-      link.download = `streakd-${cardType}-${Date.now()}.png`;
+      link.download = `dayseven-${cardType}-${Date.now()}.png`;
       link.href = canvas.toDataURL('image/png', 1.0);
       link.click();
     } catch (error) {
@@ -1421,7 +1421,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
 
             {/* Footer */}
             <div className="text-center mt-1">
-              <StreakdLogo gradient={['#FFD700', '#FFA500']} size="sm" />
+              <DaySevenLogo gradient={['#FFD700', '#FFA500']} size="sm" />
               <div className={`${isPostFormat ? 'text-[8px]' : 'text-[8px]'} text-gray-600 tracking-widest uppercase`}>Personal Bests</div>
             </div>
           </div>
@@ -1584,7 +1584,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
 
               {/* Footer */}
               <div className={`text-center ${isPostFormat ? 'mt-0' : 'mt-1'}`}>
-                <StreakdLogo gradient={['#00FF94', '#00D1FF']} size={isPostFormat ? 'base' : 'base'} />
+                <DaySevenLogo gradient={['#00FF94', '#00D1FF']} size={isPostFormat ? 'base' : 'base'} />
                 <div className={`${isPostFormat ? 'text-[10px] -mt-0.5' : 'text-[10px]'} text-gray-600 tracking-widest uppercase`}>Weekly Recap</div>
               </div>
             </div>
@@ -1711,7 +1711,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
             </div>
 
             <div className="text-center mt-auto w-full">
-              <StreakdLogo gradient={['#00FF94', '#00D1FF']} size={isPostFormat ? 'sm' : 'base'} />
+              <DaySevenLogo gradient={['#00FF94', '#00D1FF']} size={isPostFormat ? 'sm' : 'base'} />
               <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-600 tracking-widest uppercase -mt-0.5`}>Week Highlights</div>
             </div>
           </div>
@@ -1793,7 +1793,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
                 </div>
               </div>
               <div className={`text-center ${isPostFormat ? '-mt-0.5' : 'mt-0.5'}`}>
-                <StreakdLogo gradient={['#ffffff', '#888888']} size={isPostFormat ? 'sm' : 'base'} />
+                <DaySevenLogo gradient={['#ffffff', '#888888']} size={isPostFormat ? 'sm' : 'base'} />
                 <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-600 tracking-widest uppercase -mt-0.5`}>Streak Stats</div>
               </div>
             </div>
@@ -1842,7 +1842,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
               </div>
             </div>
             <div className="text-center mt-auto w-full mt-1">
-              <StreakdLogo gradient={['#8B5CF6', '#06B6D4']} size={isPostFormat ? 'sm' : 'base'} />
+              <DaySevenLogo gradient={['#8B5CF6', '#06B6D4']} size={isPostFormat ? 'sm' : 'base'} />
               <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-600 tracking-widest uppercase -mt-0.5`}>Monthly Stats</div>
             </div>
           </div>
@@ -2753,7 +2753,7 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null }) 
             ← Back
           </button>
         )}
-        <h1 className="text-3xl font-black tracking-tight mb-1">STREAKD</h1>
+        <h1 className="text-3xl font-black tracking-tight mb-1">DAY SEVEN</h1>
         <p className="text-sm mb-4" style={{ color: '#00FF94' }}>Win the week.</p>
         <h2 className="text-xl font-bold mb-2">{isEditing ? 'Edit Your Goals' : 'Set Your Goals'}</h2>
         <p className="text-gray-500 text-sm">Set your standards. Earn your streaks.</p>
@@ -2830,7 +2830,7 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null }) 
             e.currentTarget.style.backgroundColor = '#00FF94';
           }}
         >
-          {isEditing ? 'Save Goals' : 'Start Streakd'}
+          {isEditing ? 'Save Goals' : 'Start Day Seven'}
         </button>
       </div>
     </div>
@@ -4551,7 +4551,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     <div className="pb-32">
       {/* Header */}
       <div className="px-4 pt-2 pb-3">
-        <h1 className="text-xl font-bold text-white">STREAKD</h1>
+        <h1 className="text-xl font-bold text-white">DAY SEVEN</h1>
         <p className="text-xs" style={{ color: '#00FF94' }}>Win the week.</p>
       </div>
 
@@ -7571,7 +7571,7 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
 };
 
 // Main App
-export default function StreakdApp() {
+export default function DaySevenApp() {
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);

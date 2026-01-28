@@ -24,7 +24,7 @@ const Login = ({ onLogin }) => {
     setIsLoading(false);
   };
 
-  const handleAppleSignIn = async () => {
+const handleAppleSignIn = async () => {
     setIsLoading(true);
     setError('');
     try {
@@ -111,7 +111,7 @@ const Login = ({ onLogin }) => {
         {/* Logo/Title */}
         <div className="mb-12 text-center">
           <h1 className="text-5xl font-bold text-white tracking-tight mb-2">
-            STREAKD
+            DAY SEVEN
           </h1>
           <p className="text-gray-400 text-lg">Set Your Standards. Earn Your Streaks.</p>
         </div>

@@ -1,6 +1,6 @@
 {
-  "name": "Streakd",
-  "short_name": "Streakd",
+  "name": "Day Seven",
+  "short_name": "Day Seven",
   "description": "Track your fitness streaks. Win the week.",
   "start_url": "/",
   "display": "standalone",

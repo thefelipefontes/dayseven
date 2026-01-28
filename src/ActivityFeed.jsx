@@ -1596,7 +1596,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                     // In a real app, this would trigger native share
                     if (navigator.share) {
                       navigator.share({
-                        title: 'My Streakd Ranking',
+                        title: 'My Day Seven Ranking',
                         text: `I'm ranked #${currentUserRank} on the ${getCategoryLabel()} leaderboard! 🏆`
                       });
                     }

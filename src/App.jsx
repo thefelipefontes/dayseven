@@ -1123,7 +1123,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
               </div>
             </div>
             <div className="text-center w-full">
-              <div className="inline-block text-base font-black tracking-wider" style={{ background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
+              <div className="inline-block text-base font-black tracking-wider" style={{ background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>DAY SEVEN</div>
               <div className="text-[8px] text-gray-600 tracking-widest uppercase -mt-0.5">Personal Bests</div>
             </div>
           </div>
@@ -1290,7 +1290,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
               </div>
 
               <div className="text-center mt-auto w-full">
-                <div className="inline-block text-lg font-black tracking-wider" style={{ background: 'linear-gradient(135deg, #00FF94 0%, #00D1FF 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
+                <div className="inline-block text-lg font-black tracking-wider" style={{ background: 'linear-gradient(135deg, #00FF94 0%, #00D1FF 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>DAY SEVEN</div>
                 <div className="text-[9px] text-gray-600 tracking-widest uppercase -mt-0.5">Weekly Recap</div>
                 {/* Slide indicator */}
                 <div className="flex justify-center gap-2 mt-3">
@@ -1423,7 +1423,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
             </div>
 
             <div className="text-center mt-auto w-full">
-              <div className="inline-block text-lg font-black tracking-wider" style={{ background: 'linear-gradient(135deg, #00FF94 0%, #00D1FF 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
+              <div className="inline-block text-lg font-black tracking-wider" style={{ background: 'linear-gradient(135deg, #00FF94 0%, #00D1FF 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>DAY SEVEN</div>
               <div className="text-[9px] text-gray-600 tracking-widest uppercase -mt-0.5">Week Highlights</div>
               {/* Slide indicator */}
               <div className="flex justify-center gap-2 mt-3">
@@ -1512,7 +1512,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
                 </div>
               </div>
               <div className="text-center">
-                <div className="inline-block text-base font-black tracking-wider" style={{ background: 'linear-gradient(135deg, #ffffff 0%, #888888 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
+                <div className="inline-block text-base font-black tracking-wider" style={{ background: 'linear-gradient(135deg, #ffffff 0%, #888888 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>DAY SEVEN</div>
                 <div className="text-[8px] text-gray-600 tracking-widest uppercase -mt-0.5">Streak Stats</div>
                 {/* Slide indicator */}
                 <div className="flex justify-center gap-2 mt-3">
@@ -1567,7 +1567,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
               </div>
             </div>
             <div className="text-center mt-auto w-full">
-              <div className="inline-block text-lg font-black tracking-wider" style={{ background: 'linear-gradient(135deg, #8B5CF6 0%, #06B6D4 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>STREAKD</div>
+              <div className="inline-block text-lg font-black tracking-wider" style={{ background: 'linear-gradient(135deg, #8B5CF6 0%, #06B6D4 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', opacity: 0.7 }}>DAY SEVEN</div>
               <div className="text-[9px] text-gray-600 tracking-widest uppercase -mt-0.5">Monthly Stats</div>
             </div>
           </div>
@@ -2470,7 +2470,7 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null }) 
             ← Back
           </button>
         )}
-        <h1 className="text-3xl font-black tracking-tight mb-1">STREAKD</h1>
+        <h1 className="text-3xl font-black tracking-tight mb-1">DAY SEVEN</h1>
         <p className="text-sm mb-4" style={{ color: '#00FF94' }}>Win the week.</p>
         <h2 className="text-xl font-bold mb-2">{isEditing ? 'Edit Your Goals' : 'Set Your Goals'}</h2>
         <p className="text-gray-500 text-sm">Be realistic. Consistency beats intensity.</p>
@@ -2544,7 +2544,7 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null }) 
             e.currentTarget.style.backgroundColor = '#00FF94';
           }}
         >
-          {isEditing ? 'Save Goals' : 'Start Streakd'}
+          {isEditing ? 'Save Goals' : 'Start Day Seven'}
         </button>
       </div>
     </div>
@@ -3651,7 +3651,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     <div className="pb-32">
       {/* Header */}
       <div className="px-4 pt-2 pb-3">
-        <h1 className="text-xl font-bold text-white">STREAKD</h1>
+        <h1 className="text-xl font-bold text-white">DAY SEVEN</h1>
         <p className="text-xs" style={{ color: '#00FF94' }}>Win the week.</p>
       </div>
 
@@ -6135,7 +6135,7 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals }) => 
 };
 
 // Main App
-export default function StreakdApp() {
+export default function DaySevenApp() {
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);

@@ -108,11 +108,13 @@ const handleAppleSignIn = async () => {
   if (authMode === 'main') {
     return (
       <div className="min-h-screen bg-black flex flex-col items-center justify-center px-6">
-        {/* Logo/Title */}
+        {/* Logo/Wordmark */}
         <div className="mb-12 text-center">
-          <h1 className="text-5xl font-bold text-white tracking-tight mb-2">
-            DAY SEVEN
-          </h1>
+          <img
+            src="/wordmark.png"
+            alt="Day Seven"
+            className="h-10 mx-auto mb-4"
+          />
           <p className="text-gray-400 text-lg">Set Your Standards. Earn Your Streaks.</p>
         </div>
 

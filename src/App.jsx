@@ -10,49 +10,21 @@ import { createUserProfile, getUserProfile, saveUserActivities, getUserActivitie
 import { getFriends, getReactions, getFriendRequests } from './services/friendService';
 import html2canvas from 'html2canvas';
 
-// DAY SEVEN Logo component with gradient - uses individual colored letters for html2canvas compatibility
-const DaySevenLogo = ({ gradient = ['#00FF94', '#00D1FF'], size = 'base', opacity = 0.7 }) => {
+// DAY SEVEN Logo component - uses wordmark image
+const DaySevenLogo = ({ size = 'base', opacity = 0.7 }) => {
   const sizeMap = {
-    'sm': 'text-sm',
-    'base': 'text-base',
+    'sm': 'h-4',
+    'base': 'h-5',
   };
-  const textClass = sizeMap[size] || sizeMap['base'];
-  const letters = 'DAY SEVEN'.split('');
-
-  // Calculate color for each letter position (0-6)
-  const getColorAtPosition = (index, total) => {
-    const ratio = index / (total - 1);
-    const startColor = gradient[0];
-    const endColor = gradient[1];
-
-    // Parse hex colors
-    const start = {
-      r: parseInt(startColor.slice(1, 3), 16),
-      g: parseInt(startColor.slice(3, 5), 16),
-      b: parseInt(startColor.slice(5, 7), 16),
-    };
-    const end = {
-      r: parseInt(endColor.slice(1, 3), 16),
-      g: parseInt(endColor.slice(3, 5), 16),
-      b: parseInt(endColor.slice(5, 7), 16),
-    };
-
-    // Interpolate
-    const r = Math.round(start.r + (end.r - start.r) * ratio);
-    const g = Math.round(start.g + (end.g - start.g) * ratio);
-    const b = Math.round(start.b + (end.b - start.b) * ratio);
-
-    return `rgb(${r}, ${g}, ${b})`;
-  };
+  const heightClass = sizeMap[size] || sizeMap['base'];
 
   return (
-    <span className={`${textClass} font-black tracking-wider inline-flex items-center justify-center leading-none`} style={{ opacity }}>
-      {letters.map((letter, index) => (
-        <span key={index} style={{ color: getColorAtPosition(index, letters.length) }}>
-          {letter}
-        </span>
-      ))}
-    </span>
+    <img
+      src="/wordmark.png"
+      alt="Day Seven"
+      className={`${heightClass} inline-block`}
+      style={{ opacity }}
+    />
   );
 };
 
@@ -2753,7 +2725,7 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null }) 
             ← Back
           </button>
         )}
-        <h1 className="text-3xl font-black tracking-tight mb-1">DAY SEVEN</h1>
+        <img src="/wordmark.png" alt="Day Seven" className="h-8 mb-2" />
         <p className="text-sm mb-4" style={{ color: '#00FF94' }}>Win the week.</p>
         <h2 className="text-xl font-bold mb-2">{isEditing ? 'Edit Your Goals' : 'Set Your Goals'}</h2>
         <p className="text-gray-500 text-sm">Set your standards. Earn your streaks.</p>
@@ -4551,7 +4523,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     <div className="pb-32">
       {/* Header */}
       <div className="px-4 pt-2 pb-3">
-        <h1 className="text-xl font-bold text-white">DAY SEVEN</h1>
+        <img src="/wordmark.png" alt="Day Seven" className="h-6" />
         <p className="text-xs" style={{ color: '#00FF94' }}>Win the week.</p>
       </div>
 

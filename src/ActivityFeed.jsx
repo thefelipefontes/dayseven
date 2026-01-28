@@ -139,6 +139,24 @@ const SegmentedControl = ({ activeView, setActiveView }) => (
   </div>
 );
 
+// ProfilePhoto component - defined outside ActivityFeed for stable reference
+const ProfilePhoto = React.memo(({ photoURL, displayName, size = 40 }) => (
+  <div
+    className="rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0"
+    style={{ width: size, height: size }}
+  >
+    {photoURL ? (
+      <img
+        src={photoURL}
+        alt={displayName}
+        className="w-full h-full object-cover"
+      />
+    ) : (
+      <span className="text-white text-sm">{displayName?.[0]?.toUpperCase() || '?'}</span>
+    )}
+  </div>
+));
+
 const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingRequestsCount = 0 }) => {
   const [feedActivities, setFeedActivities] = useState([]);
   const [activityReactions, setActivityReactions] = useState({});
@@ -147,7 +165,6 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
-  const [touchStart, setTouchStart] = useState(null);
   const [activeView, setActiveView] = useState('feed'); // 'feed' or 'leaderboard'
   const [leaderboardData, setLeaderboardData] = useState([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
@@ -696,49 +713,51 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     }
   };
 
-  // Pull to refresh handlers - only activate when touching the scroll container directly
+  // Pull to refresh handlers - only activate when pulling down from top
+  const touchStartRef = useRef(null);
+  const pullDistanceRef = useRef(0);
+
   const handleTouchStart = (e) => {
-    // Only start pull-to-refresh if we're at the top and touching the container itself
-    // Check if the touch target is a button or interactive element - if so, don't start pull
+    // Skip if touching interactive elements
     const target = e.target;
-    if (target.closest('button') || target.closest('a') || target.closest('[role="button"]')) {
+    if (target.closest('button') || target.closest('a') || target.closest('[role="button"]') || target.closest('input')) {
+      touchStartRef.current = null;
       return;
     }
+    // Only track if at the top of scroll
     if (e.currentTarget.scrollTop === 0) {
-      setTouchStart(e.touches[0].clientY);
+      touchStartRef.current = e.touches[0].clientY;
+    } else {
+      touchStartRef.current = null;
     }
   };
 
   const handleTouchMove = (e) => {
-    if (touchStart === null) return;
+    if (touchStartRef.current === null) return;
     const currentTouch = e.touches[0].clientY;
-    const diff = currentTouch - touchStart;
-    if (diff > 0 && e.currentTarget.scrollTop === 0) {
-      setPullDistance(Math.min(diff * 0.5, 80));
+    const diff = currentTouch - touchStartRef.current;
+    // Only pull down (positive diff) and only when at top
+    if (diff > 10 && e.currentTarget.scrollTop === 0) {
+      const newDistance = Math.min((diff - 10) * 0.5, 80);
+      pullDistanceRef.current = newDistance;
+      setPullDistance(newDistance);
+    } else if (diff <= 10 && pullDistanceRef.current > 0) {
+      // Reset if scrolling back up
+      pullDistanceRef.current = 0;
+      setPullDistance(0);
     }
   };
 
   const handleTouchEnd = () => {
-    if (pullDistance > 60) {
+    if (pullDistanceRef.current > 60) {
       handleRefresh();
     }
-    setPullDistance(0);
-    setTouchStart(null);
+    if (pullDistanceRef.current > 0) {
+      setPullDistance(0);
+    }
+    pullDistanceRef.current = 0;
+    touchStartRef.current = null;
   };
-
-
-  const ProfilePhoto = ({ photoURL, displayName, size = 40 }) => (
-    <div
-      className="rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0"
-      style={{ width: size, height: size }}
-    >
-      {photoURL ? (
-        <img src={photoURL} alt={displayName} className="w-full h-full object-cover" />
-      ) : (
-        <span className="text-white text-sm">{displayName?.[0]?.toUpperCase() || '?'}</span>
-      )}
-    </div>
-  );
 
   const ActivityCard = ({ activity }) => {
     const { friend, type, duration, calories, distance, date, id, customEmoji, sportEmoji } = activity;
@@ -933,7 +952,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     );
   };
 
-  // Comments Modal Component
+  // Comments Modal Component - Bottom sheet design
   const CommentsModal = ({ data, onClose, onAddComment, onDeleteComment, currentUserId }) => {
     const [newComment, setNewComment] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -966,29 +985,52 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
 
     if (!data) return null;
 
+    // Stop all touch events from reaching the feed behind the modal
+    const stopTouchPropagation = (e) => {
+      e.stopPropagation();
+    };
+
     return (
       <div
-        className="fixed inset-0 z-50 flex items-end justify-center bg-black/80"
-        onClick={onClose}
+        className="fixed inset-0 z-50 flex items-end justify-center"
+        style={{ backgroundColor: 'rgba(0,0,0,0.8)' }}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            onClose();
+          }
+        }}
+        onTouchStart={stopTouchPropagation}
+        onTouchMove={stopTouchPropagation}
+        onTouchEnd={stopTouchPropagation}
       >
         <div
-          className="w-full max-h-[70vh] bg-zinc-900 rounded-t-2xl flex flex-col animate-slide-up"
-          onClick={e => e.stopPropagation()}
+          className="w-full max-h-[70vh] bg-zinc-900 rounded-t-2xl flex flex-col"
+          onClick={(e) => e.stopPropagation()}
+          onTouchStart={stopTouchPropagation}
+          onTouchMove={stopTouchPropagation}
+          onTouchEnd={stopTouchPropagation}
         >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
             <h3 className="text-white font-semibold">
               Comments {data.comments.length > 0 && `(${data.comments.length})`}
             </h3>
-            <TouchButton onClick={onClose} className="p-1">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onClose();
+              }}
+              className="p-1"
+              type="button"
+            >
               <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
-            </TouchButton>
+            </button>
           </div>
 
           {/* Comments list */}
-          <div className="flex-1 overflow-y-auto px-4 py-3">
+          <div className="flex-1 overflow-y-auto px-4 py-3 min-h-[100px]">
             {data.comments.length === 0 ? (
               <div className="text-center py-8">
                 <p className="text-gray-500">No comments yet</p>
@@ -1013,12 +1055,16 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                       <p className="text-gray-300 text-sm mt-0.5 break-words">{comment.text}</p>
                     </div>
                     {comment.commenterUid === currentUserId && (
-                      <TouchButton
-                        onClick={() => onDeleteComment(comment.id)}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteComment(comment.id);
+                        }}
                         className="text-red-400 text-xs px-2 py-1 hover:bg-red-400/10 rounded"
+                        type="button"
                       >
                         Delete
-                      </TouchButton>
+                      </button>
                     )}
                   </div>
                 ))}
@@ -1027,39 +1073,47 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           </div>
 
           {/* Input area */}
-          <div className="px-4 py-3 border-t border-zinc-800 flex gap-2">
+          <div
+            className="px-4 py-3 border-t border-zinc-800 flex gap-2"
+            style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <input
               ref={inputRef}
               type="text"
               value={newComment}
               onChange={(e) => setNewComment(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleSubmit();
+                }
+              }}
+              onClick={(e) => e.stopPropagation()}
+              onTouchStart={(e) => e.stopPropagation()}
               placeholder="Add a comment..."
-              className="flex-1 bg-zinc-800 text-white px-4 py-2 rounded-full text-sm focus:outline-none focus:ring-1 focus:ring-white/20"
+              className="flex-1 bg-zinc-800 text-white px-4 py-2 rounded-full focus:outline-none focus:ring-1 focus:ring-white/20"
+              style={{ fontSize: '16px' }}
+              autoComplete="off"
             />
-            <TouchButton
-              onClick={handleSubmit}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleSubmit();
+              }}
               disabled={!newComment.trim() || isSubmitting}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+              type="button"
+              className={`px-4 py-2 rounded-full text-sm font-medium transition-all flex-shrink-0 ${
                 newComment.trim() && !isSubmitting
                   ? 'bg-green-500 text-black'
                   : 'bg-zinc-700 text-gray-500'
               }`}
             >
               {isSubmitting ? '...' : 'Send'}
-            </TouchButton>
+            </button>
           </div>
         </div>
-
-        <style>{`
-          @keyframes slide-up {
-            from { transform: translateY(100%); }
-            to { transform: translateY(0); }
-          }
-          .animate-slide-up {
-            animation: slide-up 0.3s ease-out forwards;
-          }
-        `}</style>
       </div>
     );
   };

@@ -271,3 +271,58 @@ export async function removeReaction(ownerUid, activityId, reactorUid) {
   const reactionRef = doc(db, 'users', ownerUid, 'activityReactions', activityIdStr, 'reactions', reactorUid);
   await deleteDoc(reactionRef);
 }
+
+// Comments functions
+export async function addComment(activityId, ownerUid, commenterUid, commenterName, commenterPhoto, text) {
+  const activityIdStr = String(activityId);
+  const commentsRef = collection(db, 'users', ownerUid, 'activityComments', activityIdStr, 'comments');
+  const commentRef = doc(commentsRef);
+
+  try {
+    await setDoc(commentRef, {
+      id: commentRef.id,
+      commenterUid,
+      commenterName,
+      commenterPhoto,
+      text,
+      createdAt: serverTimestamp()
+    });
+    return commentRef.id;
+  } catch (error) {
+    console.error('addComment: Error writing to Firestore:', error);
+    throw error;
+  }
+}
+
+export async function getComments(ownerUid, activityId) {
+  const activityIdStr = String(activityId);
+  const commentsRef = collection(db, 'users', ownerUid, 'activityComments', activityIdStr, 'comments');
+  const q = query(commentsRef, orderBy('createdAt', 'asc'));
+
+  try {
+    const snapshot = await getDocs(q);
+
+    if (snapshot.empty) {
+      return [];
+    }
+
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+  } catch (error) {
+    // If index doesn't exist yet, fall back to unordered query
+    console.warn('getComments: Ordered query failed, falling back to unordered:', error);
+    const fallbackSnapshot = await getDocs(commentsRef);
+    return fallbackSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+  }
+}
+
+export async function deleteComment(ownerUid, activityId, commentId) {
+  const activityIdStr = String(activityId);
+  const commentRef = doc(db, 'users', ownerUid, 'activityComments', activityIdStr, 'comments', commentId);
+  await deleteDoc(commentRef);
+}

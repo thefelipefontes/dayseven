@@ -7,7 +7,7 @@ import UsernameSetup from './UsernameSetup';
 import Friends from './Friends';
 import ActivityFeed from './ActivityFeed';
 import { createUserProfile, getUserProfile, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, saveUserGoals, getUserGoals, setOnboardingComplete } from './services/userService';
-import { getFriends, getReactions, getFriendRequests } from './services/friendService';
+import { getFriends, getReactions, getFriendRequests, getComments } from './services/friendService';
 import html2canvas from 'html2canvas';
 
 // DAY SEVEN Logo component - uses wordmark image
@@ -2369,6 +2369,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit }) =>
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showFullscreenPhoto, setShowFullscreenPhoto] = useState(false);
   
   useEffect(() => {
     if (isOpen) {
@@ -2543,11 +2544,21 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit }) =>
           {/* Activity Photo */}
           {activity.photoURL && (
             <div className="mb-4 rounded-xl overflow-hidden">
-              <img
-                src={activity.photoURL}
-                alt="Activity"
-                className="w-full h-auto max-h-64 object-cover"
-              />
+              <button
+                onClick={() => setShowFullscreenPhoto(true)}
+                className="w-full relative group"
+              >
+                <img
+                  src={activity.photoURL}
+                  alt="Activity"
+                  className="w-full h-auto max-h-64 object-cover"
+                />
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                  <svg className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                  </svg>
+                </div>
+              </button>
               {activity.isPhotoPrivate && (
                 <div className="flex items-center gap-1 p-2 bg-black/50 text-xs text-gray-400">
                   <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -2556,6 +2567,29 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit }) =>
                   <span>Only visible to you</span>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Fullscreen Photo Modal */}
+          {showFullscreenPhoto && activity.photoURL && (
+            <div
+              className="fixed inset-0 z-[100] bg-black flex items-center justify-center"
+              onClick={() => setShowFullscreenPhoto(false)}
+            >
+              <button
+                onClick={() => setShowFullscreenPhoto(false)}
+                className="absolute top-4 right-4 w-10 h-10 bg-white/10 rounded-full flex items-center justify-center z-10"
+              >
+                <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+              <img
+                src={activity.photoURL}
+                alt="Activity fullscreen"
+                className="max-w-full max-h-full object-contain"
+                onClick={(e) => e.stopPropagation()}
+              />
             </div>
           )}
 
@@ -4473,7 +4507,9 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, onDeleteActivity, onEditActivity, user }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [activityReactions, setActivityReactions] = useState({});
+  const [activityComments, setActivityComments] = useState({});
   const [reactionDetailModal, setReactionDetailModal] = useState(null); // { activityId, reactions, selectedEmoji }
+  const [commentDetailModal, setCommentDetailModal] = useState(null); // { activityId, comments }
 
   // Calculate weekly progress directly from activities to ensure it's always in sync
   const weekProgress = useMemo(() => {
@@ -4573,30 +4609,38 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     .slice(0, 10); // Cap at 10 total
   const latestActivities = activityExpanded ? allLatestActivities : allLatestActivities.slice(0, 2);
 
-  // Fetch reactions for user's activities
+  // Fetch reactions and comments for user's activities
   useEffect(() => {
-    const fetchReactions = async () => {
+    const fetchReactionsAndComments = async () => {
       if (!user?.uid || activities.length === 0) return;
 
       const reactionsMap = {};
+      const commentsMap = {};
       await Promise.all(
         allLatestActivities.map(async (activity) => {
           if (activity.id) {
             try {
-              const reactions = await getReactions(user.uid, activity.id);
+              const [reactions, comments] = await Promise.all([
+                getReactions(user.uid, activity.id),
+                getComments(user.uid, activity.id)
+              ]);
               if (reactions.length > 0) {
                 reactionsMap[activity.id] = reactions;
               }
+              if (comments.length > 0) {
+                commentsMap[activity.id] = comments;
+              }
             } catch (error) {
-              console.error('Error fetching reactions for activity:', activity.id, error);
+              console.error('Error fetching reactions/comments for activity:', activity.id, error);
             }
           }
         })
       );
       setActivityReactions(reactionsMap);
+      setActivityComments(commentsMap);
     };
 
-    fetchReactions();
+    fetchReactionsAndComments();
   }, [user?.uid, activities]);
 
   // Helper to get reaction summary for an activity
@@ -4611,6 +4655,12 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     });
 
     return { counts, total: reactions.length, reactions };
+  };
+
+  // Helper to get comment count for an activity
+  const getCommentCount = (activityId) => {
+    const comments = activityComments[activityId] || [];
+    return comments.length;
   };
 
   // Reactions Detail Modal
@@ -4664,6 +4714,87 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                   )}
                 </div>
                 <span className="text-white text-sm font-medium">{reactor.reactorName}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Comments Detail Modal
+  const CommentsDetailModal = ({ data, onClose }) => {
+    if (!data) return null;
+
+    const { comments } = data;
+
+    const formatCommentTime = (createdAt) => {
+      if (!createdAt) return '';
+      const date = createdAt.toDate ? createdAt.toDate() : new Date(createdAt);
+      const now = new Date();
+      const diffMs = now - date;
+      const diffMins = Math.floor(diffMs / (1000 * 60));
+      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+      if (diffMins < 1) return 'Just now';
+      if (diffMins < 60) return `${diffMins}m ago`;
+      if (diffHours < 24) return `${diffHours}h ago`;
+      if (diffDays === 1) return 'Yesterday';
+      if (diffDays < 7) return `${diffDays}d ago`;
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    };
+
+    return (
+      <div
+        className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+        onClick={onClose}
+        onTouchEnd={(e) => {
+          if (e.target === e.currentTarget) {
+            e.preventDefault();
+            onClose();
+          }
+        }}
+      >
+        <div
+          className="w-full max-w-sm bg-zinc-900 rounded-2xl p-5 max-h-[60vh] overflow-y-auto"
+          onClick={e => e.stopPropagation()}
+          onTouchEnd={e => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+              <span className="text-gray-400 text-sm">{comments.length} {comments.length === 1 ? 'comment' : 'comments'}</span>
+            </div>
+            <button onClick={onClose} className="text-gray-400 p-1">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Comments list */}
+          <div className="space-y-4">
+            {comments.map((comment, idx) => (
+              <div key={comment.id || idx} className="flex gap-3">
+                <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {comment.commenterPhoto ? (
+                    <img src={comment.commenterPhoto} alt={comment.commenterName} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-white text-xs">{comment.commenterName?.[0]?.toUpperCase() || '?'}</span>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-white text-sm font-medium">{comment.commenterName}</span>
+                    <span className="text-gray-500 text-xs">{formatCommentTime(comment.createdAt)}</span>
+                  </div>
+                  <p className="text-gray-300 text-sm mt-0.5 break-words">{comment.text}</p>
+                </div>
               </div>
             ))}
           </div>
@@ -5039,12 +5170,13 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                           <span className="text-sm font-semibold truncate">{activity.type}{activity.subtype ? ` • ${activity.subtype}` : ''}</span>
                           {(() => {
                             const summary = getReactionSummary(activity.id);
-                            if (!summary) return null;
+                            const commentCount = getCommentCount(activity.id);
+                            if (!summary && commentCount === 0) return null;
                             return (
                               <span
                                 className="flex items-center gap-0.5 rounded-full flex-shrink-0"
                               >
-                                {Object.entries(summary.counts).slice(0, 4).map(([emoji, count]) => (
+                                {summary && Object.entries(summary.counts).slice(0, 4).map(([emoji, count]) => (
                                   <button
                                     key={emoji}
                                     className="flex items-center text-xs px-1.5 py-0.5 rounded-full transition-all duration-150 active:scale-95"
@@ -5075,6 +5207,36 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                                     {count > 1 && <span className="text-gray-300 text-[10px] ml-0.5">{count}</span>}
                                   </button>
                                 ))}
+                                {commentCount > 0 && (
+                                  <button
+                                    className="flex items-center text-xs px-1.5 py-0.5 rounded-full transition-all duration-150 active:scale-95"
+                                    style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (navigator.vibrate) {
+                                        navigator.vibrate(10);
+                                      }
+                                      setCommentDetailModal({
+                                        activityId: activity.id,
+                                        comments: activityComments[activity.id] || []
+                                      });
+                                    }}
+                                    onTouchStart={(e) => {
+                                      e.stopPropagation();
+                                      e.currentTarget.style.transform = 'scale(0.9)';
+                                      e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.2)';
+                                    }}
+                                    onTouchEnd={(e) => {
+                                      e.currentTarget.style.transform = '';
+                                      e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                                    }}
+                                  >
+                                    <svg className="w-3 h-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                                    </svg>
+                                    <span className="text-gray-300 text-[10px] ml-0.5">{commentCount}</span>
+                                  </button>
+                                )}
                               </span>
                             );
                           })()}
@@ -5139,6 +5301,12 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
       <ReactionsDetailModal
         data={reactionDetailModal}
         onClose={() => setReactionDetailModal(null)}
+      />
+
+      {/* Comments Detail Modal */}
+      <CommentsDetailModal
+        data={commentDetailModal}
+        onClose={() => setCommentDetailModal(null)}
       />
     </div>
   );

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { getUserActivities } from './services/userService';
-import { addReaction, getReactions, removeReaction } from './services/friendService';
+import { addReaction, getReactions, removeReaction, addComment, getComments, deleteComment } from './services/friendService';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -142,6 +142,8 @@ const SegmentedControl = ({ activeView, setActiveView }) => (
 const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingRequestsCount = 0 }) => {
   const [feedActivities, setFeedActivities] = useState([]);
   const [activityReactions, setActivityReactions] = useState({});
+  const [activityComments, setActivityComments] = useState({});
+  const [commentsModal, setCommentsModal] = useState(null); // { activity, comments }
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
@@ -227,18 +229,24 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       const limitedActivities = flatActivities.slice(0, 50);
       setFeedActivities(limitedActivities);
 
-      // Fetch reactions for each activity
+      // Fetch reactions and comments for each activity
       const reactionsMap = {};
+      const commentsMap = {};
       await Promise.all(
         limitedActivities.map(async (activity) => {
           if (activity.id) {
-            const reactions = await getReactions(activity.friend.uid, activity.id);
             const key = `${activity.friend.uid}-${activity.id}`;
+            const [reactions, comments] = await Promise.all([
+              getReactions(activity.friend.uid, activity.id),
+              getComments(activity.friend.uid, activity.id)
+            ]);
             reactionsMap[key] = reactions;
+            commentsMap[key] = comments;
           }
         })
       );
       setActivityReactions(reactionsMap);
+      setActivityComments(commentsMap);
     } catch (error) {
       console.error('Error loading activity feed:', error);
     }
@@ -619,6 +627,75 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     }
   };
 
+  const handleOpenComments = (activity) => {
+    if (!activity.id) return;
+    const key = `${activity.friend.uid}-${activity.id}`;
+    const comments = activityComments[key] || [];
+    setCommentsModal({ activity, comments });
+  };
+
+  const handleAddComment = async (text) => {
+    if (!commentsModal || !text.trim()) return;
+    const { activity } = commentsModal;
+    const key = `${activity.friend.uid}-${activity.id}`;
+
+    try {
+      const commentId = await addComment(
+        activity.id,
+        activity.friend.uid,
+        user.uid,
+        userProfile?.displayName || userProfile?.username || 'User',
+        userProfile?.photoURL || null,
+        text.trim()
+      );
+
+      const newComment = {
+        id: commentId,
+        commenterUid: user.uid,
+        commenterName: userProfile?.displayName || userProfile?.username || 'User',
+        commenterPhoto: userProfile?.photoURL || null,
+        text: text.trim(),
+        createdAt: { toDate: () => new Date() }
+      };
+
+      // Update local state
+      const updatedComments = [...(activityComments[key] || []), newComment];
+      setActivityComments(prev => ({
+        ...prev,
+        [key]: updatedComments
+      }));
+      setCommentsModal(prev => ({
+        ...prev,
+        comments: updatedComments
+      }));
+    } catch (error) {
+      console.error('Error adding comment:', error);
+    }
+  };
+
+  const handleDeleteComment = async (commentId) => {
+    if (!commentsModal) return;
+    const { activity } = commentsModal;
+    const key = `${activity.friend.uid}-${activity.id}`;
+
+    try {
+      await deleteComment(activity.friend.uid, activity.id, commentId);
+
+      // Update local state
+      const updatedComments = (activityComments[key] || []).filter(c => c.id !== commentId);
+      setActivityComments(prev => ({
+        ...prev,
+        [key]: updatedComments
+      }));
+      setCommentsModal(prev => ({
+        ...prev,
+        comments: updatedComments
+      }));
+    } catch (error) {
+      console.error('Error deleting comment:', error);
+    }
+  };
+
   // Pull to refresh handlers - only activate when touching the scroll container directly
   const handleTouchStart = (e) => {
     // Only start pull-to-refresh if we're at the top and touching the container itself
@@ -668,6 +745,8 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     const icon = activityIcons[type] || '💪';
     const key = `${friend.uid}-${id}`;
     const reactions = activityReactions[key] || [];
+    const comments = activityComments[key] || [];
+    const [showFullscreenPhoto, setShowFullscreenPhoto] = useState(false);
 
     // Count reactions by type
     const reactionCounts = {};
@@ -734,20 +813,53 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
 
         {/* Activity Photo - only show if not private */}
         {activity.photoURL && !activity.isPhotoPrivate && (
-          <div className="mt-3 rounded-xl overflow-hidden">
-            <img
-              src={activity.photoURL}
-              alt="Activity"
-              className="w-full h-auto max-h-80 object-cover"
-            />
-          </div>
+          <>
+            <button
+              onClick={() => setShowFullscreenPhoto(true)}
+              className="mt-3 rounded-xl overflow-hidden w-full relative group"
+            >
+              <img
+                src={activity.photoURL}
+                alt="Activity"
+                className="w-full h-auto max-h-80 object-cover"
+              />
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                <svg className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                </svg>
+              </div>
+            </button>
+
+            {/* Fullscreen Photo Modal */}
+            {showFullscreenPhoto && (
+              <div
+                className="fixed inset-0 z-[100] bg-black flex items-center justify-center"
+                onClick={() => setShowFullscreenPhoto(false)}
+              >
+                <button
+                  onClick={() => setShowFullscreenPhoto(false)}
+                  className="absolute top-4 right-4 w-10 h-10 bg-white/10 rounded-full flex items-center justify-center z-10"
+                >
+                  <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+                <img
+                  src={activity.photoURL}
+                  alt="Activity fullscreen"
+                  className="max-w-full max-h-full object-contain"
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </div>
+            )}
+          </>
         )}
 
-        {/* Reactions section */}
+        {/* Reactions and Comments section */}
         {id && (
           <div className="mt-3 pt-3 border-t border-zinc-800">
             <div className="flex items-center justify-between">
-              {/* Reaction buttons */}
+              {/* Reaction buttons and comment button */}
               <div className="flex items-center gap-1">
                 {reactionEmojis.map((emoji) => {
                   const count = reactionCounts[emoji] || 0;
@@ -772,6 +884,18 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                     </TouchButton>
                   );
                 })}
+                {/* Comment button */}
+                <TouchButton
+                  onClick={() => handleOpenComments(activity)}
+                  className="flex items-center gap-1 px-2 py-1 rounded-full transition-all duration-150 bg-zinc-800 hover:bg-zinc-700"
+                >
+                  <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                  </svg>
+                  {comments.length > 0 && (
+                    <span className="text-xs text-gray-400">{comments.length}</span>
+                  )}
+                </TouchButton>
               </div>
 
               {/* Reactor photos */}
@@ -799,6 +923,137 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             </div>
           </div>
         )}
+      </div>
+    );
+  };
+
+  // Comments Modal Component
+  const CommentsModal = ({ data, onClose, onAddComment, onDeleteComment, currentUserId }) => {
+    const [newComment, setNewComment] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const inputRef = useRef(null);
+
+    const handleSubmit = async () => {
+      if (!newComment.trim() || isSubmitting) return;
+      setIsSubmitting(true);
+      await onAddComment(newComment);
+      setNewComment('');
+      setIsSubmitting(false);
+    };
+
+    const formatCommentTime = (createdAt) => {
+      if (!createdAt) return '';
+      const date = createdAt.toDate ? createdAt.toDate() : new Date(createdAt);
+      const now = new Date();
+      const diffMs = now - date;
+      const diffMins = Math.floor(diffMs / (1000 * 60));
+      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+      if (diffMins < 1) return 'Just now';
+      if (diffMins < 60) return `${diffMins}m ago`;
+      if (diffHours < 24) return `${diffHours}h ago`;
+      if (diffDays === 1) return 'Yesterday';
+      if (diffDays < 7) return `${diffDays}d ago`;
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    };
+
+    if (!data) return null;
+
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-end justify-center bg-black/80"
+        onClick={onClose}
+      >
+        <div
+          className="w-full max-h-[70vh] bg-zinc-900 rounded-t-2xl flex flex-col animate-slide-up"
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+            <h3 className="text-white font-semibold">
+              Comments {data.comments.length > 0 && `(${data.comments.length})`}
+            </h3>
+            <TouchButton onClick={onClose} className="p-1">
+              <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </TouchButton>
+          </div>
+
+          {/* Comments list */}
+          <div className="flex-1 overflow-y-auto px-4 py-3">
+            {data.comments.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-gray-500">No comments yet</p>
+                <p className="text-gray-600 text-sm mt-1">Be the first to comment!</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {data.comments.map((comment) => (
+                  <div key={comment.id} className="flex gap-3">
+                    <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0">
+                      {comment.commenterPhoto ? (
+                        <img src={comment.commenterPhoto} alt={comment.commenterName} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-white text-xs">{comment.commenterName?.[0]?.toUpperCase() || '?'}</span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-white text-sm font-medium">{comment.commenterName}</span>
+                        <span className="text-gray-500 text-xs">{formatCommentTime(comment.createdAt)}</span>
+                      </div>
+                      <p className="text-gray-300 text-sm mt-0.5 break-words">{comment.text}</p>
+                    </div>
+                    {comment.commenterUid === currentUserId && (
+                      <TouchButton
+                        onClick={() => onDeleteComment(comment.id)}
+                        className="text-red-400 text-xs px-2 py-1 hover:bg-red-400/10 rounded"
+                      >
+                        Delete
+                      </TouchButton>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Input area */}
+          <div className="px-4 py-3 border-t border-zinc-800 flex gap-2">
+            <input
+              ref={inputRef}
+              type="text"
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+              placeholder="Add a comment..."
+              className="flex-1 bg-zinc-800 text-white px-4 py-2 rounded-full text-sm focus:outline-none focus:ring-1 focus:ring-white/20"
+            />
+            <TouchButton
+              onClick={handleSubmit}
+              disabled={!newComment.trim() || isSubmitting}
+              className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                newComment.trim() && !isSubmitting
+                  ? 'bg-green-500 text-black'
+                  : 'bg-zinc-700 text-gray-500'
+              }`}
+            >
+              {isSubmitting ? '...' : 'Send'}
+            </TouchButton>
+          </div>
+        </div>
+
+        <style>{`
+          @keyframes slide-up {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+          }
+          .animate-slide-up {
+            animation: slide-up 0.3s ease-out forwards;
+          }
+        `}</style>
       </div>
     );
   };
@@ -1719,6 +1974,17 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
 
       {/* Friend Profile Modal */}
       <FriendProfileModal friend={selectedFriend} onClose={() => setSelectedFriend(null)} />
+
+      {/* Comments Modal */}
+      {commentsModal && (
+        <CommentsModal
+          data={commentsModal}
+          onClose={() => setCommentsModal(null)}
+          onAddComment={handleAddComment}
+          onDeleteComment={handleDeleteComment}
+          currentUserId={user.uid}
+        />
+      )}
     </div>
   );
 };

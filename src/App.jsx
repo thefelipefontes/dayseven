@@ -6551,18 +6551,41 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
   const [calendarView, setCalendarView] = useState('heatmap');
   const [selectedDate, setSelectedDate] = useState(getTodayDate());
   const [selectedDayActivity, setSelectedDayActivity] = useState(null); // For activity detail modal
-  
+
+  // Calendar hints state - shows first-visit tips
+  const [showCalendarHints, setShowCalendarHints] = useState(() => {
+    return !localStorage.getItem('hasSeenCalendarHints');
+  });
+
   // Update view when initialView prop changes
   useEffect(() => {
     setView(initialView);
   }, [initialView]);
-  
+
   // Update statsSubView when initialStatsSubView prop changes
   useEffect(() => {
     setStatsSubView(initialStatsSubView);
   }, [initialStatsSubView]);
   const [selectedWeek, setSelectedWeek] = useState(null);
   const [showWeekStats, setShowWeekStats] = useState(false);
+
+  // Dismiss calendar hints
+  const dismissCalendarHints = () => {
+    setShowCalendarHints(false);
+    localStorage.setItem('hasSeenCalendarHints', 'true');
+  };
+
+  // Progress photos hints state - shows first-visit tips
+  const [showPhotosHints, setShowPhotosHints] = useState(() => {
+    return !localStorage.getItem('hasSeenPhotosHints');
+  });
+
+  // Dismiss progress photos hints
+  const dismissPhotosHints = () => {
+    setShowPhotosHints(false);
+    localStorage.setItem('hasSeenPhotosHints', 'true');
+  };
+
   const [showDayModal, setShowDayModal] = useState(false);
   const [dayModalAnimating, setDayModalAnimating] = useState(false);
   const [dayModalClosing, setDayModalClosing] = useState(false);
@@ -7147,6 +7170,34 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
             <div className="text-sm font-semibold text-white">Activity Calendar</div>
             <p className="text-[11px] text-gray-500 mt-0.5">Tap any day or week to see details</p>
           </div>
+
+          {/* First-visit calendar hints */}
+          {showCalendarHints && (
+            <div
+              className="mb-4 p-3 rounded-xl relative"
+              style={{
+                backgroundColor: 'rgba(0,209,255,0.1)',
+                border: '1px solid rgba(0,209,255,0.3)'
+              }}
+            >
+              <button
+                onClick={dismissCalendarHints}
+                className="absolute top-2 right-2 w-6 h-6 flex items-center justify-center rounded-full"
+                style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+              >
+                <span className="text-gray-400 text-sm">×</span>
+              </button>
+              <div className="flex items-start gap-2 pr-6">
+                <span className="text-base">💡</span>
+                <div>
+                  <p className="text-xs text-white font-medium mb-1">Pro tips</p>
+                  <p className="text-[11px] text-gray-300 leading-relaxed">
+                    Tap the <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[8px]" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>📊</span> buttons on the left for weekly breakdowns. Scroll down below the calendar to compare this week vs your average or last week.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
           
           {/* Month navigation */}
           <div className="flex items-center justify-between mb-3">
@@ -8203,6 +8254,34 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
               <h2 className="text-lg font-bold text-white">Progress Photos</h2>
               <p className="text-xs text-gray-500">Compare your fitness journey over time</p>
             </div>
+
+            {/* First-visit progress photos hints */}
+            {showPhotosHints && (
+              <div
+                className="mb-4 p-3 rounded-xl relative"
+                style={{
+                  backgroundColor: 'rgba(0,209,255,0.1)',
+                  border: '1px solid rgba(0,209,255,0.3)'
+                }}
+              >
+                <button
+                  onClick={dismissPhotosHints}
+                  className="absolute top-2 right-2 w-6 h-6 flex items-center justify-center rounded-full"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+                >
+                  <span className="text-gray-400 text-sm">×</span>
+                </button>
+                <div className="flex items-start gap-2 pr-6">
+                  <span className="text-base">💡</span>
+                  <div>
+                    <p className="text-xs text-white font-medium mb-1">Pro tip</p>
+                    <p className="text-[11px] text-gray-300 leading-relaxed">
+                      Tap any two photos to compare them side-by-side and see your transformation over time.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Filter pills */}
             <div className="flex gap-2 mb-3 overflow-x-auto pb-2 -mx-4 px-4 no-scrollbar">

@@ -6,7 +6,7 @@ import Login from './Login';
 import UsernameSetup from './UsernameSetup';
 import Friends from './Friends';
 import ActivityFeed from './ActivityFeed';
-import { createUserProfile, getUserProfile, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, saveUserGoals, getUserGoals, setOnboardingComplete } from './services/userService';
+import { createUserProfile, getUserProfile, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, saveUserGoals, getUserGoals, setOnboardingComplete, setTourComplete } from './services/userService';
 import { getFriends, getReactions, getFriendRequests, getComments, addReply, getReplies, deleteReply } from './services/friendService';
 import html2canvas from 'html2canvas';
 
@@ -163,6 +163,422 @@ const initialRunningBreakdown = {
 const initialRecoveryBreakdown = {
   '2026': {},
   'all-time': {}
+};
+
+// App Tour Component - Guides new users through the app
+const AppTour = ({ step, onNext, onBack, onSkip, targetRef, onSwitchTab, homeTabRef }) => {
+  const [position, setPosition] = useState({ top: 0, left: 0, width: 0, height: 0 });
+  const [homePosition, setHomePosition] = useState({ top: 0, left: 0, width: 0, height: 0 });
+  const [isReady, setIsReady] = useState(false);
+
+  const tourSteps = [
+    {
+      title: 'Log Activity',
+      description: 'Tap here to log workouts, runs, recovery sessions, and more.',
+      position: 'above',
+      tab: 'home',
+      features: null
+    },
+    {
+      title: 'Weekly Goals',
+      description: 'Track your weekly progress here. Hit all three goals to earn your streak! Your latest sessions appear below.',
+      position: 'below',
+      tab: 'home',
+      features: null
+    },
+    {
+      title: 'History',
+      description: 'Your complete fitness journey lives here.',
+      position: 'above',
+      tab: 'history',
+      features: [
+        { emoji: '🔥', text: 'Active streaks' },
+        { emoji: '📅', text: 'Activity calendar' },
+        { emoji: '📊', text: 'Stats, personal records & trends' },
+        { emoji: '📸', text: 'Photo comparison tool' }
+      ]
+    },
+    {
+      title: 'Friends',
+      description: 'Stay motivated together with friends.',
+      position: 'above',
+      tab: 'feed',
+      features: [
+        { emoji: '👥', text: 'See friend activity' },
+        { emoji: '🎉', text: 'React & comment' },
+        { emoji: '🏅', text: 'Leaderboard (streaks and activities)' },
+        { emoji: '➕', text: 'Add new friends' }
+      ]
+    },
+    {
+      title: 'Profile',
+      description: 'Customize your experience.',
+      position: 'above',
+      tab: 'profile',
+      features: [
+        { emoji: '🎯', text: 'Set weekly goals' },
+        { emoji: '👤', text: 'Update profile details' },
+        { emoji: '↗️', text: 'Share your stats' }
+      ]
+    }
+  ];
+
+  const currentStep = tourSteps[step] || tourSteps[0];
+
+  // Track previous tab for detecting tab changes
+  const prevTabRef = useRef(currentStep.tab);
+
+  // Switch to the appropriate tab when step changes
+  useEffect(() => {
+    if (currentStep.tab && onSwitchTab) {
+      onSwitchTab(currentStep.tab);
+    }
+    // Scroll to top when entering a new step
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, [step, currentStep.tab, onSwitchTab]);
+
+  useEffect(() => {
+    const isTabChange = prevTabRef.current !== currentStep.tab;
+    prevTabRef.current = currentStep.tab;
+
+    // Only show loading state for tab changes
+    if (isTabChange) {
+      setIsReady(false);
+    }
+
+    const capturePosition = () => {
+      if (targetRef?.current) {
+        // Use requestAnimationFrame to ensure we get the correct position after paint
+        requestAnimationFrame(() => {
+          if (targetRef?.current) {
+            const rect = targetRef.current.getBoundingClientRect();
+            setPosition({
+              top: rect.top,
+              left: rect.left,
+              width: rect.width,
+              height: rect.height
+            });
+            // Also capture Home button position for steps 0-1
+            if (homeTabRef?.current) {
+              const homeRect = homeTabRef.current.getBoundingClientRect();
+              setHomePosition({
+                top: homeRect.top,
+                left: homeRect.left,
+                width: homeRect.width,
+                height: homeRect.height
+              });
+            }
+            setIsReady(true);
+          } else {
+            // Fallback - try again after a short delay
+            setTimeout(capturePosition, 50);
+          }
+        });
+      } else {
+        // Ref not ready yet, try again
+        setTimeout(capturePosition, 50);
+      }
+    };
+
+    const updatePosition = () => {
+      // Fixed elements are the bottom nav tabs: History (2), Friends (3), Profile (4)
+      const isFixedElement = step >= 2 && step <= 4;
+
+      if (!isFixedElement) {
+        // Scroll to top first to reset position
+        window.scrollTo({ top: 0, behavior: 'instant' });
+
+        // Wait a frame, then scroll element into view
+        requestAnimationFrame(() => {
+          if (targetRef?.current) {
+            const rect = targetRef.current.getBoundingClientRect();
+            const scrollTarget = window.scrollY + rect.top - 100; // 100px padding from top
+            window.scrollTo({ top: Math.max(0, scrollTarget), behavior: 'instant' });
+          }
+          // Capture position immediately
+          capturePosition();
+        });
+      } else {
+        // For fixed elements, capture position after tab switch
+        setTimeout(capturePosition, isTabChange ? 50 : 0);
+      }
+    };
+
+    // Shorter delay - only need time for tab switch if changing tabs
+    const timer = setTimeout(updatePosition, isTabChange ? 50 : 0);
+    return () => clearTimeout(timer);
+  }, [targetRef, step, currentStep.tab]);
+
+  // Disable scrolling while tour is active
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, []);
+
+  // Don't render until position is calculated
+  if (!isReady || position.width === 0) {
+    return (
+      <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center">
+        <div className="animate-pulse text-white">Loading...</div>
+      </div>
+    );
+  }
+
+  // Calculate tooltip position based on target element
+  const getTooltipStyle = () => {
+    const padding = 16;
+    const tooltipWidth = 280;
+
+    // Center tooltip horizontally over the target element
+    const isNavBarStep = step >= 2 && step <= 4;
+    const centerOnElement = position.left + position.width / 2 - tooltipWidth / 2;
+    const clampedLeft = Math.max(16, Math.min(centerOnElement, window.innerWidth - tooltipWidth - 16));
+
+    if (isNavBarStep) {
+      // For nav bar items (History, Friends, Profile), use fixed position from bottom
+      // Center tooltip over the actual tab button
+      return {
+        bottom: 124, // Fixed distance from bottom of screen
+        left: clampedLeft
+      };
+    } else if (currentStep.position === 'above') {
+      // For other 'above' positioned items (not nav bar)
+      const tooltipHeight = 160;
+      return {
+        top: position.top - tooltipHeight - 16,
+        left: clampedLeft
+      };
+    } else {
+      // Position tooltip below the target element
+      return {
+        top: position.top + position.height + padding,
+        left: clampedLeft
+      };
+    }
+  };
+
+  // Calculate arrow position
+  const getArrowStyle = () => {
+    const tooltipStyle = getTooltipStyle();
+    const tooltipLeft = typeof tooltipStyle.left === 'number' ? tooltipStyle.left : 16;
+    const arrowLeft = position.left + position.width / 2 - tooltipLeft - 8; // 8 = half arrow width
+
+    if (currentStep.position === 'above') {
+      return {
+        bottom: '-8px',
+        left: Math.max(16, Math.min(arrowLeft, 280 - 32)) // Keep arrow within tooltip bounds
+      };
+    } else {
+      return {
+        top: '-8px',
+        left: Math.max(16, Math.min(arrowLeft, 280 - 32))
+      };
+    }
+  };
+
+  // Small padding around highlight box (just for the green border)
+  const highlightPadding = 4;
+
+  // Calculate the cutout rectangle
+  const cutout = {
+    top: position.top - highlightPadding,
+    left: position.left - highlightPadding,
+    width: position.width + highlightPadding * 2,
+    height: position.height + highlightPadding * 2,
+  };
+
+  // Calculate Home button cutout for step 1
+  const homeCutout = step === 1 && homePosition.width > 0 ? {
+    top: homePosition.top - highlightPadding,
+    left: homePosition.left - highlightPadding,
+    width: homePosition.width + highlightPadding * 2,
+    height: homePosition.height + highlightPadding * 2,
+  } : null;
+
+  return (
+    <div className="fixed inset-0 z-[100]" style={{ pointerEvents: 'none' }}>
+      {/* Dark overlay with SVG mask for multiple cutouts */}
+      <svg
+        className="fixed inset-0 w-full h-full transition-all duration-300"
+        style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+        onClick={() => {
+          if (navigator.vibrate) navigator.vibrate(10);
+          onSkip();
+        }}
+      >
+        <defs>
+          <mask id="tour-mask">
+            {/* White = visible (dark overlay), Black = hidden (cutout) */}
+            <rect x="0" y="0" width="100%" height="100%" fill="white" />
+            {/* Main target cutout */}
+            <rect
+              x={cutout.left}
+              y={cutout.top}
+              width={cutout.width}
+              height={cutout.height}
+              rx="12"
+              fill="black"
+            />
+            {/* Home button cutout for step 1 */}
+            {homeCutout && (
+              <rect
+                x={homeCutout.left}
+                y={homeCutout.top}
+                width={homeCutout.width}
+                height={homeCutout.height}
+                rx="12"
+                fill="black"
+              />
+            )}
+          </mask>
+        </defs>
+        <rect
+          x="0"
+          y="0"
+          width="100%"
+          height="100%"
+          fill="rgba(0,0,0,0.65)"
+          mask="url(#tour-mask)"
+        />
+      </svg>
+
+      {/* Highlight ring around target element */}
+      <div
+        className="fixed rounded-xl transition-all duration-300"
+        style={{
+          top: cutout.top,
+          left: cutout.left,
+          width: cutout.width,
+          height: cutout.height,
+          border: '2px solid #00FF94',
+          boxShadow: '0 0 20px rgba(0, 255, 148, 0.4)',
+          pointerEvents: 'none'
+        }}
+      />
+
+      {/* Highlight ring around Home button for step 1 (Weekly Goals) */}
+      {homeCutout && (
+        <div
+          className="fixed rounded-xl transition-all duration-300"
+          style={{
+            top: homeCutout.top,
+            left: homeCutout.left,
+            width: homeCutout.width,
+            height: homeCutout.height,
+            border: '2px solid rgba(255, 255, 255, 0.6)',
+            boxShadow: '0 0 12px rgba(255, 255, 255, 0.3)',
+            pointerEvents: 'none'
+          }}
+        />
+      )}
+
+      {/* Tooltip */}
+      <div
+        className="fixed p-4 rounded-2xl transition-all duration-300"
+        style={{
+          ...getTooltipStyle(),
+          width: 280,
+          backgroundColor: '#1a1a1a',
+          border: '1px solid rgba(255,255,255,0.1)',
+          pointerEvents: 'auto'
+        }}
+      >
+        {/* Arrow */}
+        <div
+          className="absolute w-4 h-4 rotate-45"
+          style={{
+            ...getArrowStyle(),
+            backgroundColor: '#1a1a1a',
+            borderLeft: currentStep.position === 'below' ? '1px solid rgba(255,255,255,0.1)' : 'none',
+            borderTop: currentStep.position === 'below' ? '1px solid rgba(255,255,255,0.1)' : 'none',
+            borderRight: currentStep.position === 'above' ? '1px solid rgba(255,255,255,0.1)' : 'none',
+            borderBottom: currentStep.position === 'above' ? '1px solid rgba(255,255,255,0.1)' : 'none'
+          }}
+        />
+
+        {/* Step indicator */}
+        <div className="flex gap-1 mb-3">
+          {tourSteps.map((_, i) => (
+            <div
+              key={i}
+              className="h-1 rounded-full transition-all duration-200"
+              style={{
+                width: i === step ? 24 : 8,
+                backgroundColor: i === step ? '#00FF94' : 'rgba(255,255,255,0.2)'
+              }}
+            />
+          ))}
+        </div>
+
+        {/* Content */}
+        <h3 className="text-white font-semibold text-base mb-1">{currentStep.title}</h3>
+        <p className="text-gray-400 text-sm mb-2">{currentStep.description}</p>
+
+        {/* Features list */}
+        {currentStep.features && (
+          <div className="mb-3 py-2 px-2.5 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+            {currentStep.features.map((feature, index) => (
+              <div key={index} className="flex items-center gap-2 py-1">
+                <span className="text-sm">{feature.emoji}</span>
+                <span className="text-xs text-gray-400">{feature.text}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!currentStep.features && <div className="mb-2" />}
+
+        {/* Actions */}
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => {
+              if (navigator.vibrate) navigator.vibrate(10);
+              onSkip();
+            }}
+            className="text-gray-500 text-sm px-3 py-2"
+          >
+            Skip tour
+          </button>
+          <div className="flex items-center gap-2">
+            {step > 0 && (
+              <button
+                onClick={() => {
+                  if (navigator.vibrate) navigator.vibrate(10);
+                  onBack();
+                }}
+                className="px-3 py-2 rounded-full text-sm font-medium transition-all duration-150"
+                style={{
+                  backgroundColor: 'rgba(255,255,255,0.1)',
+                  color: 'rgba(255,255,255,0.7)'
+                }}
+                onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.95)'}
+                onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
+              >
+                Back
+              </button>
+            )}
+            <button
+              onClick={() => {
+                if (navigator.vibrate) navigator.vibrate(10);
+                onNext();
+              }}
+              className="px-4 py-2 rounded-full text-sm font-medium transition-all duration-150"
+              style={{
+                backgroundColor: '#00FF94',
+                color: '#000'
+              }}
+              onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.95)'}
+              onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            >
+              {step === tourSteps.length - 1 ? "Let's go!" : 'Next'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 // Utility Components
@@ -4525,7 +4941,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 };
 
 // Home Tab - Simplified
-const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user }) => {
+const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, onStartTour }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [activityReactions, setActivityReactions] = useState({});
   const [activityComments, setActivityComments] = useState({});
@@ -5030,12 +5446,43 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     );
   };
 
+  // Triple-tap to trigger tour (for testing)
+  const tapCountRef = useRef(0);
+  const tapTimerRef = useRef(null);
+
+  const handleLogoTap = () => {
+    tapCountRef.current += 1;
+
+    if (tapTimerRef.current) {
+      clearTimeout(tapTimerRef.current);
+    }
+
+    if (tapCountRef.current >= 3) {
+      tapCountRef.current = 0;
+      // Trigger tour restart
+      if (typeof onStartTour === 'function') {
+        onStartTour();
+      }
+    } else {
+      tapTimerRef.current = setTimeout(() => {
+        tapCountRef.current = 0;
+      }, 500);
+    }
+  };
+
   return (
     <div className="pb-32">
-      {/* Header */}
-      <div className="px-4 pt-2 pb-3">
-        <img src="/wordmark.png" alt="Day Seven" className="h-6" />
-        <p className="text-xs" style={{ color: '#00FF94' }}>Win the week.</p>
+      {/* Header - Triple tap logo to restart tour */}
+      <div className="px-4 pt-2 pb-3 flex items-center justify-between">
+        <div>
+          <img
+            src="/wordmark.png"
+            alt="Day Seven"
+            className="h-6 cursor-pointer"
+            onClick={handleLogoTap}
+          />
+          <p className="text-xs" style={{ color: '#00FF94' }}>Win the week.</p>
+        </div>
       </div>
 
       {/* Daily Stats - Single Card */}
@@ -5192,22 +5639,24 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
           </div>
         )}
         
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-white">This Week's Goals</span>
-              <span>🎯</span>
+        {/* Weekly Goals - tour highlight wraps header + card */}
+        <div ref={weeklyGoalsRef}>
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-white">This Week's Goals</span>
+                <span>🎯</span>
+              </div>
+              <p className="text-[11px] text-gray-500 mt-0.5">Hit these to keep your streaks alive</p>
             </div>
-            <p className="text-[11px] text-gray-500 mt-0.5">Hit these to keep your streaks alive</p>
+            <span className="text-xs text-gray-500">{daysLeft} days left</span>
           </div>
-          <span className="text-xs text-gray-500">{daysLeft} days left</span>
-        </div>
-        
-        {/* Individual Goals - The Main Event */}
-        <div className="p-5 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+
+          {/* Individual Goals - The Main Event */}
+          <div className="p-5 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
           <div className="flex items-center justify-around">
             {/* Strength */}
-            <button 
+            <button
               className="text-center transition-all duration-150"
               onClick={() => setShowStrengthBreakdown(!showStrengthBreakdown)}
               onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.93)'}
@@ -5353,6 +5802,8 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
             <ProgressBar progress={overallPercent} height={4} color={overallPercent >= 100 ? '#00FF94' : '#00FF94'} />
           </div>
         </div>
+        </div>
+        {/* End of weeklyGoalsRef wrapper */}
 
         {/* What's Left This Week */}
         {(liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0) && (
@@ -5381,20 +5832,48 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
 
       {/* Latest Activity */}
       <div className="mx-4 mb-4">
-        <div className="mb-3">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-white">Latest Activity</span>
-            <span>📋</span>
+        {/* Tour highlight wrapper - includes header + first activity */}
+        <div ref={latestActivityRef}>
+          <div className="mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-white">Latest Activity</span>
+              <span>📋</span>
+            </div>
+            <p className="text-[11px] text-gray-500 mt-0.5">Your recent workout and recovery sessions</p>
           </div>
-          <p className="text-[11px] text-gray-500 mt-0.5">Your recent workout and recovery sessions</p>
+          {/* Show first activity inside the tour highlight, or empty state */}
+          {latestActivities.length > 0 ? (
+            <div
+              className="w-full p-3 rounded-xl flex items-center gap-3 text-left"
+              style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+            >
+              <ActivityIcon type={latestActivities[0].type} size={20} sportEmoji={latestActivities[0].sportEmoji} customEmoji={latestActivities[0].customEmoji} />
+              <div className="flex-1 min-w-0">
+                <span className="text-sm font-semibold truncate">{latestActivities[0].type}{latestActivities[0].subtype ? ` • ${latestActivities[0].subtype}` : ''}</span>
+                <div className="text-xs text-gray-400">{formatFriendlyDate(latestActivities[0].date)}{latestActivities[0].time ? ` at ${latestActivities[0].time}` : ''}</div>
+              </div>
+              <div className="text-right">
+                <span className="text-sm font-semibold">{latestActivities[0].duration} min</span>
+              </div>
+            </div>
+          ) : (
+            <div className="p-6 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+              <div className="text-4xl mb-3">🏋️</div>
+              <p className="text-white font-medium text-sm">Your first workout is waiting!</p>
+              <p className="text-gray-500 text-xs mt-1">Tap the + button to log an activity</p>
+            </div>
+          )}
         </div>
+        {/* End of latestActivityRef wrapper */}
+
+        {/* Remaining activities (starting from index 1) */}
         <SwipeableProvider>
           <div
-            className="space-y-2 transition-all duration-300 ease-out overflow-hidden"
+            className="space-y-2 transition-all duration-300 ease-out overflow-hidden mt-2"
           >
-            {latestActivities.length > 0 ? (
+            {latestActivities.length > 1 ? (
               <>
-                {latestActivities.map((activity) => (
+                {latestActivities.slice(1).map((activity) => (
                   <SwipeableActivityItem
                     key={activity.id}
                     activity={activity}
@@ -5524,13 +6003,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                 </button>
               )}
             </>
-          ) : (
-            <div className="p-6 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              <div className="text-4xl mb-3">🏋️</div>
-              <p className="text-white font-medium text-sm">Your first workout is waiting!</p>
-              <p className="text-gray-500 text-xs mt-1">Tap the + button to log an activity</p>
-            </div>
-          )}
+          ) : null}
           </div>
         </SwipeableProvider>
       </div>
@@ -6072,7 +6545,7 @@ const TrendsView = ({ activities = [], calendarData = {} }) => {
 };
 
 // History Tab
-const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onAddActivity, onDeleteActivity, onEditActivity, initialView = 'calendar', initialStatsSubView = 'overview' }) => {
+const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onAddActivity, onDeleteActivity, onEditActivity, initialView = 'calendar', initialStatsSubView = 'overview', activeStreaksRef, calendarRef, statsRef, progressPhotosRef }) => {
   const [view, setView] = useState(initialView);
   const [statsSubView, setStatsSubView] = useState(initialStatsSubView); // 'overview' or 'records'
   const [calendarView, setCalendarView] = useState('heatmap');
@@ -6536,7 +7009,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
   return (
     <div className="pb-32">
       {/* Active Streaks Section */}
-      <div className="mx-4 mb-4">
+      <div ref={activeStreaksRef} className="mx-4 mb-4">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-500 uppercase tracking-wider">Active Streaks</span>
@@ -6621,42 +7094,55 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
         </div>
       </div>
 
-      {/* View Toggles */}
-      <div className="mx-4 mb-4 relative flex gap-2 p-1 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-        {/* Sliding pill indicator */}
-        <div
-          className="absolute top-1 bottom-1 rounded-lg transition-all duration-300 ease-out"
-          style={{
-            backgroundColor: 'rgba(255,255,255,0.1)',
-            width: 'calc((100% - 8px) / 3)',
-            left: view === 'calendar'
-              ? '4px'
-              : view === 'stats'
-                ? 'calc(4px + (100% - 8px) / 3)'
-                : 'calc(4px + 2 * (100% - 8px) / 3)'
-          }}
-        />
-        {[
-          { key: 'calendar', label: 'Calendar' },
-          { key: 'stats', label: 'Stats' },
-          { key: 'progress', label: 'Progress Photos' }
-        ].map((v) => (
+      {/* View Toggles + Content Wrapper for Tour */}
+      <div>
+        {/* View Toggles */}
+        <div className="mx-4 mb-4 relative flex gap-2 p-1 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+          {/* Sliding pill indicator */}
+          <div
+            className="absolute top-1 bottom-1 rounded-lg transition-all duration-300 ease-out"
+            style={{
+              backgroundColor: 'rgba(255,255,255,0.1)',
+              width: 'calc((100% - 8px) / 3)',
+              left: view === 'calendar'
+                ? '4px'
+                : view === 'stats'
+                  ? 'calc(4px + (100% - 8px) / 3)'
+                  : 'calc(4px + 2 * (100% - 8px) / 3)'
+            }}
+          />
           <button
-            key={v.key}
-            onClick={() => setView(v.key)}
+            onClick={() => setView('calendar')}
             className="flex-1 py-2 rounded-lg text-sm font-medium transition-colors duration-200 relative z-10"
             style={{
-              color: view === v.key ? 'white' : 'rgba(255,255,255,0.5)'
+              color: view === 'calendar' ? 'white' : 'rgba(255,255,255,0.5)'
             }}
           >
-            {v.label}
+            Calendar
           </button>
-        ))}
-      </div>
+          <button
+            onClick={() => setView('stats')}
+            className="flex-1 py-2 rounded-lg text-sm font-medium transition-colors duration-200 relative z-10"
+            style={{
+              color: view === 'stats' ? 'white' : 'rgba(255,255,255,0.5)'
+            }}
+          >
+            Stats
+          </button>
+          <button
+            onClick={() => setView('progress')}
+            className="flex-1 py-2 rounded-lg text-sm font-medium transition-colors duration-200 relative z-10"
+            style={{
+              color: view === 'progress' ? 'white' : 'rgba(255,255,255,0.5)'
+            }}
+          >
+            Progress Photos
+          </button>
+        </div>
 
-      {/* Calendar View */}
-      {view === 'calendar' && (
-        <div className="mx-4 mt-2">
+        {/* Calendar View */}
+        {view === 'calendar' && (
+          <div ref={calendarRef} className="mx-4 mt-2">
           <div className="mb-4">
             <div className="text-sm font-semibold text-white">Activity Calendar</div>
             <p className="text-[11px] text-gray-500 mt-0.5">Tap any day or week to see details</p>
@@ -7188,7 +7674,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
       {/* Records View */}
       {/* Stats View (with mini-toggle for Overview/Records) */}
       {view === 'stats' && (
-        <div className="mx-4 mt-2">
+        <div ref={statsRef} className="mx-4 mt-2">
           {/* Stats Headline */}
           <div className="mb-4">
             <div className="text-sm font-semibold text-white">Your Stats</div>
@@ -7711,7 +8197,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
         };
 
         return (
-          <div className="px-4 pb-32">
+          <div ref={progressPhotosRef} className="px-4 pb-32">
             {/* Header */}
             <div className="mb-4">
               <h2 className="text-lg font-bold text-white">Progress Photos</h2>
@@ -8402,9 +8888,11 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
           </div>
         );
       })()}
+      </div>
+      {/* End of View Toggles + Content Wrapper */}
 
       {/* Week Stats Modal */}
-      <WeekStatsModal 
+      <WeekStatsModal
         isOpen={showWeekStats}
         onClose={() => setShowWeekStats(false)}
         weekData={selectedWeek ? (() => {
@@ -8468,7 +8956,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
 };
 
 // Profile Tab Component
-const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpdatePhoto, onShare }) => {
+const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpdatePhoto, onShare, onStartTour }) => {
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [showPhotoOptions, setShowPhotoOptions] = useState(false);
   const [showPhotoPreview, setShowPhotoPreview] = useState(false);
@@ -8820,7 +9308,27 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
         <div className="mb-6">
           <h3 className="text-sm font-semibold text-gray-400 mb-3">APP</h3>
           <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-            <div className="flex items-center justify-between py-2">
+            <button
+              onClick={onStartTour}
+              className="w-full flex items-center justify-between py-2 transition-all duration-150"
+              style={{ transform: 'scale(1)' }}
+              onTouchStart={(e) => e.currentTarget.style.opacity = '0.7'}
+              onTouchEnd={(e) => e.currentTarget.style.opacity = '1'}
+              onMouseDown={(e) => e.currentTarget.style.opacity = '0.7'}
+              onMouseUp={(e) => e.currentTarget.style.opacity = '1'}
+              onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
+                  <span className="text-base">🎯</span>
+                </div>
+                <span className="text-sm text-white">Take the Tour</span>
+              </div>
+              <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+            <div className="flex items-center justify-between py-2 border-t border-zinc-700/50 mt-2">
               <span className="text-sm text-gray-400">Version</span>
               <span className="text-sm text-white">1.0.0</span>
             </div>
@@ -9053,7 +9561,66 @@ export default function DaySevenApp() {
   const [historyStatsSubView, setHistoryStatsSubView] = useState('overview');
   const [showEditGoals, setShowEditGoals] = useState(false);
   const [pendingFriendRequests, setPendingFriendRequests] = useState(0);
-  
+
+  // Tour state
+  const [showTour, setShowTour] = useState(false);
+  const [tourStep, setTourStep] = useState(0);
+
+  // Tour element refs
+  const logActivityRef = useRef(null);
+  const weeklyGoalsRef = useRef(null);
+  const latestActivityRef = useRef(null);
+  const homeTabRef = useRef(null);
+  const historyTabRef = useRef(null);
+  const activeStreaksRef = useRef(null);
+  const calendarRef = useRef(null);
+  const statsRef = useRef(null);
+  const progressPhotosRef = useRef(null);
+  const friendsTabRef = useRef(null);
+  const profileTabRef = useRef(null);
+  // Get current tour target ref based on step (5-step tour)
+  const getTourTargetRef = () => {
+    const refs = [
+      logActivityRef,      // 0: Log Activity
+      weeklyGoalsRef,      // 1: Weekly Goals
+      historyTabRef,       // 2: History Tab
+      friendsTabRef,       // 3: Friends Tab
+      profileTabRef        // 4: Profile Tab
+    ];
+    return refs[tourStep] || logActivityRef;
+  };
+
+
+  // Handle tour navigation (5-step tour: 0-4)
+  const handleTourNext = async () => {
+    if (tourStep < 4) {
+      setTourStep(tourStep + 1);
+    } else {
+      // Tour complete
+      setShowTour(false);
+      setTourStep(0);
+      if (user?.uid) {
+        await setTourComplete(user.uid);
+        setUserProfile(prev => ({ ...prev, hasCompletedTour: true }));
+      }
+    }
+  };
+
+  const handleTourBack = () => {
+    if (tourStep > 0) {
+      setTourStep(tourStep - 1);
+    }
+  };
+
+  const handleTourSkip = async () => {
+    setShowTour(false);
+    setTourStep(0);
+    if (user?.uid) {
+      await setTourComplete(user.uid);
+      setUserProfile(prev => ({ ...prev, hasCompletedTour: true }));
+    }
+  };
+
   // Navigate to Hall of Fame
   const navigateToHallOfFame = () => {
     setActiveTab('history');
@@ -9160,6 +9727,20 @@ export default function DaySevenApp() {
     const timer = setTimeout(() => setIsLoading(false), 800);
     return () => clearTimeout(timer);
   }, []);
+
+  // Check if tour should be shown for returning users who haven't seen it yet
+  const tourShownRef = useRef(false);
+  useEffect(() => {
+    if (!isLoading && isOnboarded && userProfile && userProfile.hasCompletedTour !== true && !tourShownRef.current) {
+      tourShownRef.current = true;
+      // Small delay to ensure UI is ready
+      const timer = setTimeout(() => {
+        setActiveTab('home');
+        setShowTour(true);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoading, isOnboarded, userProfile?.hasCompletedTour]);
 
   // Real state management
   const [activities, setActivities] = useState(initialActivities);
@@ -9855,6 +10436,12 @@ export default function DaySevenApp() {
           calories: { ...prev.calories, goal: goals.caloriesPerDay }
         }));
         setIsOnboarded(true);
+
+        // Start tour for new users after a short delay to let the UI render
+        setTimeout(() => {
+          setActiveTab('home');
+          setShowTour(true);
+        }, 500);
       }}
     />;
   }
@@ -9926,11 +10513,18 @@ export default function DaySevenApp() {
                     setShowAddActivity(true);
                   }}
                   user={user}
+                  weeklyGoalsRef={weeklyGoalsRef}
+                  latestActivityRef={latestActivityRef}
+                  onStartTour={() => {
+                    setTourStep(0);
+                    setActiveTab('home');
+                    setShowTour(true);
+                  }}
                 />
               )}
               {activeTab === 'history' && (
-                <HistoryTab 
-                  onShare={() => setShowShare(true)} 
+                <HistoryTab
+                  onShare={() => setShowShare(true)}
                   activities={activities}
                   calendarData={calendarData}
                   userData={userData}
@@ -9947,6 +10541,10 @@ export default function DaySevenApp() {
                   }}
                   initialView={historyView}
                   initialStatsSubView={historyStatsSubView}
+                  activeStreaksRef={activeStreaksRef}
+                  calendarRef={calendarRef}
+                  statsRef={statsRef}
+                  progressPhotosRef={progressPhotosRef}
                 />
               )}
               {activeTab === 'feed' && (
@@ -9967,6 +10565,11 @@ export default function DaySevenApp() {
                   onEditGoals={() => setShowEditGoals(true)}
                   onUpdatePhoto={handleUpdatePhoto}
                   onShare={() => setShowShare(true)}
+                  onStartTour={() => {
+                    setTourStep(0);
+                    setActiveTab('home');
+                    setShowTour(true);
+                  }}
                 />
               )}
             </>
@@ -9987,6 +10590,7 @@ export default function DaySevenApp() {
       <div className="fixed bottom-0 left-0 right-0 px-4 pb-6 pt-2 z-40" style={{ background: 'linear-gradient(to top, #0A0A0A 0%, #0A0A0A 70%, transparent 100%)' }}>
         {/* Floating + button - centered, overlapping nav */}
         <button
+          ref={logActivityRef}
           onClick={() => handleAddActivity()}
           className="absolute left-1/2 -translate-x-1/2 w-20 h-20 rounded-full flex items-center justify-center shadow-xl transition-all duration-150 z-50"
           style={{
@@ -10027,6 +10631,7 @@ export default function DaySevenApp() {
         <div className="flex items-center justify-around p-2 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(20px)' }}>
           {/* Home */}
           <button
+            ref={homeTabRef}
             onClick={() => setActiveTab('home')}
             className="flex-1 py-3 flex flex-col items-center gap-1 transition-all duration-150"
             style={{ transform: 'scale(1)' }}
@@ -10044,6 +10649,7 @@ export default function DaySevenApp() {
 
           {/* History */}
           <button
+            ref={historyTabRef}
             onClick={() => setActiveTab('history')}
             className="flex-1 py-3 flex flex-col items-center gap-1 transition-all duration-150"
             style={{ transform: 'scale(1)' }}
@@ -10064,6 +10670,7 @@ export default function DaySevenApp() {
 
           {/* Friends */}
           <button
+            ref={friendsTabRef}
             onClick={() => setActiveTab('feed')}
             className="flex-1 py-3 flex flex-col items-center gap-1 transition-all duration-150 relative"
             style={{ transform: 'scale(1)' }}
@@ -10087,6 +10694,7 @@ export default function DaySevenApp() {
 
           {/* Profile */}
           <button
+            ref={profileTabRef}
             onClick={() => setActiveTab('profile')}
             className="flex-1 py-3 flex flex-col items-center gap-1 transition-all duration-150"
             style={{ transform: 'scale(1)' }}
@@ -10103,6 +10711,19 @@ export default function DaySevenApp() {
           </button>
         </div>
       </div>
+
+      {/* App Tour */}
+      {showTour && (
+        <AppTour
+          step={tourStep}
+          onNext={handleTourNext}
+          onBack={handleTourBack}
+          onSkip={handleTourSkip}
+          targetRef={getTourTargetRef()}
+          onSwitchTab={setActiveTab}
+          homeTabRef={homeTabRef}
+        />
+      )}
 
       <AddActivityModal
         isOpen={showAddActivity}

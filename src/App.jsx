@@ -8062,18 +8062,20 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                     </div>
 
                     {/* Side by side photos */}
-                    <div className="flex-1 p-4">
+                    <div id="progress-share-content" className="flex-1 p-4" style={{ backgroundColor: '#000000' }}>
                       <div className="flex gap-3">
                         {/* Before */}
                         <div className="flex-1">
                           <div className="text-center mb-2">
                             <span className="text-xs font-medium px-2 py-1 rounded-full bg-zinc-800 text-gray-300">BEFORE</span>
                           </div>
-                          <div className="aspect-[3/4] rounded-xl overflow-hidden bg-zinc-900">
+                          <div className="aspect-[3/4] rounded-xl overflow-hidden bg-zinc-900" id="before-photo-container">
                             <img
+                              id="before-photo"
                               src={before.photoURL}
                               alt="Before"
                               className="w-full h-full object-cover"
+                              crossOrigin="anonymous"
                             />
                           </div>
                           <p className="text-gray-400 text-xs mt-2 text-center">{formatDate(before.date)}</p>
@@ -8084,11 +8086,13 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                           <div className="text-center mb-2">
                             <span className="text-xs font-medium px-2 py-1 rounded-full bg-green-500/20 text-green-400">AFTER</span>
                           </div>
-                          <div className="aspect-[3/4] rounded-xl overflow-hidden bg-zinc-900">
+                          <div className="aspect-[3/4] rounded-xl overflow-hidden bg-zinc-900" id="after-photo-container">
                             <img
+                              id="after-photo"
                               src={after.photoURL}
                               alt="After"
                               className="w-full h-full object-cover"
+                              crossOrigin="anonymous"
                             />
                           </div>
                           <p className="text-gray-400 text-xs mt-2 text-center">{formatDate(after.date)}</p>
@@ -8133,6 +8137,11 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                           </div>
                         </div>
                       </div>
+
+                      {/* Branding for share image */}
+                      <div className="text-center mt-4 text-gray-600 text-sm">
+                        Tracked with Day Seven
+                      </div>
                     </div>
 
                     {/* Action buttons */}
@@ -8143,179 +8152,200 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                           setIsShareGenerating(true);
 
                           try {
-                            // Generate a canvas with the progress comparison
-                            const canvas = document.createElement('canvas');
-                            const ctx = canvas.getContext('2d');
-                            const width = 1080;
-                            const height = 1920;
-                            canvas.width = width;
-                            canvas.height = height;
-
-                            // Background
-                            ctx.fillStyle = '#0A0A0A';
-                            ctx.fillRect(0, 0, width, height);
-
-                            // Load image as blob to avoid CORS issues with Firebase Storage
-                            const loadImageAsBlob = async (src) => {
-                              try {
-                                const response = await fetch(src);
-                                const blob = await response.blob();
-                                const objectUrl = URL.createObjectURL(blob);
-                                return new Promise((resolve, reject) => {
-                                  const img = new Image();
-                                  img.onload = () => {
-                                    URL.revokeObjectURL(objectUrl);
-                                    resolve(img);
-                                  };
-                                  img.onerror = () => {
-                                    URL.revokeObjectURL(objectUrl);
-                                    reject(new Error('Failed to load image'));
-                                  };
-                                  img.src = objectUrl;
-                                });
-                              } catch (err) {
-                                console.error('Fetch failed, trying direct load:', err);
-                                // Fallback to direct load
-                                return new Promise((resolve, reject) => {
-                                  const img = new Image();
-                                  img.crossOrigin = 'anonymous';
-                                  img.onload = () => resolve(img);
-                                  img.onerror = () => reject(new Error('Failed to load image'));
-                                  img.src = src;
-                                });
-                              }
+                            // Helper function for rounded rectangles (iOS compatibility)
+                            const roundRect = (ctx, x, y, w, h, r) => {
+                              ctx.beginPath();
+                              ctx.moveTo(x + r, y);
+                              ctx.lineTo(x + w - r, y);
+                              ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+                              ctx.lineTo(x + w, y + h - r);
+                              ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+                              ctx.lineTo(x + r, y + h);
+                              ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+                              ctx.lineTo(x, y + r);
+                              ctx.quadraticCurveTo(x, y, x + r, y);
+                              ctx.closePath();
                             };
 
-                            try {
-                              const [beforeImg, afterImg] = await Promise.all([
-                                loadImageAsBlob(before.photoURL),
-                                loadImageAsBlob(after.photoURL)
-                              ]);
+                            // Create canvas
+                            const canvas = document.createElement('canvas');
+                            const ctx = canvas.getContext('2d');
+                            const scale = 3;
+                            const width = 390;
+                            const height = 620;
+                            canvas.width = width * scale;
+                            canvas.height = height * scale;
+                            ctx.scale(scale, scale);
 
-                              // Title
-                              ctx.fillStyle = '#FFFFFF';
-                              ctx.font = 'bold 48px -apple-system, BlinkMacSystemFont, sans-serif';
-                              ctx.textAlign = 'center';
-                              ctx.fillText('My Progress', width / 2, 80);
+                            // Background
+                            ctx.fillStyle = '#000000';
+                            ctx.fillRect(0, 0, width, height);
 
-                              // Days subtitle
-                              ctx.fillStyle = '#00FF94';
-                              ctx.font = 'bold 36px -apple-system, BlinkMacSystemFont, sans-serif';
-                              ctx.fillText(`${daysBetween} days apart`, width / 2, 130);
+                            // Title
+                            ctx.fillStyle = '#ffffff';
+                            ctx.font = 'bold 24px -apple-system, BlinkMacSystemFont, sans-serif';
+                            ctx.textAlign = 'center';
+                            ctx.fillText('My Progress', width / 2, 40);
 
-                              // Before/After labels
-                              ctx.font = 'bold 28px -apple-system, BlinkMacSystemFont, sans-serif';
-                              ctx.fillStyle = '#888888';
-                              ctx.fillText('BEFORE', width * 0.25, 190);
-                              ctx.fillStyle = '#00FF94';
-                              ctx.fillText('AFTER', width * 0.75, 190);
+                            // Subtitle
+                            ctx.fillStyle = '#00FF94';
+                            ctx.font = 'bold 18px -apple-system, BlinkMacSystemFont, sans-serif';
+                            ctx.fillText(`${daysBetween} days apart`, width / 2, 65);
 
-                              // Draw photos (side by side)
-                              const photoWidth = 480;
-                              const photoHeight = 640;
-                              const photoY = 210;
+                            // Before/After labels
+                            ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, sans-serif';
+                            ctx.fillStyle = '#888888';
+                            ctx.fillText('BEFORE', width * 0.25, 95);
+                            ctx.fillStyle = '#00FF94';
+                            ctx.fillText('AFTER', width * 0.75, 95);
 
-                              // Before photo
+                            // Photo dimensions
+                            const photoWidth = 170;
+                            const photoHeight = 220;
+                            const photoY = 105;
+
+                            // Get the img elements
+                            const beforeImg = document.getElementById('before-photo');
+                            const afterImg = document.getElementById('after-photo');
+
+                            // Helper to draw image with fallback
+                            const drawPhoto = (img, x, y, w, h) => {
                               ctx.save();
-                              ctx.beginPath();
-                              ctx.roundRect(40, photoY, photoWidth, photoHeight, 20);
+                              roundRect(ctx, x, y, w, h, 12);
                               ctx.clip();
-                              ctx.drawImage(beforeImg, 40, photoY, photoWidth, photoHeight);
+                              try {
+                                if (img && img.complete && img.naturalWidth > 0) {
+                                  // Calculate cover-fit dimensions
+                                  const imgRatio = img.naturalWidth / img.naturalHeight;
+                                  const boxRatio = w / h;
+                                  let sx = 0, sy = 0, sw = img.naturalWidth, sh = img.naturalHeight;
+
+                                  if (imgRatio > boxRatio) {
+                                    // Image is wider - crop sides
+                                    sw = img.naturalHeight * boxRatio;
+                                    sx = (img.naturalWidth - sw) / 2;
+                                  } else {
+                                    // Image is taller - crop top/bottom
+                                    sh = img.naturalWidth / boxRatio;
+                                    sy = (img.naturalHeight - sh) / 2;
+                                  }
+
+                                  ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+                                } else {
+                                  throw new Error('Image not loaded');
+                                }
+                              } catch (e) {
+                                // Fallback to placeholder
+                                ctx.fillStyle = '#1f1f1f';
+                                ctx.fillRect(x, y, w, h);
+                                ctx.fillStyle = '#444444';
+                                ctx.font = '12px -apple-system, BlinkMacSystemFont, sans-serif';
+                                ctx.textAlign = 'center';
+                                ctx.fillText('Photo', x + w / 2, y + h / 2);
+                              }
                               ctx.restore();
+                            };
 
-                              // After photo
-                              ctx.save();
-                              ctx.beginPath();
-                              ctx.roundRect(width - 40 - photoWidth, photoY, photoWidth, photoHeight, 20);
-                              ctx.clip();
-                              ctx.drawImage(afterImg, width - 40 - photoWidth, photoY, photoWidth, photoHeight);
-                              ctx.restore();
+                            // Draw before photo
+                            drawPhoto(beforeImg, 15, photoY, photoWidth, photoHeight);
 
-                              // Dates under photos
-                              ctx.font = '24px -apple-system, BlinkMacSystemFont, sans-serif';
-                              ctx.fillStyle = '#888888';
-                              ctx.fillText(formatDate(before.date), 40 + photoWidth / 2, photoY + photoHeight + 40);
-                              ctx.fillText(formatDate(after.date), width - 40 - photoWidth / 2, photoY + photoHeight + 40);
+                            // Draw after photo
+                            drawPhoto(afterImg, width - 15 - photoWidth, photoY, photoWidth, photoHeight);
 
-                              // Stats section
-                              const statsY = photoY + photoHeight + 100;
+                            // Dates
+                            ctx.fillStyle = '#888888';
+                            ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+                            ctx.fillText(formatDate(before.date), 15 + photoWidth / 2, photoY + photoHeight + 18);
+                            ctx.fillText(formatDate(after.date), width - 15 - photoWidth / 2, photoY + photoHeight + 18);
 
-                              // Stats background
-                              ctx.fillStyle = '#1A1A1A';
-                              ctx.beginPath();
-                              ctx.roundRect(40, statsY, width - 80, 400, 20);
+                            // Stats section
+                            const statsY = photoY + photoHeight + 35;
+                            ctx.fillStyle = '#18181b';
+                            roundRect(ctx, 15, statsY, width - 30, 200, 12);
+                            ctx.fill();
+
+                            // Stats grid
+                            const statItems = [
+                              { emoji: '🔥', value: totalCalories.toLocaleString(), label: 'calories burned', color: '#FF9500', bg: 'rgba(255,149,0,0.15)' },
+                              { emoji: '💪', value: strengthSessions.toString(), label: 'strength sessions', color: '#00FF94', bg: 'rgba(0,255,148,0.15)' },
+                              { emoji: '🏃', value: cardioSessions.toString(), label: 'cardio sessions', color: '#00D1FF', bg: 'rgba(0,209,255,0.15)' },
+                              { emoji: '🧘', value: recoverySessions.toString(), label: 'recovery sessions', color: '#BF5AF2', bg: 'rgba(191,90,242,0.15)' }
+                            ];
+
+                            const cellWidth = (width - 60) / 2;
+                            const cellHeight = 85;
+                            const gridStartY = statsY + 12;
+
+                            statItems.forEach((stat, i) => {
+                              const col = i % 2;
+                              const row = Math.floor(i / 2);
+                              const x = 25 + col * (cellWidth + 10);
+                              const y = gridStartY + row * (cellHeight + 8);
+
+                              ctx.fillStyle = stat.bg;
+                              roundRect(ctx, x, y, cellWidth, cellHeight, 10);
                               ctx.fill();
 
-                              // Stats grid (2x2)
-                              const statItems = [
-                                { emoji: '🔥', value: totalCalories.toLocaleString(), label: 'calories burned', color: '#FF9500' },
-                                { emoji: '💪', value: strengthSessions.toString(), label: 'strength sessions', color: '#00FF94' },
-                                { emoji: '🏃', value: cardioSessions.toString(), label: 'cardio sessions', color: '#00D1FF' },
-                                { emoji: '🧘', value: recoverySessions.toString(), label: 'recovery sessions', color: '#BF5AF2' }
-                              ];
+                              ctx.textAlign = 'center';
+                              ctx.font = '20px -apple-system, BlinkMacSystemFont, sans-serif';
+                              ctx.fillStyle = '#ffffff';
+                              ctx.fillText(stat.emoji, x + cellWidth / 2, y + 25);
 
-                              const cellWidth = (width - 80) / 2;
-                              const cellHeight = 200;
+                              ctx.font = 'bold 22px -apple-system, BlinkMacSystemFont, sans-serif';
+                              ctx.fillStyle = stat.color;
+                              ctx.fillText(stat.value, x + cellWidth / 2, y + 52);
 
-                              statItems.forEach((stat, i) => {
-                                const col = i % 2;
-                                const row = Math.floor(i / 2);
-                                const x = 40 + col * cellWidth + cellWidth / 2;
-                                const y = statsY + row * cellHeight + 60;
+                              ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
+                              ctx.fillStyle = '#888888';
+                              ctx.fillText(stat.label, x + cellWidth / 2, y + 72);
+                            });
 
-                                ctx.font = '48px -apple-system, BlinkMacSystemFont, sans-serif';
-                                ctx.fillText(stat.emoji, x, y);
+                            // Branding
+                            ctx.fillStyle = '#444444';
+                            ctx.font = '12px -apple-system, BlinkMacSystemFont, sans-serif';
+                            ctx.textAlign = 'center';
+                            ctx.fillText('Tracked with Day Seven', width / 2, height - 23);
 
-                                ctx.font = 'bold 56px -apple-system, BlinkMacSystemFont, sans-serif';
-                                ctx.fillStyle = stat.color;
-                                ctx.fillText(stat.value, x, y + 70);
+                            // Create blob and share
+                            const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png', 1.0));
+                            const file = new File([blob], `dayseven-progress-${Date.now()}.png`, { type: 'image/png' });
 
-                                ctx.font = '24px -apple-system, BlinkMacSystemFont, sans-serif';
-                                ctx.fillStyle = '#888888';
-                                ctx.fillText(stat.label, x, y + 110);
-                              });
-
-                              // Day Seven branding
-                              ctx.fillStyle = '#444444';
-                              ctx.font = '24px -apple-system, BlinkMacSystemFont, sans-serif';
-                              ctx.fillText('Tracked with Day Seven', width / 2, height - 60);
-
-                              // Create blob and share
-                              const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png', 1.0));
-                              const file = new File([blob], `dayseven-progress-${Date.now()}.png`, { type: 'image/png' });
-
-                              if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-                                try {
+                            // Try native share API (mobile)
+                            if (navigator.share) {
+                              try {
+                                // Check if we can share files
+                                if (navigator.canShare && navigator.canShare({ files: [file] })) {
                                   await navigator.share({ files: [file] });
                                   return;
-                                } catch (e) {
-                                  if (e.name === 'AbortError') return;
                                 }
-                              }
-
-                              // Fallback: download
-                              const link = document.createElement('a');
-                              link.download = `dayseven-progress-${Date.now()}.png`;
-                              link.href = canvas.toDataURL('image/png', 1.0);
-                              link.click();
-                            } catch (err) {
-                              console.error('Failed to generate share image:', err);
-                              // Fallback to text share
-                              const shareText = `My fitness progress over ${daysBetween} days!\n\n🔥 ${totalCalories.toLocaleString()} calories burned\n💪 ${strengthSessions} strength sessions\n🏃 ${cardioSessions} cardio sessions\n🧘 ${recoverySessions} recovery sessions\n\nTracked with Day Seven`;
-                              if (navigator.share) {
-                                try {
-                                  await navigator.share({ title: 'My Fitness Progress', text: shareText });
-                                } catch (e) {
-                                  if (e.name !== 'AbortError') {
-                                    await navigator.clipboard.writeText(shareText);
-                                    alert('Progress copied to clipboard!');
-                                  }
+                                // Fallback: share without file but still download the image
+                                await navigator.share({
+                                  title: 'Day Seven',
+                                  text: 'Check out my fitness progress!'
+                                });
+                                // Still download the image since we couldn't share the file
+                                const link = document.createElement('a');
+                                link.download = `dayseven-progress-${Date.now()}.png`;
+                                link.href = canvas.toDataURL('image/png', 1.0);
+                                link.click();
+                                return;
+                              } catch (e) {
+                                // User cancelled or share failed - if AbortError, user cancelled so don't download
+                                if (e.name === 'AbortError') {
+                                  return;
                                 }
-                              } else {
-                                await navigator.clipboard.writeText(shareText);
-                                alert('Progress copied to clipboard!');
+                                console.log('Share failed, falling back to download:', e);
                               }
                             }
+
+                            // Fallback: download the image
+                            const link = document.createElement('a');
+                            link.download = `dayseven-progress-${Date.now()}.png`;
+                            link.href = canvas.toDataURL('image/png', 1.0);
+                            link.click();
+                          } catch (err) {
+                            console.error('Failed to generate share image:', err);
+                            alert('Failed to generate share image. Please try again.');
                           } finally {
                             setIsShareGenerating(false);
                           }

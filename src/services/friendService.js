@@ -326,3 +326,58 @@ export async function deleteComment(ownerUid, activityId, commentId) {
   const commentRef = doc(db, 'users', ownerUid, 'activityComments', activityIdStr, 'comments', commentId);
   await deleteDoc(commentRef);
 }
+
+// Reply functions - one reply thread per comment
+export async function addReply(ownerUid, activityId, commentId, replierUid, replierName, replierPhoto, text) {
+  const activityIdStr = String(activityId);
+  const repliesRef = collection(db, 'users', ownerUid, 'activityComments', activityIdStr, 'comments', commentId, 'replies');
+  const replyRef = doc(repliesRef);
+
+  try {
+    await setDoc(replyRef, {
+      id: replyRef.id,
+      replierUid,
+      replierName,
+      replierPhoto,
+      text,
+      createdAt: serverTimestamp()
+    });
+    return replyRef.id;
+  } catch (error) {
+    console.error('addReply: Error writing to Firestore:', error);
+    throw error;
+  }
+}
+
+export async function getReplies(ownerUid, activityId, commentId) {
+  const activityIdStr = String(activityId);
+  const repliesRef = collection(db, 'users', ownerUid, 'activityComments', activityIdStr, 'comments', commentId, 'replies');
+  const q = query(repliesRef, orderBy('createdAt', 'asc'));
+
+  try {
+    const snapshot = await getDocs(q);
+
+    if (snapshot.empty) {
+      return [];
+    }
+
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+  } catch (error) {
+    // If index doesn't exist yet, fall back to unordered query
+    console.warn('getReplies: Ordered query failed, falling back to unordered:', error);
+    const fallbackSnapshot = await getDocs(repliesRef);
+    return fallbackSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+  }
+}
+
+export async function deleteReply(ownerUid, activityId, commentId, replyId) {
+  const activityIdStr = String(activityId);
+  const replyRef = doc(db, 'users', ownerUid, 'activityComments', activityIdStr, 'comments', commentId, 'replies', replyId);
+  await deleteDoc(replyRef);
+}

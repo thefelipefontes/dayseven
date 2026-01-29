@@ -7,7 +7,7 @@ import UsernameSetup from './UsernameSetup';
 import Friends from './Friends';
 import ActivityFeed from './ActivityFeed';
 import { createUserProfile, getUserProfile, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, saveUserGoals, getUserGoals, setOnboardingComplete } from './services/userService';
-import { getFriends, getReactions, getFriendRequests, getComments } from './services/friendService';
+import { getFriends, getReactions, getFriendRequests, getComments, addReply, getReplies, deleteReply } from './services/friendService';
 import html2canvas from 'html2canvas';
 
 // DAY SEVEN Logo component - uses wordmark image
@@ -4506,7 +4506,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 };
 
 // Home Tab - Simplified
-const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, onDeleteActivity, onEditActivity, user }) => {
+const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [activityReactions, setActivityReactions] = useState({});
   const [activityComments, setActivityComments] = useState({});
@@ -4725,10 +4725,45 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
   };
 
   // Comments Detail Modal
-  const CommentsDetailModal = ({ data, onClose }) => {
+  const CommentsDetailModal = ({ data, onClose, user, userProfile, onRepliesUpdated }) => {
+    const [replyingTo, setReplyingTo] = useState(null);
+    const [commentReplies, setCommentReplies] = useState({});
+    const [expandedReplies, setExpandedReplies] = useState({});
+    const replyInputRef = useRef(null);
+
+    // Load replies when modal opens
+    useEffect(() => {
+      if (data?.activityId && data?.comments) {
+        const loadReplies = async () => {
+          const repliesMap = {};
+          await Promise.all(
+            data.comments.map(async (comment) => {
+              try {
+                const replies = await getReplies(user.uid, data.activityId, comment.id);
+                if (replies.length > 0) {
+                  repliesMap[comment.id] = replies;
+                }
+              } catch (error) {
+                console.error('Error loading replies:', error);
+              }
+            })
+          );
+          setCommentReplies(repliesMap);
+        };
+        loadReplies();
+      }
+    }, [data, user?.uid]);
+
+    // Focus reply input when replying
+    useEffect(() => {
+      if (replyingTo && replyInputRef.current) {
+        replyInputRef.current.focus();
+      }
+    }, [replyingTo]);
+
     if (!data) return null;
 
-    const { comments } = data;
+    const { activityId, comments } = data;
 
     const formatCommentTime = (createdAt) => {
       if (!createdAt) return '';
@@ -4740,11 +4775,58 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
       const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
       if (diffMins < 1) return 'Just now';
-      if (diffMins < 60) return `${diffMins}m ago`;
-      if (diffHours < 24) return `${diffHours}h ago`;
-      if (diffDays === 1) return 'Yesterday';
-      if (diffDays < 7) return `${diffDays}d ago`;
+      if (diffMins < 60) return `${diffMins}m`;
+      if (diffHours < 24) return `${diffHours}h`;
+      if (diffDays === 1) return '1d';
+      if (diffDays < 7) return `${diffDays}d`;
       return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    };
+
+    const handleSubmitReply = async (commentId, text) => {
+      if (!text.trim() || !user) return;
+      try {
+        const replierName = userProfile?.displayName || user?.displayName || userProfile?.username || user?.email?.split('@')[0] || 'User';
+        const replierPhoto = userProfile?.photoURL || user?.photoURL || null;
+
+        const replyId = await addReply(
+          user.uid,
+          activityId,
+          commentId,
+          user.uid,
+          replierName,
+          replierPhoto,
+          text.trim()
+        );
+
+        const newReply = {
+          id: replyId,
+          replierUid: user.uid,
+          replierName: replierName,
+          replierPhoto: replierPhoto,
+          text: text.trim(),
+          createdAt: { toDate: () => new Date() }
+        };
+
+        setCommentReplies(prev => ({
+          ...prev,
+          [commentId]: [...(prev[commentId] || []), newReply]
+        }));
+        setExpandedReplies(prev => ({ ...prev, [commentId]: true }));
+      } catch (error) {
+        console.error('Error adding reply:', error);
+      }
+    };
+
+    const handleDeleteReply = async (commentId, replyId) => {
+      try {
+        await deleteReply(user.uid, activityId, commentId, replyId);
+        setCommentReplies(prev => ({
+          ...prev,
+          [commentId]: (prev[commentId] || []).filter(r => r.id !== replyId)
+        }));
+      } catch (error) {
+        console.error('Error deleting reply:', error);
+      }
     };
 
     return (
@@ -4759,7 +4841,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         }}
       >
         <div
-          className="w-full max-w-sm bg-zinc-900 rounded-2xl p-5 max-h-[60vh] overflow-y-auto"
+          className="w-full max-w-sm bg-zinc-900 rounded-2xl p-5 max-h-[70vh] overflow-y-auto"
           onClick={e => e.stopPropagation()}
           onTouchEnd={e => e.stopPropagation()}
         >
@@ -4781,24 +4863,143 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
 
           {/* Comments list */}
           <div className="space-y-4">
-            {comments.map((comment, idx) => (
-              <div key={comment.id || idx} className="flex gap-3">
-                <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0">
-                  {comment.commenterPhoto ? (
-                    <img src={comment.commenterPhoto} alt={comment.commenterName} className="w-full h-full object-cover" />
-                  ) : (
-                    <span className="text-white text-xs">{comment.commenterName?.[0]?.toUpperCase() || '?'}</span>
+            {comments.map((comment, idx) => {
+              const replies = commentReplies[comment.id] || [];
+              const isExpanded = expandedReplies[comment.id];
+              return (
+                <div key={comment.id || idx}>
+                  <div className="flex gap-3">
+                    <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0">
+                      {comment.commenterPhoto ? (
+                        <img src={comment.commenterPhoto} alt={comment.commenterName} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-white text-xs">{comment.commenterName?.[0]?.toUpperCase() || '?'}</span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="bg-zinc-800 rounded-2xl px-3 py-2">
+                        <span className="text-white text-xs font-medium">{comment.commenterName}</span>
+                        <p className="text-gray-300 text-sm break-words">{comment.text}</p>
+                      </div>
+                      <div className="flex items-center gap-3 mt-1 ml-1">
+                        <span className="text-gray-500 text-[10px]">{formatCommentTime(comment.createdAt)}</span>
+                        <button
+                          onClick={() => setReplyingTo({ commentId: comment.id, commenterName: comment.commenterName })}
+                          className="text-gray-400 text-[10px] font-medium hover:text-white"
+                        >
+                          Reply
+                        </button>
+                        {replies.length > 0 && !isExpanded && (
+                          <button
+                            onClick={() => setExpandedReplies(prev => ({ ...prev, [comment.id]: true }))}
+                            className="text-blue-400 text-[10px] font-medium"
+                          >
+                            View {replies.length} {replies.length === 1 ? 'reply' : 'replies'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Replies thread */}
+                  {isExpanded && replies.length > 0 && (
+                    <div className="ml-11 mt-2 space-y-2 border-l-2 border-zinc-700 pl-3">
+                      {replies.map((reply) => (
+                        <div key={reply.id}>
+                          <div className="flex gap-2 items-start">
+                            <div className="w-6 h-6 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0">
+                              {reply.replierPhoto ? (
+                                <img src={reply.replierPhoto} alt={reply.replierName} className="w-full h-full object-cover" />
+                              ) : (
+                                <span className="text-white text-[9px]">{reply.replierName?.[0]?.toUpperCase() || '?'}</span>
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="bg-zinc-800/70 rounded-2xl px-3 py-1.5">
+                                <span className="text-white text-[11px] font-medium">{reply.replierName}</span>
+                                <p className="text-gray-300 text-xs break-words">{reply.text}</p>
+                              </div>
+                              <div className="flex items-center gap-2 mt-0.5 ml-1">
+                                <span className="text-gray-500 text-[9px]">{formatCommentTime(reply.createdAt)}</span>
+                                {reply.replierUid === user?.uid && (
+                                  <button
+                                    onClick={() => handleDeleteReply(comment.id, reply.id)}
+                                    className="text-red-400 text-[9px] font-medium"
+                                  >
+                                    Delete
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      <button
+                        onClick={() => setExpandedReplies(prev => ({ ...prev, [comment.id]: false }))}
+                        className="text-gray-500 text-[10px] ml-2"
+                      >
+                        Hide replies
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Reply input */}
+                  {replyingTo?.commentId === comment.id && (
+                    <div className="ml-11 mt-2 flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0">
+                        {userData?.photoURL ? (
+                          <img src={userData.photoURL} alt="You" className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-white text-[9px]">{userData?.displayName?.[0]?.toUpperCase() || '?'}</span>
+                        )}
+                      </div>
+                      <div className="flex-1 flex items-center gap-2 bg-zinc-800 rounded-full px-3 py-1">
+                        <input
+                          ref={replyInputRef}
+                          type="text"
+                          defaultValue=""
+                          onKeyDown={async (e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              const text = replyInputRef.current?.value;
+                              if (text?.trim()) {
+                                await handleSubmitReply(comment.id, text);
+                                replyInputRef.current.value = '';
+                                setReplyingTo(null);
+                              }
+                            } else if (e.key === 'Escape') {
+                              setReplyingTo(null);
+                            }
+                          }}
+                          placeholder={`Reply to ${comment.commenterName}...`}
+                          className="flex-1 bg-transparent text-white text-xs focus:outline-none"
+                          style={{ fontSize: '14px' }}
+                        />
+                        <button
+                          onClick={async () => {
+                            const text = replyInputRef.current?.value;
+                            if (text?.trim()) {
+                              await handleSubmitReply(comment.id, text);
+                              replyInputRef.current.value = '';
+                              setReplyingTo(null);
+                            }
+                          }}
+                          className="text-xs font-medium text-green-500"
+                        >
+                          Post
+                        </button>
+                        <button
+                          onClick={() => setReplyingTo(null)}
+                          className="text-xs text-gray-500"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
                   )}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-white text-sm font-medium">{comment.commenterName}</span>
-                    <span className="text-gray-500 text-xs">{formatCommentTime(comment.createdAt)}</span>
-                  </div>
-                  <p className="text-gray-300 text-sm mt-0.5 break-words">{comment.text}</p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>
@@ -5309,6 +5510,8 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
       <CommentsDetailModal
         data={commentDetailModal}
         onClose={() => setCommentDetailModal(null)}
+        user={user}
+        userProfile={userProfile}
       />
     </div>
   );
@@ -9461,6 +9664,7 @@ export default function DaySevenApp() {
                   activities={activities}
                   weeklyProgress={weeklyProgress}
                   userData={userData}
+                  userProfile={userProfile}
                   onDeleteActivity={handleDeleteActivity}
                   onEditActivity={(activity) => {
                     setPendingActivity({

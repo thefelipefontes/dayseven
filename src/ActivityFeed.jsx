@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, createContext, useContext } from 'react';
 import { getUserActivities } from './services/userService';
-import { addReaction, getReactions, removeReaction, addComment, getComments, deleteComment } from './services/friendService';
+import { addReaction, getReactions, removeReaction, addComment, getComments, deleteComment, addReply, getReplies, deleteReply } from './services/friendService';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -72,24 +72,27 @@ const SwipeableComment = ({ children, commentId, onDelete, canDelete }) => {
   }
 
   return (
-    <div
-      className="relative overflow-hidden rounded-lg"
-      style={{ backgroundColor: swipeX < 0 ? '#FF453A' : 'transparent' }}
-    >
-      {/* Delete button - positioned on the right */}
+    <div className="relative overflow-hidden rounded-lg">
+      {/* Delete button - positioned on the right, only visible when swiping */}
       <div
-        className="absolute inset-y-0 right-0 flex items-center justify-center"
+        className="absolute inset-y-0 right-0 flex items-center rounded-r-lg"
         style={{
-          width: deleteButtonWidth,
+          width: Math.abs(swipeX) + deleteButtonWidth,
+          backgroundColor: '#FF453A',
           opacity: swipeX < 0 ? 1 : 0,
-          pointerEvents: swipeX < 0 ? 'auto' : 'none'
+          pointerEvents: swipeX < 0 ? 'auto' : 'none',
+          justifyContent: 'flex-end',
+          paddingRight: 8
         }}
       >
         <button
           onClick={handleDelete}
-          className="h-full w-full flex items-center justify-center text-white text-xs font-medium"
+          className="h-full flex items-center justify-center"
+          style={{ width: 40 }}
         >
-          Delete
+          <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
         </button>
       </div>
 
@@ -269,6 +272,7 @@ const MemoizedActivityCard = React.memo(({
   activityKey,
   reactions,
   comments,
+  commentReplies,
   showComments,
   user,
   userProfile,
@@ -276,6 +280,8 @@ const MemoizedActivityCard = React.memo(({
   onToggleComments,
   onSubmitComment,
   onDeleteComment,
+  onSubmitReply,
+  onDeleteReply,
   onSelectFriend,
   commentInputRef,
   formatTimeAgo,
@@ -287,7 +293,10 @@ const MemoizedActivityCard = React.memo(({
   const { friend, type, duration, calories, distance, date, id, customEmoji, sportEmoji } = activity;
   const [showFullscreenPhoto, setShowFullscreenPhoto] = useState(false);
   const [openCommentId, setOpenCommentId] = useState(null);
+  const [replyingTo, setReplyingTo] = useState(null); // { commentId, commenterName }
+  const [expandedReplies, setExpandedReplies] = useState({});
   const inputRef = useRef(null);
+  const replyInputRef = useRef(null);
 
   // Set up the ref callback
   useEffect(() => {
@@ -295,6 +304,13 @@ const MemoizedActivityCard = React.memo(({
       commentInputRef(inputRef.current);
     }
   }, [commentInputRef]);
+
+  // Focus reply input when replying
+  useEffect(() => {
+    if (replyingTo && replyInputRef.current) {
+      replyInputRef.current.focus();
+    }
+  }, [replyingTo]);
 
   let icon = activityIcons[type] || '💪';
   if (type === 'Other' && customEmoji) {
@@ -418,37 +434,163 @@ const MemoizedActivityCard = React.memo(({
           </div>
 
           {/* Inline Comments Section */}
-          <div className="overflow-hidden transition-all duration-300 ease-out" style={{ maxHeight: showComments ? '500px' : '0', opacity: showComments ? 1 : 0 }}>
+          <div className="overflow-hidden transition-all duration-300 ease-out" style={{ maxHeight: showComments ? '1000px' : '0', opacity: showComments ? 1 : 0 }}>
             <div className="pt-3 mt-3 border-t border-zinc-800">
               {comments.length > 0 && (
                 <SwipeableCommentContext.Provider value={{ openId: openCommentId, setOpenId: setOpenCommentId }}>
                   <div className="space-y-2 mb-3">
-                    {comments.map((comment) => (
-                      <div key={comment.id} className="py-1">
-                        <SwipeableComment
-                          commentId={comment.id}
-                          canDelete={comment.commenterUid === user.uid}
-                          onDelete={() => onDeleteComment(comment.id)}
-                        >
-                          <div className="flex gap-2 items-start">
-                            <div className="w-7 h-7 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0">
-                              {comment.commenterPhoto ? (
-                                <img src={comment.commenterPhoto} alt={comment.commenterName} className="w-full h-full object-cover" />
-                              ) : (
-                                <span className="text-white text-[10px]">{comment.commenterName?.[0]?.toUpperCase() || '?'}</span>
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="bg-zinc-800 rounded-2xl px-3 py-2">
-                                <span className="text-white text-xs font-medium">{comment.commenterName}</span>
-                                <p className="text-gray-300 text-sm break-words">{comment.text}</p>
+                    {comments.map((comment) => {
+                      const replies = commentReplies?.[comment.id] || [];
+                      const isExpanded = expandedReplies[comment.id];
+                      return (
+                        <div key={comment.id} className="py-1">
+                          <SwipeableComment
+                            commentId={comment.id}
+                            canDelete={comment.commenterUid === user.uid}
+                            onDelete={() => onDeleteComment(comment.id)}
+                          >
+                            <div className="flex gap-2 items-start">
+                              <div className="w-7 h-7 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0">
+                                {comment.commenterPhoto ? (
+                                  <img src={comment.commenterPhoto} alt={comment.commenterName} className="w-full h-full object-cover" />
+                                ) : (
+                                  <span className="text-white text-[10px]">{comment.commenterName?.[0]?.toUpperCase() || '?'}</span>
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="bg-zinc-800 rounded-2xl px-3 py-2">
+                                  <span className="text-white text-xs font-medium">{comment.commenterName}</span>
+                                  <p className="text-gray-300 text-sm break-words">{comment.text}</p>
+                                </div>
                               </div>
                             </div>
+                          </SwipeableComment>
+                          <div className="flex items-center gap-3 ml-9 mt-0.5">
+                            <span className="text-gray-500 text-[10px]">{formatCommentTime(comment.createdAt)}</span>
+                            {/* Only post owner can reply to comments */}
+                            {user?.uid === friend.uid && (
+                              <button
+                                onClick={() => setReplyingTo({ commentId: comment.id, commenterName: comment.commenterName })}
+                                className="text-gray-400 text-[10px] font-medium hover:text-white"
+                              >
+                                Reply
+                              </button>
+                            )}
+                            {replies.length > 0 && !isExpanded && (
+                              <button
+                                onClick={() => setExpandedReplies(prev => ({ ...prev, [comment.id]: true }))}
+                                className="text-blue-400 text-[10px] font-medium"
+                              >
+                                View {replies.length} {replies.length === 1 ? 'reply' : 'replies'}
+                              </button>
+                            )}
                           </div>
-                        </SwipeableComment>
-                        <span className="text-gray-500 text-[10px] px-1 ml-9">{formatCommentTime(comment.createdAt)}</span>
-                      </div>
-                    ))}
+
+                          {/* Replies thread */}
+                          {isExpanded && replies.length > 0 && (
+                            <div className="ml-9 mt-2 space-y-2 border-l-2 border-zinc-700 pl-3">
+                              {replies.map((reply) => (
+                                <div key={reply.id}>
+                                  <SwipeableComment
+                                    commentId={`reply-${reply.id}`}
+                                    canDelete={reply.replierUid === user.uid}
+                                    onDelete={() => onDeleteReply(comment.id, reply.id)}
+                                  >
+                                    <div className="flex gap-2 items-start">
+                                      <div className="w-6 h-6 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0">
+                                        {reply.replierPhoto ? (
+                                          <img src={reply.replierPhoto} alt={reply.replierName} className="w-full h-full object-cover" />
+                                        ) : (
+                                          <span className="text-white text-[9px]">{reply.replierName?.[0]?.toUpperCase() || '?'}</span>
+                                        )}
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="bg-zinc-800/70 rounded-2xl px-3 py-1.5">
+                                          <span className="text-white text-[11px] font-medium">{reply.replierName}</span>
+                                          <p className="text-gray-300 text-xs break-words">{reply.text}</p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </SwipeableComment>
+                                  <span className="text-gray-500 text-[9px] ml-8">{formatCommentTime(reply.createdAt)}</span>
+                                </div>
+                              ))}
+                              <button
+                                onClick={() => setExpandedReplies(prev => ({ ...prev, [comment.id]: false }))}
+                                className="text-gray-500 text-[10px] ml-2"
+                              >
+                                Hide replies
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Reply input for this comment */}
+                          {replyingTo?.commentId === comment.id && (
+                            <div className="ml-9 mt-2 flex items-center gap-2">
+                              <div className="w-6 h-6 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0">
+                                {userProfile?.photoURL ? (
+                                  <img src={userProfile.photoURL} alt="You" className="w-full h-full object-cover" />
+                                ) : (
+                                  <span className="text-white text-[9px]">{userProfile?.displayName?.[0]?.toUpperCase() || '?'}</span>
+                                )}
+                              </div>
+                              <div className="flex-1 flex items-center gap-2 bg-zinc-800 rounded-full px-3 py-1">
+                                <input
+                                  ref={replyInputRef}
+                                  type="text"
+                                  defaultValue=""
+                                  onKeyDown={async (e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      const text = replyInputRef.current?.value;
+                                      if (text?.trim()) {
+                                        try {
+                                          await onSubmitReply(comment.id, text);
+                                          replyInputRef.current.value = '';
+                                          setReplyingTo(null);
+                                          setExpandedReplies(prev => ({ ...prev, [comment.id]: true }));
+                                        } catch (error) {
+                                          console.error('Failed to post reply:', error);
+                                        }
+                                      }
+                                    } else if (e.key === 'Escape') {
+                                      setReplyingTo(null);
+                                    }
+                                  }}
+                                  placeholder={`Reply to ${comment.commenterName}...`}
+                                  className="flex-1 bg-transparent text-white text-xs focus:outline-none"
+                                  style={{ fontSize: '14px' }}
+                                />
+                                <button
+                                  onClick={async () => {
+                                    const text = replyInputRef.current?.value;
+                                    if (text?.trim()) {
+                                      try {
+                                        await onSubmitReply(comment.id, text);
+                                        replyInputRef.current.value = '';
+                                        setReplyingTo(null);
+                                        setExpandedReplies(prev => ({ ...prev, [comment.id]: true }));
+                                      } catch (error) {
+                                        console.error('Failed to post reply:', error);
+                                      }
+                                    }
+                                  }}
+                                  className="text-xs font-medium text-green-500"
+                                >
+                                  Post
+                                </button>
+                                <button
+                                  onClick={() => setReplyingTo(null)}
+                                  className="text-xs text-gray-500"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </SwipeableCommentContext.Provider>
               )}
@@ -491,6 +633,7 @@ const MemoizedActivityCard = React.memo(({
     prevProps.activityKey === nextProps.activityKey &&
     prevProps.reactions === nextProps.reactions &&
     prevProps.comments === nextProps.comments &&
+    prevProps.commentReplies === nextProps.commentReplies &&
     prevProps.showComments === nextProps.showComments &&
     prevProps.activity === nextProps.activity
   );
@@ -500,6 +643,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   const [feedActivities, setFeedActivities] = useState([]);
   const [activityReactions, setActivityReactions] = useState({});
   const [activityComments, setActivityComments] = useState({});
+  const [commentReplies, setCommentReplies] = useState({}); // { activityKey: { commentId: [replies] } }
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeView, setActiveView] = useState('feed'); // 'feed' or 'leaderboard'
@@ -587,6 +731,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       // Fetch reactions and comments for each activity
       const reactionsMap = {};
       const commentsMap = {};
+      const repliesMap = {};
       await Promise.all(
         limitedActivities.map(async (activity) => {
           if (activity.id) {
@@ -597,11 +742,25 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             ]);
             reactionsMap[key] = reactions;
             commentsMap[key] = comments;
+
+            // Load replies for each comment
+            if (comments.length > 0) {
+              repliesMap[key] = {};
+              await Promise.all(
+                comments.map(async (comment) => {
+                  const replies = await getReplies(activity.friend.uid, activity.id, comment.id);
+                  if (replies.length > 0) {
+                    repliesMap[key][comment.id] = replies;
+                  }
+                })
+              );
+            }
           }
         })
       );
       setActivityReactions(reactionsMap);
       setActivityComments(commentsMap);
+      setCommentReplies(repliesMap);
     } catch (error) {
       console.error('Error loading activity feed:', error);
     }
@@ -934,20 +1093,23 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         }));
       } else {
         // Add or update reaction
+        const reactorName = userProfile?.displayName || user?.displayName || userProfile?.username || user?.email?.split('@')[0] || 'User';
+        const reactorPhoto = userProfile?.photoURL || user?.photoURL || null;
+
         console.log('Calling addReaction with:', {
           activityId: activity.id,
           ownerUid: activity.friend.uid,
           reactorUid: user.uid,
-          reactorName: userProfile?.displayName || userProfile?.username || 'User',
-          reactorPhoto: userProfile?.photoURL || null,
+          reactorName: reactorName,
+          reactorPhoto: reactorPhoto,
           reactionType: emoji
         });
         const result = await addReaction(
           activity.id,
           activity.friend.uid,
           user.uid,
-          userProfile?.displayName || userProfile?.username || 'User',
-          userProfile?.photoURL || null,
+          reactorName,
+          reactorPhoto,
           emoji
         );
         console.log('addReaction result:', result);
@@ -955,8 +1117,8 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         // Update local state
         const newReaction = {
           reactorUid: user.uid,
-          reactorName: userProfile?.displayName || userProfile?.username || 'User',
-          reactorPhoto: userProfile?.photoURL || null,
+          reactorName: reactorName,
+          reactorPhoto: reactorPhoto,
           reactionType: emoji
         };
 
@@ -987,20 +1149,23 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     const key = `${activity.friend.uid}-${activity.id}`;
 
     try {
+      const commenterName = userProfile?.displayName || user?.displayName || userProfile?.username || user?.email?.split('@')[0] || 'User';
+      const commenterPhoto = userProfile?.photoURL || user?.photoURL || null;
+
       const commentId = await addComment(
         activity.id,
         activity.friend.uid,
         user.uid,
-        userProfile?.displayName || userProfile?.username || 'User',
-        userProfile?.photoURL || null,
+        commenterName,
+        commenterPhoto,
         text.trim()
       );
 
       const newComment = {
         id: commentId,
         commenterUid: user.uid,
-        commenterName: userProfile?.displayName || userProfile?.username || 'User',
-        commenterPhoto: userProfile?.photoURL || null,
+        commenterName: commenterName,
+        commenterPhoto: commenterPhoto,
         text: text.trim(),
         createdAt: { toDate: () => new Date() }
       };
@@ -1030,8 +1195,85 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         ...prev,
         [key]: updatedComments
       }));
+
+      // Also remove any replies for this comment
+      setCommentReplies(prev => {
+        const newReplies = { ...prev };
+        if (newReplies[key]) {
+          delete newReplies[key][commentId];
+        }
+        return newReplies;
+      });
     } catch (error) {
       console.error('Error deleting comment:', error);
+    }
+  };
+
+  const handleAddReply = async (commentId, text, activity) => {
+    console.log('handleAddReply called:', { commentId, text, activity });
+    if (!activity || !text.trim()) {
+      console.log('handleAddReply: early return - activity or text missing');
+      return;
+    }
+    const key = `${activity.friend.uid}-${activity.id}`;
+    console.log('handleAddReply: key =', key);
+
+    try {
+      console.log('handleAddReply: calling addReply...');
+      const replierName = userProfile?.displayName || user?.displayName || userProfile?.username || user?.email?.split('@')[0] || 'User';
+      const replierPhoto = userProfile?.photoURL || user?.photoURL || null;
+
+      const replyId = await addReply(
+        activity.friend.uid,
+        activity.id,
+        commentId,
+        user.uid,
+        replierName,
+        replierPhoto,
+        text.trim()
+      );
+      console.log('handleAddReply: replyId =', replyId);
+
+      const newReply = {
+        id: replyId,
+        replierUid: user.uid,
+        replierName: replierName,
+        replierPhoto: replierPhoto,
+        text: text.trim(),
+        createdAt: { toDate: () => new Date() }
+      };
+
+      // Update local state
+      setCommentReplies(prev => ({
+        ...prev,
+        [key]: {
+          ...(prev[key] || {}),
+          [commentId]: [...(prev[key]?.[commentId] || []), newReply]
+        }
+      }));
+    } catch (error) {
+      console.error('Error adding reply:', error);
+      throw error;
+    }
+  };
+
+  const handleDeleteReply = async (commentId, replyId, activity) => {
+    if (!activity) return;
+    const key = `${activity.friend.uid}-${activity.id}`;
+
+    try {
+      await deleteReply(activity.friend.uid, activity.id, commentId, replyId);
+
+      // Update local state
+      setCommentReplies(prev => ({
+        ...prev,
+        [key]: {
+          ...(prev[key] || {}),
+          [commentId]: (prev[key]?.[commentId] || []).filter(r => r.id !== replyId)
+        }
+      }));
+    } catch (error) {
+      console.error('Error deleting reply:', error);
     }
   };
 
@@ -1940,6 +2182,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               activityKey={key}
               reactions={activityReactions[key] || []}
               comments={activityComments[key] || []}
+              commentReplies={commentReplies[key] || {}}
               showComments={expandedComments[key] || false}
               user={user}
               userProfile={userProfile}
@@ -1947,6 +2190,8 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               onToggleComments={() => setExpandedComments(prev => ({ ...prev, [key]: !prev[key] }))}
               onSubmitComment={(activityKey) => handleSubmitInlineComment(activityKey, activity)}
               onDeleteComment={(commentId) => handleDeleteComment(commentId, activity)}
+              onSubmitReply={(commentId, text) => handleAddReply(commentId, text, activity)}
+              onDeleteReply={(commentId, replyId) => handleDeleteReply(commentId, replyId, activity)}
               onSelectFriend={setSelectedFriend}
               commentInputRef={(el) => { commentInputRefs.current[key] = el; }}
               formatTimeAgo={formatTimeAgo}

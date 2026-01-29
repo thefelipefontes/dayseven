@@ -6318,31 +6318,51 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
         {/* Sub Streaks - 2x2 Grid */}
         <div className="grid grid-cols-2 gap-2">
           {/* Strength Streak */}
-          <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.2)' }}>
-            <div className="text-2xl font-black" style={{ color: '#00FF94' }}>🏋️ {streaks.lifts} Weeks</div>
-            <div className="text-sm text-gray-300 mt-1">Strength</div>
-            <div className="text-[10px] text-gray-500 mt-1">{goals.liftsPerWeek}+ per week</div>
+          <div className="px-3 py-2.5 rounded-xl bg-zinc-800/60" style={{ borderLeft: '3px solid #00FF94' }}>
+            <div className="flex items-center gap-2">
+              <span className="text-base">🏋️</span>
+              <span className="text-xl font-bold" style={{ color: '#00FF94' }}>{streaks.lifts} Weeks</span>
+            </div>
+            <div className="flex items-center justify-between mt-0.5">
+              <span className="text-xs text-gray-400">Strength</span>
+              <span className="text-[10px] text-gray-500">{goals.liftsPerWeek}+ per week</span>
+            </div>
           </div>
-          
+
           {/* Cardio Streak */}
-          <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,149,0,0.1)', border: '1px solid rgba(255,149,0,0.2)' }}>
-            <div className="text-2xl font-black" style={{ color: '#FF9500' }}>🏃 {streaks.cardio} Weeks</div>
-            <div className="text-sm text-gray-300 mt-1">Cardio</div>
-            <div className="text-[10px] text-gray-500 mt-1">{goals.cardioPerWeek}+ per week</div>
+          <div className="px-3 py-2.5 rounded-xl bg-zinc-800/60" style={{ borderLeft: '3px solid #FF9500' }}>
+            <div className="flex items-center gap-2">
+              <span className="text-base">🏃</span>
+              <span className="text-xl font-bold" style={{ color: '#FF9500' }}>{streaks.cardio} Weeks</span>
+            </div>
+            <div className="flex items-center justify-between mt-0.5">
+              <span className="text-xs text-gray-400">Cardio</span>
+              <span className="text-[10px] text-gray-500">{goals.cardioPerWeek}+ per week</span>
+            </div>
           </div>
-          
+
           {/* Recovery Streak */}
-          <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(0,209,255,0.1)', border: '1px solid rgba(0,209,255,0.2)' }}>
-            <div className="text-2xl font-black" style={{ color: '#00D1FF' }}>🧊 {streaks.recovery} Weeks</div>
-            <div className="text-sm text-gray-300 mt-1">Recovery</div>
-            <div className="text-[10px] text-gray-500 mt-1">{goals.recoveryPerWeek}+ per week</div>
+          <div className="px-3 py-2.5 rounded-xl bg-zinc-800/60" style={{ borderLeft: '3px solid #00D1FF' }}>
+            <div className="flex items-center gap-2">
+              <span className="text-base">🧊</span>
+              <span className="text-xl font-bold" style={{ color: '#00D1FF' }}>{streaks.recovery} Weeks</span>
+            </div>
+            <div className="flex items-center justify-between mt-0.5">
+              <span className="text-xs text-gray-400">Recovery</span>
+              <span className="text-[10px] text-gray-500">{goals.recoveryPerWeek}+ per week</span>
+            </div>
           </div>
-          
+
           {/* Steps Streak */}
-          <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(191,90,242,0.1)', border: '1px solid rgba(191,90,242,0.2)' }}>
-            <div className="text-2xl font-black" style={{ color: '#BF5AF2' }}>👟 {streaks.stepsGoal} Weeks</div>
-            <div className="text-sm text-gray-300 mt-1">Steps</div>
-            <div className="text-[10px] text-gray-500 mt-1">{(goals.stepsPerDay/1000).toFixed(0)}k+ daily avg</div>
+          <div className="px-3 py-2.5 rounded-xl bg-zinc-800/60" style={{ borderLeft: '3px solid #BF5AF2' }}>
+            <div className="flex items-center gap-2">
+              <span className="text-base">👟</span>
+              <span className="text-xl font-bold" style={{ color: '#BF5AF2' }}>{streaks.stepsGoal} Weeks</span>
+            </div>
+            <div className="flex items-center justify-between mt-0.5">
+              <span className="text-xs text-gray-400">Steps</span>
+              <span className="text-[10px] text-gray-500">{(goals.stepsPerDay/1000).toFixed(0)}k+ daily avg</span>
+            </div>
           </div>
         </div>
       </div>
@@ -6969,21 +6989,33 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
 
               {/* Main Stats Grid */}
               <div className="grid grid-cols-2 gap-3 mb-4">
-                <div className="p-4 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(0,255,148,0.2) 0%, rgba(0,255,148,0.05) 100%)' }}>
+                <div className="p-4 rounded-2xl bg-zinc-800/50">
                   <div className="text-4xl font-black" style={{ color: '#00FF94' }}>{Object.values(totalsData.lifting || {}).reduce((a, b) => a + b, 0)}</div>
-                  <div className="text-sm text-gray-400">🏋️ Strength</div>
+                  <div className="text-sm text-gray-400 flex items-center gap-1.5 mt-1">
+                    <span>🏋️</span>
+                    <span>Strength</span>
+                  </div>
                 </div>
-                <div className="p-4 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(255,149,0,0.2) 0%, rgba(255,149,0,0.05) 100%)' }}>
+                <div className="p-4 rounded-2xl bg-zinc-800/50">
                   <div className="text-4xl font-black" style={{ color: '#FF9500' }}>{Object.values(totalsData.cardio || {}).reduce((a, b) => a + b, 0)}</div>
-                  <div className="text-sm text-gray-400">🏃 Cardio</div>
+                  <div className="text-sm text-gray-400 flex items-center gap-1.5 mt-1">
+                    <span>🏃</span>
+                    <span>Cardio</span>
+                  </div>
                 </div>
-                <div className="p-4 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(0,209,255,0.2) 0%, rgba(0,209,255,0.05) 100%)' }}>
+                <div className="p-4 rounded-2xl bg-zinc-800/50">
                   <div className="text-4xl font-black" style={{ color: '#00D1FF' }}>{totalsData.recovery}</div>
-                  <div className="text-sm text-gray-400">🧊 Recovery</div>
+                  <div className="text-sm text-gray-400 flex items-center gap-1.5 mt-1">
+                    <span>🧊</span>
+                    <span>Recovery</span>
+                  </div>
                 </div>
-                <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="text-4xl font-black">{totalsData.miles.toFixed(1)}</div>
-                  <div className="text-sm text-gray-400">📍 Miles Run</div>
+                <div className="p-4 rounded-2xl bg-zinc-800/50">
+                  <div className="text-4xl font-black text-white">{totalsData.miles.toFixed(1)}</div>
+                  <div className="text-sm text-gray-400 flex items-center gap-1.5 mt-1">
+                    <span>📍</span>
+                    <span>Miles Run</span>
+                  </div>
                 </div>
               </div>
 

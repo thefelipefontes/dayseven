@@ -649,8 +649,9 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   const [activeView, setActiveView] = useState('feed'); // 'feed' or 'leaderboard'
   const [leaderboardData, setLeaderboardData] = useState([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
-  const [leaderboardCategory, setLeaderboardCategory] = useState('master'); // 'master', 'strength', 'cardio', 'recovery', 'calories', 'steps'
-  const [leaderboardTimeRange, setLeaderboardTimeRange] = useState('week'); // 'week', 'month', 'year', 'all'
+  const [leaderboardSection, setLeaderboardSection] = useState('activity'); // 'activity' or 'streak'
+  const [leaderboardCategory, setLeaderboardCategory] = useState('calories'); // Activity: 'calories', 'steps', 'workouts' | Streak: 'master', 'strength', 'cardio', 'recovery'
+  const [leaderboardTimeRange, setLeaderboardTimeRange] = useState('week'); // Activity: 'week', 'month', 'year', 'all' | Streak: 'year', 'all'
   const [selectedFriend, setSelectedFriend] = useState(null); // For viewing friend profile
   const [expandedComments, setExpandedComments] = useState({}); // Track which activities have expanded comments
 
@@ -1321,12 +1322,19 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     };
 
     const getValue = (tr = timeRange) => {
+      const v = userData.volume || {};
       switch (category) {
         case 'strength': return userData.strengthStreak || 0;
         case 'cardio': return userData.cardioStreak || 0;
         case 'recovery': return userData.recoveryStreak || 0;
         case 'calories': return userData.stats?.calories?.[tr] || 0;
         case 'steps': return userData.stats?.steps?.[tr] || 0;
+        case 'workouts': {
+          return (v.runs?.[tr] || 0) + (v.strengthSessions?.[tr] || 0) + (v.recoverySessions?.[tr] || 0) + (v.rides?.[tr] || 0);
+        }
+        case 'strengthSessions': return v.strengthSessions?.[tr] || 0;
+        case 'cardioSessions': return (v.runs?.[tr] || 0) + (v.rides?.[tr] || 0);
+        case 'recoverySessions': return v.recoverySessions?.[tr] || 0;
         default: return userData.masterStreak || 0;
       }
     };
@@ -1342,6 +1350,10 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       switch (category) {
         case 'calories': return 'cal';
         case 'steps': return 'steps';
+        case 'workouts': return 'workouts';
+        case 'strengthSessions': return 'sessions';
+        case 'cardioSessions': return 'sessions';
+        case 'recoverySessions': return 'sessions';
         default: return 'streak';
       }
     };
@@ -1359,7 +1371,8 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     // Memoize trend calculation to prevent changes on every render
     // Uses a stable hash based on userId + category + timeRange
     const { trend, delta, percentChange } = useMemo(() => {
-      if (category !== 'calories' && category !== 'steps') {
+      const activityCategories = ['calories', 'steps', 'workouts', 'strengthSessions', 'cardioSessions', 'recoverySessions'];
+      if (!activityCategories.includes(category)) {
         // For streaks, use a stable pseudo-random based on user ID + category + timeRange
         // This ensures the same user always gets the same trend for a given category/timeRange
         const seed = `${userData.uid || userData.username}-${category}-${timeRange}`;
@@ -1409,11 +1422,15 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     // Get category color for progress bar
     const getCategoryColor = () => {
       switch (category) {
-        case 'strength': return '#FF6B6B';
-        case 'cardio': return '#4ECDC4';
-        case 'recovery': return '#9B59B6';
-        case 'calories': return '#F39C12';
+        case 'strength': return '#00FF94';
+        case 'strengthSessions': return '#00FF94';
+        case 'cardio': return '#FF9500';
+        case 'cardioSessions': return '#FF9500';
+        case 'recovery': return '#00D1FF';
+        case 'recoverySessions': return '#00D1FF';
+        case 'calories': return '#FF6B6B';
         case 'steps': return '#3498DB';
+        case 'workouts': return '#00FF94';
         default: return '#FFD700';
       }
     };
@@ -1481,12 +1498,19 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     if (topThree.length < 3) return null;
 
     const getValue = (userData) => {
+      const v = userData.volume || {};
       switch (category) {
         case 'strength': return userData.strengthStreak || 0;
         case 'cardio': return userData.cardioStreak || 0;
         case 'recovery': return userData.recoveryStreak || 0;
         case 'calories': return userData.stats?.calories?.[timeRange] || 0;
         case 'steps': return userData.stats?.steps?.[timeRange] || 0;
+        case 'workouts': {
+          return (v.runs?.[timeRange] || 0) + (v.strengthSessions?.[timeRange] || 0) + (v.recoverySessions?.[timeRange] || 0) + (v.rides?.[timeRange] || 0);
+        }
+        case 'strengthSessions': return v.strengthSessions?.[timeRange] || 0;
+        case 'cardioSessions': return (v.runs?.[timeRange] || 0) + (v.rides?.[timeRange] || 0);
+        case 'recoverySessions': return v.recoverySessions?.[timeRange] || 0;
         default: return userData.masterStreak || 0;
       }
     };
@@ -1735,13 +1759,29 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   if (activeView === 'leaderboard') {
     // Sort leaderboard data based on selected category and time range
     const getSortValue = (userData) => {
-      switch (leaderboardCategory) {
-        case 'strength': return userData.strengthStreak || 0;
-        case 'cardio': return userData.cardioStreak || 0;
-        case 'recovery': return userData.recoveryStreak || 0;
-        case 'calories': return userData.stats?.calories?.[leaderboardTimeRange] || 0;
-        case 'steps': return userData.stats?.steps?.[leaderboardTimeRange] || 0;
-        default: return userData.masterStreak || 0;
+      if (leaderboardSection === 'activity') {
+        const v = userData.volume || {};
+        const tr = leaderboardTimeRange;
+        switch (leaderboardCategory) {
+          case 'calories': return userData.stats?.calories?.[tr] || 0;
+          case 'steps': return userData.stats?.steps?.[tr] || 0;
+          case 'workouts': {
+            // Total workouts = sum of all activity sessions
+            return (v.runs?.[tr] || 0) + (v.strengthSessions?.[tr] || 0) + (v.recoverySessions?.[tr] || 0) + (v.rides?.[tr] || 0);
+          }
+          case 'strengthSessions': return v.strengthSessions?.[tr] || 0;
+          case 'cardioSessions': return (v.runs?.[tr] || 0) + (v.rides?.[tr] || 0);
+          case 'recoverySessions': return v.recoverySessions?.[tr] || 0;
+          default: return userData.stats?.calories?.[tr] || 0;
+        }
+      } else {
+        // Streak section
+        switch (leaderboardCategory) {
+          case 'strength': return userData.strengthStreak || 0;
+          case 'cardio': return userData.cardioStreak || 0;
+          case 'recovery': return userData.recoveryStreak || 0;
+          default: return userData.masterStreak || 0;
+        }
       }
     };
 
@@ -1751,13 +1791,23 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     const rest = sortedLeaderboard.slice(3);
 
     const getCategoryLabel = () => {
-      switch (leaderboardCategory) {
-        case 'strength': return '💪 Strength Streak';
-        case 'cardio': return '🏃 Cardio Streak';
-        case 'recovery': return '🧘 Recovery Streak';
-        case 'calories': return '🔥 Calories Burned';
-        case 'steps': return '👟 Steps';
-        default: return '🏆 Overall Streak';
+      if (leaderboardSection === 'activity') {
+        switch (leaderboardCategory) {
+          case 'calories': return '🔥 Calories Burned';
+          case 'steps': return '👟 Steps';
+          case 'workouts': return '💪 Total Workouts';
+          case 'strengthSessions': return '🏋️ Strength Sessions';
+          case 'cardioSessions': return '🏃 Cardio Sessions';
+          case 'recoverySessions': return '🧊 Recovery Sessions';
+          default: return '🔥 Calories Burned';
+        }
+      } else {
+        switch (leaderboardCategory) {
+          case 'strength': return '💪 Strength Streak';
+          case 'cardio': return '🏃 Cardio Streak';
+          case 'recovery': return '🧊 Recovery Streak';
+          default: return '🏆 Overall Streak';
+        }
       }
     };
 
@@ -1777,59 +1827,119 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             <p className="text-[11px] text-gray-500 mt-0.5">See how you rank among friends</p>
           </div>
 
-          {/* Time Range Toggle - smaller secondary style, centered and narrower */}
-          <div className="relative flex p-1 rounded-lg mb-4 max-w-sm mx-auto" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+          {/* Section Toggle - Activity vs Streak */}
+          <div className="relative flex p-1 rounded-lg mb-3 max-w-[240px] mx-auto" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
             <div
               className="absolute top-1 bottom-1 rounded-md transition-all duration-300 ease-out"
               style={{
-                backgroundColor: 'rgba(255,255,255,0.1)',
-                width: 'calc((100% - 8px) / 4)',
-                left: (() => {
-                  const ranges = ['week', 'month', 'year', 'all'];
-                  const index = ranges.indexOf(leaderboardTimeRange);
-                  return `calc(4px + ${index} * (100% - 8px) / 4)`;
-                })()
+                backgroundColor: leaderboardSection === 'activity' ? '#00FF94' : '#FFD700',
+                width: 'calc((100% - 8px) / 2)',
+                left: leaderboardSection === 'activity' ? '4px' : 'calc(50% + 0px)'
               }}
             />
             {[
-              { key: 'week', label: 'Week' },
-              { key: 'month', label: 'Month' },
-              { key: 'year', label: 'Year' },
-              { key: 'all', label: 'All Time' }
-            ].map((range) => (
+              { key: 'activity', label: '📊 Activity' },
+              { key: 'streak', label: '🔥 Streaks' }
+            ].map((section) => (
               <TouchButton
-                key={range.key}
-                onClick={() => setLeaderboardTimeRange(range.key)}
-                className="flex-1 py-1.5 rounded-md text-xs font-medium transition-colors duration-200 relative z-10"
-                style={{ color: leaderboardTimeRange === range.key ? 'white' : 'rgba(255,255,255,0.5)' }}
+                key={section.key}
+                onClick={() => {
+                  setLeaderboardSection(section.key);
+                  // Reset to appropriate defaults when switching
+                  if (section.key === 'activity') {
+                    setLeaderboardCategory('calories');
+                    if (leaderboardTimeRange !== 'week' && leaderboardTimeRange !== 'month' && leaderboardTimeRange !== 'year' && leaderboardTimeRange !== 'all') {
+                      setLeaderboardTimeRange('week');
+                    }
+                  } else {
+                    setLeaderboardCategory('master');
+                    if (leaderboardTimeRange === 'week' || leaderboardTimeRange === 'month') {
+                      setLeaderboardTimeRange('year');
+                    }
+                  }
+                }}
+                className="flex-1 py-1.5 rounded-md text-xs font-semibold transition-colors duration-200 relative z-10"
+                style={{ color: leaderboardSection === section.key ? 'black' : 'rgba(255,255,255,0.5)' }}
               >
-                {range.label}
+                {section.label}
               </TouchButton>
             ))}
           </div>
 
-          {/* Category Selector */}
-          <div className="flex gap-2 mb-4 overflow-x-auto pb-2 -mx-4 px-4 no-scrollbar">
-            {[
-              { key: 'master', label: '🏆 Overall', color: '#FFD700' },
-              { key: 'strength', label: '💪 Strength', color: '#FF6B6B' },
-              { key: 'cardio', label: '🏃 Cardio', color: '#4ECDC4' },
-              { key: 'recovery', label: '🧘 Recovery', color: '#9B59B6' },
-              { key: 'calories', label: '🔥 Calories', color: '#F39C12' },
-              { key: 'steps', label: '👟 Steps', color: '#3498DB' }
-            ].map((cat) => (
-              <TouchButton
-                key={cat.key}
-                onClick={() => setLeaderboardCategory(cat.key)}
-                className="px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-200"
-                style={{
-                  backgroundColor: leaderboardCategory === cat.key ? cat.color : 'rgba(255,255,255,0.05)',
-                  color: leaderboardCategory === cat.key ? (cat.key === 'master' ? 'black' : 'white') : 'rgba(255,255,255,0.5)'
-                }}
-              >
-                {cat.label}
-              </TouchButton>
-            ))}
+          {/* Category Pills + Time Dropdown Row */}
+          <div className="flex items-center justify-between mb-4">
+            {/* Category Pills */}
+            <div className="flex gap-1.5 overflow-x-auto no-scrollbar flex-1 mr-3">
+              {leaderboardSection === 'activity' ? (
+                [
+                  { key: 'calories', label: '🔥 Calories', color: '#FF6B6B' },
+                  { key: 'steps', label: '👟 Steps', color: '#3498DB' },
+                  { key: 'workouts', label: '💪 Workouts', color: '#00FF94' },
+                  { key: 'strengthSessions', label: '🏋️ Strength', color: '#00FF94' },
+                  { key: 'cardioSessions', label: '🏃 Cardio', color: '#FF9500' },
+                  { key: 'recoverySessions', label: '🧊 Recovery', color: '#00D1FF' }
+                ].map((cat) => (
+                  <TouchButton
+                    key={cat.key}
+                    onClick={() => setLeaderboardCategory(cat.key)}
+                    className="px-2.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-200"
+                    style={{
+                      backgroundColor: leaderboardCategory === cat.key ? cat.color : 'rgba(255,255,255,0.05)',
+                      color: leaderboardCategory === cat.key ? 'black' : 'rgba(255,255,255,0.5)'
+                    }}
+                  >
+                    {cat.label}
+                  </TouchButton>
+                ))
+              ) : (
+                [
+                  { key: 'master', label: '🏆 Overall', color: '#FFD700' },
+                  { key: 'strength', label: '💪 Strength', color: '#00FF94' },
+                  { key: 'cardio', label: '🏃 Cardio', color: '#FF9500' },
+                  { key: 'recovery', label: '🧊 Recovery', color: '#00D1FF' }
+                ].map((cat) => (
+                  <TouchButton
+                    key={cat.key}
+                    onClick={() => setLeaderboardCategory(cat.key)}
+                    className="px-2.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-200"
+                    style={{
+                      backgroundColor: leaderboardCategory === cat.key ? cat.color : 'rgba(255,255,255,0.05)',
+                      color: leaderboardCategory === cat.key ? (cat.key === 'master' ? 'black' : 'white') : 'rgba(255,255,255,0.5)'
+                    }}
+                  >
+                    {cat.label}
+                  </TouchButton>
+                ))
+              )}
+            </div>
+
+            {/* Time Range Dropdown */}
+            <select
+              value={leaderboardTimeRange}
+              onChange={(e) => setLeaderboardTimeRange(e.target.value)}
+              className="px-2.5 py-1.5 rounded-lg bg-zinc-800/50 border border-white/10 text-white text-xs appearance-none cursor-pointer shrink-0"
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23999'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
+                backgroundRepeat: 'no-repeat',
+                backgroundPosition: 'right 6px center',
+                backgroundSize: '12px',
+                paddingRight: '24px'
+              }}
+            >
+              {leaderboardSection === 'activity' ? (
+                <>
+                  <option value="week">Week</option>
+                  <option value="month">Month</option>
+                  <option value="year">Year</option>
+                  <option value="all">All Time</option>
+                </>
+              ) : (
+                <>
+                  <option value="year">This Year</option>
+                  <option value="all">All Time</option>
+                </>
+              )}
+            </select>
           </div>
 
           {leaderboardLoading ? (
@@ -1862,13 +1972,17 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                         {(() => {
                           const userData = sortedLeaderboard.find(u => u.isCurrentUser);
                           const val = getSortValue(userData);
-                          return (leaderboardCategory === 'calories' || leaderboardCategory === 'steps')
+                          return (leaderboardSection === 'activity' && (leaderboardCategory === 'calories' || leaderboardCategory === 'steps'))
                             ? (val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val)
                             : val;
                         })()}
                       </p>
                       <p className="text-gray-500 text-xs">
-                        {leaderboardCategory === 'calories' ? 'cal' : leaderboardCategory === 'steps' ? 'steps' : 'streak'}
+                        {leaderboardSection === 'activity'
+                          ? (leaderboardCategory === 'calories' ? 'cal' :
+                             leaderboardCategory === 'steps' ? 'steps' :
+                             leaderboardCategory === 'workouts' ? 'workouts' : 'sessions')
+                          : 'streak'}
                       </p>
                     </div>
                   </div>
@@ -1938,7 +2052,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                             <span className="text-[10px] text-gray-500">{i + 1}.</span>
                             <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
                             <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
-                            <span className="text-[11px] font-bold" style={{ color: '#4ECDC4' }}>{user.volume?.runs?.[leaderboardTimeRange] || 0}</span>
+                            <span className="text-[11px] font-bold" style={{ color: '#FF9500' }}>{user.volume?.runs?.[leaderboardTimeRange] || 0}</span>
                           </div>
                         ))}
                     </div>
@@ -1954,7 +2068,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                             <span className="text-[10px] text-gray-500">{i + 1}.</span>
                             <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
                             <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
-                            <span className="text-[11px] font-bold" style={{ color: '#4ECDC4' }}>{user.volume?.miles?.[leaderboardTimeRange]?.toFixed(0) || 0}</span>
+                            <span className="text-[11px] font-bold" style={{ color: '#FF9500' }}>{user.volume?.miles?.[leaderboardTimeRange]?.toFixed(0) || 0}</span>
                           </div>
                         ))}
                     </div>
@@ -1973,7 +2087,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                               <span className="text-[10px] text-gray-500">{i + 1}.</span>
                               <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
                               <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
-                              <span className="text-[11px] font-bold" style={{ color: '#4ECDC4' }}>{hrs}h</span>
+                              <span className="text-[11px] font-bold" style={{ color: '#FF9500' }}>{hrs}h</span>
                             </div>
                           );
                         })}
@@ -1996,7 +2110,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                             <span className="text-[10px] text-gray-500">{i + 1}.</span>
                             <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
                             <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
-                            <span className="text-[11px] font-bold" style={{ color: '#FF6B6B' }}>{user.volume?.strengthSessions?.[leaderboardTimeRange] || 0}</span>
+                            <span className="text-[11px] font-bold" style={{ color: '#00FF94' }}>{user.volume?.strengthSessions?.[leaderboardTimeRange] || 0}</span>
                           </div>
                         ))}
                     </div>
@@ -2015,7 +2129,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                               <span className="text-[10px] text-gray-500">{i + 1}.</span>
                               <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
                               <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
-                              <span className="text-[11px] font-bold" style={{ color: '#FF6B6B' }}>{hrs}h</span>
+                              <span className="text-[11px] font-bold" style={{ color: '#00FF94' }}>{hrs}h</span>
                             </div>
                           );
                         })}

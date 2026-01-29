@@ -5396,8 +5396,11 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                     onDelete={(act) => onDeleteActivity && onDeleteActivity(act.id)}
                   >
                     <div
-                      onClick={() => setSelectedActivity(activity)}
-                      className="w-full p-3 flex items-center gap-3 text-left cursor-pointer"
+                      onClick={() => {
+                        if (navigator.vibrate) navigator.vibrate(10);
+                        setSelectedActivity(activity);
+                      }}
+                      className="w-full p-3 flex items-center gap-3 text-left cursor-pointer active:opacity-70 transition-opacity"
                       style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
                     >
                       <ActivityIcon type={activity.type} size={20} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} />
@@ -5490,7 +5493,10 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                 ))}
               {allLatestActivities.length > 2 && (
                 <button
-                  onClick={() => setActivityExpanded(!activityExpanded)}
+                  onClick={() => {
+                    if (navigator.vibrate) navigator.vibrate(10);
+                    setActivityExpanded(!activityExpanded);
+                  }}
                   className="w-full py-2 text-center text-xs font-medium transition-all duration-150 rounded-xl"
                   style={{ color: 'rgba(255,255,255,0.5)' }}
                   onTouchStart={(e) => {

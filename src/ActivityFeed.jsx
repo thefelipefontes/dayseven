@@ -332,14 +332,16 @@ const MemoizedActivityCard = React.memo(({
     <div className="bg-zinc-900 rounded-xl p-4 mb-3">
       {/* Header - Friend info */}
       <div className="flex items-center gap-3 mb-3">
-        <TouchButton onClick={() => onSelectFriend(friend)} className="flex-shrink-0 transition-transform">
+        <TouchButton onClick={() => onSelectFriend(friend)} className="flex-shrink-0">
           <ProfilePhoto photoURL={friend.photoURL} displayName={friend.displayName} />
         </TouchButton>
-        <TouchButton onClick={() => onSelectFriend(friend)} className="flex-1 min-w-0 text-left transition-opacity">
-          <p className="text-white font-medium truncate">{friend.displayName || friend.username}</p>
-          <p className="text-gray-500 text-xs">@{friend.username}</p>
-        </TouchButton>
-        <span className="text-gray-500 text-xs">{formatTimeAgo(date)}</span>
+        <div className="flex-1 min-w-0">
+          <TouchButton onClick={() => onSelectFriend(friend)} className="text-left inline-block max-w-full">
+            <p className="text-white font-medium truncate">{friend.displayName || friend.username}</p>
+            <p className="text-gray-500 text-xs truncate">@{friend.username}</p>
+          </TouchButton>
+        </div>
+        <span className="text-gray-500 text-xs flex-shrink-0">{formatTimeAgo(date)}</span>
       </div>
 
       {/* Activity details */}
@@ -1594,10 +1596,12 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   const FriendProfileModal = ({ friend, onClose }) => {
     const [isAnimating, setIsAnimating] = useState(false);
     const [isClosing, setIsClosing] = useState(false);
+    const [showFullPhoto, setShowFullPhoto] = useState(false);
 
     useEffect(() => {
       if (friend) {
         setIsClosing(false);
+        setShowFullPhoto(false);
         // Trigger animation after mount
         setTimeout(() => setIsAnimating(true), 10);
       } else {
@@ -1617,36 +1621,42 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     if (!friend && !isClosing) return null;
 
     return (
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 transition-all duration-300"
-        style={{
-          backgroundColor: isAnimating ? 'rgba(0,0,0,0.8)' : 'rgba(0,0,0,0)'
-        }}
-        onClick={handleClose}
-        onTouchEnd={(e) => {
-          if (e.target === e.currentTarget) {
-            e.preventDefault();
-            handleClose();
-          }
-        }}
-      >
+      <>
         <div
-          className="w-full max-w-sm bg-zinc-900 rounded-2xl p-6 transition-all duration-300 ease-out"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 transition-all duration-300"
           style={{
-            transform: isAnimating ? 'scale(1) translateY(0)' : 'scale(0.95) translateY(20px)',
-            opacity: isAnimating ? 1 : 0
+            backgroundColor: isAnimating ? 'rgba(0,0,0,0.8)' : 'rgba(0,0,0,0)'
           }}
-          onClick={e => e.stopPropagation()}
-          onTouchEnd={e => e.stopPropagation()}
+          onClick={handleClose}
+          onTouchEnd={(e) => {
+            if (e.target === e.currentTarget) {
+              e.preventDefault();
+              handleClose();
+            }
+          }}
         >
-          {/* Header */}
-          <div className="flex items-center gap-4 mb-6">
-            <ProfilePhoto photoURL={friend?.photoURL} displayName={friend?.displayName} size={64} />
-            <div>
-              <p className="text-white font-bold text-lg">{friend?.displayName || friend?.username}</p>
-              <p className="text-gray-400">@{friend?.username}</p>
+          <div
+            className="w-full max-w-sm bg-zinc-900 rounded-2xl p-6 transition-all duration-300 ease-out"
+            style={{
+              transform: isAnimating ? 'scale(1) translateY(0)' : 'scale(0.95) translateY(20px)',
+              opacity: isAnimating ? 1 : 0
+            }}
+            onClick={e => e.stopPropagation()}
+            onTouchEnd={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center gap-4 mb-6">
+              <TouchButton
+                onClick={() => friend?.photoURL && setShowFullPhoto(true)}
+                className={friend?.photoURL ? 'cursor-pointer' : ''}
+              >
+                <ProfilePhoto photoURL={friend?.photoURL} displayName={friend?.displayName} size={64} />
+              </TouchButton>
+              <div>
+                <p className="text-white font-bold text-lg">{friend?.displayName || friend?.username}</p>
+                <p className="text-gray-400">@{friend?.username}</p>
+              </div>
             </div>
-          </div>
 
           {/* Stats grid */}
           <div className="grid grid-cols-3 gap-3 mb-6">
@@ -1689,6 +1699,38 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           </TouchButton>
         </div>
       </div>
+
+      {/* Fullscreen Photo Overlay - always rendered but hidden to prevent flash */}
+      {friend?.photoURL && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black transition-opacity duration-150"
+          style={{
+            opacity: showFullPhoto ? 1 : 0,
+            pointerEvents: showFullPhoto ? 'auto' : 'none',
+            visibility: showFullPhoto ? 'visible' : 'hidden'
+          }}
+          onClick={() => setShowFullPhoto(false)}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchMove={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => e.stopPropagation()}
+        >
+          <TouchButton
+            onClick={() => setShowFullPhoto(false)}
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center z-10"
+          >
+            <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </TouchButton>
+          <img
+            src={friend.photoURL}
+            alt={friend.displayName}
+            className="max-w-[90vw] max-h-[90vh] rounded-2xl object-contain"
+            onClick={e => e.stopPropagation()}
+          />
+        </div>
+      )}
+      </>
     );
   };
 

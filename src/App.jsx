@@ -7244,29 +7244,29 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
 
               {/* Main Stats Grid */}
               <div className="grid grid-cols-2 gap-3 mb-4">
-                <div className="p-4 rounded-2xl bg-zinc-800/50">
+                <div className="p-4 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(0, 255, 148, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
                   <div className="text-4xl font-black" style={{ color: '#00FF94' }}>{Object.values(totalsData.lifting || {}).reduce((a, b) => a + b, 0)}</div>
                   <div className="text-sm text-gray-400 flex items-center gap-1.5 mt-1">
                     <span>🏋️</span>
                     <span>Strength</span>
                   </div>
                 </div>
-                <div className="p-4 rounded-2xl bg-zinc-800/50">
+                <div className="p-4 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(255, 149, 0, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
                   <div className="text-4xl font-black" style={{ color: '#FF9500' }}>{Object.values(totalsData.cardio || {}).reduce((a, b) => a + b, 0)}</div>
                   <div className="text-sm text-gray-400 flex items-center gap-1.5 mt-1">
                     <span>🏃</span>
                     <span>Cardio</span>
                   </div>
                 </div>
-                <div className="p-4 rounded-2xl bg-zinc-800/50">
+                <div className="p-4 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(0, 209, 255, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
                   <div className="text-4xl font-black" style={{ color: '#00D1FF' }}>{totalsData.recovery}</div>
                   <div className="text-sm text-gray-400 flex items-center gap-1.5 mt-1">
                     <span>🧊</span>
                     <span>Recovery</span>
                   </div>
                 </div>
-                <div className="p-4 rounded-2xl bg-zinc-800/50">
-                  <div className="text-4xl font-black text-white">{totalsData.miles.toFixed(1)}</div>
+                <div className="p-4 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(255, 87, 87, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
+                  <div className="text-4xl font-black" style={{ color: '#FF5757' }}>{totalsData.miles.toFixed(1)}</div>
                   <div className="text-sm text-gray-400 flex items-center gap-1.5 mt-1">
                     <span>📍</span>
                     <span>Miles Run</span>
@@ -7347,40 +7347,39 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
 
               {/* Streaks Section */}
               <div>
-                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">🔥 Streak Records</div>
-                <div className="space-y-2">
-                  <div className="p-4 rounded-2xl flex items-center justify-between" style={{ background: 'linear-gradient(135deg, rgba(255,215,0,0.15) 0%, rgba(255,149,0,0.1) 100%)', border: '1px solid rgba(255,215,0,0.3)' }}>
-                    <div>
-                      <div className="text-sm text-gray-400">🏆 Longest Master Streak</div>
-                      <div className="text-2xl font-black" style={{ color: records.longestMasterStreak ? '#FFD700' : 'rgba(255,255,255,0.3)' }}>
-                        {records.longestMasterStreak ? `${records.longestMasterStreak} weeks` : '—'}
+                <div className="text-xs text-gray-600 uppercase tracking-wider mb-3">Streak Records</div>
+                <div className="p-4 rounded-2xl bg-zinc-900/50 space-y-4">
+                  {/* Master Streak - Featured */}
+                  <div className="flex items-center justify-between pb-3 border-b border-white/5">
+                    <div className="flex items-center gap-3">
+                      <span className="text-lg">🏆</span>
+                      <div>
+                        <div className="text-xs text-gray-500">Longest Master Streak</div>
+                        <div className="text-2xl font-black text-white">
+                          {records.longestMasterStreak ? `${records.longestMasterStreak} weeks` : '—'}
+                        </div>
                       </div>
                     </div>
-                    <span className="text-3xl">🏆</span>
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.2)' }}>
-                      <div className="text-xs text-gray-400">🏋️ Strength Streak</div>
-                      <div className="text-xl font-black" style={{ color: records.longestStrengthStreak ? '#00FF94' : 'rgba(255,255,255,0.3)' }}>
-                        {records.longestStrengthStreak ? `${records.longestStrengthStreak} weeks` : '—'}
+
+                  {/* Other Streaks */}
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <div className="text-[10px] text-gray-600 mb-1">🏋️ Strength</div>
+                      <div className="text-lg font-bold text-white">
+                        {records.longestStrengthStreak ? `${records.longestStrengthStreak}w` : '—'}
                       </div>
                     </div>
-                    <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,149,0,0.1)', border: '1px solid rgba(255,149,0,0.2)' }}>
-                      <div className="text-xs text-gray-400">🏃 Cardio Streak</div>
-                      <div className="text-xl font-black" style={{ color: records.longestCardioStreak ? '#FF9500' : 'rgba(255,255,255,0.3)' }}>
-                        {records.longestCardioStreak ? `${records.longestCardioStreak} weeks` : '—'}
+                    <div>
+                      <div className="text-[10px] text-gray-600 mb-1">🏃 Cardio</div>
+                      <div className="text-lg font-bold text-white">
+                        {records.longestCardioStreak ? `${records.longestCardioStreak}w` : '—'}
                       </div>
                     </div>
-                    <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(0,209,255,0.1)', border: '1px solid rgba(0,209,255,0.2)' }}>
-                      <div className="text-xs text-gray-400">🧊 Recovery Streak</div>
-                      <div className="text-xl font-black" style={{ color: records.longestRecoveryStreak ? '#00D1FF' : 'rgba(255,255,255,0.3)' }}>
-                        {records.longestRecoveryStreak ? `${records.longestRecoveryStreak} weeks` : '—'}
-                      </div>
-                    </div>
-                    <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)' }}>
-                      <div className="text-xs text-gray-400">📊 Current Master</div>
-                      <div className="text-xl font-black" style={{ color: streaks.master ? 'white' : 'rgba(255,255,255,0.3)' }}>
-                        {streaks.master ? `${streaks.master} weeks` : '—'}
+                    <div>
+                      <div className="text-[10px] text-gray-600 mb-1">🧊 Recovery</div>
+                      <div className="text-lg font-bold text-white">
+                        {records.longestRecoveryStreak ? `${records.longestRecoveryStreak}w` : '—'}
                       </div>
                     </div>
                   </div>
@@ -7389,76 +7388,93 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
 
               {/* Single Workout Records */}
               <div>
-                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">💪 Single Workout Records</div>
-                <div className="space-y-2">
+                <div className="text-xs text-gray-600 uppercase tracking-wider mb-3">Single Workout Records</div>
+                <div className="p-4 rounded-2xl bg-zinc-900/50 space-y-3">
                   {/* Highest Calories */}
-                  <div className="p-3 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(255,149,0,0.05)' }}>
-                    <div>
-                      <div className="text-[10px] text-gray-500">🔥 Highest Calories Burned</div>
-                      <div className="text-xl font-black" style={{ color: getRecordValue(records.highestCalories) ? '#FF9500' : 'rgba(255,255,255,0.3)' }}>
-                        {getRecordValue(records.highestCalories) 
-                          ? `${getRecordValue(records.highestCalories)} cal` 
-                          : '—'}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm">🔥</span>
+                      <div className="text-xs text-gray-500">Highest Calories</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-base font-bold text-white">
+                        {getRecordValue(records.highestCalories) ? `${getRecordValue(records.highestCalories)} cal` : '—'}
                       </div>
                       {getRecordType(records.highestCalories) && (
-                        <div className="text-[10px] text-gray-600">{getRecordType(records.highestCalories)}</div>
+                        <div className="text-[9px] text-gray-600">{getRecordType(records.highestCalories)}</div>
                       )}
                     </div>
                   </div>
-                  
+
+                  <div className="border-t border-white/5" />
+
                   {/* Longest Strength */}
-                  <div className="p-3 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(0,255,148,0.05)' }}>
-                    <div>
-                      <div className="text-[10px] text-gray-500">🏋️ Longest Strength Session</div>
-                      <div className="text-xl font-black" style={{ color: getRecordValue(records.longestStrength) ? '#00FF94' : 'rgba(255,255,255,0.3)' }}>
-                        {getRecordValue(records.longestStrength) ? (() => {
-                          const duration = getRecordValue(records.longestStrength);
-                          const hours = Math.floor(duration / 60);
-                          const mins = duration % 60;
-                          return hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
-                        })() : '—'}
-                      </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm">🏋️</span>
+                      <div className="text-xs text-gray-500">Longest Strength</div>
+                    </div>
+                    <div className="text-base font-bold text-white">
+                      {getRecordValue(records.longestStrength) ? (() => {
+                        const duration = getRecordValue(records.longestStrength);
+                        const hours = Math.floor(duration / 60);
+                        const mins = duration % 60;
+                        return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+                      })() : '—'}
                     </div>
                   </div>
-                  
+
+                  <div className="border-t border-white/5" />
+
                   {/* Longest Cardio */}
-                  <div className="p-3 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(255,149,0,0.05)' }}>
-                    <div>
-                      <div className="text-[10px] text-gray-500">🏃 Longest Cardio Session</div>
-                      <div className="text-xl font-black" style={{ color: getRecordValue(records.longestCardio) ? '#FF9500' : 'rgba(255,255,255,0.3)' }}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm">🏃</span>
+                      <div className="text-xs text-gray-500">Longest Cardio</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-base font-bold text-white">
                         {getRecordValue(records.longestCardio) ? (() => {
                           const duration = getRecordValue(records.longestCardio);
                           const hours = Math.floor(duration / 60);
                           const mins = duration % 60;
-                          return hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
+                          return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
                         })() : '—'}
                       </div>
                       {getRecordType(records.longestCardio) && (
-                        <div className="text-[10px] text-gray-600">{getRecordType(records.longestCardio)}</div>
+                        <div className="text-[9px] text-gray-600">{getRecordType(records.longestCardio)}</div>
                       )}
                     </div>
                   </div>
-                  
+
+                  <div className="border-t border-white/5" />
+
                   {/* Longest Distance */}
-                  <div className="p-3 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(255,149,0,0.05)' }}>
-                    <div>
-                      <div className="text-[10px] text-gray-500">📍 Longest Distance</div>
-                      <div className="text-xl font-black" style={{ color: getRecordValue(records.longestDistance) ? '#FF9500' : 'rgba(255,255,255,0.3)' }}>
-                        {getRecordValue(records.longestDistance) 
-                          ? `${parseFloat(getRecordValue(records.longestDistance)).toFixed(1)} mi` 
-                          : '—'}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm">📍</span>
+                      <div className="text-xs text-gray-500">Longest Distance</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-base font-bold text-white">
+                        {getRecordValue(records.longestDistance) ? `${parseFloat(getRecordValue(records.longestDistance)).toFixed(1)} mi` : '—'}
                       </div>
                       {getRecordType(records.longestDistance) && (
-                        <div className="text-[10px] text-gray-600">{getRecordType(records.longestDistance)}</div>
+                        <div className="text-[9px] text-gray-600">{getRecordType(records.longestDistance)}</div>
                       )}
                     </div>
                   </div>
-                  
+
+                  <div className="border-t border-white/5" />
+
                   {/* Fastest Running Pace */}
-                  <div className="p-3 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(255,149,0,0.05)' }}>
-                    <div>
-                      <div className="text-[10px] text-gray-500">🏃 Fastest Running Pace</div>
-                      <div className="text-xl font-black" style={{ color: getRecordValue(records.fastestPace) ? '#FF9500' : 'rgba(255,255,255,0.3)' }}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm">⚡</span>
+                      <div className="text-xs text-gray-500">Fastest Run Pace</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-base font-bold text-white">
                         {getRecordValue(records.fastestPace) ? (() => {
                           const pace = getRecordValue(records.fastestPace);
                           const paceMin = Math.floor(pace);
@@ -7466,27 +7482,24 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                           return `${paceMin}:${paceSec.toString().padStart(2, '0')}/mi`;
                         })() : '—'}
                       </div>
-                      {getRecordType(records.fastestPace) && (
-                        <div className="text-[10px] text-gray-600">{getRecordType(records.fastestPace)}</div>
-                      )}
                     </div>
                   </div>
 
+                  <div className="border-t border-white/5" />
+
                   {/* Fastest Cycling Pace */}
-                  <div className="p-3 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(0,209,255,0.05)' }}>
-                    <div>
-                      <div className="text-[10px] text-gray-500">🚴 Fastest Cycling Pace</div>
-                      <div className="text-xl font-black" style={{ color: getRecordValue(records.fastestCyclingPace) ? '#00D1FF' : 'rgba(255,255,255,0.3)' }}>
-                        {getRecordValue(records.fastestCyclingPace) ? (() => {
-                          const pace = getRecordValue(records.fastestCyclingPace);
-                          const paceMin = Math.floor(pace);
-                          const paceSec = Math.round((pace - paceMin) * 60);
-                          return `${paceMin}:${paceSec.toString().padStart(2, '0')}/mi`;
-                        })() : '—'}
-                      </div>
-                      {getRecordType(records.fastestCyclingPace) && (
-                        <div className="text-[10px] text-gray-600">{getRecordType(records.fastestCyclingPace)}</div>
-                      )}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm">🚴</span>
+                      <div className="text-xs text-gray-500">Fastest Cycle Pace</div>
+                    </div>
+                    <div className="text-base font-bold text-white">
+                      {getRecordValue(records.fastestCyclingPace) ? (() => {
+                        const pace = getRecordValue(records.fastestCyclingPace);
+                        const paceMin = Math.floor(pace);
+                        const paceSec = Math.round((pace - paceMin) * 60);
+                        return `${paceMin}:${paceSec.toString().padStart(2, '0')}/mi`;
+                      })() : '—'}
                     </div>
                   </div>
                 </div>
@@ -7494,35 +7507,42 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
 
               {/* Weekly Records */}
               <div>
-                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">📅 Weekly Records</div>
-                <div className="space-y-2">
+                <div className="text-xs text-gray-600 uppercase tracking-wider mb-3">Weekly Records</div>
+                <div className="p-4 rounded-2xl bg-zinc-900/50 space-y-3">
                   {/* Most Workouts */}
-                  <div className="p-3 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-                    <div>
-                      <div className="text-[10px] text-gray-500">🎯 Most Workouts in a Week</div>
-                      <div className="text-xl font-black" style={{ color: records.mostWorkoutsWeek ? 'white' : 'rgba(255,255,255,0.3)' }}>
-                        {records.mostWorkoutsWeek || '—'}
-                      </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm">🎯</span>
+                      <div className="text-xs text-gray-500">Most Workouts</div>
+                    </div>
+                    <div className="text-base font-bold text-white">
+                      {records.mostWorkoutsWeek || '—'}
                     </div>
                   </div>
-                  
+
+                  <div className="border-t border-white/5" />
+
                   {/* Most Calories */}
-                  <div className="p-3 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(255,149,0,0.05)' }}>
-                    <div>
-                      <div className="text-[10px] text-gray-500">🔥 Most Calories in a Week</div>
-                      <div className="text-xl font-black" style={{ color: records.mostCaloriesWeek ? '#FF9500' : 'rgba(255,255,255,0.3)' }}>
-                        {records.mostCaloriesWeek ? `${records.mostCaloriesWeek.toLocaleString()} cal` : '—'}
-                      </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm">🔥</span>
+                      <div className="text-xs text-gray-500">Most Calories</div>
+                    </div>
+                    <div className="text-base font-bold text-white">
+                      {records.mostCaloriesWeek ? `${records.mostCaloriesWeek.toLocaleString()} cal` : '—'}
                     </div>
                   </div>
-                  
+
+                  <div className="border-t border-white/5" />
+
                   {/* Most Miles */}
-                  <div className="p-3 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(255,149,0,0.05)' }}>
-                    <div>
-                      <div className="text-[10px] text-gray-500">🏃 Most Miles in a Week</div>
-                      <div className="text-xl font-black" style={{ color: records.mostMilesWeek ? '#FF9500' : 'rgba(255,255,255,0.3)' }}>
-                        {records.mostMilesWeek ? `${parseFloat(records.mostMilesWeek).toFixed(1)} mi` : '—'}
-                      </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm">📍</span>
+                      <div className="text-xs text-gray-500">Most Miles</div>
+                    </div>
+                    <div className="text-base font-bold text-white">
+                      {records.mostMilesWeek ? `${parseFloat(records.mostMilesWeek).toFixed(1)} mi` : '—'}
                     </div>
                   </div>
                 </div>

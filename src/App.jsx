@@ -71,7 +71,7 @@ const initialUserData = {
     cardioPerWeek: 3,
     recoveryPerWeek: 2,
     stepsPerDay: 10000,
-    caloriesPerWeek: 3500
+    caloriesPerDay: 500
   },
   streaks: {
     master: 0,
@@ -106,7 +106,7 @@ const initialWeeklyProgress = {
   lifts: { completed: 0, goal: 4, sessions: [] },
   cardio: { completed: 0, goal: 3, sessions: [], breakdown: { running: 0, cycling: 0, sports: 0 } },
   recovery: { completed: 0, goal: 2, sessions: [], breakdown: { coldPlunge: 0, sauna: 0, yoga: 0 } },
-  calories: { burned: 0, goal: 3500 },
+  calories: { burned: 0, goal: 500 },
   steps: { today: 0, goal: 10000 }
 };
 
@@ -2749,7 +2749,8 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null }) 
     liftsPerWeek: currentGoals?.liftsPerWeek ?? 3,
     cardioPerWeek: currentGoals?.cardioPerWeek ?? 2,
     recoveryPerWeek: currentGoals?.recoveryPerWeek ?? 2,
-    stepsPerDay: currentGoals?.stepsPerDay ?? 10000
+    stepsPerDay: currentGoals?.stepsPerDay ?? 10000,
+    caloriesPerDay: currentGoals?.caloriesPerDay ?? 500
   });
 
   const isEditing = currentGoals !== null;
@@ -2758,7 +2759,8 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null }) 
     { title: "Strength training sessions per week", key: 'liftsPerWeek', options: [2, 3, 4, 5, 6], subtitle: "Weightlifting, calisthenics, or any resistance training. Recommended: 2+ per week." },
     { title: "Cardio sessions per week", key: 'cardioPerWeek', options: [1, 2, 3, 4, 5], subtitle: "Running, cycling, sports, etc. Recommended: 1+ per week." },
     { title: "Recovery sessions per week", key: 'recoveryPerWeek', options: [1, 2, 3, 4], subtitle: "Cold plunge, sauna, yoga, pilates, etc. Recommended: 1+ per week." },
-    { title: "Daily step goal", key: 'stepsPerDay', options: [6000, 8000, 10000, 12000, 15000], isSteps: true, subtitle: "Recommended: 10k+ per day for fat loss and general heart health." }
+    { title: "Daily step goal", key: 'stepsPerDay', options: [6000, 8000, 10000, 12000, 15000], isSteps: true, subtitle: "Recommended: 10k+ per day for fat loss and general heart health." },
+    { title: "Daily active calories goal", key: 'caloriesPerDay', options: [300, 400, 500, 600, 750, 1000, 1250, 1500, 1750, 2000], isCalories: true, isScrollable: true, subtitle: "Calories burned from exercise only (not resting metabolism). Recommended: 400-600 per day." }
   ];
 
   return (
@@ -2806,12 +2808,15 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null }) 
           <div key={q.key}>
             <label className="text-sm font-semibold mb-1 block">{q.title}</label>
             {q.subtitle && <p className="text-xs text-gray-500 mb-2">{q.subtitle}</p>}
-            <div className={`flex gap-2 ${!q.subtitle ? 'mt-3' : ''}`}>
+            <div
+              className={`flex gap-2 ${!q.subtitle ? 'mt-3' : ''} ${q.isScrollable ? 'overflow-x-auto pb-2 -mx-6 px-6' : ''}`}
+              style={q.isScrollable ? { WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none' } : {}}
+            >
               {q.options.map((option) => (
                 <button
                   key={option}
                   onClick={() => setGoals({ ...goals, [q.key]: option })}
-                  className="flex-1 py-3 rounded-xl text-center transition-all duration-200 border-2"
+                  className={`py-3 rounded-xl text-center transition-all duration-200 border-2 ${q.isScrollable ? 'flex-shrink-0 px-4 min-w-[70px]' : 'flex-1'}`}
                   style={{
                     backgroundColor: goals[q.key] === option ? 'rgba(0,255,148,0.15)' : 'rgba(255,255,255,0.05)',
                     borderColor: goals[q.key] === option ? '#00FF94' : 'transparent',
@@ -2834,7 +2839,7 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null }) 
                   }}
                 >
                   <span className="font-bold" style={{ color: goals[q.key] === option ? '#00FF94' : 'white' }}>
-                    {q.isSteps ? `${option/1000}k` : option}
+                    {q.isSteps ? `${option/1000}k` : q.isCalories ? `${option}` : option}
                   </span>
                 </button>
               ))}
@@ -4529,7 +4534,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
 
   // Calculate weekly progress directly from activities to ensure it's always in sync
   const weekProgress = useMemo(() => {
-    const goals = userData?.goals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2, caloriesPerWeek: 3500, stepsPerDay: 10000 };
+    const goals = userData?.goals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2, caloriesPerDay: 500, stepsPerDay: 10000 };
 
     const today = new Date();
     today.setHours(23, 59, 59, 999); // End of today
@@ -4583,7 +4588,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
       lifts: { completed: lifts.length, goal: goals.liftsPerWeek, sessions: lifts.map(l => l.subtype || l.type), breakdown: { lifting: lifting.length, bodyweight: bodyweight.length }, otherActivities: otherStrength },
       cardio: { completed: cardio.length, goal: goals.cardioPerWeek, miles: totalMiles, sessions: cardio.map(c => c.type), breakdown: { running: running.length, cycling: cycling.length, sports: sports.length, other: otherCardio.length }, otherActivities: otherCardio },
       recovery: { completed: recovery.length, goal: goals.recoveryPerWeek, sessions: recovery.map(r => r.type), breakdown: { coldPlunge: coldPlunge.length, sauna: sauna.length, yoga: yoga.length, pilates: pilates.length }, otherActivities: otherRecovery },
-      calories: { burned: totalCalories, goal: goals.caloriesPerWeek },
+      calories: { burned: totalCalories, goal: goals.caloriesPerDay },
       steps: { today: 0, goal: goals.stepsPerDay }
     };
   }, [activities, userData?.goals]);
@@ -9295,7 +9300,7 @@ export default function DaySevenApp() {
           pilates: pilates.length
         }
       },
-      calories: { burned: totalCalories, goal: userData.goals.caloriesPerWeek },
+      calories: { burned: totalCalories, goal: userData.goals.caloriesPerDay },
       steps: { today: 0, goal: userData.goals.stepsPerDay }
     };
   };
@@ -9826,7 +9831,7 @@ export default function DaySevenApp() {
           cardioPerWeek: goals.cardioPerWeek,
           recoveryPerWeek: goals.recoveryPerWeek,
           stepsPerDay: goals.stepsPerDay,
-          caloriesPerWeek: userData.goals.caloriesPerWeek // Keep existing value
+          caloriesPerDay: goals.caloriesPerDay
         };
 
         // Save goals to Firestore
@@ -9846,7 +9851,8 @@ export default function DaySevenApp() {
           lifts: { ...prev.lifts, goal: goals.liftsPerWeek },
           cardio: { ...prev.cardio, goal: goals.cardioPerWeek },
           recovery: { ...prev.recovery, goal: goals.recoveryPerWeek },
-          steps: { ...prev.steps, goal: goals.stepsPerDay }
+          steps: { ...prev.steps, goal: goals.stepsPerDay },
+          calories: { ...prev.calories, goal: goals.caloriesPerDay }
         }));
         setIsOnboarded(true);
       }}
@@ -10314,7 +10320,7 @@ export default function DaySevenApp() {
                 cardioPerWeek: goals.cardioPerWeek,
                 recoveryPerWeek: goals.recoveryPerWeek,
                 stepsPerDay: goals.stepsPerDay,
-                caloriesPerWeek: userData.goals.caloriesPerWeek
+                caloriesPerDay: goals.caloriesPerDay
               };
 
               // Save goals to Firestore
@@ -10329,7 +10335,8 @@ export default function DaySevenApp() {
                 lifts: { ...prev.lifts, goal: goals.liftsPerWeek },
                 cardio: { ...prev.cardio, goal: goals.cardioPerWeek },
                 recovery: { ...prev.recovery, goal: goals.recoveryPerWeek },
-                steps: { ...prev.steps, goal: goals.stepsPerDay }
+                steps: { ...prev.steps, goal: goals.stepsPerDay },
+                calories: { ...prev.calories, goal: goals.caloriesPerDay }
               }));
               setShowEditGoals(false);
             }}

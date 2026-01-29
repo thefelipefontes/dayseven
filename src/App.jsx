@@ -6089,6 +6089,8 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
   const [showCompareModal, setShowCompareModal] = useState(false);
   const [photoFilter, setPhotoFilter] = useState('all');
   const [expandedMonths, setExpandedMonths] = useState({}); // { monthKey: true/false }
+  const [selectedPhotoYear, setSelectedPhotoYear] = useState('all'); // 'all' or year like '2026'
+  const [selectedPhotoMonth, setSelectedPhotoMonth] = useState('all'); // 'all' or month number like '01'
   const [isShareGenerating, setIsShareGenerating] = useState(false);
   const records = userData?.personalRecords || initialUserData.personalRecords;
   const streaks = userData?.streaks || initialUserData.streaks;
@@ -6615,21 +6617,18 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
           className="absolute top-1 bottom-1 rounded-lg transition-all duration-300 ease-out"
           style={{
             backgroundColor: 'rgba(255,255,255,0.1)',
-            width: 'calc((100% - 8px) / 4)',
+            width: 'calc((100% - 8px) / 3)',
             left: view === 'calendar'
               ? '4px'
               : view === 'stats'
-                ? 'calc(4px + (100% - 8px) / 4)'
-                : view === 'trends'
-                  ? 'calc(4px + 2 * (100% - 8px) / 4)'
-                  : 'calc(4px + 3 * (100% - 8px) / 4)'
+                ? 'calc(4px + (100% - 8px) / 3)'
+                : 'calc(4px + 2 * (100% - 8px) / 3)'
           }}
         />
         {[
           { key: 'calendar', label: 'Calendar' },
           { key: 'stats', label: 'Stats' },
-          { key: 'trends', label: 'Trends' },
-          { key: 'progress', label: 'Progress' }
+          { key: 'progress', label: 'Progress Photos' }
         ].map((v) => (
           <button
             key={v.key}
@@ -7188,14 +7187,18 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
           {/* Toggle and Dropdown Row */}
           <div className="flex items-center justify-between mb-4 gap-3">
             {/* Mini Toggle - left aligned */}
-            <div className="relative flex p-1 rounded-lg flex-1" style={{ backgroundColor: 'rgba(255,255,255,0.05)', maxWidth: '180px' }}>
+            <div className="relative flex p-1 rounded-lg flex-1" style={{ backgroundColor: 'rgba(255,255,255,0.05)', maxWidth: '240px' }}>
               {/* Sliding pill indicator */}
               <div
                 className="absolute top-1 bottom-1 rounded-md transition-all duration-300 ease-out"
                 style={{
                   backgroundColor: 'rgba(255,255,255,0.1)',
-                  width: 'calc((100% - 8px) / 2)',
-                  left: statsSubView === 'overview' ? '4px' : 'calc(4px + (100% - 8px) / 2)'
+                  width: 'calc((100% - 8px) / 3)',
+                  left: statsSubView === 'overview'
+                    ? '4px'
+                    : statsSubView === 'records'
+                      ? 'calc(4px + (100% - 8px) / 3)'
+                      : 'calc(4px + 2 * (100% - 8px) / 3)'
                 }}
               />
               <button
@@ -7214,7 +7217,16 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                   color: statsSubView === 'records' ? 'white' : 'rgba(255,255,255,0.5)'
                 }}
               >
-                My Records
+                Records
+              </button>
+              <button
+                onClick={() => setStatsSubView('trends')}
+                className="flex-1 py-1 rounded-md text-xs font-medium transition-colors duration-200 relative z-10"
+                style={{
+                  color: statsSubView === 'trends' ? 'white' : 'rgba(255,255,255,0.5)'
+                }}
+              >
+                Trends
               </button>
             </div>
 
@@ -7549,12 +7561,12 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
               </div>
             </div>
           )}
-        </div>
-      )}
 
-      {/* Trends View */}
-      {view === 'trends' && (
-        <TrendsView activities={activities} calendarData={calendarData} />
+          {/* Trends Sub-View */}
+          {statsSubView === 'trends' && (
+            <TrendsView activities={activities} calendarData={calendarData} />
+          )}
+        </div>
       )}
 
       {/* Progress View - Photo Comparison */}
@@ -7649,6 +7661,40 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
 
         const monthGroups = groupByMonth(sortedActivities);
 
+        // Get available years from photos
+        const availableYears = [...new Set(sortedActivities.map(a => {
+          const date = new Date(a.date + 'T12:00:00');
+          return date.getFullYear().toString();
+        }))].sort((a, b) => b.localeCompare(a)); // Newest first
+
+        // Get available months for the selected year
+        const availableMonthsForYear = selectedPhotoYear === 'all'
+          ? []
+          : [...new Set(sortedActivities
+              .filter(a => {
+                const date = new Date(a.date + 'T12:00:00');
+                return date.getFullYear().toString() === selectedPhotoYear;
+              })
+              .map(a => {
+                const date = new Date(a.date + 'T12:00:00');
+                return String(date.getMonth() + 1).padStart(2, '0');
+              })
+            )].sort((a, b) => b.localeCompare(a)); // Newest first
+
+        // Month names for display
+        const monthNames = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+        // Filter photos by selected year and month
+        const displayedPhotos = sortedActivities.filter(a => {
+          const date = new Date(a.date + 'T12:00:00');
+          const year = date.getFullYear().toString();
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+
+          if (selectedPhotoYear !== 'all' && year !== selectedPhotoYear) return false;
+          if (selectedPhotoMonth !== 'all' && month !== selectedPhotoMonth) return false;
+          return true;
+        });
+
         const clearSelection = () => {
           setSelectedPhotos([]);
         };
@@ -7662,7 +7708,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
             </div>
 
             {/* Filter pills */}
-            <div className="flex gap-2 mb-4 overflow-x-auto pb-2 -mx-4 px-4 no-scrollbar">
+            <div className="flex gap-2 mb-3 overflow-x-auto pb-2 -mx-4 px-4 no-scrollbar">
               {[
                 { key: 'all', label: 'All Photos' },
                 { key: 'strength', label: '💪 Strength' },
@@ -7686,19 +7732,69 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
               ))}
             </div>
 
+            {/* Year and Month Dropdowns */}
+            {availableYears.length > 0 && (
+              <div className="flex gap-2 mb-4">
+                {/* Year Dropdown */}
+                <select
+                  value={selectedPhotoYear}
+                  onChange={(e) => {
+                    setSelectedPhotoYear(e.target.value);
+                    setSelectedPhotoMonth('all'); // Reset month when year changes
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg bg-zinc-800/50 border border-white/10 text-white text-xs appearance-none cursor-pointer"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23999'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 6px center',
+                    backgroundSize: '12px',
+                    paddingRight: '24px'
+                  }}
+                >
+                  <option value="all" className="bg-zinc-900">All Years</option>
+                  {availableYears.map(year => (
+                    <option key={year} value={year} className="bg-zinc-900">{year}</option>
+                  ))}
+                </select>
+
+                {/* Month Dropdown - only show when a specific year is selected */}
+                {selectedPhotoYear !== 'all' && (
+                  <select
+                    value={selectedPhotoMonth}
+                    onChange={(e) => setSelectedPhotoMonth(e.target.value)}
+                    className="px-2.5 py-1.5 rounded-lg bg-zinc-800/50 border border-white/10 text-white text-xs appearance-none cursor-pointer"
+                    style={{
+                      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23999'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
+                      backgroundRepeat: 'no-repeat',
+                      backgroundPosition: 'right 6px center',
+                      backgroundSize: '12px',
+                      paddingRight: '24px'
+                    }}
+                  >
+                    <option value="all" className="bg-zinc-900">All Months</option>
+                    {availableMonthsForYear.map(month => (
+                      <option key={month} value={month} className="bg-zinc-900">
+                        {monthNames[parseInt(month)]}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
+
             {/* Photo Grid or Empty State */}
-            {sortedActivities.length === 0 ? (
+            {displayedPhotos.length === 0 ? (
               <div className="text-center py-12">
                 <div className="text-5xl mb-4">📸</div>
                 <p className="text-white font-medium mb-2">
                   {activitiesWithPhotos.length === 0
                     ? 'No progress photos yet'
-                    : 'No photos in this category'}
+                    : 'No photos in this selection'}
                 </p>
                 <p className="text-gray-500 text-sm">
                   {activitiesWithPhotos.length === 0
                     ? 'Add photos to your workouts to track your progress'
-                    : 'Try selecting a different filter'}
+                    : 'Try selecting a different month or filter'}
                 </p>
               </div>
             ) : (
@@ -7794,94 +7890,135 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                       : 'Tap "Compare" to see your progress'}
                 </p>
 
-                {/* Month-grouped photos (collapsible) */}
-                {monthGroups.map((group, groupIndex) => {
-                  // First month is expanded by default, others are collapsed
-                  const isExpanded = expandedMonths[group.key] !== undefined
-                    ? expandedMonths[group.key]
-                    : groupIndex === 0;
+                {/* Photo Grid - Simple grid when year/month selected, grouped when All Years */}
+                {selectedPhotoYear !== 'all' ? (
+                  /* Simple grid for selected year/month */
+                  <div className="grid grid-cols-3 gap-2">
+                    {displayedPhotos.map(activity => {
+                      const isSelected = selectedPhotos.includes(activity.id);
+                      const selectionIndex = selectedPhotos.indexOf(activity.id);
 
-                  const toggleMonth = () => {
-                    setExpandedMonths(prev => ({
-                      ...prev,
-                      [group.key]: !isExpanded
-                    }));
-                  };
-
-                  // Check if any photos in this month are selected
-                  const selectedInMonth = group.activities.filter(a => selectedPhotos.includes(a.id)).length;
-
-                  return (
-                    <div key={group.key} className="mb-3">
-                      {/* Month header - clickable */}
-                      <button
-                        onClick={toggleMonth}
-                        className="w-full flex items-center justify-between p-3 rounded-xl transition-all duration-150 active:scale-98"
-                        style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
-                      >
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-sm font-semibold text-white">{group.label}</h3>
-                          <span className="text-xs text-gray-500">
-                            {group.activities.length} photo{group.activities.length !== 1 ? 's' : ''}
-                          </span>
-                          {selectedInMonth > 0 && (
-                            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-green-500 text-black">
-                              {selectedInMonth} selected
-                            </span>
-                          )}
-                        </div>
-                        <svg
-                          className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
+                      return (
+                        <button
+                          key={activity.id}
+                          onClick={() => handlePhotoSelect(activity.id)}
+                          className="relative aspect-square rounded-xl overflow-hidden transition-all duration-150"
+                          style={{
+                            boxShadow: isSelected ? '0 0 0 2px #00FF94' : 'none'
+                          }}
                         >
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </button>
+                          <img
+                            src={activity.photoURL}
+                            alt={activity.type}
+                            className="w-full h-full object-cover"
+                          />
+                          {/* Overlay with date */}
+                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2">
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs">{getActivityIcon(activity)}</span>
+                              <span className="text-[10px] text-white truncate">{formatDate(activity.date)}</span>
+                            </div>
+                          </div>
+                          {/* Selection indicator */}
+                          {isSelected && (
+                            <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-green-500 flex items-center justify-center">
+                              <span className="text-black text-xs font-bold">{selectionIndex + 1}</span>
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  /* Month-grouped photos (collapsible) for All Time view */
+                  monthGroups.map((group, groupIndex) => {
+                    // First month is expanded by default, others are collapsed
+                    const isExpanded = expandedMonths[group.key] !== undefined
+                      ? expandedMonths[group.key]
+                      : groupIndex === 0;
 
-                      {/* Photo grid for this month - collapsible */}
-                      {isExpanded && (
-                        <div className="grid grid-cols-3 gap-2 mt-3">
-                          {group.activities.map(activity => {
-                            const isSelected = selectedPhotos.includes(activity.id);
-                            const selectionIndex = selectedPhotos.indexOf(activity.id);
+                    const toggleMonth = () => {
+                      setExpandedMonths(prev => ({
+                        ...prev,
+                        [group.key]: !isExpanded
+                      }));
+                    };
 
-                            return (
-                              <button
-                                key={activity.id}
-                                onClick={() => handlePhotoSelect(activity.id)}
-                                className="relative aspect-square rounded-xl overflow-hidden transition-all duration-150"
-                                style={{
-                                  boxShadow: isSelected ? '0 0 0 2px #00FF94' : 'none'
-                                }}
-                              >
-                                <img
-                                  src={activity.photoURL}
-                                  alt={activity.type}
-                                  className="w-full h-full object-cover"
-                                />
-                                {/* Overlay with date */}
-                                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2">
-                                  <div className="flex items-center gap-1">
-                                    <span className="text-xs">{getActivityIcon(activity)}</span>
-                                    <span className="text-[10px] text-white truncate">{formatDate(activity.date)}</span>
+                    // Check if any photos in this month are selected
+                    const selectedInMonth = group.activities.filter(a => selectedPhotos.includes(a.id)).length;
+
+                    return (
+                      <div key={group.key} className="mb-3">
+                        {/* Month header - clickable */}
+                        <button
+                          onClick={toggleMonth}
+                          className="w-full flex items-center justify-between p-3 rounded-xl transition-all duration-150 active:scale-98"
+                          style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-sm font-semibold text-white">{group.label}</h3>
+                            <span className="text-xs text-gray-500">
+                              {group.activities.length} photo{group.activities.length !== 1 ? 's' : ''}
+                            </span>
+                            {selectedInMonth > 0 && (
+                              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-green-500 text-black">
+                                {selectedInMonth} selected
+                              </span>
+                            )}
+                          </div>
+                          <svg
+                            className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+
+                        {/* Photo grid for this month - collapsible */}
+                        {isExpanded && (
+                          <div className="grid grid-cols-3 gap-2 mt-3">
+                            {group.activities.map(activity => {
+                              const isSelected = selectedPhotos.includes(activity.id);
+                              const selectionIndex = selectedPhotos.indexOf(activity.id);
+
+                              return (
+                                <button
+                                  key={activity.id}
+                                  onClick={() => handlePhotoSelect(activity.id)}
+                                  className="relative aspect-square rounded-xl overflow-hidden transition-all duration-150"
+                                  style={{
+                                    boxShadow: isSelected ? '0 0 0 2px #00FF94' : 'none'
+                                  }}
+                                >
+                                  <img
+                                    src={activity.photoURL}
+                                    alt={activity.type}
+                                    className="w-full h-full object-cover"
+                                  />
+                                  {/* Overlay with date */}
+                                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2">
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-xs">{getActivityIcon(activity)}</span>
+                                      <span className="text-[10px] text-white truncate">{formatDate(activity.date)}</span>
+                                    </div>
                                   </div>
-                                </div>
-                                {/* Selection indicator */}
-                                {isSelected && (
-                                  <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-green-500 flex items-center justify-center">
-                                    <span className="text-black text-xs font-bold">{selectionIndex + 1}</span>
-                                  </div>
-                                )}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                                  {/* Selection indicator */}
+                                  {isSelected && (
+                                    <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-green-500 flex items-center justify-center">
+                                      <span className="text-black text-xs font-bold">{selectionIndex + 1}</span>
+                                    </div>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
               </>
             )}
 

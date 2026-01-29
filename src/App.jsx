@@ -6,8 +6,8 @@ import Login from './Login';
 import UsernameSetup from './UsernameSetup';
 import Friends from './Friends';
 import ActivityFeed from './ActivityFeed';
-import { createUserProfile, getUserProfile, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, saveUserGoals, getUserGoals, setOnboardingComplete, setTourComplete } from './services/userService';
-import { getFriends, getReactions, getFriendRequests, getComments, addReply, getReplies, deleteReply } from './services/friendService';
+import { createUserProfile, getUserProfile, updateUserProfile, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, saveUserGoals, getUserGoals, setOnboardingComplete, setTourComplete } from './services/userService';
+import { getFriends, getReactions, getFriendRequests, getComments, addReply, getReplies, deleteReply, addReaction, removeReaction, addComment } from './services/friendService';
 import html2canvas from 'html2canvas';
 
 // DAY SEVEN Logo component - uses wordmark image
@@ -2449,7 +2449,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
 };
 
 // Week Stats Modal
-const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel }) => {
+const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity, onSelectActivity }) => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   
@@ -2675,6 +2675,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel }) => {
           <p className="text-[11px] text-gray-500 mt-0.5">All sessions from this week</p>
         </div>
 
+        <SwipeableProvider>
         {/* Strength Section */}
         {lifts.length > 0 && (
           <div className="mb-4">
@@ -2694,20 +2695,30 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel }) => {
             </div>
             <div className="space-y-2">
               {lifts.map((activity, i) => (
-                <div key={i} className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(0,255,148,0.05)' }}>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="font-medium text-sm flex items-center gap-1">
-                      {activity.type === 'Other' && activity.customEmoji && <span>{activity.customEmoji}</span>}
-                      {activity.subtype || activity.type}
+                <SwipeableActivityItem
+                  key={activity.id || i}
+                  activity={activity}
+                  onDelete={(act) => onDeleteActivity?.(act.id)}
+                >
+                  <div
+                    onClick={() => onSelectActivity?.(activity)}
+                    className="p-3 rounded-xl cursor-pointer"
+                    style={{ backgroundColor: 'rgba(0,255,148,0.05)' }}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="font-medium text-sm flex items-center gap-1">
+                        {activity.type === 'Other' && activity.customEmoji && <span>{activity.customEmoji}</span>}
+                        {activity.subtype || activity.type}
+                      </div>
+                      <div className="text-xs text-gray-500">{activity.date}</div>
                     </div>
-                    <div className="text-xs text-gray-500">{activity.date}</div>
+                    <div className="flex gap-4 text-xs text-gray-400">
+                      <span>{activity.duration} min</span>
+                      <span>{activity.calories} cal</span>
+                      {activity.avgHr && <span>♥ {activity.avgHr} avg</span>}
+                    </div>
                   </div>
-                  <div className="flex gap-4 text-xs text-gray-400">
-                    <span>{activity.duration} min</span>
-                    <span>{activity.calories} cal</span>
-                    {activity.avgHr && <span>♥ {activity.avgHr} avg</span>}
-                  </div>
-                </div>
+                </SwipeableActivityItem>
               ))}
             </div>
           </div>
@@ -2732,20 +2743,30 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel }) => {
             </div>
             <div className="space-y-2">
               {cardioActivities.map((activity, i) => (
-                <div key={i} className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,149,0,0.05)' }}>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="font-medium text-sm flex items-center gap-1">
-                      {activity.type === 'Other' && activity.customEmoji && <span>{activity.customEmoji}</span>}
-                      {activity.subtype || activity.type}
+                <SwipeableActivityItem
+                  key={activity.id || i}
+                  activity={activity}
+                  onDelete={(act) => onDeleteActivity?.(act.id)}
+                >
+                  <div
+                    onClick={() => onSelectActivity?.(activity)}
+                    className="p-3 rounded-xl cursor-pointer"
+                    style={{ backgroundColor: 'rgba(255,149,0,0.05)' }}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="font-medium text-sm flex items-center gap-1">
+                        {activity.type === 'Other' && activity.customEmoji && <span>{activity.customEmoji}</span>}
+                        {activity.subtype || activity.type}
+                      </div>
+                      <div className="text-xs text-gray-500">{activity.date}</div>
                     </div>
-                    <div className="text-xs text-gray-500">{activity.date}</div>
+                    <div className="flex gap-4 text-xs text-gray-400">
+                      {activity.distance && <span>{activity.distance} mi</span>}
+                      <span>{activity.duration} min</span>
+                      <span>{activity.calories} cal</span>
+                    </div>
                   </div>
-                  <div className="flex gap-4 text-xs text-gray-400">
-                    {activity.distance && <span>{activity.distance} mi</span>}
-                    <span>{activity.duration} min</span>
-                    <span>{activity.calories} cal</span>
-                  </div>
-                </div>
+                </SwipeableActivityItem>
               ))}
             </div>
           </div>
@@ -2770,24 +2791,35 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel }) => {
             </div>
             <div className="space-y-2">
               {recoveryActivities.map((activity, i) => (
-                <div key={i} className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(0,209,255,0.05)' }}>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="font-medium text-sm flex items-center gap-1">
-                      {activity.type === 'Other' && activity.customEmoji && <span>{activity.customEmoji}</span>}
-                      {activity.type === 'Other' ? (activity.subtype || activity.type) : activity.type}
+                <SwipeableActivityItem
+                  key={activity.id || i}
+                  activity={activity}
+                  onDelete={(act) => onDeleteActivity?.(act.id)}
+                >
+                  <div
+                    onClick={() => onSelectActivity?.(activity)}
+                    className="p-3 rounded-xl cursor-pointer"
+                    style={{ backgroundColor: 'rgba(0,209,255,0.05)' }}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="font-medium text-sm flex items-center gap-1">
+                        {activity.type === 'Other' && activity.customEmoji && <span>{activity.customEmoji}</span>}
+                        {activity.type === 'Other' ? (activity.subtype || activity.type) : activity.type}
+                      </div>
+                      <div className="text-xs text-gray-500">{activity.date}</div>
                     </div>
-                    <div className="text-xs text-gray-500">{activity.date}</div>
+                    <div className="flex gap-4 text-xs text-gray-400">
+                      <span>{activity.duration} min</span>
+                      {activity.temp && <span>{activity.temp}°F</span>}
+                      {activity.calories && <span>{activity.calories} cal</span>}
+                    </div>
                   </div>
-                  <div className="flex gap-4 text-xs text-gray-400">
-                    <span>{activity.duration} min</span>
-                    {activity.temp && <span>{activity.temp}°F</span>}
-                    {activity.calories && <span>{activity.calories} cal</span>}
-                  </div>
-                </div>
+                </SwipeableActivityItem>
               ))}
             </div>
           </div>
         )}
+        </SwipeableProvider>
       </div>
       </div>
     </div>
@@ -2795,12 +2827,100 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel }) => {
 };
 
 // Activity Detail Modal
-const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit }) => {
+const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user, userProfile }) => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showFullscreenPhoto, setShowFullscreenPhoto] = useState(false);
-  
+
+  // Reactions & Comments state
+  const [reactions, setReactions] = useState([]);
+  const [comments, setComments] = useState([]);
+  const [showComments, setShowComments] = useState(false);
+  const [newComment, setNewComment] = useState('');
+  const [loadingInteractions, setLoadingInteractions] = useState(false);
+
+  const reactionEmojis = ['🔥', '💪', '👏', '❤️', '🎉'];
+
+  // Determine the activity owner - use activity.userId if set, otherwise current user owns this activity
+  const activityOwnerId = activity?.userId || user?.uid;
+
+  // Fetch reactions and comments when modal opens
+  useEffect(() => {
+    if (isOpen && activity?.id && activityOwnerId) {
+      fetchInteractions();
+    } else if (!isOpen) {
+      // Reset state when modal closes
+      setReactions([]);
+      setComments([]);
+      setShowComments(false);
+      setNewComment('');
+    }
+  }, [isOpen, activity?.id, activityOwnerId]);
+
+  const fetchInteractions = async () => {
+    if (!activity?.id || !activityOwnerId) return;
+    setLoadingInteractions(true);
+    try {
+      const [rxns, cmts] = await Promise.all([
+        getReactions(activityOwnerId, activity.id),
+        getComments(activityOwnerId, activity.id)
+      ]);
+      setReactions(rxns || []);
+      setComments(cmts || []);
+    } catch (err) {
+      console.error('Error fetching interactions:', err);
+    }
+    setLoadingInteractions(false);
+  };
+
+  const handleReaction = async (emoji) => {
+    if (!user || !activity?.id || !activityOwnerId) return;
+
+    const existingReaction = reactions.find(r => r.reactorUid === user.uid);
+
+    try {
+      if (existingReaction?.reactionType === emoji) {
+        // Remove reaction
+        await removeReaction(activityOwnerId, activity.id, user.uid);
+        setReactions(prev => prev.filter(r => r.reactorUid !== user.uid));
+      } else {
+        // Add or change reaction
+        if (existingReaction) {
+          await removeReaction(activityOwnerId, activity.id, user.uid);
+        }
+        await addReaction(activityOwnerId, activity.id, user.uid, emoji, userProfile?.displayName, userProfile?.photoURL);
+        setReactions(prev => {
+          const filtered = prev.filter(r => r.reactorUid !== user.uid);
+          return [...filtered, { reactorUid: user.uid, reactionType: emoji, reactorName: userProfile?.displayName, reactorPhoto: userProfile?.photoURL }];
+        });
+      }
+      if (navigator.vibrate) navigator.vibrate(10);
+    } catch (err) {
+      console.error('Error handling reaction:', err);
+    }
+  };
+
+  const handleAddComment = async () => {
+    if (!user || !activity?.id || !activityOwnerId || !newComment.trim()) return;
+
+    try {
+      await addComment(activityOwnerId, activity.id, user.uid, newComment.trim(), userProfile?.displayName, userProfile?.photoURL);
+      setComments(prev => [...prev, {
+        id: Date.now().toString(),
+        commenterUid: user.uid,
+        commenterName: userProfile?.displayName,
+        commenterPhoto: userProfile?.photoURL,
+        text: newComment.trim(),
+        createdAt: new Date().toISOString()
+      }]);
+      setNewComment('');
+      if (navigator.vibrate) navigator.vibrate(10);
+    } catch (err) {
+      console.error('Error adding comment:', err);
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
       setIsClosing(false);
@@ -2842,15 +2962,16 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit }) =>
       style={{ backgroundColor: isAnimating ? 'rgba(0,0,0,0.9)' : 'rgba(0,0,0,0)' }}
       onClick={(e) => e.target === e.currentTarget && handleClose()}
     >
-      <div 
-        className="w-full max-w-lg rounded-t-3xl transition-all duration-300 ease-out overflow-hidden"
-        style={{ 
+      <div
+        className="w-full max-w-lg rounded-t-3xl transition-all duration-300 ease-out overflow-hidden flex flex-col"
+        style={{
           backgroundColor: '#0A0A0A',
-          transform: isAnimating ? 'translateY(0)' : 'translateY(100%)'
+          transform: isAnimating ? 'translateY(0)' : 'translateY(100%)',
+          maxHeight: '85vh'
         }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-white/10">
+        <div className="flex items-center justify-between p-4 border-b border-white/10 flex-shrink-0">
           <button 
             onClick={handleClose}
             className="text-gray-400 text-sm transition-all duration-150 px-2 py-1 rounded-lg"
@@ -2882,7 +3003,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit }) =>
         </div>
 
         {/* Content */}
-        <div className="p-5">
+        <div className="p-5 overflow-y-auto flex-1">
           {/* Activity Type Header */}
           <div className="flex items-center gap-4 mb-6">
             <div 
@@ -2963,6 +3084,114 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit }) =>
             )}
           </div>
 
+          {/* Reactions & Comments Section - show if user is logged in */}
+          {user && (
+            <div className="mb-4 pt-3 border-t border-white/10">
+              {/* Reactions Row */}
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-1">
+                  {reactionEmojis.map((emoji) => {
+                    const count = reactions.filter(r => r.reactionType === emoji).length;
+                    const isSelected = reactions.find(r => r.reactorUid === user?.uid)?.reactionType === emoji;
+                    const canReact = activity?.id && activityOwnerId;
+                    return (
+                      <button
+                        key={emoji}
+                        onClick={() => canReact && handleReaction(emoji)}
+                        disabled={!canReact}
+                        className={`flex items-center gap-1 px-2 py-1 rounded-full transition-all duration-150 ${!canReact ? 'opacity-50' : ''} ${isSelected ? 'bg-zinc-700 ring-1 ring-white/20' : 'bg-zinc-800 hover:bg-zinc-700'}`}
+                      >
+                        <span className="text-sm">{emoji}</span>
+                        {count > 0 && <span className={`text-xs ${isSelected ? 'text-white' : 'text-gray-400'}`}>{count}</span>}
+                      </button>
+                    );
+                  })}
+                  <button
+                    onClick={() => setShowComments(!showComments)}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-full transition-all duration-150 ${showComments ? 'bg-zinc-700 ring-1 ring-white/20' : 'bg-zinc-800 hover:bg-zinc-700'}`}
+                  >
+                    <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                    </svg>
+                    {comments.length > 0 && <span className="text-xs text-gray-400">{comments.length}</span>}
+                  </button>
+                </div>
+
+                {/* Reactor photos */}
+                {reactions.filter(r => r.reactorPhoto).length > 0 && (
+                  <div className="flex items-center -space-x-2">
+                    {reactions.filter(r => r.reactorPhoto).slice(0, 3).map((reactor, idx) => (
+                      <div key={reactor.reactorUid || idx} className="w-6 h-6 rounded-full border-2 border-zinc-900 overflow-hidden">
+                        <img src={reactor.reactorPhoto} alt={reactor.reactorName} className="w-full h-full object-cover" />
+                      </div>
+                    ))}
+                    {reactions.length > 3 && <span className="text-gray-500 text-xs ml-2">+{reactions.length - 3}</span>}
+                  </div>
+                )}
+              </div>
+
+              {/* Comments Section (expandable) */}
+              {showComments && (
+                <div className="space-y-3">
+                  {comments.length > 0 && (
+                    <div className="space-y-2">
+                      {comments.map((comment) => (
+                        <div key={comment.id} className="flex gap-2 items-start">
+                          <div className="w-7 h-7 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0">
+                            {comment.commenterPhoto ? (
+                              <img src={comment.commenterPhoto} alt={comment.commenterName} className="w-full h-full object-cover" />
+                            ) : (
+                              <span className="text-white text-[10px]">{comment.commenterName?.[0]?.toUpperCase() || '?'}</span>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="bg-zinc-800 rounded-2xl px-3 py-2">
+                              <span className="text-white text-xs font-medium">{comment.commenterName}</span>
+                              <p className="text-gray-300 text-sm break-words">{comment.text}</p>
+                            </div>
+                            <span className="text-gray-500 text-[10px] ml-2">
+                              {comment.createdAt ? new Date(comment.createdAt).toLocaleDateString() : ''}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Comment Input */}
+                  <div className="flex gap-2 items-center">
+                    <div className="w-7 h-7 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0">
+                      {userProfile?.photoURL ? (
+                        <img src={userProfile.photoURL} alt="You" className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-white text-[10px]">{userProfile?.displayName?.[0]?.toUpperCase() || '?'}</span>
+                      )}
+                    </div>
+                    <div className="flex-1 flex gap-2">
+                      <input
+                        type="text"
+                        value={newComment}
+                        onChange={(e) => setNewComment(e.target.value)}
+                        placeholder="Add a comment..."
+                        className="flex-1 bg-zinc-800 rounded-full px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-white/20"
+                        onKeyDown={(e) => e.key === 'Enter' && handleAddComment()}
+                      />
+                      <button
+                        onClick={handleAddComment}
+                        disabled={!newComment.trim()}
+                        className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center disabled:opacity-50 transition-all"
+                      >
+                        <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Notes */}
           {activity.notes && (
             <div className="p-4 rounded-xl mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
@@ -3025,7 +3254,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit }) =>
 
           {/* Source indicator */}
           {activity.fromAppleHealth && (
-            <div className="flex items-center gap-2 text-xs text-gray-500 mb-6">
+            <div className="flex items-center gap-2 text-xs text-gray-500 mb-4">
               <span>📱</span>
               <span>Synced from Apple Health</span>
             </div>
@@ -3160,13 +3389,18 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit }) =>
 };
 
 // Onboarding Survey
-const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null }) => {
+const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, currentPrivacy = null }) => {
   const [goals, setGoals] = useState({
     liftsPerWeek: currentGoals?.liftsPerWeek ?? 3,
     cardioPerWeek: currentGoals?.cardioPerWeek ?? 2,
     recoveryPerWeek: currentGoals?.recoveryPerWeek ?? 2,
     stepsPerDay: currentGoals?.stepsPerDay ?? 10000,
     caloriesPerDay: currentGoals?.caloriesPerDay ?? 500
+  });
+
+  const [privacy, setPrivacy] = useState({
+    showInActivityFeed: currentPrivacy?.showInActivityFeed ?? true,
+    showOnLeaderboard: currentPrivacy?.showOnLeaderboard ?? true
   });
 
   const isEditing = currentGoals !== null;
@@ -3262,11 +3496,73 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null }) 
             </div>
           </div>
         ))}
+
+        {/* Privacy Section - only show during initial onboarding */}
+        {!isEditing && (
+          <div className="mt-8 pt-6 border-t border-zinc-800">
+            <h3 className="text-sm font-semibold text-gray-400 mb-4">PRIVACY SETTINGS</h3>
+            <p className="text-xs text-gray-500 mb-4">Choose how you appear to friends. You can change these anytime in Settings.</p>
+
+            {/* Activity Feed Toggle */}
+            <div className="flex items-center justify-between py-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
+                  <span className="text-lg">📲</span>
+                </div>
+                <div>
+                  <span className="text-sm text-white font-medium">Show in Activity Feed</span>
+                  <p className="text-[11px] text-gray-500">Friends can see your workouts</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setPrivacy({ ...privacy, showInActivityFeed: !privacy.showInActivityFeed })}
+                className="w-12 h-7 rounded-full transition-all duration-200 relative"
+                style={{
+                  backgroundColor: privacy.showInActivityFeed ? '#00FF94' : 'rgba(255,255,255,0.2)'
+                }}
+              >
+                <div
+                  className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-200"
+                  style={{
+                    left: privacy.showInActivityFeed ? '26px' : '4px'
+                  }}
+                />
+              </button>
+            </div>
+
+            {/* Leaderboard Toggle */}
+            <div className="flex items-center justify-between py-3 mt-2">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
+                  <span className="text-lg">🏅</span>
+                </div>
+                <div>
+                  <span className="text-sm text-white font-medium">Appear on Leaderboards</span>
+                  <p className="text-[11px] text-gray-500">Compete with friends</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setPrivacy({ ...privacy, showOnLeaderboard: !privacy.showOnLeaderboard })}
+                className="w-12 h-7 rounded-full transition-all duration-200 relative"
+                style={{
+                  backgroundColor: privacy.showOnLeaderboard ? '#00FF94' : 'rgba(255,255,255,0.2)'
+                }}
+              >
+                <div
+                  className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-200"
+                  style={{
+                    left: privacy.showOnLeaderboard ? '26px' : '4px'
+                  }}
+                />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 p-6 pb-12" style={{ background: 'linear-gradient(to top, #000 80%, transparent)' }}>
         <button
-          onClick={() => onComplete(goals)}
+          onClick={() => onComplete(goals, isEditing ? undefined : privacy)}
           className="w-full py-4 rounded-xl font-bold text-black text-lg transition-all duration-150"
           style={{ backgroundColor: '#00FF94' }}
           onTouchStart={(e) => {
@@ -5524,7 +5820,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
             <div className="flex-1">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs text-gray-400">Active Calories</span>
-                <span className="text-xs font-bold">{weekProgress.calories.burned.toLocaleString()}</span>
+                <span className="text-xs font-bold">{weekProgress.calories.burned.toLocaleString()} / {(weekProgress.calories.goal || 500).toLocaleString()}</span>
               </div>
               <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
                 <div 
@@ -6015,6 +6311,8 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         activity={selectedActivity}
         onDelete={onDeleteActivity}
         onEdit={onEditActivity}
+        user={user}
+        userProfile={userProfile}
       />
 
       {/* Reactions Detail Modal */}
@@ -6545,7 +6843,7 @@ const TrendsView = ({ activities = [], calendarData = {} }) => {
 };
 
 // History Tab
-const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onAddActivity, onDeleteActivity, onEditActivity, initialView = 'calendar', initialStatsSubView = 'overview', activeStreaksRef, calendarRef, statsRef, progressPhotosRef }) => {
+const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onAddActivity, onDeleteActivity, onEditActivity, initialView = 'calendar', initialStatsSubView = 'overview', activeStreaksRef, calendarRef, statsRef, progressPhotosRef, user, userProfile }) => {
   const [view, setView] = useState(initialView);
   const [statsSubView, setStatsSubView] = useState(initialStatsSubView); // 'overview' or 'records'
   const [calendarView, setCalendarView] = useState('heatmap');
@@ -9014,6 +9312,8 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
           };
         })() : null}
         weekLabel={selectedWeek?.label || ''}
+        onDeleteActivity={onDeleteActivity}
+        onSelectActivity={(activity) => setSelectedDayActivity(activity)}
       />
 
       {/* Activity Detail Modal for calendar day view */}
@@ -9029,13 +9329,15 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
           onEditActivity && onEditActivity(activity);
           setSelectedDayActivity(null);
         }}
+        user={user}
+        userProfile={userProfile}
       />
     </div>
   );
 };
 
 // Profile Tab Component
-const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpdatePhoto, onShare, onStartTour }) => {
+const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy }) => {
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [showPhotoOptions, setShowPhotoOptions] = useState(false);
   const [showPhotoPreview, setShowPhotoPreview] = useState(false);
@@ -9043,6 +9345,19 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
   const [capturedFile, setCapturedFile] = useState(null);
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
+
+  // Privacy settings (default to true if not set)
+  const showInActivityFeed = userProfile?.privacySettings?.showInActivityFeed !== false;
+  const showOnLeaderboard = userProfile?.privacySettings?.showOnLeaderboard !== false;
+
+  const handlePrivacyToggle = (setting, value) => {
+    if (onUpdatePrivacy) {
+      onUpdatePrivacy({
+        ...userProfile?.privacySettings,
+        [setting]: value
+      });
+    }
+  };
 
   const goalLabels = {
     liftsPerWeek: { label: 'Strength', icon: '🏋️', suffix: '/week' },
@@ -9379,6 +9694,66 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Privacy Section */}
+        <div className="mb-6">
+          <h3 className="text-sm font-semibold text-gray-400 mb-3">PRIVACY</h3>
+          <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+            {/* Activity Feed Toggle */}
+            <div className="flex items-center justify-between py-2">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
+                  <span className="text-base">📲</span>
+                </div>
+                <div>
+                  <span className="text-sm text-white">Show in Activity Feed</span>
+                  <p className="text-[11px] text-gray-500">Friends can see your workouts</p>
+                </div>
+              </div>
+              <button
+                onClick={() => handlePrivacyToggle('showInActivityFeed', !showInActivityFeed)}
+                className="w-12 h-7 rounded-full transition-all duration-200 relative"
+                style={{
+                  backgroundColor: showInActivityFeed ? '#00FF94' : 'rgba(255,255,255,0.2)'
+                }}
+              >
+                <div
+                  className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-200"
+                  style={{
+                    left: showInActivityFeed ? '26px' : '4px'
+                  }}
+                />
+              </button>
+            </div>
+
+            {/* Leaderboard Toggle */}
+            <div className="flex items-center justify-between py-2 border-t border-zinc-700/50 mt-2 pt-4">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
+                  <span className="text-base">🏅</span>
+                </div>
+                <div>
+                  <span className="text-sm text-white">Appear on Leaderboards</span>
+                  <p className="text-[11px] text-gray-500">Compete with friends</p>
+                </div>
+              </div>
+              <button
+                onClick={() => handlePrivacyToggle('showOnLeaderboard', !showOnLeaderboard)}
+                className="w-12 h-7 rounded-full transition-all duration-200 relative"
+                style={{
+                  backgroundColor: showOnLeaderboard ? '#00FF94' : 'rgba(255,255,255,0.2)'
+                }}
+              >
+                <div
+                  className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-200"
+                  style={{
+                    left: showOnLeaderboard ? '26px' : '4px'
+                  }}
+                />
+              </button>
             </div>
           </div>
         </div>
@@ -9723,7 +10098,17 @@ export default function DaySevenApp() {
     const newPhotoURL = await uploadProfilePhoto(user.uid, file);
     setUserProfile(prev => ({ ...prev, photoURL: newPhotoURL }));
   };
-  
+
+  const handleUpdatePrivacy = async (privacySettings) => {
+    if (!user) return;
+    try {
+      await updateUserProfile(user.uid, { privacySettings });
+      setUserProfile(prev => ({ ...prev, privacySettings }));
+    } catch (error) {
+      console.error('Error updating privacy settings:', error);
+    }
+  };
+
   // Listen to auth state
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -10485,7 +10870,7 @@ export default function DaySevenApp() {
     return <OnboardingSurvey
       currentGoals={userData.goals}
       onCancel={null}
-      onComplete={async (goals) => {
+      onComplete={async (goals, privacySettings) => {
         const goalsToSave = {
           liftsPerWeek: goals.liftsPerWeek,
           cardioPerWeek: goals.cardioPerWeek,
@@ -10496,6 +10881,12 @@ export default function DaySevenApp() {
 
         // Save goals to Firestore
         await saveUserGoals(user.uid, goalsToSave);
+
+        // Save privacy settings to Firestore
+        if (privacySettings) {
+          await updateUserProfile(user.uid, { privacySettings });
+          setUserProfile(prev => ({ ...prev, privacySettings }));
+        }
 
         // Mark onboarding as complete
         await setOnboardingComplete(user.uid);
@@ -10624,6 +11015,8 @@ export default function DaySevenApp() {
                   calendarRef={calendarRef}
                   statsRef={statsRef}
                   progressPhotosRef={progressPhotosRef}
+                  user={user}
+                  userProfile={userProfile}
                 />
               )}
               {activeTab === 'feed' && (
@@ -10649,6 +11042,7 @@ export default function DaySevenApp() {
                     setActiveTab('home');
                     setShowTour(true);
                   }}
+                  onUpdatePrivacy={handleUpdatePrivacy}
                 />
               )}
             </>

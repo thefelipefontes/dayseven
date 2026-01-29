@@ -114,6 +114,11 @@ export async function setOnboardingComplete(uid) {
   await updateDoc(userRef, { hasCompletedOnboarding: true });
 }
 
+export async function setTourComplete(uid) {
+  const userRef = doc(db, 'users', uid);
+  await updateDoc(userRef, { hasCompletedTour: true });
+}
+
 export async function uploadProfilePhoto(uid, file) {
   // Create a reference to the profile photo location
   const photoRef = ref(storage, `profilePhotos/${uid}`);

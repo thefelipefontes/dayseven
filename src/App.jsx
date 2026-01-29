@@ -2057,12 +2057,17 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel }) => {
 
   if (!isOpen && !isClosing) return null;
   
-  const lifts = weekData?.activities?.filter(a => a.type === 'Strength Training') || [];
-  const cardioActivities = weekData?.activities?.filter(a => 
-    a.type === 'Running' || a.type === 'Cycle' || a.type === 'Sports'
+  const lifts = weekData?.activities?.filter(a =>
+    a.type === 'Strength Training' ||
+    (a.type === 'Other' && (a.customActivityCategory === 'strength' || a.countToward === 'strength'))
   ) || [];
-  const recoveryActivities = weekData?.activities?.filter(a => 
-    a.type === 'Cold Plunge' || a.type === 'Sauna' || a.type === 'Yoga'
+  const cardioActivities = weekData?.activities?.filter(a =>
+    a.type === 'Running' || a.type === 'Cycle' || a.type === 'Sports' ||
+    (a.type === 'Other' && (a.customActivityCategory === 'cardio' || a.countToward === 'cardio'))
+  ) || [];
+  const recoveryActivities = weekData?.activities?.filter(a =>
+    a.type === 'Cold Plunge' || a.type === 'Sauna' || a.type === 'Yoga' ||
+    (a.type === 'Other' && (a.customActivityCategory === 'recovery' || a.countToward === 'recovery'))
   ) || [];
 
   const goals = initialUserData.goals;
@@ -2275,13 +2280,16 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel }) => {
               {lifts.map((activity, i) => (
                 <div key={i} className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(0,255,148,0.05)' }}>
                   <div className="flex items-center justify-between mb-2">
-                    <div className="font-medium text-sm">{activity.subtype}</div>
+                    <div className="font-medium text-sm flex items-center gap-1">
+                      {activity.type === 'Other' && activity.customEmoji && <span>{activity.customEmoji}</span>}
+                      {activity.subtype || activity.type}
+                    </div>
                     <div className="text-xs text-gray-500">{activity.date}</div>
                   </div>
                   <div className="flex gap-4 text-xs text-gray-400">
                     <span>{activity.duration} min</span>
                     <span>{activity.calories} cal</span>
-                    <span>♥ {activity.avgHr} avg</span>
+                    {activity.avgHr && <span>♥ {activity.avgHr} avg</span>}
                   </div>
                 </div>
               ))}
@@ -2310,7 +2318,10 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel }) => {
               {cardioActivities.map((activity, i) => (
                 <div key={i} className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,149,0,0.05)' }}>
                   <div className="flex items-center justify-between mb-2">
-                    <div className="font-medium text-sm">{activity.subtype || activity.type}</div>
+                    <div className="font-medium text-sm flex items-center gap-1">
+                      {activity.type === 'Other' && activity.customEmoji && <span>{activity.customEmoji}</span>}
+                      {activity.subtype || activity.type}
+                    </div>
                     <div className="text-xs text-gray-500">{activity.date}</div>
                   </div>
                   <div className="flex gap-4 text-xs text-gray-400">
@@ -2345,7 +2356,10 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel }) => {
               {recoveryActivities.map((activity, i) => (
                 <div key={i} className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(0,209,255,0.05)' }}>
                   <div className="flex items-center justify-between mb-2">
-                    <div className="font-medium text-sm">{activity.type}</div>
+                    <div className="font-medium text-sm flex items-center gap-1">
+                      {activity.type === 'Other' && activity.customEmoji && <span>{activity.customEmoji}</span>}
+                      {activity.type === 'Other' ? (activity.subtype || activity.type) : activity.type}
+                    </div>
                     <div className="text-xs text-gray-500">{activity.date}</div>
                   </div>
                   <div className="flex gap-4 text-xs text-gray-400">
@@ -4546,6 +4560,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     const running = weekActivities.filter(a => a.type === 'Running');
     const cycling = weekActivities.filter(a => a.type === 'Cycle');
     const sports = weekActivities.filter(a => a.type === 'Sports');
+    const otherCardio = weekActivities.filter(a => a.type === 'Other' && (a.customActivityCategory === 'cardio' || a.countToward === 'cardio'));
 
     // Strength breakdown - check strengthType field or if subtype starts with the type name
     const lifting = lifts.filter(a => a.strengthType === 'Lifting' || a.subtype?.startsWith('Lifting') || (!a.subtype && !a.strengthType));
@@ -4556,14 +4571,18 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     const sauna = weekActivities.filter(a => a.type === 'Sauna');
     const yoga = weekActivities.filter(a => a.type === 'Yoga');
     const pilates = weekActivities.filter(a => a.type === 'Pilates');
+    const otherRecovery = weekActivities.filter(a => a.type === 'Other' && (a.customActivityCategory === 'recovery' || a.countToward === 'recovery'));
+
+    // Strength "Other" activities
+    const otherStrength = weekActivities.filter(a => a.type === 'Other' && (a.customActivityCategory === 'strength' || a.countToward === 'strength'));
 
     const totalMiles = running.reduce((sum, r) => sum + (parseFloat(r.distance) || 0), 0);
     const totalCalories = weekActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
 
     return {
-      lifts: { completed: lifts.length, goal: goals.liftsPerWeek, sessions: lifts.map(l => l.subtype || l.type), breakdown: { lifting: lifting.length, bodyweight: bodyweight.length } },
-      cardio: { completed: cardio.length, goal: goals.cardioPerWeek, miles: totalMiles, sessions: cardio.map(c => c.type), breakdown: { running: running.length, cycling: cycling.length, sports: sports.length } },
-      recovery: { completed: recovery.length, goal: goals.recoveryPerWeek, sessions: recovery.map(r => r.type), breakdown: { coldPlunge: coldPlunge.length, sauna: sauna.length, yoga: yoga.length, pilates: pilates.length } },
+      lifts: { completed: lifts.length, goal: goals.liftsPerWeek, sessions: lifts.map(l => l.subtype || l.type), breakdown: { lifting: lifting.length, bodyweight: bodyweight.length }, otherActivities: otherStrength },
+      cardio: { completed: cardio.length, goal: goals.cardioPerWeek, miles: totalMiles, sessions: cardio.map(c => c.type), breakdown: { running: running.length, cycling: cycling.length, sports: sports.length, other: otherCardio.length }, otherActivities: otherCardio },
+      recovery: { completed: recovery.length, goal: goals.recoveryPerWeek, sessions: recovery.map(r => r.type), breakdown: { coldPlunge: coldPlunge.length, sauna: sauna.length, yoga: yoga.length, pilates: pilates.length }, otherActivities: otherRecovery },
       calories: { burned: totalCalories, goal: goals.caloriesPerWeek },
       steps: { today: 0, goal: goals.stepsPerDay }
     };
@@ -5264,7 +5283,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
           {showCardioBreakdown && (
             <div className="mt-4 pt-4 border-t border-white/10">
               <div className="text-xs text-gray-400 mb-2">Cardio Breakdown</div>
-              <div className="grid grid-cols-3 gap-2 text-center">
+              <div className={`grid gap-2 text-center`} style={{ gridTemplateColumns: `repeat(${3 + (weekProgress.cardio?.otherActivities?.length || 0)}, minmax(0, 1fr))` }}>
                 <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                   <div className="text-lg font-bold">{weekProgress.cardio?.breakdown?.running || 0}</div>
                   <div className="text-[10px] text-gray-400">🏃 Running</div>
@@ -5277,6 +5296,13 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                   <div className="text-lg font-bold">{weekProgress.cardio?.breakdown?.sports || 0}</div>
                   <div className="text-[10px] text-gray-400">🏀 Sports</div>
                 </div>
+                {/* Show each "Other" cardio activity */}
+                {weekProgress.cardio?.otherActivities?.map((activity, i) => (
+                  <div key={activity.id || i} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                    <div className="text-lg font-bold">1</div>
+                    <div className="text-[10px] text-gray-400">{activity.customEmoji || '⭐'} {activity.subtype || 'Other'}</div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -5302,6 +5328,13 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                   <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.pilates || 0}</div>
                   <div className="text-[10px] text-gray-400">🤸 Pilates</div>
                 </div>
+                {/* Show each "Other" recovery activity */}
+                {weekProgress.recovery?.otherActivities?.map((activity, i) => (
+                  <div key={activity.id || i} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                    <div className="text-lg font-bold">1</div>
+                    <div className="text-[10px] text-gray-400">{activity.customEmoji || '⭐'} {activity.subtype || 'Other'}</div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -5910,12 +5943,17 @@ const TrendsView = ({ activities = [], calendarData = {} }) => {
         const dateStr = selectedPoint.date;
         // Get full activity data from activities array
         const fullDayActivities = activities.filter(a => a.date === dateStr);
-        const lifts = fullDayActivities.filter(a => a.type === 'Strength Training');
+        const lifts = fullDayActivities.filter(a =>
+          a.type === 'Strength Training' ||
+          (a.type === 'Other' && (a.customActivityCategory === 'strength' || a.countToward === 'strength'))
+        );
         const cardioActivities = fullDayActivities.filter(a =>
-          a.type === 'Running' || a.type === 'Cycle' || a.type === 'Sports'
+          a.type === 'Running' || a.type === 'Cycle' || a.type === 'Sports' ||
+          (a.type === 'Other' && (a.customActivityCategory === 'cardio' || a.countToward === 'cardio'))
         );
         const recoveryActivities = fullDayActivities.filter(a =>
-          a.type === 'Cold Plunge' || a.type === 'Sauna' || a.type === 'Yoga' || a.type === 'Pilates'
+          a.type === 'Cold Plunge' || a.type === 'Sauna' || a.type === 'Yoga' || a.type === 'Pilates' ||
+          (a.type === 'Other' && (a.customActivityCategory === 'recovery' || a.countToward === 'recovery'))
         );
 
         const dayCalories = fullDayActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
@@ -6885,12 +6923,17 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
       {(showDayModal || dayModalClosing) && calendarData[selectedDate] && (() => {
         // Get full activity data from activities array (has IDs and all stats)
         const fullDayActivities = activities.filter(a => a.date === selectedDate);
-        const lifts = fullDayActivities.filter(a => a.type === 'Strength Training');
-        const cardioActivities = fullDayActivities.filter(a => 
-          a.type === 'Running' || a.type === 'Cycle' || a.type === 'Sports'
+        const lifts = fullDayActivities.filter(a =>
+          a.type === 'Strength Training' ||
+          (a.type === 'Other' && (a.customActivityCategory === 'strength' || a.countToward === 'strength'))
         );
-        const recoveryActivities = fullDayActivities.filter(a => 
-          a.type === 'Cold Plunge' || a.type === 'Sauna' || a.type === 'Yoga' || a.type === 'Pilates'
+        const cardioActivities = fullDayActivities.filter(a =>
+          a.type === 'Running' || a.type === 'Cycle' || a.type === 'Sports' ||
+          (a.type === 'Other' && (a.customActivityCategory === 'cardio' || a.countToward === 'cardio'))
+        );
+        const recoveryActivities = fullDayActivities.filter(a =>
+          a.type === 'Cold Plunge' || a.type === 'Sauna' || a.type === 'Yoga' || a.type === 'Pilates' ||
+          (a.type === 'Other' && (a.customActivityCategory === 'recovery' || a.countToward === 'recovery'))
         );
         
         // Format date nicely
@@ -7036,7 +7079,10 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                           style={{ backgroundColor: 'rgba(0,255,148,0.05)' }}
                         >
                           <div className="flex justify-between items-start mb-2">
-                            <div className="font-medium text-sm">{activity.strengthType && activity.focusArea ? `${activity.strengthType} • ${activity.focusArea}` : activity.subtype || 'Strength Training'}</div>
+                            <div className="font-medium text-sm flex items-center gap-1">
+                              {activity.type === 'Other' && activity.customEmoji && <span>{activity.customEmoji}</span>}
+                              {activity.type === 'Other' ? (activity.subtype || activity.type) : (activity.strengthType && activity.focusArea ? `${activity.strengthType} • ${activity.focusArea}` : activity.subtype || 'Strength Training')}
+                            </div>
                             <span className="text-gray-500 text-xs">›</span>
                           </div>
                           <div className="flex gap-4 text-xs text-gray-400">
@@ -7070,7 +7116,10 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                           style={{ backgroundColor: 'rgba(255,149,0,0.05)' }}
                         >
                           <div className="flex justify-between items-start mb-2">
-                            <div className="font-medium text-sm">{activity.subtype || activity.type}</div>
+                            <div className="font-medium text-sm flex items-center gap-1">
+                              {activity.type === 'Other' && activity.customEmoji && <span>{activity.customEmoji}</span>}
+                              {activity.subtype || activity.type}
+                            </div>
                             <span className="text-gray-500 text-xs">›</span>
                           </div>
                           <div className="flex gap-4 text-xs text-gray-400">
@@ -7104,7 +7153,10 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                           style={{ backgroundColor: 'rgba(0,209,255,0.05)' }}
                         >
                           <div className="flex justify-between items-start mb-2">
-                            <div className="font-medium text-sm">{activity.subtype ? `${activity.type} • ${activity.subtype}` : activity.type}</div>
+                            <div className="font-medium text-sm flex items-center gap-1">
+                              {activity.type === 'Other' && activity.customEmoji && <span>{activity.customEmoji}</span>}
+                              {activity.type === 'Other' ? (activity.subtype || activity.type) : (activity.subtype ? `${activity.type} • ${activity.subtype}` : activity.type)}
+                            </div>
                             <span className="text-gray-500 text-xs">›</span>
                           </div>
                           <div className="flex gap-4 text-xs text-gray-400">

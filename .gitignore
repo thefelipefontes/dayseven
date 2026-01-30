@@ -27,3 +27,5 @@ dist-ssr
 .env
 .env.local
 .env.*.local
+# iOS Firebase config (contains API keys)
+ios/App/App/GoogleService-Info.plist

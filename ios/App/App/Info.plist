@@ -53,5 +53,16 @@
 	<string>This app accesses your photo library to select photos for your profile and activities.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>This app saves photos to your photo library.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.720071743166-ugsgiood2j86vfo70r8m5c48h354ib0t</string>
+			</array>
+			<key>CFBundleURLName</key>
+			<string>Google Sign-In</string>
+		</dict>
+	</array>
 </dict>
 </plist>

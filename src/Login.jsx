@@ -16,34 +16,6 @@ const Login = ({ onLogin }) => {
   // Check if running in Capacitor (native app)
   const isNative = Capacitor.isNativePlatform();
 
-  // Dev mode sign in for simulator testing
-  const handleDevSignIn = async () => {
-    setIsLoading(true);
-    setError('');
-    try {
-      // Try to sign in with test account, create if doesn't exist
-      const testEmail = 'test@dayseven.dev';
-      const testPassword = 'testdev123';
-      try {
-        const result = await signInWithEmailAndPassword(auth, testEmail, testPassword);
-        onLogin(result.user);
-      } catch (signInError) {
-        // If account doesn't exist, create it
-        if (signInError.code === 'auth/user-not-found' || signInError.code === 'auth/invalid-credential') {
-          const result = await createUserWithEmailAndPassword(auth, testEmail, testPassword);
-          await updateProfile(result.user, { displayName: 'Test User' });
-          onLogin(result.user);
-        } else {
-          throw signInError;
-        }
-      }
-    } catch (error) {
-      console.error('Error with dev sign in:', error);
-      setError('Dev sign in failed: ' + error.message);
-    }
-    setIsLoading(false);
-  };
-
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
     setError('');
@@ -72,12 +44,29 @@ const Login = ({ onLogin }) => {
     setError('');
     try {
       if (isNative) {
-        // Apple Sign In on native has nonce issues with Firebase web SDK
-        // Use email sign-in instead for the mobile app
-        setAuthMode('email-signin');
-        setIsLoading(false);
-        setError('');
-        return;
+        // Use native Apple Sign In through Capacitor plugin
+        const result = await FirebaseAuthentication.signInWithApple();
+        console.log('Apple Sign In result:', result);
+
+        if (result.credential) {
+          // Use the credential to sign in with web Firebase SDK
+          const provider = new OAuthProvider('apple.com');
+          const credential = provider.credential({
+            idToken: result.credential.idToken,
+            rawNonce: result.credential.nonce,
+          });
+          const userCredential = await signInWithCredential(auth, credential);
+          onLogin(userCredential.user);
+        } else if (result.user) {
+          // If we got a user directly, use it
+          const user = {
+            uid: result.user.uid,
+            email: result.user.email,
+            displayName: result.user.displayName,
+            photoURL: result.user.photoUrl,
+          };
+          onLogin(user);
+        }
       } else {
         // Use popup for web
         await signInWithPopup(auth, appleProvider);
@@ -86,7 +75,12 @@ const Login = ({ onLogin }) => {
     } catch (error) {
       console.error('Error signing in with Apple:', error);
       console.error('Error code:', error.code);
-      setError('Failed to sign in with Apple: ' + error.message);
+      // User cancelled is not an error we need to show
+      if (error.code === 'ERROR_CANCELED' || error.message?.includes('cancel')) {
+        setError('');
+      } else {
+        setError('Failed to sign in with Apple: ' + error.message);
+      }
     }
     setIsLoading(false);
   };
@@ -294,15 +288,6 @@ const Login = ({ onLogin }) => {
               Sign up
             </button>
           </p>
-
-          {/* Dev Mode Sign In - for simulator testing */}
-          <button
-            onClick={handleDevSignIn}
-            disabled={isLoading}
-            className="w-full mt-4 flex items-center justify-center gap-2 bg-yellow-600 text-black font-semibold py-2 px-4 rounded-full hover:bg-yellow-500 active:scale-95 transition-all duration-200 disabled:opacity-50 text-sm"
-          >
-            Dev Mode Sign In (Simulator)
-          </button>
         </div>
 
         {/* Error message */}

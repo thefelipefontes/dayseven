@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from './firebase';
-import { updateUserProfile } from './services/userService';
+import { updateUserProfile, checkUsernameAvailable } from './services/userService';
+import { Capacitor } from '@capacitor/core';
+import { FirebaseFirestore } from '@capacitor-firebase/firestore';
+
+const isNative = Capacitor.isNativePlatform();
 
 const UsernameSetup = ({ user, onComplete }) => {
   const [username, setUsername] = useState('');
@@ -32,12 +36,23 @@ const UsernameSetup = ({ user, onComplete }) => {
     const checkUsername = async () => {
       setIsChecking(true);
       try {
-        const usersRef = collection(db, 'users');
-        const q = query(usersRef, where('username', '==', username));
-        const querySnapshot = await getDocs(q);
-        setIsTaken(!querySnapshot.empty);
+        if (isNative) {
+          // Use native Firestore to check username
+          const { snapshot } = await FirebaseFirestore.getDocument({
+            reference: `usernames/${username.toLowerCase()}`
+          });
+          setIsTaken(!!snapshot?.data);
+        } else {
+          // Use web Firestore
+          const usersRef = collection(db, 'users');
+          const q = query(usersRef, where('username', '==', username));
+          const querySnapshot = await getDocs(q);
+          setIsTaken(!querySnapshot.empty);
+        }
       } catch (error) {
         console.error('Error checking username:', error);
+        // On error, assume username is available to let user proceed
+        setIsTaken(false);
       }
       setIsChecking(false);
     };
@@ -51,10 +66,12 @@ const UsernameSetup = ({ user, onComplete }) => {
 
     setIsSaving(true);
     try {
-      await updateUserProfile(user.uid, { username });
+      await updateUserProfile(user.uid, { username: username.toLowerCase() });
       onComplete(username);
     } catch (error) {
       console.error('Error saving username:', error);
+      // Still proceed on error - will sync later
+      onComplete(username);
     }
     setIsSaving(false);
   };

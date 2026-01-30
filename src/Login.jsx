@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
-import { signInWithPopup, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import React, { useState, useEffect } from 'react';
+import { signInWithPopup, signInWithCredential, OAuthProvider, GoogleAuthProvider, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { auth, googleProvider, appleProvider } from './firebase';
+import { Capacitor } from '@capacitor/core';
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 
 const Login = ({ onLogin }) => {
   const [authMode, setAuthMode] = useState('main'); // 'main', 'email-signin', 'email-signup'
@@ -11,12 +13,53 @@ const Login = ({ onLogin }) => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  // Check if running in Capacitor (native app)
+  const isNative = Capacitor.isNativePlatform();
+
+  // Dev mode sign in for simulator testing
+  const handleDevSignIn = async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      // Try to sign in with test account, create if doesn't exist
+      const testEmail = 'test@dayseven.dev';
+      const testPassword = 'testdev123';
+      try {
+        const result = await signInWithEmailAndPassword(auth, testEmail, testPassword);
+        onLogin(result.user);
+      } catch (signInError) {
+        // If account doesn't exist, create it
+        if (signInError.code === 'auth/user-not-found' || signInError.code === 'auth/invalid-credential') {
+          const result = await createUserWithEmailAndPassword(auth, testEmail, testPassword);
+          await updateProfile(result.user, { displayName: 'Test User' });
+          onLogin(result.user);
+        } else {
+          throw signInError;
+        }
+      }
+    } catch (error) {
+      console.error('Error with dev sign in:', error);
+      setError('Dev sign in failed: ' + error.message);
+    }
+    setIsLoading(false);
+  };
+
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
     setError('');
     try {
-      const result = await signInWithPopup(auth, googleProvider);
-      onLogin(result.user);
+      if (isNative) {
+        // Use native Google Sign In through Capacitor plugin
+        const result = await FirebaseAuthentication.signInWithGoogle();
+        // Use the credential to sign in with web Firebase SDK
+        const credential = GoogleAuthProvider.credential(result.credential?.idToken);
+        const userCredential = await signInWithCredential(auth, credential);
+        onLogin(userCredential.user);
+      } else {
+        // Use popup for web
+        const result = await signInWithPopup(auth, googleProvider);
+        onLogin(result.user);
+      }
     } catch (error) {
       console.error('Error signing in with Google:', error);
       setError('Failed to sign in with Google. Please try again.');
@@ -24,15 +67,26 @@ const Login = ({ onLogin }) => {
     setIsLoading(false);
   };
 
-const handleAppleSignIn = async () => {
+  const handleAppleSignIn = async () => {
     setIsLoading(true);
     setError('');
     try {
-      const result = await signInWithPopup(auth, appleProvider);
-      onLogin(result.user);
+      if (isNative) {
+        // Apple Sign In on native has nonce issues with Firebase web SDK
+        // Use email sign-in instead for the mobile app
+        setAuthMode('email-signin');
+        setIsLoading(false);
+        setError('');
+        return;
+      } else {
+        // Use popup for web
+        await signInWithPopup(auth, appleProvider);
+        // onLogin not needed - onAuthStateChanged in App.jsx will handle it
+      }
     } catch (error) {
       console.error('Error signing in with Apple:', error);
-      setError('Failed to sign in with Apple. Please try again.');
+      console.error('Error code:', error.code);
+      setError('Failed to sign in with Apple: ' + error.message);
     }
     setIsLoading(false);
   };
@@ -58,18 +112,46 @@ const handleAppleSignIn = async () => {
 
     setIsLoading(true);
     try {
-      const result = await createUserWithEmailAndPassword(auth, email, password);
-      // Update the user's display name
-      await updateProfile(result.user, { displayName: displayName.trim() });
-      onLogin(result.user);
+      console.log('Creating account with email:', email);
+      if (isNative) {
+        // Use native Firebase SDK via Capacitor plugin
+        const result = await FirebaseAuthentication.createUserWithEmailAndPassword({
+          email,
+          password,
+        });
+        console.log('Native account created:', result.user?.uid);
+        // Update display name
+        if (result.user) {
+          await FirebaseAuthentication.updateProfile({
+            displayName: displayName.trim(),
+          });
+          // Pass the native user to the app
+          const user = {
+            uid: result.user.uid,
+            email: result.user.email,
+            displayName: displayName.trim(),
+            photoURL: result.user.photoUrl,
+          };
+          onLogin(user);
+        }
+      } else {
+        // Use web Firebase SDK
+        const result = await createUserWithEmailAndPassword(auth, email, password);
+        console.log('Account created, updating profile...');
+        await updateProfile(result.user, { displayName: displayName.trim() });
+        console.log('Profile updated');
+        // onAuthStateChanged will handle it
+      }
     } catch (error) {
       console.error('Error signing up:', error);
+      console.error('Error code:', error.code);
+      console.error('Error message:', error.message);
       if (error.code === 'auth/email-already-in-use') {
         setError('An account with this email already exists');
       } else if (error.code === 'auth/invalid-email') {
         setError('Please enter a valid email address');
       } else {
-        setError('Failed to create account. Please try again.');
+        setError('Failed to create account: ' + error.message);
       }
     }
     setIsLoading(false);
@@ -81,16 +163,39 @@ const handleAppleSignIn = async () => {
     setIsLoading(true);
 
     try {
-      const result = await signInWithEmailAndPassword(auth, email, password);
-      onLogin(result.user);
+      console.log('Signing in with email:', email);
+      if (isNative) {
+        // Use native Firebase SDK via Capacitor plugin
+        const result = await FirebaseAuthentication.signInWithEmailAndPassword({
+          email,
+          password,
+        });
+        console.log('Native sign in successful:', result.user?.uid);
+        // Pass the native user to the app
+        if (result.user) {
+          const user = {
+            uid: result.user.uid,
+            email: result.user.email,
+            displayName: result.user.displayName,
+            photoURL: result.user.photoUrl,
+          };
+          onLogin(user);
+        }
+      } else {
+        // Use web Firebase SDK directly
+        const result = await signInWithEmailAndPassword(auth, email, password);
+        console.log('Sign in successful:', result.user?.uid);
+        // onAuthStateChanged will handle the rest
+      }
     } catch (error) {
       console.error('Error signing in:', error);
-      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+      console.error('Error code:', error.code);
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
         setError('Invalid email or password');
       } else if (error.code === 'auth/invalid-email') {
         setError('Please enter a valid email address');
       } else {
-        setError('Failed to sign in. Please try again.');
+        setError('Failed to sign in: ' + error.message);
       }
     }
     setIsLoading(false);
@@ -189,6 +294,15 @@ const handleAppleSignIn = async () => {
               Sign up
             </button>
           </p>
+
+          {/* Dev Mode Sign In - for simulator testing */}
+          <button
+            onClick={handleDevSignIn}
+            disabled={isLoading}
+            className="w-full mt-4 flex items-center justify-center gap-2 bg-yellow-600 text-black font-semibold py-2 px-4 rounded-full hover:bg-yellow-500 active:scale-95 transition-all duration-200 disabled:opacity-50 text-sm"
+          >
+            Dev Mode Sign In (Simulator)
+          </button>
         </div>
 
         {/* Error message */}

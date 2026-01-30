@@ -15,11 +15,30 @@
 /* Prevent overscroll bounce on iOS */
 html, body {
   overscroll-behavior: none;
+  /* Ensure proper positioning for iOS WebView */
+  position: fixed;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+#root {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Safe area padding for notched devices */
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+.safe-top {
+  padding-top: env(safe-area-inset-top);
 }
 
 /* Smooth animations */

@@ -1,0 +1,34 @@
+{
+  "appId": "app.dayseven.fitness",
+  "appName": "Day Seven",
+  "webDir": "dist",
+  "server": {
+    "iosScheme": "https",
+    "androidScheme": "https",
+    "hostname": "localhost"
+  },
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#000000",
+    "allowsLinkPreview": false
+  },
+  "android": {
+    "backgroundColor": "#000000"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 0,
+      "launchAutoHide": true,
+      "backgroundColor": "#000000",
+      "showSpinner": false
+    },
+    "StatusBar": {
+      "style": "LIGHT",
+      "backgroundColor": "#000000"
+    },
+    "FirebaseAuthentication": {
+      "skipNativeAuth": false,
+      "providers": ["apple.com", "google.com"]
+    }
+  }
+}

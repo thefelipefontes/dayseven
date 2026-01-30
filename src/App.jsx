@@ -10109,82 +10109,150 @@ export default function DaySevenApp() {
     }
   };
 
-  // Listen to auth state
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setUser(user);
-      if (user) {
-        // Check if user profile exists, create if not
-        let profile = await getUserProfile(user.uid);
+  // Handle user authentication (shared by onAuthStateChanged and native login)
+  const handleUserAuth = useCallback(async (user) => {
+    setUser(user);
+    if (user) {
+      // Get profile first (needed to show app)
+      let profile = null;
+      try {
+        profile = await getUserProfile(user.uid);
         if (!profile) {
           await createUserProfile(user);
           profile = await getUserProfile(user.uid);
         }
-        setUserProfile(profile);
-
-        // Check onboarding status
-        const hasCompletedOnboarding = profile?.hasCompletedOnboarding === true;
-        setIsOnboarded(hasCompletedOnboarding);
-
-        // Load user's goals from Firestore (if they exist)
-        const userGoals = await getUserGoals(user.uid);
-        if (userGoals) {
-          setUserData(prev => ({
-            ...prev,
-            goals: userGoals
-          }));
-        }
-
-        // Load user's activities from Firestore
-        const userActivities = await getUserActivities(user.uid);
-        if (userActivities.length > 0) {
-          setActivities(userActivities);
-          // Build calendar data from loaded activities
-          const calendarMap = {};
-          userActivities.forEach(activity => {
-            if (activity.date) {
-              if (!calendarMap[activity.date]) {
-                calendarMap[activity.date] = [];
-              }
-              calendarMap[activity.date].push({
-                type: activity.type,
-                subtype: activity.subtype,
-                duration: activity.duration,
-                distance: activity.distance,
-                calories: activity.calories,
-                avgHr: activity.avgHr,
-                maxHr: activity.maxHr
-              });
-            }
-          });
-          setCalendarData(calendarMap);
-        }
-        // Load friends list
-        const friendsList = await getFriends(user.uid);
-        setFriends(friendsList);
-
-        // Load pending friend requests count
-        const requests = await getFriendRequests(user.uid);
-        setPendingFriendRequests(requests.length);
-
-        // Load user's custom activities
-        const userCustomActivities = await getCustomActivities(user.uid);
-        if (userCustomActivities.length > 0) {
-          setUserData(prev => ({
-            ...prev,
-            customActivities: userCustomActivities
-          }));
-        }
-      } else {
-        setUserProfile(null);
-        setFriends([]);
-        setPendingFriendRequests(0);
-        setIsOnboarded(null);
+      } catch (error) {
+        console.error('Error loading profile:', error);
       }
+      setUserProfile(profile);
+
+      // Check onboarding status
+      const hasCompletedOnboarding = profile?.hasCompletedOnboarding === true;
+      setIsOnboarded(hasCompletedOnboarding);
+
+      // Show app immediately, load rest in background
       setAuthLoading(false);
-    });
-    return () => unsubscribe();
+
+      // Load remaining data in background (don't await)
+      (async () => {
+        try {
+          // Load user's goals from Firestore (if they exist)
+          const userGoals = await getUserGoals(user.uid);
+          if (userGoals) {
+            setUserData(prev => ({
+              ...prev,
+              goals: userGoals
+            }));
+          }
+
+          // Load user's activities from Firestore
+          const userActivities = await getUserActivities(user.uid);
+          if (userActivities.length > 0) {
+            setActivities(userActivities);
+            // Build calendar data from loaded activities
+            const calendarMap = {};
+            userActivities.forEach(activity => {
+              if (activity.date) {
+                if (!calendarMap[activity.date]) {
+                  calendarMap[activity.date] = [];
+                }
+                calendarMap[activity.date].push({
+                  type: activity.type,
+                  subtype: activity.subtype,
+                  duration: activity.duration,
+                  distance: activity.distance,
+                  calories: activity.calories,
+                  avgHr: activity.avgHr,
+                  maxHr: activity.maxHr
+                });
+              }
+            });
+            setCalendarData(calendarMap);
+          }
+
+          // Load friends list
+          const friendsList = await getFriends(user.uid);
+          setFriends(friendsList);
+
+          // Load pending friend requests count
+          const requests = await getFriendRequests(user.uid);
+          setPendingFriendRequests(requests.length);
+
+          // Load user's custom activities
+          const userCustomActivities = await getCustomActivities(user.uid);
+          if (userCustomActivities.length > 0) {
+            setUserData(prev => ({
+              ...prev,
+              customActivities: userCustomActivities
+            }));
+          }
+        } catch (error) {
+          console.error('Error loading user data:', error);
+        }
+      })();
+    } else {
+      setUserProfile(null);
+      setFriends([]);
+      setPendingFriendRequests(0);
+      setIsOnboarded(null);
+      setAuthLoading(false);
+    }
   }, []);
+
+  // Listen to auth state
+  useEffect(() => {
+    const checkAuth = async () => {
+      // Check if running in native app
+      const isNative = typeof window !== 'undefined' && window.Capacitor?.isNativePlatform();
+
+      if (isNative) {
+        // On native, check native Firebase auth state
+        try {
+          const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+          const result = await FirebaseAuthentication.getCurrentUser();
+
+          if (result.user) {
+            console.log('Native user found:', result.user.uid);
+            // Convert native user to our user format
+            const user = {
+              uid: result.user.uid,
+              email: result.user.email,
+              displayName: result.user.displayName,
+              photoURL: result.user.photoUrl,
+            };
+            await handleUserAuth(user);
+          } else {
+            // No native user - show login immediately
+            console.log('No native user - showing login');
+            setAuthLoading(false);
+          }
+          return; // Don't set up web listener on native
+        } catch (error) {
+          console.log('Native auth check failed:', error);
+          setAuthLoading(false);
+          return;
+        }
+      }
+
+      // Web auth listener (only for web, not native)
+      const authTimeout = setTimeout(() => {
+        console.log('Auth timeout - showing login');
+        setAuthLoading(false);
+      }, 3000);
+
+      const unsubscribe = onAuthStateChanged(auth, async (user) => {
+        clearTimeout(authTimeout);
+        await handleUserAuth(user);
+      });
+
+      return () => {
+        clearTimeout(authTimeout);
+        unsubscribe();
+      };
+    };
+
+    checkAuth();
+  }, [handleUserAuth]);
 
   // Simulate initial load
   useEffect(() => {
@@ -10853,7 +10921,7 @@ export default function DaySevenApp() {
 
   // Show login if no user
   if (!user) {
-    return <Login onLogin={() => {}} />;
+    return <Login onLogin={handleUserAuth} />;
   }
 
   // Show username setup if user doesn't have a username

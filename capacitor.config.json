@@ -1,6 +1,6 @@
 {
   "appId": "app.dayseven.fitness",
-  "appName": "Day Seven",
+  "appName": "dayseven",
   "webDir": "dist",
   "server": {
     "iosScheme": "https",
@@ -10,7 +10,9 @@
   "ios": {
     "contentInset": "never",
     "backgroundColor": "#000000",
-    "allowsLinkPreview": false
+    "scrollEnabled": true,
+    "allowsLinkPreview": false,
+    "webContentsDebuggingEnabled": false
   },
   "android": {
     "backgroundColor": "#000000"

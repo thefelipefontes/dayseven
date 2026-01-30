@@ -3774,7 +3774,8 @@ const SwipeableProvider = ({ children }) => {
       {/* Invisible overlay to catch taps outside swiped item */}
       {openId !== null && (
         <div
-          className="fixed inset-0 z-30"
+          className="fixed inset-0"
+          style={{ zIndex: 9998 }}
           onClick={closeAll}
           onTouchEnd={(e) => {
             e.preventDefault();
@@ -3782,26 +3783,38 @@ const SwipeableProvider = ({ children }) => {
           }}
         />
       )}
-      <div className="relative z-40">
-        {children}
-      </div>
+      {children}
     </SwipeableContext.Provider>
   );
 };
 
 // Swipeable Activity Item Component for swipe-to-delete
-const SwipeableActivityItem = ({ children, onDelete, activity }) => {
+const SwipeableActivityItem = ({ children, onDelete, activity, onTap }) => {
   const { openId, setOpenId } = useContext(SwipeableContext);
   const [swipeX, setSwipeX] = useState(0);
-  const [startX, setStartX] = useState(null);
-  const [startSwipeX, setStartSwipeX] = useState(0);
-  const [isSwiping, setIsSwiping] = useState(false);
   const [isBouncing, setIsBouncing] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
-  const [hasMoved, setHasMoved] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  // Use refs for touch tracking to avoid stale closure issues
+  const swipeRef = useRef(null);
+  const swipeXRef = useRef(0); // Track current swipeX value
+  const touchState = useRef({
+    startX: null,
+    startY: null,
+    startSwipeX: 0,
+    hasMoved: false,
+    startTime: 0
+  });
+
+  // Keep swipeXRef in sync with swipeX state
+  useEffect(() => {
+    swipeXRef.current = swipeX;
+  }, [swipeX]);
+
   const deleteButtonWidth = 100;
   const snapThreshold = 40;
+  const moveThreshold = 10; // Increased threshold for iOS
   const itemId = activity.id;
 
   // Close this item if another one becomes the open one, or if closeAll is triggered (openId becomes null)
@@ -3812,57 +3825,100 @@ const SwipeableActivityItem = ({ children, onDelete, activity }) => {
     }
   }, [openId, itemId, swipeX]);
 
-  const handleTouchStart = (e) => {
-    setStartX(e.touches[0].clientX);
-    setStartSwipeX(swipeX);
-    setIsSwiping(true);
-    setIsBouncing(false);
-    setHasMoved(false);
-    // Only show press effect if card is closed
-    if (swipeX === 0) {
-      setIsPressed(true);
-    }
-  };
+  // Attach touch event listeners with { passive: false } for iOS
+  useEffect(() => {
+    const element = swipeRef.current;
+    if (!element) return;
 
-  const handleTouchMove = (e) => {
-    if (startX === null) return;
-    const currentX = e.touches[0].clientX;
-    const diff = currentX - startX;
-
-    // If moved more than 5px, cancel the press effect and enable swiping
-    if (Math.abs(diff) > 5) {
-      setHasMoved(true);
-      setIsPressed(false);
-      // Notify context that this item is being swiped (close others)
-      if (diff < 0) {
-        setOpenId(itemId);
+    const handleTouchStart = (e) => {
+      touchState.current = {
+        startX: e.touches[0].clientX,
+        startY: e.touches[0].clientY,
+        startSwipeX: swipeXRef.current,
+        hasMoved: false,
+        startTime: Date.now()
+      };
+      setIsBouncing(false);
+      // Only show press effect if card is closed
+      if (swipeXRef.current === 0) {
+        setIsPressed(true);
       }
-    }
+    };
 
-    // Allow slight overswipe for bounce effect
-    const newSwipeX = Math.max(-deleteButtonWidth - 30, Math.min(0, startSwipeX + diff));
-    setSwipeX(newSwipeX);
-  };
+    const handleTouchMove = (e) => {
+      const { startX, startY, startSwipeX, hasMoved } = touchState.current;
+      if (startX === null) return;
 
-  const handleTouchEnd = () => {
-    setIsSwiping(false);
-    setStartX(null);
-    setIsPressed(false);
+      const currentX = e.touches[0].clientX;
+      const currentY = e.touches[0].clientY;
+      const diffX = currentX - startX;
+      const diffY = currentY - startY;
 
-    if (swipeX < -snapThreshold) {
-      // Snap open with bounce
-      setIsBouncing(true);
-      setSwipeX(-deleteButtonWidth);
-      setOpenId(itemId);
-      setTimeout(() => setIsBouncing(false), 500);
-    } else {
-      setSwipeX(0);
-      // If closing, clear the open id
-      if (openId === itemId) {
+      // Once we've started swiping, continue updating position
+      if (hasMoved) {
+        e.preventDefault(); // Prevent scrolling while swiping
+        const newSwipeX = Math.max(-deleteButtonWidth - 30, Math.min(0, startSwipeX + diffX));
+        setSwipeX(newSwipeX);
+        return;
+      }
+
+      // Detect if this is a horizontal swipe (not vertical scroll)
+      if (Math.abs(diffX) > moveThreshold && Math.abs(diffX) > Math.abs(diffY)) {
+        touchState.current.hasMoved = true;
+        setIsPressed(false);
+        e.preventDefault(); // Prevent scrolling when swiping horizontally
+        // Notify context that this item is being swiped (close others)
+        if (diffX < 0) {
+          setOpenId(itemId);
+        }
+        const newSwipeX = Math.max(-deleteButtonWidth - 30, Math.min(0, startSwipeX + diffX));
+        setSwipeX(newSwipeX);
+      }
+    };
+
+    const handleTouchEnd = (e) => {
+      const { hasMoved, startTime } = touchState.current;
+      const touchDuration = Date.now() - startTime;
+      const currentSwipeX = swipeXRef.current; // Use ref for current value
+      const wasTap = !hasMoved && touchDuration < 300 && currentSwipeX === 0;
+
+      setIsPressed(false);
+
+      if (wasTap) {
+        // This was a tap, not a swipe - trigger click on target
+        const target = e.target;
+        if (target) {
+          setTimeout(() => target.click(), 10);
+        }
+        touchState.current = { startX: null, startY: null, startSwipeX: 0, hasMoved: false, startTime: 0 };
+        return;
+      }
+
+      // Check swipe position and snap accordingly
+      if (currentSwipeX < -snapThreshold) {
+        setIsBouncing(true);
+        setSwipeX(-deleteButtonWidth);
+        setOpenId(itemId);
+        setTimeout(() => setIsBouncing(false), 500);
+      } else {
+        setSwipeX(0);
         setOpenId(null);
       }
-    }
-  };
+
+      touchState.current = { startX: null, startY: null, startSwipeX: 0, hasMoved: false, startTime: 0 };
+    };
+
+    // Add event listeners with passive: false to allow preventDefault
+    element.addEventListener('touchstart', handleTouchStart, { passive: true });
+    element.addEventListener('touchmove', handleTouchMove, { passive: false });
+    element.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+    return () => {
+      element.removeEventListener('touchstart', handleTouchStart);
+      element.removeEventListener('touchmove', handleTouchMove);
+      element.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [itemId, setOpenId]); // Only re-attach if itemId or setOpenId changes
 
   const handleDeleteClick = (e) => {
     e.stopPropagation();
@@ -3889,19 +3945,23 @@ const SwipeableActivityItem = ({ children, onDelete, activity }) => {
 
   // Get transition style based on state
   const getTransition = () => {
-    if (isSwiping) return 'none';
+    if (touchState.current.hasMoved) return 'none'; // No transition while actively swiping
     if (isBouncing) return 'transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)'; // Stronger bounce easing
     return 'transform 0.3s ease-out';
   };
 
-  // Only show delete button when actually swiped left (not just touched)
-  const showDeleteButton = swipeX < 0 || hasMoved;
+  // Only show delete button when actually swiped left
+  const showDeleteButton = swipeX < 0;
 
   return (
     <>
       <div
         className="relative overflow-hidden rounded-xl"
-        style={{ backgroundColor: showDeleteButton ? '#FF453A' : 'transparent' }}
+        style={{
+          backgroundColor: showDeleteButton ? '#FF453A' : 'transparent',
+          zIndex: showDeleteButton ? 9999 : 'auto',
+          position: showDeleteButton ? 'relative' : 'static'
+        }}
       >
         {/* Delete button - positioned on right, only visible when swiping */}
         {showDeleteButton && (
@@ -3937,15 +3997,12 @@ const SwipeableActivityItem = ({ children, onDelete, activity }) => {
 
         {/* Main content with swipe */}
         <div
-          className="relative bg-zinc-900"
+          ref={swipeRef}
+          className="relative bg-zinc-900 swipeable-item"
           style={{
             transform: `translateX(${swipeX}px)${isPressed ? ' scale(0.98)' : ''}`,
             transition: getTransition()
           }}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-          onClick={() => swipeX !== 0 && resetSwipe()}
         >
           {children}
         </div>
@@ -5237,7 +5294,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 };
 
 // Home Tab - Simplified
-const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, onStartTour }) => {
+const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [activityReactions, setActivityReactions] = useState({});
   const [activityComments, setActivityComments] = useState({});
@@ -5742,45 +5799,8 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     );
   };
 
-  // Triple-tap to trigger tour (for testing)
-  const tapCountRef = useRef(0);
-  const tapTimerRef = useRef(null);
-
-  const handleLogoTap = () => {
-    tapCountRef.current += 1;
-
-    if (tapTimerRef.current) {
-      clearTimeout(tapTimerRef.current);
-    }
-
-    if (tapCountRef.current >= 3) {
-      tapCountRef.current = 0;
-      // Trigger tour restart
-      if (typeof onStartTour === 'function') {
-        onStartTour();
-      }
-    } else {
-      tapTimerRef.current = setTimeout(() => {
-        tapCountRef.current = 0;
-      }, 500);
-    }
-  };
-
   return (
     <div className="pb-32">
-      {/* Header - Triple tap logo to restart tour */}
-      <div className="px-4 pt-2 pb-3 flex items-center justify-between">
-        <div>
-          <img
-            src="/wordmark.png"
-            alt="Day Seven"
-            className="h-6 cursor-pointer"
-            onClick={handleLogoTap}
-          />
-          <p className="text-xs" style={{ color: '#00FF94' }}>Win the week.</p>
-        </div>
-      </div>
-
       {/* Daily Stats - Single Card */}
       <div className="px-4 mb-4">
         <div className="flex items-center justify-between mb-3">
@@ -6128,42 +6148,53 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
 
       {/* Latest Activity */}
       <div className="mx-4 mb-4">
-        {/* Tour highlight wrapper - includes header + first activity */}
-        <div ref={latestActivityRef}>
-          <div className="mb-3">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-white">Latest Activity</span>
-              <span>📋</span>
-            </div>
-            <p className="text-[11px] text-gray-500 mt-0.5">Your recent workout and recovery sessions</p>
-          </div>
-          {/* Show first activity inside the tour highlight, or empty state */}
-          {latestActivities.length > 0 ? (
-            <div
-              className="w-full p-3 rounded-xl flex items-center gap-3 text-left"
-              style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
-            >
-              <ActivityIcon type={latestActivities[0].type} size={20} sportEmoji={latestActivities[0].sportEmoji} customEmoji={latestActivities[0].customEmoji} />
-              <div className="flex-1 min-w-0">
-                <span className="text-sm font-semibold truncate">{latestActivities[0].type}{latestActivities[0].subtype ? ` • ${latestActivities[0].subtype}` : ''}</span>
-                <div className="text-xs text-gray-400">{formatFriendlyDate(latestActivities[0].date)}{latestActivities[0].time ? ` at ${latestActivities[0].time}` : ''}</div>
-              </div>
-              <div className="text-right">
-                <span className="text-sm font-semibold">{latestActivities[0].duration} min</span>
-              </div>
-            </div>
-          ) : (
-            <div className="p-6 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              <div className="text-4xl mb-3">🏋️</div>
-              <p className="text-white font-medium text-sm">Your first workout is waiting!</p>
-              <p className="text-gray-500 text-xs mt-1">Tap the + button to log an activity</p>
-            </div>
-          )}
-        </div>
-        {/* End of latestActivityRef wrapper */}
-
-        {/* Remaining activities (starting from index 1) */}
         <SwipeableProvider>
+          {/* Tour highlight wrapper - includes header + first activity */}
+          <div ref={latestActivityRef}>
+            <div className="mb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-white">Latest Activity</span>
+                <span>📋</span>
+              </div>
+              <p className="text-[11px] text-gray-500 mt-0.5">Your recent workout and recovery sessions</p>
+            </div>
+            {/* Show first activity inside the tour highlight, or empty state */}
+            {latestActivities.length > 0 ? (
+              <SwipeableActivityItem
+                key={latestActivities[0].id}
+                activity={latestActivities[0]}
+                onDelete={(act) => onDeleteActivity && onDeleteActivity(act.id)}
+              >
+                <div
+                  onClick={() => {
+                    if (navigator.vibrate) navigator.vibrate(10);
+                    setSelectedActivity(latestActivities[0]);
+                  }}
+                  className="w-full p-3 flex items-center gap-3 text-left cursor-pointer active:opacity-70 transition-opacity"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+                >
+                  <ActivityIcon type={latestActivities[0].type} size={20} sportEmoji={latestActivities[0].sportEmoji} customEmoji={latestActivities[0].customEmoji} />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-semibold truncate">{latestActivities[0].type}{latestActivities[0].subtype ? ` • ${latestActivities[0].subtype}` : ''}</span>
+                    <div className="text-xs text-gray-400">{formatFriendlyDate(latestActivities[0].date)}{latestActivities[0].time ? ` at ${latestActivities[0].time}` : ''}</div>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-sm font-semibold">{latestActivities[0].duration} min</span>
+                  </div>
+                  <span className="text-gray-600 text-xs">›</span>
+                </div>
+              </SwipeableActivityItem>
+            ) : (
+              <div className="p-6 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <div className="text-4xl mb-3">🏋️</div>
+                <p className="text-white font-medium text-sm">Your first workout is waiting!</p>
+                <p className="text-gray-500 text-xs mt-1">Tap the + button to log an activity</p>
+              </div>
+            )}
+          </div>
+          {/* End of latestActivityRef wrapper */}
+
+          {/* Remaining activities (starting from index 1) */}
           <div
             className="space-y-2 transition-all duration-300 ease-out overflow-hidden mt-2"
           >
@@ -7329,6 +7360,12 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
 
   return (
     <div className="pb-32">
+      {/* Header */}
+      <div className="px-4 pt-2 pb-4">
+        <h1 className="text-xl font-bold text-white">History</h1>
+        <p className="text-sm text-gray-500">Track your progress over time.</p>
+      </div>
+
       {/* Active Streaks Section */}
       <div ref={activeStreaksRef} className="mx-4 mb-4">
         <div className="flex items-center justify-between mb-3">
@@ -10009,8 +10046,6 @@ export default function DaySevenApp() {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [pendingToast, setPendingToast] = useState(null); // Queue toast to show after celebration
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [pullDistance, setPullDistance] = useState(0);
   const [historyView, setHistoryView] = useState('calendar');
   const [historyStatsSubView, setHistoryStatsSubView] = useState('overview');
   const [showEditGoals, setShowEditGoals] = useState(false);
@@ -10032,6 +10067,32 @@ export default function DaySevenApp() {
   const progressPhotosRef = useRef(null);
   const friendsTabRef = useRef(null);
   const profileTabRef = useRef(null);
+
+  // Triple-tap logo refs
+  const logoTapCountRef = useRef(0);
+  const logoTapTimerRef = useRef(null);
+
+  // Triple-tap logo to trigger tour
+  const handleLogoTap = () => {
+    logoTapCountRef.current += 1;
+
+    if (logoTapTimerRef.current) {
+      clearTimeout(logoTapTimerRef.current);
+    }
+
+    if (logoTapCountRef.current >= 3) {
+      logoTapCountRef.current = 0;
+      // Trigger tour restart
+      setTourStep(0);
+      setActiveTab('home');
+      setShowTour(true);
+    } else {
+      logoTapTimerRef.current = setTimeout(() => {
+        logoTapCountRef.current = 0;
+      }, 500);
+    }
+  };
+
   // Get current tour target ref based on step (5-step tour)
   const getTourTargetRef = () => {
     const refs = [
@@ -10869,39 +10930,6 @@ export default function DaySevenApp() {
     console.log('Deleted activity:', activityId);
   };
 
-  // Pull to refresh handlers
-  let touchStartY = 0;
-  const handleTouchStart = (e) => {
-    if (window.scrollY === 0) {
-      touchStartY = e.touches[0].clientY;
-    }
-  };
-
-  const handleTouchMove = (e) => {
-    if (window.scrollY === 0 && !isRefreshing) {
-      const touchY = e.touches[0].clientY;
-      const distance = touchY - touchStartY;
-      if (distance > 0) {
-        setPullDistance(distance * 0.5);
-      }
-    }
-  };
-
-  const handleTouchEnd = () => {
-    if (pullDistance > 60 && !isRefreshing) {
-      // Trigger refresh
-      setIsRefreshing(true);
-      setPullDistance(0);
-      
-      // Simulate refresh (in real app, would fetch data)
-      setTimeout(() => {
-        setIsRefreshing(false);
-      }, 1500);
-    } else {
-      setPullDistance(0);
-    }
-  };
-
   // Show loading spinner while checking auth
   if (authLoading) {
     return (
@@ -10984,45 +11012,47 @@ export default function DaySevenApp() {
     />;
   }
 
+  // Custom refresh indicator component
   return (
-    <div 
-      className="min-h-screen text-white" 
-      style={{ 
+    <div
+      className="min-h-screen text-white"
+      style={{
         backgroundColor: '#0A0A0A',
         fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif'
       }}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
     >
-      {/* Pull to Refresh Indicator */}
-      <div
-        className="fixed top-0 left-0 right-0 flex justify-center items-center transition-all duration-300 z-30"
-        style={{
-          height: isRefreshing ? '60px' : `${Math.min(pullDistance, 80)}px`,
-          opacity: isRefreshing ? 1 : Math.min(pullDistance / 60, 1)
-        }}
-      >
+      {/* Fixed Header */}
+      {activeTab === 'home' && (
         <div
-          className={`${isRefreshing ? 'animate-spin' : ''}`}
+          className="fixed top-0 left-0 right-0 z-40 px-4 pb-4"
           style={{
-            transform: isRefreshing ? 'none' : `rotate(${pullDistance * 3}deg)`,
-            transition: isRefreshing ? 'none' : 'transform 0.1s'
+            backgroundColor: '#0A0A0A',
+            paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)'
           }}
         >
-          <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
+          <div>
+            <img
+              src="/wordmark.png"
+              alt="Day Seven"
+              className="h-6 cursor-pointer"
+              onClick={handleLogoTap}
+            />
+            <p className="text-xs" style={{ color: '#00FF94' }}>Win the week.</p>
+          </div>
         </div>
-      </div>
+      )}
 
+      {/* Spacer for fixed header */}
       <div
-        className="h-12"
-        style={{ marginTop: isRefreshing ? '48px' : '0', transition: 'margin 0.3s' }}
+        style={{
+          height: activeTab === 'home'
+            ? 'calc(env(safe-area-inset-top, 0px) + 70px)'
+            : 'calc(env(safe-area-inset-top, 0px) + 16px)'
+        }}
       />
 
-      <div className="mt-2">
-        <div 
+      <div>
+        <div
           key={activeTab}
           className="animate-fade-in"
           style={{
@@ -11053,11 +11083,6 @@ export default function DaySevenApp() {
                   user={user}
                   weeklyGoalsRef={weeklyGoalsRef}
                   latestActivityRef={latestActivityRef}
-                  onStartTour={() => {
-                    setTourStep(0);
-                    setActiveTab('home');
-                    setShowTour(true);
-                  }}
                 />
               )}
               {activeTab === 'history' && (

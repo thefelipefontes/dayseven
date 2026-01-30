@@ -215,7 +215,7 @@ const TouchButton = ({ onClick, disabled = false, className, style, children }) 
 };
 
 // Segmented control component - defined outside ActivityFeed for stable reference (enables CSS animations)
-const SegmentedControl = ({ activeView, setActiveView }) => (
+const SegmentedControl = ({ activeView, setActiveView, isRefreshing = false }) => (
   <div className="px-4 pb-4">
     <div className="relative flex p-1 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
       {/* Sliding pill indicator - uses transform for smooth hardware-accelerated animation */}
@@ -245,6 +245,10 @@ const SegmentedControl = ({ activeView, setActiveView }) => (
         </TouchButton>
       ))}
     </div>
+    {/* Spacer for pull-to-refresh indicator */}
+    {isRefreshing && (
+      <div style={{ height: '50px', transition: 'height 0.3s' }} />
+    )}
   </div>
 );
 
@@ -641,7 +645,7 @@ const MemoizedActivityCard = React.memo(({
   );
 });
 
-const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingRequestsCount = 0 }) => {
+const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingRequestsCount = 0, isRefreshing: isRefreshingProp = false }) => {
   const [feedActivities, setFeedActivities] = useState([]);
   const [activityReactions, setActivityReactions] = useState({});
   const [activityComments, setActivityComments] = useState({});
@@ -1768,7 +1772,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     return (
       <div>
         <FriendsHeaderTop />
-        <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
+        <SegmentedControl activeView={activeView} setActiveView={setActiveView} isRefreshing={isRefreshingProp} />
         <div className="flex items-center justify-center py-12">
           <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
         </div>
@@ -1780,7 +1784,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     return (
       <div>
         <FriendsHeaderTop />
-        <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
+        <SegmentedControl activeView={activeView} setActiveView={setActiveView} isRefreshing={isRefreshingProp} />
         <div className="text-center py-12 px-6">
           <div className="text-5xl mb-4">👥</div>
           <p className="text-white font-medium mb-2">Find your workout buddies</p>
@@ -1859,7 +1863,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     return (
       <div className="h-full overflow-y-auto">
         <FriendsHeaderTop />
-        <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
+        <SegmentedControl activeView={activeView} setActiveView={setActiveView} isRefreshing={isRefreshingProp} />
 
         {/* Leaderboard content */}
         <div className="px-4 pb-32">
@@ -2306,7 +2310,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     return (
       <div>
         <FriendsHeaderTop />
-        <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
+        <SegmentedControl activeView={activeView} setActiveView={setActiveView} isRefreshing={isRefreshingProp} />
         <div className="text-center py-12 px-6">
           <div className="text-5xl mb-4">📭</div>
           <p className="text-white font-medium mb-2">No activity yet</p>
@@ -2319,7 +2323,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   return (
     <div className="h-full overflow-y-auto">
       <FriendsHeaderTop />
-      <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
+      <SegmentedControl activeView={activeView} setActiveView={setActiveView} isRefreshing={isRefreshingProp} />
 
       {/* Feed content */}
       <div className="px-4 pb-32">

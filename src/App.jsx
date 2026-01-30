@@ -28,6 +28,22 @@ const DaySevenLogo = ({ size = 'base', opacity = 0.7 }) => {
   );
 };
 
+// Status bar blur overlay for non-home tabs
+// Creates a blurred backdrop that extends just below the Dynamic Island with soft edges
+const StatusBarBlur = () => (
+  <div
+    className="fixed top-0 left-0 right-0 z-30 pointer-events-none"
+    style={{
+      height: 'calc(env(safe-area-inset-top, 0px) + 45px)',
+      background: 'linear-gradient(to bottom, rgba(10, 10, 10, 1) 0%, rgba(10, 10, 10, 1) 30%, rgba(10, 10, 10, 0.97) 50%, rgba(10, 10, 10, 0.9) 70%, rgba(10, 10, 10, 0.7) 85%, transparent 100%)',
+      maskImage: 'linear-gradient(to bottom, black 0%, black 35%, rgba(0,0,0,0.9) 55%, rgba(0,0,0,0.6) 75%, transparent 100%)',
+      WebkitMaskImage: 'linear-gradient(to bottom, black 0%, black 35%, rgba(0,0,0,0.9) 55%, rgba(0,0,0,0.6) 75%, transparent 100%)',
+      backdropFilter: 'blur(20px)',
+      WebkitBackdropFilter: 'blur(20px)',
+    }}
+  />
+);
+
 // Get today's date in YYYY-MM-DD format (local timezone)
 const getTodayDate = () => {
   const today = new Date();
@@ -11021,7 +11037,7 @@ export default function DaySevenApp() {
         fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif'
       }}
     >
-      {/* Fixed Header */}
+      {/* Fixed Header for Home tab */}
       {activeTab === 'home' && (
         <div
           className="fixed top-0 left-0 right-0 z-40 px-4 pb-4"
@@ -11041,6 +11057,9 @@ export default function DaySevenApp() {
           </div>
         </div>
       )}
+
+      {/* Status bar blur overlay for non-home tabs */}
+      {activeTab !== 'home' && <StatusBarBlur />}
 
       {/* Spacer for fixed header */}
       <div

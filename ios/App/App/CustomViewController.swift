@@ -4,9 +4,15 @@ import WebKit
 
 class CustomViewController: CAPBridgeViewController, UIScrollViewDelegate {
 
+    // Force light status bar (white text/icons) for dark app
+    override var preferredStatusBarStyle: UIStatusBarStyle {
+        return .lightContent
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
+        setNeedsStatusBarAppearanceUpdate()
     }
 
     override func viewDidAppear(_ animated: Bool) {

@@ -10,6 +10,8 @@ import { createUserProfile, getUserProfile, updateUserProfile, saveUserActivitie
 import { getFriends, getReactions, getFriendRequests, getComments, addReply, getReplies, deleteReply, addReaction, removeReaction, addComment } from './services/friendService';
 import html2canvas from 'html2canvas';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
+import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
+import { Capacitor } from '@capacitor/core';
 
 // Helper function for haptic feedback that works on iOS
 const triggerHaptic = async (style = ImpactStyle.Medium) => {
@@ -431,7 +433,7 @@ const AppTour = ({ step, onNext, onBack, onSkip, targetRef, onSwitchTab, homeTab
         className="fixed inset-0 w-full h-full transition-all duration-300"
         style={{ pointerEvents: 'auto', cursor: 'pointer' }}
         onClick={() => {
-          if (navigator.vibrate) navigator.vibrate(10);
+          triggerHaptic(ImpactStyle.Light);
           onSkip();
         }}
       >
@@ -561,7 +563,7 @@ const AppTour = ({ step, onNext, onBack, onSkip, targetRef, onSwitchTab, homeTab
         <div className="flex items-center justify-between">
           <button
             onClick={() => {
-              if (navigator.vibrate) navigator.vibrate(10);
+              triggerHaptic(ImpactStyle.Light);
               onSkip();
             }}
             className="text-gray-500 text-sm px-3 py-2"
@@ -572,7 +574,7 @@ const AppTour = ({ step, onNext, onBack, onSkip, targetRef, onSwitchTab, homeTab
             {step > 0 && (
               <button
                 onClick={() => {
-                  if (navigator.vibrate) navigator.vibrate(10);
+                  triggerHaptic(ImpactStyle.Light);
                   onBack();
                 }}
                 className="px-3 py-2 rounded-full text-sm font-medium transition-all duration-150"
@@ -588,7 +590,7 @@ const AppTour = ({ step, onNext, onBack, onSkip, targetRef, onSwitchTab, homeTab
             )}
             <button
               onClick={() => {
-                if (navigator.vibrate) navigator.vibrate(10);
+                triggerHaptic(ImpactStyle.Light);
                 onNext();
               }}
               className="px-4 py-2 rounded-full text-sm font-medium transition-all duration-150"
@@ -905,16 +907,431 @@ const HomeTabSkeleton = () => (
   </div>
 );
 
+// Animated Counter Component - smoothly animates number changes
+const AnimatedCounter = ({ value, duration = 500, className = "" }) => {
+  const [displayValue, setDisplayValue] = useState(value);
+  const previousValue = useRef(value);
+  const animationRef = useRef(null);
+
+  useEffect(() => {
+    if (previousValue.current === value) return;
+
+    const startValue = previousValue.current;
+    const endValue = value;
+    const startTime = performance.now();
+
+    const animate = (currentTime) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+
+      // Ease out cubic for smooth deceleration
+      const easeOut = 1 - Math.pow(1 - progress, 3);
+      const current = startValue + (endValue - startValue) * easeOut;
+
+      setDisplayValue(Math.round(current));
+
+      if (progress < 1) {
+        animationRef.current = requestAnimationFrame(animate);
+      } else {
+        previousValue.current = value;
+      }
+    };
+
+    animationRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, [value, duration]);
+
+  return <span className={className}>{displayValue}</span>;
+};
+
+// Offline Indicator Component
+const OfflineIndicator = () => {
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [showBanner, setShowBanner] = useState(false);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      // Show "back online" briefly then hide
+      setShowBanner(true);
+      setTimeout(() => setShowBanner(false), 2000);
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      setShowBanner(true);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // Show banner initially if offline
+    if (!navigator.onLine) {
+      setShowBanner(true);
+    }
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  if (!showBanner) return null;
+
+  return (
+    <div
+      className="fixed top-0 left-0 right-0 z-[100] flex items-center justify-center transition-all duration-300"
+      style={{
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)',
+        transform: showBanner ? 'translateY(0)' : 'translateY(-100%)',
+        opacity: showBanner ? 1 : 0,
+      }}
+    >
+      <div
+        className="px-4 py-2 rounded-full flex items-center gap-2 text-sm font-medium shadow-lg"
+        style={{
+          backgroundColor: isOnline ? 'rgba(34, 197, 94, 0.9)' : 'rgba(239, 68, 68, 0.9)',
+          backdropFilter: 'blur(10px)',
+        }}
+      >
+        {isOnline ? (
+          <>
+            <svg className="w-4 h-4" fill="none" stroke="white" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+            <span className="text-white">Back online</span>
+          </>
+        ) : (
+          <>
+            <svg className="w-4 h-4" fill="none" stroke="white" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 5.636a9 9 0 010 12.728m0 0l-2.829-2.829m2.829 2.829L21 21M15.536 8.464a5 5 0 010 7.072m0 0l-2.829-2.829m-4.243 2.829a4.978 4.978 0 01-1.414-2.83m-1.414 5.658a9 9 0 01-2.167-9.238m7.824 2.167a1 1 0 111.414 1.414m-1.414-1.414L3 3m8.293 8.293l1.414 1.414" />
+            </svg>
+            <span className="text-white">No connection</span>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// Long Press Context Menu Component
+const LongPressMenu = ({ show, position, onClose, onEdit, onDelete, onShare }) => {
+  if (!show) return null;
+
+  // Position menu above the touch point with arrow pointing down
+  const menuWidth = 200;
+  const menuHeight = 130;
+  const arrowSize = 12;
+  const offsetAbove = 20; // Gap between arrow and touch point
+  const screenWidth = window.innerWidth;
+
+  // Calculate position - prefer above the finger
+  let menuTop = position.y - menuHeight - arrowSize - offsetAbove;
+  let menuLeft = position.x - menuWidth / 2;
+  let showAbove = true;
+
+  // If menu would go above screen, show below finger instead
+  if (menuTop < 60) {
+    menuTop = position.y + offsetAbove + arrowSize;
+    showAbove = false;
+  }
+
+  // Keep menu within horizontal bounds
+  menuLeft = Math.max(16, Math.min(menuLeft, screenWidth - menuWidth - 16));
+
+  // Calculate arrow position relative to menu (pointing at touch x position)
+  const arrowLeft = Math.max(20, Math.min(position.x - menuLeft, menuWidth - 20));
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 z-[60] bg-black/40"
+        onClick={onClose}
+        onTouchEnd={(e) => {
+          e.preventDefault();
+          onClose();
+        }}
+      />
+      {/* Menu with arrow */}
+      <div
+        className="fixed z-[61]"
+        style={{
+          top: menuTop,
+          left: menuLeft,
+          width: `${menuWidth}px`,
+          animation: 'scaleIn 150ms ease-out',
+        }}
+      >
+        {/* Arrow pointing up (when menu is below) */}
+        {!showAbove && (
+          <div
+            style={{
+              position: 'absolute',
+              top: -arrowSize + 1,
+              left: arrowLeft - arrowSize,
+              width: 0,
+              height: 0,
+              borderLeft: `${arrowSize}px solid transparent`,
+              borderRight: `${arrowSize}px solid transparent`,
+              borderBottom: `${arrowSize}px solid rgba(38, 38, 38, 0.98)`,
+            }}
+          />
+        )}
+        {/* Menu content */}
+        <div
+          className="rounded-2xl overflow-hidden shadow-2xl"
+          style={{
+            backgroundColor: 'rgba(38, 38, 38, 0.98)',
+            backdropFilter: 'blur(20px)',
+          }}
+        >
+          <button
+            className="w-full px-5 py-4 flex items-center gap-4 text-white text-base font-medium active:bg-white/10"
+            onClick={() => { onEdit(); onClose(); }}
+            onTouchEnd={(e) => { e.stopPropagation(); triggerHaptic(ImpactStyle.Light); onEdit(); onClose(); }}
+          >
+            <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" />
+            </svg>
+            Edit Activity
+          </button>
+          <div className="h-px bg-white/10 mx-4" />
+          <button
+            className="w-full px-5 py-4 flex items-center gap-4 text-red-400 text-base font-medium active:bg-white/10"
+            onClick={() => { onDelete(); onClose(); }}
+            onTouchEnd={(e) => { e.stopPropagation(); triggerHaptic(ImpactStyle.Medium); onDelete(); onClose(); }}
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+            </svg>
+            Delete Activity
+          </button>
+        </div>
+        {/* Arrow pointing down (when menu is above) */}
+        {showAbove && (
+          <div
+            style={{
+              position: 'absolute',
+              bottom: -arrowSize + 1,
+              left: arrowLeft - arrowSize,
+              width: 0,
+              height: 0,
+              borderLeft: `${arrowSize}px solid transparent`,
+              borderRight: `${arrowSize}px solid transparent`,
+              borderTop: `${arrowSize}px solid rgba(38, 38, 38, 0.98)`,
+            }}
+          />
+        )}
+      </div>
+      <style>{`
+        @keyframes scaleIn {
+          from { opacity: 0; transform: scale(0.9); }
+          to { opacity: 1; transform: scale(1); }
+        }
+      `}</style>
+    </>
+  );
+};
+
+// Global ref to track if user is currently pulling to refresh (for blocking taps during pull)
+const globalIsPulling = { current: false };
+
+// Pull-to-Refresh Hook with Haptic Feedback - uses native event listeners on #root
+const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled = true } = {}) => {
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Use refs to avoid stale closures in event handlers
+  const touchStartY = useRef(0);
+  const initialScrollTop = useRef(0);
+  const isPulling = useRef(false);
+  const hasTriggeredHaptic = useRef(false);
+  const pullDistanceRef = useRef(0);
+  const isRefreshingRef = useRef(false);
+  const onRefreshRef = useRef(onRefresh);
+
+  // Keep refs in sync
+  useEffect(() => {
+    isRefreshingRef.current = isRefreshing;
+  }, [isRefreshing]);
+
+  useEffect(() => {
+    onRefreshRef.current = onRefresh;
+  }, [onRefresh]);
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    const root = document.getElementById('root');
+    if (!root) return;
+
+    const handleTouchStart = (e) => {
+      if (isRefreshingRef.current) return;
+      touchStartY.current = e.touches[0].clientY;
+      initialScrollTop.current = root.scrollTop;
+      isPulling.current = false;
+      hasTriggeredHaptic.current = false;
+    };
+
+    const handleTouchMove = (e) => {
+      if (isRefreshingRef.current) return;
+
+      const currentScrollTop = root.scrollTop;
+      const touchY = e.touches[0].clientY;
+      const diff = touchY - touchStartY.current;
+
+      // Only activate when at top and pulling down
+      if (currentScrollTop <= 0 && initialScrollTop.current <= 0 && diff > 10) {
+        isPulling.current = true;
+        globalIsPulling.current = true; // Update global ref
+        const distance = Math.min(diff / resistance, threshold * 1.5);
+        pullDistanceRef.current = distance;
+        setPullDistance(distance);
+
+        // Trigger haptic when crossing threshold
+        if (distance >= threshold && !hasTriggeredHaptic.current) {
+          hasTriggeredHaptic.current = true;
+          triggerHaptic(ImpactStyle.Medium);
+        }
+      } else if (!isPulling.current) {
+        pullDistanceRef.current = 0;
+        setPullDistance(0);
+      }
+    };
+
+    const handleTouchEnd = async () => {
+      if (isRefreshingRef.current || !isPulling.current) return;
+
+      const distance = pullDistanceRef.current;
+      isPulling.current = false;
+      globalIsPulling.current = false; // Reset global ref
+
+      if (distance >= threshold && onRefreshRef.current) {
+        setIsRefreshing(true);
+        isRefreshingRef.current = true;
+        triggerHaptic(ImpactStyle.Heavy);
+        try {
+          // Ensure minimum refresh time of 600ms so animation doesn't flash away
+          const startTime = Date.now();
+          await onRefreshRef.current();
+          const elapsed = Date.now() - startTime;
+          if (elapsed < 600) {
+            await new Promise(resolve => setTimeout(resolve, 600 - elapsed));
+          }
+        } finally {
+          setIsRefreshing(false);
+          isRefreshingRef.current = false;
+          setPullDistance(0);
+          pullDistanceRef.current = 0;
+        }
+      } else {
+        setPullDistance(0);
+        pullDistanceRef.current = 0;
+      }
+    };
+
+    root.addEventListener('touchstart', handleTouchStart, { passive: true });
+    root.addEventListener('touchmove', handleTouchMove, { passive: true });
+    root.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+    return () => {
+      root.removeEventListener('touchstart', handleTouchStart);
+      root.removeEventListener('touchmove', handleTouchMove);
+      root.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [enabled, threshold, resistance]);
+
+  return { pullDistance, isRefreshing };
+};
+
+// Pull-to-Refresh Indicator Component
+const PullToRefreshIndicator = ({ pullDistance, isRefreshing, threshold = 80 }) => {
+  const progress = Math.min(pullDistance / threshold, 1);
+  const rotation = progress * 180;
+
+  if (pullDistance === 0 && !isRefreshing) return null;
+
+  // Position just above the steps/calories counters - right below the header
+  return (
+    <div
+      className="fixed left-0 right-0 flex items-center justify-center z-50 pointer-events-none"
+      style={{
+        top: 'calc(env(safe-area-inset-top, 0px) + 75px)',
+        opacity: isRefreshing ? 1 : progress,
+        transition: isRefreshing ? 'none' : 'opacity 0.1s',
+      }}
+    >
+      <div
+        className="w-7 h-7 rounded-full flex items-center justify-center shadow-lg"
+        style={{
+          backgroundColor: 'rgba(0, 255, 148, 0.15)',
+          backdropFilter: 'blur(10px)',
+          transform: `rotate(${isRefreshing ? 0 : rotation}deg)`,
+        }}
+      >
+        {isRefreshing ? (
+          <div
+            className="w-4 h-4 border-2 border-[#00FF94] border-t-transparent rounded-full"
+            style={{
+              animation: 'dynamicSpin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite',
+            }}
+          />
+        ) : (
+          <svg
+            className="w-4 h-4"
+            fill="none"
+            stroke="#00FF94"
+            viewBox="0 0 24 24"
+            strokeWidth={2.5}
+            style={{
+              opacity: progress,
+              transform: progress >= 1 ? 'scale(1.1)' : 'scale(1)',
+              transition: 'transform 0.15s',
+            }}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 13.5 12 21m0 0-7.5-7.5M12 21V3" />
+          </svg>
+        )}
+      </div>
+      <style>{`
+        @keyframes dynamicSpin {
+          0% { transform: rotate(0deg); }
+          25% { transform: rotate(120deg); }
+          50% { transform: rotate(180deg); }
+          75% { transform: rotate(300deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
+    </div>
+  );
+};
+
 // Toast Notification Component
 const Toast = ({ show, message, onDismiss, onTap, type = 'record' }) => {
   const [isVisible, setIsVisible] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
+  const [swipeY, setSwipeY] = useState(0);
+  const touchStartRef = useRef({ y: null, time: 0 });
+  const swipeYRef = useRef(0);
+  const toastRef = useRef(null);
+
+  // Keep swipeY ref in sync
+  useEffect(() => {
+    swipeYRef.current = swipeY;
+  }, [swipeY]);
 
   useEffect(() => {
     if (show) {
       setIsVisible(true);
       setIsLeaving(false);
-      
+      setSwipeY(0);
+
       // Auto dismiss after 4 seconds
       const timer = setTimeout(() => {
         setIsLeaving(true);
@@ -923,23 +1340,73 @@ const Toast = ({ show, message, onDismiss, onTap, type = 'record' }) => {
           onDismiss && onDismiss();
         }, 300);
       }, 4000);
-      
+
       return () => clearTimeout(timer);
     }
   }, [show, onDismiss]);
 
-  const handleTap = () => {
-    setIsLeaving(true);
-    setTimeout(() => {
-      setIsVisible(false);
-      onDismiss && onDismiss();
-      onTap && onTap();
-    }, 300);
-  };
+  // Use native event listeners to ensure swipe works
+  useEffect(() => {
+    const element = toastRef.current;
+    if (!element || !isVisible) return;
+
+    const handleTouchStart = (e) => {
+      touchStartRef.current = { y: e.touches[0].clientY, time: Date.now() };
+    };
+
+    const handleTouchMove = (e) => {
+      if (touchStartRef.current.y === null) return;
+      const diff = e.touches[0].clientY - touchStartRef.current.y;
+      // Only allow swiping down (positive diff)
+      if (diff > 5) {
+        e.preventDefault(); // Prevent scroll
+        setSwipeY(Math.min(diff, 150));
+      }
+    };
+
+    const handleTouchEnd = (e) => {
+      const currentSwipeY = swipeYRef.current;
+      const touchDuration = Date.now() - touchStartRef.current.time;
+      const wasTap = currentSwipeY < 15 && touchDuration < 300;
+
+      if (currentSwipeY > 40) {
+        // Swipe threshold reached - dismiss with slide down animation
+        triggerHaptic(ImpactStyle.Light);
+        setIsLeaving(true);
+        setTimeout(() => {
+          setIsVisible(false);
+          setSwipeY(0);
+          onDismiss && onDismiss();
+        }, 300);
+      } else if (wasTap) {
+        // This was a tap - trigger onTap
+        setIsLeaving(true);
+        setTimeout(() => {
+          setIsVisible(false);
+          onDismiss && onDismiss();
+          onTap && onTap();
+        }, 300);
+      } else {
+        // Snap back
+        setSwipeY(0);
+      }
+      touchStartRef.current = { y: null, time: 0 };
+    };
+
+    element.addEventListener('touchstart', handleTouchStart, { passive: true });
+    element.addEventListener('touchmove', handleTouchMove, { passive: false });
+    element.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+    return () => {
+      element.removeEventListener('touchstart', handleTouchStart);
+      element.removeEventListener('touchmove', handleTouchMove);
+      element.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [isVisible, onDismiss, onTap]);
 
   if (!isVisible) return null;
 
-  const bgColor = type === 'record' 
+  const bgColor = type === 'record'
     ? 'linear-gradient(135deg, rgba(255,215,0,0.15) 0%, rgba(255,149,0,0.1) 100%)'
     : 'rgba(0,255,148,0.1)';
   const borderColor = type === 'record' ? 'rgba(255,215,0,0.3)' : 'rgba(0,255,148,0.3)';
@@ -947,34 +1414,31 @@ const Toast = ({ show, message, onDismiss, onTap, type = 'record' }) => {
 
   return (
     <div
-      className="fixed bottom-6 left-4 right-4 z-50 transition-all duration-300"
+      ref={toastRef}
+      className="fixed bottom-6 left-4 right-4 z-50"
       style={{
-        transform: isLeaving ? 'translateY(100px)' : 'translateY(0)',
-        opacity: isLeaving ? 0 : 1
+        transform: isLeaving ? 'translateY(150px)' : `translateY(${swipeY}px)`,
+        opacity: isLeaving ? 0 : Math.max(0, 1 - swipeY / 150),
+        transition: swipeY === 0 || isLeaving ? 'transform 0.3s ease-out, opacity 0.3s ease-out' : 'none'
       }}
     >
-      <button 
-        onClick={handleTap}
-        className="w-full p-4 rounded-2xl flex items-start gap-3 shadow-lg text-left transition-all duration-150"
-        style={{ 
+      <div
+        className="w-full p-4 rounded-2xl flex items-start gap-3 shadow-lg text-left"
+        style={{
           background: bgColor,
           border: `1px solid ${borderColor}`,
           backdropFilter: 'blur(20px)'
         }}
-        onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.98)'}
-        onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
-        onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.98)'}
-        onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
-        onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
       >
         <span className="text-2xl">{icon}</span>
         <div className="flex-1">
           <div className="text-sm font-bold text-white" style={{ whiteSpace: 'pre-line' }}>{message}</div>
           <div className="text-xs text-gray-400 mt-1">Tap to view Hall of Fame →</div>
         </div>
-        <button 
+        <button
           onClick={(e) => {
             e.stopPropagation();
+            triggerHaptic(ImpactStyle.Light);
             setIsLeaving(true);
             setTimeout(() => {
               setIsVisible(false);
@@ -985,7 +1449,7 @@ const Toast = ({ show, message, onDismiss, onTap, type = 'record' }) => {
         >
           ✕
         </button>
-      </button>
+      </div>
     </div>
   );
 };
@@ -1000,16 +1464,16 @@ const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!" }) =>
       setIsVisible(true);
       setIsFadingOut(false);
 
-      // Start fade out after 2.5s
+      // Start fade out after 1.2s (shortened from 2.5s)
       const fadeTimer = setTimeout(() => {
         setIsFadingOut(true);
-      }, 2500);
+      }, 1200);
 
-      // Complete after fade out (2.5s + 0.8s fade)
+      // Complete after fade out (1.2s + 0.5s fade)
       const completeTimer = setTimeout(() => {
         setIsVisible(false);
         onComplete();
-      }, 3300);
+      }, 1700);
 
       return () => {
         clearTimeout(fadeTimer);
@@ -1026,7 +1490,7 @@ const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!" }) =>
       style={{
         opacity: isFadingOut ? 0 : 1,
         transform: isFadingOut ? 'scale(1.1)' : 'scale(1)',
-        transition: 'opacity 0.8s ease-out, transform 0.8s ease-out'
+        transition: 'opacity 0.5s ease-out, transform 0.5s ease-out'
       }}
     >
       {/* Background pulse */}
@@ -1311,7 +1775,8 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
   const [weeklySlide, setWeeklySlide] = useState(0); // 0 = progress, 1 = highlights
   const [touchStart, setTouchStart] = useState(null);
   const [cardFormat, setCardFormat] = useState('story'); // 'story' (9:16) or 'post' (4:5)
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
   const cardRef = useRef(null);
 
   // Detect mobile for responsive sizing
@@ -1438,9 +1903,9 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
     }
   };
 
-  // Save image to device
+  // Save image directly to photos
   const handleSaveImage = async () => {
-    setIsGenerating(true);
+    setIsSaving(true);
     try {
       const canvas = await generateImage();
       if (!canvas) {
@@ -1448,42 +1913,46 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
         return;
       }
 
-      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png', 1.0));
-      const file = new File([blob], `dayseven-${cardType}-${Date.now()}.png`, { type: 'image/png' });
+      // Get base64 data
+      const dataUrl = canvas.toDataURL('image/png', 1.0);
 
-      // On mobile, use share API with "Save Image" intent if available
-      if (isMobile && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      // On native iOS/Android, save directly to photo library
+      if (Capacitor.isNativePlatform()) {
         try {
-          await navigator.share({ files: [file] });
+          const { Media } = await import('@capacitor-community/media');
+          await Media.savePhoto({
+            path: dataUrl,
+            albumIdentifier: undefined // Saves to default camera roll
+          });
+          // Show brief success feedback
+          triggerHaptic(ImpactStyle.Medium);
           return;
         } catch (e) {
-          if (e.name === 'AbortError') {
-            return; // User cancelled
-          }
-          // Fall through to download
+          console.log('Native save error:', e);
+          // Fall through to web method
         }
       }
 
-      // Fallback: trigger download
+      // Fallback for web: trigger download
       const link = document.createElement('a');
       link.download = `dayseven-${cardType}-${Date.now()}.png`;
-      link.href = canvas.toDataURL('image/png', 1.0);
+      link.href = dataUrl;
       link.click();
     } finally {
-      setIsGenerating(false);
+      setIsSaving(false);
     }
   };
 
   // Share image
   const executeShare = async () => {
-    setIsGenerating(true);
+    setIsSharing(true);
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
     try {
       const canvas = await generateImage();
       if (!canvas) {
         alert('Failed to generate image. Please try again.');
-        setIsGenerating(false);
+        setIsSharing(false);
         return;
       }
 
@@ -1496,7 +1965,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
           // Check if we can share files
           if (navigator.canShare && navigator.canShare({ files: [file] })) {
             await navigator.share({ files: [file] });
-            setIsGenerating(false);
+            setIsSharing(false);
             return;
           }
           // Fallback: share without file (just URL/text if available)
@@ -1509,12 +1978,12 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
           link.download = `dayseven-${cardType}-${Date.now()}.png`;
           link.href = canvas.toDataURL('image/png', 1.0);
           link.click();
-          setIsGenerating(false);
+          setIsSharing(false);
           return;
         } catch (e) {
           // User cancelled or share failed - if AbortError, user cancelled so don't download
           if (e.name === 'AbortError') {
-            setIsGenerating(false);
+            setIsSharing(false);
             return;
           }
           console.log('Share failed, falling back to download:', e);
@@ -1530,7 +1999,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
       console.error('Error in executeShare:', error);
       alert('Failed to generate image. Please try again.');
     } finally {
-      setIsGenerating(false);
+      setIsSharing(false);
     }
   };
 
@@ -1547,8 +2016,10 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
     if (Math.abs(diff) > 50) { // Minimum swipe distance
       if (diff > 0 && weeklySlide < 2) {
         setWeeklySlide(weeklySlide + 1); // Swipe left = next slide
+        triggerHaptic(ImpactStyle.Light);
       } else if (diff < 0 && weeklySlide > 0) {
         setWeeklySlide(weeklySlide - 1); // Swipe right = prev slide
+        triggerHaptic(ImpactStyle.Light);
       }
     }
     setTouchStart(null);
@@ -2379,7 +2850,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
               backgroundColor: cardFormat === 'story' ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.05)',
               border: cardFormat === 'story' ? '1px solid rgba(255,255,255,0.2)' : '1px solid rgba(255,255,255,0.1)'
             }}
-            onClick={() => setCardFormat('story')}
+            onClick={() => { setCardFormat('story'); triggerHaptic(ImpactStyle.Light); }}
           >
             <svg width="14" height="21" viewBox="0 0 16 24" fill="none">
               <defs>
@@ -2399,7 +2870,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
               backgroundColor: cardFormat === 'post' ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.05)',
               border: cardFormat === 'post' ? '1px solid rgba(255,255,255,0.2)' : '1px solid rgba(255,255,255,0.1)'
             }}
-            onClick={() => setCardFormat('post')}
+            onClick={() => { setCardFormat('post'); triggerHaptic(ImpactStyle.Light); }}
           >
             <svg width="16" height="19" viewBox="0 0 20 24" fill="none">
               <defs>
@@ -2418,48 +2889,47 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
         {/* Share and Save Buttons */}
         <div className="flex justify-center gap-3 mb-3">
           <button
-            className="flex items-center justify-center gap-2.5 px-8 py-3.5 rounded-xl font-semibold transition-all duration-200 active:scale-[0.98]"
+            className="flex items-center justify-center gap-2.5 px-8 py-3.5 rounded-xl font-semibold active:scale-[0.98]"
             style={{
               background: 'linear-gradient(135deg, #E1306C 0%, #833AB4 50%, #405DE6 100%)',
-              opacity: isGenerating ? 0.7 : 1,
-              pointerEvents: isGenerating ? 'none' : 'auto'
+              opacity: (isSharing || isSaving) ? 0.7 : 1,
+              pointerEvents: (isSharing || isSaving) ? 'none' : 'auto',
+              minWidth: '160px'
             }}
             onClick={executeShare}
+            disabled={isSharing || isSaving}
           >
-            {isGenerating ? (
-              <>
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span className="text-white text-base">Generating...</span>
-              </>
-            ) : (
-              <>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="18" cy="5" r="3"/>
-                  <circle cx="6" cy="12" r="3"/>
-                  <circle cx="18" cy="19" r="3"/>
-                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-                  <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-                </svg>
-                <span className="text-white text-base">Share {cardFormat === 'story' ? 'Story' : 'Post'}</span>
-              </>
-            )}
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="18" cy="5" r="3"/>
+              <circle cx="6" cy="12" r="3"/>
+              <circle cx="18" cy="19" r="3"/>
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+            </svg>
+            <span className="text-white text-base">Share {cardFormat === 'story' ? 'Story' : 'Post'}</span>
           </button>
           <button
-            className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-medium transition-all duration-200"
+            className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl font-medium"
             style={{
               backgroundColor: 'rgba(255,255,255,0.08)',
               border: '1px solid rgba(255,255,255,0.1)',
-              opacity: isGenerating ? 0.5 : 1,
-              pointerEvents: isGenerating ? 'none' : 'auto'
+              opacity: (isSharing || isSaving) ? 0.5 : 1,
+              pointerEvents: (isSharing || isSaving) ? 'none' : 'auto',
+              minWidth: '100px'
             }}
             onClick={handleSaveImage}
+            disabled={isSharing || isSaving}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-              <polyline points="7 10 12 15 17 10"/>
-              <line x1="12" y1="15" x2="12" y2="3"/>
-            </svg>
-            <span className="text-gray-300 text-base">Save</span>
+            {isSaving ? (
+              <div className="w-[18px] h-[18px] border-2 border-white/30 border-t-white rounded-full animate-spin flex-shrink-0" />
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+            )}
+            <span className="text-gray-300 text-base whitespace-nowrap">{isSaving ? 'Saving...' : 'Save'}</span>
           </button>
         </div>
 
@@ -2922,7 +3392,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
           return [...filtered, { reactorUid: user.uid, reactionType: emoji, reactorName: userProfile?.displayName, reactorPhoto: userProfile?.photoURL }];
         });
       }
-      if (navigator.vibrate) navigator.vibrate(10);
+      triggerHaptic(ImpactStyle.Light);
     } catch (err) {
       console.error('Error handling reaction:', err);
     }
@@ -2942,7 +3412,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
         createdAt: new Date().toISOString()
       }]);
       setNewComment('');
-      if (navigator.vibrate) navigator.vibrate(10);
+      triggerHaptic(ImpactStyle.Light);
     } catch (err) {
       console.error('Error adding comment:', err);
     }
@@ -3135,6 +3605,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
                   })}
                   <button
                     onClick={() => setShowComments(!showComments)}
+                    onTouchStart={() => triggerHaptic(ImpactStyle.Light)}
                     className={`flex items-center gap-1 px-2 py-1 rounded-full transition-all duration-150 ${showComments ? 'bg-zinc-700 ring-1 ring-white/20' : 'bg-zinc-800 hover:bg-zinc-700'}`}
                   >
                     <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -3815,13 +4286,15 @@ const SwipeableProvider = ({ children }) => {
   );
 };
 
-// Swipeable Activity Item Component for swipe-to-delete
-const SwipeableActivityItem = ({ children, onDelete, activity, onTap }) => {
+// Swipeable Activity Item Component for swipe-to-delete with long-press menu
+const SwipeableActivityItem = ({ children, onDelete, activity, onTap, onEdit }) => {
   const { openId, setOpenId } = useContext(SwipeableContext);
   const [swipeX, setSwipeX] = useState(0);
   const [isBouncing, setIsBouncing] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [longPressMenu, setLongPressMenu] = useState({ show: false, x: 0, y: 0 });
+  const longPressTimer = useRef(null);
 
   // Use refs for touch tracking to avoid stale closure issues
   const swipeRef = useRef(null);
@@ -3838,6 +4311,12 @@ const SwipeableActivityItem = ({ children, onDelete, activity, onTap }) => {
   useEffect(() => {
     swipeXRef.current = swipeX;
   }, [swipeX]);
+
+  // Keep longPressMenu ref in sync to avoid stale closure
+  const longPressMenuRef = useRef(longPressMenu);
+  useEffect(() => {
+    longPressMenuRef.current = longPressMenu;
+  }, [longPressMenu]);
 
   const deleteButtonWidth = 100;
   const snapThreshold = 40;
@@ -3858,9 +4337,10 @@ const SwipeableActivityItem = ({ children, onDelete, activity, onTap }) => {
     if (!element) return;
 
     const handleTouchStart = (e) => {
+      const touch = e.touches[0];
       touchState.current = {
-        startX: e.touches[0].clientX,
-        startY: e.touches[0].clientY,
+        startX: touch.clientX,
+        startY: touch.clientY,
         startSwipeX: swipeXRef.current,
         hasMoved: false,
         startTime: Date.now()
@@ -3870,6 +4350,16 @@ const SwipeableActivityItem = ({ children, onDelete, activity, onTap }) => {
       if (swipeXRef.current === 0) {
         setIsPressed(true);
       }
+
+      // Start long-press timer (500ms)
+      if (longPressTimer.current) clearTimeout(longPressTimer.current);
+      longPressTimer.current = setTimeout(() => {
+        if (!touchState.current.hasMoved && swipeXRef.current === 0) {
+          triggerHaptic(ImpactStyle.Heavy);
+          setLongPressMenu({ show: true, x: touch.clientX, y: touch.clientY });
+          setIsPressed(false);
+        }
+      }, 500);
     };
 
     const handleTouchMove = (e) => {
@@ -3881,12 +4371,27 @@ const SwipeableActivityItem = ({ children, onDelete, activity, onTap }) => {
       const diffX = currentX - startX;
       const diffY = currentY - startY;
 
+      // Cancel long-press if user moves significantly (15px to allow for finger micro-movements)
+      if (Math.abs(diffX) > 15 || Math.abs(diffY) > 15) {
+        if (longPressTimer.current) {
+          clearTimeout(longPressTimer.current);
+          longPressTimer.current = null;
+        }
+      }
+
       // Once we've started swiping, continue updating position
       if (hasMoved) {
         e.preventDefault(); // Prevent scrolling while swiping
         const newSwipeX = Math.max(-deleteButtonWidth - 30, Math.min(0, startSwipeX + diffX));
         setSwipeX(newSwipeX);
         return;
+      }
+
+      // Detect if this is a vertical scroll (should cancel tap)
+      if (Math.abs(diffY) > moveThreshold) {
+        touchState.current.hasMoved = true; // Mark as moved to prevent tap
+        setIsPressed(false);
+        return; // Let scroll happen naturally
       }
 
       // Detect if this is a horizontal swipe (not vertical scroll)
@@ -3904,6 +4409,12 @@ const SwipeableActivityItem = ({ children, onDelete, activity, onTap }) => {
     };
 
     const handleTouchEnd = (e) => {
+      // Clear long-press timer
+      if (longPressTimer.current) {
+        clearTimeout(longPressTimer.current);
+        longPressTimer.current = null;
+      }
+
       const { hasMoved, startTime } = touchState.current;
       const touchDuration = Date.now() - startTime;
       const currentSwipeX = swipeXRef.current; // Use ref for current value
@@ -3911,8 +4422,14 @@ const SwipeableActivityItem = ({ children, onDelete, activity, onTap }) => {
 
       setIsPressed(false);
 
-      if (wasTap) {
-        // This was a tap, not a swipe - trigger click on target
+      // If long-press menu is showing, don't do anything else
+      if (longPressMenuRef.current.show) {
+        touchState.current = { startX: null, startY: null, startSwipeX: 0, hasMoved: false, startTime: 0 };
+        return;
+      }
+
+      if (wasTap && !globalIsPulling.current) {
+        // This was a tap, not a swipe, and we're not pulling to refresh - trigger click on target
         const target = e.target;
         if (target) {
           setTimeout(() => target.click(), 10);
@@ -3949,6 +4466,7 @@ const SwipeableActivityItem = ({ children, onDelete, activity, onTap }) => {
 
   const handleDeleteClick = (e) => {
     e.stopPropagation();
+    triggerHaptic(ImpactStyle.Medium);
     setShowDeleteConfirm(true);
   };
 
@@ -4140,6 +4658,19 @@ const SwipeableActivityItem = ({ children, onDelete, activity, onTap }) => {
           </div>
         </div>
       )}
+
+      {/* Long Press Context Menu */}
+      <LongPressMenu
+        show={longPressMenu.show}
+        position={{ x: longPressMenu.x, y: longPressMenu.y }}
+        onClose={() => setLongPressMenu({ show: false, x: 0, y: 0 })}
+        onEdit={() => {
+          if (onEdit) onEdit(activity);
+        }}
+        onDelete={() => {
+          setShowDeleteConfirm(true);
+        }}
+      />
     </>
   );
 };
@@ -4311,10 +4842,15 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
-  
+  const [dragY, setDragY] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartY = useRef(0);
+  const modalRef = useRef(null);
+
   useEffect(() => {
     if (isOpen) {
       setIsClosing(false);
+      setDragY(0);
       // Trigger animation after mount
       setTimeout(() => setIsAnimating(true), 10);
     } else {
@@ -4327,28 +4863,71 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
     setIsClosing(true);
     setTimeout(() => {
       setIsClosing(false);
+      setDragY(0);
       onClose();
     }, 300);
+  };
+
+  // Swipe-to-dismiss handlers
+  const handleDragStart = (e) => {
+    // Only allow drag from the header area (first 60px)
+    const touch = e.touches[0];
+    const modalTop = modalRef.current?.getBoundingClientRect().top || 0;
+    if (touch.clientY - modalTop < 60) {
+      setIsDragging(true);
+      dragStartY.current = touch.clientY;
+    }
+  };
+
+  const handleDragMove = (e) => {
+    if (!isDragging) return;
+    const touch = e.touches[0];
+    const diff = touch.clientY - dragStartY.current;
+    // Only allow dragging down
+    if (diff > 0) {
+      setDragY(diff);
+    }
+  };
+
+  const handleDragEnd = () => {
+    if (!isDragging) return;
+    setIsDragging(false);
+    // If dragged more than 100px, close the modal
+    if (dragY > 100) {
+      triggerHaptic(ImpactStyle.Light);
+      handleClose();
+    } else {
+      // Snap back
+      setDragY(0);
+    }
   };
 
   if (!isOpen && !isClosing) return null;
 
   return (
-    <div 
+    <div
       className="fixed inset-0 z-50 flex flex-col transition-all duration-300"
-      style={{ 
-        backgroundColor: isAnimating ? 'rgba(0,0,0,0.95)' : 'rgba(0,0,0,0)'
+      style={{
+        backgroundColor: isClosing ? 'rgba(0,0,0,0)' : (isAnimating && dragY === 0 ? 'rgba(0,0,0,0.95)' : `rgba(0,0,0,${Math.max(0, 0.95 - dragY / 300)})`)
       }}
       onClick={(e) => e.target === e.currentTarget && handleClose()}
     >
-      <div 
-        className="flex-1 flex flex-col mt-12 rounded-t-3xl transition-all duration-300 ease-out overflow-hidden"
-        style={{ 
+      <div
+        ref={modalRef}
+        className={`flex-1 flex flex-col mt-12 rounded-t-3xl overflow-hidden ${isDragging ? '' : 'transition-all duration-300 ease-out'}`}
+        style={{
           backgroundColor: '#0A0A0A',
-          transform: isAnimating ? 'translateY(0)' : 'translateY(100%)'
+          transform: isAnimating ? `translateY(${dragY}px)` : 'translateY(100%)'
         }}
+        onTouchStart={handleDragStart}
+        onTouchMove={handleDragMove}
+        onTouchEnd={handleDragEnd}
       >
-        <div className="flex items-center justify-between p-4 border-b border-white/10">
+        {/* Drag handle indicator */}
+        <div className="flex justify-center pt-3 pb-1">
+          <div className="w-10 h-1 rounded-full bg-gray-600" />
+        </div>
+        <div className="flex items-center justify-between px-4 pb-4 border-b border-white/10">
           <button 
             onClick={handleClose} 
             className="text-gray-400 text-sm transition-all duration-150 px-2 py-1 rounded-lg"
@@ -4492,6 +5071,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 onTouchStart={(e) => {
                   e.currentTarget.style.transform = 'scale(0.95)';
                   e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                  triggerHaptic(ImpactStyle.Light);
                 }}
                 onTouchEnd={(e) => {
                   e.currentTarget.style.transform = 'scale(1)';
@@ -4532,6 +5112,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                   onTouchStart={(e) => {
                     e.currentTarget.style.transform = 'scale(0.95)';
                     e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                    triggerHaptic(ImpactStyle.Light);
                   }}
                   onTouchEnd={(e) => {
                     e.currentTarget.style.transform = 'scale(1)';
@@ -4564,6 +5145,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               onTouchStart={(e) => {
                 e.currentTarget.style.transform = 'scale(0.95)';
                 e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                triggerHaptic(ImpactStyle.Light);
               }}
               onTouchEnd={(e) => {
                 e.currentTarget.style.transform = 'scale(1)';
@@ -4605,6 +5187,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               onTouchStart={(e) => {
                 e.currentTarget.style.transform = 'scale(0.95)';
                 e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                triggerHaptic(ImpactStyle.Light);
               }}
               onTouchEnd={(e) => {
                 e.currentTarget.style.transform = 'scale(1)';
@@ -4645,6 +5228,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               onTouchStart={(e) => {
                 e.currentTarget.style.transform = 'scale(0.98)';
                 e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                triggerHaptic(ImpactStyle.Light);
               }}
               onTouchEnd={(e) => {
                 e.currentTarget.style.transform = 'scale(1)';
@@ -4810,6 +5394,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                   <button
                     type="button"
                     onClick={() => setShowSportEmojiPicker(!showSportEmojiPicker)}
+                    onTouchStart={() => triggerHaptic(ImpactStyle.Light)}
                     className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl transition-all"
                     style={{
                       backgroundColor: showSportEmojiPicker ? 'rgba(255,149,0,0.2)' : 'rgba(255,255,255,0.05)',
@@ -4838,6 +5423,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                           onClick={() => {
                             setCustomSportEmoji(emoji);
                             setShowSportEmojiPicker(false);
+                            triggerHaptic(ImpactStyle.Light);
                           }}
                           className="w-10 h-10 rounded-lg flex items-center justify-center text-xl transition-all hover:bg-white/10"
                           style={{
@@ -4859,7 +5445,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                       borderColor: saveCustomSport ? '#00FF94' : 'rgba(255,255,255,0.3)',
                       backgroundColor: saveCustomSport ? 'rgba(0,255,148,0.2)' : 'transparent'
                     }}
-                    onClick={() => setSaveCustomSport(!saveCustomSport)}
+                    onClick={() => { setSaveCustomSport(!saveCustomSport); triggerHaptic(ImpactStyle.Light); }}
                   >
                     {saveCustomSport && <span style={{ color: '#00FF94' }}>✓</span>}
                   </div>
@@ -4877,6 +5463,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                   <button
                     type="button"
                     onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                    onTouchStart={() => triggerHaptic(ImpactStyle.Light)}
                     className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl transition-all"
                     style={{
                       backgroundColor: showEmojiPicker ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
@@ -4905,6 +5492,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                           onClick={() => {
                             setCustomActivityEmoji(emoji);
                             setShowEmojiPicker(false);
+                            triggerHaptic(ImpactStyle.Light);
                           }}
                           className="w-10 h-10 rounded-lg flex items-center justify-center text-xl transition-all hover:bg-white/10"
                           style={{
@@ -4925,7 +5513,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                   <div className="grid grid-cols-3 gap-2">
                     <button
                       type="button"
-                      onClick={() => setCustomActivityCategory('strength')}
+                      onClick={() => { setCustomActivityCategory('strength'); triggerHaptic(ImpactStyle.Light); }}
                       className="p-3 rounded-xl text-center transition-all"
                       style={{
                         backgroundColor: customActivityCategory === 'strength' ? 'rgba(0,255,148,0.15)' : 'rgba(255,255,255,0.05)',
@@ -4937,7 +5525,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     </button>
                     <button
                       type="button"
-                      onClick={() => setCustomActivityCategory('cardio')}
+                      onClick={() => { setCustomActivityCategory('cardio'); triggerHaptic(ImpactStyle.Light); }}
                       className="p-3 rounded-xl text-center transition-all"
                       style={{
                         backgroundColor: customActivityCategory === 'cardio' ? 'rgba(255,149,0,0.15)' : 'rgba(255,255,255,0.05)',
@@ -4949,7 +5537,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     </button>
                     <button
                       type="button"
-                      onClick={() => setCustomActivityCategory('recovery')}
+                      onClick={() => { setCustomActivityCategory('recovery'); triggerHaptic(ImpactStyle.Light); }}
                       className="p-3 rounded-xl text-center transition-all"
                       style={{
                         backgroundColor: customActivityCategory === 'recovery' ? 'rgba(0,209,255,0.15)' : 'rgba(255,255,255,0.05)',
@@ -4969,7 +5557,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                       borderColor: saveCustomActivity ? '#00FF94' : 'rgba(255,255,255,0.3)',
                       backgroundColor: saveCustomActivity ? 'rgba(0,255,148,0.2)' : 'transparent'
                     }}
-                    onClick={() => setSaveCustomActivity(!saveCustomActivity)}
+                    onClick={() => { setSaveCustomActivity(!saveCustomActivity); triggerHaptic(ImpactStyle.Light); }}
                   >
                     {saveCustomActivity && <span style={{ color: '#00FF94' }}>✓</span>}
                   </div>
@@ -5014,6 +5602,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 onTouchStart={(e) => {
                   e.currentTarget.style.transform = 'scale(0.98)';
                   e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                  triggerHaptic(ImpactStyle.Light);
                 }}
                 onTouchEnd={(e) => {
                   e.currentTarget.style.transform = 'scale(1)';
@@ -6065,7 +6654,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
             <button
               className="text-center transition-all duration-150"
               onClick={() => setShowStrengthBreakdown(!showStrengthBreakdown)}
-              onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.93)'}
+              onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.93)'; triggerHaptic(ImpactStyle.Light); }}
               onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
               onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.93)'}
               onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
@@ -6074,7 +6663,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
               <div className="relative inline-block">
                 <ProgressRing progress={liftsPercent} size={72} strokeWidth={6} color="#00FF94" />
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-xl font-black">{weekProgress.lifts.completed}/{weekProgress.lifts.goal}</span>
+                  <span className="text-xl font-black"><AnimatedCounter value={weekProgress.lifts.completed} />/{weekProgress.lifts.goal}</span>
                 </div>
               </div>
               <div className="text-sm font-medium mt-2">🏋️ Strength</div>
@@ -6082,10 +6671,10 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
             </button>
             
             {/* Cardio */}
-            <button 
+            <button
               className="text-center transition-all duration-150"
               onClick={() => setShowCardioBreakdown(!showCardioBreakdown)}
-              onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.93)'}
+              onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.93)'; triggerHaptic(ImpactStyle.Light); }}
               onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
               onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.93)'}
               onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
@@ -6094,7 +6683,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
               <div className="relative inline-block">
                 <ProgressRing progress={cardioPercent} size={72} strokeWidth={6} color="#FF9500" />
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-xl font-black">{weekProgress.cardio?.completed || 0}/{weekProgress.cardio?.goal || 0}</span>
+                  <span className="text-xl font-black"><AnimatedCounter value={weekProgress.cardio?.completed || 0} />/{weekProgress.cardio?.goal || 0}</span>
                 </div>
               </div>
               <div className="text-sm font-medium mt-2">🏃 Cardio</div>
@@ -6102,10 +6691,10 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
             </button>
             
             {/* Recovery */}
-            <button 
+            <button
               className="text-center transition-all duration-150"
               onClick={() => setShowRecoveryBreakdown(!showRecoveryBreakdown)}
-              onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.93)'}
+              onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.93)'; triggerHaptic(ImpactStyle.Light); }}
               onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
               onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.93)'}
               onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
@@ -6114,7 +6703,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
               <div className="relative inline-block">
                 <ProgressRing progress={recoveryPercent} size={72} strokeWidth={6} color="#00D1FF" />
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-xl font-black">{weekProgress.recovery?.completed || 0}/{weekProgress.recovery?.goal || 0}</span>
+                  <span className="text-xl font-black"><AnimatedCounter value={weekProgress.recovery?.completed || 0} />/{weekProgress.recovery?.goal || 0}</span>
                 </div>
               </div>
               <div className="text-sm font-medium mt-2">🧊 Recovery</div>
@@ -6203,7 +6792,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
           <div className="mt-4 pt-4 border-t border-white/10">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-gray-400">Week Progress</span>
-              <span className="text-xs font-bold" style={{ color: overallPercent >= 100 ? '#00FF94' : 'white' }}>{overallPercent}%</span>
+              <span className="text-xs font-bold" style={{ color: overallPercent >= 100 ? '#00FF94' : 'white' }}><AnimatedCounter value={overallPercent} />%</span>
             </div>
             <ProgressBar progress={overallPercent} height={4} color={overallPercent >= 100 ? '#00FF94' : '#00FF94'} />
           </div>
@@ -6254,10 +6843,11 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                 key={latestActivities[0].id}
                 activity={latestActivities[0]}
                 onDelete={(act) => onDeleteActivity && onDeleteActivity(act.id)}
+                onEdit={onEditActivity}
               >
                 <div
                   onClick={() => {
-                    if (navigator.vibrate) navigator.vibrate(10);
+                    triggerHaptic(ImpactStyle.Light);
                     setSelectedActivity(latestActivities[0]);
                   }}
                   className="w-full p-3 flex items-center gap-3 text-left cursor-pointer active:opacity-70 transition-opacity"
@@ -6292,10 +6882,11 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                     key={activity.id}
                     activity={activity}
                     onDelete={(act) => onDeleteActivity && onDeleteActivity(act.id)}
+                    onEdit={onEditActivity}
                   >
                     <div
                       onClick={() => {
-                        if (navigator.vibrate) navigator.vibrate(10);
+                        triggerHaptic(ImpactStyle.Light);
                         setSelectedActivity(activity);
                       }}
                       className="w-full p-3 flex items-center gap-3 text-left cursor-pointer active:opacity-70 transition-opacity"
@@ -6387,7 +6978,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
               {allLatestActivities.length > 2 && (
                 <button
                   onClick={() => {
-                    if (navigator.vibrate) navigator.vibrate(10);
+                    triggerHaptic(ImpactStyle.Light);
                     setActivityExpanded(!activityExpanded);
                   }}
                   className="w-full py-2 text-center text-xs font-medium transition-all duration-150 rounded-xl"
@@ -9462,8 +10053,12 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
   const [showPhotoPreview, setShowPhotoPreview] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
   const [capturedFile, setCapturedFile] = useState(null);
+  const [imagePosition, setImagePosition] = useState({ x: 0, y: 0 });
+  const [imageScale, setImageScale] = useState(1);
+  const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
+  const cropContainerRef = useRef(null);
 
   // Privacy settings (default to true if not set)
   const showInActivityFeed = userProfile?.privacySettings?.showInActivityFeed !== false;
@@ -9496,14 +10091,68 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
     setShowPhotoOptions(true);
   };
 
-  const handleChooseFromLibrary = () => {
+  const handleChooseFromLibrary = async () => {
     setShowPhotoOptions(false);
-    fileInputRef.current?.click();
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const image = await Camera.getPhoto({
+          quality: 90,
+          allowEditing: false,
+          resultType: CameraResultType.DataUrl,
+          source: CameraSource.Photos
+        });
+
+        if (image.dataUrl) {
+          // Convert data URL to blob/file
+          const response = await fetch(image.dataUrl);
+          const blob = await response.blob();
+          const file = new File([blob], 'photo.jpg', { type: 'image/jpeg' });
+
+          setPreviewImage(image.dataUrl);
+          setCapturedFile(file);
+          setShowPhotoPreview(true);
+        }
+      } catch (error) {
+        if (error.message !== 'User cancelled photos app') {
+          console.error('Error picking photo:', error);
+        }
+      }
+    } else {
+      fileInputRef.current?.click();
+    }
   };
 
-  const handleTakePhoto = () => {
+  const handleTakePhoto = async () => {
     setShowPhotoOptions(false);
-    cameraInputRef.current?.click();
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const image = await Camera.getPhoto({
+          quality: 90,
+          allowEditing: false,
+          resultType: CameraResultType.DataUrl,
+          source: CameraSource.Camera
+        });
+
+        if (image.dataUrl) {
+          // Convert data URL to blob/file
+          const response = await fetch(image.dataUrl);
+          const blob = await response.blob();
+          const file = new File([blob], 'photo.jpg', { type: 'image/jpeg' });
+
+          setPreviewImage(image.dataUrl);
+          setCapturedFile(file);
+          setShowPhotoPreview(true);
+        }
+      } catch (error) {
+        if (error.message !== 'User cancelled photos app') {
+          console.error('Error taking photo:', error);
+        }
+      }
+    } else {
+      cameraInputRef.current?.click();
+    }
   };
 
   const handleCameraCapture = (e) => {
@@ -9540,9 +10189,27 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
     setPreviewImage(null);
     setCapturedFile(null);
     setShowPhotoPreview(false);
+    setImagePosition({ x: 0, y: 0 });
+    setImageScale(1);
     // Trigger camera again
     setTimeout(() => {
       cameraInputRef.current?.click();
+    }, 100);
+  };
+
+  const handleChooseAnother = async () => {
+    // Clean up preview URL
+    if (previewImage) {
+      URL.revokeObjectURL(previewImage);
+    }
+    setPreviewImage(null);
+    setCapturedFile(null);
+    setShowPhotoPreview(false);
+    setImagePosition({ x: 0, y: 0 });
+    setImageScale(1);
+    // Open photo library
+    setTimeout(() => {
+      handleChooseFromLibrary();
     }, 100);
   };
 
@@ -9551,7 +10218,9 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
 
     setIsUploadingPhoto(true);
     try {
-      await onUpdatePhoto(capturedFile);
+      // Crop the image based on user's position/zoom
+      const croppedFile = await cropImage();
+      await onUpdatePhoto(croppedFile);
       // Clean up
       if (previewImage) {
         URL.revokeObjectURL(previewImage);
@@ -9559,6 +10228,8 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
       setPreviewImage(null);
       setCapturedFile(null);
       setShowPhotoPreview(false);
+      setImagePosition({ x: 0, y: 0 });
+      setImageScale(1);
     } catch (error) {
       console.error('Error uploading photo:', error);
       alert('Failed to upload photo. Please try again.');
@@ -9574,6 +10245,201 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
     setPreviewImage(null);
     setCapturedFile(null);
     setShowPhotoPreview(false);
+    setImagePosition({ x: 0, y: 0 });
+    setImageScale(1);
+  };
+
+  // Refs for gesture tracking (more responsive than state)
+  const gestureRef = useRef({
+    isDragging: false,
+    startX: 0,
+    startY: 0,
+    initialDistance: 0,
+    initialScale: 1
+  });
+
+  // Calculate the display size of the image to cover the container
+  const getImageDisplaySize = () => {
+    const containerSize = 256; // w-64 h-64 = 256px
+
+    if (imageDimensions.width === 0 || imageDimensions.height === 0) {
+      return { width: containerSize, height: containerSize };
+    }
+
+    const imgAspect = imageDimensions.width / imageDimensions.height;
+
+    // To "cover" the container, we scale so the smaller dimension fits exactly
+    if (imgAspect > 1) {
+      // Landscape: height fits, width overflows
+      return {
+        width: containerSize * imgAspect,
+        height: containerSize
+      };
+    } else {
+      // Portrait/square: width fits, height overflows
+      return {
+        width: containerSize,
+        height: containerSize / imgAspect
+      };
+    }
+  };
+
+  // Calculate max drag bounds based on image dimensions and scale
+  const getMaxOffset = (scale) => {
+    const containerSize = 256;
+    const { width, height } = getImageDisplaySize();
+
+    // Apply scale
+    const scaledWidth = width * scale;
+    const scaledHeight = height * scale;
+
+    // Max offset is how much the scaled image extends beyond the container on each side
+    const maxX = Math.max(0, (scaledWidth - containerSize) / 2);
+    const maxY = Math.max(0, (scaledHeight - containerSize) / 2);
+
+    return { maxX, maxY };
+  };
+
+  // Touch handlers for drag and pinch-to-zoom
+  const handleTouchStart = (e) => {
+    e.preventDefault();
+    const gesture = gestureRef.current;
+
+    if (e.touches.length === 1) {
+      gesture.isDragging = true;
+      gesture.startX = e.touches[0].clientX - imagePosition.x;
+      gesture.startY = e.touches[0].clientY - imagePosition.y;
+    } else if (e.touches.length === 2) {
+      gesture.isDragging = false;
+      gesture.initialDistance = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      gesture.initialScale = imageScale;
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    e.preventDefault();
+    const gesture = gestureRef.current;
+
+    if (e.touches.length === 1 && gesture.isDragging) {
+      const newX = e.touches[0].clientX - gesture.startX;
+      const newY = e.touches[0].clientY - gesture.startY;
+
+      // Limit drag bounds based on image dimensions and scale
+      const { maxX, maxY } = getMaxOffset(imageScale);
+      const boundedX = Math.max(-maxX, Math.min(maxX, newX));
+      const boundedY = Math.max(-maxY, Math.min(maxY, newY));
+
+      setImagePosition({ x: boundedX, y: boundedY });
+    } else if (e.touches.length === 2 && gesture.initialDistance > 0) {
+      const currentDistance = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const newScale = Math.min(Math.max((currentDistance / gesture.initialDistance) * gesture.initialScale, 1), 4);
+      setImageScale(newScale);
+
+      // Adjust position when zooming out to keep image in bounds
+      const { maxX, maxY } = getMaxOffset(newScale);
+      setImagePosition(prev => ({
+        x: Math.max(-maxX, Math.min(maxX, prev.x)),
+        y: Math.max(-maxY, Math.min(maxY, prev.y))
+      }));
+    }
+  };
+
+  const handleTouchEnd = (e) => {
+    e.preventDefault();
+    const gesture = gestureRef.current;
+    gesture.isDragging = false;
+    gesture.initialDistance = 0;
+  };
+
+  // Load image dimensions when preview image changes
+  useEffect(() => {
+    if (previewImage) {
+      const img = new Image();
+      img.onload = () => {
+        setImageDimensions({ width: img.width, height: img.height });
+      };
+      img.src = previewImage;
+    } else {
+      setImageDimensions({ width: 0, height: 0 });
+    }
+  }, [previewImage]);
+
+  // Crop the image based on position and scale before upload
+  const cropImage = () => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+
+        // Output size (square for profile picture)
+        const outputSize = 512;
+        canvas.width = outputSize;
+        canvas.height = outputSize;
+
+        // Container size in CSS pixels (matches w-64 h-64 = 256px)
+        const containerSize = 256;
+
+        // The image fills the container with object-fit: cover
+        // So we need to figure out how it's being displayed
+        const imgAspect = img.width / img.height;
+        let coverWidth, coverHeight;
+
+        if (imgAspect > 1) {
+          // Landscape: height fits, width overflows
+          coverHeight = containerSize;
+          coverWidth = containerSize * imgAspect;
+        } else {
+          // Portrait/square: width fits, height overflows
+          coverWidth = containerSize;
+          coverHeight = containerSize / imgAspect;
+        }
+
+        // Apply scale
+        const scaledWidth = coverWidth * imageScale;
+        const scaledHeight = coverHeight * imageScale;
+
+        // Calculate how position translates to source coordinates
+        // Position offset in pixels -> offset in image coordinates
+        const pixelToImageX = img.width / scaledWidth;
+        const pixelToImageY = img.height / scaledHeight;
+
+        // Center of visible area in image coordinates
+        // (accounting for the translate offset and scale transform origin at center)
+        const centerX = img.width / 2 - imagePosition.x * pixelToImageX;
+        const centerY = img.height / 2 - imagePosition.y * pixelToImageY;
+
+        // Size of visible square in image coordinates
+        const visibleSizeInImage = (containerSize / scaledWidth) * img.width;
+
+        // Source rectangle
+        const sourceX = centerX - visibleSizeInImage / 2;
+        const sourceY = centerY - visibleSizeInImage / 2;
+
+        // Clamp to image bounds
+        const clampedX = Math.max(0, Math.min(img.width - visibleSizeInImage, sourceX));
+        const clampedY = Math.max(0, Math.min(img.height - visibleSizeInImage, sourceY));
+
+        // Draw the cropped region
+        ctx.drawImage(
+          img,
+          clampedX, clampedY, visibleSizeInImage, visibleSizeInImage,
+          0, 0, outputSize, outputSize
+        );
+
+        canvas.toBlob((blob) => {
+          const croppedFile = new File([blob], 'profile.jpg', { type: 'image/jpeg' });
+          resolve(croppedFile);
+        }, 'image/jpeg', 0.9);
+      };
+      img.src = previewImage;
+    });
   };
 
   const handleFileChange = async (e) => {
@@ -9825,7 +10691,9 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
             <div className="flex items-center justify-between py-2">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
-                  <span className="text-base">📲</span>
+                  <svg className="w-4 h-4" fill="none" stroke="#00D1FF" viewBox="0 0 24 24" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" />
+                  </svg>
                 </div>
                 <div>
                   <span className="text-sm text-white">Show in Activity Feed</span>
@@ -9833,7 +10701,10 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
                 </div>
               </div>
               <button
-                onClick={() => handlePrivacyToggle('showInActivityFeed', !showInActivityFeed)}
+                onClick={() => {
+                  triggerHaptic(ImpactStyle.Light);
+                  handlePrivacyToggle('showInActivityFeed', !showInActivityFeed);
+                }}
                 className="w-12 h-7 rounded-full transition-all duration-200 relative"
                 style={{
                   backgroundColor: showInActivityFeed ? '#00FF94' : 'rgba(255,255,255,0.2)'
@@ -9852,7 +10723,9 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
             <div className="flex items-center justify-between py-2 border-t border-zinc-700/50 mt-2 pt-4">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
-                  <span className="text-base">🏅</span>
+                  <svg className="w-4 h-4" fill="none" stroke="#FF9500" viewBox="0 0 24 24" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 18.75h-9m9 0a3 3 0 0 1 3 3h-15a3 3 0 0 1 3-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 0 1-.982-3.172M9.497 14.25a7.454 7.454 0 0 0 .981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 0 0 7.73 9.728M5.25 4.236V4.5c0 2.108.966 3.99 2.48 5.228M5.25 4.236V2.721C7.456 2.41 9.71 2.25 12 2.25c2.291 0 4.545.16 6.75.47v1.516M7.73 9.728a6.726 6.726 0 0 0 2.748 1.35m8.272-6.842V4.5c0 2.108-.966 3.99-2.48 5.228m2.48-5.492a46.32 46.32 0 0 1 2.916.52 6.003 6.003 0 0 1-5.395 4.972m0 0a6.726 6.726 0 0 1-2.749 1.35m0 0a6.772 6.772 0 0 1-2.992 0" />
+                  </svg>
                 </div>
                 <div>
                   <span className="text-sm text-white">Appear on Leaderboards</span>
@@ -9860,7 +10733,10 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
                 </div>
               </div>
               <button
-                onClick={() => handlePrivacyToggle('showOnLeaderboard', !showOnLeaderboard)}
+                onClick={() => {
+                  triggerHaptic(ImpactStyle.Light);
+                  handlePrivacyToggle('showOnLeaderboard', !showOnLeaderboard);
+                }}
                 className="w-12 h-7 rounded-full transition-all duration-200 relative"
                 style={{
                   backgroundColor: showOnLeaderboard ? '#00FF94' : 'rgba(255,255,255,0.2)'
@@ -10106,8 +10982,8 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black">
           {/* Preview Image */}
           <div className="relative w-full h-full flex flex-col">
-            {/* Header */}
-            <div className="absolute top-0 left-0 right-0 z-10 px-4 py-4 flex items-center justify-between" style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.8) 0%, transparent 100%)' }}>
+            {/* Header - pushed down to avoid Dynamic Island */}
+            <div className="absolute top-0 left-0 right-0 z-10 px-4 flex items-center justify-between" style={{ paddingTop: 'calc(env(safe-area-inset-top, 20px) + 10px)', background: 'linear-gradient(to bottom, rgba(0,0,0,0.8) 0%, transparent 100%)', paddingBottom: '20px' }}>
               <button
                 onClick={handleCancelPreview}
                 className="w-10 h-10 rounded-full flex items-center justify-center"
@@ -10122,15 +10998,53 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
               <div className="w-10" />
             </div>
 
-            {/* Image Container */}
+            {/* Image Container with touch handlers */}
             <div className="flex-1 flex items-center justify-center p-4">
-              <div className="relative w-64 h-64 rounded-full overflow-hidden border-4 border-white/20">
-                <img
-                  src={previewImage}
-                  alt="Preview"
-                  className="w-full h-full object-cover"
-                />
+              <div
+                ref={cropContainerRef}
+                className="relative w-64 h-64 rounded-full overflow-hidden border-4 border-white/20"
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+                style={{ touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}
+              >
+                {imageDimensions.width > 0 && imageDimensions.height > 0 ? (() => {
+                  const aspect = imageDimensions.width / imageDimensions.height;
+                  const isLandscape = aspect > 1;
+                  const imgWidth = isLandscape ? Math.round(256 * aspect) : 256;
+                  const imgHeight = isLandscape ? 256 : Math.round(256 / aspect);
+                  return (
+                    <img
+                      src={previewImage}
+                      alt="Preview"
+                      draggable={false}
+                      style={{
+                        position: 'absolute',
+                        width: `${imgWidth}px`,
+                        height: `${imgHeight}px`,
+                        maxWidth: 'none',
+                        maxHeight: 'none',
+                        objectFit: 'fill',
+                        left: '50%',
+                        top: '50%',
+                        transform: `translate(calc(-50% + ${imagePosition.x}px), calc(-50% + ${imagePosition.y}px)) scale(${imageScale})`,
+                        transformOrigin: 'center center',
+                        pointerEvents: 'none',
+                        userSelect: 'none'
+                      }}
+                    />
+                  );
+                })() : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  </div>
+                )}
               </div>
+            </div>
+
+            {/* Hint text */}
+            <div className="absolute left-0 right-0 z-10 text-center" style={{ top: 'calc(50% + 160px)' }}>
+              <p className="text-gray-500 text-xs">Drag to reposition • Pinch to zoom</p>
             </div>
 
             {/* Action Buttons */}
@@ -10139,12 +11053,12 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
 
               <div className="flex gap-3">
                 <button
-                  onClick={handleRetakePhoto}
+                  onClick={handleChooseAnother}
                   disabled={isUploadingPhoto}
                   className="flex-1 py-3.5 rounded-xl font-semibold transition-all duration-150 active:scale-98"
                   style={{ backgroundColor: 'rgba(255,255,255,0.1)', color: 'white' }}
                 >
-                  Retake
+                  Choose Another
                 </button>
                 <button
                   onClick={handleSavePhoto}
@@ -10178,6 +11092,8 @@ export default function DaySevenApp() {
   const [isOnboarded, setIsOnboarded] = useState(null); // null = loading, true = onboarded, false = needs onboarding
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('home');
+  const [prevTab, setPrevTab] = useState('home');
+  const [tabDirection, setTabDirection] = useState(0); // -1 = left, 0 = none, 1 = right
   const [showAddActivity, setShowAddActivity] = useState(false);
   const [pendingActivity, setPendingActivity] = useState(null);
   const [defaultActivityDate, setDefaultActivityDate] = useState(null);
@@ -10194,6 +11110,119 @@ export default function DaySevenApp() {
   const [historyStatsSubView, setHistoryStatsSubView] = useState('overview');
   const [showEditGoals, setShowEditGoals] = useState(false);
   const [pendingFriendRequests, setPendingFriendRequests] = useState(0);
+
+  // Update app icon badge when pending requests change
+  useEffect(() => {
+    const updateBadge = async () => {
+      if (Capacitor.isNativePlatform()) {
+        try {
+          const { Badge } = await import('@capawesome/capacitor-badge');
+          if (pendingFriendRequests > 0) {
+            await Badge.set({ count: pendingFriendRequests });
+          } else {
+            await Badge.clear();
+          }
+        } catch (e) {
+          console.log('Badge update error:', e);
+        }
+      }
+    };
+    updateBadge();
+  }, [pendingFriendRequests]);
+
+  // Tab order for direction detection
+  const tabOrder = ['home', 'history', 'feed', 'profile'];
+
+  // Custom tab switcher with direction tracking
+  const switchTab = useCallback((newTab) => {
+    if (newTab === activeTab) return;
+    const currentIndex = tabOrder.indexOf(activeTab);
+    const newIndex = tabOrder.indexOf(newTab);
+    setTabDirection(newIndex > currentIndex ? 1 : -1);
+    setPrevTab(activeTab);
+    setActiveTab(newTab);
+  }, [activeTab]);
+
+  // Edge swipe gesture for tab navigation (iOS-style) - uses native event listeners
+  const activeTabRef = useRef(activeTab);
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
+  useEffect(() => {
+    const root = document.getElementById('root');
+    if (!root) return;
+
+    const edgeZone = 40; // pixels from edge to trigger
+    let swipeStartX = 0;
+    let swipeStartY = 0;
+    let isEdgeSwiping = false;
+    let swipeEdge = null; // 'left' or 'right'
+
+    const handleTouchStart = (e) => {
+      const touch = e.touches[0];
+      const screenWidth = window.innerWidth;
+
+      // Check if touch started from left or right edge
+      if (touch.clientX <= edgeZone) {
+        swipeEdge = 'left';
+        isEdgeSwiping = true;
+      } else if (touch.clientX >= screenWidth - edgeZone) {
+        swipeEdge = 'right';
+        isEdgeSwiping = true;
+      } else {
+        isEdgeSwiping = false;
+        swipeEdge = null;
+        return;
+      }
+
+      swipeStartX = touch.clientX;
+      swipeStartY = touch.clientY;
+    };
+
+    const handleTouchEnd = (e) => {
+      if (!isEdgeSwiping) return;
+
+      const touch = e.changedTouches[0];
+      const deltaX = touch.clientX - swipeStartX;
+      const deltaY = touch.clientY - swipeStartY;
+
+      // Reset state
+      const edge = swipeEdge;
+      isEdgeSwiping = false;
+      swipeEdge = null;
+
+      // Only trigger if horizontal swipe is dominant and exceeds threshold
+      if (Math.abs(deltaX) > 50 && Math.abs(deltaX) > Math.abs(deltaY) * 2) {
+        const currentTab = activeTabRef.current;
+        const currentIndex = tabOrder.indexOf(currentTab);
+
+        if (edge === 'left' && deltaX > 0 && currentIndex > 0) {
+          // Swipe from left edge going right - go to previous tab
+          triggerHaptic(ImpactStyle.Light);
+          const newTab = tabOrder[currentIndex - 1];
+          setTabDirection(-1);
+          setPrevTab(currentTab);
+          setActiveTab(newTab);
+        } else if (edge === 'right' && deltaX < 0 && currentIndex < tabOrder.length - 1) {
+          // Swipe from right edge going left - go to next tab
+          triggerHaptic(ImpactStyle.Light);
+          const newTab = tabOrder[currentIndex + 1];
+          setTabDirection(1);
+          setPrevTab(currentTab);
+          setActiveTab(newTab);
+        }
+      }
+    };
+
+    root.addEventListener('touchstart', handleTouchStart, { passive: true });
+    root.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+    return () => {
+      root.removeEventListener('touchstart', handleTouchStart);
+      root.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, []); // Empty deps - use refs for current values
 
   // Tour state
   const [showTour, setShowTour] = useState(false);
@@ -10289,12 +11318,34 @@ export default function DaySevenApp() {
 
   // Handle sign out
   const handleSignOut = async () => {
-    try {
-      await signOut(auth);
-      setActiveTab('home');
-    } catch (error) {
-      console.error('Error signing out:', error);
-    }
+    // Immediately clear user state to show login screen
+    setUser(null);
+    setUserProfile(null);
+    setUserData(initialUserData); // Reset to initial, not null (prevents spread errors on re-login)
+    setIsOnboarded(null); // null = loading state, prevents onboarding flash on re-login
+    setActivities(initialActivities);
+    setCalendarData(initialCalendarData);
+    setFriends([]);
+    setPendingFriendRequests(0);
+
+    // Then attempt actual sign out in background (don't block UI)
+    (async () => {
+      // Try native plugin sign out (ignore errors)
+      if (Capacitor.isNativePlatform()) {
+        try {
+          const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+          await FirebaseAuthentication.signOut();
+        } catch (e) {
+          // Ignore native sign out errors
+        }
+      }
+      // Try web SDK signOut
+      try {
+        await signOut(auth);
+      } catch (e) {
+        // Ignore web sign out errors
+      }
+    })();
   };
 
   // Handle profile photo update
@@ -10316,7 +11367,6 @@ export default function DaySevenApp() {
 
   // Handle user authentication (shared by onAuthStateChanged and native login)
   const handleUserAuth = useCallback(async (user) => {
-    setUser(user);
     if (user) {
       // Get profile first (needed to show app)
       let profile = null;
@@ -10329,13 +11379,15 @@ export default function DaySevenApp() {
       } catch (error) {
         console.error('Error loading profile:', error);
       }
-      setUserProfile(profile);
 
       // Check onboarding status
       const hasCompletedOnboarding = profile?.hasCompletedOnboarding === true;
-      setIsOnboarded(hasCompletedOnboarding);
 
-      // Show app immediately, load rest in background
+      // Set user and profile together to avoid intermediate render states
+      setUser(user);
+      setUserProfile(profile);
+      setIsOnboarded(hasCompletedOnboarding);
+      setActiveTab('home'); // Always go to home screen after login
       setAuthLoading(false);
 
       // Load remaining data in background (don't await)
@@ -10403,6 +11455,54 @@ export default function DaySevenApp() {
       setAuthLoading(false);
     }
   }, []);
+
+  // Refresh data function for pull-to-refresh
+  const refreshData = useCallback(async () => {
+    if (!user?.uid) return;
+
+    try {
+      // Reload activities
+      const userActivities = await getUserActivities(user.uid);
+      if (userActivities.length > 0) {
+        setActivities(userActivities);
+        // Rebuild calendar data
+        const calendarMap = {};
+        userActivities.forEach(activity => {
+          if (activity.date) {
+            if (!calendarMap[activity.date]) {
+              calendarMap[activity.date] = [];
+            }
+            calendarMap[activity.date].push({
+              type: activity.type,
+              subtype: activity.subtype,
+              duration: activity.duration,
+              distance: activity.distance,
+              calories: activity.calories,
+              avgHr: activity.avgHr,
+              maxHr: activity.maxHr
+            });
+          }
+        });
+        setCalendarData(calendarMap);
+      }
+
+      // Reload friends and pending requests
+      const [friendsList, requests] = await Promise.all([
+        getFriends(user.uid),
+        getFriendRequests(user.uid)
+      ]);
+      setFriends(friendsList);
+      setPendingFriendRequests(requests.length);
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+    }
+  }, [user?.uid]);
+
+  // Pull-to-refresh hook (enabled on home and feed tabs)
+  const { pullDistance, isRefreshing } = usePullToRefresh(refreshData, {
+    threshold: 80,
+    enabled: activeTab === 'home' || activeTab === 'feed'
+  });
 
   // Listen to auth state
   useEffect(() => {
@@ -10522,7 +11622,7 @@ export default function DaySevenApp() {
   // Save custom activities to Firestore when they change
   const hasLoadedCustomActivities = useRef(false);
   useEffect(() => {
-    if (!user) return;
+    if (!user || !userData) return;
 
     // Skip the initial load
     if (!hasLoadedCustomActivities.current) {
@@ -10538,7 +11638,7 @@ export default function DaySevenApp() {
 
       return () => clearTimeout(timeoutId);
     }
-  }, [userData.customActivities, user]);
+  }, [userData?.customActivities, user]);
 
   // Helper to determine effective category of an activity
   const getActivityCategory = (activity) => {
@@ -10637,6 +11737,9 @@ export default function DaySevenApp() {
   };
 
   const handleActivitySaved = async (activity) => {
+    // Haptic feedback when saving activity
+    triggerHaptic(ImpactStyle.Medium);
+
     // Check if this is an edit (activity has existing ID) or new activity
     const isEdit = activity.id && activities.some(a => a.id === activity.id);
 
@@ -10955,6 +12058,7 @@ export default function DaySevenApp() {
         } else {
           setCelebrationMessage('Strength goal complete! 🏋️');
         }
+        triggerHaptic(ImpactStyle.Heavy);
         setShowCelebration(true);
       }
     } else if (justCompletedCardio) {
@@ -10976,6 +12080,7 @@ export default function DaySevenApp() {
         } else {
           setCelebrationMessage('Cardio goal complete! 🏃');
         }
+        triggerHaptic(ImpactStyle.Heavy);
         setShowCelebration(true);
       }
     } else if (justCompletedRecovery) {
@@ -10997,6 +12102,7 @@ export default function DaySevenApp() {
         } else {
           setCelebrationMessage('Recovery goal complete! 🧊');
         }
+        triggerHaptic(ImpactStyle.Heavy);
         setShowCelebration(true);
       }
     } else {
@@ -11037,6 +12143,7 @@ export default function DaySevenApp() {
 
       // Show the week streak celebration modal immediately (no delay needed since we skipped individual celebration)
       setTimeout(() => {
+        triggerHaptic(ImpactStyle.Heavy); // Strong haptic for celebration!
         setShowWeekStreakCelebration(true);
       }, 500);
     }
@@ -11046,6 +12153,9 @@ export default function DaySevenApp() {
     // Find the activity to delete
     const activityToDelete = activities.find(a => a.id === activityId);
     if (!activityToDelete) return;
+
+    // Haptic feedback for delete action
+    triggerHaptic(ImpactStyle.Medium);
 
     // Remove from activities
     const updatedActivities = activities.filter(a => a.id !== activityId);
@@ -11071,7 +12181,84 @@ export default function DaySevenApp() {
     const newProgress = calculateWeeklyProgress(updatedActivities);
     setWeeklyProgress(newProgress);
 
-    console.log('Deleted activity:', activityId);
+    // Recalculate single-activity personal records from remaining activities
+    const recalculateRecords = () => {
+      const currentRecords = userDataRef.current.personalRecords || {};
+      const newRecords = {
+        highestCalories: { value: 0, activityType: null },
+        longestStrength: { value: 0, activityType: null },
+        longestCardio: { value: 0, activityType: null },
+        longestDistance: { value: 0, activityType: null },
+        fastestPace: { value: null, activityType: null },
+        fastestCyclingPace: { value: null, activityType: null },
+      };
+
+      // Recovery activity types
+      const recoveryTypes = ['Cold Plunge', 'Sauna'];
+
+      updatedActivities.forEach(activity => {
+        const yogaPilatesAsRecovery = ['Yoga', 'Pilates'].includes(activity.type) &&
+          (!activity.countToward || activity.countToward === 'recovery');
+        const isRecovery = recoveryTypes.includes(activity.type) || yogaPilatesAsRecovery;
+        const isStrength = activity.type === 'Strength Training' || activity.countToward === 'strength';
+        const isCardio = ['Running', 'Cycle', 'Sports'].includes(activity.type) || activity.countToward === 'cardio';
+
+        // Highest calories (all activities)
+        if (activity.calories && activity.calories > (newRecords.highestCalories.value || 0)) {
+          newRecords.highestCalories = { value: activity.calories, activityType: activity.type };
+        }
+
+        // Non-recovery records
+        if (!isRecovery) {
+          // Longest strength
+          if (isStrength && activity.duration && activity.duration > (newRecords.longestStrength.value || 0)) {
+            newRecords.longestStrength = { value: activity.duration, activityType: activity.type };
+          }
+
+          // Longest cardio
+          if (isCardio && activity.duration && activity.duration > (newRecords.longestCardio.value || 0)) {
+            newRecords.longestCardio = { value: activity.duration, activityType: activity.type };
+          }
+
+          // Longest distance
+          if (activity.distance && activity.distance > (newRecords.longestDistance.value || 0)) {
+            newRecords.longestDistance = { value: activity.distance, activityType: activity.type };
+          }
+
+          // Fastest pace (running) - lower is better
+          if (activity.type === 'Running' && activity.distance && activity.duration) {
+            const pace = activity.duration / activity.distance;
+            if (newRecords.fastestPace.value === null || pace < newRecords.fastestPace.value) {
+              newRecords.fastestPace = { value: pace, activityType: activity.type };
+            }
+          }
+
+          // Fastest cycling pace - lower is better
+          if (activity.type === 'Cycle' && activity.distance && activity.duration) {
+            const pace = activity.duration / activity.distance;
+            if (newRecords.fastestCyclingPace.value === null || pace < newRecords.fastestCyclingPace.value) {
+              newRecords.fastestCyclingPace = { value: pace, activityType: activity.type };
+            }
+          }
+        }
+      });
+
+      // Merge with existing records (keep streak records, update activity records)
+      return {
+        ...currentRecords,
+        ...newRecords
+      };
+    };
+
+    const updatedRecords = recalculateRecords();
+
+    // Update userData with new records
+    setUserData(prev => ({
+      ...prev,
+      personalRecords: updatedRecords
+    }));
+
+    console.log('Deleted activity:', activityId, 'Records recalculated');
   };
 
   // Show loading spinner while checking auth
@@ -11091,13 +12278,13 @@ export default function DaySevenApp() {
     );
   }
 
-  // Show login if no user
-  if (!user) {
+  // Show login if no user or no userData (signed out)
+  if (!user || !userData || !userProfile) {
     return <Login onLogin={handleUserAuth} />;
   }
 
   // Show username setup if user doesn't have a username
-  if (!userProfile?.username) {
+  if (!userProfile.username) {
     return (
       <UsernameSetup
         user={user}
@@ -11165,6 +12352,18 @@ export default function DaySevenApp() {
         fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif'
       }}
     >
+      {/* Pull-to-Refresh Indicator (Home tab only) */}
+      {activeTab === 'home' && (
+        <PullToRefreshIndicator
+          pullDistance={pullDistance}
+          isRefreshing={isRefreshing}
+          threshold={80}
+        />
+      )}
+
+      {/* Offline Indicator */}
+      <OfflineIndicator />
+
       {/* Fixed Header for Home tab */}
       {activeTab === 'home' && (
         <div
@@ -11198,12 +12397,17 @@ export default function DaySevenApp() {
         }}
       />
 
-      <div>
+      <div
+        className="overflow-hidden"
+        style={{
+          transform: (activeTab === 'home' || activeTab === 'feed') && pullDistance > 0 ? `translateY(${Math.min(pullDistance * 0.5, 60)}px)` : 'none',
+          transition: pullDistance === 0 ? 'transform 0.3s ease-out' : 'none',
+        }}
+      >
         <div
           key={activeTab}
-          className="animate-fade-in"
           style={{
-            animation: 'fadeIn 100ms ease-out'
+            animation: `${tabDirection === 0 ? 'fadeIn' : tabDirection === 1 ? 'slideInRight' : 'slideInLeft'} 200ms ease-out`
           }}
         >
           {isLoading ? (
@@ -11266,6 +12470,8 @@ export default function DaySevenApp() {
                   friends={friends}
                   onOpenFriends={() => setShowFriends(true)}
                   pendingRequestsCount={pendingFriendRequests}
+                  isRefreshing={isRefreshing}
+                  pullDistance={pullDistance}
                 />
               )}
               {activeTab === 'profile' && (
@@ -11313,6 +12519,7 @@ export default function DaySevenApp() {
           }}
           onTouchStart={(e) => {
             e.currentTarget.style.transform = 'translateX(-50%) scale(0.9)';
+            triggerHaptic(ImpactStyle.Medium);
             const ring = document.createElement('div');
             ring.style.cssText = `
               position: absolute;
@@ -11345,10 +12552,10 @@ export default function DaySevenApp() {
           {/* Home */}
           <button
             ref={homeTabRef}
-            onClick={() => setActiveTab('home')}
+            onClick={() => switchTab('home')}
             className="flex-1 py-3 flex flex-col items-center gap-1 transition-all duration-150"
             style={{ transform: 'scale(1)' }}
-            onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.92)'}
+            onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.92)'; triggerHaptic(ImpactStyle.Light); }}
             onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
             onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.92)'}
             onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
@@ -11363,10 +12570,10 @@ export default function DaySevenApp() {
           {/* History */}
           <button
             ref={historyTabRef}
-            onClick={() => setActiveTab('history')}
+            onClick={() => switchTab('history')}
             className="flex-1 py-3 flex flex-col items-center gap-1 transition-all duration-150"
             style={{ transform: 'scale(1)' }}
-            onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.92)'}
+            onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.92)'; triggerHaptic(ImpactStyle.Light); }}
             onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
             onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.92)'}
             onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
@@ -11384,10 +12591,10 @@ export default function DaySevenApp() {
           {/* Friends */}
           <button
             ref={friendsTabRef}
-            onClick={() => setActiveTab('feed')}
+            onClick={() => switchTab('feed')}
             className="flex-1 py-3 flex flex-col items-center gap-1 transition-all duration-150 relative"
             style={{ transform: 'scale(1)' }}
-            onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.92)'}
+            onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.92)'; triggerHaptic(ImpactStyle.Light); }}
             onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
             onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.92)'}
             onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
@@ -11408,10 +12615,10 @@ export default function DaySevenApp() {
           {/* Profile */}
           <button
             ref={profileTabRef}
-            onClick={() => setActiveTab('profile')}
+            onClick={() => switchTab('profile')}
             className="flex-1 py-3 flex flex-col items-center gap-1 transition-all duration-150"
             style={{ transform: 'scale(1)' }}
-            onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.92)'}
+            onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.92)'; triggerHaptic(ImpactStyle.Light); }}
             onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
             onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.92)'}
             onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}

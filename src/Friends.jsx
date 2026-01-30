@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import {
   searchUsers,
   sendFriendRequest,
@@ -9,6 +10,16 @@ import {
   getFriends,
   removeFriend
 } from './services/friendService';
+
+// Haptic helper
+const triggerHaptic = async (style = ImpactStyle.Medium) => {
+  try {
+    await Haptics.impact({ style });
+  } catch (e) {
+    // Fallback for web
+    if (navigator.vibrate) navigator.vibrate(10);
+  }
+};
 
 const Friends = ({ user, userProfile, onClose }) => {
   const [activeTab, setActiveTab] = useState('friends');
@@ -90,6 +101,7 @@ const Friends = ({ user, userProfile, onClose }) => {
   const handleSendRequest = async (toUid) => {
     console.log('Add friend clicked', toUid);
     console.log('From user:', user.uid);
+    triggerHaptic(ImpactStyle.Medium);
     setSendingTo(toUid);
     try {
       const result = await sendFriendRequest(user.uid, toUid);
@@ -113,6 +125,7 @@ const Friends = ({ user, userProfile, onClose }) => {
   };
 
   const handleAcceptRequest = async (request) => {
+    triggerHaptic(ImpactStyle.Medium);
     try {
       await acceptFriendRequest(request.id, request.fromUid, request.toUid);
       await loadData();
@@ -341,7 +354,7 @@ const Friends = ({ user, userProfile, onClose }) => {
           {[
             { key: 'friends', label: 'Friends' },
             { key: 'requests', label: 'Requests' },
-            { key: 'add', label: 'Add Friends' }
+            { key: 'add', label: 'Add' }
           ].map((tab) => (
             <ActionButton
               key={tab.key}

@@ -3,6 +3,80 @@ import { getUserActivities } from './services/userService';
 import { addReaction, getReactions, removeReaction, addComment, getComments, deleteComment, addReply, getReplies, deleteReply } from './services/friendService';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
+import { Haptics, ImpactStyle } from '@capacitor/haptics';
+
+// Helper function for haptic feedback
+const triggerHaptic = async (style = ImpactStyle.Medium) => {
+  try {
+    await Haptics.impact({ style });
+  } catch (e) {
+    // Fallback to vibrate API for web/Android
+    if (navigator.vibrate) navigator.vibrate(10);
+  }
+};
+
+// Pull-to-Refresh Indicator Component for Feed
+const FeedPullToRefreshIndicator = ({ pullDistance, isRefreshing, threshold = 80 }) => {
+  const progress = Math.min(pullDistance / threshold, 1);
+  const rotation = progress * 180;
+
+  if (pullDistance === 0 && !isRefreshing) return null;
+
+  return (
+    <div
+      className="flex items-center justify-center pointer-events-none"
+      style={{
+        height: 40,
+        marginTop: 8,
+        marginBottom: 8,
+        opacity: isRefreshing ? 1 : progress,
+        transition: isRefreshing ? 'none' : 'opacity 0.1s',
+      }}
+    >
+      <div
+        className="w-7 h-7 rounded-full flex items-center justify-center shadow-lg"
+        style={{
+          backgroundColor: 'rgba(0, 255, 148, 0.15)',
+          backdropFilter: 'blur(10px)',
+          transform: `rotate(${isRefreshing ? 0 : rotation}deg)`,
+        }}
+      >
+        {isRefreshing ? (
+          <div
+            className="w-4 h-4 border-2 border-[#00FF94] border-t-transparent rounded-full"
+            style={{
+              animation: 'dynamicSpin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite',
+            }}
+          />
+        ) : (
+          <svg
+            className="w-4 h-4"
+            fill="none"
+            stroke="#00FF94"
+            viewBox="0 0 24 24"
+            strokeWidth={2.5}
+            style={{
+              opacity: progress,
+              transform: progress >= 1 ? 'scale(1.1)' : 'scale(1)',
+              transition: 'transform 0.15s',
+            }}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 13.5 12 21m0 0-7.5-7.5M12 21V3" />
+          </svg>
+        )}
+      </div>
+      <style>{`
+        @keyframes dynamicSpin {
+          0% { transform: rotate(0deg); }
+          25% { transform: rotate(120deg); }
+          50% { transform: rotate(180deg); }
+          75% { transform: rotate(300deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
+    </div>
+  );
+};
 
 // Context for swipeable comments
 const SwipeableCommentContext = createContext({ openId: null, setOpenId: () => {} });
@@ -645,7 +719,7 @@ const MemoizedActivityCard = React.memo(({
   );
 });
 
-const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingRequestsCount = 0, isRefreshing: isRefreshingProp = false }) => {
+const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingRequestsCount = 0, isRefreshing: isRefreshingProp = false, pullDistance = 0 }) => {
   const [feedActivities, setFeedActivities] = useState([]);
   const [activityReactions, setActivityReactions] = useState({});
   const [activityComments, setActivityComments] = useState({});
@@ -1070,6 +1144,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   }, [activeView, leaderboardData.length, loadLeaderboard]);
 
   const handleRefresh = async () => {
+    triggerHaptic(ImpactStyle.Light);
     setIsRefreshing(true);
     if (activeView === 'feed') {
       await loadFeed();
@@ -1749,11 +1824,16 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           </p>
         </div>
         <TouchButton
-          onClick={onOpenFriends}
+          onClick={() => {
+            triggerHaptic(ImpactStyle.Medium);
+            onOpenFriends();
+          }}
           className="flex items-center gap-2 px-4 py-2 rounded-full transition-all duration-150 relative"
           style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
         >
-          <span className="text-sm">➕</span>
+          <svg className="w-4 h-4" fill="none" stroke="white" viewBox="0 0 24 24" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0ZM3 19.235v-.11a6.375 6.375 0 0 1 12.75 0v.109A12.318 12.318 0 0 1 9.374 21c-2.331 0-4.512-.645-6.374-1.766Z" />
+          </svg>
           <span className="text-sm font-medium text-white">Add</span>
           {pendingRequestsCount > 0 && (
             <span
@@ -1773,6 +1853,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       <div>
         <FriendsHeaderTop />
         <SegmentedControl activeView={activeView} setActiveView={setActiveView} isRefreshing={isRefreshingProp} />
+        <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} />
         <div className="flex items-center justify-center py-12">
           <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
         </div>
@@ -1785,12 +1866,16 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       <div>
         <FriendsHeaderTop />
         <SegmentedControl activeView={activeView} setActiveView={setActiveView} isRefreshing={isRefreshingProp} />
+        <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} />
         <div className="text-center py-12 px-6">
           <div className="text-5xl mb-4">👥</div>
           <p className="text-white font-medium mb-2">Find your workout buddies</p>
           <p className="text-gray-500 text-sm mb-6">Add friends to see their workouts and cheer them on!</p>
           <TouchButton
-            onClick={onOpenFriends}
+            onClick={() => {
+              triggerHaptic(ImpactStyle.Medium);
+              onOpenFriends();
+            }}
             className="px-6 py-3 rounded-full font-semibold text-black transition-all duration-150"
             style={{ backgroundColor: '#00FF94' }}
           >
@@ -1864,6 +1949,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       <div className="h-full overflow-y-auto">
         <FriendsHeaderTop />
         <SegmentedControl activeView={activeView} setActiveView={setActiveView} isRefreshing={isRefreshingProp} />
+        <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} />
 
         {/* Leaderboard content */}
         <div className="px-4 pb-32">
@@ -2311,6 +2397,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       <div>
         <FriendsHeaderTop />
         <SegmentedControl activeView={activeView} setActiveView={setActiveView} isRefreshing={isRefreshingProp} />
+        <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} />
         <div className="text-center py-12 px-6">
           <div className="text-5xl mb-4">📭</div>
           <p className="text-white font-medium mb-2">No activity yet</p>
@@ -2324,6 +2411,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     <div className="h-full overflow-y-auto">
       <FriendsHeaderTop />
       <SegmentedControl activeView={activeView} setActiveView={setActiveView} isRefreshing={isRefreshingProp} />
+      <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} />
 
       {/* Feed content */}
       <div className="px-4 pb-32">

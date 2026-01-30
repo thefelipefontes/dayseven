@@ -8386,7 +8386,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
               <div className="grid grid-cols-5 gap-2 text-center">
                 <div>
                   <div className="text-lg font-black text-white">{currentWeekStats.lifts}</div>
-                  <div className="text-[10px] text-gray-400">🏋️ Strength</div>
+                  <div className="text-[10px] text-gray-400 whitespace-nowrap">🏋️ Strength</div>
                   {(() => {
                     const compare = compareWeek === 'average' ? weeklyStats['average']?.lifts || 0 : weeklyStats['week-2']?.lifts || 0;
                     if (currentWeekStats.lifts > compare) return <div className="text-[10px] mt-1" style={{ color: '#00FF94' }}>↑</div>;
@@ -8396,7 +8396,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                 </div>
                 <div>
                   <div className="text-lg font-black text-white">{currentWeekStats.cardio}</div>
-                  <div className="text-[10px] text-gray-400">🏃 Cardio</div>
+                  <div className="text-[10px] text-gray-400 whitespace-nowrap">🏃 Cardio</div>
                   {(() => {
                     const compare = compareWeek === 'average' ? weeklyStats['average']?.cardio || 0 : weeklyStats['week-2']?.cardio || 0;
                     if (currentWeekStats.cardio > compare) return <div className="text-[10px] mt-1" style={{ color: '#00FF94' }}>↑</div>;
@@ -8406,7 +8406,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                 </div>
                 <div>
                   <div className="text-lg font-black text-white">{currentWeekStats.recovery}</div>
-                  <div className="text-[10px] text-gray-400">🧊 Recovery</div>
+                  <div className="text-[10px] text-gray-400 whitespace-nowrap">🧊 Recov</div>
                   {(() => {
                     const compare = compareWeek === 'average' ? weeklyStats['average']?.recovery || 0 : weeklyStats['week-2']?.recovery || 0;
                     if (currentWeekStats.recovery > compare) return <div className="text-[10px] mt-1" style={{ color: '#00FF94' }}>↑</div>;
@@ -8416,7 +8416,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                 </div>
                 <div>
                   <div className="text-lg font-black text-white">{(currentWeekStats.calories/1000).toFixed(1)}k</div>
-                  <div className="text-[10px] text-gray-400">🔥 Cals</div>
+                  <div className="text-[10px] text-gray-400 whitespace-nowrap">🔥 Cals</div>
                   {(() => {
                     const compare = compareWeek === 'average' ? weeklyStats['average']?.calories || 0 : weeklyStats['week-2']?.calories || 0;
                     if (currentWeekStats.calories > compare) return <div className="text-[10px] mt-1" style={{ color: '#00FF94' }}>↑</div>;
@@ -8426,7 +8426,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                 </div>
                 <div>
                   <div className="text-lg font-black text-white">{currentWeekStats.miles.toFixed(1)}</div>
-                  <div className="text-[10px] text-gray-400">📍 Miles</div>
+                  <div className="text-[10px] text-gray-400 whitespace-nowrap">📍 Miles</div>
                   {(() => {
                     const compare = compareWeek === 'average' ? weeklyStats['average']?.miles || 0 : weeklyStats['week-2']?.miles || 0;
                     if (currentWeekStats.miles > compare) return <div className="text-[10px] mt-1" style={{ color: '#00FF94' }}>↑</div>;
@@ -8445,27 +8445,27 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
               <div className="grid grid-cols-5 gap-2 text-center">
                 <div>
                   <div className="text-lg font-black">{compareWeek === 'average' ? weeklyStats['average']?.lifts || 0 : weeklyStats['week-2']?.lifts || 0}</div>
-                  <div className="text-[10px] text-gray-400">🏋️ Strength</div>
+                  <div className="text-[10px] text-gray-400 whitespace-nowrap">🏋️ Strength</div>
                   <div className="text-[10px] mt-1 opacity-0">-</div>
                 </div>
                 <div>
                   <div className="text-lg font-black">{compareWeek === 'average' ? weeklyStats['average']?.cardio || 0 : weeklyStats['week-2']?.cardio || 0}</div>
-                  <div className="text-[10px] text-gray-400">🏃 Cardio</div>
+                  <div className="text-[10px] text-gray-400 whitespace-nowrap">🏃 Cardio</div>
                   <div className="text-[10px] mt-1 opacity-0">-</div>
                 </div>
                 <div>
                   <div className="text-lg font-black">{compareWeek === 'average' ? weeklyStats['average']?.recovery || 0 : weeklyStats['week-2']?.recovery || 0}</div>
-                  <div className="text-[10px] text-gray-400">🧊 Recovery</div>
+                  <div className="text-[10px] text-gray-400 whitespace-nowrap">🧊 Recov</div>
                   <div className="text-[10px] mt-1 opacity-0">-</div>
                 </div>
                 <div>
                   <div className="text-lg font-black">{compareWeek === 'average' ? ((weeklyStats['average']?.calories || 0)/1000).toFixed(1) + 'k' : ((weeklyStats['week-2']?.calories || 0)/1000).toFixed(1) + 'k'}</div>
-                  <div className="text-[10px] text-gray-400">🔥 Cals</div>
+                  <div className="text-[10px] text-gray-400 whitespace-nowrap">🔥 Cals</div>
                   <div className="text-[10px] mt-1 opacity-0">-</div>
                 </div>
                 <div>
                   <div className="text-lg font-black">{compareWeek === 'average' ? weeklyStats['average']?.miles || 0 : weeklyStats['week-2']?.miles || 0}</div>
-                  <div className="text-[10px] text-gray-400">📍 Miles</div>
+                  <div className="text-[10px] text-gray-400 whitespace-nowrap">📍 Miles</div>
                   <div className="text-[10px] mt-1 opacity-0">-</div>
                 </div>
               </div>

@@ -18,14 +18,56 @@ import { FirebaseFirestore } from '@capacitor-firebase/firestore';
 // Check if running in native app
 const isNative = Capacitor.isNativePlatform();
 
+// Simple in-memory cache for friend data
+const friendCache = {
+  friends: new Map(),
+  requests: new Map(),
+  cacheExpiry: 30000, // 30 second cache for social data (shorter for real-time feel)
+  timestamps: new Map(),
+};
+
+// Check if cache is valid
+const isCacheValid = (key) => {
+  const timestamp = friendCache.timestamps.get(key);
+  if (!timestamp) return false;
+  return Date.now() - timestamp < friendCache.cacheExpiry;
+};
+
+// Clear friend cache for a user
+export const clearFriendCache = (uid) => {
+  friendCache.friends.delete(uid);
+  friendCache.requests.delete(uid);
+  friendCache.requests.delete(`sent_${uid}`);
+  // Also clear timestamps
+  friendCache.timestamps.delete(`friends_${uid}`);
+  friendCache.timestamps.delete(`requests_${uid}`);
+  friendCache.timestamps.delete(`sentRequests_${uid}`);
+};
+
 // Helper function to add timeout to Firestore operations (for web SDK)
-const withTimeout = (promise, timeoutMs = 8000) => {
+const withTimeout = (promise, timeoutMs = 10000) => {
   return Promise.race([
     promise,
     new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Firestore operation timed out')), timeoutMs)
     )
   ]);
+};
+
+// Retry wrapper for transient failures
+const withRetry = async (fn, maxRetries = 2, delayMs = 500) => {
+  let lastError;
+  for (let i = 0; i <= maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (i < maxRetries && !error.code?.includes('permission')) {
+        await new Promise(resolve => setTimeout(resolve, delayMs * (i + 1)));
+      }
+    }
+  }
+  throw lastError;
 };
 
 export async function searchUsers(searchQuery, currentUid) {
@@ -144,6 +186,11 @@ export async function sendFriendRequest(fromUid, toUid) {
           createdAt: new Date().toISOString()
         }
       });
+
+      // Clear cache for both users
+      clearFriendCache(fromUid);
+      clearFriendCache(toUid);
+
       return { success: true, requestId };
     } else {
       // Web Firestore
@@ -188,6 +235,11 @@ export async function sendFriendRequest(fromUid, toUid) {
         status: 'pending',
         createdAt: serverTimestamp()
       }));
+
+      // Clear cache for both users
+      clearFriendCache(fromUid);
+      clearFriendCache(toUid);
+
       return { success: true, requestId: requestRef.id };
     }
   } catch (error) {
@@ -196,10 +248,16 @@ export async function sendFriendRequest(fromUid, toUid) {
   }
 }
 
-export async function getFriendRequests(uid) {
-  console.log('getFriendRequests called for uid:', uid);
+export async function getFriendRequests(uid, forceRefresh = false) {
+  // Check cache first (unless force refresh)
+  const cacheKey = `requests_${uid}`;
+  if (!forceRefresh && friendCache.requests.has(uid) && isCacheValid(cacheKey)) {
+    return friendCache.requests.get(uid);
+  }
 
   try {
+    let requests = [];
+
     if (isNative) {
       // Use native Firestore
       const { snapshots } = await FirebaseFirestore.getCollection({
@@ -213,20 +271,17 @@ export async function getFriendRequests(uid) {
         }
       });
 
-      console.log('Query returned', snapshots?.length || 0, 'documents');
-      const requests = [];
-
-      for (const snap of (snapshots || [])) {
+      // Batch fetch all sender profiles in parallel for speed
+      const requestPromises = (snapshots || []).map(async (snap) => {
         const requestData = snap.data;
-        if (!requestData) continue;
+        if (!requestData) return null;
 
-        // Fetch the sender's profile
         const { snapshot: senderSnapshot } = await FirebaseFirestore.getDocument({
           reference: `users/${requestData.fromUid}`
         });
         const senderData = senderSnapshot?.data || {};
 
-        requests.push({
+        return {
           id: snap.id,
           ...requestData,
           fromUser: {
@@ -235,10 +290,10 @@ export async function getFriendRequests(uid) {
             displayName: senderData.displayName,
             photoURL: senderData.photoURL
           }
-        });
-      }
+        };
+      });
 
-      return requests;
+      requests = (await Promise.all(requestPromises)).filter(Boolean);
     } else {
       // Web Firestore
       const requestsRef = collection(db, 'friendRequests');
@@ -248,19 +303,17 @@ export async function getFriendRequests(uid) {
         where('status', '==', 'pending'),
         orderBy('createdAt', 'desc')
       );
-      console.log('Query: toUid ==', uid, ', status == pending');
 
       const querySnapshot = await withTimeout(getDocs(q));
-      console.log('Query returned', querySnapshot.docs.length, 'documents');
-      const requests = [];
 
-      for (const docSnapshot of querySnapshot.docs) {
+      // Batch fetch all sender profiles in parallel for speed
+      const requestPromises = querySnapshot.docs.map(async (docSnapshot) => {
         const requestData = docSnapshot.data();
         const senderRef = doc(db, 'users', requestData.fromUid);
         const senderDoc = await withTimeout(getDoc(senderRef));
         const senderData = senderDoc.exists() ? senderDoc.data() : {};
 
-        requests.push({
+        return {
           id: docSnapshot.id,
           ...requestData,
           fromUser: {
@@ -269,19 +322,37 @@ export async function getFriendRequests(uid) {
             displayName: senderData.displayName,
             photoURL: senderData.photoURL
           }
-        });
-      }
+        };
+      });
 
-      return requests;
+      requests = await Promise.all(requestPromises);
     }
+
+    // Cache the result
+    friendCache.requests.set(uid, requests);
+    friendCache.timestamps.set(cacheKey, Date.now());
+
+    return requests;
   } catch (error) {
     console.error('getFriendRequests error:', error);
+    // Return cached data if available, even if expired
+    if (friendCache.requests.has(uid)) {
+      return friendCache.requests.get(uid);
+    }
     return [];
   }
 }
 
-export async function getSentRequests(uid) {
+export async function getSentRequests(uid, forceRefresh = false) {
+  // Check cache first (unless force refresh) - use separate cache key for sent requests
+  const cacheKey = `sentRequests_${uid}`;
+  if (!forceRefresh && friendCache.timestamps.has(cacheKey) && isCacheValid(cacheKey)) {
+    return friendCache.requests.get(`sent_${uid}`) || [];
+  }
+
   try {
+    let requests = [];
+
     if (isNative) {
       const { snapshots } = await FirebaseFirestore.getCollection({
         reference: 'friendRequests',
@@ -294,18 +365,17 @@ export async function getSentRequests(uid) {
         }
       });
 
-      const requests = [];
-
-      for (const snap of (snapshots || [])) {
+      // Batch fetch all recipient profiles in parallel for speed
+      const requestPromises = (snapshots || []).map(async (snap) => {
         const requestData = snap.data;
-        if (!requestData) continue;
+        if (!requestData) return null;
 
         const { snapshot: recipientSnapshot } = await FirebaseFirestore.getDocument({
           reference: `users/${requestData.toUid}`
         });
         const recipientData = recipientSnapshot?.data || {};
 
-        requests.push({
+        return {
           id: snap.id,
           ...requestData,
           toUser: {
@@ -314,10 +384,10 @@ export async function getSentRequests(uid) {
             displayName: recipientData.displayName,
             photoURL: recipientData.photoURL
           }
-        });
-      }
+        };
+      });
 
-      return requests;
+      requests = (await Promise.all(requestPromises)).filter(Boolean);
     } else {
       const requestsRef = collection(db, 'friendRequests');
       const q = query(
@@ -328,15 +398,15 @@ export async function getSentRequests(uid) {
       );
 
       const querySnapshot = await withTimeout(getDocs(q));
-      const requests = [];
 
-      for (const docSnapshot of querySnapshot.docs) {
+      // Batch fetch all recipient profiles in parallel for speed
+      const requestPromises = querySnapshot.docs.map(async (docSnapshot) => {
         const requestData = docSnapshot.data();
         const recipientRef = doc(db, 'users', requestData.toUid);
         const recipientDoc = await withTimeout(getDoc(recipientRef));
         const recipientData = recipientDoc.exists() ? recipientDoc.data() : {};
 
-        requests.push({
+        return {
           id: docSnapshot.id,
           ...requestData,
           toUser: {
@@ -345,13 +415,24 @@ export async function getSentRequests(uid) {
             displayName: recipientData.displayName,
             photoURL: recipientData.photoURL
           }
-        });
-      }
+        };
+      });
 
-      return requests;
+      requests = await Promise.all(requestPromises);
     }
+
+    // Cache the result
+    friendCache.requests.set(`sent_${uid}`, requests);
+    friendCache.timestamps.set(cacheKey, Date.now());
+
+    return requests;
   } catch (error) {
     console.error('getSentRequests error:', error);
+    // Return cached data if available, even if expired
+    const cached = friendCache.requests.get(`sent_${uid}`);
+    if (cached) {
+      return cached;
+    }
     return [];
   }
 }
@@ -398,13 +479,17 @@ export async function acceptFriendRequest(requestId, fromUid, toUid) {
         addedAt: serverTimestamp()
       }));
     }
+
+    // Clear cache for both users so fresh data is fetched
+    clearFriendCache(fromUid);
+    clearFriendCache(toUid);
   } catch (error) {
     console.error('acceptFriendRequest error:', error);
     throw error;
   }
 }
 
-export async function declineFriendRequest(requestId) {
+export async function declineFriendRequest(requestId, currentUid) {
   try {
     if (isNative) {
       await FirebaseFirestore.deleteDocument({
@@ -414,64 +499,86 @@ export async function declineFriendRequest(requestId) {
       const requestRef = doc(db, 'friendRequests', requestId);
       await withTimeout(deleteDoc(requestRef));
     }
+
+    // Clear cache so fresh data is fetched
+    if (currentUid) {
+      clearFriendCache(currentUid);
+    }
   } catch (error) {
     console.error('declineFriendRequest error:', error);
     throw error;
   }
 }
 
-export async function getFriends(uid) {
+export async function getFriends(uid, forceRefresh = false) {
+  // Check cache first (unless force refresh)
+  const cacheKey = `friends_${uid}`;
+  if (!forceRefresh && friendCache.friends.has(uid) && isCacheValid(cacheKey)) {
+    return friendCache.friends.get(uid);
+  }
+
   try {
+    let friends = [];
+
     if (isNative) {
       const { snapshots } = await FirebaseFirestore.getCollection({
         reference: `users/${uid}/friends`
       });
 
-      const friends = [];
-
-      for (const snap of (snapshots || [])) {
+      // Batch fetch all friend profiles in parallel for speed
+      const friendPromises = (snapshots || []).map(async (snap) => {
         const friendData = snap.data;
-        if (!friendData) continue;
+        if (!friendData) return null;
 
         const { snapshot: profileSnapshot } = await FirebaseFirestore.getDocument({
           reference: `users/${friendData.friendUid}`
         });
         const friendProfile = profileSnapshot?.data || {};
 
-        friends.push({
+        return {
           uid: friendData.friendUid,
           username: friendProfile.username,
           displayName: friendProfile.displayName,
           photoURL: friendProfile.photoURL,
           addedAt: friendData.addedAt
-        });
-      }
+        };
+      });
 
-      return friends;
+      friends = (await Promise.all(friendPromises)).filter(Boolean);
     } else {
       const friendsRef = collection(db, 'users', uid, 'friends');
       const querySnapshot = await withTimeout(getDocs(friendsRef));
-      const friends = [];
 
-      for (const docSnapshot of querySnapshot.docs) {
+      // Batch fetch all friend profiles in parallel for speed
+      const friendPromises = querySnapshot.docs.map(async (docSnapshot) => {
         const friendData = docSnapshot.data();
         const friendProfileRef = doc(db, 'users', friendData.friendUid);
         const friendProfileDoc = await withTimeout(getDoc(friendProfileRef));
         const friendProfile = friendProfileDoc.exists() ? friendProfileDoc.data() : {};
 
-        friends.push({
+        return {
           uid: friendData.friendUid,
           username: friendProfile.username,
           displayName: friendProfile.displayName,
           photoURL: friendProfile.photoURL,
           addedAt: friendData.addedAt
-        });
-      }
+        };
+      });
 
-      return friends;
+      friends = await Promise.all(friendPromises);
     }
+
+    // Cache the result
+    friendCache.friends.set(uid, friends);
+    friendCache.timestamps.set(cacheKey, Date.now());
+
+    return friends;
   } catch (error) {
     console.error('getFriends error:', error);
+    // Return cached data if available, even if expired
+    if (friendCache.friends.has(uid)) {
+      return friendCache.friends.get(uid);
+    }
     return [];
   }
 }
@@ -492,6 +599,10 @@ export async function removeFriend(uid, friendUid) {
       await withTimeout(deleteDoc(userFriendRef));
       await withTimeout(deleteDoc(friendFriendRef));
     }
+
+    // Clear cache for both users so fresh data is fetched
+    clearFriendCache(uid);
+    clearFriendCache(friendUid);
   } catch (error) {
     console.error('removeFriend error:', error);
     throw error;

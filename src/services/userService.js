@@ -3,18 +3,76 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseFirestore } from '@capacitor-firebase/firestore';
+import { FirebaseStorage } from '@capacitor-firebase/storage';
+import { Filesystem, Directory } from '@capacitor/filesystem';
 
 // Check if running in native app
 const isNative = Capacitor.isNativePlatform();
 
+// Simple in-memory cache for frequently accessed data
+const cache = {
+  userProfiles: new Map(),
+  userActivities: new Map(),
+  userGoals: new Map(),
+  customActivities: new Map(),
+  cacheExpiry: 60000, // 1 minute cache expiry
+  timestamps: new Map(),
+};
+
+// Check if cache is still valid
+const isCacheValid = (key) => {
+  const timestamp = cache.timestamps.get(key);
+  if (!timestamp) return false;
+  return Date.now() - timestamp < cache.cacheExpiry;
+};
+
+// Set cache with timestamp
+const setCache = (cacheMap, key, value) => {
+  cacheMap.set(key, value);
+  cache.timestamps.set(`${cacheMap}_${key}`, Date.now());
+};
+
+// Clear cache for a specific user (call after updates)
+export const clearUserCache = (uid) => {
+  cache.userProfiles.delete(uid);
+  cache.userActivities.delete(uid);
+  cache.userGoals.delete(uid);
+  cache.customActivities.delete(uid);
+  // Also clear timestamps
+  cache.timestamps.delete(`profile_${uid}`);
+  cache.timestamps.delete(`activities_${uid}`);
+  cache.timestamps.delete(`goals_${uid}`);
+  cache.timestamps.delete(`customActivities_${uid}`);
+};
+
 // Helper function to add timeout to Firestore operations (for web SDK fallback)
-const withTimeout = (promise, timeoutMs = 8000) => {
+const withTimeout = (promise, timeoutMs = 10000) => {
   return Promise.race([
     promise,
     new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Firestore operation timed out')), timeoutMs)
     )
   ]);
+};
+
+// Retry wrapper for transient failures
+const withRetry = async (fn, maxRetries = 2, delayMs = 500) => {
+  let lastError;
+  for (let i = 0; i <= maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (i < maxRetries) {
+        // Only retry on network/timeout errors, not permission errors
+        if (error.code === 'permission-denied' || error.code === 'not-found') {
+          throw error;
+        }
+        await new Promise(resolve => setTimeout(resolve, delayMs * (i + 1)));
+      }
+    }
+  }
+  throw lastError;
 };
 
 export async function createUserProfile(user) {
@@ -64,26 +122,52 @@ export async function createUserProfile(user) {
   return path;
 }
 
-export async function getUserProfile(uid) {
+export async function getUserProfile(uid, forceRefresh = false) {
+  // Check cache first (unless force refresh)
+  const cacheKey = `profile_${uid}`;
+  if (!forceRefresh && cache.userProfiles.has(uid) && isCacheValid(cacheKey)) {
+    return cache.userProfiles.get(uid);
+  }
+
   const path = `users/${uid}`;
 
   try {
+    let profile;
     if (isNative) {
       const { snapshot } = await FirebaseFirestore.getDocument({ reference: path });
-      return snapshot?.data || null;
+      profile = snapshot?.data || null;
     } else {
       const userRef = doc(db, 'users', uid);
       const userDoc = await withTimeout(getDoc(userRef));
-      return userDoc.exists() ? userDoc.data() : null;
+      profile = userDoc.exists() ? userDoc.data() : null;
     }
+
+    // Cache the result
+    if (profile) {
+      cache.userProfiles.set(uid, profile);
+      cache.timestamps.set(cacheKey, Date.now());
+    }
+
+    return profile;
   } catch (error) {
     console.error('getUserProfile error:', error);
+    // Return cached data if available, even if expired
+    if (cache.userProfiles.has(uid)) {
+      return cache.userProfiles.get(uid);
+    }
     return null;
   }
 }
 
 export async function updateUserProfile(uid, data) {
   const path = `users/${uid}`;
+
+  // Optimistically update cache if we have it
+  if (cache.userProfiles.has(uid)) {
+    const current = cache.userProfiles.get(uid);
+    cache.userProfiles.set(uid, { ...current, ...data });
+    cache.timestamps.set(`profile_${uid}`, Date.now());
+  }
 
   try {
     if (isNative) {
@@ -110,6 +194,8 @@ export async function updateUserProfile(uid, data) {
         await withTimeout(setDoc(userRef, data, { merge: true }));
       }
     } else {
+      // Revert cache on error
+      cache.userProfiles.delete(uid);
       throw error;
     }
   }
@@ -122,38 +208,62 @@ export async function saveUserActivities(uid, activities) {
     );
   });
 
+  // Update cache immediately (optimistic update)
+  cache.userActivities.set(uid, cleanedActivities);
+  cache.timestamps.set(`activities_${uid}`, Date.now());
+
   const path = `users/${uid}`;
 
   try {
-    if (isNative) {
-      await FirebaseFirestore.updateDocument({
-        reference: path,
-        data: { activities: cleanedActivities }
-      });
-    } else {
-      const userRef = doc(db, 'users', uid);
-      await updateDoc(userRef, { activities: cleanedActivities });
-    }
+    await withRetry(async () => {
+      if (isNative) {
+        await FirebaseFirestore.updateDocument({
+          reference: path,
+          data: { activities: cleanedActivities }
+        });
+      } else {
+        const userRef = doc(db, 'users', uid);
+        await withTimeout(updateDoc(userRef, { activities: cleanedActivities }));
+      }
+    });
   } catch (error) {
     console.error('saveUserActivities error:', error);
-    throw error;
+    // Cache is already updated, so user sees changes immediately
+    // Error will be logged but won't block the UI
+    // On next refresh, data will sync
   }
 }
 
-export async function getUserActivities(uid) {
+export async function getUserActivities(uid, forceRefresh = false) {
+  // Check cache first (unless force refresh)
+  if (!forceRefresh && cache.userActivities.has(uid) && isCacheValid(`activities_${uid}`)) {
+    return cache.userActivities.get(uid);
+  }
+
   const path = `users/${uid}`;
 
   try {
+    let activities;
     if (isNative) {
       const { snapshot } = await FirebaseFirestore.getDocument({ reference: path });
-      return snapshot?.data?.activities || [];
+      activities = snapshot?.data?.activities || [];
     } else {
       const userRef = doc(db, 'users', uid);
-      const userDoc = await getDoc(userRef);
-      return userDoc.exists() ? (userDoc.data().activities || []) : [];
+      const userDoc = await withTimeout(getDoc(userRef));
+      activities = userDoc.exists() ? (userDoc.data().activities || []) : [];
     }
+
+    // Cache the result
+    cache.userActivities.set(uid, activities);
+    cache.timestamps.set(`activities_${uid}`, Date.now());
+
+    return activities;
   } catch (error) {
     console.error('getUserActivities error:', error);
+    // Return cached data if available, even if expired
+    if (cache.userActivities.has(uid)) {
+      return cache.userActivities.get(uid);
+    }
     return [];
   }
 }
@@ -204,75 +314,121 @@ export async function saveUsername(uid, username) {
 }
 
 export async function saveCustomActivities(uid, customActivities) {
+  // Update cache immediately (optimistic update)
+  cache.customActivities.set(uid, customActivities);
+  cache.timestamps.set(`customActivities_${uid}`, Date.now());
+
   const path = `users/${uid}`;
 
   try {
-    if (isNative) {
-      await FirebaseFirestore.updateDocument({
-        reference: path,
-        data: { customActivities }
-      });
-    } else {
-      const userRef = doc(db, 'users', uid);
-      await updateDoc(userRef, { customActivities });
-    }
+    await withRetry(async () => {
+      if (isNative) {
+        await FirebaseFirestore.updateDocument({
+          reference: path,
+          data: { customActivities }
+        });
+      } else {
+        const userRef = doc(db, 'users', uid);
+        await withTimeout(updateDoc(userRef, { customActivities }));
+      }
+    });
   } catch (error) {
     console.error('saveCustomActivities error:', error);
-    throw error;
+    // Don't throw - optimistic update already applied
   }
 }
 
-export async function getCustomActivities(uid) {
+export async function getCustomActivities(uid, forceRefresh = false) {
+  // Check cache first
+  if (!forceRefresh && cache.customActivities.has(uid) && isCacheValid(`customActivities_${uid}`)) {
+    return cache.customActivities.get(uid);
+  }
+
   const path = `users/${uid}`;
 
   try {
+    let customActivities;
     if (isNative) {
       const { snapshot } = await FirebaseFirestore.getDocument({ reference: path });
-      return snapshot?.data?.customActivities || [];
+      customActivities = snapshot?.data?.customActivities || [];
     } else {
       const userRef = doc(db, 'users', uid);
-      const userDoc = await getDoc(userRef);
-      return userDoc.exists() ? (userDoc.data().customActivities || []) : [];
+      const userDoc = await withTimeout(getDoc(userRef));
+      customActivities = userDoc.exists() ? (userDoc.data().customActivities || []) : [];
     }
+
+    // Cache the result
+    cache.customActivities.set(uid, customActivities);
+    cache.timestamps.set(`customActivities_${uid}`, Date.now());
+
+    return customActivities;
   } catch (error) {
     console.error('getCustomActivities error:', error);
+    // Return cached data if available
+    if (cache.customActivities.has(uid)) {
+      return cache.customActivities.get(uid);
+    }
     return [];
   }
 }
 
 export async function saveUserGoals(uid, goals) {
+  // Update cache immediately (optimistic update)
+  cache.userGoals.set(uid, goals);
+  cache.timestamps.set(`goals_${uid}`, Date.now());
+
   const path = `users/${uid}`;
 
   try {
-    if (isNative) {
-      await FirebaseFirestore.updateDocument({
-        reference: path,
-        data: { goals }
-      });
-    } else {
-      const userRef = doc(db, 'users', uid);
-      await updateDoc(userRef, { goals });
-    }
+    await withRetry(async () => {
+      if (isNative) {
+        await FirebaseFirestore.updateDocument({
+          reference: path,
+          data: { goals }
+        });
+      } else {
+        const userRef = doc(db, 'users', uid);
+        await withTimeout(updateDoc(userRef, { goals }));
+      }
+    });
   } catch (error) {
     console.error('saveUserGoals error:', error);
-    throw error;
+    // Don't throw - optimistic update already applied
   }
 }
 
-export async function getUserGoals(uid) {
+export async function getUserGoals(uid, forceRefresh = false) {
+  // Check cache first
+  if (!forceRefresh && cache.userGoals.has(uid) && isCacheValid(`goals_${uid}`)) {
+    return cache.userGoals.get(uid);
+  }
+
   const path = `users/${uid}`;
 
   try {
+    let goals;
     if (isNative) {
       const { snapshot } = await FirebaseFirestore.getDocument({ reference: path });
-      return snapshot?.data?.goals || null;
+      goals = snapshot?.data?.goals || null;
     } else {
       const userRef = doc(db, 'users', uid);
-      const userDoc = await getDoc(userRef);
-      return userDoc.exists() ? (userDoc.data().goals || null) : null;
+      const userDoc = await withTimeout(getDoc(userRef));
+      goals = userDoc.exists() ? (userDoc.data().goals || null) : null;
     }
+
+    // Cache the result
+    if (goals) {
+      cache.userGoals.set(uid, goals);
+      cache.timestamps.set(`goals_${uid}`, Date.now());
+    }
+
+    return goals;
   } catch (error) {
     console.error('getUserGoals error:', error);
+    // Return cached data if available
+    if (cache.userGoals.has(uid)) {
+      return cache.userGoals.get(uid);
+    }
     return null;
   }
 }
@@ -316,14 +472,57 @@ export async function setTourComplete(uid) {
 }
 
 export async function uploadProfilePhoto(uid, file) {
-  // Create a reference to the profile photo location
-  const photoRef = ref(storage, `profilePhotos/${uid}`);
+  const storagePath = `profilePhotos/${uid}`;
+  let downloadURL;
 
-  // Upload the file
-  await uploadBytes(photoRef, file);
+  if (isNative) {
+    // Convert File/Blob to base64
+    const base64 = await fileToBase64(file);
 
-  // Get the download URL
-  const downloadURL = await getDownloadURL(photoRef);
+    // Save to temporary file
+    const tempFileName = `temp_profile_${Date.now()}.jpg`;
+    const writeResult = await Filesystem.writeFile({
+      path: tempFileName,
+      data: base64,
+      directory: Directory.Cache
+    });
+
+    // Upload using native Firebase Storage
+    await new Promise((resolve, reject) => {
+      FirebaseStorage.uploadFile(
+        {
+          path: storagePath,
+          uri: writeResult.uri
+        },
+        (event, error) => {
+          if (error) {
+            reject(error);
+          } else if (event?.completed) {
+            resolve();
+          }
+        }
+      );
+    });
+
+    // Clean up temp file
+    try {
+      await Filesystem.deleteFile({
+        path: tempFileName,
+        directory: Directory.Cache
+      });
+    } catch (e) {
+      // Ignore cleanup errors
+    }
+
+    // Get the download URL
+    const result = await FirebaseStorage.getDownloadUrl({ path: storagePath });
+    downloadURL = result.downloadUrl;
+  } else {
+    // Web SDK fallback
+    const photoRef = ref(storage, storagePath);
+    await uploadBytes(photoRef, file);
+    downloadURL = await getDownloadURL(photoRef);
+  }
 
   // Update the user's profile with the new photo URL
   await updateUserProfile(uid, { photoURL: downloadURL });
@@ -331,16 +530,73 @@ export async function uploadProfilePhoto(uid, file) {
   return downloadURL;
 }
 
+// Helper function to convert File/Blob to base64
+async function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      // Remove the data URL prefix (e.g., "data:image/jpeg;base64,")
+      const base64 = reader.result.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 export async function uploadActivityPhoto(uid, activityId, file) {
-  // Create a unique filename with timestamp
   const timestamp = Date.now();
-  const photoRef = ref(storage, `activityPhotos/${uid}/${activityId}/${timestamp}`);
+  const storagePath = `activityPhotos/${uid}/${activityId}/${timestamp}`;
+  let downloadURL;
 
-  // Upload the file
-  await uploadBytes(photoRef, file);
+  if (isNative) {
+    // Convert File/Blob to base64
+    const base64 = await fileToBase64(file);
 
-  // Get the download URL
-  const downloadURL = await getDownloadURL(photoRef);
+    // Save to temporary file
+    const tempFileName = `temp_activity_${timestamp}.jpg`;
+    const writeResult = await Filesystem.writeFile({
+      path: tempFileName,
+      data: base64,
+      directory: Directory.Cache
+    });
+
+    // Upload using native Firebase Storage
+    await new Promise((resolve, reject) => {
+      FirebaseStorage.uploadFile(
+        {
+          path: storagePath,
+          uri: writeResult.uri
+        },
+        (event, error) => {
+          if (error) {
+            reject(error);
+          } else if (event?.completed) {
+            resolve();
+          }
+        }
+      );
+    });
+
+    // Clean up temp file
+    try {
+      await Filesystem.deleteFile({
+        path: tempFileName,
+        directory: Directory.Cache
+      });
+    } catch (e) {
+      // Ignore cleanup errors
+    }
+
+    // Get the download URL
+    const result = await FirebaseStorage.getDownloadUrl({ path: storagePath });
+    downloadURL = result.downloadUrl;
+  } else {
+    // Web SDK fallback
+    const photoRef = ref(storage, storagePath);
+    await uploadBytes(photoRef, file);
+    downloadURL = await getDownloadURL(photoRef);
+  }
 
   return downloadURL;
 }

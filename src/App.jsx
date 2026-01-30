@@ -9,6 +9,17 @@ import ActivityFeed from './ActivityFeed';
 import { createUserProfile, getUserProfile, updateUserProfile, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, saveUserGoals, getUserGoals, setOnboardingComplete, setTourComplete } from './services/userService';
 import { getFriends, getReactions, getFriendRequests, getComments, addReply, getReplies, deleteReply, addReaction, removeReaction, addComment } from './services/friendService';
 import html2canvas from 'html2canvas';
+import { Haptics, ImpactStyle } from '@capacitor/haptics';
+
+// Helper function for haptic feedback that works on iOS
+const triggerHaptic = async (style = ImpactStyle.Medium) => {
+  try {
+    await Haptics.impact({ style });
+  } catch (e) {
+    // Fallback to vibrate API for web/Android
+    if (navigator.vibrate) navigator.vibrate(10);
+  }
+};
 
 // DAY SEVEN Logo component - uses wordmark image
 const DaySevenLogo = ({ size = 'base', opacity = 0.7 }) => {
@@ -4027,13 +4038,24 @@ const SwipeableActivityItem = ({ children, onDelete, activity, onTap }) => {
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
           style={{ backgroundColor: 'rgba(0,0,0,0.8)' }}
-          onClick={handleCancelDelete}
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              handleCancelDelete();
+            }
+          }}
+          onTouchStart={(e) => {
+            if (e.target === e.currentTarget) {
+              e.preventDefault();
+              handleCancelDelete();
+            }
+          }}
         >
           <div
             className="w-full max-w-xs bg-zinc-900 rounded-2xl overflow-hidden"
-            onClick={e => e.stopPropagation()}
+            onMouseDown={e => e.stopPropagation()}
+            onTouchStart={e => e.stopPropagation()}
           >
             <div className="p-6 text-center">
               <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-4">
@@ -4051,14 +4073,66 @@ const SwipeableActivityItem = ({ children, onDelete, activity, onTap }) => {
             </div>
             <div className="flex border-t border-zinc-800">
               <button
-                onClick={handleCancelDelete}
-                className="flex-1 py-4 text-white font-medium border-r border-zinc-800 transition-colors active:bg-zinc-800"
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  e.currentTarget.style.transform = 'scale(0.95)';
+                  e.currentTarget.style.backgroundColor = 'rgba(39, 39, 42, 1)';
+                }}
+                onMouseUp={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = '';
+                  handleCancelDelete();
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = '';
+                }}
+                onTouchStart={(e) => {
+                  e.stopPropagation();
+                  e.currentTarget.style.transform = 'scale(0.95)';
+                  e.currentTarget.style.backgroundColor = 'rgba(39, 39, 42, 1)';
+                }}
+                onTouchEnd={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = '';
+                  handleCancelDelete();
+                }}
+                className="flex-1 py-4 text-white font-medium border-r border-zinc-800 transition-all duration-150"
               >
                 Cancel
               </button>
               <button
-                onClick={handleConfirmDelete}
-                className="flex-1 py-4 text-red-500 font-medium transition-colors active:bg-zinc-800"
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  e.currentTarget.style.transform = 'scale(0.95)';
+                  e.currentTarget.style.backgroundColor = 'rgba(39, 39, 42, 1)';
+                }}
+                onMouseUp={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = '';
+                  triggerHaptic(ImpactStyle.Heavy);
+                  handleConfirmDelete();
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = '';
+                }}
+                onTouchStart={(e) => {
+                  e.stopPropagation();
+                  e.currentTarget.style.transform = 'scale(0.95)';
+                  e.currentTarget.style.backgroundColor = 'rgba(39, 39, 42, 1)';
+                }}
+                onTouchEnd={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = '';
+                  triggerHaptic(ImpactStyle.Heavy);
+                  handleConfirmDelete();
+                }}
+                className="flex-1 py-4 text-red-500 font-medium transition-all duration-150"
               >
                 Delete
               </button>
@@ -6191,11 +6265,8 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                 >
                   <ActivityIcon type={latestActivities[0].type} size={20} sportEmoji={latestActivities[0].sportEmoji} customEmoji={latestActivities[0].customEmoji} />
                   <div className="flex-1 min-w-0">
-                    <span className="text-sm font-semibold truncate">{latestActivities[0].type}{latestActivities[0].subtype ? ` • ${latestActivities[0].subtype}` : ''}</span>
-                    <div className="text-xs text-gray-400">{formatFriendlyDate(latestActivities[0].date)}{latestActivities[0].time ? ` at ${latestActivities[0].time}` : ''}</div>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-sm font-semibold">{latestActivities[0].duration} min</span>
+                    <div className="text-sm font-semibold truncate">{latestActivities[0].type}{latestActivities[0].subtype ? ` • ${latestActivities[0].subtype}` : ''}</div>
+                    <div className="text-xs text-gray-400">{formatFriendlyDate(latestActivities[0].date)}{latestActivities[0].time ? ` at ${latestActivities[0].time}` : ''}{latestActivities[0].duration ? ` (${latestActivities[0].duration} min)` : ''}</div>
                   </div>
                   <span className="text-gray-600 text-xs">›</span>
                 </div>
@@ -6307,12 +6378,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                             );
                           })()}
                         </div>
-                        <div className="text-[10px] text-gray-500">{formatFriendlyDate(activity.date)} at {activity.time}</div>
-                      </div>
-                      <div className="text-right">
-                        {activity.calories && <div className="text-sm font-bold">{activity.calories} cal</div>}
-                        {activity.distance && <div className="text-sm font-bold">{activity.distance} mi</div>}
-                        {activity.duration && !activity.calories && !activity.distance && <div className="text-sm font-bold">{activity.duration} min</div>}
+                        <div className="text-[10px] text-gray-500">{formatFriendlyDate(activity.date)} at {activity.time}{activity.duration ? ` (${activity.duration} min)` : ''}</div>
                       </div>
                       <span className="text-gray-600 text-xs">›</span>
                     </div>
@@ -9844,7 +9910,6 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
 
         {/* Sign Out Button */}
         <button
-          onClick={onSignOut}
           className="w-full py-4 rounded-xl font-semibold text-red-500 transition-all duration-150 mb-8"
           style={{ backgroundColor: 'rgba(255,69,58,0.1)', transform: 'scale(1)' }}
           onTouchStart={(e) => {
@@ -9852,8 +9917,11 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
             e.currentTarget.style.backgroundColor = 'rgba(255,69,58,0.2)';
           }}
           onTouchEnd={(e) => {
+            e.preventDefault();
             e.currentTarget.style.transform = 'scale(1)';
             e.currentTarget.style.backgroundColor = 'rgba(255,69,58,0.1)';
+            triggerHaptic(ImpactStyle.Medium);
+            onSignOut();
           }}
           onMouseDown={(e) => {
             e.currentTarget.style.transform = 'scale(0.98)';
@@ -9862,6 +9930,7 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
           onMouseUp={(e) => {
             e.currentTarget.style.transform = 'scale(1)';
             e.currentTarget.style.backgroundColor = 'rgba(255,69,58,0.1)';
+            onSignOut();
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.transform = 'scale(1)';
@@ -9908,12 +9977,32 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
             <div className="p-4 space-y-2">
               {isMobile && (
                 <button
-                  onClick={handleTakePhoto}
-                  className="w-full py-3.5 px-4 rounded-xl flex items-center gap-3 transition-all duration-150 active:scale-98"
-                  style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
-                  onMouseDown={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'}
-                  onMouseUp={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)'}
-                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)'}
+                  className="w-full py-3.5 px-4 rounded-xl flex items-center gap-3 transition-all duration-150"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.05)', transform: 'scale(1)' }}
+                  onTouchStart={(e) => {
+                    e.currentTarget.style.transform = 'scale(0.98)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                  }}
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                    triggerHaptic(ImpactStyle.Light);
+                    handleTakePhoto();
+                  }}
+                  onMouseDown={(e) => {
+                    e.currentTarget.style.transform = 'scale(0.98)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                  }}
+                  onMouseUp={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                    handleTakePhoto();
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                  }}
                 >
                   <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
                     <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="#00FF94" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -9932,12 +10021,32 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
               )}
 
               <button
-                onClick={handleChooseFromLibrary}
-                className="w-full py-3.5 px-4 rounded-xl flex items-center gap-3 transition-all duration-150 active:scale-98"
-                style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
-                onMouseDown={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'}
-                onMouseUp={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)'}
+                className="w-full py-3.5 px-4 rounded-xl flex items-center gap-3 transition-all duration-150"
+                style={{ backgroundColor: 'rgba(255,255,255,0.05)', transform: 'scale(1)' }}
+                onTouchStart={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.98)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                }}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                  triggerHaptic(ImpactStyle.Light);
+                  handleChooseFromLibrary();
+                }}
+                onMouseDown={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.98)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                }}
+                onMouseUp={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                  handleChooseFromLibrary();
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                }}
               >
                 <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
                   <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="#FF9500" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -9959,12 +10068,31 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
             {/* Cancel */}
             <div className="px-4 pb-4">
               <button
-                onClick={() => setShowPhotoOptions(false)}
-                className="w-full py-3 rounded-xl text-gray-400 font-medium transition-all duration-150 active:scale-98"
-                style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
-                onMouseDown={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)'}
-                onMouseUp={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.03)'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.03)'}
+                className="w-full py-3 rounded-xl text-gray-400 font-medium transition-all duration-150"
+                style={{ backgroundColor: 'rgba(255,255,255,0.03)', transform: 'scale(1)' }}
+                onTouchStart={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.98)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
+                }}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.03)';
+                  setShowPhotoOptions(false);
+                }}
+                onMouseDown={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.98)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
+                }}
+                onMouseUp={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.03)';
+                  setShowPhotoOptions(false);
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.03)';
+                }}
               >
                 Cancel
               </button>

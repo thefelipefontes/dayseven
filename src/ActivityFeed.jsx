@@ -16,8 +16,10 @@ const triggerHaptic = async (style = ImpactStyle.Medium) => {
 };
 
 // Pull-to-Refresh Indicator Component for Feed - uses fixed positioning to avoid layout shifts
-const FeedPullToRefreshIndicator = ({ pullDistance, isRefreshing, threshold = 1 }) => {
-  const progress = Math.min(pullDistance / threshold, 1);
+// visualThreshold controls how much the indicator moves - lower = less movement needed to show full indicator
+const FeedPullToRefreshIndicator = ({ pullDistance, isRefreshing, threshold = 28, visualThreshold }) => {
+  const effectiveThreshold = visualThreshold !== undefined ? visualThreshold : threshold;
+  const progress = Math.min(pullDistance / effectiveThreshold, 1);
   const rotation = progress * 180;
 
   if (pullDistance === 0 && !isRefreshing) return null;
@@ -1818,7 +1820,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       <div>
         <FriendsHeaderTop />
         <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
-        <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} />
+        <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} visualThreshold={activeView === 'leaderboard' ? 8 : 40} />
         <div className="flex items-center justify-center py-12">
           <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
         </div>
@@ -1831,7 +1833,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       <div>
         <FriendsHeaderTop />
         <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
-        <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} />
+        <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} visualThreshold={activeView === 'leaderboard' ? 8 : 40} />
         <div className="text-center py-12 px-6">
           <div className="text-5xl mb-4">👥</div>
           <p className="text-white font-medium mb-2">Find your workout buddies</p>
@@ -1914,7 +1916,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       <div style={{ touchAction: 'pan-y' }}>
         <FriendsHeaderTop />
         <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
-        <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} />
+        <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} visualThreshold={activeView === 'leaderboard' ? 8 : 40} />
 
         {/* Leaderboard content */}
         <div
@@ -2368,7 +2370,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       <div>
         <FriendsHeaderTop />
         <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
-        <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} />
+        <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} visualThreshold={activeView === 'leaderboard' ? 8 : 40} />
         <div className="text-center py-12 px-6">
           <div className="text-5xl mb-4">📭</div>
           <p className="text-white font-medium mb-2">No activity yet</p>
@@ -2382,7 +2384,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     <div>
       <FriendsHeaderTop />
       <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
-      <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} />
+      <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} visualThreshold={activeView === 'leaderboard' ? 8 : 40} />
 
       {/* Feed content */}
       <div

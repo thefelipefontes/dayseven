@@ -23,10 +23,21 @@ const Login = ({ onLogin }) => {
       if (isNative) {
         // Use native Google Sign In through Capacitor plugin
         const result = await FirebaseAuthentication.signInWithGoogle();
-        // Use the credential to sign in with web Firebase SDK
-        const credential = GoogleAuthProvider.credential(result.credential?.idToken);
-        const userCredential = await signInWithCredential(auth, credential);
-        onLogin(userCredential.user);
+        console.log('Google Sign In result:', result);
+
+        // The plugin signs the user into Firebase natively
+        // Pass the user info directly to trigger state update
+        if (result.user) {
+          const user = {
+            uid: result.user.uid,
+            email: result.user.email,
+            displayName: result.user.displayName,
+            photoURL: result.user.photoUrl,
+          };
+          // Don't set isLoading to false - let the parent handle the transition
+          await onLogin(user);
+          return; // Exit early, parent will handle state
+        }
       } else {
         // Use popup for web
         const result = await signInWithPopup(auth, googleProvider);
@@ -35,8 +46,8 @@ const Login = ({ onLogin }) => {
     } catch (error) {
       console.error('Error signing in with Google:', error);
       setError('Failed to sign in with Google. Please try again.');
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   const handleAppleSignIn = async () => {

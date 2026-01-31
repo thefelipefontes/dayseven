@@ -47,10 +47,10 @@ const StatusBarBlur = () => (
   <div
     className="fixed top-0 left-0 right-0 z-30 pointer-events-none"
     style={{
-      height: 'calc(env(safe-area-inset-top, 0px) + 45px)',
-      background: 'linear-gradient(to bottom, rgba(10, 10, 10, 1) 0%, rgba(10, 10, 10, 1) 30%, rgba(10, 10, 10, 0.97) 50%, rgba(10, 10, 10, 0.9) 70%, rgba(10, 10, 10, 0.7) 85%, transparent 100%)',
-      maskImage: 'linear-gradient(to bottom, black 0%, black 35%, rgba(0,0,0,0.9) 55%, rgba(0,0,0,0.6) 75%, transparent 100%)',
-      WebkitMaskImage: 'linear-gradient(to bottom, black 0%, black 35%, rgba(0,0,0,0.9) 55%, rgba(0,0,0,0.6) 75%, transparent 100%)',
+      height: 'calc(env(safe-area-inset-top, 0px) + 30px)',
+      background: 'linear-gradient(to bottom, rgba(10, 10, 10, 1) 0%, rgba(10, 10, 10, 1) 50%, rgba(10, 10, 10, 0.9) 70%, rgba(10, 10, 10, 0.6) 85%, transparent 100%)',
+      maskImage: 'linear-gradient(to bottom, black 0%, black 50%, rgba(0,0,0,0.7) 70%, rgba(0,0,0,0.3) 85%, transparent 100%)',
+      WebkitMaskImage: 'linear-gradient(to bottom, black 0%, black 50%, rgba(0,0,0,0.7) 70%, rgba(0,0,0,0.3) 85%, transparent 100%)',
       backdropFilter: 'blur(20px)',
       WebkitBackdropFilter: 'blur(20px)',
     }}
@@ -3241,16 +3241,16 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
       style={{ backgroundColor: isAnimating ? 'rgba(0,0,0,0.95)' : 'rgba(0,0,0,0)' }}
       onClick={(e) => e.target === e.currentTarget && handleClose()}
     >
-      <div 
-        className="flex-1 flex flex-col mt-8 rounded-t-3xl transition-all duration-300 ease-out overflow-hidden"
-        style={{ 
+      <div
+        className="flex-1 flex flex-col transition-all duration-300 ease-out overflow-hidden"
+        style={{
           backgroundColor: '#0A0A0A',
           transform: isAnimating ? 'translateY(0)' : 'translateY(100%)'
         }}
       >
-        <div className="flex items-center justify-between p-4 border-b border-white/10">
-          <button 
-            onClick={handleClose} 
+        <div className="flex items-center justify-between p-4 border-b border-white/10" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)' }}>
+          <button
+            onClick={handleClose}
             className="text-gray-400 transition-all duration-150 px-2 py-1 rounded-lg"
             onTouchStart={(e) => {
               e.currentTarget.style.transform = 'scale(0.9)';
@@ -8418,7 +8418,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
               color: view === 'progress' ? 'white' : 'rgba(255,255,255,0.5)'
             }}
           >
-            Progress Photos
+            Compare
           </button>
         </div>
 
@@ -8759,7 +8759,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
               opacity: dayModalAnimating ? 1 : 0
             }}
           >
-            <div className="flex items-center justify-between p-4 border-b border-white/10">
+            <div className="flex items-center justify-between p-4 border-b border-white/10" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)' }}>
               <button 
                 onClick={() => closeDayModal()} 
                 className="text-gray-400 transition-all duration-150 px-2 py-1 rounded-lg"
@@ -9510,7 +9510,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
           <div ref={progressPhotosRef} className="px-4 pb-32">
             {/* Header */}
             <div className="mb-4">
-              <h2 className="text-lg font-bold text-white">Progress Photos</h2>
+              <h2 className="text-lg font-bold text-white">Compare</h2>
               <p className="text-xs text-gray-500">Compare your fitness journey over time</p>
             </div>
 
@@ -9884,7 +9884,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                     onClick={e => e.stopPropagation()}
                   >
                     {/* Header */}
-                    <div className="flex items-center justify-between p-4 border-b border-zinc-800">
+                    <div className="flex items-center justify-between p-4 border-b border-zinc-800" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)' }}>
                       <h3 className="text-white font-semibold text-lg">Progress Comparison</h3>
                       <button
                         onClick={() => setShowCompareModal(false)}
@@ -9975,7 +9975,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
 
                       {/* Branding for share image */}
                       <div className="text-center mt-4 text-gray-600 text-sm">
-                        Tracked with Day Seven
+                        Tracked with dayseven
                       </div>
                     </div>
 
@@ -10139,7 +10139,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                             ctx.fillStyle = '#444444';
                             ctx.font = '12px -apple-system, BlinkMacSystemFont, sans-serif';
                             ctx.textAlign = 'center';
-                            ctx.fillText('Tracked with Day Seven', width / 2, height - 23);
+                            ctx.fillText('Tracked with dayseven', width / 2, height - 23);
 
                             // Create blob and share
                             const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png', 1.0));
@@ -11752,9 +11752,9 @@ export default function DaySevenApp() {
 
   // Pull-to-refresh hook (enabled on home and feed tabs)
   // Lower resistance means pull distance grows faster relative to finger movement
-  // Feed/leaderboard uses a lower threshold (1) for easier refresh triggering
+  // Both use threshold 28 - visual threshold is handled by the indicator component
   const { pullDistance, isRefreshing } = usePullToRefresh(refreshData, {
-    threshold: activeTab === 'feed' ? 1 : 28,
+    threshold: 28,
     resistance: 0.5,
     enabled: activeTab === 'home' || activeTab === 'feed'
   });

@@ -730,7 +730,7 @@ const MemoizedActivityCard = React.memo(({
   );
 });
 
-const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingRequestsCount = 0, isRefreshing: isRefreshingProp = false, pullDistance = 0 }) => {
+const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingRequestsCount = 0, isRefreshing: isRefreshingProp = false, pullDistance = 0, onActiveViewChange }) => {
   const [feedActivities, setFeedActivities] = useState([]);
   const [activityReactions, setActivityReactions] = useState({});
   const [activityComments, setActivityComments] = useState({});
@@ -745,6 +745,13 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   const [leaderboardTimeRange, setLeaderboardTimeRange] = useState('week'); // Activity: 'week', 'month', 'year', 'all' | Streak: 'year', 'all'
   const [selectedFriend, setSelectedFriend] = useState(null); // For viewing friend profile
   const [expandedComments, setExpandedComments] = useState({}); // Track which activities have expanded comments
+
+  // Notify parent when active view changes (for pull-to-refresh threshold)
+  useEffect(() => {
+    if (onActiveViewChange) {
+      onActiveViewChange(activeView);
+    }
+  }, [activeView, onActiveViewChange]);
 
   const reactionEmojis = ['💪', '🔥', '👏', '❤️'];
 
@@ -1863,7 +1870,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       <div>
         <FriendsHeaderTop />
         <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
-        <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} visualThreshold={activeView === 'leaderboard' ? 8 : 40} />
+        <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} visualThreshold={activeView === 'leaderboard' ? 120 : 40} />
         <div className="flex items-center justify-center py-12">
           <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
         </div>
@@ -1876,7 +1883,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       <div>
         <FriendsHeaderTop />
         <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
-        <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} visualThreshold={activeView === 'leaderboard' ? 8 : 40} />
+        <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} visualThreshold={activeView === 'leaderboard' ? 120 : 40} />
         <div className="text-center py-12 px-6">
           <div className="text-5xl mb-4">👥</div>
           <p className="text-white font-medium mb-2">Find your workout buddies</p>
@@ -1959,7 +1966,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       <div style={{ touchAction: 'pan-y' }}>
         <FriendsHeaderTop />
         <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
-        <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} visualThreshold={activeView === 'leaderboard' ? 8 : 40} />
+        <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} visualThreshold={activeView === 'leaderboard' ? 120 : 40} />
 
         {/* Leaderboard content */}
         <div
@@ -2409,7 +2416,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       <div>
         <FriendsHeaderTop />
         <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
-        <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} visualThreshold={activeView === 'leaderboard' ? 8 : 40} />
+        <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} visualThreshold={activeView === 'leaderboard' ? 120 : 40} />
         <div className="text-center py-12 px-6">
           <div className="text-5xl mb-4">📭</div>
           <p className="text-white font-medium mb-2">No activity yet</p>

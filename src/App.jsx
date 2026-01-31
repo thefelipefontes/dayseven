@@ -1159,6 +1159,7 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
   const activeTouchId = useRef(null); // Track the touch identifier we're following
   const hadDownwardMovement = useRef(false); // Track if any downward movement occurred
   const maxPullDistance = useRef(0); // Track maximum pull distance reached
+  const thresholdRef = useRef(threshold); // Track threshold to avoid stale closures
 
   // Keep refs in sync
   useEffect(() => {
@@ -1168,6 +1169,10 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
   useEffect(() => {
     onRefreshRef.current = onRefresh;
   }, [onRefresh]);
+
+  useEffect(() => {
+    thresholdRef.current = threshold;
+  }, [threshold]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -1251,12 +1256,12 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
         // Calculate new distance - use the max of new value and slightly decayed previous value
         const newDistance = diff / resistance;
         // Keep the higher of: new distance, or previous distance minus small decay
-        const distance = Math.max(0, Math.min(newDistance, threshold * 1.5), pullDistanceRef.current - 1);
+        const distance = Math.max(0, Math.min(newDistance, thresholdRef.current * 1.5), pullDistanceRef.current - 1);
         pullDistanceRef.current = distance;
         setPullDistance(distance);
 
         // Trigger refresh IMMEDIATELY when crossing threshold (don't wait for touchend)
-        if (distance >= threshold && !hasTriggeredHaptic.current) {
+        if (distance >= thresholdRef.current && !hasTriggeredHaptic.current) {
           hasTriggeredHaptic.current = true;
           triggerHaptic(ImpactStyle.Medium);
           // Trigger refresh now
@@ -1281,15 +1286,15 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
 
       // Only activate when started at top, still at top, and pulling down
       // Use lower activation threshold for low refresh thresholds (min 2px)
-      const activationThreshold = Math.max(2, Math.min(10, threshold * resistance));
+      const activationThreshold = Math.max(2, Math.min(10, thresholdRef.current * resistance));
       if (currentScrollTop <= 5 && initialScrollTop.current <= 5 && diff > activationThreshold) {
         isPulling.current = true;
         globalIsPulling.current = true;
-        const distance = Math.min(diff / resistance, threshold * 1.5);
+        const distance = Math.min(diff / resistance, thresholdRef.current * 1.5);
         pullDistanceRef.current = distance;
         setPullDistance(distance);
         // Trigger refresh IMMEDIATELY when crossing threshold
-        if (distance >= threshold && !hasTriggeredHaptic.current) {
+        if (distance >= thresholdRef.current && !hasTriggeredHaptic.current) {
           hasTriggeredHaptic.current = true;
           triggerHaptic(ImpactStyle.Medium);
           // Trigger refresh now
@@ -1337,7 +1342,7 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
       const endedAtTop = currentScrollTop <= 5;
       const hadAnyPullIntent = hadDownwardMovement.current || (startedAtTop && endedAtTop && fingerMovedDown);
 
-      if (!isRefreshingRef.current && threshold <= 5 && hadAnyPullIntent && onRefreshRef.current) {
+      if (!isRefreshingRef.current && thresholdRef.current <= 5 && hadAnyPullIntent && onRefreshRef.current) {
         hadDownwardMovement.current = false;
         maxPullDistance.current = 0;
         isPulling.current = false;
@@ -1371,7 +1376,7 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
       isPulling.current = false;
       globalIsPulling.current = false; // Reset global ref
 
-      if (distance >= threshold && onRefreshRef.current) {
+      if (distance >= thresholdRef.current && onRefreshRef.current) {
         setIsRefreshing(true);
         isRefreshingRef.current = true;
         triggerHaptic(ImpactStyle.Heavy);
@@ -1397,7 +1402,7 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
 
     const handleTouchCancel = async () => {
       // For very low thresholds, trigger refresh even on cancel if we had downward movement
-      if (!isRefreshingRef.current && threshold <= 5 && hadDownwardMovement.current && onRefreshRef.current) {
+      if (!isRefreshingRef.current && thresholdRef.current <= 5 && hadDownwardMovement.current && onRefreshRef.current) {
         hadDownwardMovement.current = false;
         maxPullDistance.current = 0;
         isPulling.current = false;
@@ -1439,7 +1444,7 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
         const timeSinceLastTouch = Date.now() - lastTouchTime.current;
 
         // If we had downward movement and touch stopped for 100ms, trigger refresh for low thresholds
-        if (timeSinceLastTouch > 100 && threshold <= 5 && hadDownwardMovement.current && onRefreshRef.current) {
+        if (timeSinceLastTouch > 100 && thresholdRef.current <= 5 && hadDownwardMovement.current && onRefreshRef.current) {
           hadDownwardMovement.current = false;
           maxPullDistance.current = 0;
           isPulling.current = false;
@@ -11361,6 +11366,7 @@ export default function DaySevenApp() {
   const [historyStatsSubView, setHistoryStatsSubView] = useState('overview');
   const [showEditGoals, setShowEditGoals] = useState(false);
   const [pendingFriendRequests, setPendingFriendRequests] = useState(0);
+  const [feedActiveView, setFeedActiveView] = useState('feed'); // 'feed' or 'leaderboard'
 
 
   // Update app icon badge when pending requests change
@@ -11750,13 +11756,12 @@ export default function DaySevenApp() {
     }
   }, [user?.uid]);
 
-  // Pull-to-refresh hook (enabled on home and feed tabs)
+  // Pull-to-refresh hook (enabled on home tab and feed tab, but not on leaderboard view)
   // Lower resistance means pull distance grows faster relative to finger movement
-  // Both use threshold 28 - visual threshold is handled by the indicator component
   const { pullDistance, isRefreshing } = usePullToRefresh(refreshData, {
     threshold: 28,
     resistance: 0.5,
-    enabled: activeTab === 'home' || activeTab === 'feed'
+    enabled: activeTab === 'home' || (activeTab === 'feed' && feedActiveView === 'feed')
   });
 
   // Listen to auth state
@@ -12727,6 +12732,7 @@ export default function DaySevenApp() {
                   pendingRequestsCount={pendingFriendRequests}
                   isRefreshing={isRefreshing}
                   pullDistance={pullDistance}
+                  onActiveViewChange={setFeedActiveView}
                 />
               )}
               {activeTab === 'profile' && (

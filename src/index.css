@@ -58,7 +58,7 @@ html {
 }
 
 button, a, [role="button"], input, select, textarea {
-  touch-action: manipulation !important;
+  touch-action: pan-y !important;
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
@@ -69,6 +69,15 @@ button, a, [role="button"], input, select, textarea {
   touch-action: pan-y pinch-zoom;
   -webkit-user-select: none;
   user-select: none;
+}
+
+/* Prevent iOS from capturing touch events on images for "Save Image" action */
+img {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: pan-y;
+  -webkit-user-drag: none;
 }
 
 /* Ensure clickable elements receive touch events properly on iOS */

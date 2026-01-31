@@ -15,20 +15,19 @@ const triggerHaptic = async (style = ImpactStyle.Medium) => {
   }
 };
 
-// Pull-to-Refresh Indicator Component for Feed
+// Pull-to-Refresh Indicator Component for Feed - uses fixed positioning to avoid layout shifts
 const FeedPullToRefreshIndicator = ({ pullDistance, isRefreshing, threshold = 80 }) => {
   const progress = Math.min(pullDistance / threshold, 1);
   const rotation = progress * 180;
 
   if (pullDistance === 0 && !isRefreshing) return null;
 
+  // Position below the Friends header and toggle
   return (
     <div
-      className="flex items-center justify-center pointer-events-none"
+      className="fixed left-0 right-0 flex items-center justify-center z-50 pointer-events-none"
       style={{
-        height: 40,
-        marginTop: 8,
-        marginBottom: 8,
+        top: 'calc(env(safe-area-inset-top, 0px) + 160px)',
         opacity: isRefreshing ? 1 : progress,
         transition: isRefreshing ? 'none' : 'opacity 0.1s',
       }}
@@ -187,111 +186,62 @@ const SwipeableComment = ({ children, commentId, onDelete, canDelete }) => {
   );
 };
 
-// TouchButton component - fires action reliably on touch devices
-// Tracks touch position and fires on touchend if finger hasn't moved (prevents scroll conflicts)
+// TouchButton component - uses native DOM event listeners for tap detection
+// This allows window-level capture listeners to still receive touch events for pull-to-refresh
 const TouchButton = ({ onClick, disabled = false, className, style, children }) => {
-  const touchStartPos = useRef(null);
-  const hasMoved = useRef(false);
-  const touchHandled = useRef(false); // Prevent double-fire from click after touchend
-  const buttonRef = useRef(null);
+  const ref = useRef(null);
+  const touchStartRef = useRef({ x: 0, y: 0, time: 0 });
 
-  const handleTouchStart = (e) => {
-    if (disabled) return;
-    touchStartPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-    hasMoved.current = false;
-    touchHandled.current = false;
-    if (buttonRef.current) {
-      buttonRef.current.style.transform = 'scale(0.95)';
-    }
-  };
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || disabled || !onClick) return;
 
-  const handleTouchMove = (e) => {
-    if (!touchStartPos.current) return;
-    const dx = Math.abs(e.touches[0].clientX - touchStartPos.current.x);
-    const dy = Math.abs(e.touches[0].clientY - touchStartPos.current.y);
-    // If moved more than 10px, consider it a scroll/swipe
-    if (dx > 10 || dy > 10) {
-      hasMoved.current = true;
-      // Reset scale when scrolling starts
-      if (buttonRef.current) {
-        buttonRef.current.style.transform = '';
+    const handleTouchStart = (e) => {
+      touchStartRef.current = {
+        x: e.touches[0].clientX,
+        y: e.touches[0].clientY,
+        time: Date.now()
+      };
+    };
+
+    const handleTouchEnd = (e) => {
+      const touch = e.changedTouches[0];
+      const dx = Math.abs(touch.clientX - touchStartRef.current.x);
+      const dy = Math.abs(touch.clientY - touchStartRef.current.y);
+      const dt = Date.now() - touchStartRef.current.time;
+      // Only trigger tap if minimal movement and quick touch
+      if (dx < 10 && dy < 10 && dt < 300) {
+        onClick();
       }
-    }
-  };
+    };
 
-  const handleTouchEnd = (e) => {
-    if (buttonRef.current) {
-      buttonRef.current.style.transform = '';
-    }
-    if (disabled || hasMoved.current || !touchStartPos.current) {
-      touchStartPos.current = null;
-      return;
-    }
-    // Fire the action on touchend for reliability
-    if (onClick) {
-      e.preventDefault(); // Prevent the delayed click event
-      touchHandled.current = true;
-      onClick(e);
-    }
-    touchStartPos.current = null;
-  };
+    // Use passive: true to not block scrolling, and NOT capture phase so window gets events first
+    el.addEventListener('touchstart', handleTouchStart, { passive: true });
+    el.addEventListener('touchend', handleTouchEnd, { passive: true });
 
-  const handleTouchCancel = () => {
-    // Reset state if touch is cancelled (e.g., system gesture)
-    if (buttonRef.current) {
-      buttonRef.current.style.transform = '';
-    }
-    touchStartPos.current = null;
-    hasMoved.current = false;
-  };
-
-  const handleClick = (e) => {
-    // Only fire click if it wasn't already handled by touch
-    // This handles desktop clicks and accessibility
-    if (disabled || touchHandled.current) {
-      touchHandled.current = false;
-      return;
-    }
-    onClick && onClick(e);
-  };
-
-  const handleMouseDown = () => {
-    if (disabled) return;
-    if (buttonRef.current) {
-      buttonRef.current.style.transform = 'scale(0.95)';
-    }
-  };
-
-  const handleMouseUp = () => {
-    if (buttonRef.current) {
-      buttonRef.current.style.transform = '';
-    }
-  };
+    return () => {
+      el.removeEventListener('touchstart', handleTouchStart);
+      el.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [disabled, onClick]);
 
   return (
-    <button
-      ref={buttonRef}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-      onTouchCancel={handleTouchCancel}
-      onMouseDown={handleMouseDown}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
-      onClick={handleClick}
-      disabled={disabled}
+    <div
+      ref={ref}
+      role={disabled ? undefined : "button"}
+      tabIndex={disabled ? undefined : 0}
       className={className}
-      style={style}
+      style={{ ...style, touchAction: 'pan-y', cursor: disabled ? 'default' : 'pointer', textAlign: 'center' }}
     >
       {children}
-    </button>
+    </div>
   );
 };
 
 // Segmented control component - defined outside ActivityFeed for stable reference (enables CSS animations)
-const SegmentedControl = ({ activeView, setActiveView, isRefreshing = false }) => (
-  <div className="px-4 pb-4">
-    <div className="relative flex p-1 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+const SegmentedControl = ({ activeView, setActiveView }) => (
+  <div className="px-4 pb-4" style={{ touchAction: 'pan-y' }}>
+    <div className="relative flex p-1 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)', touchAction: 'pan-y' }}>
       {/* Sliding pill indicator - uses transform for smooth hardware-accelerated animation */}
       <div
         className="absolute top-1 bottom-1 left-1 rounded-lg"
@@ -319,10 +269,6 @@ const SegmentedControl = ({ activeView, setActiveView, isRefreshing = false }) =
         </TouchButton>
       ))}
     </div>
-    {/* Spacer for pull-to-refresh indicator */}
-    {isRefreshing && (
-      <div style={{ height: '50px', transition: 'height 0.3s' }} />
-    )}
   </div>
 );
 
@@ -330,16 +276,31 @@ const SegmentedControl = ({ activeView, setActiveView, isRefreshing = false }) =
 const ProfilePhoto = React.memo(({ photoURL, displayName, size = 40 }) => (
   <div
     className="rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0"
-    style={{ width: size, height: size }}
+    style={{
+      width: size,
+      height: size,
+      touchAction: 'pan-y',
+      WebkitTouchCallout: 'none',
+      WebkitUserSelect: 'none',
+      userSelect: 'none',
+    }}
   >
     {photoURL ? (
       <img
         src={photoURL}
         alt={displayName}
         className="w-full h-full object-cover"
+        draggable={false}
+        style={{
+          touchAction: 'pan-y',
+          pointerEvents: 'none',
+          WebkitTouchCallout: 'none',
+          WebkitUserSelect: 'none',
+          userSelect: 'none',
+        }}
       />
     ) : (
-      <span className="text-white text-sm">{displayName?.[0]?.toUpperCase() || '?'}</span>
+      <span className="text-white text-sm" style={{ pointerEvents: 'none' }}>{displayName?.[0]?.toUpperCase() || '?'}</span>
     )}
   </div>
 ));
@@ -850,6 +811,10 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   }, [friends]);
 
   const loadLeaderboard = useCallback(async () => {
+    if (!user) {
+      setLeaderboardLoading(false);
+      return;
+    }
     setLeaderboardLoading(true);
 
     // Dummy data for demo purposes
@@ -1036,112 +1001,55 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       }
     ];
 
-    try {
-      // Also add current user to leaderboard
-      const currentUserDocRef = doc(db, 'users', user.uid);
-      const currentUserDoc = await getDoc(currentUserDocRef);
-      const currentUserData = currentUserDoc.exists() ? currentUserDoc.data() : {};
-
-      // If we have real friends, fetch their data too
-      let realFriendsData = [];
-      if (friends && friends.length > 0) {
-        const leaderboardPromises = friends.map(async (friend) => {
-          const userDocRef = doc(db, 'users', friend.uid);
-          const userDoc = await getDoc(userDocRef);
-          const userData = userDoc.exists() ? userDoc.data() : {};
-
-          return {
-            uid: friend.uid,
-            username: friend.username,
-            displayName: friend.displayName,
-            photoURL: friend.photoURL,
-            masterStreak: userData.streaks?.master || 0,
-            strengthStreak: userData.streaks?.strength || 0,
-            cardioStreak: userData.streaks?.cardio || 0,
-            recoveryStreak: userData.streaks?.recovery || 0,
-            weeksWon: userData.weeksWon || 0,
-            totalWorkouts: userData.totalWorkouts || 0,
-            stats: {
-              calories: {
-                week: userData.weeklyCalories || Math.floor(Math.random() * 5000) + 1000,
-                month: userData.monthlyCalories || Math.floor(Math.random() * 20000) + 5000,
-                year: userData.yearlyCalories || Math.floor(Math.random() * 200000) + 50000,
-                all: userData.allTimeCalories || Math.floor(Math.random() * 500000) + 100000
-              },
-              steps: {
-                week: userData.weeklySteps || Math.floor(Math.random() * 70000) + 20000,
-                month: userData.monthlySteps || Math.floor(Math.random() * 300000) + 100000,
-                year: userData.yearlySteps || Math.floor(Math.random() * 3000000) + 1000000,
-                all: userData.allTimeSteps || Math.floor(Math.random() * 10000000) + 3000000
-              }
-            }
-          };
-        });
-        realFriendsData = await Promise.all(leaderboardPromises);
+    // Build leaderboard with dummy data + current user (skip Firestore calls that were hanging)
+    const allUsers = [
+      ...dummyFriends,
+      {
+        uid: user.uid,
+        username: userProfile?.username || 'You',
+        displayName: userProfile?.displayName || 'You',
+        photoURL: userProfile?.photoURL,
+        masterStreak: 24,
+        strengthStreak: 18,
+        cardioStreak: 14,
+        recoveryStreak: 9,
+        weeksWon: 10,
+        totalWorkouts: 145,
+        stats: {
+          calories: { week: 3800, month: 16200, year: 185000, all: 420000 },
+          steps: { week: 58000, month: 245000, year: 2800000, all: 8500000 }
+        },
+        volume: {
+          runs: { week: 4, month: 15, year: 175, all: 420 },
+          miles: { week: 20, month: 78, year: 910, all: 2184 },
+          runMinutes: { week: 200, month: 780, year: 9100, all: 21840 },
+          strengthSessions: { week: 4, month: 16, year: 192, all: 460 },
+          liftingMinutes: { week: 240, month: 960, year: 11520, all: 27600 },
+          recoverySessions: { week: 2, month: 9, year: 105, all: 252 },
+          coldPlunges: { week: 1, month: 3, year: 35, all: 84 },
+          saunaSessions: { week: 1, month: 4, year: 45, all: 108 },
+          yogaSessions: { week: 0, month: 2, year: 25, all: 60 },
+          rides: { week: 3, month: 11, year: 130, all: 312 },
+          cycleMiles: { week: 40, month: 150, year: 1750, all: 4200 },
+          cycleMinutes: { week: 130, month: 500, year: 5800, all: 13900 }
+        },
+        isCurrentUser: true
       }
+    ];
 
-      const allUsers = [
-        ...dummyFriends,
-        ...realFriendsData,
-        {
-          uid: user.uid,
-          username: userProfile?.username || 'You',
-          displayName: userProfile?.displayName || 'You',
-          photoURL: userProfile?.photoURL,
-          masterStreak: currentUserData.streaks?.master || 24,
-          strengthStreak: currentUserData.streaks?.strength || 18,
-          cardioStreak: currentUserData.streaks?.cardio || 14,
-          recoveryStreak: currentUserData.streaks?.recovery || 9,
-          weeksWon: currentUserData.weeksWon || 10,
-          totalWorkouts: currentUserData.totalWorkouts || 145,
-          stats: {
-            calories: {
-              week: currentUserData.weeklyCalories || 3800,
-              month: currentUserData.monthlyCalories || 16200,
-              year: currentUserData.yearlyCalories || 185000,
-              all: currentUserData.allTimeCalories || 420000
-            },
-            steps: {
-              week: currentUserData.weeklySteps || 58000,
-              month: currentUserData.monthlySteps || 245000,
-              year: currentUserData.yearlySteps || 2800000,
-              all: currentUserData.allTimeSteps || 8500000
-            }
-          },
-          volume: {
-            runs: { week: 4, month: 15, year: 175, all: 420 },
-            miles: { week: 20, month: 78, year: 910, all: 2184 },
-            runMinutes: { week: 200, month: 780, year: 9100, all: 21840 },
-            strengthSessions: { week: 4, month: 16, year: 192, all: 460 },
-            liftingMinutes: { week: 240, month: 960, year: 11520, all: 27600 },
-            recoverySessions: { week: 2, month: 9, year: 105, all: 252 },
-            coldPlunges: { week: 1, month: 3, year: 35, all: 84 },
-            saunaSessions: { week: 1, month: 4, year: 45, all: 108 },
-            yogaSessions: { week: 0, month: 2, year: 25, all: 60 },
-            rides: { week: 3, month: 11, year: 130, all: 312 },
-            cycleMiles: { week: 40, month: 150, year: 1750, all: 4200 },
-            cycleMinutes: { week: 130, month: 500, year: 5800, all: 13900 }
-          },
-          isCurrentUser: true
-        }
-      ];
-
-      setLeaderboardData(allUsers);
-    } catch (error) {
-      console.error('Error loading leaderboard:', error);
-    }
+    setLeaderboardData(allUsers);
     setLeaderboardLoading(false);
-  }, [friends, user, userProfile]);
+  }, [user, userProfile]);
 
   useEffect(() => {
     loadFeed();
   }, [loadFeed]);
 
   useEffect(() => {
-    if (activeView === 'leaderboard' && leaderboardData.length === 0) {
+    if (activeView === 'leaderboard' && leaderboardData.length === 0 && user) {
       loadLeaderboard();
     }
-  }, [activeView, leaderboardData.length, loadLeaderboard]);
+  }, [activeView, leaderboardData.length, loadLeaderboard, user]);
 
   const handleRefresh = async () => {
     triggerHaptic(ImpactStyle.Light);
@@ -1528,7 +1436,8 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         <div
           className="absolute inset-0 opacity-20 transition-all duration-500"
           style={{
-            background: `linear-gradient(to right, ${getCategoryColor()} ${progressPercent}%, transparent ${progressPercent}%)`
+            background: `linear-gradient(to right, ${getCategoryColor()} ${progressPercent}%, transparent ${progressPercent}%)`,
+            pointerEvents: 'none'
           }}
         />
 
@@ -1603,67 +1512,123 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       return val;
     };
 
-    const PodiumSpot = ({ userData, place, height }) => (
-      <TouchButton
-        onClick={() => !userData.isCurrentUser && onTap && onTap(userData)}
-        disabled={userData.isCurrentUser}
-        className="flex flex-col items-center transition-all duration-150"
-      >
-        {/* Crown for 1st place */}
-        {place === 1 && (
-          <div className="text-2xl mb-1 animate-bounce">👑</div>
-        )}
+    // Common style for podium elements - use pan-y to allow scrolling
+    const touchPassthroughStyle = {
+      touchAction: 'pan-y',
+      WebkitTouchCallout: 'none',
+      WebkitUserSelect: 'none',
+      userSelect: 'none',
+    };
 
-        {/* Profile photo with ring */}
-        <div className={`relative mb-2 ${place === 1 ? 'scale-110' : ''}`}>
-          <div className={`rounded-full p-0.5 ${
-            place === 1 ? 'bg-gradient-to-r from-yellow-400 to-yellow-600' :
-            place === 2 ? 'bg-gradient-to-r from-gray-300 to-gray-500' :
-            'bg-gradient-to-r from-amber-600 to-amber-800'
-          }`}>
-            <div className="rounded-full overflow-hidden bg-black">
-              <ProfilePhoto
-                photoURL={userData.photoURL}
-                displayName={userData.displayName}
-                size={place === 1 ? 56 : 48}
-              />
+    const PodiumSpot = ({ userData, place, height }) => {
+      // Use native DOM event listeners for tap detection - allows window capture to get events first
+      const photoRef = useRef(null);
+      const touchStartRef = useRef({ x: 0, y: 0, time: 0 });
+
+      useEffect(() => {
+        const el = photoRef.current;
+        if (!el || userData.isCurrentUser || !onTap) return;
+
+        const handleTouchStart = (e) => {
+          touchStartRef.current = {
+            x: e.touches[0].clientX,
+            y: e.touches[0].clientY,
+            time: Date.now()
+          };
+        };
+
+        const handleTouchEnd = (e) => {
+          const touch = e.changedTouches[0];
+          const dx = Math.abs(touch.clientX - touchStartRef.current.x);
+          const dy = Math.abs(touch.clientY - touchStartRef.current.y);
+          const dt = Date.now() - touchStartRef.current.time;
+          // Only trigger tap if minimal movement and quick touch
+          if (dx < 10 && dy < 10 && dt < 300) {
+            onTap(userData);
+          }
+        };
+
+        // Use passive: true and bubble phase so window capture listeners get events first
+        el.addEventListener('touchstart', handleTouchStart, { passive: true });
+        el.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+        return () => {
+          el.removeEventListener('touchstart', handleTouchStart);
+          el.removeEventListener('touchend', handleTouchEnd);
+        };
+      }, [userData, onTap]);
+
+      return (
+        <div
+          className="flex flex-col items-center transition-all duration-150"
+          style={touchPassthroughStyle}
+        >
+          {/* Crown for 1st place */}
+          {place === 1 && (
+            <div className="text-2xl mb-1 animate-bounce" style={touchPassthroughStyle}>👑</div>
+          )}
+
+          {/* Profile photo with ring - tap detected via native DOM events to not block pull-to-refresh */}
+          <div
+            ref={photoRef}
+            className={`relative mb-2 ${place === 1 ? 'scale-110' : ''}`}
+            style={{ ...touchPassthroughStyle, cursor: userData.isCurrentUser ? 'default' : 'pointer' }}
+          >
+            <div
+              className={`rounded-full p-0.5 ${
+                place === 1 ? 'bg-gradient-to-r from-yellow-400 to-yellow-600' :
+                place === 2 ? 'bg-gradient-to-r from-gray-300 to-gray-500' :
+                'bg-gradient-to-r from-amber-600 to-amber-800'
+              }`}
+              style={touchPassthroughStyle}
+            >
+              <div className="rounded-full overflow-hidden bg-black" style={touchPassthroughStyle}>
+                <ProfilePhoto
+                  photoURL={userData.photoURL}
+                  displayName={userData.displayName}
+                  size={place === 1 ? 56 : 48}
+                />
+              </div>
+            </div>
+            {/* Place badge */}
+            <div
+              className={`absolute -bottom-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                place === 1 ? 'bg-yellow-500 text-black' :
+                place === 2 ? 'bg-gray-400 text-black' :
+                'bg-amber-700 text-white'
+              }`}
+              style={{ ...touchPassthroughStyle, pointerEvents: 'none' }}
+            >
+              {place}
             </div>
           </div>
-          {/* Place badge */}
-          <div className={`absolute -bottom-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-            place === 1 ? 'bg-yellow-500 text-black' :
-            place === 2 ? 'bg-gray-400 text-black' :
-            'bg-amber-700 text-white'
-          }`}>
-            {place}
+
+          {/* Name */}
+          <p className={`text-xs font-medium truncate max-w-[80px] ${userData.isCurrentUser ? 'text-green-400' : 'text-white'}`} style={touchPassthroughStyle}>
+            {userData.isCurrentUser ? 'You' : (userData.displayName?.split(' ')[0] || userData.username)}
+          </p>
+
+          {/* Score */}
+          <p className="text-white font-bold text-sm" style={touchPassthroughStyle}>{formatValue(getValue(userData))}</p>
+
+          {/* Podium bar */}
+          <div
+            className={`w-20 rounded-t-lg mt-2 flex items-end justify-center ${
+              place === 1 ? 'bg-gradient-to-t from-yellow-600 to-yellow-400' :
+              place === 2 ? 'bg-gradient-to-t from-gray-500 to-gray-300' :
+              'bg-gradient-to-t from-amber-800 to-amber-600'
+            }`}
+            style={{ ...touchPassthroughStyle, height: `${height}px` }}
+          >
+            <span className="text-2xl font-bold text-white/30 mb-2" style={touchPassthroughStyle}>{place}</span>
           </div>
         </div>
-
-        {/* Name */}
-        <p className={`text-xs font-medium truncate max-w-[80px] ${userData.isCurrentUser ? 'text-green-400' : 'text-white'}`}>
-          {userData.isCurrentUser ? 'You' : (userData.displayName?.split(' ')[0] || userData.username)}
-        </p>
-
-        {/* Score */}
-        <p className="text-white font-bold text-sm">{formatValue(getValue(userData))}</p>
-
-        {/* Podium bar */}
-        <div
-          className={`w-20 rounded-t-lg mt-2 flex items-end justify-center ${
-            place === 1 ? 'bg-gradient-to-t from-yellow-600 to-yellow-400' :
-            place === 2 ? 'bg-gradient-to-t from-gray-500 to-gray-300' :
-            'bg-gradient-to-t from-amber-800 to-amber-600'
-          }`}
-          style={{ height: `${height}px` }}
-        >
-          <span className="text-2xl font-bold text-white/30 mb-2">{place}</span>
-        </div>
-      </TouchButton>
-    );
+      );
+    };
 
     // Reorder for podium display: 2nd, 1st, 3rd
     return (
-      <div className="flex items-end justify-center gap-2 mb-6 pt-8">
+      <div className="flex items-end justify-center gap-2 mb-6 pt-8" style={touchPassthroughStyle}>
         <PodiumSpot userData={topThree[1]} place={2} height={60} />
         <PodiumSpot userData={topThree[0]} place={1} height={80} />
         <PodiumSpot userData={topThree[2]} place={3} height={40} />
@@ -1815,8 +1780,8 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
 
   // Header component (title and add button only)
   const FriendsHeaderTop = () => (
-    <div className="px-4 pt-2 pb-4">
-      <div className="flex items-center justify-between">
+    <div className="px-4 pt-2 pb-4" style={{ touchAction: 'pan-y' }}>
+      <div className="flex items-center justify-between" style={{ touchAction: 'pan-y' }}>
         <div>
           <h1 className="text-xl font-bold text-white">Friends</h1>
           <p className="text-xs text-gray-500">
@@ -1852,7 +1817,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     return (
       <div>
         <FriendsHeaderTop />
-        <SegmentedControl activeView={activeView} setActiveView={setActiveView} isRefreshing={isRefreshingProp} />
+        <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
         <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} />
         <div className="flex items-center justify-center py-12">
           <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -1865,7 +1830,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     return (
       <div>
         <FriendsHeaderTop />
-        <SegmentedControl activeView={activeView} setActiveView={setActiveView} isRefreshing={isRefreshingProp} />
+        <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
         <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} />
         <div className="text-center py-12 px-6">
           <div className="text-5xl mb-4">👥</div>
@@ -1946,21 +1911,27 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     const currentUserRank = sortedLeaderboard.findIndex(u => u.isCurrentUser) + 1;
 
     return (
-      <div className="h-full overflow-y-auto">
+      <div style={{ touchAction: 'pan-y' }}>
         <FriendsHeaderTop />
-        <SegmentedControl activeView={activeView} setActiveView={setActiveView} isRefreshing={isRefreshingProp} />
+        <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
         <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} />
 
         {/* Leaderboard content */}
-        <div className="px-4 pb-32">
+        <div
+          className="px-4 pb-32"
+          style={{
+            transform: pullDistance > 0 ? `translateY(${Math.min(pullDistance * 0.5, 60)}px)` : 'none',
+            transition: pullDistance === 0 ? 'transform 0.3s ease-out' : 'none',
+          }}
+        >
           {/* Leaderboard headline */}
-          <div className="mb-4">
+          <div className="mb-4" style={{ touchAction: 'pan-y' }}>
             <div className="text-sm font-semibold text-white">Leaderboard</div>
             <p className="text-[11px] text-gray-500 mt-0.5">See how you rank among friends</p>
           </div>
 
           {/* Section Toggle - Activity vs Streak */}
-          <div className="relative flex p-1 rounded-lg mb-3 max-w-[240px] mx-auto" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+          <div className="relative flex p-1 rounded-lg mb-3 max-w-[240px] mx-auto" style={{ backgroundColor: 'rgba(255,255,255,0.05)', touchAction: 'pan-y' }}>
             <div
               className="absolute top-1 bottom-1 rounded-md transition-all duration-300 ease-out"
               style={{
@@ -2001,7 +1972,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           {/* Category Pills + Time Dropdown Row */}
           <div className="flex items-center justify-between mb-4">
             {/* Category Pills */}
-            <div className="flex gap-1.5 overflow-x-auto no-scrollbar flex-1 mr-3">
+            <div className="flex gap-1.5 overflow-x-auto no-scrollbar flex-1 mr-3" style={{ touchAction: 'pan-x pan-y' }}>
               {leaderboardSection === 'activity' ? (
                 [
                   { key: 'calories', label: '🔥 Calories', color: '#FF6B6B' },
@@ -2088,7 +2059,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             <>
               {/* Your Position Card (if not in top 3) */}
               {currentUserRank > 3 && (
-                <div className="bg-gradient-to-r from-green-900/30 to-green-800/20 rounded-xl p-3 mb-4 border border-green-500/20">
+                <div className="bg-gradient-to-r from-green-900/30 to-green-800/20 rounded-xl p-3 mb-4 border border-green-500/20" style={{ touchAction: 'pan-y' }}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center">
@@ -2396,7 +2367,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     return (
       <div>
         <FriendsHeaderTop />
-        <SegmentedControl activeView={activeView} setActiveView={setActiveView} isRefreshing={isRefreshingProp} />
+        <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
         <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} />
         <div className="text-center py-12 px-6">
           <div className="text-5xl mb-4">📭</div>
@@ -2408,13 +2379,19 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   }
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div>
       <FriendsHeaderTop />
-      <SegmentedControl activeView={activeView} setActiveView={setActiveView} isRefreshing={isRefreshingProp} />
+      <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
       <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} />
 
       {/* Feed content */}
-      <div className="px-4 pb-32">
+      <div
+        className="px-4 pb-32"
+        style={{
+          transform: pullDistance > 0 ? `translateY(${Math.min(pullDistance * 0.5, 60)}px)` : 'none',
+          transition: pullDistance === 0 ? 'transform 0.3s ease-out' : 'none',
+        }}
+      >
         {/* Feed headline */}
         <div className="mb-4">
           <div className="text-sm font-semibold text-white">Feed</div>

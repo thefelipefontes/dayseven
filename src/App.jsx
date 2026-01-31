@@ -1155,6 +1155,8 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
   const pullDistanceRef = useRef(0);
   const isRefreshingRef = useRef(false);
   const onRefreshRef = useRef(onRefresh);
+  const lastTouchTime = useRef(0);
+  const activeTouchId = useRef(null); // Track the touch identifier we're following
 
   // Keep refs in sync
   useEffect(() => {
@@ -1171,41 +1173,142 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
     const root = document.getElementById('root');
     if (!root) return;
 
+    const getScrollTop = () => {
+      // Try multiple sources for scroll position for maximum compatibility
+      return root.scrollTop || window.pageYOffset || document.documentElement.scrollTop || 0;
+    };
+
     const handleTouchStart = (e) => {
       if (isRefreshingRef.current) return;
-      touchStartY.current = e.touches[0].clientY;
-      initialScrollTop.current = root.scrollTop;
-      isPulling.current = false;
+      if (!e.touches || e.touches.length === 0) return;
+
+      const touch = e.touches[0];
+      const now = Date.now();
+      const timeSinceLastTouch = now - lastTouchTime.current;
+
+      // If we're "pulling" but it's been more than 150ms since last touch, reset - the gesture ended
+      if (isPulling.current && timeSinceLastTouch > 150) {
+        isPulling.current = false;
+        globalIsPulling.current = false;
+        pullDistanceRef.current = 0;
+        setPullDistance(0);
+        activeTouchId.current = null;
+      }
+
+      // If we have an active touch and this is a different touch, ignore it
+      if (activeTouchId.current !== null && touch.identifier !== activeTouchId.current) {
+        return;
+      }
+
+      // Don't reset if we're actively pulling (rapid touchstart events from iOS)
+      if (isPulling.current) {
+        lastTouchTime.current = now;
+        return;
+      }
+
+      // Start tracking this touch
+      activeTouchId.current = touch.identifier;
+      touchStartY.current = touch.clientY;
+      initialScrollTop.current = getScrollTop();
       hasTriggeredHaptic.current = false;
+      lastTouchTime.current = now;
     };
 
     const handleTouchMove = (e) => {
       if (isRefreshingRef.current) return;
+      if (!e.touches || e.touches.length === 0) return;
 
-      const currentScrollTop = root.scrollTop;
-      const touchY = e.touches[0].clientY;
+      // Find our tracked touch
+      let touch = null;
+      for (let i = 0; i < e.touches.length; i++) {
+        if (e.touches[i].identifier === activeTouchId.current) {
+          touch = e.touches[i];
+          break;
+        }
+      }
+      // If our touch isn't found, use the first touch
+      if (!touch) touch = e.touches[0];
+
+      // Update last touch time
+      lastTouchTime.current = Date.now();
+
+      const currentScrollTop = getScrollTop();
+      const touchY = touch.clientY;
       const diff = touchY - touchStartY.current;
 
-      // Only activate when at top and pulling down
-      if (currentScrollTop <= 0 && initialScrollTop.current <= 0 && diff > 10) {
-        isPulling.current = true;
-        globalIsPulling.current = true; // Update global ref
-        const distance = Math.min(diff / resistance, threshold * 1.5);
+      // If already pulling, continue tracking regardless of scroll position
+      if (isPulling.current) {
+        // Calculate new distance - use the max of new value and slightly decayed previous value
+        const newDistance = diff / resistance;
+        // Keep the higher of: new distance, or previous distance minus small decay
+        const distance = Math.max(0, Math.min(newDistance, threshold * 1.5), pullDistanceRef.current - 1);
         pullDistanceRef.current = distance;
         setPullDistance(distance);
 
-        // Trigger haptic when crossing threshold
+        // Trigger refresh IMMEDIATELY when crossing threshold (don't wait for touchend)
         if (distance >= threshold && !hasTriggeredHaptic.current) {
           hasTriggeredHaptic.current = true;
           triggerHaptic(ImpactStyle.Medium);
+          // Trigger refresh now
+          isPulling.current = false;
+          globalIsPulling.current = false;
+          setIsRefreshing(true);
+          isRefreshingRef.current = true;
+          triggerHaptic(ImpactStyle.Heavy);
+          if (onRefreshRef.current) {
+            Promise.resolve(onRefreshRef.current()).finally(() => {
+              setTimeout(() => {
+                setIsRefreshing(false);
+                isRefreshingRef.current = false;
+                setPullDistance(0);
+                pullDistanceRef.current = 0;
+              }, 600);
+            });
+          }
         }
-      } else if (!isPulling.current) {
+        return;
+      }
+
+      // Only activate when started at top, still at top, and pulling down
+      if (currentScrollTop <= 5 && initialScrollTop.current <= 5 && diff > 10) {
+        isPulling.current = true;
+        globalIsPulling.current = true;
+        const distance = Math.min(diff / resistance, threshold * 1.5);
+        pullDistanceRef.current = distance;
+        setPullDistance(distance);
+        // Trigger refresh IMMEDIATELY when crossing threshold
+        if (distance >= threshold && !hasTriggeredHaptic.current) {
+          hasTriggeredHaptic.current = true;
+          triggerHaptic(ImpactStyle.Medium);
+          // Trigger refresh now
+          isPulling.current = false;
+          globalIsPulling.current = false;
+          activeTouchId.current = null;
+          setIsRefreshing(true);
+          isRefreshingRef.current = true;
+          triggerHaptic(ImpactStyle.Heavy);
+          if (onRefreshRef.current) {
+            Promise.resolve(onRefreshRef.current()).finally(() => {
+              setTimeout(() => {
+                setIsRefreshing(false);
+                isRefreshingRef.current = false;
+                setPullDistance(0);
+                pullDistanceRef.current = 0;
+              }, 600);
+            });
+          }
+        }
+      } else {
         pullDistanceRef.current = 0;
         setPullDistance(0);
       }
     };
 
-    const handleTouchEnd = async () => {
+    const handleTouchEnd = async (e) => {
+
+      // Reset active touch ID
+      activeTouchId.current = null;
+
       if (isRefreshingRef.current || !isPulling.current) return;
 
       const distance = pullDistanceRef.current;
@@ -1236,14 +1339,42 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
       }
     };
 
-    root.addEventListener('touchstart', handleTouchStart, { passive: true });
-    root.addEventListener('touchmove', handleTouchMove, { passive: true });
-    root.addEventListener('touchend', handleTouchEnd, { passive: true });
+    const handleTouchCancel = () => {
+      isPulling.current = false;
+      globalIsPulling.current = false;
+      activeTouchId.current = null;
+      setPullDistance(0);
+      pullDistanceRef.current = 0;
+    };
+
+    // Periodic check to reset stuck pull states (iOS doesn't always fire touchend/touchcancel)
+    const stuckCheckInterval = setInterval(() => {
+      if (isPulling.current && !isRefreshingRef.current) {
+        const timeSinceLastTouch = Date.now() - lastTouchTime.current;
+        if (timeSinceLastTouch > 100) {
+          // No touch events for 100ms while pulling - gesture is stuck, reset
+          isPulling.current = false;
+          globalIsPulling.current = false;
+          activeTouchId.current = null;
+          setPullDistance(0);
+          pullDistanceRef.current = 0;
+        }
+      }
+    }, 50);
+
+    // Use window with capture phase to receive touch events FIRST, before any child can stop propagation
+    // Window-level listeners receive events before document-level listeners
+    window.addEventListener('touchstart', handleTouchStart, { passive: true, capture: true });
+    window.addEventListener('touchmove', handleTouchMove, { passive: true, capture: true });
+    window.addEventListener('touchend', handleTouchEnd, { passive: true, capture: true });
+    window.addEventListener('touchcancel', handleTouchCancel, { passive: true, capture: true });
 
     return () => {
-      root.removeEventListener('touchstart', handleTouchStart);
-      root.removeEventListener('touchmove', handleTouchMove);
-      root.removeEventListener('touchend', handleTouchEnd);
+      clearInterval(stuckCheckInterval);
+      window.removeEventListener('touchstart', handleTouchStart, { capture: true });
+      window.removeEventListener('touchmove', handleTouchMove, { capture: true });
+      window.removeEventListener('touchend', handleTouchEnd, { capture: true });
+      window.removeEventListener('touchcancel', handleTouchCancel, { capture: true });
     };
   }, [enabled, threshold, resistance]);
 
@@ -1257,12 +1388,12 @@ const PullToRefreshIndicator = ({ pullDistance, isRefreshing, threshold = 80 }) 
 
   if (pullDistance === 0 && !isRefreshing) return null;
 
-  // Position just above the steps/calories counters - right below the header
+  // Position below the header
   return (
     <div
       className="fixed left-0 right-0 flex items-center justify-center z-50 pointer-events-none"
       style={{
-        top: 'calc(env(safe-area-inset-top, 0px) + 75px)',
+        top: 'calc(env(safe-area-inset-top, 0px) + 85px)',
         opacity: isRefreshing ? 1 : progress,
         transition: isRefreshing ? 'none' : 'opacity 0.1s',
       }}
@@ -11115,6 +11246,7 @@ export default function DaySevenApp() {
   const [showEditGoals, setShowEditGoals] = useState(false);
   const [pendingFriendRequests, setPendingFriendRequests] = useState(0);
 
+
   // Update app icon badge when pending requests change
   useEffect(() => {
     const updateBadge = async () => {
@@ -11503,8 +11635,10 @@ export default function DaySevenApp() {
   }, [user?.uid]);
 
   // Pull-to-refresh hook (enabled on home and feed tabs)
+  // Lower resistance means pull distance grows faster relative to finger movement
   const { pullDistance, isRefreshing } = usePullToRefresh(refreshData, {
-    threshold: 80,
+    threshold: 28,
+    resistance: 0.5,
     enabled: activeTab === 'home' || activeTab === 'feed'
   });
 
@@ -12404,7 +12538,7 @@ export default function DaySevenApp() {
       <div
         className="overflow-hidden"
         style={{
-          transform: (activeTab === 'home' || activeTab === 'feed') && pullDistance > 0 ? `translateY(${Math.min(pullDistance * 0.5, 60)}px)` : 'none',
+          transform: activeTab === 'home' && pullDistance > 0 ? `translateY(${Math.min(pullDistance * 0.5, 60)}px)` : 'none',
           transition: pullDistance === 0 ? 'transform 0.3s ease-out' : 'none',
         }}
       >

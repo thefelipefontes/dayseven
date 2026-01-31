@@ -23,7 +23,7 @@ const Login = ({ onLogin }) => {
       if (isNative) {
         // Use native Google Sign In through Capacitor plugin
         const result = await FirebaseAuthentication.signInWithGoogle();
-        console.log('Google Sign In result:', result);
+        // console.log('Google Sign In result:', result);
 
         // The plugin signs the user into Firebase natively
         // Pass the user info directly to trigger state update
@@ -44,7 +44,7 @@ const Login = ({ onLogin }) => {
         onLogin(result.user);
       }
     } catch (error) {
-      console.error('Error signing in with Google:', error);
+      // console.error('Error signing in with Google:', error);
       setError('Failed to sign in with Google. Please try again.');
       setIsLoading(false);
     }
@@ -58,7 +58,7 @@ const Login = ({ onLogin }) => {
         // Use native Apple Sign In through Capacitor plugin
         // The plugin handles Firebase authentication internally
         const result = await FirebaseAuthentication.signInWithApple();
-        console.log('Apple Sign In result:', result);
+        // console.log('Apple Sign In result:', result);
 
         // The plugin already signs the user into Firebase natively
         // Just pass the user info to the app - auth state listener will sync
@@ -77,8 +77,8 @@ const Login = ({ onLogin }) => {
         // onLogin not needed - onAuthStateChanged in App.jsx will handle it
       }
     } catch (error) {
-      console.error('Error signing in with Apple:', error);
-      console.error('Error code:', error.code);
+      // console.error('Error signing in with Apple:', error);
+      // console.error('Error code:', error.code);
       // User cancelled is not an error we need to show
       if (error.code === 'ERROR_CANCELED' || error.message?.includes('cancel')) {
         setError('');
@@ -110,14 +110,14 @@ const Login = ({ onLogin }) => {
 
     setIsLoading(true);
     try {
-      console.log('Creating account with email:', email);
+      // console.log('Creating account with email:', email);
       if (isNative) {
         // Use native Firebase SDK via Capacitor plugin
         const result = await FirebaseAuthentication.createUserWithEmailAndPassword({
           email,
           password,
         });
-        console.log('Native account created:', result.user?.uid);
+        // console.log('Native account created:', result.user?.uid);
         // Update display name
         if (result.user) {
           await FirebaseAuthentication.updateProfile({
@@ -135,15 +135,15 @@ const Login = ({ onLogin }) => {
       } else {
         // Use web Firebase SDK
         const result = await createUserWithEmailAndPassword(auth, email, password);
-        console.log('Account created, updating profile...');
+        // console.log('Account created, updating profile...');
         await updateProfile(result.user, { displayName: displayName.trim() });
-        console.log('Profile updated');
+        // console.log('Profile updated');
         // onAuthStateChanged will handle it
       }
     } catch (error) {
-      console.error('Error signing up:', error);
-      console.error('Error code:', error.code);
-      console.error('Error message:', error.message);
+      // console.error('Error signing up:', error);
+      // console.error('Error code:', error.code);
+      // console.error('Error message:', error.message);
       if (error.code === 'auth/email-already-in-use') {
         setError('An account with this email already exists');
       } else if (error.code === 'auth/invalid-email') {
@@ -161,14 +161,14 @@ const Login = ({ onLogin }) => {
     setIsLoading(true);
 
     try {
-      console.log('Signing in with email:', email);
+      // console.log('Signing in with email:', email);
       if (isNative) {
         // Use native Firebase SDK via Capacitor plugin
         const result = await FirebaseAuthentication.signInWithEmailAndPassword({
           email,
           password,
         });
-        console.log('Native sign in successful:', result.user?.uid);
+        // console.log('Native sign in successful:', result.user?.uid);
         // Pass the native user to the app
         if (result.user) {
           const user = {
@@ -182,12 +182,12 @@ const Login = ({ onLogin }) => {
       } else {
         // Use web Firebase SDK directly
         const result = await signInWithEmailAndPassword(auth, email, password);
-        console.log('Sign in successful:', result.user?.uid);
+        // console.log('Sign in successful:', result.user?.uid);
         // onAuthStateChanged will handle the rest
       }
     } catch (error) {
-      console.error('Error signing in:', error);
-      console.error('Error code:', error.code);
+      // console.error('Error signing in:', error);
+      // console.error('Error code:', error.code);
       if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
         setError('Invalid email or password');
       } else if (error.code === 'auth/invalid-email') {

@@ -593,7 +593,7 @@ const MemoizedActivityCard = React.memo(({
                                           setReplyingTo(null);
                                           setExpandedReplies(prev => ({ ...prev, [comment.id]: true }));
                                         } catch (error) {
-                                          console.error('Failed to post reply:', error);
+                                          // console.error('Failed to post reply:', error);
                                         }
                                       }
                                     } else if (e.key === 'Escape') {
@@ -614,7 +614,7 @@ const MemoizedActivityCard = React.memo(({
                                         setReplyingTo(null);
                                         setExpandedReplies(prev => ({ ...prev, [comment.id]: true }));
                                       } catch (error) {
-                                        console.error('Failed to post reply:', error);
+                                        // console.error('Failed to post reply:', error);
                                       }
                                     }
                                   }}
@@ -806,7 +806,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       setActivityComments(commentsMap);
       setCommentReplies(repliesMap);
     } catch (error) {
-      console.error('Error loading activity feed:', error);
+      // console.error('Error loading activity feed:', error);
     }
     setIsLoading(false);
     setIsRefreshing(false);
@@ -1067,7 +1067,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   const handleReaction = async (activity, emoji) => {
     if (!activity.id) return;
 
-    console.log('Adding reaction:', activity.id, activity.friend.uid, emoji);
+    // console.log('Adding reaction:', activity.id, activity.friend.uid, emoji);
 
     const key = `${activity.friend.uid}-${activity.id}`;
     const currentReactions = activityReactions[key] || [];
@@ -1076,9 +1076,9 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     try {
       if (existingReaction && existingReaction.reactionType === emoji) {
         // Remove reaction (toggle off)
-        console.log('Removing reaction for activity:', activity.id);
+        // console.log('Removing reaction for activity:', activity.id);
         await removeReaction(activity.friend.uid, activity.id, user.uid);
-        console.log('Reaction removed successfully');
+        // console.log('Reaction removed successfully');
         setActivityReactions(prev => ({
           ...prev,
           [key]: currentReactions.filter(r => r.reactorUid !== user.uid)
@@ -1088,14 +1088,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         const reactorName = userProfile?.displayName || user?.displayName || userProfile?.username || user?.email?.split('@')[0] || 'User';
         const reactorPhoto = userProfile?.photoURL || user?.photoURL || null;
 
-        console.log('Calling addReaction with:', {
-          activityId: activity.id,
-          ownerUid: activity.friend.uid,
-          reactorUid: user.uid,
-          reactorName: reactorName,
-          reactorPhoto: reactorPhoto,
-          reactionType: emoji
-        });
+        // Calling addReaction with activity.id, activity.friend.uid, user.uid, reactorName, reactorPhoto, emoji
         const result = await addReaction(
           activity.id,
           activity.friend.uid,
@@ -1104,7 +1097,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           reactorPhoto,
           emoji
         );
-        console.log('addReaction result:', result);
+        // console.log('addReaction result:', result);
 
         // Update local state
         const newReaction = {
@@ -1131,8 +1124,8 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         }
       }
     } catch (error) {
-      console.error('Error handling reaction:', error);
-      console.error('Error details:', error.message, error.code);
+      // console.error('Error handling reaction:', error);
+      // console.error('Error details:', error.message, error.code);
     }
   };
 
@@ -1169,7 +1162,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         [key]: updatedComments
       }));
     } catch (error) {
-      console.error('Error adding comment:', error);
+      // console.error('Error adding comment:', error);
       throw error;
     }
   };
@@ -1197,21 +1190,21 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         return newReplies;
       });
     } catch (error) {
-      console.error('Error deleting comment:', error);
+      // console.error('Error deleting comment:', error);
     }
   };
 
   const handleAddReply = async (commentId, text, activity) => {
-    console.log('handleAddReply called:', { commentId, text, activity });
+    // console.log('handleAddReply called:', { commentId, text, activity });
     if (!activity || !text.trim()) {
-      console.log('handleAddReply: early return - activity or text missing');
+      // console.log('handleAddReply: early return - activity or text missing');
       return;
     }
     const key = `${activity.friend.uid}-${activity.id}`;
-    console.log('handleAddReply: key =', key);
+    // console.log('handleAddReply: key =', key);
 
     try {
-      console.log('handleAddReply: calling addReply...');
+      // console.log('handleAddReply: calling addReply...');
       const replierName = userProfile?.displayName || user?.displayName || userProfile?.username || user?.email?.split('@')[0] || 'User';
       const replierPhoto = userProfile?.photoURL || user?.photoURL || null;
 
@@ -1224,7 +1217,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         replierPhoto,
         text.trim()
       );
-      console.log('handleAddReply: replyId =', replyId);
+      // console.log('handleAddReply: replyId =', replyId);
 
       const newReply = {
         id: replyId,
@@ -1244,7 +1237,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         }
       }));
     } catch (error) {
-      console.error('Error adding reply:', error);
+      // console.error('Error adding reply:', error);
       throw error;
     }
   };
@@ -1265,7 +1258,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         }
       }));
     } catch (error) {
-      console.error('Error deleting reply:', error);
+      // console.error('Error deleting reply:', error);
     }
   };
 
@@ -1283,7 +1276,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       await handleAddComment(text, activity);
       if (input) input.value = '';
     } catch (error) {
-      console.error('Error adding comment:', error);
+      // console.error('Error adding comment:', error);
     }
     submittingRef.current[activityKey] = false;
   };

@@ -115,7 +115,7 @@ export async function createUserProfile(user) {
       }
     }
   } catch (error) {
-    console.error('createUserProfile error:', error);
+    // console.error('createUserProfile error:', error);
     // Continue anyway - profile will be created later
   }
 
@@ -150,7 +150,7 @@ export async function getUserProfile(uid, forceRefresh = false) {
 
     return profile;
   } catch (error) {
-    console.error('getUserProfile error:', error);
+    // console.error('getUserProfile error:', error);
     // Return cached data if available, even if expired
     if (cache.userProfiles.has(uid)) {
       return cache.userProfiles.get(uid);
@@ -180,7 +180,7 @@ export async function updateUserProfile(uid, data) {
       await withTimeout(updateDoc(userRef, data));
     }
   } catch (error) {
-    console.error('updateUserProfile error:', error);
+    // console.error('updateUserProfile error:', error);
     // If doc doesn't exist, try to create it
     if (error.message?.includes('No document') || error.message?.includes('not-found') || error.code === 'not-found') {
       if (isNative) {
@@ -227,7 +227,7 @@ export async function saveUserActivities(uid, activities) {
       }
     });
   } catch (error) {
-    console.error('saveUserActivities error:', error);
+    // console.error('saveUserActivities error:', error);
     // Cache is already updated, so user sees changes immediately
     // Error will be logged but won't block the UI
     // On next refresh, data will sync
@@ -259,7 +259,7 @@ export async function getUserActivities(uid, forceRefresh = false) {
 
     return activities;
   } catch (error) {
-    console.error('getUserActivities error:', error);
+    // console.error('getUserActivities error:', error);
     // Return cached data if available, even if expired
     if (cache.userActivities.has(uid)) {
       return cache.userActivities.get(uid);
@@ -281,7 +281,7 @@ export async function checkUsernameAvailable(username) {
       return !usernameDoc.exists();
     }
   } catch (error) {
-    console.error('checkUsernameAvailable error:', error);
+    // console.error('checkUsernameAvailable error:', error);
     return true; // Assume available on error
   }
 }
@@ -308,7 +308,7 @@ export async function saveUsername(uid, username) {
       await setDoc(usernameRef, { uid });
     }
   } catch (error) {
-    console.error('saveUsername error:', error);
+    // console.error('saveUsername error:', error);
     throw error;
   }
 }
@@ -333,7 +333,7 @@ export async function saveCustomActivities(uid, customActivities) {
       }
     });
   } catch (error) {
-    console.error('saveCustomActivities error:', error);
+    // console.error('saveCustomActivities error:', error);
     // Don't throw - optimistic update already applied
   }
 }
@@ -363,7 +363,7 @@ export async function getCustomActivities(uid, forceRefresh = false) {
 
     return customActivities;
   } catch (error) {
-    console.error('getCustomActivities error:', error);
+    // console.error('getCustomActivities error:', error);
     // Return cached data if available
     if (cache.customActivities.has(uid)) {
       return cache.customActivities.get(uid);
@@ -392,7 +392,7 @@ export async function saveUserGoals(uid, goals) {
       }
     });
   } catch (error) {
-    console.error('saveUserGoals error:', error);
+    // console.error('saveUserGoals error:', error);
     // Don't throw - optimistic update already applied
   }
 }
@@ -424,7 +424,7 @@ export async function getUserGoals(uid, forceRefresh = false) {
 
     return goals;
   } catch (error) {
-    console.error('getUserGoals error:', error);
+    // console.error('getUserGoals error:', error);
     // Return cached data if available
     if (cache.userGoals.has(uid)) {
       return cache.userGoals.get(uid);
@@ -447,7 +447,7 @@ export async function setOnboardingComplete(uid) {
       await updateDoc(userRef, { hasCompletedOnboarding: true });
     }
   } catch (error) {
-    console.error('setOnboardingComplete error:', error);
+    // console.error('setOnboardingComplete error:', error);
     throw error;
   }
 }
@@ -466,7 +466,7 @@ export async function setTourComplete(uid) {
       await updateDoc(userRef, { hasCompletedTour: true });
     }
   } catch (error) {
-    console.error('setTourComplete error:', error);
+    // console.error('setTourComplete error:', error);
     throw error;
   }
 }

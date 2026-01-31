@@ -2145,7 +2145,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
       return roundedCanvas;
       return canvas;
     } catch (error) {
-      console.error('Error generating image:', error);
+      // console.error('Error generating image:', error);
       return null;
     }
   };
@@ -2175,7 +2175,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
           triggerHaptic(ImpactStyle.Medium);
           return;
         } catch (e) {
-          console.log('Native save error:', e);
+          // console.log('Native save error:', e);
           // Fall through to web method
         }
       }
@@ -2233,7 +2233,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
             setIsSharing(false);
             return;
           }
-          console.log('Share failed, falling back to download:', e);
+          // console.log('Share failed, falling back to download:', e);
         }
       }
 
@@ -2243,7 +2243,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
       link.href = canvas.toDataURL('image/png', 1.0);
       link.click();
     } catch (error) {
-      console.error('Error in executeShare:', error);
+      // console.error('Error in executeShare:', error);
       alert('Failed to generate image. Please try again.');
     } finally {
       setIsSharing(false);
@@ -3613,7 +3613,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
       setReactions(rxns || []);
       setComments(cmts || []);
     } catch (err) {
-      console.error('Error fetching interactions:', err);
+      // console.error('Error fetching interactions:', err);
     }
     setLoadingInteractions(false);
   };
@@ -3641,7 +3641,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
       }
       triggerHaptic(ImpactStyle.Light);
     } catch (err) {
-      console.error('Error handling reaction:', err);
+      // console.error('Error handling reaction:', err);
     }
   };
 
@@ -3661,7 +3661,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
       setNewComment('');
       triggerHaptic(ImpactStyle.Light);
     } catch (err) {
-      console.error('Error adding comment:', err);
+      // console.error('Error adding comment:', err);
     }
   };
 
@@ -6352,7 +6352,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                 commentsMap[activity.id] = comments;
               }
             } catch (error) {
-              console.error('Error fetching reactions/comments for activity:', activity.id, error);
+              // console.error('Error fetching reactions/comments for activity:', activity.id, error);
             }
           }
         })
@@ -6463,7 +6463,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                   repliesMap[comment.id] = replies;
                 }
               } catch (error) {
-                console.error('Error loading replies:', error);
+                // console.error('Error loading replies:', error);
               }
             })
           );
@@ -6532,7 +6532,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         }));
         setExpandedReplies(prev => ({ ...prev, [commentId]: true }));
       } catch (error) {
-        console.error('Error adding reply:', error);
+        // console.error('Error adding reply:', error);
       }
     };
 
@@ -6544,7 +6544,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
           [commentId]: (prev[commentId] || []).filter(r => r.id !== replyId)
         }));
       } catch (error) {
-        console.error('Error deleting reply:', error);
+        // console.error('Error deleting reply:', error);
       }
     };
 
@@ -10169,7 +10169,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                                 if (e.name === 'AbortError') {
                                   return;
                                 }
-                                console.log('Share failed, falling back to download:', e);
+                                // console.log('Share failed, falling back to download:', e);
                               }
                             }
 
@@ -10179,7 +10179,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                             link.href = canvas.toDataURL('image/png', 1.0);
                             link.click();
                           } catch (err) {
-                            console.error('Failed to generate share image:', err);
+                            // console.error('Failed to generate share image:', err);
                             alert('Failed to generate share image. Please try again.');
                           } finally {
                             setIsShareGenerating(false);
@@ -10333,7 +10333,7 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
 
   // Check if today is Monday (0 = Sunday, 1 = Monday)
   const isMonday = new Date().getDay() === 1;
-  const canEditGoals = true; // TODO: change back to isMonday after testing
+  const canEditGoals = isMonday;
 
   // Detect if user is on mobile device
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -10366,7 +10366,7 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
         }
       } catch (error) {
         if (error.message !== 'User cancelled photos app') {
-          console.error('Error picking photo:', error);
+          // console.error('Error picking photo:', error);
         }
       }
     } else {
@@ -10398,7 +10398,7 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
         }
       } catch (error) {
         if (error.message !== 'User cancelled photos app') {
-          console.error('Error taking photo:', error);
+          // console.error('Error taking photo:', error);
         }
       }
     } else {
@@ -10482,7 +10482,7 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
       setImagePosition({ x: 0, y: 0 });
       setImageScale(1);
     } catch (error) {
-      console.error('Error uploading photo:', error);
+      // console.error('Error uploading photo:', error);
       alert('Failed to upload photo. Please try again.');
     }
     setIsUploadingPhoto(false);
@@ -10713,7 +10713,7 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
     try {
       await onUpdatePhoto(file);
     } catch (error) {
-      console.error('Error uploading photo:', error);
+      // console.error('Error uploading photo:', error);
       alert('Failed to upload photo. Please try again.');
     }
     setIsUploadingPhoto(false);
@@ -11375,7 +11375,7 @@ export default function DaySevenApp() {
             await Badge.clear();
           }
         } catch (e) {
-          console.log('Badge update error:', e);
+          // console.log('Badge update error:', e);
         }
       }
     };
@@ -11613,7 +11613,7 @@ export default function DaySevenApp() {
       await updateUserProfile(user.uid, { privacySettings });
       setUserProfile(prev => ({ ...prev, privacySettings }));
     } catch (error) {
-      console.error('Error updating privacy settings:', error);
+      // console.error('Error updating privacy settings:', error);
     }
   };
 
@@ -11629,7 +11629,7 @@ export default function DaySevenApp() {
           profile = await getUserProfile(user.uid);
         }
       } catch (error) {
-        console.error('Error loading profile:', error);
+        // console.error('Error loading profile:', error);
       }
 
       // Check onboarding status
@@ -11696,7 +11696,7 @@ export default function DaySevenApp() {
             }));
           }
         } catch (error) {
-          console.error('Error loading user data:', error);
+          // console.error('Error loading user data:', error);
         }
       })();
     } else {
@@ -11746,7 +11746,7 @@ export default function DaySevenApp() {
       setFriends(friendsList);
       setPendingFriendRequests(requests.length);
     } catch (error) {
-      console.error('Error refreshing data:', error);
+      // console.error('Error refreshing data:', error);
     }
   }, [user?.uid]);
 
@@ -11772,7 +11772,7 @@ export default function DaySevenApp() {
           const result = await FirebaseAuthentication.getCurrentUser();
 
           if (result.user) {
-            console.log('Native user found:', result.user.uid);
+            // console.log('Native user found:', result.user.uid);
             // Convert native user to our user format
             const user = {
               uid: result.user.uid,
@@ -11783,12 +11783,12 @@ export default function DaySevenApp() {
             await handleUserAuth(user);
           } else {
             // No native user - show login immediately
-            console.log('No native user - showing login');
+            // console.log('No native user - showing login');
             setAuthLoading(false);
           }
           return; // Don't set up web listener on native
         } catch (error) {
-          console.log('Native auth check failed:', error);
+          // console.log('Native auth check failed:', error);
           setAuthLoading(false);
           return;
         }
@@ -11796,7 +11796,7 @@ export default function DaySevenApp() {
 
       // Web auth listener (only for web, not native)
       const authTimeout = setTimeout(() => {
-        console.log('Auth timeout - showing login');
+        // console.log('Auth timeout - showing login');
         setAuthLoading(false);
       }, 3000);
 
@@ -11851,23 +11851,23 @@ export default function DaySevenApp() {
 
   // Save activities to Firestore when they change
   useEffect(() => {
-    console.log('Activities effect triggered:', { user: !!user, activitiesCount: activities.length, hasLoaded: hasLoadedActivities.current });
+    // console.log('Activities effect triggered:', { user: !!user, activitiesCount: activities.length, hasLoaded: hasLoadedActivities.current });
 
     if (!user) {
-      console.log('No user, skipping save');
+      // console.log('No user, skipping save');
       return;
     }
 
     // Skip the initial load - only save after user makes changes
     if (!hasLoadedActivities.current) {
-      console.log('Initial load, marking as loaded');
+      // console.log('Initial load, marking as loaded');
       hasLoadedActivities.current = true;
       return;
     }
 
     // Debounce the save to avoid too many writes
     const timeoutId = setTimeout(() => {
-      console.log('Saving activities:', activities);
+      // console.log('Saving activities:', activities);
       saveUserActivities(user.uid, activities);
     }, 1000);
 
@@ -12007,7 +12007,7 @@ export default function DaySevenApp() {
       try {
         photoURL = await uploadActivityPhoto(user.uid, activityId, activity.photoFile);
       } catch (error) {
-        console.error('Error uploading activity photo:', error);
+        // console.error('Error uploading activity photo:', error);
         // Continue saving the activity without the photo
       }
     }
@@ -12088,7 +12088,7 @@ export default function DaySevenApp() {
     const newProgress = calculateWeeklyProgress(updatedActivities);
     setWeeklyProgress(newProgress);
 
-    console.log('Saved activity:', newActivity, 'Cardio count:', newProgress.cardio?.completed);
+    // console.log('Saved activity:', newActivity, 'Cardio count:', newProgress.cardio?.completed);
 
     // Skip celebration for edits
     if (isEdit) return;
@@ -12513,7 +12513,7 @@ export default function DaySevenApp() {
       personalRecords: updatedRecords
     }));
 
-    console.log('Deleted activity:', activityId, 'Records recalculated');
+    // console.log('Deleted activity:', activityId, 'Records recalculated');
   };
 
   // Show loading spinner while checking auth

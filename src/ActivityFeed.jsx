@@ -16,7 +16,7 @@ const triggerHaptic = async (style = ImpactStyle.Medium) => {
 };
 
 // Pull-to-Refresh Indicator Component for Feed - uses fixed positioning to avoid layout shifts
-const FeedPullToRefreshIndicator = ({ pullDistance, isRefreshing, threshold = 80 }) => {
+const FeedPullToRefreshIndicator = ({ pullDistance, isRefreshing, threshold = 1 }) => {
   const progress = Math.min(pullDistance / threshold, 1);
   const rotation = progress * 180;
 
@@ -2059,7 +2059,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             <>
               {/* Your Position Card (if not in top 3) */}
               {currentUserRank > 3 && (
-                <div className="bg-gradient-to-r from-green-900/30 to-green-800/20 rounded-xl p-3 mb-4 border border-green-500/20" style={{ touchAction: 'pan-y' }}>
+                <div className="bg-gradient-to-r from-green-900/30 to-green-800/20 rounded-xl p-3 mb-2 border border-green-500/20" style={{ touchAction: 'pan-y' }}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center">

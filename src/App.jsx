@@ -1157,6 +1157,8 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
   const onRefreshRef = useRef(onRefresh);
   const lastTouchTime = useRef(0);
   const activeTouchId = useRef(null); // Track the touch identifier we're following
+  const hadDownwardMovement = useRef(false); // Track if any downward movement occurred
+  const maxPullDistance = useRef(0); // Track maximum pull distance reached
 
   // Keep refs in sync
   useEffect(() => {
@@ -1212,6 +1214,8 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
       initialScrollTop.current = getScrollTop();
       hasTriggeredHaptic.current = false;
       lastTouchTime.current = now;
+      hadDownwardMovement.current = false;
+      maxPullDistance.current = 0;
     };
 
     const handleTouchMove = (e) => {
@@ -1235,6 +1239,12 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
       const currentScrollTop = getScrollTop();
       const touchY = touch.clientY;
       const diff = touchY - touchStartY.current;
+
+      // Track any downward movement at top of page (for very low threshold refresh)
+      if (currentScrollTop <= 5 && initialScrollTop.current <= 5 && diff > 0) {
+        hadDownwardMovement.current = true;
+        maxPullDistance.current = Math.max(maxPullDistance.current, diff / resistance);
+      }
 
       // If already pulling, continue tracking regardless of scroll position
       if (isPulling.current) {
@@ -1270,7 +1280,9 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
       }
 
       // Only activate when started at top, still at top, and pulling down
-      if (currentScrollTop <= 5 && initialScrollTop.current <= 5 && diff > 10) {
+      // Use lower activation threshold for low refresh thresholds (min 2px)
+      const activationThreshold = Math.max(2, Math.min(10, threshold * resistance));
+      if (currentScrollTop <= 5 && initialScrollTop.current <= 5 && diff > activationThreshold) {
         isPulling.current = true;
         globalIsPulling.current = true;
         const distance = Math.min(diff / resistance, threshold * 1.5);
@@ -1309,6 +1321,50 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
       // Reset active touch ID
       activeTouchId.current = null;
 
+      const currentScrollTop = getScrollTop();
+
+      // Check if touch ended lower than it started (finger moved down)
+      let touchEndY = 0;
+      if (e.changedTouches && e.changedTouches.length > 0) {
+        touchEndY = e.changedTouches[0].clientY;
+      }
+      const fingerMovedDown = touchEndY > touchStartY.current;
+
+      // For very low thresholds (<=5), trigger refresh if:
+      // 1. We had ANY downward movement at top, OR
+      // 2. Touch started at top AND finger moved downward (even if iOS blocked move events)
+      const startedAtTop = initialScrollTop.current <= 5;
+      const endedAtTop = currentScrollTop <= 5;
+      const hadAnyPullIntent = hadDownwardMovement.current || (startedAtTop && endedAtTop && fingerMovedDown);
+
+      if (!isRefreshingRef.current && threshold <= 5 && hadAnyPullIntent && onRefreshRef.current) {
+        hadDownwardMovement.current = false;
+        maxPullDistance.current = 0;
+        isPulling.current = false;
+        globalIsPulling.current = false;
+
+        setIsRefreshing(true);
+        isRefreshingRef.current = true;
+        triggerHaptic(ImpactStyle.Heavy);
+        try {
+          const startTime = Date.now();
+          await onRefreshRef.current();
+          const elapsed = Date.now() - startTime;
+          if (elapsed < 600) {
+            await new Promise(resolve => setTimeout(resolve, 600 - elapsed));
+          }
+        } finally {
+          setIsRefreshing(false);
+          isRefreshingRef.current = false;
+          setPullDistance(0);
+          pullDistanceRef.current = 0;
+        }
+        return;
+      }
+
+      hadDownwardMovement.current = false;
+      maxPullDistance.current = 0;
+
       if (isRefreshingRef.current || !isPulling.current) return;
 
       const distance = pullDistanceRef.current;
@@ -1339,23 +1395,83 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
       }
     };
 
-    const handleTouchCancel = () => {
+    const handleTouchCancel = async () => {
+      // For very low thresholds, trigger refresh even on cancel if we had downward movement
+      if (!isRefreshingRef.current && threshold <= 5 && hadDownwardMovement.current && onRefreshRef.current) {
+        hadDownwardMovement.current = false;
+        maxPullDistance.current = 0;
+        isPulling.current = false;
+        globalIsPulling.current = false;
+        activeTouchId.current = null;
+
+        setIsRefreshing(true);
+        isRefreshingRef.current = true;
+        triggerHaptic(ImpactStyle.Heavy);
+        try {
+          const startTime = Date.now();
+          await onRefreshRef.current();
+          const elapsed = Date.now() - startTime;
+          if (elapsed < 600) {
+            await new Promise(resolve => setTimeout(resolve, 600 - elapsed));
+          }
+        } finally {
+          setIsRefreshing(false);
+          isRefreshingRef.current = false;
+          setPullDistance(0);
+          pullDistanceRef.current = 0;
+        }
+        return;
+      }
+
       isPulling.current = false;
       globalIsPulling.current = false;
       activeTouchId.current = null;
+      hadDownwardMovement.current = false;
+      maxPullDistance.current = 0;
       setPullDistance(0);
       pullDistanceRef.current = 0;
     };
 
     // Periodic check to reset stuck pull states (iOS doesn't always fire touchend/touchcancel)
-    const stuckCheckInterval = setInterval(() => {
-      if (isPulling.current && !isRefreshingRef.current) {
+    // For very low thresholds, trigger refresh if we had downward movement
+    const stuckCheckInterval = setInterval(async () => {
+      if (!isRefreshingRef.current) {
         const timeSinceLastTouch = Date.now() - lastTouchTime.current;
-        if (timeSinceLastTouch > 100) {
-          // No touch events for 100ms while pulling - gesture is stuck, reset
+
+        // If we had downward movement and touch stopped for 100ms, trigger refresh for low thresholds
+        if (timeSinceLastTouch > 100 && threshold <= 5 && hadDownwardMovement.current && onRefreshRef.current) {
+          hadDownwardMovement.current = false;
+          maxPullDistance.current = 0;
           isPulling.current = false;
           globalIsPulling.current = false;
           activeTouchId.current = null;
+
+          setIsRefreshing(true);
+          isRefreshingRef.current = true;
+          triggerHaptic(ImpactStyle.Heavy);
+          try {
+            const startTime = Date.now();
+            await onRefreshRef.current();
+            const elapsed = Date.now() - startTime;
+            if (elapsed < 600) {
+              await new Promise(resolve => setTimeout(resolve, 600 - elapsed));
+            }
+          } finally {
+            setIsRefreshing(false);
+            isRefreshingRef.current = false;
+            setPullDistance(0);
+            pullDistanceRef.current = 0;
+          }
+          return;
+        }
+
+        // Regular stuck state reset
+        if (isPulling.current && timeSinceLastTouch > 100) {
+          isPulling.current = false;
+          globalIsPulling.current = false;
+          activeTouchId.current = null;
+          hadDownwardMovement.current = false;
+          maxPullDistance.current = 0;
           setPullDistance(0);
           pullDistanceRef.current = 0;
         }
@@ -11636,8 +11752,9 @@ export default function DaySevenApp() {
 
   // Pull-to-refresh hook (enabled on home and feed tabs)
   // Lower resistance means pull distance grows faster relative to finger movement
+  // Feed/leaderboard uses a lower threshold (1) for easier refresh triggering
   const { pullDistance, isRefreshing } = usePullToRefresh(refreshData, {
-    threshold: 28,
+    threshold: activeTab === 'feed' ? 1 : 28,
     resistance: 0.5,
     enabled: activeTab === 'home' || activeTab === 'feed'
   });

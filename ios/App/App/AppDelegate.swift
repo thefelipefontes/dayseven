@@ -1,6 +1,5 @@
 import UIKit
 import Capacitor
-import FirebaseCore
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -8,32 +7,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Initialize Firebase
-        FirebaseApp.configure()
-
-        // Set window background to black immediately
-        window?.backgroundColor = .black
-
-        // Configure WebView background color after a short delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            self.configureWebViewBackground()
-        }
-
+        // Override point for customization after application launch.
         return true
-    }
-
-    private func configureWebViewBackground() {
-        // Find the CAPBridgeViewController and configure its WebView
-        if let rootVC = window?.rootViewController as? CAPBridgeViewController {
-            rootVC.webView?.backgroundColor = .black
-            rootVC.webView?.scrollView.backgroundColor = .black
-            rootVC.view.backgroundColor = .black
-
-            // Disable bounce/overscroll to prevent white flash
-            rootVC.webView?.scrollView.bounces = false
-            rootVC.webView?.scrollView.alwaysBounceVertical = false
-            rootVC.webView?.scrollView.alwaysBounceHorizontal = false
-        }
     }
 
     func applicationWillResignActive(_ application: UIApplication) {
@@ -52,9 +27,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func applicationDidBecomeActive(_ application: UIApplication) {
         // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
-
-        // Ensure WebView background is configured
-        configureWebViewBackground()
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
@@ -70,7 +42,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {
         // Called when the app was launched with an activity, including Universal Links.
         // Feel free to add additional processing here, but if you want the App API to support
-        // tracking app url opens, make sure to keep this call
+        // temporary user activities, make sure to keep this call
         return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
     }
 

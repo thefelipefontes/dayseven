@@ -45,20 +45,13 @@ const Login = ({ onLogin }) => {
     try {
       if (isNative) {
         // Use native Apple Sign In through Capacitor plugin
+        // The plugin handles Firebase authentication internally
         const result = await FirebaseAuthentication.signInWithApple();
         console.log('Apple Sign In result:', result);
 
-        if (result.credential) {
-          // Use the credential to sign in with web Firebase SDK
-          const provider = new OAuthProvider('apple.com');
-          const credential = provider.credential({
-            idToken: result.credential.idToken,
-            rawNonce: result.credential.nonce,
-          });
-          const userCredential = await signInWithCredential(auth, credential);
-          onLogin(userCredential.user);
-        } else if (result.user) {
-          // If we got a user directly, use it
+        // The plugin already signs the user into Firebase natively
+        // Just pass the user info to the app - auth state listener will sync
+        if (result.user) {
           const user = {
             uid: result.user.uid,
             email: result.user.email,

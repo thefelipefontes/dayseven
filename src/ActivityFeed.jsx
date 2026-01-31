@@ -193,6 +193,7 @@ const SwipeableComment = ({ children, commentId, onDelete, canDelete }) => {
 const TouchButton = ({ onClick, disabled = false, className, style, children }) => {
   const ref = useRef(null);
   const touchStartRef = useRef({ x: 0, y: 0, time: 0 });
+  const [isPressed, setIsPressed] = useState(false);
 
   useEffect(() => {
     const el = ref.current;
@@ -204,9 +205,11 @@ const TouchButton = ({ onClick, disabled = false, className, style, children }) 
         y: e.touches[0].clientY,
         time: Date.now()
       };
+      setIsPressed(true);
     };
 
     const handleTouchEnd = (e) => {
+      setIsPressed(false);
       const touch = e.changedTouches[0];
       const dx = Math.abs(touch.clientX - touchStartRef.current.x);
       const dy = Math.abs(touch.clientY - touchStartRef.current.y);
@@ -217,13 +220,19 @@ const TouchButton = ({ onClick, disabled = false, className, style, children }) 
       }
     };
 
+    const handleTouchCancel = () => {
+      setIsPressed(false);
+    };
+
     // Use passive: true to not block scrolling, and NOT capture phase so window gets events first
     el.addEventListener('touchstart', handleTouchStart, { passive: true });
     el.addEventListener('touchend', handleTouchEnd, { passive: true });
+    el.addEventListener('touchcancel', handleTouchCancel, { passive: true });
 
     return () => {
       el.removeEventListener('touchstart', handleTouchStart);
       el.removeEventListener('touchend', handleTouchEnd);
+      el.removeEventListener('touchcancel', handleTouchCancel);
     };
   }, [disabled, onClick]);
 
@@ -233,7 +242,15 @@ const TouchButton = ({ onClick, disabled = false, className, style, children }) 
       role={disabled ? undefined : "button"}
       tabIndex={disabled ? undefined : 0}
       className={className}
-      style={{ ...style, touchAction: 'pan-y', cursor: disabled ? 'default' : 'pointer', textAlign: 'center' }}
+      style={{
+        ...style,
+        touchAction: 'pan-y',
+        cursor: disabled ? 'default' : 'pointer',
+        textAlign: 'center',
+        transform: isPressed ? 'scale(0.95)' : 'scale(1)',
+        opacity: isPressed ? 0.7 : 1,
+        transition: 'transform 0.1s ease-out, opacity 0.1s ease-out'
+      }}
     >
       {children}
     </div>
@@ -451,9 +468,7 @@ const MemoizedActivityCard = React.memo(({
               <TouchButton
                 onClick={() => {
                   onToggleComments();
-                  if (!showComments) {
-                    setTimeout(() => inputRef.current?.focus(), 100);
-                  }
+                  // Don't auto-focus keyboard - let user tap "Add a comment" to focus
                 }}
                 className={`flex items-center gap-1 px-2 py-1 rounded-full transition-all duration-150 ${showComments ? 'bg-zinc-700 ring-1 ring-white/20' : 'bg-zinc-800 hover:bg-zinc-700'}`}
               >
@@ -1067,29 +1082,50 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   const handleReaction = async (activity, emoji) => {
     if (!activity.id) return;
 
-    // console.log('Adding reaction:', activity.id, activity.friend.uid, emoji);
-
     const key = `${activity.friend.uid}-${activity.id}`;
     const currentReactions = activityReactions[key] || [];
     const existingReaction = currentReactions.find(r => r.reactorUid === user.uid);
+    const reactorName = userProfile?.displayName || user?.displayName || userProfile?.username || user?.email?.split('@')[0] || 'User';
+    const reactorPhoto = userProfile?.photoURL || user?.photoURL || null;
 
+    // Optimistic UI update - update state immediately before async call
+    if (existingReaction && existingReaction.reactionType === emoji) {
+      // Optimistically remove reaction
+      setActivityReactions(prev => ({
+        ...prev,
+        [key]: currentReactions.filter(r => r.reactorUid !== user.uid)
+      }));
+    } else {
+      // Optimistically add/update reaction
+      const newReaction = {
+        reactorUid: user.uid,
+        reactorName: reactorName,
+        reactorPhoto: reactorPhoto,
+        reactionType: emoji
+      };
+      if (existingReaction) {
+        setActivityReactions(prev => ({
+          ...prev,
+          [key]: currentReactions.map(r =>
+            r.reactorUid === user.uid ? newReaction : r
+          )
+        }));
+      } else {
+        setActivityReactions(prev => ({
+          ...prev,
+          [key]: [...currentReactions, newReaction]
+        }));
+      }
+    }
+
+    // Sync with server in background
     try {
       if (existingReaction && existingReaction.reactionType === emoji) {
         // Remove reaction (toggle off)
-        // console.log('Removing reaction for activity:', activity.id);
         await removeReaction(activity.friend.uid, activity.id, user.uid);
-        // console.log('Reaction removed successfully');
-        setActivityReactions(prev => ({
-          ...prev,
-          [key]: currentReactions.filter(r => r.reactorUid !== user.uid)
-        }));
       } else {
         // Add or update reaction
-        const reactorName = userProfile?.displayName || user?.displayName || userProfile?.username || user?.email?.split('@')[0] || 'User';
-        const reactorPhoto = userProfile?.photoURL || user?.photoURL || null;
-
-        // Calling addReaction with activity.id, activity.friend.uid, user.uid, reactorName, reactorPhoto, emoji
-        const result = await addReaction(
+        await addReaction(
           activity.id,
           activity.friend.uid,
           user.uid,
@@ -1097,37 +1133,18 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           reactorPhoto,
           emoji
         );
-        // console.log('addReaction result:', result);
-
-        // Update local state
-        const newReaction = {
-          reactorUid: user.uid,
-          reactorName: reactorName,
-          reactorPhoto: reactorPhoto,
-          reactionType: emoji
-        };
-
-        if (existingReaction) {
-          // Replace existing reaction
-          setActivityReactions(prev => ({
-            ...prev,
-            [key]: currentReactions.map(r =>
-              r.reactorUid === user.uid ? newReaction : r
-            )
-          }));
-        } else {
-          // Add new reaction
-          setActivityReactions(prev => ({
-            ...prev,
-            [key]: [...currentReactions, newReaction]
-          }));
-        }
       }
     } catch (error) {
-      // console.error('Error handling reaction:', error);
-      // console.error('Error details:', error.message, error.code);
+      // Revert optimistic update on error - reload reactions from server
+      try {
+        const reactions = await getReactions(activity.friend.uid, activity.id);
+        setActivityReactions(prev => ({ ...prev, [key]: reactions }));
+      } catch (e) {
+        // If reload fails, just leave the optimistic state
+      }
     }
   };
+
 
   const handleAddComment = async (text, activity) => {
     if (!activity || !text.trim()) return;

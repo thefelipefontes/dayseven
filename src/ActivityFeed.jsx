@@ -15,6 +15,39 @@ const triggerHaptic = async (style = ImpactStyle.Medium) => {
   }
 };
 
+// ScrollablePill - a pill button that allows horizontal scrolling through it
+// Uses onPointerUp for tap detection which doesn't block scroll gestures
+const ScrollablePill = ({ onClick, isSelected, color, textColor, children }) => {
+  const startPos = useRef({ x: 0, y: 0 });
+
+  const handlePointerDown = (e) => {
+    startPos.current = { x: e.clientX, y: e.clientY };
+  };
+
+  const handlePointerUp = (e) => {
+    const dx = Math.abs(e.clientX - startPos.current.x);
+    const dy = Math.abs(e.clientY - startPos.current.y);
+    // Only trigger click if minimal movement (not a scroll)
+    if (dx < 10 && dy < 10) {
+      onClick();
+    }
+  };
+
+  return (
+    <div
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      className="px-2.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-200 flex-shrink-0 cursor-pointer select-none"
+      style={{
+        backgroundColor: isSelected ? color : 'rgba(255,255,255,0.05)',
+        color: isSelected ? textColor : 'rgba(255,255,255,0.5)',
+      }}
+    >
+      {children}
+    </div>
+  );
+};
+
 // Pull-to-Refresh Indicator Component for Feed - uses fixed positioning to avoid layout shifts
 // visualThreshold controls how much the indicator moves - lower = less movement needed to show full indicator
 const FeedPullToRefreshIndicator = ({ pullDistance, isRefreshing, threshold = 28, visualThreshold }) => {
@@ -190,7 +223,7 @@ const SwipeableComment = ({ children, commentId, onDelete, canDelete }) => {
 
 // TouchButton component - uses native DOM event listeners for tap detection
 // This allows window-level capture listeners to still receive touch events for pull-to-refresh
-const TouchButton = ({ onClick, disabled = false, className, style, children }) => {
+const TouchButton = ({ onClick, disabled = false, className, style, children, touchAction = 'pan-y' }) => {
   const ref = useRef(null);
   const touchStartRef = useRef({ x: 0, y: 0, time: 0 });
   const [isPressed, setIsPressed] = useState(false);
@@ -244,7 +277,7 @@ const TouchButton = ({ onClick, disabled = false, className, style, children }) 
       className={className}
       style={{
         ...style,
-        touchAction: 'pan-y',
+        touchAction: touchAction,
         cursor: disabled ? 'default' : 'pointer',
         textAlign: 'center',
         transform: isPressed ? 'scale(0.95)' : 'scale(1)',
@@ -1983,8 +2016,8 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
 
           {/* Category Pills + Time Dropdown Row */}
           <div className="flex items-center justify-between mb-4">
-            {/* Category Pills */}
-            <div className="flex gap-1.5 overflow-x-auto no-scrollbar flex-1 mr-3" style={{ touchAction: 'pan-x pan-y' }}>
+            {/* Category Pills - using ScrollablePill for proper scroll + tap behavior */}
+            <div className="flex gap-1.5 overflow-x-auto no-scrollbar flex-1 mr-3 -mx-1 px-1" style={{ WebkitOverflowScrolling: 'touch' }}>
               {leaderboardSection === 'activity' ? (
                 [
                   { key: 'calories', label: '🔥 Calories', color: '#FF6B6B' },
@@ -1994,17 +2027,15 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                   { key: 'cardioSessions', label: '🏃 Cardio', color: '#FF9500' },
                   { key: 'recoverySessions', label: '🧊 Recovery', color: '#00D1FF' }
                 ].map((cat) => (
-                  <TouchButton
+                  <ScrollablePill
                     key={cat.key}
                     onClick={() => setLeaderboardCategory(cat.key)}
-                    className="px-2.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-200"
-                    style={{
-                      backgroundColor: leaderboardCategory === cat.key ? cat.color : 'rgba(255,255,255,0.05)',
-                      color: leaderboardCategory === cat.key ? 'black' : 'rgba(255,255,255,0.5)'
-                    }}
+                    isSelected={leaderboardCategory === cat.key}
+                    color={cat.color}
+                    textColor="black"
                   >
                     {cat.label}
-                  </TouchButton>
+                  </ScrollablePill>
                 ))
               ) : (
                 [
@@ -2013,17 +2044,15 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                   { key: 'cardio', label: '🏃 Cardio', color: '#FF9500' },
                   { key: 'recovery', label: '🧊 Recovery', color: '#00D1FF' }
                 ].map((cat) => (
-                  <TouchButton
+                  <ScrollablePill
                     key={cat.key}
                     onClick={() => setLeaderboardCategory(cat.key)}
-                    className="px-2.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-200"
-                    style={{
-                      backgroundColor: leaderboardCategory === cat.key ? cat.color : 'rgba(255,255,255,0.05)',
-                      color: leaderboardCategory === cat.key ? (cat.key === 'master' ? 'black' : 'white') : 'rgba(255,255,255,0.5)'
-                    }}
+                    isSelected={leaderboardCategory === cat.key}
+                    color={cat.color}
+                    textColor={cat.key === 'master' ? 'black' : 'white'}
                   >
                     {cat.label}
-                  </TouchButton>
+                  </ScrollablePill>
                 ))
               )}
             </div>

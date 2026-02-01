@@ -13,6 +13,9 @@ class CustomViewController: CAPBridgeViewController, UIScrollViewDelegate {
         super.viewDidLoad()
         view.backgroundColor = .black
         setNeedsStatusBarAppearanceUpdate()
+
+        // Register local HealthKit writer plugin
+        bridge?.registerPluginInstance(HealthKitWriterPlugin())
     }
 
     override func viewDidAppear(_ animated: Bool) {

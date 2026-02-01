@@ -12,7 +12,7 @@ import html2canvas from 'html2canvas';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
-import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType } from './services/healthService';
+import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts } from './services/healthService';
 
 // Helper function for haptic feedback that works on iOS
 const triggerHaptic = async (style = ImpactStyle.Medium) => {
@@ -6122,6 +6122,10 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   const [calories, setCalories] = useState('');
   const [avgHr, setAvgHr] = useState('');
   const [maxHr, setMaxHr] = useState('');
+  // Link to Apple Health workout
+  const [linkableWorkouts, setLinkableWorkouts] = useState([]);
+  const [linkedWorkout, setLinkedWorkout] = useState(null);
+  const [isLoadingWorkouts, setIsLoadingWorkouts] = useState(false);
   // Photo upload state
   const [activityPhoto, setActivityPhoto] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
@@ -6160,6 +6164,10 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       setCalories(pendingActivity?.calories || '');
       setAvgHr(pendingActivity?.avgHr || '');
       setMaxHr(pendingActivity?.maxHr || '');
+      // Reset linked workout state
+      setLinkableWorkouts([]);
+      setLinkedWorkout(pendingActivity?.linkedHealthKitUUID ? { healthKitUUID: pendingActivity.linkedHealthKitUUID } : null);
+      setIsLoadingWorkouts(false);
       // Reset photo state
       setActivityPhoto(null);
       setPhotoPreview(pendingActivity?.photoURL || null);
@@ -6167,6 +6175,28 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       setShowPhotoOptions(false);
     }
   }, [isOpen, pendingActivity, defaultDate]);
+
+  // Fetch linkable Apple Health workouts when date changes (only in "completed" mode)
+  useEffect(() => {
+    if (!isOpen || mode !== 'completed' || !date) return;
+
+    const fetchWorkouts = async () => {
+      setIsLoadingWorkouts(true);
+      try {
+        // Get list of already linked workout IDs from user's activities
+        // For now, we'll pass an empty array - in future could track this
+        const workouts = await fetchLinkableWorkouts(date, []);
+        setLinkableWorkouts(workouts);
+      } catch (error) {
+        console.error('Error fetching linkable workouts:', error);
+        setLinkableWorkouts([]);
+      } finally {
+        setIsLoadingWorkouts(false);
+      }
+    };
+
+    fetchWorkouts();
+  }, [isOpen, mode, date]);
 
   // Generate calendar days for date picker
   const getCalendarDays = () => {
@@ -6254,6 +6284,26 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   const showCustomActivityInput = activityType === 'Other';
   const showCountToward = activityType === 'Yoga' || activityType === 'Pilates';
   const isFromAppleHealth = !!pendingActivity?.fromAppleHealth;
+
+  // Handle linking an Apple Health workout
+  const handleLinkWorkout = (workout) => {
+    if (linkedWorkout?.healthKitUUID === workout.healthKitUUID) {
+      // Unlink if already linked
+      setLinkedWorkout(null);
+      // Don't clear metrics - user might have edited them
+    } else {
+      // Link and auto-fill metrics
+      setLinkedWorkout(workout);
+      if (workout.calories) setCalories(workout.calories.toString());
+      if (workout.avgHr) setAvgHr(workout.avgHr.toString());
+      if (workout.maxHr) setMaxHr(workout.maxHr.toString());
+      if (workout.distance) setDistance(workout.distance.toString());
+      if (workout.duration) {
+        setDurationHours(Math.floor(workout.duration / 60));
+        setDurationMinutes(workout.duration % 60);
+      }
+    }
+  };
 
   // Photo handling with Capacitor Camera
   const handleChooseFromLibrary = async () => {
@@ -6523,6 +6573,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               sportEmoji,
               customEmoji: showCustomActivityInput ? customActivityEmoji : undefined, // Store emoji for "Other" activities
               fromAppleHealth: isFromAppleHealth,
+              linkedHealthKitUUID: linkedWorkout?.healthKitUUID || undefined, // Link to Apple Health workout
               countToward: showCustomActivityInput ? customActivityCategory : (countToward || undefined),
               customActivityCategory: showCustomActivityInput ? customActivityCategory : undefined,
               // Photo data
@@ -7424,10 +7475,94 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               })()}
             </div>
 
+            {/* Link to Apple Health Workout Section */}
+            {!isFromAppleHealth && (linkableWorkouts.length > 0 || isLoadingWorkouts || linkedWorkout) && (
+              <div>
+                <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">
+                  Link to Apple Health Workout
+                </label>
+                {isLoadingWorkouts ? (
+                  <div className="flex items-center justify-center p-4 rounded-xl bg-white/5 border border-white/10">
+                    <span className="text-gray-500 text-sm">Finding workouts...</span>
+                  </div>
+                ) : linkableWorkouts.length === 0 && !linkedWorkout ? (
+                  <div className="p-3 rounded-xl bg-white/5 border border-white/10 text-center">
+                    <span className="text-gray-500 text-sm">No workouts found for this date</span>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {linkableWorkouts.map((workout) => {
+                      const isLinked = linkedWorkout?.healthKitUUID === workout.healthKitUUID;
+                      return (
+                        <button
+                          key={workout.healthKitUUID || workout.id}
+                          onClick={() => handleLinkWorkout(workout)}
+                          className={`w-full p-3 rounded-xl text-left transition-all ${
+                            isLinked
+                              ? 'bg-[#00FF94]/20 border-2 border-[#00FF94]'
+                              : 'bg-white/5 border border-white/10 hover:bg-white/10'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <span className="text-xl">{workout.icon || '💪'}</span>
+                              <div>
+                                <div className="text-white text-sm font-medium">
+                                  {workout.type}{workout.subtype ? ` • ${workout.subtype}` : ''}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {workout.time} • {workout.duration} min
+                                  {workout.sourceDevice && ` • ${workout.sourceDevice}`}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              {isLinked ? (
+                                <span className="text-[#00FF94] text-xs font-medium">✓ Linked</span>
+                              ) : (
+                                <span className="text-gray-500 text-xs">Tap to link</span>
+                              )}
+                            </div>
+                          </div>
+                          {/* Show metrics preview */}
+                          {(workout.calories || workout.avgHr) && (
+                            <div className="flex gap-4 mt-2 text-xs text-gray-400">
+                              {workout.calories && (
+                                <span>🔥 {workout.calories} cal</span>
+                              )}
+                              {workout.avgHr && (
+                                <span>❤️ {workout.avgHr} bpm avg</span>
+                              )}
+                              {workout.distance && (
+                                <span>📍 {workout.distance} mi</span>
+                              )}
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                    {linkedWorkout && !linkableWorkouts.find(w => w.healthKitUUID === linkedWorkout.healthKitUUID) && (
+                      <div className="p-3 rounded-xl bg-[#00FF94]/20 border-2 border-[#00FF94]">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[#00FF94] text-sm">✓ Linked to Apple Health workout</span>
+                          <button
+                            onClick={() => setLinkedWorkout(null)}
+                            className="text-gray-400 text-xs"
+                          >
+                            Unlink
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Optional Metrics Section */}
             <div>
               <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">
-                Workout Metrics {isFromAppleHealth ? <span style={{ color: '#00FF94' }}>(from Apple Health)</span> : <span className="text-gray-600">(optional)</span>}
+                Workout Metrics {isFromAppleHealth ? <span style={{ color: '#00FF94' }}>(from Apple Health)</span> : linkedWorkout ? <span style={{ color: '#00FF94' }}>(from linked workout)</span> : <span className="text-gray-600">(optional)</span>}
               </label>
               <div className="grid grid-cols-3 gap-3">
                 <div>

@@ -194,6 +194,65 @@ export async function fetchHealthKitWorkouts(days = 7) {
   }
 }
 
+// Fetch workouts from HealthKit for a specific date that can be linked to a DaySeven activity
+// Excludes workouts that were created by DaySeven (source contains 'dayseven')
+export async function fetchLinkableWorkouts(date, linkedWorkoutIds = []) {
+  if (!Capacitor.isNativePlatform()) return [];
+
+  try {
+    // Create date range for the entire day
+    const startDate = new Date(date + 'T00:00:00');
+    const endDate = new Date(date + 'T23:59:59');
+
+    const result = await Health.queryWorkouts({
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+      limit: 50
+    });
+
+    if (!result.workouts || result.workouts.length === 0) {
+      return [];
+    }
+
+    // Convert and filter workouts
+    const activities = result.workouts
+      .map(convertWorkoutToActivity)
+      .filter(activity => {
+        // Exclude workouts created by DaySeven
+        const sourceName = (activity.sourceDevice || '').toLowerCase();
+        if (sourceName.includes('dayseven')) return false;
+
+        // Exclude already linked workouts
+        if (linkedWorkoutIds.includes(activity.healthKitUUID)) return false;
+
+        return true;
+      });
+
+    // Sort by time (most recent first)
+    activities.sort((a, b) => {
+      const timeA = a.time || '00:00 AM';
+      const timeB = b.time || '00:00 AM';
+      // Parse 12-hour time to comparable format
+      const parseTime = (t) => {
+        const match = t.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+        if (!match) return 0;
+        let hours = parseInt(match[1], 10);
+        const minutes = parseInt(match[2], 10);
+        const period = match[3]?.toUpperCase();
+        if (period === 'PM' && hours !== 12) hours += 12;
+        if (period === 'AM' && hours === 12) hours = 0;
+        return hours * 60 + minutes;
+      };
+      return parseTime(timeB) - parseTime(timeA);
+    });
+
+    return activities;
+  } catch (error) {
+    console.error('Error fetching linkable workouts:', error);
+    return [];
+  }
+}
+
 // Fetch today's steps from HealthKit
 export async function fetchTodaySteps() {
   if (!Capacitor.isNativePlatform()) return null;

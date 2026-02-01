@@ -12,6 +12,7 @@ import html2canvas from 'html2canvas';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
+import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories } from './services/healthService';
 
 // Helper function for haptic feedback that works on iOS
 const triggerHaptic = async (style = ImpactStyle.Medium) => {
@@ -6676,7 +6677,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 };
 
 // Home Tab - Simplified
-const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef }) => {
+const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {} }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [activityReactions, setActivityReactions] = useState({});
   const [activityComments, setActivityComments] = useState({});
@@ -6739,10 +6740,12 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
       lifts: { completed: lifts.length, goal: goals.liftsPerWeek, sessions: lifts.map(l => l.subtype || l.type), breakdown: { lifting: lifting.length, bodyweight: bodyweight.length }, otherActivities: otherStrength },
       cardio: { completed: cardio.length, goal: goals.cardioPerWeek, miles: totalMiles, sessions: cardio.map(c => c.type), breakdown: { running: running.length, cycling: cycling.length, sports: sports.length, other: otherCardio.length }, otherActivities: otherCardio },
       recovery: { completed: recovery.length, goal: goals.recoveryPerWeek, sessions: recovery.map(r => r.type), breakdown: { coldPlunge: coldPlunge.length, sauna: sauna.length, yoga: yoga.length, pilates: pilates.length }, otherActivities: otherRecovery },
-      calories: { burned: totalCalories, goal: goals.caloriesPerDay },
-      steps: { today: 0, goal: goals.stepsPerDay }
+      // Use HealthKit calories if available, otherwise fall back to activity sum
+      calories: { burned: healthKitData.todayCalories || totalCalories, goal: goals.caloriesPerDay },
+      // Use HealthKit steps
+      steps: { today: healthKitData.todaySteps || 0, goal: goals.stepsPerDay }
     };
-  }, [activities, userData?.goals]);
+  }, [activities, userData?.goals, healthKitData.todaySteps, healthKitData.todayCalories]);
 
   const stepsPercent = weekProgress.steps?.goal > 0 ? Math.min((weekProgress.steps.today / weekProgress.steps.goal) * 100, 100) : 0;
   const caloriesPercent = weekProgress.calories.goal > 0 ? Math.min((weekProgress.calories.burned / weekProgress.calories.goal) * 100, 100) : 0;
@@ -11945,6 +11948,13 @@ export default function DaySevenApp() {
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [feedActiveView, setFeedActiveView] = useState('feed'); // 'feed' or 'leaderboard'
 
+  // HealthKit data state
+  const [healthKitData, setHealthKitData] = useState({
+    todaySteps: 0,
+    todayCalories: 0,
+    pendingWorkouts: [], // Workouts from HealthKit not yet added to activities
+    lastSynced: null
+  });
 
   // Update app icon badge when pending requests change
   useEffect(() => {
@@ -12352,10 +12362,84 @@ export default function DaySevenApp() {
       ]);
       setFriends(friendsList);
       setPendingFriendRequests(requests.length);
+
+      // Refresh HealthKit data on pull-to-refresh
+      if (Capacitor.isNativePlatform()) {
+        try {
+          const [steps, calories] = await Promise.all([
+            fetchTodaySteps(),
+            fetchTodayCalories()
+          ]);
+          setHealthKitData(prev => ({
+            ...prev,
+            todaySteps: steps || prev.todaySteps,
+            todayCalories: calories || prev.todayCalories
+          }));
+        } catch (e) {
+          // Silently fail HealthKit refresh
+        }
+      }
     } catch (error) {
       // console.error('Error refreshing data:', error);
     }
   }, [user?.uid]);
+
+  // Sync HealthKit data function
+  const syncHealthKit = useCallback(async (existingActivities = []) => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    try {
+      const result = await syncHealthKitData();
+      if (result.success) {
+        // Find workouts that aren't already in activities (by healthKitUUID)
+        const existingUUIDs = new Set(
+          existingActivities
+            .filter(a => a.healthKitUUID)
+            .map(a => a.healthKitUUID)
+        );
+
+        const newWorkouts = result.workouts.filter(
+          w => w.healthKitUUID && !existingUUIDs.has(w.healthKitUUID)
+        );
+
+        setHealthKitData({
+          todaySteps: result.todaySteps || 0,
+          todayCalories: result.todayCalories || 0,
+          pendingWorkouts: newWorkouts,
+          lastSynced: new Date().toISOString()
+        });
+      }
+    } catch (error) {
+      console.log('HealthKit sync error:', error);
+    }
+  }, []);
+
+  // Sync HealthKit when user logs in and periodically refresh steps/calories
+  useEffect(() => {
+    if (!user?.uid || !Capacitor.isNativePlatform()) return;
+
+    // Initial sync
+    syncHealthKit(activities);
+
+    // Refresh steps and calories every 5 minutes (these update frequently)
+    const refreshInterval = setInterval(async () => {
+      try {
+        const [steps, calories] = await Promise.all([
+          fetchTodaySteps(),
+          fetchTodayCalories()
+        ]);
+        setHealthKitData(prev => ({
+          ...prev,
+          todaySteps: steps || prev.todaySteps,
+          todayCalories: calories || prev.todayCalories
+        }));
+      } catch (e) {
+        // Silently fail
+      }
+    }, 5 * 60 * 1000); // 5 minutes
+
+    return () => clearInterval(refreshInterval);
+  }, [user?.uid, syncHealthKit]);
 
   // Pull-to-refresh hook (enabled on home tab and feed tab, but not on leaderboard view)
   // Threshold of 80 matches native iOS UIRefreshControl feel
@@ -12880,6 +12964,14 @@ export default function DaySevenApp() {
     }
     
     setActivities(updatedActivities);
+
+    // If this was a HealthKit workout, remove it from pending list
+    if (activityData.healthKitUUID) {
+      setHealthKitData(prev => ({
+        ...prev,
+        pendingWorkouts: prev.pendingWorkouts.filter(w => w.healthKitUUID !== activityData.healthKitUUID)
+      }));
+    }
 
     // Recalculate weekly progress
     const newProgress = calculateWeeklyProgress(updatedActivities);
@@ -13469,7 +13561,7 @@ export default function DaySevenApp() {
               {activeTab === 'home' && (
                 <HomeTab
                   onAddActivity={handleAddActivity}
-                  pendingSync={initialPendingSync}
+                  pendingSync={healthKitData.pendingWorkouts || []}
                   activities={activities}
                   weeklyProgress={weeklyProgress}
                   userData={userData}
@@ -13486,6 +13578,7 @@ export default function DaySevenApp() {
                   user={user}
                   weeklyGoalsRef={weeklyGoalsRef}
                   latestActivityRef={latestActivityRef}
+                  healthKitData={healthKitData}
                 />
               )}
               {activeTab === 'history' && (

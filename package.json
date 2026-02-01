@@ -25,6 +25,7 @@
     "@capacitor/splash-screen": "^8.0.0",
     "@capacitor/status-bar": "^8.0.0",
     "@capawesome/capacitor-badge": "^8.0.0",
+    "@capgo/capacitor-health": "^8.2.11",
     "@sentry/react": "^10.36.0",
     "dom-to-image-more": "^3.7.2",
     "firebase": "^12.8.0",

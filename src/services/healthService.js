@@ -55,41 +55,83 @@ export async function requestHealthKitAuthorization() {
 }
 
 // Map HealthKit workout types to our app's activity types
+// Plugin returns lowercase camelCase (e.g., "walking", "running", "strengthTraining")
 const workoutTypeMap = {
-  'HKWorkoutActivityTypeRunning': { type: 'Running', icon: '🏃' },
-  'HKWorkoutActivityTypeCycling': { type: 'Cycle', icon: '🚴' },
-  'HKWorkoutActivityTypeSwimming': { type: 'Other', subtype: 'Swimming', icon: '🏊' },
-  'HKWorkoutActivityTypeYoga': { type: 'Yoga', icon: '🧘' },
-  'HKWorkoutActivityTypePilates': { type: 'Pilates', icon: '🤸' },
-  'HKWorkoutActivityTypeTraditionalStrengthTraining': { type: 'Strength Training', subtype: 'Lifting', strengthType: 'Lifting', icon: '🏋️' },
-  'HKWorkoutActivityTypeFunctionalStrengthTraining': { type: 'Strength Training', subtype: 'Bodyweight', strengthType: 'Bodyweight', icon: '💪' },
-  'HKWorkoutActivityTypeHighIntensityIntervalTraining': { type: 'Strength Training', subtype: 'HIIT', strengthType: 'Lifting', icon: '🔥' },
-  'HKWorkoutActivityTypeCrossTraining': { type: 'Strength Training', subtype: 'Cross Training', strengthType: 'Lifting', icon: '💪' },
-  'HKWorkoutActivityTypeWalking': { type: 'Other', subtype: 'Walking', icon: '🚶' },
-  'HKWorkoutActivityTypeHiking': { type: 'Other', subtype: 'Hiking', icon: '🥾' },
-  'HKWorkoutActivityTypeElliptical': { type: 'Other', subtype: 'Elliptical', icon: '🏃' },
-  'HKWorkoutActivityTypeRowing': { type: 'Other', subtype: 'Rowing', icon: '🚣' },
-  'HKWorkoutActivityTypeStairClimbing': { type: 'Other', subtype: 'Stair Climbing', icon: '🪜' },
-  'HKWorkoutActivityTypeTennis': { type: 'Sports', subtype: 'Tennis', sportEmoji: '🎾', icon: '🎾' },
-  'HKWorkoutActivityTypeBasketball': { type: 'Sports', subtype: 'Basketball', sportEmoji: '🏀', icon: '🏀' },
-  'HKWorkoutActivityTypeSoccer': { type: 'Sports', subtype: 'Soccer', sportEmoji: '⚽', icon: '⚽' },
-  'HKWorkoutActivityTypeAmericanFootball': { type: 'Sports', subtype: 'Football', sportEmoji: '🏈', icon: '🏈' },
-  'HKWorkoutActivityTypeBaseball': { type: 'Sports', subtype: 'Baseball', sportEmoji: '⚾', icon: '⚾' },
-  'HKWorkoutActivityTypeGolf': { type: 'Sports', subtype: 'Golf', sportEmoji: '⛳', icon: '⛳' },
-  'HKWorkoutActivityTypeBadminton': { type: 'Sports', subtype: 'Badminton', sportEmoji: '🏸', icon: '🏸' },
-  'HKWorkoutActivityTypeBoxing': { type: 'Sports', subtype: 'Boxing', sportEmoji: '🥊', icon: '🥊' },
-  'HKWorkoutActivityTypeMartialArts': { type: 'Sports', subtype: 'Martial Arts', sportEmoji: '🥋', icon: '🥋' },
-  'HKWorkoutActivityTypeDance': { type: 'Other', subtype: 'Dance', icon: '💃' },
-  'HKWorkoutActivityTypeMindAndBody': { type: 'Yoga', icon: '🧘' },
-  'HKWorkoutActivityTypeCoreTraining': { type: 'Strength Training', subtype: 'Core', strengthType: 'Bodyweight', icon: '💪' },
-  'HKWorkoutActivityTypeFlexibility': { type: 'Yoga', icon: '🧘' },
-  'HKWorkoutActivityTypeCooldown': { type: 'Other', subtype: 'Cooldown', icon: '🧊' },
+  // Lowercase versions from @capgo/capacitor-health plugin
+  'running': { type: 'Running', icon: '🏃' },
+  'cycling': { type: 'Cycle', icon: '🚴' },
+  'swimming': { type: 'Other', subtype: 'Swimming', icon: '🏊' },
+  'yoga': { type: 'Yoga', icon: '🧘' },
+  'pilates': { type: 'Pilates', icon: '🤸' },
+  'traditionalStrengthTraining': { type: 'Strength Training', subtype: 'Lifting', strengthType: 'Lifting', icon: '🏋️' },
+  'strengthTraining': { type: 'Strength Training', subtype: 'Lifting', strengthType: 'Lifting', icon: '🏋️' },
+  'functionalStrengthTraining': { type: 'Strength Training', subtype: 'Bodyweight', strengthType: 'Bodyweight', icon: '💪' },
+  'highIntensityIntervalTraining': { type: 'Strength Training', subtype: 'HIIT', strengthType: 'Lifting', icon: '🔥' },
+  'crossTraining': { type: 'Strength Training', subtype: 'Cross Training', strengthType: 'Lifting', icon: '💪' },
+  'walking': { type: 'Other', subtype: 'Walking', icon: '🚶' },
+  'hiking': { type: 'Other', subtype: 'Hiking', icon: '🥾' },
+  'elliptical': { type: 'Other', subtype: 'Elliptical', icon: '🏃' },
+  'rowing': { type: 'Other', subtype: 'Rowing', icon: '🚣' },
+  'stairClimbing': { type: 'Other', subtype: 'Stair Climbing', icon: '🪜' },
+  'tennis': { type: 'Sports', subtype: 'Tennis', sportEmoji: '🎾', icon: '🎾' },
+  'basketball': { type: 'Sports', subtype: 'Basketball', sportEmoji: '🏀', icon: '🏀' },
+  'soccer': { type: 'Sports', subtype: 'Soccer', sportEmoji: '⚽', icon: '⚽' },
+  'americanFootball': { type: 'Sports', subtype: 'Football', sportEmoji: '🏈', icon: '🏈' },
+  'baseball': { type: 'Sports', subtype: 'Baseball', sportEmoji: '⚾', icon: '⚾' },
+  'golf': { type: 'Sports', subtype: 'Golf', sportEmoji: '⛳', icon: '⛳' },
+  'badminton': { type: 'Sports', subtype: 'Badminton', sportEmoji: '🏸', icon: '🏸' },
+  'boxing': { type: 'Sports', subtype: 'Boxing', sportEmoji: '🥊', icon: '🥊' },
+  'martialArts': { type: 'Sports', subtype: 'Martial Arts', sportEmoji: '🥋', icon: '🥋' },
+  'dance': { type: 'Other', subtype: 'Dance', icon: '💃' },
+  'mindAndBody': { type: 'Yoga', icon: '🧘' },
+  'coreTraining': { type: 'Strength Training', subtype: 'Core', strengthType: 'Bodyweight', icon: '💪' },
+  'flexibility': { type: 'Yoga', icon: '🧘' },
+  'cooldown': { type: 'Other', subtype: 'Cooldown', icon: '🧊' },
+  'other': { type: 'Other', subtype: 'Workout', icon: '💪' },
+};
+
+// Map HealthKit workout type to human-readable Apple name
+// Plugin returns lowercase camelCase (e.g., "walking", "running", "strengthTraining")
+const appleWorkoutNameMap = {
+  'running': 'Running',
+  'cycling': 'Cycling',
+  'swimming': 'Swimming',
+  'yoga': 'Yoga',
+  'pilates': 'Pilates',
+  'traditionalStrengthTraining': 'Strength Training',
+  'strengthTraining': 'Strength Training',
+  'functionalStrengthTraining': 'Functional Training',
+  'highIntensityIntervalTraining': 'HIIT',
+  'crossTraining': 'Cross Training',
+  'walking': 'Walking',
+  'hiking': 'Hiking',
+  'elliptical': 'Elliptical',
+  'rowing': 'Rowing',
+  'stairClimbing': 'Stair Climbing',
+  'tennis': 'Tennis',
+  'basketball': 'Basketball',
+  'soccer': 'Soccer',
+  'americanFootball': 'Football',
+  'baseball': 'Baseball',
+  'golf': 'Golf',
+  'badminton': 'Badminton',
+  'boxing': 'Boxing',
+  'martialArts': 'Martial Arts',
+  'dance': 'Dance',
+  'mindAndBody': 'Mind & Body',
+  'coreTraining': 'Core Training',
+  'flexibility': 'Flexibility',
+  'cooldown': 'Cooldown',
+  'other': 'Other Workout',
 };
 
 // Convert HealthKit workout to our activity format
 function convertWorkoutToActivity(workout) {
+  console.log('Raw HealthKit workout:', JSON.stringify(workout, null, 2));
+
   const workoutType = workout.workoutActivityType || workout.workoutType || 'HKWorkoutActivityTypeOther';
   const mapped = workoutTypeMap[workoutType] || { type: 'Other', subtype: 'Workout', icon: '💪' };
+  const appleWorkoutName = appleWorkoutNameMap[workoutType] || 'Workout';
 
   // Parse date
   const startDate = new Date(workout.startDate);
@@ -101,9 +143,19 @@ function convertWorkoutToActivity(workout) {
   });
 
   // Calculate duration in minutes
-  const endDate = new Date(workout.endDate);
-  const durationMs = endDate - startDate;
-  const durationMinutes = Math.round(durationMs / (1000 * 60));
+  // Check if workout already has a duration field (in seconds from HealthKit)
+  let durationMinutes;
+  if (workout.duration !== undefined && workout.duration !== null) {
+    // Duration from HealthKit is typically in seconds
+    durationMinutes = Math.round(workout.duration / 60);
+    console.log('Using workout.duration (seconds):', workout.duration, '-> minutes:', durationMinutes);
+  } else {
+    // Fallback: calculate from start/end dates
+    const endDate = new Date(workout.endDate);
+    const durationMs = endDate - startDate;
+    durationMinutes = Math.round(durationMs / (1000 * 60));
+    console.log('Calculated duration from dates:', workout.startDate, 'to', workout.endDate, '-> minutes:', durationMinutes);
+  }
 
   // Get calories (active energy burned)
   const calories = workout.totalEnergyBurned
@@ -127,16 +179,21 @@ function convertWorkoutToActivity(workout) {
     pace = `${paceMin}:${paceSec.toString().padStart(2, '0')}`;
   }
 
+  // Create a unique identifier for this workout
+  // Use uuid if available, otherwise create from sourceId or timestamp
+  const uniqueId = workout.uuid || workout.sourceId || `${startDate.getTime()}_${durationMinutes}`;
+
   // Create activity object
   const activity = {
-    id: `hk_${workout.uuid || startDate.getTime()}`,
+    id: `hk_${uniqueId}`,
     type: mapped.type,
     date: dateStr,
     time: timeStr,
     duration: durationMinutes,
     source: 'healthkit',
     sourceDevice: workout.sourceName || 'Apple Health',
-    healthKitUUID: workout.uuid,
+    healthKitUUID: uniqueId, // Unique identifier for linking
+    appleWorkoutName, // Human-readable name from Apple (e.g., "Walking", "Running")
     ...mapped // includes subtype, strengthType, sportEmoji, etc.
   };
 
@@ -177,8 +234,14 @@ export async function fetchHealthKitWorkouts(days = 7) {
       return [];
     }
 
-    // Convert HealthKit workouts to our format
-    const activities = result.workouts.map(convertWorkoutToActivity);
+    // Convert HealthKit workouts to our format and filter out DaySeven-created workouts
+    const activities = result.workouts
+      .map(convertWorkoutToActivity)
+      .filter(activity => {
+        // Exclude workouts created by DaySeven
+        const sourceName = (activity.sourceDevice || '').toLowerCase();
+        return !sourceName.includes('dayseven');
+      });
 
     // Sort by date (most recent first)
     activities.sort((a, b) => {

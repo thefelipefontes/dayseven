@@ -5516,14 +5516,14 @@ const DurationPicker = ({ hours, minutes, onChange, disabled = false }) => {
   const visibleItems = 3;
 
   useEffect(() => {
-    // Scroll to initial values
+    // Scroll to values when they change
     if (hoursRef.current) {
       hoursRef.current.scrollTop = hours * itemHeight;
     }
     if (minutesRef.current) {
       minutesRef.current.scrollTop = minutes * itemHeight;
     }
-  }, []);
+  }, [hours, minutes]);
 
   const handleScroll = (ref, options, type) => {
     if (!ref.current) return;
@@ -6126,6 +6126,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   const [linkableWorkouts, setLinkableWorkouts] = useState([]);
   const [linkedWorkout, setLinkedWorkout] = useState(null);
   const [isLoadingWorkouts, setIsLoadingWorkouts] = useState(false);
+  // Activity time (set from linked workout)
+  const [activityTime, setActivityTime] = useState('');
   // Photo upload state
   const [activityPhoto, setActivityPhoto] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
@@ -6133,10 +6135,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   const [showPhotoOptions, setShowPhotoOptions] = useState(false);
   const photoInputRef = useRef(null);
   const cameraInputRef = useRef(null);
+  const hasInitializedRef = useRef(false);
 
   // Reset state when modal opens
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !hasInitializedRef.current) {
+      hasInitializedRef.current = true;
       // If there's a pending activity (from HealthKit or editing), go directly to completed flow
       // Otherwise show initial choice screen
       setMode(pendingActivity ? 'completed' : null);
@@ -6157,22 +6161,51 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       setDate(defaultDate || pendingActivity?.date || getTodayDate());
       setShowDatePicker(false);
       setNotes(pendingActivity?.notes || '');
-      setDistance(pendingActivity?.distance || '');
-      // Default to 1 hour for manual input, use synced duration if from Apple Health
-      setDurationHours(pendingActivity?.durationHours ?? 1);
-      setDurationMinutes(pendingActivity?.durationMinutes ?? 0);
-      setCalories(pendingActivity?.calories || '');
-      setAvgHr(pendingActivity?.avgHr || '');
-      setMaxHr(pendingActivity?.maxHr || '');
+
+      // Check if this is a workout from the notification banner (has healthKitUUID and id starts with 'hk_')
+      // Workouts from notification have id like 'hk_com.apple.health...' while saved activities have Firebase IDs
+      const isFromNotification = pendingActivity?.healthKitUUID &&
+        !pendingActivity?.linkedHealthKitUUID &&
+        pendingActivity?.id?.startsWith('hk_');
+
+      if (isFromNotification) {
+        // Pre-fill all metrics from the workout and auto-link it
+        setDistance(pendingActivity?.distance?.toString() || '');
+        const duration = pendingActivity?.duration || 0;
+        setDurationHours(Math.floor(duration / 60));
+        setDurationMinutes(duration % 60);
+        setCalories(pendingActivity?.calories?.toString() || '');
+        setAvgHr(pendingActivity?.avgHr?.toString() || '');
+        setMaxHr(pendingActivity?.maxHr?.toString() || '');
+        setActivityTime(pendingActivity?.time || '');
+        // Auto-link the workout
+        setLinkedWorkout(pendingActivity);
+      } else {
+        // Normal edit flow or manual entry
+        setDistance(pendingActivity?.distance || '');
+        // Default to 1 hour for manual input, use synced duration if from Apple Health
+        setDurationHours(pendingActivity?.durationHours ?? 1);
+        setDurationMinutes(pendingActivity?.durationMinutes ?? 0);
+        setCalories(pendingActivity?.calories || '');
+        setAvgHr(pendingActivity?.avgHr || '');
+        setMaxHr(pendingActivity?.maxHr || '');
+        setActivityTime(pendingActivity?.time || '');
+        // Set linked workout if editing an activity that was previously linked
+        setLinkedWorkout(pendingActivity?.linkedHealthKitUUID ? { healthKitUUID: pendingActivity.linkedHealthKitUUID } : null);
+      }
+
       // Reset linked workout state
       setLinkableWorkouts([]);
-      setLinkedWorkout(pendingActivity?.linkedHealthKitUUID ? { healthKitUUID: pendingActivity.linkedHealthKitUUID } : null);
       setIsLoadingWorkouts(false);
       // Reset photo state
       setActivityPhoto(null);
       setPhotoPreview(pendingActivity?.photoURL || null);
       setIsPhotoPrivate(pendingActivity?.isPhotoPrivate || false);
       setShowPhotoOptions(false);
+    }
+    // Reset the initialization flag when modal closes
+    if (!isOpen) {
+      hasInitializedRef.current = false;
     }
   }, [isOpen, pendingActivity, defaultDate]);
 
@@ -6288,20 +6321,35 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   // Handle linking an Apple Health workout
   const handleLinkWorkout = (workout) => {
     if (linkedWorkout?.healthKitUUID === workout.healthKitUUID) {
-      // Unlink if already linked
+      // Unlink if already linked - clear metrics
       setLinkedWorkout(null);
-      // Don't clear metrics - user might have edited them
+      setCalories('');
+      setAvgHr('');
+      setMaxHr('');
+      setDistance('');
+      setDurationHours(1);
+      setDurationMinutes(0);
+      setActivityTime('');
     } else {
       // Link and auto-fill metrics
       setLinkedWorkout(workout);
+      console.log('Linking workout - FULL OBJECT:', JSON.stringify(workout, null, 2));
+      console.log('Linking workout - duration field:', workout.duration, 'type:', typeof workout.duration);
       if (workout.calories) setCalories(workout.calories.toString());
       if (workout.avgHr) setAvgHr(workout.avgHr.toString());
       if (workout.maxHr) setMaxHr(workout.maxHr.toString());
       if (workout.distance) setDistance(workout.distance.toString());
-      if (workout.duration) {
-        setDurationHours(Math.floor(workout.duration / 60));
-        setDurationMinutes(workout.duration % 60);
+      // Always set duration if it exists (including 0)
+      if (workout.duration !== undefined && workout.duration !== null) {
+        const hours = Math.floor(workout.duration / 60);
+        const mins = Math.round(workout.duration % 60);
+        console.log('Setting duration:', workout.duration, 'hours:', hours, 'mins:', mins);
+        setDurationHours(hours);
+        setDurationMinutes(mins);
+      } else {
+        console.log('WARNING: workout.duration is undefined or null!');
       }
+      if (workout.time) setActivityTime(workout.time);
     }
   };
 
@@ -6557,7 +6605,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             // COMPLETED MODE: Normal save flow
             onSave({
               id: pendingActivity?.id, // Preserve ID if editing
-              time: pendingActivity?.time, // Preserve time if editing
+              time: activityTime || pendingActivity?.time, // Use linked workout time, or preserve time if editing
               type: finalType,
               subtype: finalSubtype,
               strengthType: activityType === 'Strength Training' ? strengthType : undefined,
@@ -7494,13 +7542,13 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     {linkableWorkouts.map((workout) => {
                       const isLinked = linkedWorkout?.healthKitUUID === workout.healthKitUUID;
                       return (
-                        <button
+                        <div
                           key={workout.healthKitUUID || workout.id}
                           onClick={() => handleLinkWorkout(workout)}
-                          className={`w-full p-3 rounded-xl text-left transition-all ${
+                          className={`w-full p-3 rounded-xl text-left transition-all cursor-pointer ${
                             isLinked
                               ? 'bg-[#00FF94]/20 border-2 border-[#00FF94]'
-                              : 'bg-white/5 border border-white/10 hover:bg-white/10'
+                              : 'bg-white/5 border border-white/10 active:bg-white/20'
                           }`}
                         >
                           <div className="flex items-center justify-between">
@@ -7508,7 +7556,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                               <span className="text-xl">{workout.icon || '💪'}</span>
                               <div>
                                 <div className="text-white text-sm font-medium">
-                                  {workout.type}{workout.subtype ? ` • ${workout.subtype}` : ''}
+                                  {workout.appleWorkoutName || workout.subtype || workout.type}
                                 </div>
                                 <div className="text-xs text-gray-500">
                                   {workout.time} • {workout.duration} min
@@ -7538,20 +7586,42 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                               )}
                             </div>
                           )}
-                        </button>
+                        </div>
                       );
                     })}
                     {linkedWorkout && !linkableWorkouts.find(w => w.healthKitUUID === linkedWorkout.healthKitUUID) && (
-                      <div className="p-3 rounded-xl bg-[#00FF94]/20 border-2 border-[#00FF94]">
+                      <div
+                        onClick={() => handleLinkWorkout(linkedWorkout)}
+                        className="p-3 rounded-xl bg-[#00FF94]/20 border-2 border-[#00FF94] cursor-pointer transition-all"
+                      >
                         <div className="flex items-center justify-between">
-                          <span className="text-[#00FF94] text-sm">✓ Linked to Apple Health workout</span>
-                          <button
-                            onClick={() => setLinkedWorkout(null)}
-                            className="text-gray-400 text-xs"
-                          >
-                            Unlink
-                          </button>
+                          <div className="flex items-center gap-3">
+                            <span className="text-xl">{linkedWorkout.icon || '💪'}</span>
+                            <div>
+                              <div className="text-white text-sm font-medium">
+                                {linkedWorkout.appleWorkoutName || linkedWorkout.subtype || linkedWorkout.type}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {linkedWorkout.time} • {linkedWorkout.duration} min
+                                {linkedWorkout.sourceDevice && ` • ${linkedWorkout.sourceDevice}`}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[#00FF94] text-xs font-medium">✓ Linked</span>
+                          </div>
                         </div>
+                        {/* Show metrics preview */}
+                        {(linkedWorkout.calories || linkedWorkout.distance) && (
+                          <div className="flex gap-4 mt-2 text-xs text-gray-400">
+                            {linkedWorkout.calories && (
+                              <span>🔥 {linkedWorkout.calories} cal</span>
+                            )}
+                            {linkedWorkout.distance && (
+                              <span>📍 {linkedWorkout.distance} mi</span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -8307,7 +8377,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
             <span className="text-lg">📱</span>
             <div className="flex-1 text-left">
               <div className="text-xs font-semibold" style={{ color: '#00FF94' }}>New workout detected</div>
-              <div className="text-[10px] text-gray-400">{pendingSync[0].type} • {pendingSync[0].duration} min • from Apple Health</div>
+              <div className="text-[10px] text-gray-400">{pendingSync[0].appleWorkoutName || pendingSync[0].type} • {pendingSync[0].time} • {pendingSync[0].duration} min</div>
             </div>
             <span className="px-3 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: 'rgba(0,255,148,0.2)', color: '#00FF94' }}>
               Add

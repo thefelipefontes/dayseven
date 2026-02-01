@@ -11757,9 +11757,9 @@ export default function DaySevenApp() {
   }, [user?.uid]);
 
   // Pull-to-refresh hook (enabled on home tab and feed tab, but not on leaderboard view)
-  // Lower resistance means pull distance grows faster relative to finger movement
+  // Threshold of 80 matches native iOS UIRefreshControl feel
   const { pullDistance, isRefreshing } = usePullToRefresh(refreshData, {
-    threshold: 28,
+    threshold: 80,
     resistance: 0.5,
     enabled: activeTab === 'home' || (activeTab === 'feed' && feedActiveView === 'feed')
   });

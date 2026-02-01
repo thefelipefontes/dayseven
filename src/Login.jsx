@@ -1,17 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { signInWithPopup, signInWithCredential, OAuthProvider, GoogleAuthProvider, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { signInWithPopup, signInWithCredential, OAuthProvider, GoogleAuthProvider, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, sendPasswordResetEmail } from 'firebase/auth';
 import { auth, googleProvider, appleProvider } from './firebase';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 
 const Login = ({ onLogin }) => {
-  const [authMode, setAuthMode] = useState('main'); // 'main', 'email-signin', 'email-signup'
+  const [authMode, setAuthMode] = useState('main'); // 'main', 'email-signin', 'email-signup', 'forgot-password'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [resetEmailSent, setResetEmailSent] = useState(false);
 
   // Check if running in Capacitor (native app)
   const isNative = Capacitor.isNativePlatform();
@@ -205,6 +206,32 @@ const Login = ({ onLogin }) => {
     setConfirmPassword('');
     setDisplayName('');
     setError('');
+    setResetEmailSent(false);
+  };
+
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    if (!email.trim()) {
+      setError('Please enter your email address');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setResetEmailSent(true);
+    } catch (error) {
+      if (error.code === 'auth/user-not-found') {
+        setError('No account found with this email address');
+      } else if (error.code === 'auth/invalid-email') {
+        setError('Please enter a valid email address');
+      } else {
+        setError('Failed to send reset email. Please try again.');
+      }
+    }
+    setIsLoading(false);
   };
 
   // Main login screen with social buttons
@@ -314,7 +341,8 @@ const Login = ({ onLogin }) => {
         {/* Back button */}
         <button
           onClick={() => { resetForm(); setAuthMode('main'); }}
-          className="absolute top-8 left-6 text-gray-400 hover:text-white transition-colors flex items-center gap-2"
+          className="absolute left-6 text-gray-400 hover:text-white transition-colors flex items-center gap-2"
+          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M19 12H5M12 19l-7-7 7-7" />
@@ -343,7 +371,16 @@ const Login = ({ onLogin }) => {
           </div>
 
           <div>
-            <label className="block text-gray-400 text-sm mb-2">Password</label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-gray-400 text-sm">Password</label>
+              <button
+                type="button"
+                onClick={() => { setError(''); setAuthMode('forgot-password'); }}
+                className="text-green-400 text-sm font-medium hover:underline"
+              >
+                Forgot password?
+              </button>
+            </div>
             <input
               type="password"
               value={password}
@@ -389,7 +426,8 @@ const Login = ({ onLogin }) => {
         {/* Back button */}
         <button
           onClick={() => { resetForm(); setAuthMode('main'); }}
-          className="absolute top-8 left-6 text-gray-400 hover:text-white transition-colors flex items-center gap-2"
+          className="absolute left-6 text-gray-400 hover:text-white transition-colors flex items-center gap-2"
+          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M19 12H5M12 19l-7-7 7-7" />
@@ -477,6 +515,90 @@ const Login = ({ onLogin }) => {
             </button>
           </p>
         </form>
+      </div>
+    );
+  }
+
+  // Forgot Password form
+  if (authMode === 'forgot-password') {
+    return (
+      <div className="min-h-screen bg-black flex flex-col items-center justify-center px-6">
+        {/* Back button */}
+        <button
+          onClick={() => { resetForm(); setAuthMode('email-signin'); }}
+          className="absolute left-6 text-gray-400 hover:text-white transition-colors flex items-center gap-2"
+          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M19 12H5M12 19l-7-7 7-7" />
+          </svg>
+          Back
+        </button>
+
+        {/* Title */}
+        <div className="mb-8 text-center">
+          <h1 className="text-3xl font-bold text-white mb-2">Reset password</h1>
+          <p className="text-gray-400">We'll send you a reset link</p>
+        </div>
+
+        {resetEmailSent ? (
+          <div className="w-full max-w-sm text-center">
+            <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-6">
+              <svg className="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-semibold text-white mb-2">Check your email</h2>
+            <p className="text-gray-400 mb-6">
+              We've sent a password reset link to <span className="text-white">{email}</span>
+            </p>
+            <button
+              onClick={() => { resetForm(); setAuthMode('email-signin'); }}
+              className="w-full py-3 rounded-full font-semibold text-black transition-all duration-200 active:scale-95"
+              style={{ backgroundColor: '#00FF94' }}
+            >
+              Back to Sign In
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleForgotPassword} className="w-full max-w-sm space-y-4">
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                required
+                className="w-full bg-zinc-800 text-white rounded-xl px-4 py-3 border border-zinc-700 focus:border-green-500 focus:outline-none transition-colors"
+              />
+            </div>
+
+            {error && (
+              <p className="text-red-400 text-sm">{error}</p>
+            )}
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full py-3 rounded-full font-semibold text-black transition-all duration-200 active:scale-95 disabled:opacity-50"
+              style={{ backgroundColor: '#00FF94' }}
+            >
+              {isLoading ? 'Sending...' : 'Send Reset Link'}
+            </button>
+
+            <p className="text-center text-gray-500 text-sm pt-2">
+              Remember your password?{' '}
+              <button
+                type="button"
+                onClick={() => { resetForm(); setAuthMode('email-signin'); }}
+                className="text-green-400 font-medium hover:underline"
+              >
+                Sign in
+              </button>
+            </p>
+          </form>
+        )}
       </div>
     );
   }

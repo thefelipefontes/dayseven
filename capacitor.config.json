@@ -1,6 +1,6 @@
 {
   "appId": "app.dayseven.fitness",
-  "appName": "dayseven",
+  "appName": "DaySeven",
   "webDir": "dist",
   "server": {
     "iosScheme": "https",

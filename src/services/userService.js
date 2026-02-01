@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, writeBatch } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { Capacitor } from '@capacitor/core';
@@ -599,4 +599,106 @@ export async function uploadActivityPhoto(uid, activityId, file) {
   }
 
   return downloadURL;
+}
+
+export async function deleteUserAccount(uid, username) {
+  try {
+    if (isNative) {
+      // Native: Delete username document
+      if (username) {
+        try {
+          await FirebaseFirestore.deleteDocument({
+            reference: `usernames/${username.toLowerCase()}`
+          });
+        } catch (e) {
+          console.error('Error deleting username:', e);
+        }
+      }
+
+      // Native: Get and delete friends subcollection
+      try {
+        const { snapshots: friendSnapshots } = await FirebaseFirestore.getCollection({
+          reference: `users/${uid}/friends`
+        });
+        if (friendSnapshots) {
+          for (const snap of friendSnapshots) {
+            // Remove this user from their friend's list
+            try {
+              await FirebaseFirestore.deleteDocument({
+                reference: `users/${snap.data.friendUid}/friends/${uid}`
+              });
+            } catch (e) {
+              // Friend may have already removed us
+            }
+            // Delete from our list
+            await FirebaseFirestore.deleteDocument({
+              reference: `users/${uid}/friends/${snap.id}`
+            });
+          }
+        }
+      } catch (e) {
+        console.error('Error deleting friends:', e);
+      }
+
+      // Native: Delete the user document
+      await FirebaseFirestore.deleteDocument({
+        reference: `users/${uid}`
+      });
+
+    } else {
+      // Web SDK implementation
+      const batch = writeBatch(db);
+
+      // Delete username document
+      if (username) {
+        const usernameRef = doc(db, 'usernames', username.toLowerCase());
+        batch.delete(usernameRef);
+      }
+
+      // Get and delete friends - also remove from their friend lists
+      try {
+        const friendsRef = collection(db, 'users', uid, 'friends');
+        const friendsSnapshot = await getDocs(friendsRef);
+
+        for (const friendDoc of friendsSnapshot.docs) {
+          const friendData = friendDoc.data();
+          // Remove this user from their friend's list
+          const reverseFriendRef = doc(db, 'users', friendData.friendUid, 'friends', uid);
+          batch.delete(reverseFriendRef);
+          // Delete from our list
+          batch.delete(friendDoc.ref);
+        }
+      } catch (e) {
+        console.error('Error processing friends:', e);
+      }
+
+      // Delete friend requests involving this user
+      try {
+        const sentRequestsQuery = query(collection(db, 'friendRequests'), where('fromUid', '==', uid));
+        const sentSnapshot = await getDocs(sentRequestsQuery);
+        sentSnapshot.docs.forEach(doc => batch.delete(doc.ref));
+
+        const receivedRequestsQuery = query(collection(db, 'friendRequests'), where('toUid', '==', uid));
+        const receivedSnapshot = await getDocs(receivedRequestsQuery);
+        receivedSnapshot.docs.forEach(doc => batch.delete(doc.ref));
+      } catch (e) {
+        console.error('Error deleting friend requests:', e);
+      }
+
+      // Delete the user document
+      const userRef = doc(db, 'users', uid);
+      batch.delete(userRef);
+
+      // Commit all deletes
+      await batch.commit();
+    }
+
+    // Clear all caches for this user
+    clearUserCache(uid);
+
+    return true;
+  } catch (error) {
+    console.error('deleteUserAccount error:', error);
+    throw error;
+  }
 }

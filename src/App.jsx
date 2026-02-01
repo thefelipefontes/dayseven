@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, createContext, useContext, useCallback } from 'react';
 import * as Sentry from '@sentry/react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { auth } from './firebase';
+import { auth, EmailAuthProvider, reauthenticateWithCredential, updatePassword, sendPasswordResetEmail } from './firebase';
 import Login from './Login';
 import UsernameSetup from './UsernameSetup';
 import Friends from './Friends';
@@ -3192,6 +3192,457 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
         >
           Close
         </button>
+      </div>
+    </div>
+  );
+};
+
+// Change Password Modal
+const ChangePasswordModal = ({ isOpen, onClose, user }) => {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setIsClosing(false);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setError('');
+      setSuccess(false);
+      setTimeout(() => setIsAnimating(true), 10);
+    } else {
+      setIsAnimating(false);
+    }
+  }, [isOpen]);
+
+  const handleClose = () => {
+    setIsClosing(true);
+    setIsAnimating(false);
+    setTimeout(() => {
+      onClose();
+      setIsClosing(false);
+    }, 300);
+  };
+
+  const handleChangePassword = async () => {
+    setError('');
+
+    // Validation
+    if (!currentPassword) {
+      setError('Please enter your current password');
+      return;
+    }
+    if (newPassword.length < 6) {
+      setError('New password must be at least 6 characters');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError('New passwords do not match');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      if (Capacitor.isNativePlatform()) {
+        // Use Capacitor Firebase plugin for native platforms
+        const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+
+        // Re-authenticate by signing in again with current password
+        await FirebaseAuthentication.signInWithEmailAndPassword({
+          email: user.email,
+          password: currentPassword
+        });
+
+        // Update password using native plugin
+        await FirebaseAuthentication.updatePassword({
+          newPassword: newPassword
+        });
+      } else {
+        // Use web SDK for browser
+        const credential = EmailAuthProvider.credential(user.email, currentPassword);
+        await reauthenticateWithCredential(auth.currentUser, credential);
+        await updatePassword(auth.currentUser, newPassword);
+      }
+
+      setSuccess(true);
+      triggerHaptic(ImpactStyle.Medium);
+
+      // Close modal after showing success
+      setTimeout(() => {
+        handleClose();
+      }, 1500);
+    } catch (err) {
+      console.error('Password change error:', err);
+      const errorCode = err.code || err.message || '';
+      if (errorCode.includes('wrong-password') || errorCode.includes('invalid-credential') || errorCode.includes('INVALID_LOGIN_CREDENTIALS')) {
+        setError('Current password is incorrect');
+      } else if (errorCode.includes('weak-password')) {
+        setError('New password is too weak. Please use a stronger password.');
+      } else if (errorCode.includes('requires-recent-login')) {
+        setError('Please sign out and sign back in, then try again.');
+      } else {
+        setError('Failed to change password. Please try again.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (!isOpen && !isClosing) return null;
+
+  return (
+    <div
+      className={`fixed inset-0 z-50 flex items-end justify-center transition-all duration-300 ${
+        isAnimating && !isClosing ? 'bg-black/60' : 'bg-black/0'
+      }`}
+      onClick={handleClose}
+    >
+      <div
+        className={`w-full max-w-lg rounded-t-3xl transition-all duration-300 ${
+          isAnimating && !isClosing ? 'translate-y-0' : 'translate-y-full'
+        }`}
+        style={{
+          backgroundColor: '#1a1a1a',
+          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 20px)'
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Handle bar */}
+        <div className="flex justify-center pt-3 pb-2">
+          <div className="w-10 h-1 rounded-full bg-gray-600" />
+        </div>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 pb-4">
+          <h2 className="text-xl font-bold text-white">Change Password</h2>
+          <button
+            onClick={handleClose}
+            className="w-8 h-8 rounded-full flex items-center justify-center"
+            style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+          >
+            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="px-6 pb-6">
+          {success ? (
+            <div className="text-center py-8">
+              <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <p className="text-white font-medium">Password changed successfully!</p>
+            </div>
+          ) : (
+            <>
+              {error && (
+                <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                  <p className="text-red-400 text-sm">{error}</p>
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Current Password</label>
+                  <input
+                    type="password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl bg-black/30 border border-zinc-700 text-white placeholder-gray-500 focus:outline-none focus:border-[#00FF94]"
+                    placeholder="Enter current password"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">New Password</label>
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl bg-black/30 border border-zinc-700 text-white placeholder-gray-500 focus:outline-none focus:border-[#00FF94]"
+                    placeholder="Enter new password (min 6 characters)"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Confirm New Password</label>
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl bg-black/30 border border-zinc-700 text-white placeholder-gray-500 focus:outline-none focus:border-[#00FF94]"
+                    placeholder="Confirm new password"
+                  />
+                </div>
+              </div>
+
+              <button
+                onClick={handleChangePassword}
+                disabled={isLoading}
+                className="w-full mt-6 py-4 rounded-xl font-semibold text-black transition-all duration-200"
+                style={{
+                  backgroundColor: isLoading ? 'rgba(0, 255, 148, 0.5)' : '#00FF94'
+                }}
+              >
+                {isLoading ? (
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                    <span>Changing Password...</span>
+                  </div>
+                ) : (
+                  'Change Password'
+                )}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Delete Account Modal
+const DeleteAccountModal = ({ isOpen, onClose, user, userProfile, onDeleteComplete }) => {
+  const [password, setPassword] = useState('');
+  const [confirmText, setConfirmText] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [step, setStep] = useState(1); // 1 = warning, 2 = confirm
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+
+  const isEmailPasswordUser = user?.providerData?.some(p => p.providerId === 'password');
+
+  useEffect(() => {
+    if (isOpen) {
+      setIsClosing(false);
+      setPassword('');
+      setConfirmText('');
+      setError('');
+      setStep(1);
+      setTimeout(() => setIsAnimating(true), 10);
+    } else {
+      setIsAnimating(false);
+    }
+  }, [isOpen]);
+
+  const handleClose = () => {
+    setIsClosing(true);
+    setIsAnimating(false);
+    setTimeout(() => {
+      onClose();
+      setIsClosing(false);
+    }, 300);
+  };
+
+  const handleDeleteAccount = async () => {
+    setError('');
+
+    if (confirmText !== 'DELETE') {
+      setError('Please type DELETE to confirm');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const { deleteUserAccount } = await import('./services/userService');
+
+      // For email/password users, re-authenticate first
+      if (isEmailPasswordUser && password) {
+        if (Capacitor.isNativePlatform()) {
+          const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+          await FirebaseAuthentication.signInWithEmailAndPassword({
+            email: user.email,
+            password: password
+          });
+        } else {
+          const credential = EmailAuthProvider.credential(user.email, password);
+          await reauthenticateWithCredential(auth.currentUser, credential);
+        }
+      }
+
+      // Delete user data from Firestore
+      await deleteUserAccount(user.uid, userProfile?.username);
+
+      // Delete Firebase Auth account
+      if (Capacitor.isNativePlatform()) {
+        const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+        await FirebaseAuthentication.deleteUser();
+      } else {
+        await auth.currentUser.delete();
+      }
+
+      triggerHaptic(ImpactStyle.Heavy);
+      onDeleteComplete();
+    } catch (err) {
+      console.error('Delete account error:', err);
+      const errorCode = err.code || err.message || '';
+      if (errorCode.includes('wrong-password') || errorCode.includes('invalid-credential') || errorCode.includes('INVALID_LOGIN_CREDENTIALS')) {
+        setError('Incorrect password. Please try again.');
+      } else if (errorCode.includes('requires-recent-login')) {
+        setError('Please sign out, sign back in, and try again.');
+      } else {
+        setError('Failed to delete account. Please try again.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (!isOpen && !isClosing) return null;
+
+  return (
+    <div
+      className={`fixed inset-0 z-50 flex items-end justify-center transition-all duration-300 ${
+        isAnimating && !isClosing ? 'bg-black/60' : 'bg-black/0'
+      }`}
+      onClick={handleClose}
+    >
+      <div
+        className={`w-full max-w-lg rounded-t-3xl transition-all duration-300 ${
+          isAnimating && !isClosing ? 'translate-y-0' : 'translate-y-full'
+        }`}
+        style={{
+          backgroundColor: '#1a1a1a',
+          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 20px)'
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Handle bar */}
+        <div className="flex justify-center pt-3 pb-2">
+          <div className="w-10 h-1 rounded-full bg-gray-600" />
+        </div>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 pb-4">
+          <h2 className="text-xl font-bold text-red-500">Delete Account</h2>
+          <button
+            onClick={handleClose}
+            className="w-8 h-8 rounded-full flex items-center justify-center"
+            style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+          >
+            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="px-6 pb-6">
+          {step === 1 ? (
+            <>
+              {/* Warning */}
+              <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0">
+                    <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-red-400 font-medium mb-2">This action cannot be undone</p>
+                    <p className="text-gray-400 text-sm">
+                      Deleting your account will permanently remove:
+                    </p>
+                    <ul className="text-gray-400 text-sm mt-2 space-y-1">
+                      <li>• All your workout history and streaks</li>
+                      <li>• Your progress photos</li>
+                      <li>• Your friends and social connections</li>
+                      <li>• Your profile and settings</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setStep(2)}
+                className="w-full py-4 rounded-xl font-semibold text-white bg-red-500/20 border border-red-500/50 transition-all duration-200"
+              >
+                I understand, continue
+              </button>
+
+              <button
+                onClick={handleClose}
+                className="w-full mt-3 py-4 rounded-xl font-semibold text-gray-400 bg-white/5 transition-all duration-200"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              {error && (
+                <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                  <p className="text-red-400 text-sm">{error}</p>
+                </div>
+              )}
+
+              <div className="space-y-4">
+                {isEmailPasswordUser && (
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">Enter your password</label>
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl bg-black/30 border border-zinc-700 text-white placeholder-gray-500 focus:outline-none focus:border-red-500"
+                      placeholder="Your password"
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">
+                    Type <span className="text-red-400 font-mono">DELETE</span> to confirm
+                  </label>
+                  <input
+                    type="text"
+                    value={confirmText}
+                    onChange={(e) => setConfirmText(e.target.value.toUpperCase())}
+                    className="w-full px-4 py-3 rounded-xl bg-black/30 border border-zinc-700 text-white placeholder-gray-500 focus:outline-none focus:border-red-500 font-mono"
+                    placeholder="DELETE"
+                  />
+                </div>
+              </div>
+
+              <button
+                onClick={handleDeleteAccount}
+                disabled={isLoading || confirmText !== 'DELETE' || (isEmailPasswordUser && !password)}
+                className="w-full mt-6 py-4 rounded-xl font-semibold text-white transition-all duration-200 disabled:opacity-50"
+                style={{
+                  backgroundColor: confirmText === 'DELETE' ? '#ef4444' : 'rgba(239, 68, 68, 0.3)'
+                }}
+              >
+                {isLoading ? (
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Deleting Account...</span>
+                  </div>
+                ) : (
+                  'Permanently Delete Account'
+                )}
+              </button>
+
+              <button
+                onClick={() => setStep(1)}
+                disabled={isLoading}
+                className="w-full mt-3 py-4 rounded-xl font-semibold text-gray-400 bg-white/5 transition-all duration-200"
+              >
+                Go Back
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -10303,8 +10754,38 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
 };
 
 // Profile Tab Component
-const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy }) => {
+const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onChangePassword, onResetPassword, onDeleteAccount }) => {
+  const [isEmailPasswordUser, setIsEmailPasswordUser] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+
+  // Check if user signed in with email/password (not social login)
+  useEffect(() => {
+    const checkAuthProvider = async () => {
+      // First try web Firebase auth
+      if (auth.currentUser?.providerData?.some(p => p.providerId === 'password')) {
+        setIsEmailPasswordUser(true);
+        return;
+      }
+      // Then try prop
+      if (user?.providerData?.some(p => p.providerId === 'password')) {
+        setIsEmailPasswordUser(true);
+        return;
+      }
+      // For native, use Capacitor plugin
+      if (Capacitor.isNativePlatform()) {
+        try {
+          const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+          const result = await FirebaseAuthentication.getCurrentUser();
+          if (result.user?.providerData?.some(p => p.providerId === 'password')) {
+            setIsEmailPasswordUser(true);
+          }
+        } catch (e) {
+          // Ignore errors
+        }
+      }
+    };
+    checkAuthProvider();
+  }, [user]);
   const [showPhotoOptions, setShowPhotoOptions] = useState(false);
   const [showPhotoPreview, setShowPhotoPreview] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
@@ -11009,6 +11490,68 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
           </div>
         </div>
 
+        {/* Password & Security Section - Only shown for email/password users */}
+        {isEmailPasswordUser && (
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold text-gray-400 mb-3">SECURITY</h3>
+            <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+              {/* Change Password */}
+              <button
+                onClick={onChangePassword}
+                className="w-full flex items-center justify-between py-2 transition-all duration-150"
+                style={{ transform: 'scale(1)' }}
+                onTouchStart={(e) => e.currentTarget.style.opacity = '0.7'}
+                onTouchEnd={(e) => e.currentTarget.style.opacity = '1'}
+                onMouseDown={(e) => e.currentTarget.style.opacity = '0.7'}
+                onMouseUp={(e) => e.currentTarget.style.opacity = '1'}
+                onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
+                    <svg className="w-4 h-4" fill="none" stroke="#00FF94" viewBox="0 0 24 24" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+                    </svg>
+                  </div>
+                  <div className="text-left">
+                    <span className="text-sm text-white block">Change Password</span>
+                    <p className="text-[11px] text-gray-500">Update your account password</p>
+                  </div>
+                </div>
+                <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </button>
+
+              {/* Reset Password */}
+              <button
+                onClick={onResetPassword}
+                className="w-full flex items-center justify-between py-2 border-t border-zinc-700/50 mt-2 pt-4 transition-all duration-150"
+                style={{ transform: 'scale(1)' }}
+                onTouchStart={(e) => e.currentTarget.style.opacity = '0.7'}
+                onTouchEnd={(e) => e.currentTarget.style.opacity = '1'}
+                onMouseDown={(e) => e.currentTarget.style.opacity = '0.7'}
+                onMouseUp={(e) => e.currentTarget.style.opacity = '1'}
+                onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
+                    <svg className="w-4 h-4" fill="none" stroke="#FF9500" viewBox="0 0 24 24" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" />
+                    </svg>
+                  </div>
+                  <div className="text-left">
+                    <span className="text-sm text-white block">Reset Password via Email</span>
+                    <p className="text-[11px] text-gray-500">Send a password reset link</p>
+                  </div>
+                </div>
+                <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* App Info Section */}
         <div className="mb-6">
           <h3 className="text-sm font-semibold text-gray-400 mb-3">APP</h3>
@@ -11042,7 +11585,7 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
 
         {/* Sign Out Button */}
         <button
-          className="w-full py-4 rounded-xl font-semibold text-red-500 transition-all duration-150 mb-8"
+          className="w-full py-4 rounded-xl font-semibold text-red-500 transition-all duration-150"
           style={{ backgroundColor: 'rgba(255,69,58,0.1)', transform: 'scale(1)' }}
           onTouchStart={(e) => {
             e.currentTarget.style.transform = 'scale(0.98)';
@@ -11070,6 +11613,33 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
           }}
         >
           Sign Out
+        </button>
+
+        {/* Delete Account Button */}
+        <button
+          className="w-full py-4 rounded-xl font-semibold text-gray-500 transition-all duration-150 mt-3 mb-8"
+          style={{ backgroundColor: 'transparent', transform: 'scale(1)' }}
+          onTouchStart={(e) => {
+            e.currentTarget.style.transform = 'scale(0.98)';
+          }}
+          onTouchEnd={(e) => {
+            e.preventDefault();
+            e.currentTarget.style.transform = 'scale(1)';
+            triggerHaptic(ImpactStyle.Light);
+            onDeleteAccount();
+          }}
+          onMouseDown={(e) => {
+            e.currentTarget.style.transform = 'scale(0.98)';
+          }}
+          onMouseUp={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            onDeleteAccount();
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+          }}
+        >
+          Delete Account
         </button>
       </div>
 
@@ -11366,6 +11936,8 @@ export default function DaySevenApp() {
   const [historyStatsSubView, setHistoryStatsSubView] = useState('overview');
   const [showEditGoals, setShowEditGoals] = useState(false);
   const [pendingFriendRequests, setPendingFriendRequests] = useState(0);
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [feedActiveView, setFeedActiveView] = useState('feed'); // 'feed' or 'leaderboard'
 
 
@@ -11620,6 +12192,21 @@ export default function DaySevenApp() {
       setUserProfile(prev => ({ ...prev, privacySettings }));
     } catch (error) {
       // console.error('Error updating privacy settings:', error);
+    }
+  };
+
+  // Handle password reset via email
+  const handleResetPassword = async () => {
+    if (!user?.email) return;
+    try {
+      await sendPasswordResetEmail(auth, user.email);
+      triggerHaptic(ImpactStyle.Medium);
+      setToastMessage('Password reset email sent!');
+      setShowToast(true);
+    } catch (error) {
+      console.error('Error sending password reset email:', error);
+      setToastMessage('Failed to send reset email. Please try again.');
+      setShowToast(true);
     }
   };
 
@@ -12750,6 +13337,9 @@ export default function DaySevenApp() {
                     setShowTour(true);
                   }}
                   onUpdatePrivacy={handleUpdatePrivacy}
+                  onChangePassword={() => setShowChangePassword(true)}
+                  onResetPassword={handleResetPassword}
+                  onDeleteAccount={() => setShowDeleteAccount(true)}
                 />
               )}
             </>
@@ -12930,6 +13520,23 @@ export default function DaySevenApp() {
               customActivities: [...(prev.customActivities || []), customActivity]
             }));
           }
+        }}
+      />
+
+      <ChangePasswordModal
+        isOpen={showChangePassword}
+        onClose={() => setShowChangePassword(false)}
+        user={user}
+      />
+
+      <DeleteAccountModal
+        isOpen={showDeleteAccount}
+        onClose={() => setShowDeleteAccount(false)}
+        user={user}
+        userProfile={userProfile}
+        onDeleteComplete={() => {
+          setShowDeleteAccount(false);
+          // User will be automatically signed out when auth account is deleted
         }}
       />
 

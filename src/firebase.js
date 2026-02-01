@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider, OAuthProvider } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, OAuthProvider, EmailAuthProvider, reauthenticateWithCredential, updatePassword, sendPasswordResetEmail } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
@@ -20,3 +20,6 @@ appleProvider.addScope('email');
 appleProvider.addScope('name');
 export const db = getFirestore(app);
 export const storage = getStorage(app);
+
+// Password management functions
+export { EmailAuthProvider, reauthenticateWithCredential, updatePassword, sendPasswordResetEmail };

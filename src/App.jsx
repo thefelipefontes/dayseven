@@ -4480,7 +4480,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
         
         <div className="flex-1 overflow-auto p-4">
         {/* Summary Stats */}
-        <div className={`grid gap-2 mb-4`} style={{ gridTemplateColumns: `repeat(${nonCardioWalks.length > 0 ? 4 : 3}, minmax(0, 1fr))` }}>
+        <div className="grid grid-cols-3 gap-2 mb-4">
           <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
             <div className="text-2xl font-black" style={{ color: '#00FF94' }}>{weekData?.lifts || 0}</div>
             <div className="text-[10px] text-gray-400">🏋️ Strength</div>
@@ -4493,12 +4493,6 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
             <div className="text-2xl font-black" style={{ color: '#00D1FF' }}>{weekData?.recovery || 0}</div>
             <div className="text-[10px] text-gray-400">🧊 Recovery</div>
           </div>
-          {nonCardioWalks.length > 0 && (
-            <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(128,128,128,0.1)' }}>
-              <div className="text-2xl font-black text-gray-400">{nonCardioWalks.length}</div>
-              <div className="text-[10px] text-gray-400">🚶 Walks</div>
-            </div>
-          )}
         </div>
 
         {/* Goals Status */}
@@ -9480,7 +9474,7 @@ const TrendsView = ({ activities = [], calendarData = {} }) => {
             {fullDayActivities.length > 0 ? (
               <div className="space-y-3">
                 {/* Summary Stats */}
-                <div className={`grid gap-2`} style={{ gridTemplateColumns: `repeat(${nonCardioWalks.length > 0 ? 4 : 3}, minmax(0, 1fr))` }}>
+                <div className="grid grid-cols-3 gap-2">
                   <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
                     <div className="text-lg font-black" style={{ color: '#00FF94' }}>{lifts.length}</div>
                     <div className="text-[9px] text-gray-400">🏋️ Strength</div>
@@ -9493,12 +9487,6 @@ const TrendsView = ({ activities = [], calendarData = {} }) => {
                     <div className="text-lg font-black" style={{ color: '#00D1FF' }}>{recoveryActivities.length}</div>
                     <div className="text-[9px] text-gray-400">🧊 Recovery</div>
                   </div>
-                  {nonCardioWalks.length > 0 && (
-                    <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(128,128,128,0.1)' }}>
-                      <div className="text-lg font-black text-gray-400">{nonCardioWalks.length}</div>
-                      <div className="text-[9px] text-gray-400">🚶 Walks</div>
-                    </div>
-                  )}
                 </div>
 
                 {/* Daily Totals */}
@@ -10603,7 +10591,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
             
             <div className="flex-1 overflow-auto p-4">
               {/* Summary Stats */}
-              <div className={`grid gap-2 mb-4`} style={{ gridTemplateColumns: `repeat(${nonCardioWalks.length > 0 ? 4 : 3}, minmax(0, 1fr))` }}>
+              <div className="grid grid-cols-3 gap-2 mb-4">
                 <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
                   <div className="text-2xl font-black" style={{ color: '#00FF94' }}>{lifts.length}</div>
                   <div className="text-[10px] text-gray-400">🏋️ Strength</div>
@@ -10616,12 +10604,6 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                   <div className="text-2xl font-black" style={{ color: '#00D1FF' }}>{recoveryActivities.length}</div>
                   <div className="text-[10px] text-gray-400">🧊 Recovery</div>
                 </div>
-                {nonCardioWalks.length > 0 && (
-                  <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(128,128,128,0.1)' }}>
-                    <div className="text-2xl font-black text-gray-400">{nonCardioWalks.length}</div>
-                    <div className="text-[10px] text-gray-400">🚶 Walks</div>
-                  </div>
-                )}
               </div>
 
               {/* Daily Totals */}
@@ -12081,7 +12063,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
         onClose={() => setShowWeekStats(false)}
         onShare={() => {
           setShowWeekStats(false);
-          onShare && onShare();
+          onShare && onShare({ startDate: selectedWeek?.startDate, endDate: selectedWeek?.endDate });
         }}
         weekData={selectedWeek ? (() => {
           // Calculate week data from calendarData
@@ -12215,9 +12197,9 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
     stepsPerDay: { label: 'Steps', icon: '👟', suffix: '/day', format: (v) => `${(v/1000).toFixed(0)}k` }
   };
 
-  // Check if today is Monday (0 = Sunday, 1 = Monday)
-  const isMonday = new Date().getDay() === 1;
-  const canEditGoals = isMonday;
+  // Check if today is Sunday (0 = Sunday) - first day of the week
+  const isSunday = new Date().getDay() === 0;
+  const canEditGoals = isSunday;
 
   // Detect if user is on mobile device
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -13326,6 +13308,7 @@ export default function DaySevenApp() {
   const [pendingActivity, setPendingActivity] = useState(null);
   const [defaultActivityDate, setDefaultActivityDate] = useState(null);
   const [showShare, setShowShare] = useState(false);
+  const [shareWeekRange, setShareWeekRange] = useState(null); // { startDate, endDate } for week-specific sharing
   const [showFriends, setShowFriends] = useState(false);
   const [friends, setFriends] = useState([]);
   const [showCelebration, setShowCelebration] = useState(false);
@@ -15180,7 +15163,10 @@ export default function DaySevenApp() {
               )}
               {activeTab === 'history' && (
                 <HistoryTab
-                  onShare={() => setShowShare(true)}
+                  onShare={(weekRange) => {
+                    setShareWeekRange(weekRange || null);
+                    setShowShare(true);
+                  }}
                   activities={activities}
                   calendarData={calendarData}
                   userData={userData}
@@ -15449,8 +15435,34 @@ export default function DaySevenApp() {
 
       <ShareModal
         isOpen={showShare}
-        onClose={() => setShowShare(false)}
-        stats={{
+        onClose={() => {
+          setShowShare(false);
+          setShareWeekRange(null);
+        }}
+        stats={(() => {
+          // Determine which week to use for stats
+          const getWeekRange = () => {
+            if (shareWeekRange?.startDate && shareWeekRange?.endDate) {
+              return {
+                startStr: shareWeekRange.startDate,
+                endStr: shareWeekRange.endDate
+              };
+            }
+            // Default to current week (Sunday - Saturday)
+            const today = new Date();
+            const weekStart = new Date(today);
+            weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+            const weekEnd = new Date(weekStart);
+            weekEnd.setDate(weekStart.getDate() + 6);
+            return {
+              startStr: `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`,
+              endStr: `${weekEnd.getFullYear()}-${String(weekEnd.getMonth() + 1).padStart(2, '0')}-${String(weekEnd.getDate()).padStart(2, '0')}`
+            };
+          };
+          const weekRange = getWeekRange();
+          const weekActivitiesForShare = activities.filter(a => a.date >= weekRange.startStr && a.date <= weekRange.endStr);
+
+          return {
           // Streak stats
           streak: userData.streaks.master,
           longestStreak: userData.personalRecords.longestMasterStreak || userData.streaks.master,
@@ -15510,35 +15522,17 @@ export default function DaySevenApp() {
               w.recovery >= goals.recoveryPerWeek
             ).length;
           })(),
-          // Weekly stats
-          weeklyLifts: weeklyProgress.lifts.completed,
-          weeklyCardio: weeklyProgress.cardio.completed,
-          weeklyRecovery: weeklyProgress.recovery.completed,
+          // Weekly stats - use selected week or current week
+          weeklyLifts: weekActivitiesForShare.filter(a => a.type === 'Strength Training').length,
+          weeklyCardio: weekActivitiesForShare.filter(a => ['Running', 'Cycle', 'Sports'].includes(a.type)).length,
+          weeklyRecovery: weekActivitiesForShare.filter(a => ['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(a.type)).length,
           liftsGoal: userData.goals.liftsPerWeek,
           cardioGoal: userData.goals.cardioPerWeek,
           recoveryGoal: userData.goals.recoveryPerWeek,
-          weeklyCalories: activities.filter(a => {
-            const today = new Date();
-            const weekStart = new Date(today);
-            weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-            const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
-            return a.date >= weekStartStr;
-          }).reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0),
-          weeklyMiles: activities.filter(a => {
-            const today = new Date();
-            const weekStart = new Date(today);
-            weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-            const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
-            return a.date >= weekStartStr && a.distance;
-          }).reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0),
+          weeklyCalories: weekActivitiesForShare.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0),
+          weeklyMiles: weekActivitiesForShare.filter(a => a.distance).reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0),
           // Weekly activities for analysis
-          weeklyActivities: activities.filter(a => {
-            const today = new Date();
-            const weekStart = new Date(today);
-            weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-            const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
-            return a.date >= weekStartStr;
-          }),
+          weeklyActivities: weekActivitiesForShare,
           // Monthly stats
           monthlyWorkouts: activities.filter(a => {
             const today = new Date();
@@ -15559,7 +15553,8 @@ export default function DaySevenApp() {
           records: userData.personalRecords,
           // Totals
           workouts: activities.length
-        }}
+        };
+        })()}
       />
 
       <CelebrationOverlay

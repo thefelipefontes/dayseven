@@ -206,7 +206,14 @@ export async function fetchTodaySteps() {
       endDate: now.toISOString()
     });
 
-    return result.value ? Math.round(result.value) : 0;
+    // Handle both formats: direct value or samples array
+    if (result.value !== undefined) {
+      return Math.round(result.value);
+    } else if (result.samples && result.samples.length > 0) {
+      const total = result.samples.reduce((sum, sample) => sum + (sample.value || 0), 0);
+      return Math.round(total);
+    }
+    return 0;
   } catch (error) {
     console.log('Error fetching steps:', error);
     return null;
@@ -222,13 +229,24 @@ export async function fetchTodayCalories() {
     today.setHours(0, 0, 0, 0);
     const now = new Date();
 
+    console.log('Fetching calories from', today.toISOString(), 'to', now.toISOString());
     const result = await Health.queryAggregated({
       dataType: 'calories',
       startDate: today.toISOString(),
       endDate: now.toISOString()
     });
+    console.log('Calories result:', JSON.stringify(result));
 
-    return result.value ? Math.round(result.value) : 0;
+    // Handle both formats: direct value or samples array
+    if (result.value !== undefined) {
+      return Math.round(result.value);
+    } else if (result.samples && result.samples.length > 0) {
+      // Sum up all samples
+      const total = result.samples.reduce((sum, sample) => sum + (sample.value || 0), 0);
+      console.log('Calories total from samples:', total);
+      return Math.round(total);
+    }
+    return 0;
   } catch (error) {
     console.log('Error fetching calories:', error);
     return null;

@@ -34,7 +34,8 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     // Accumulated metrics during observation
     private var accumulatedCalories: Double = 0
-    private var heartRateSamples: [Double] = []
+    private var heartRateSamples: [Double] = []  // For calculating avg/max
+    private var heartRateHKSamples: [HKQuantitySample] = []  // Actual samples to attach to workout
     private var lastHeartRate: Double = 0
 
     private let isoFormatter: ISO8601DateFormatter = {
@@ -160,6 +161,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             // Reset metrics
             self.accumulatedCalories = 0
             self.heartRateSamples = []
+            self.heartRateHKSamples = []
             self.lastHeartRate = 0
             self.observerStartDate = self.liveWorkoutStartDate
 
@@ -247,6 +249,12 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
             }
 
+            // Add heart rate samples collected during the workout
+            if !self.heartRateHKSamples.isEmpty {
+                samples.append(contentsOf: self.heartRateHKSamples)
+                print("HealthKitWriter: Adding \(self.heartRateHKSamples.count) heart rate samples to workout")
+            }
+
             let finishWorkout = { [weak self] in
                 guard let self = self else { return }
 
@@ -279,6 +287,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                         // Reset metrics
                         self.accumulatedCalories = 0
                         self.heartRateSamples = []
+                        self.heartRateHKSamples = []
                         self.lastHeartRate = 0
                     }
                 }
@@ -315,6 +324,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         observerStartDate = nil
         accumulatedCalories = 0
         heartRateSamples = []
+        heartRateHKSamples = []
         lastHeartRate = 0
 
         call.resolve(["success": true])
@@ -517,6 +527,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.observerStartDate = Date()
             self.accumulatedCalories = 0
             self.heartRateSamples = []
+            self.heartRateHKSamples = []
             self.lastHeartRate = 0
 
             self.startHeartRateObserver(from: self.observerStartDate!)
@@ -548,6 +559,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         observerStartDate = nil
         accumulatedCalories = 0
         heartRateSamples = []
+        heartRateHKSamples = []
         lastHeartRate = 0
     }
 
@@ -624,6 +636,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
 
             if !newSamples.isEmpty {
                 self.heartRateSamples = newSamples
+                self.heartRateHKSamples = samples  // Store actual HK samples for workout attachment
                 self.lastHeartRate = newSamples.last ?? 0
 
                 DispatchQueue.main.async {

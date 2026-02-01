@@ -798,6 +798,207 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   };
 
   const loadFeed = useCallback(async () => {
+    // Check if this is the appreview account
+    const isAppReviewAccount = userProfile?.username?.toLowerCase() === 'appreview' ||
+                               user?.email?.toLowerCase() === 'appreview@dayseven.app';
+
+    // Generate dummy feed data for appreview account
+    if (isAppReviewAccount) {
+      const dummyFriends = [
+        { uid: 'dummy1', username: 'alex_fitness', displayName: 'Alex Thompson', photoURL: 'https://i.pravatar.cc/150?img=1' },
+        { uid: 'dummy2', username: 'sarah_runs', displayName: 'Sarah Chen', photoURL: 'https://i.pravatar.cc/150?img=5' },
+        { uid: 'dummy3', username: 'mike_lifts', displayName: 'Mike Johnson', photoURL: 'https://i.pravatar.cc/150?img=8' },
+        { uid: 'dummy4', username: 'emma_yoga', displayName: 'Emma Williams', photoURL: 'https://i.pravatar.cc/150?img=9' },
+        { uid: 'dummy5', username: 'jake_athlete', displayName: 'Jake Martinez', photoURL: 'https://i.pravatar.cc/150?img=12' },
+        { uid: 'dummy6', username: 'lisa_cardio', displayName: 'Lisa Park', photoURL: 'https://i.pravatar.cc/150?img=16' }
+      ];
+
+      const today = new Date();
+      const formatDate = (date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+
+      const dummyActivities = [
+        // Today's activities
+        {
+          id: 'demo-1',
+          type: 'Strength Training',
+          subtype: 'Lifting - Push',
+          strengthType: 'Lifting',
+          date: formatDate(today),
+          time: '7:30 AM',
+          duration: 65,
+          calories: 420,
+          friend: dummyFriends[0],
+          photoURL: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=400&h=400&fit=crop'
+        },
+        {
+          id: 'demo-2',
+          type: 'Running',
+          date: formatDate(today),
+          time: '6:15 AM',
+          duration: 42,
+          distance: 5.2,
+          pace: '8:05',
+          calories: 485,
+          friend: dummyFriends[1]
+        },
+        // Yesterday's activities
+        {
+          id: 'demo-3',
+          type: 'Yoga',
+          date: formatDate(new Date(today.getTime() - 86400000)),
+          time: '6:00 AM',
+          duration: 45,
+          friend: dummyFriends[3],
+          photoURL: 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=400&h=400&fit=crop'
+        },
+        {
+          id: 'demo-4',
+          type: 'Strength Training',
+          subtype: 'Lifting - Legs',
+          strengthType: 'Lifting',
+          date: formatDate(new Date(today.getTime() - 86400000)),
+          time: '5:45 PM',
+          duration: 72,
+          calories: 380,
+          friend: dummyFriends[2],
+          photoURL: 'https://images.unsplash.com/photo-1574680096145-d05b474e2155?w=400&h=400&fit=crop'
+        },
+        {
+          id: 'demo-5',
+          type: 'Cycle',
+          date: formatDate(new Date(today.getTime() - 86400000)),
+          time: '7:00 AM',
+          duration: 55,
+          distance: 18.5,
+          calories: 520,
+          friend: dummyFriends[4]
+        },
+        // 2 days ago
+        {
+          id: 'demo-6',
+          type: 'Running',
+          date: formatDate(new Date(today.getTime() - 2 * 86400000)),
+          time: '6:30 AM',
+          duration: 38,
+          distance: 4.8,
+          pace: '7:55',
+          calories: 445,
+          friend: dummyFriends[5],
+          photoURL: 'https://images.unsplash.com/photo-1476480862126-209bfaa8edc8?w=400&h=400&fit=crop'
+        },
+        {
+          id: 'demo-7',
+          type: 'Cold Plunge',
+          date: formatDate(new Date(today.getTime() - 2 * 86400000)),
+          time: '7:15 AM',
+          duration: 5,
+          friend: dummyFriends[0]
+        },
+        {
+          id: 'demo-8',
+          type: 'Strength Training',
+          subtype: 'Lifting - Pull',
+          strengthType: 'Lifting',
+          date: formatDate(new Date(today.getTime() - 2 * 86400000)),
+          time: '6:00 PM',
+          duration: 58,
+          calories: 345,
+          friend: dummyFriends[1]
+        },
+        // 3 days ago
+        {
+          id: 'demo-9',
+          type: 'Sauna',
+          date: formatDate(new Date(today.getTime() - 3 * 86400000)),
+          time: '8:00 PM',
+          duration: 20,
+          friend: dummyFriends[2]
+        },
+        {
+          id: 'demo-10',
+          type: 'Running',
+          date: formatDate(new Date(today.getTime() - 3 * 86400000)),
+          time: '5:30 AM',
+          duration: 52,
+          distance: 6.5,
+          pace: '8:00',
+          calories: 580,
+          friend: dummyFriends[4],
+          photoURL: 'https://images.unsplash.com/photo-1549060279-7e168fcee0c2?w=400&h=400&fit=crop'
+        }
+      ];
+
+      // Generate dummy reactions
+      const dummyReactions = {
+        'dummy1-demo-1': [
+          { reactorUid: 'dummy2', reactionType: '🔥', reactorName: 'Sarah Chen', reactorPhoto: 'https://i.pravatar.cc/150?img=5' },
+          { reactorUid: 'dummy3', reactionType: '💪', reactorName: 'Mike Johnson', reactorPhoto: 'https://i.pravatar.cc/150?img=8' },
+          { reactorUid: 'dummy4', reactionType: '🔥', reactorName: 'Emma Williams', reactorPhoto: 'https://i.pravatar.cc/150?img=9' }
+        ],
+        'dummy2-demo-2': [
+          { reactorUid: 'dummy1', reactionType: '🏃', reactorName: 'Alex Thompson', reactorPhoto: 'https://i.pravatar.cc/150?img=1' },
+          { reactorUid: 'dummy5', reactionType: '🔥', reactorName: 'Jake Martinez', reactorPhoto: 'https://i.pravatar.cc/150?img=12' }
+        ],
+        'dummy4-demo-3': [
+          { reactorUid: 'dummy6', reactionType: '🧘', reactorName: 'Lisa Park', reactorPhoto: 'https://i.pravatar.cc/150?img=16' },
+          { reactorUid: 'dummy2', reactionType: '💚', reactorName: 'Sarah Chen', reactorPhoto: 'https://i.pravatar.cc/150?img=5' }
+        ],
+        'dummy3-demo-4': [
+          { reactorUid: 'dummy1', reactionType: '💪', reactorName: 'Alex Thompson', reactorPhoto: 'https://i.pravatar.cc/150?img=1' },
+          { reactorUid: 'dummy5', reactionType: '🔥', reactorName: 'Jake Martinez', reactorPhoto: 'https://i.pravatar.cc/150?img=12' },
+          { reactorUid: 'dummy6', reactionType: '💪', reactorName: 'Lisa Park', reactorPhoto: 'https://i.pravatar.cc/150?img=16' },
+          { reactorUid: 'dummy4', reactionType: '🔥', reactorName: 'Emma Williams', reactorPhoto: 'https://i.pravatar.cc/150?img=9' }
+        ],
+        'dummy5-demo-5': [
+          { reactorUid: 'dummy3', reactionType: '🚴', reactorName: 'Mike Johnson', reactorPhoto: 'https://i.pravatar.cc/150?img=8' }
+        ],
+        'dummy6-demo-6': [
+          { reactorUid: 'dummy2', reactionType: '🏃', reactorName: 'Sarah Chen', reactorPhoto: 'https://i.pravatar.cc/150?img=5' },
+          { reactorUid: 'dummy4', reactionType: '🔥', reactorName: 'Emma Williams', reactorPhoto: 'https://i.pravatar.cc/150?img=9' }
+        ],
+        'dummy1-demo-7': [
+          { reactorUid: 'dummy3', reactionType: '🧊', reactorName: 'Mike Johnson', reactorPhoto: 'https://i.pravatar.cc/150?img=8' }
+        ],
+        'dummy5-demo-10': [
+          { reactorUid: 'dummy1', reactionType: '🔥', reactorName: 'Alex Thompson', reactorPhoto: 'https://i.pravatar.cc/150?img=1' },
+          { reactorUid: 'dummy2', reactionType: '🏃', reactorName: 'Sarah Chen', reactorPhoto: 'https://i.pravatar.cc/150?img=5' },
+          { reactorUid: 'dummy6', reactionType: '💪', reactorName: 'Lisa Park', reactorPhoto: 'https://i.pravatar.cc/150?img=16' }
+        ]
+      };
+
+      // Generate dummy comments
+      const dummyComments = {
+        'dummy1-demo-1': [
+          { id: 'c1', commenterUid: 'dummy2', commenterName: 'Sarah Chen', commenterPhoto: 'https://i.pravatar.cc/150?img=5', text: 'Beast mode! 💪', createdAt: new Date(today.getTime() - 3600000).toISOString() },
+          { id: 'c2', commenterUid: 'dummy3', commenterName: 'Mike Johnson', commenterPhoto: 'https://i.pravatar.cc/150?img=8', text: 'What exercises did you do?', createdAt: new Date(today.getTime() - 1800000).toISOString() }
+        ],
+        'dummy3-demo-4': [
+          { id: 'c3', commenterUid: 'dummy1', commenterName: 'Alex Thompson', commenterPhoto: 'https://i.pravatar.cc/150?img=1', text: 'Leg day is the best day! 🦵', createdAt: new Date(today.getTime() - 86400000 - 3600000).toISOString() }
+        ],
+        'dummy6-demo-6': [
+          { id: 'c4', commenterUid: 'dummy2', commenterName: 'Sarah Chen', commenterPhoto: 'https://i.pravatar.cc/150?img=5', text: 'Great pace! Keep it up 🏃‍♀️', createdAt: new Date(today.getTime() - 2 * 86400000 - 7200000).toISOString() },
+          { id: 'c5', commenterUid: 'dummy5', commenterName: 'Jake Martinez', commenterPhoto: 'https://i.pravatar.cc/150?img=12', text: 'We should run together sometime!', createdAt: new Date(today.getTime() - 2 * 86400000 - 3600000).toISOString() }
+        ],
+        'dummy5-demo-10': [
+          { id: 'c6', commenterUid: 'dummy6', commenterName: 'Lisa Park', commenterPhoto: 'https://i.pravatar.cc/150?img=16', text: 'Beautiful sunrise run! 🌅', createdAt: new Date(today.getTime() - 3 * 86400000 - 3600000).toISOString() }
+        ]
+      };
+
+      setFeedActivities(dummyActivities);
+      setActivityReactions(dummyReactions);
+      setActivityComments(dummyComments);
+      setCommentReplies({});
+      setIsLoading(false);
+      setIsRefreshing(false);
+      return;
+    }
+
+    // Regular flow for non-appreview accounts
     if (!friends || friends.length === 0) {
       setFeedActivities([]);
       setIsLoading(false);
@@ -872,7 +1073,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     }
     setIsLoading(false);
     setIsRefreshing(false);
-  }, [friends]);
+  }, [friends, user, userProfile]);
 
   const loadLeaderboard = useCallback(async () => {
     if (!user) {
@@ -1065,37 +1266,41 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       }
     ];
 
-    // Build leaderboard with dummy data + current user (skip Firestore calls that were hanging)
+    // Only show dummy friends for the appreview account (for App Store review demo)
+    const isAppReviewAccount = userProfile?.username?.toLowerCase() === 'appreview' ||
+                               user.email?.toLowerCase() === 'appreview@dayseven.app';
+
+    // Build leaderboard - use dummy data only for appreview account, real friends for everyone else
     const allUsers = [
-      ...dummyFriends,
+      ...(isAppReviewAccount ? dummyFriends : []),
       {
         uid: user.uid,
         username: userProfile?.username || 'You',
         displayName: userProfile?.displayName || 'You',
         photoURL: userProfile?.photoURL,
-        masterStreak: 24,
-        strengthStreak: 18,
-        cardioStreak: 14,
-        recoveryStreak: 9,
-        weeksWon: 10,
-        totalWorkouts: 145,
+        masterStreak: isAppReviewAccount ? 24 : 0,
+        strengthStreak: isAppReviewAccount ? 18 : 0,
+        cardioStreak: isAppReviewAccount ? 14 : 0,
+        recoveryStreak: isAppReviewAccount ? 9 : 0,
+        weeksWon: isAppReviewAccount ? 10 : 0,
+        totalWorkouts: isAppReviewAccount ? 145 : 0,
         stats: {
-          calories: { week: 3800, month: 16200, year: 185000, all: 420000 },
-          steps: { week: 58000, month: 245000, year: 2800000, all: 8500000 }
+          calories: { week: isAppReviewAccount ? 3800 : 0, month: isAppReviewAccount ? 16200 : 0, year: isAppReviewAccount ? 185000 : 0, all: isAppReviewAccount ? 420000 : 0 },
+          steps: { week: isAppReviewAccount ? 58000 : 0, month: isAppReviewAccount ? 245000 : 0, year: isAppReviewAccount ? 2800000 : 0, all: isAppReviewAccount ? 8500000 : 0 }
         },
         volume: {
-          runs: { week: 4, month: 15, year: 175, all: 420 },
-          miles: { week: 20, month: 78, year: 910, all: 2184 },
-          runMinutes: { week: 200, month: 780, year: 9100, all: 21840 },
-          strengthSessions: { week: 4, month: 16, year: 192, all: 460 },
-          liftingMinutes: { week: 240, month: 960, year: 11520, all: 27600 },
-          recoverySessions: { week: 2, month: 9, year: 105, all: 252 },
-          coldPlunges: { week: 1, month: 3, year: 35, all: 84 },
-          saunaSessions: { week: 1, month: 4, year: 45, all: 108 },
-          yogaSessions: { week: 0, month: 2, year: 25, all: 60 },
-          rides: { week: 3, month: 11, year: 130, all: 312 },
-          cycleMiles: { week: 40, month: 150, year: 1750, all: 4200 },
-          cycleMinutes: { week: 130, month: 500, year: 5800, all: 13900 }
+          runs: { week: isAppReviewAccount ? 4 : 0, month: isAppReviewAccount ? 15 : 0, year: isAppReviewAccount ? 175 : 0, all: isAppReviewAccount ? 420 : 0 },
+          miles: { week: isAppReviewAccount ? 20 : 0, month: isAppReviewAccount ? 78 : 0, year: isAppReviewAccount ? 910 : 0, all: isAppReviewAccount ? 2184 : 0 },
+          runMinutes: { week: isAppReviewAccount ? 200 : 0, month: isAppReviewAccount ? 780 : 0, year: isAppReviewAccount ? 9100 : 0, all: isAppReviewAccount ? 21840 : 0 },
+          strengthSessions: { week: isAppReviewAccount ? 4 : 0, month: isAppReviewAccount ? 16 : 0, year: isAppReviewAccount ? 192 : 0, all: isAppReviewAccount ? 460 : 0 },
+          liftingMinutes: { week: isAppReviewAccount ? 240 : 0, month: isAppReviewAccount ? 960 : 0, year: isAppReviewAccount ? 11520 : 0, all: isAppReviewAccount ? 27600 : 0 },
+          recoverySessions: { week: isAppReviewAccount ? 2 : 0, month: isAppReviewAccount ? 9 : 0, year: isAppReviewAccount ? 105 : 0, all: isAppReviewAccount ? 252 : 0 },
+          coldPlunges: { week: isAppReviewAccount ? 1 : 0, month: isAppReviewAccount ? 3 : 0, year: isAppReviewAccount ? 35 : 0, all: isAppReviewAccount ? 84 : 0 },
+          saunaSessions: { week: isAppReviewAccount ? 1 : 0, month: isAppReviewAccount ? 4 : 0, year: isAppReviewAccount ? 45 : 0, all: isAppReviewAccount ? 108 : 0 },
+          yogaSessions: { week: 0, month: isAppReviewAccount ? 2 : 0, year: isAppReviewAccount ? 25 : 0, all: isAppReviewAccount ? 60 : 0 },
+          rides: { week: isAppReviewAccount ? 3 : 0, month: isAppReviewAccount ? 11 : 0, year: isAppReviewAccount ? 130 : 0, all: isAppReviewAccount ? 312 : 0 },
+          cycleMiles: { week: isAppReviewAccount ? 40 : 0, month: isAppReviewAccount ? 150 : 0, year: isAppReviewAccount ? 1750 : 0, all: isAppReviewAccount ? 4200 : 0 },
+          cycleMinutes: { week: isAppReviewAccount ? 130 : 0, month: isAppReviewAccount ? 500 : 0, year: isAppReviewAccount ? 5800 : 0, all: isAppReviewAccount ? 13900 : 0 }
         },
         isCurrentUser: true
       }
@@ -1885,7 +2090,11 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     );
   }
 
-  if (!friends || friends.length === 0) {
+  // Check if this is the appreview account (for demo purposes, skip "no friends" screen)
+  const isAppReviewAccount = userProfile?.username?.toLowerCase() === 'appreview' ||
+                             user?.email?.toLowerCase() === 'appreview@dayseven.app';
+
+  if ((!friends || friends.length === 0) && !isAppReviewAccount) {
     return (
       <div>
         <FriendsHeaderTop />

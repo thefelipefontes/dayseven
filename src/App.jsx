@@ -3481,7 +3481,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
                 {/* Longest distance or longest workout */}
                 {weeklyAnalysis?.longestDistance && parseFloat(weeklyAnalysis.longestDistance.distance) > 0 ? (
                   <div className={`${isPostFormat ? 'p-2' : 'p-2.5'} rounded-xl text-center`} style={{ backgroundColor: 'rgba(0,209,255,0.08)' }}>
-                    <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500 uppercase mb-0.5`}>Longest Run</div>
+                    <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500 uppercase mb-0.5`}>Furthest Distance</div>
                     <div className={isPostFormat ? 'text-base' : 'text-lg'}>{getActivityEmoji(weeklyAnalysis.longestDistance.type)}</div>
                     <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-black`} style={{ color: '#00D1FF' }}>{parseFloat(weeklyAnalysis.longestDistance.distance).toFixed(2)}</div>
                     <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>miles</div>
@@ -7157,11 +7157,6 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                         <span>➖</span> Don't Count
                       </button>
                     </div>
-                    {countToward === null && (
-                      <p className="text-[11px] text-gray-500 mt-2">
-                        This walk will still show as a completed activity, but won't count toward your weekly goals or streak.
-                      </p>
-                    )}
                   </>
                 ) : (
                   /* Yoga/Pilates options: Strength, Cardio, Recovery */
@@ -9968,7 +9963,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
     const lifts = weekActivities.filter(a => getActivityCategory(a) === 'lifting').length;
     const cardio = weekActivities.filter(a => getActivityCategory(a) === 'cardio').length;
     const recovery = weekActivities.filter(a => getActivityCategory(a) === 'recovery').length;
-    const miles = weekActivities.filter(a => a.type === 'Running' || a.type === 'Cycle').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+    const miles = weekActivities.filter(a => a.type === 'Running' || a.type === 'Cycle' || a.type === 'Walking').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
 
     return {
       workouts: lifts + cardio, 
@@ -11095,11 +11090,11 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
 
                   <div className="border-t border-white/5" />
 
-                  {/* Longest Run */}
+                  {/* Furthest Run */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <span className="text-sm">🏃</span>
-                      <div className="text-xs text-gray-500">Longest Run</div>
+                      <div className="text-xs text-gray-500">Furthest Run</div>
                     </div>
                     <div className="text-base font-bold text-white">
                       {getRecordValue(records.longestRun) ? `${parseFloat(getRecordValue(records.longestRun)).toFixed(1)} mi` : '—'}
@@ -11108,11 +11103,11 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
 
                   <div className="border-t border-white/5" />
 
-                  {/* Longest Cycle */}
+                  {/* Furthest Cycle */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <span className="text-sm">🚴</span>
-                      <div className="text-xs text-gray-500">Longest Cycle</div>
+                      <div className="text-xs text-gray-500">Furthest Cycle</div>
                     </div>
                     <div className="text-base font-bold text-white">
                       {getRecordValue(records.longestCycle) ? `${parseFloat(getRecordValue(records.longestCycle)).toFixed(1)} mi` : '—'}
@@ -11121,11 +11116,11 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
 
                   <div className="border-t border-white/5" />
 
-                  {/* Longest Walk */}
+                  {/* Furthest Walk */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <span className="text-sm">🚶</span>
-                      <div className="text-xs text-gray-500">Longest Walk</div>
+                      <div className="text-xs text-gray-500">Furthest Walk</div>
                     </div>
                     <div className="text-base font-bold text-white">
                       {getRecordValue(records.longestWalk) ? `${parseFloat(getRecordValue(records.longestWalk)).toFixed(1)} mi` : '—'}
@@ -12111,7 +12106,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
           const lifts = weekActivities.filter(a => a.type === 'Strength Training');
           const cardioArr = weekActivities.filter(a => ['Running', 'Cycle', 'Sports'].includes(a.type));
           const recoveryArr = weekActivities.filter(a => ['Cold Plunge', 'Sauna', 'Yoga'].includes(a.type));
-          const miles = cardioArr.filter(a => a.type === 'Running' || a.type === 'Cycle').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+          const miles = weekActivities.filter(a => a.type === 'Running' || a.type === 'Cycle' || a.type === 'Walking').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
 
           return {
             lifts: lifts.length,

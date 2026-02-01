@@ -448,7 +448,7 @@ const MemoizedActivityCard = React.memo(({
           <span className="text-2xl">{icon}</span>
         </div>
         <div className="flex-1">
-          <p className="text-white font-medium">{type}</p>
+          <p className="text-white font-medium">{activity.subtype || type}</p>
           <div className="flex items-center gap-3 mt-1">
             {duration && <span className="text-gray-400 text-sm">⏱ {formatDuration(duration)}</span>}
             {calories && <span className="text-gray-400 text-sm">🔥 {calories} cal</span>}

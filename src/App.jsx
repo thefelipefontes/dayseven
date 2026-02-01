@@ -11287,9 +11287,13 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
               <div className="flex items-center justify-between py-2 border-t border-zinc-700/50">
                 <span className="text-sm text-gray-400">Member since</span>
                 <span className="text-sm text-white">
-                  {user?.metadata?.creationTime
-                    ? new Date(user.metadata.creationTime).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
-                    : 'Unknown'}
+                  {(() => {
+                    const creationDate = user?.metadata?.creationTime || userProfile?.createdAt;
+                    if (creationDate) {
+                      return new Date(creationDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                    }
+                    return 'Unknown';
+                  })()}
                 </span>
               </div>
             </div>

@@ -337,12 +337,12 @@ const Login = ({ onLogin }) => {
   // Email Sign In form
   if (authMode === 'email-signin') {
     return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center px-6">
+      <div className="min-h-screen bg-black flex flex-col items-center justify-center px-6 pt-safe">
         {/* Back button */}
         <button
           onClick={() => { resetForm(); setAuthMode('main'); }}
           className="absolute left-6 text-gray-400 hover:text-white transition-colors flex items-center gap-2"
-          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
+          style={{ top: 'max(env(safe-area-inset-top, 20px), 50px)' }}
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M19 12H5M12 19l-7-7 7-7" />
@@ -422,12 +422,12 @@ const Login = ({ onLogin }) => {
   // Email Sign Up form
   if (authMode === 'email-signup') {
     return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center px-6">
+      <div className="min-h-screen bg-black flex flex-col items-center justify-center px-6 pt-safe">
         {/* Back button */}
         <button
           onClick={() => { resetForm(); setAuthMode('main'); }}
           className="absolute left-6 text-gray-400 hover:text-white transition-colors flex items-center gap-2"
-          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
+          style={{ top: 'max(env(safe-area-inset-top, 20px), 50px)' }}
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M19 12H5M12 19l-7-7 7-7" />
@@ -522,12 +522,12 @@ const Login = ({ onLogin }) => {
   // Forgot Password form
   if (authMode === 'forgot-password') {
     return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center px-6">
+      <div className="min-h-screen bg-black flex flex-col items-center justify-center px-6 pt-safe">
         {/* Back button */}
         <button
           onClick={() => { resetForm(); setAuthMode('email-signin'); }}
           className="absolute left-6 text-gray-400 hover:text-white transition-colors flex items-center gap-2"
-          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
+          style={{ top: 'max(env(safe-area-inset-top, 20px), 50px)' }}
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M19 12H5M12 19l-7-7 7-7" />

@@ -7767,6 +7767,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 // Home Tab - Simplified
 const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {} }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
+  const [showWorkoutPicker, setShowWorkoutPicker] = useState(false);
   const [activityReactions, setActivityReactions] = useState({});
   const [activityComments, setActivityComments] = useState({});
   const [reactionDetailModal, setReactionDetailModal] = useState(null); // { activityId, reactions, selectedEmoji }
@@ -8349,8 +8350,16 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
       {/* Pending Workout Banner - Only shows when there's a detected workout */}
       {pendingSync.length > 0 && showWorkoutNotification && (
         <div className="mx-4 mb-4">
-          <button 
-            onClick={() => onAddActivity(pendingSync[0])}
+          <button
+            onClick={() => {
+              if (pendingSync.length === 1) {
+                // Single workout - go directly to add activity
+                onAddActivity(pendingSync[0]);
+              } else {
+                // Multiple workouts - show picker
+                setShowWorkoutPicker(true);
+              }
+            }}
             className="w-full p-3 rounded-xl flex items-center gap-3 transition-all duration-150"
             style={{ backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.3)' }}
             onTouchStart={(e) => {
@@ -8376,13 +8385,26 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
           >
             <span className="text-lg">📱</span>
             <div className="flex-1 text-left">
-              <div className="text-xs font-semibold" style={{ color: '#00FF94' }}>New workout detected</div>
-              <div className="text-[10px] text-gray-400">{pendingSync[0].appleWorkoutName || pendingSync[0].type} • {pendingSync[0].time} • {pendingSync[0].duration} min</div>
+              <div className="text-xs font-semibold" style={{ color: '#00FF94' }}>
+                {pendingSync.length === 1
+                  ? 'New workout detected'
+                  : `${pendingSync.length} new workouts detected`}
+              </div>
+              <div className="text-[10px] text-gray-400">
+                {pendingSync.length === 1
+                  ? `${pendingSync[0].appleWorkoutName || pendingSync[0].type} • ${pendingSync[0].time} • ${pendingSync[0].duration} min`
+                  : 'Tap to view and add'}
+              </div>
             </div>
+            {pendingSync.length > 1 && (
+              <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ backgroundColor: '#00FF94', color: '#000' }}>
+                {pendingSync.length}
+              </span>
+            )}
             <span className="px-3 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: 'rgba(0,255,148,0.2)', color: '#00FF94' }}>
-              Add
+              {pendingSync.length === 1 ? 'Add' : 'View'}
             </span>
-            <button 
+            <button
               onClick={(e) => {
                 e.stopPropagation();
                 setShowWorkoutNotification(false);
@@ -8415,6 +8437,82 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
               <span className="text-gray-400 text-xs">✕</span>
             </button>
           </button>
+        </div>
+      )}
+
+      {/* Workout Picker Modal - Shows when multiple workouts detected */}
+      {showWorkoutPicker && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/70"
+            onClick={() => setShowWorkoutPicker(false)}
+          />
+          {/* Modal */}
+          <div
+            className="relative w-full max-h-[70vh] rounded-t-3xl overflow-hidden"
+            style={{ backgroundColor: '#1a1a1a' }}
+          >
+            {/* Handle */}
+            <div className="flex justify-center pt-3 pb-2">
+              <div className="w-10 h-1 rounded-full bg-gray-600" />
+            </div>
+
+            {/* Header */}
+            <div className="px-4 pb-3 border-b border-white/10">
+              <h3 className="text-lg font-semibold text-white text-center">New Workouts from Apple Health</h3>
+              <p className="text-xs text-gray-400 text-center mt-1">Select a workout to add</p>
+            </div>
+
+            {/* Workout List */}
+            <div className="overflow-y-auto p-4 space-y-3" style={{ maxHeight: 'calc(70vh - 100px)' }}>
+              {pendingSync.map((workout) => (
+                <button
+                  key={workout.healthKitUUID || workout.id}
+                  onClick={() => {
+                    setShowWorkoutPicker(false);
+                    onAddActivity(workout);
+                  }}
+                  className="w-full p-4 rounded-xl text-left transition-all active:scale-98"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">{workout.icon || '💪'}</span>
+                    <div className="flex-1">
+                      <div className="text-white font-medium">
+                        {workout.appleWorkoutName || workout.subtype || workout.type}
+                      </div>
+                      <div className="text-xs text-gray-400 mt-0.5">
+                        {workout.time} • {workout.duration} min
+                        {workout.sourceDevice && ` • ${workout.sourceDevice}`}
+                      </div>
+                      {(workout.calories || workout.distance) && (
+                        <div className="flex gap-3 mt-1.5 text-xs text-gray-500">
+                          {workout.calories && <span>🔥 {workout.calories} cal</span>}
+                          {workout.distance && <span>📍 {workout.distance} mi</span>}
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-[#00FF94]">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {/* Cancel button */}
+            <div className="p-4 border-t border-white/10">
+              <button
+                onClick={() => setShowWorkoutPicker(false)}
+                className="w-full py-3 rounded-xl text-gray-400 font-medium transition-all active:bg-white/5"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

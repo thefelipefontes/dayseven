@@ -1021,14 +1021,25 @@ const OfflineIndicator = () => {
 };
 
 // Active Workout Indicator Component - Shows when a workout is in progress
-const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab }) => {
+const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFinishing }) => {
   const [elapsed, setElapsed] = useState(0);
+  const [frozenElapsed, setFrozenElapsed] = useState(null); // Stores elapsed time when finishing
   const [isExpanded, setIsExpanded] = useState(false);
   const [liveMetrics, setLiveMetrics] = useState({ lastHr: 0, calories: 0 });
 
-  // Update elapsed time every second
+  // Collapse and freeze timer when finishing
   useEffect(() => {
-    if (!workout?.startTime) return;
+    if (isFinishing) {
+      setFrozenElapsed(elapsed); // Freeze the current time
+      setIsExpanded(false); // Collapse to pill
+    } else {
+      setFrozenElapsed(null); // Unfreeze when modal closes
+    }
+  }, [isFinishing]);
+
+  // Update elapsed time every second (only when not finishing)
+  useEffect(() => {
+    if (!workout?.startTime || isFinishing) return;
 
     const updateElapsed = () => {
       const start = new Date(workout.startTime).getTime();
@@ -1040,7 +1051,7 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab }) => {
     const interval = setInterval(updateElapsed, 1000);
 
     return () => clearInterval(interval);
-  }, [workout?.startTime]);
+  }, [workout?.startTime, isFinishing]);
 
   // Listen for real-time HealthKit metric updates
   useEffect(() => {
@@ -1095,11 +1106,14 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab }) => {
   // - Friends: top center
   const useTopRight = activeTab === 'home' || activeTab === 'history' || activeTab === 'profile';
 
-  // Compact pill view (default)
-  if (!isExpanded) {
+  // Use frozen time when finishing, otherwise use live elapsed time
+  const displayElapsed = frozenElapsed !== null ? frozenElapsed : elapsed;
+
+  // Compact pill view (default, or forced when finishing)
+  if (!isExpanded || isFinishing) {
     return (
       <div
-        className="fixed z-[100] flex items-center gap-2 shadow-2xl cursor-pointer"
+        className={`fixed z-[100] flex items-center gap-2 shadow-2xl ${isFinishing ? '' : 'cursor-pointer'}`}
         style={{
           top: 'calc(12px + env(safe-area-inset-top, 0px))',
           ...(useTopRight
@@ -1107,31 +1121,33 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab }) => {
             : { left: '50%', transform: 'translateX(-50%)' }
           ),
           backgroundColor: 'rgba(0,0,0,0.95)',
-          border: '1px solid rgba(0,255,148,0.4)',
+          border: isFinishing ? '1px solid rgba(255,180,0,0.6)' : '1px solid rgba(0,255,148,0.4)',
           backdropFilter: 'blur(20px)',
           borderRadius: '20px',
           padding: '6px 12px',
         }}
-        onClick={() => setIsExpanded(true)}
+        onClick={() => !isFinishing && setIsExpanded(true)}
       >
-        {/* Live indicator dot */}
+        {/* Status indicator dot - orange when finishing, green when recording */}
         <span
-          className="w-2 h-2 rounded-full animate-pulse"
-          style={{ backgroundColor: '#00FF94' }}
+          className={`w-2 h-2 rounded-full ${isFinishing ? '' : 'animate-pulse'}`}
+          style={{ backgroundColor: isFinishing ? '#FFB400' : '#00FF94' }}
         />
 
         {/* Activity icon */}
         <span className="text-base">{icon}</span>
 
-        {/* Timer */}
-        <span className="font-mono font-semibold text-sm" style={{ color: '#00FF94' }}>
-          {formatElapsed(elapsed)}
+        {/* Timer - frozen when finishing */}
+        <span className="font-mono font-semibold text-sm" style={{ color: isFinishing ? '#FFB400' : '#00FF94' }}>
+          {formatElapsed(displayElapsed)}
         </span>
 
-        {/* Expand hint */}
-        <svg className="w-3 h-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-        </svg>
+        {/* Expand hint - only show when not finishing */}
+        {!isFinishing && (
+          <svg className="w-3 h-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        )}
       </div>
     );
   }
@@ -14523,6 +14539,7 @@ export default function DaySevenApp() {
       <ActiveWorkoutIndicator
         workout={activeWorkout}
         activeTab={activeTab}
+        isFinishing={showFinishWorkout}
         onFinish={() => setShowFinishWorkout(true)}
         onCancel={async () => {
           if (window.confirm('Cancel this workout? Your progress will be lost.')) {

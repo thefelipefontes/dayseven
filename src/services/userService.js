@@ -471,6 +471,48 @@ export async function setTourComplete(uid) {
   }
 }
 
+export async function savePersonalRecords(uid, personalRecords) {
+  const path = `users/${uid}`;
+
+  try {
+    await withRetry(async () => {
+      if (isNative) {
+        await FirebaseFirestore.updateDocument({
+          reference: path,
+          data: { personalRecords }
+        });
+      } else {
+        const userRef = doc(db, 'users', uid);
+        await withTimeout(updateDoc(userRef, { personalRecords }));
+      }
+    });
+  } catch (error) {
+    // console.error('savePersonalRecords error:', error);
+    // Don't throw - optimistic update already applied
+  }
+}
+
+export async function getPersonalRecords(uid) {
+  const path = `users/${uid}`;
+
+  try {
+    let personalRecords;
+    if (isNative) {
+      const { snapshot } = await FirebaseFirestore.getDocument({ reference: path });
+      personalRecords = snapshot?.data?.personalRecords || null;
+    } else {
+      const userRef = doc(db, 'users', uid);
+      const userDoc = await withTimeout(getDoc(userRef));
+      personalRecords = userDoc.exists() ? (userDoc.data().personalRecords || null) : null;
+    }
+
+    return personalRecords;
+  } catch (error) {
+    // console.error('getPersonalRecords error:', error);
+    return null;
+  }
+}
+
 export async function uploadProfilePhoto(uid, file) {
   const storagePath = `profilePhotos/${uid}`;
   let downloadURL;

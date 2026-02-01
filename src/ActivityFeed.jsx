@@ -269,11 +269,18 @@ const TouchButton = ({ onClick, disabled = false, className, style, children, to
     };
   }, [disabled, onClick]);
 
+  // Handle mouse clicks for desktop browsers
+  const handleClick = () => {
+    if (disabled || !onClick) return;
+    onClick();
+  };
+
   return (
     <div
       ref={ref}
       role={disabled ? undefined : "button"}
       tabIndex={disabled ? undefined : 0}
+      onClick={handleClick}
       className={className}
       style={{
         ...style,

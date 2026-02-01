@@ -6,7 +6,7 @@ import Login from './Login';
 import UsernameSetup from './UsernameSetup';
 import Friends from './Friends';
 import ActivityFeed from './ActivityFeed';
-import { createUserProfile, getUserProfile, updateUserProfile, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, saveUserGoals, getUserGoals, setOnboardingComplete, setTourComplete } from './services/userService';
+import { createUserProfile, getUserProfile, updateUserProfile, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, saveUserGoals, getUserGoals, setOnboardingComplete, setTourComplete, savePersonalRecords, getPersonalRecords } from './services/userService';
 import { getFriends, getReactions, getFriendRequests, getComments, addReply, getReplies, deleteReply, addReaction, removeReaction, addComment } from './services/friendService';
 import html2canvas from 'html2canvas';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
@@ -8997,8 +8997,9 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                 {/* Day cells (includes overflow days from adjacent months) */}
                 {week.days.map((day) => {
                   const dayActivities = calendarData[day.date] || [];
-                  const isToday = day.date === getTodayDate();
-                  const isFuture = new Date(day.date + 'T12:00:00') > today;
+                  const todayStr = getTodayDate();
+                  const isToday = day.date === todayStr;
+                  const isFuture = day.date > todayStr; // Simple string comparison works for YYYY-MM-DD format
 
                   return (
                     <button
@@ -12292,6 +12293,15 @@ export default function DaySevenApp() {
               customActivities: userCustomActivities
             }));
           }
+
+          // Load user's personal records
+          const userRecords = await getPersonalRecords(user.uid);
+          if (userRecords) {
+            setUserData(prev => ({
+              ...prev,
+              personalRecords: { ...prev.personalRecords, ...userRecords }
+            }));
+          }
         } catch (error) {
           // console.error('Error loading user data:', error);
         }
@@ -12441,6 +12451,197 @@ export default function DaySevenApp() {
   useEffect(() => {
     userDataRef.current = userData;
   }, [userData]);
+
+  // DEV: Add dummy data function (call window.__addDummyData() from console)
+  useEffect(() => {
+    window.__addDummyData = () => {
+      const randomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+      const randomFloat = (min, max) => (Math.random() * (max - min) + min).toFixed(1);
+      const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+      const formatDate = (date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+      const generateTime = () => {
+        const hours = randomInt(6, 20);
+        const minutes = randomInt(0, 59);
+        const hour12 = hours > 12 ? hours - 12 : hours === 0 ? 12 : hours;
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        return `${hour12}:${String(minutes).padStart(2, '0')} ${ampm}`;
+      };
+      // Real fitness photos from Unsplash (free to use)
+      const photoUrls = [
+        'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=400&h=400&fit=crop', // gym weights
+        'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=400&h=400&fit=crop', // person lifting
+        'https://images.unsplash.com/photo-1581009146145-b5ef050c149a?w=400&h=400&fit=crop', // gym workout
+        'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=400&h=400&fit=crop', // weights training
+        'https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=400&h=400&fit=crop', // fitness training
+        'https://images.unsplash.com/photo-1549060279-7e168fcee0c2?w=400&h=400&fit=crop', // running outdoors
+        'https://images.unsplash.com/photo-1476480862126-209bfaa8edc8?w=400&h=400&fit=crop', // running person
+        'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=400&fit=crop', // gym person
+        'https://images.unsplash.com/photo-1574680096145-d05b474e2155?w=400&h=400&fit=crop', // deadlift
+        'https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?w=400&h=400&fit=crop', // crossfit
+      ];
+      const muscleGroups = ['Full Body', 'Upper Body', 'Lower Body', 'Push', 'Pull', 'Legs', 'Back', 'Chest', 'Shoulders', 'Arms', 'Core'];
+      const newActivities = [];
+      const newCalendarData = {};
+      const today = new Date();
+      let photoCounter = 0;
+      for (let i = 0; i < 90; i++) {
+        const date = new Date(today);
+        date.setDate(date.getDate() - i);
+        const dateStr = formatDate(date);
+        const dayOfWeek = date.getDay();
+        const isRestDay = (dayOfWeek === 0 && Math.random() > 0.3) || (Math.random() < 0.15);
+        if (isRestDay && i > 0 && i < 85) continue;
+        if (!newCalendarData[dateStr]) newCalendarData[dateStr] = [];
+        if (dayOfWeek === 1 || dayOfWeek === 3 || dayOfWeek === 5 || (dayOfWeek === 6 && Math.random() > 0.5)) {
+          const muscleGroup = muscleGroups[randomInt(0, muscleGroups.length - 1)];
+          const shouldAddPhoto = Math.random() > 0.6; // 40% chance of having a photo
+          const activity = {
+            id: generateId(),
+            type: 'Strength Training',
+            subtype: `Lifting - ${muscleGroup}`,
+            strengthType: 'Lifting',
+            date: dateStr,
+            time: generateTime(),
+            duration: randomInt(45, 75),
+            calories: randomInt(250, 450),
+            ...(shouldAddPhoto && { photoURL: photoUrls[photoCounter++ % photoUrls.length] })
+          };
+          newActivities.push(activity);
+          newCalendarData[dateStr].push({ type: activity.type, subtype: activity.subtype, duration: activity.duration, calories: activity.calories });
+        }
+        if (dayOfWeek === 2 || dayOfWeek === 4 || (dayOfWeek === 6 && Math.random() > 0.6)) {
+          if (Math.random() > 0.3) {
+            const distance = parseFloat(randomFloat(2.5, 5.0));
+            const duration = randomInt(20, 45);
+            const shouldAddPhoto = Math.random() > 0.7; // 30% chance of having a photo
+            const activity = {
+              id: generateId(),
+              type: 'Running',
+              date: dateStr,
+              time: generateTime(),
+              duration,
+              distance,
+              pace: (duration / distance).toFixed(2),
+              calories: randomInt(200, 400),
+              avgHr: randomInt(140, 165),
+              maxHr: randomInt(170, 185),
+              ...(shouldAddPhoto && { photoURL: photoUrls[photoCounter++ % photoUrls.length] })
+            };
+            newActivities.push(activity);
+            newCalendarData[dateStr].push({ type: activity.type, duration: activity.duration, distance: activity.distance, calories: activity.calories, avgHr: activity.avgHr, maxHr: activity.maxHr });
+          } else {
+            const activity = { id: generateId(), type: 'Cycle', date: dateStr, time: generateTime(), duration: randomInt(30, 60), distance: parseFloat(randomFloat(8, 15)), calories: randomInt(250, 450), avgHr: randomInt(130, 155), maxHr: randomInt(160, 175) };
+            newActivities.push(activity);
+            newCalendarData[dateStr].push({ type: activity.type, duration: activity.duration, distance: activity.distance, calories: activity.calories, avgHr: activity.avgHr, maxHr: activity.maxHr });
+          }
+        }
+        if ((dayOfWeek === 0 || dayOfWeek === 3 || dayOfWeek === 6) && Math.random() > 0.5) {
+          const recoveryTypes = ['Cold Plunge', 'Sauna', 'Yoga'];
+          const recoveryType = recoveryTypes[randomInt(0, 2)];
+          const activity = { id: generateId(), type: recoveryType, date: dateStr, time: generateTime(), duration: recoveryType === 'Cold Plunge' ? randomInt(3, 10) : recoveryType === 'Sauna' ? randomInt(15, 25) : randomInt(30, 60) };
+          newActivities.push(activity);
+          newCalendarData[dateStr].push({ type: activity.type, duration: activity.duration });
+        }
+      }
+
+      // Calculate personal records from generated activities
+      const records = {
+        highestCalories: { value: 0, activityType: null },
+        longestStrength: { value: 0, activityType: null },
+        longestCardio: { value: 0, activityType: null },
+        longestDistance: { value: 0, activityType: null },
+        fastestPace: { value: null, activityType: null },
+        fastestCyclingPace: { value: null, activityType: null },
+        mostWorkoutsWeek: 0,
+        mostCaloriesWeek: 0,
+        mostMilesWeek: 0,
+        longestMasterStreak: 12,
+        longestStrengthStreak: 8,
+        longestCardioStreak: 6,
+        longestRecoveryStreak: 5
+      };
+
+      newActivities.forEach(a => {
+        // Highest calories
+        if (a.calories && a.calories > records.highestCalories.value) {
+          records.highestCalories = { value: a.calories, activityType: a.type };
+        }
+        // Longest strength
+        if (a.type === 'Strength Training' && a.duration > records.longestStrength.value) {
+          records.longestStrength = { value: a.duration, activityType: a.subtype || a.type };
+        }
+        // Longest cardio
+        if (['Running', 'Cycle'].includes(a.type) && a.duration > records.longestCardio.value) {
+          records.longestCardio = { value: a.duration, activityType: a.type };
+        }
+        // Longest distance
+        if (a.distance && a.distance > records.longestDistance.value) {
+          records.longestDistance = { value: a.distance, activityType: a.type };
+        }
+        // Fastest running pace (lower is better)
+        if (a.type === 'Running' && a.pace) {
+          const paceValue = parseFloat(a.pace);
+          if (!records.fastestPace.value || paceValue < records.fastestPace.value) {
+            records.fastestPace = { value: paceValue, activityType: 'Running' };
+          }
+        }
+        // Fastest cycling pace
+        if (a.type === 'Cycle' && a.distance && a.duration) {
+          const cyclingPace = a.duration / a.distance;
+          if (!records.fastestCyclingPace.value || cyclingPace < records.fastestCyclingPace.value) {
+            records.fastestCyclingPace = { value: parseFloat(cyclingPace.toFixed(2)), activityType: 'Cycle' };
+          }
+        }
+      });
+
+      // Calculate weekly records
+      const weeklyData = {};
+      newActivities.forEach(a => {
+        const actDate = new Date(a.date);
+        const weekStart = new Date(actDate);
+        weekStart.setDate(actDate.getDate() - actDate.getDay());
+        const weekKey = formatDate(weekStart);
+        if (!weeklyData[weekKey]) {
+          weeklyData[weekKey] = { workouts: 0, calories: 0, miles: 0 };
+        }
+        weeklyData[weekKey].workouts++;
+        weeklyData[weekKey].calories += (a.calories || 0);
+        weeklyData[weekKey].miles += (a.distance || 0);
+      });
+
+      Object.values(weeklyData).forEach(week => {
+        if (week.workouts > records.mostWorkoutsWeek) records.mostWorkoutsWeek = week.workouts;
+        if (week.calories > records.mostCaloriesWeek) records.mostCaloriesWeek = week.calories;
+        if (week.miles > records.mostMilesWeek) records.mostMilesWeek = parseFloat(week.miles.toFixed(1));
+      });
+
+      const activitiesWithPhotos = newActivities.filter(a => a.photoURL).length;
+      console.log(`Generated ${newActivities.length} activities (${activitiesWithPhotos} with photos), saving...`);
+      setActivities(newActivities);
+      setCalendarData(newCalendarData);
+      setUserData(prev => ({
+        ...prev,
+        personalRecords: records
+      }));
+      // Also save records to Firestore if user is logged in
+      if (user?.uid) {
+        savePersonalRecords(user.uid, records).then(() => {
+          console.log('Records persisted to Firestore');
+        }).catch(err => {
+          console.error('Error saving records:', err);
+        });
+      }
+      console.log('Done! Activities, calendar data, and records saved.');
+      console.log('Records:', records);
+      return newActivities.length;
+    };
+    return () => { delete window.__addDummyData; };
+  }, [user]);
 
   // Track if initial load is complete to avoid saving on mount
   const hasLoadedActivities = useRef(false);

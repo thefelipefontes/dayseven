@@ -12,7 +12,7 @@ import html2canvas from 'html2canvas';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
-import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories } from './services/healthService';
+import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType } from './services/healthService';
 
 // Helper function for haptic feedback that works on iOS
 const triggerHaptic = async (style = ImpactStyle.Medium) => {
@@ -1015,6 +1015,699 @@ const OfflineIndicator = () => {
             <span className="text-white">No connection</span>
           </>
         )}
+      </div>
+    </div>
+  );
+};
+
+// Active Workout Indicator Component - Shows when a workout is in progress
+const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab }) => {
+  const [elapsed, setElapsed] = useState(0);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [liveMetrics, setLiveMetrics] = useState({ lastHr: 0, calories: 0 });
+
+  // Update elapsed time every second
+  useEffect(() => {
+    if (!workout?.startTime) return;
+
+    const updateElapsed = () => {
+      const start = new Date(workout.startTime).getTime();
+      const now = Date.now();
+      setElapsed(Math.floor((now - start) / 1000));
+    };
+
+    updateElapsed(); // Initial update
+    const interval = setInterval(updateElapsed, 1000);
+
+    return () => clearInterval(interval);
+  }, [workout?.startTime]);
+
+  // Listen for real-time HealthKit metric updates
+  useEffect(() => {
+    if (!workout?.startTime) return;
+
+    const removeListener = addMetricsUpdateListener((data) => {
+      setLiveMetrics(prev => ({
+        ...prev,
+        ...(data.type === 'heartRate' && { lastHr: data.lastHr }),
+        ...(data.type === 'calories' && { calories: data.calories }),
+      }));
+    });
+
+    // Also poll for initial metrics in case some were already recorded
+    getLiveWorkoutMetrics().then(result => {
+      if (result.success && result.isActive) {
+        setLiveMetrics({
+          lastHr: result.lastHr || 0,
+          calories: result.calories || 0,
+        });
+      }
+    });
+
+    return () => removeListener();
+  }, [workout?.startTime]);
+
+  if (!workout) return null;
+
+  // Format elapsed time as HH:MM:SS or MM:SS
+  const formatElapsed = (seconds) => {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+
+    if (hrs > 0) {
+      return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Get display info
+  const icon = workout.customEmoji || workout.sportEmoji || workout.icon || '💪';
+  const typeName = workout.type === 'Strength Training'
+    ? (workout.strengthType || 'Strength')
+    : workout.type;
+  const subtypeName = workout.type === 'Strength Training'
+    ? workout.focusArea
+    : (workout.subtype || '');
+
+  // Position based on active tab:
+  // - Home, History, Profile: top right
+  // - Friends: top center
+  const useTopRight = activeTab === 'home' || activeTab === 'history' || activeTab === 'profile';
+
+  // Compact pill view (default)
+  if (!isExpanded) {
+    return (
+      <div
+        className="fixed z-[100] flex items-center gap-2 shadow-2xl cursor-pointer"
+        style={{
+          top: 'calc(12px + env(safe-area-inset-top, 0px))',
+          ...(useTopRight
+            ? { right: '16px' }
+            : { left: '50%', transform: 'translateX(-50%)' }
+          ),
+          backgroundColor: 'rgba(0,0,0,0.95)',
+          border: '1px solid rgba(0,255,148,0.4)',
+          backdropFilter: 'blur(20px)',
+          borderRadius: '20px',
+          padding: '6px 12px',
+        }}
+        onClick={() => setIsExpanded(true)}
+      >
+        {/* Live indicator dot */}
+        <span
+          className="w-2 h-2 rounded-full animate-pulse"
+          style={{ backgroundColor: '#00FF94' }}
+        />
+
+        {/* Activity icon */}
+        <span className="text-base">{icon}</span>
+
+        {/* Timer */}
+        <span className="font-mono font-semibold text-sm" style={{ color: '#00FF94' }}>
+          {formatElapsed(elapsed)}
+        </span>
+
+        {/* Expand hint */}
+        <svg className="w-3 h-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </div>
+    );
+  }
+
+  // Expanded view - appears below the header
+  return (
+    <div
+      className="fixed left-4 right-4 z-[100] rounded-2xl shadow-2xl overflow-hidden"
+      style={{
+        top: 'calc(70px + env(safe-area-inset-top, 0px))',
+        backgroundColor: 'rgba(0,0,0,0.95)',
+        border: '1px solid rgba(0,255,148,0.3)',
+        backdropFilter: 'blur(20px)',
+      }}
+    >
+      <div className="p-3">
+        {/* Header with collapse */}
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <span
+              className="w-2 h-2 rounded-full animate-pulse"
+              style={{ backgroundColor: '#00FF94' }}
+            />
+            <span className="text-xs text-gray-400 uppercase tracking-wider">Recording</span>
+          </div>
+          <button
+            onClick={() => setIsExpanded(false)}
+            className="p-1 rounded-lg"
+            style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+          >
+            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {/* Activity icon */}
+          <div
+            className="w-11 h-11 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+            style={{ backgroundColor: 'rgba(0,255,148,0.15)' }}
+          >
+            {icon}
+          </div>
+
+          {/* Workout info */}
+          <div className="flex-1 min-w-0">
+            <div className="font-medium text-sm text-white truncate">
+              {typeName}
+              {subtypeName && <span className="text-gray-400 font-normal"> • {subtypeName}</span>}
+            </div>
+            <div className="text-xl font-mono font-bold" style={{ color: '#00FF94' }}>
+              {formatElapsed(elapsed)}
+            </div>
+          </div>
+
+          {/* Cancel button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onCancel();
+            }}
+            className="p-2 rounded-lg transition-all"
+            style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+          >
+            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Live metrics from Apple Watch/Whoop */}
+        {(liveMetrics.lastHr > 0 || liveMetrics.calories > 0) && (
+          <div className="flex items-center gap-4 mt-2 py-2 px-3 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+            {liveMetrics.lastHr > 0 && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-red-400">❤️</span>
+                <span className="text-sm font-medium text-white">{liveMetrics.lastHr}</span>
+                <span className="text-xs text-gray-500">bpm</span>
+              </div>
+            )}
+            {liveMetrics.calories > 0 && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-orange-400">🔥</span>
+                <span className="text-sm font-medium text-white">{liveMetrics.calories}</span>
+                <span className="text-xs text-gray-500">cal</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Finish button */}
+        <button
+          onClick={onFinish}
+          className="w-full mt-3 py-2.5 rounded-xl font-semibold text-sm text-black transition-all active:scale-[0.98]"
+          style={{ backgroundColor: '#00FF94' }}
+        >
+          Finish Workout
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// Finish Workout Modal - Shown when user taps "Finish Workout"
+const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave }) => {
+  const [notes, setNotes] = useState('');
+  const [calories, setCalories] = useState('');
+  const [avgHr, setAvgHr] = useState('');
+  const [maxHr, setMaxHr] = useState('');
+  const [distance, setDistance] = useState('');
+  const [activityPhoto, setActivityPhoto] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const [isPhotoPrivate, setIsPhotoPrivate] = useState(false);
+  const [isLoadingMetrics, setIsLoadingMetrics] = useState(false);
+  const [healthKitDataFetched, setHealthKitDataFetched] = useState(false);
+
+  const fileInputRef = useRef(null);
+
+  // Check if this is a distance-based activity
+  const isDistanceActivity = workout?.type === 'Running' || workout?.type === 'Cycle';
+
+  // Check if we have metrics (either from HealthKit auto-fetch or manual entry)
+  const hasMetrics = calories || avgHr || maxHr;
+
+  // Calculate duration
+  const getDuration = () => {
+    if (!workout?.startTime) return 0;
+    const start = new Date(workout.startTime).getTime();
+    const now = Date.now();
+    return Math.floor((now - start) / 60000); // Duration in minutes
+  };
+
+  const duration = getDuration();
+
+  // Format duration for display
+  const formatDuration = (minutes) => {
+    const hrs = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    if (hrs > 0) {
+      return `${hrs}h ${mins}m`;
+    }
+    return `${mins} min`;
+  };
+
+  // Reset state and fetch HealthKit metrics when modal opens
+  useEffect(() => {
+    if (isOpen && workout?.startTime) {
+      // Reset all state
+      setNotes('');
+      setCalories('');
+      setAvgHr('');
+      setMaxHr('');
+      setDistance('');
+      setActivityPhoto(null);
+      setPhotoPreview(null);
+      setIsPhotoPrivate(false);
+      setHealthKitDataFetched(false);
+
+      // Get current metrics from the live workout session (don't end it yet)
+      const fetchMetrics = async () => {
+        setIsLoadingMetrics(true);
+        try {
+          // Get metrics from the live workout without ending it
+          const liveResult = await getLiveWorkoutMetrics();
+          console.log('Live workout metrics:', liveResult);
+
+          let hasData = false;
+
+          if (liveResult.success && liveResult.isActive) {
+            // Use live workout metrics if we have them
+            if (liveResult.calories > 0) {
+              setCalories(liveResult.calories.toString());
+              hasData = true;
+            }
+            if (liveResult.avgHr > 0) {
+              setAvgHr(liveResult.avgHr.toString());
+              hasData = true;
+            }
+            if (liveResult.maxHr > 0) {
+              setMaxHr(liveResult.maxHr.toString());
+              hasData = true;
+            }
+          }
+
+          // If live workout didn't get data, fallback to querying HealthKit directly
+          if (!hasData) {
+            const endTime = new Date().toISOString();
+            const result = await fetchWorkoutMetricsForTimeRange(workout.startTime, endTime);
+            console.log('Fallback HealthKit query:', result);
+
+            if (result.success && result.hasData) {
+              if (result.metrics.calories) {
+                setCalories(result.metrics.calories.toString());
+              }
+              if (result.metrics.avgHr) {
+                setAvgHr(result.metrics.avgHr.toString());
+              }
+              if (result.metrics.maxHr) {
+                setMaxHr(result.metrics.maxHr.toString());
+              }
+            }
+          }
+
+          setHealthKitDataFetched(true);
+        } catch (error) {
+          console.error('Error fetching HealthKit metrics:', error);
+          setHealthKitDataFetched(true);
+        } finally {
+          setIsLoadingMetrics(false);
+        }
+      };
+
+      fetchMetrics();
+    } else if (isOpen) {
+      // Modal opened without workout data - just reset state
+      setNotes('');
+      setCalories('');
+      setAvgHr('');
+      setMaxHr('');
+      setDistance('');
+      setActivityPhoto(null);
+      setPhotoPreview(null);
+      setIsPhotoPrivate(false);
+      setHealthKitDataFetched(false);
+      setIsLoadingMetrics(false);
+    }
+  }, [isOpen, workout?.startTime]);
+
+  // Handle photo from library using Capacitor Camera
+  const handleChooseFromLibrary = async () => {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const image = await Camera.getPhoto({
+          quality: 90,
+          allowEditing: false,
+          resultType: CameraResultType.DataUrl,
+          source: CameraSource.Photos
+        });
+
+        if (image.dataUrl) {
+          const response = await fetch(image.dataUrl);
+          const blob = await response.blob();
+          const file = new File([blob], 'photo.jpg', { type: 'image/jpeg' });
+          setActivityPhoto(file);
+          setPhotoPreview(image.dataUrl);
+        }
+      } catch (error) {
+        if (error.message !== 'User cancelled photos app') {
+          console.error('Error picking photo:', error);
+        }
+      }
+    } else {
+      fileInputRef.current?.click();
+    }
+  };
+
+  // Handle photo from camera using Capacitor Camera
+  const handleTakePhoto = async () => {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const image = await Camera.getPhoto({
+          quality: 90,
+          allowEditing: false,
+          resultType: CameraResultType.DataUrl,
+          source: CameraSource.Camera
+        });
+
+        if (image.dataUrl) {
+          const response = await fetch(image.dataUrl);
+          const blob = await response.blob();
+          const file = new File([blob], 'photo.jpg', { type: 'image/jpeg' });
+          setActivityPhoto(file);
+          setPhotoPreview(image.dataUrl);
+        }
+      } catch (error) {
+        if (error.message !== 'User cancelled photos app') {
+          console.error('Error taking photo:', error);
+        }
+      }
+    }
+  };
+
+  // Handle file input for web fallback
+  const handleFileInput = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      alert('Image must be less than 10MB');
+      return;
+    }
+    setActivityPhoto(file);
+    setPhotoPreview(URL.createObjectURL(file));
+    e.target.value = '';
+  };
+
+  // Clear photo
+  const clearPhoto = () => {
+    if (photoPreview && activityPhoto && !photoPreview.startsWith('data:')) {
+      URL.revokeObjectURL(photoPreview);
+    }
+    setActivityPhoto(null);
+    setPhotoPreview(null);
+  };
+
+  if (!isOpen || !workout) return null;
+
+  const icon = workout.customEmoji || workout.sportEmoji || workout.icon || '💪';
+  const typeName = workout.type === 'Strength Training'
+    ? (workout.strengthType || 'Strength')
+    : workout.type;
+  const subtypeName = workout.type === 'Strength Training'
+    ? workout.focusArea
+    : (workout.subtype || '');
+
+  const handleSave = () => {
+    const endTime = new Date().toISOString();
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    onSave({
+      ...workout,
+      date: dateStr,
+      duration,
+      notes: notes || undefined,
+      calories: calories ? parseInt(calories) : undefined,
+      avgHr: avgHr ? parseInt(avgHr) : undefined,
+      maxHr: maxHr ? parseInt(maxHr) : undefined,
+      distance: distance ? parseFloat(distance) : undefined,
+      // Store exact timestamps for HealthKit
+      startTime: workout.startTime,
+      endTime,
+      // Photo data
+      photoFile: activityPhoto || undefined,
+      isPhotoPrivate: activityPhoto ? isPhotoPrivate : undefined,
+    });
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center"
+      style={{ backgroundColor: 'rgba(0,0,0,0.7)' }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-lg rounded-t-3xl overflow-hidden"
+        style={{ backgroundColor: '#1A1A1A', maxHeight: '85vh' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-gray-800">
+          <button
+            onClick={onClose}
+            className="text-gray-400 font-medium px-2 py-1"
+          >
+            Cancel
+          </button>
+          <h2 className="font-bold text-white">Finish Workout</h2>
+          <button
+            onClick={handleSave}
+            className="font-bold px-2 py-1"
+            style={{ color: '#00FF94' }}
+          >
+            Save
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-4 overflow-y-auto" style={{ maxHeight: 'calc(85vh - 60px)' }}>
+          {/* Workout summary */}
+          <div
+            className="p-4 rounded-2xl mb-6"
+            style={{ backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.2)' }}
+          >
+            <div className="flex items-center gap-4">
+              <div
+                className="w-16 h-16 rounded-xl flex items-center justify-center text-3xl"
+                style={{ backgroundColor: 'rgba(0,255,148,0.15)' }}
+              >
+                {icon}
+              </div>
+              <div>
+                <div className="font-semibold text-lg text-white">
+                  {typeName}
+                  {subtypeName && <span className="text-gray-400 font-normal"> • {subtypeName}</span>}
+                </div>
+                <div className="text-3xl font-bold mt-1" style={{ color: '#00FF94' }}>
+                  {formatDuration(duration)}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Optional metrics */}
+          <div className="space-y-4">
+            <div className="text-sm text-gray-400 mb-2">Optional Details</div>
+
+            {/* Notes */}
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Notes</label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="How did it feel?"
+                className="w-full p-3 rounded-xl text-white placeholder-gray-600 resize-none"
+                style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
+                rows={2}
+              />
+            </div>
+
+            {/* Distance field for Running/Cycle */}
+            {isDistanceActivity && (
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Distance (miles)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={distance}
+                  onChange={(e) => setDistance(e.target.value)}
+                  placeholder="0.0"
+                  className="w-full p-3 rounded-xl text-white placeholder-gray-600"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
+                />
+              </div>
+            )}
+
+            {/* Metrics row */}
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Calories</label>
+                <input
+                  type="number"
+                  value={calories}
+                  onChange={(e) => setCalories(e.target.value)}
+                  placeholder="—"
+                  className="w-full p-3 rounded-xl text-white text-center placeholder-gray-600"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Avg HR</label>
+                <input
+                  type="number"
+                  value={avgHr}
+                  onChange={(e) => setAvgHr(e.target.value)}
+                  placeholder="—"
+                  className="w-full p-3 rounded-xl text-white text-center placeholder-gray-600"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Max HR</label>
+                <input
+                  type="number"
+                  value={maxHr}
+                  onChange={(e) => setMaxHr(e.target.value)}
+                  placeholder="—"
+                  className="w-full p-3 rounded-xl text-white text-center placeholder-gray-600"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
+                />
+              </div>
+            </div>
+
+            {/* Photo Upload Section */}
+            <div className="mt-4">
+              <label className="text-xs text-gray-500 block mb-2">Photo (optional)</label>
+
+              {/* Hidden file input for web fallback */}
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileInput}
+                accept="image/*"
+                className="hidden"
+              />
+
+              {photoPreview ? (
+                <div className="space-y-3">
+                  {/* Photo Preview */}
+                  <div className="relative rounded-xl overflow-hidden">
+                    <img
+                      src={photoPreview}
+                      alt="Activity preview"
+                      className="w-full h-48 object-cover"
+                    />
+                    <button
+                      onClick={clearPhoto}
+                      className="absolute top-2 right-2 w-8 h-8 bg-black/60 rounded-full flex items-center justify-center"
+                    >
+                      <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  {/* Privacy Toggle */}
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-white/5">
+                    <span className="text-sm text-gray-300">Who can see this?</span>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setIsPhotoPrivate(false)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${!isPhotoPrivate ? 'bg-[#00FF94] text-black' : 'bg-white/10 text-gray-400'}`}
+                      >
+                        Friends
+                      </button>
+                      <button
+                        onClick={() => setIsPhotoPrivate(true)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isPhotoPrivate ? 'bg-[#00FF94] text-black' : 'bg-white/10 text-gray-400'}`}
+                      >
+                        Only Me
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleTakePhoto}
+                    className="flex-1 flex items-center justify-center gap-2 p-3 rounded-xl bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10 transition-colors"
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    <span className="text-sm">Camera</span>
+                  </button>
+                  <button
+                    onClick={handleChooseFromLibrary}
+                    className="flex-1 flex items-center justify-center gap-2 p-3 rounded-xl bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10 transition-colors"
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <span className="text-sm">Library</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* HealthKit Info/Warning */}
+            {isLoadingMetrics ? (
+              <div className="mt-4 p-3 rounded-xl" style={{ backgroundColor: 'rgba(0,255,148,0.05)', border: '1px solid rgba(0,255,148,0.1)' }}>
+                <div className="flex items-center justify-center gap-2">
+                  <div className="w-4 h-4 border-2 border-[#00FF94] border-t-transparent rounded-full animate-spin"></div>
+                  <p className="text-xs text-gray-400">
+                    Fetching stats from Apple Health...
+                  </p>
+                </div>
+              </div>
+            ) : !hasMetrics && healthKitDataFetched ? (
+              <div className="mt-4 p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,193,7,0.1)', border: '1px solid rgba(255,193,7,0.3)' }}>
+                <div className="flex items-start gap-2">
+                  <span className="text-yellow-500 text-lg">⚠️</span>
+                  <div>
+                    <p className="text-xs text-yellow-500/90">
+                      No workout stats detected from Apple Health. Heart rate and calorie data from your Apple Watch or Whoop may take a few minutes to sync. You can add metrics manually above or save now and they'll link automatically later.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : hasMetrics ? (
+              <div className="mt-4 p-3 rounded-xl" style={{ backgroundColor: 'rgba(0,255,148,0.05)', border: '1px solid rgba(0,255,148,0.1)' }}>
+                <div className="flex items-start gap-2">
+                  <span className="text-[#00FF94] text-lg">✓</span>
+                  <p className="text-xs text-gray-400">
+                    Stats synced from Apple Health. Any additional data will be automatically linked to this workout.
+                  </p>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -5380,7 +6073,9 @@ const SwipeableActivityItem = ({ children, onDelete, activity, onTap, onEdit }) 
 };
 
 // Add Activity Modal
-const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, defaultDate = null, userData = null, onSaveCustomActivity = null }) => {
+const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, defaultDate = null, userData = null, onSaveCustomActivity = null, onStartWorkout = null, hasActiveWorkout = false }) => {
+  // Mode: null = initial choice, 'start' = start new workout, 'completed' = log completed (existing flow)
+  const [mode, setMode] = useState(null);
   const [activityType, setActivityType] = useState(null);
   const [subtype, setSubtype] = useState('');
   const [strengthType, setStrengthType] = useState(''); // Lifting, Bodyweight
@@ -5422,6 +6117,9 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   // Reset state when modal opens
   useEffect(() => {
     if (isOpen) {
+      // If there's a pending activity (from HealthKit or editing), go directly to completed flow
+      // Otherwise show initial choice screen
+      setMode(pendingActivity ? 'completed' : null);
       setActivityType(pendingActivity?.type || null);
       setSubtype(pendingActivity?.subtype || '');
       setStrengthType(pendingActivity?.strengthType || '');
@@ -5541,6 +6239,85 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   const showCountToward = activityType === 'Yoga' || activityType === 'Pilates';
   const isFromAppleHealth = !!pendingActivity?.fromAppleHealth;
 
+  // Photo handling with Capacitor Camera
+  const handleChooseFromLibrary = async () => {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const image = await Camera.getPhoto({
+          quality: 90,
+          allowEditing: false,
+          resultType: CameraResultType.DataUrl,
+          source: CameraSource.Photos
+        });
+
+        if (image.dataUrl) {
+          const response = await fetch(image.dataUrl);
+          const blob = await response.blob();
+          const file = new File([blob], 'photo.jpg', { type: 'image/jpeg' });
+          setActivityPhoto(file);
+          setPhotoPreview(image.dataUrl);
+        }
+      } catch (error) {
+        if (error.message !== 'User cancelled photos app') {
+          console.error('Error picking photo:', error);
+        }
+      }
+    } else {
+      photoInputRef.current?.click();
+    }
+  };
+
+  const handleTakePhoto = async () => {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const image = await Camera.getPhoto({
+          quality: 90,
+          allowEditing: false,
+          resultType: CameraResultType.DataUrl,
+          source: CameraSource.Camera
+        });
+
+        if (image.dataUrl) {
+          const response = await fetch(image.dataUrl);
+          const blob = await response.blob();
+          const file = new File([blob], 'photo.jpg', { type: 'image/jpeg' });
+          setActivityPhoto(file);
+          setPhotoPreview(image.dataUrl);
+        }
+      } catch (error) {
+        if (error.message !== 'User cancelled photos app') {
+          console.error('Error taking photo:', error);
+        }
+      }
+    } else {
+      cameraInputRef.current?.click();
+    }
+  };
+
+  const handleFileInput = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      alert('Image must be less than 10MB');
+      return;
+    }
+    setActivityPhoto(file);
+    setPhotoPreview(URL.createObjectURL(file));
+    e.target.value = '';
+  };
+
+  const clearPhoto = () => {
+    if (photoPreview && activityPhoto && !photoPreview.startsWith('data:')) {
+      URL.revokeObjectURL(photoPreview);
+    }
+    setActivityPhoto(null);
+    setPhotoPreview(null);
+  };
+
   // Get user's custom activities
   const customActivities = userData?.customActivities || [];
 
@@ -5658,7 +6435,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
           >
             Cancel
           </button>
-          <h2 className="font-bold">{pendingActivity?.id ? 'Edit Activity' : 'Log Activity'}</h2>
+          <h2 className="font-bold">{pendingActivity?.id ? 'Edit Activity' : mode === 'start' ? 'Start Workout' : 'Log Activity'}</h2>
           <button
           onClick={() => {
             // Build subtype for strength training
@@ -5689,6 +6466,29 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               }
             }
 
+            // Get the icon for this activity type
+            const selectedTypeData = activityTypes.find(t => t.name === finalType);
+            const icon = showCustomActivityInput ? customActivityEmoji : (sportEmoji || selectedTypeData?.icon || '💪');
+
+            // START WORKOUT MODE: Create active workout instead of saving
+            if (mode === 'start' && onStartWorkout) {
+              onStartWorkout({
+                type: finalType,
+                subtype: finalSubtype,
+                strengthType: activityType === 'Strength Training' ? strengthType : undefined,
+                focusArea: activityType === 'Strength Training' ? focusArea : undefined,
+                sportEmoji,
+                customEmoji: showCustomActivityInput ? customActivityEmoji : undefined,
+                countToward: showCustomActivityInput ? customActivityCategory : (countToward || undefined),
+                customActivityCategory: showCustomActivityInput ? customActivityCategory : undefined,
+                icon,
+                startTime: new Date().toISOString()
+              });
+              handleClose();
+              return;
+            }
+
+            // COMPLETED MODE: Normal save flow
             onSave({
               id: pendingActivity?.id, // Preserve ID if editing
               time: pendingActivity?.time, // Preserve time if editing
@@ -5744,7 +6544,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             e.currentTarget.style.backgroundColor = 'transparent';
           }}
         >
-          Save
+          {mode === 'start' ? 'Start' : 'Save'}
         </button>
       </div>
 
@@ -5763,8 +6563,112 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       )}
 
       <div className="flex-1 overflow-y-auto p-4 pb-32" style={{ overscrollBehavior: 'contain' }}>
-        {!activityType ? (
+        {/* Initial choice: Start Workout vs Log Completed */}
+        {mode === null ? (
+          <div className="flex flex-col gap-4 pt-4">
+            {/* Start Workout option */}
+            <button
+              onClick={() => {
+                if (hasActiveWorkout) {
+                  // Warn user there's already an active workout
+                  alert('You already have an active workout in progress. Finish it first before starting a new one.');
+                  return;
+                }
+                setMode('start');
+                triggerHaptic(ImpactStyle.Medium);
+              }}
+              className="p-5 rounded-2xl text-left transition-all duration-150 flex items-center gap-4"
+              style={{
+                backgroundColor: 'rgba(0,255,148,0.1)',
+                border: '1px solid rgba(0,255,148,0.3)'
+              }}
+              onTouchStart={(e) => {
+                e.currentTarget.style.transform = 'scale(0.98)';
+                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.15)';
+              }}
+              onTouchEnd={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+              }}
+              onMouseDown={(e) => {
+                e.currentTarget.style.transform = 'scale(0.98)';
+                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.15)';
+              }}
+              onMouseUp={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+              }}
+            >
+              <div className="w-14 h-14 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(0,255,148,0.2)' }}>
+                <svg className="w-7 h-7 ml-1" fill="#00FF94" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z"/>
+                </svg>
+              </div>
+              <div className="flex-1">
+                <div className="font-semibold text-lg" style={{ color: '#00FF94' }}>Start Workout</div>
+                <div className="text-sm text-gray-400 mt-0.5">Begin tracking a new workout now</div>
+              </div>
+              <div className="text-gray-500">→</div>
+            </button>
+
+            {/* Log Completed option */}
+            <button
+              onClick={() => {
+                setMode('completed');
+                triggerHaptic(ImpactStyle.Light);
+              }}
+              className="p-5 rounded-2xl text-left transition-all duration-150 flex items-center gap-4"
+              style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+              onTouchStart={(e) => {
+                e.currentTarget.style.transform = 'scale(0.98)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
+              }}
+              onTouchEnd={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+              }}
+              onMouseDown={(e) => {
+                e.currentTarget.style.transform = 'scale(0.98)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
+              }}
+              onMouseUp={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+              }}
+            >
+              <div className="w-14 h-14 rounded-xl flex items-center justify-center text-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
+                ✓
+              </div>
+              <div className="flex-1">
+                <div className="font-semibold text-lg">Log Completed</div>
+                <div className="text-sm text-gray-400 mt-0.5">Record a workout you already finished</div>
+              </div>
+              <div className="text-gray-500">→</div>
+            </button>
+          </div>
+        ) : !activityType ? (
           <div className="grid grid-cols-2 gap-3">
+            {/* Back to mode selection */}
+            {!pendingActivity && (
+              <button
+                onClick={() => {
+                  setMode(null);
+                  triggerHaptic(ImpactStyle.Light);
+                }}
+                className="col-span-2 mb-2 flex items-center gap-2 text-gray-400 text-sm"
+              >
+                <span>←</span>
+                <span>Back</span>
+              </button>
+            )}
             {/* Standard activity types (excluding "Other" which will be shown last) */}
             {activityTypes.filter(t => t.name !== 'Other').map((type) => (
               <button
@@ -6284,6 +7188,9 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               </div>
             )}
 
+            {/* Hide duration, date, metrics, notes, photo for "Start Workout" mode - these are entered when finishing */}
+            {mode !== 'start' && (
+              <>
             <div>
               <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">
                 Duration {isFromAppleHealth && <span style={{ color: '#00FF94' }}>(from Apple Health)</span>}
@@ -6555,48 +7462,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             <div>
               <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Photo (optional)</label>
 
-              {/* Hidden file inputs */}
+              {/* Hidden file input for web fallback */}
               <input
                 type="file"
                 ref={photoInputRef}
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  if (!file.type.startsWith('image/')) {
-                    alert('Please select an image file');
-                    return;
-                  }
-                  if (file.size > 10 * 1024 * 1024) {
-                    alert('Image must be less than 10MB');
-                    return;
-                  }
-                  setActivityPhoto(file);
-                  setPhotoPreview(URL.createObjectURL(file));
-                  e.target.value = '';
-                }}
+                onChange={handleFileInput}
                 accept="image/*"
-                className="hidden"
-              />
-              <input
-                type="file"
-                ref={cameraInputRef}
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  if (!file.type.startsWith('image/')) {
-                    alert('Please select an image file');
-                    return;
-                  }
-                  if (file.size > 10 * 1024 * 1024) {
-                    alert('Image must be less than 10MB');
-                    return;
-                  }
-                  setActivityPhoto(file);
-                  setPhotoPreview(URL.createObjectURL(file));
-                  e.target.value = '';
-                }}
-                accept="image/*"
-                capture="environment"
                 className="hidden"
               />
 
@@ -6610,13 +7481,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                       className="w-full h-48 object-cover"
                     />
                     <button
-                      onClick={() => {
-                        if (photoPreview && activityPhoto) {
-                          URL.revokeObjectURL(photoPreview);
-                        }
-                        setActivityPhoto(null);
-                        setPhotoPreview(null);
-                      }}
+                      onClick={clearPhoto}
                       className="absolute top-2 right-2 w-8 h-8 bg-black/60 rounded-full flex items-center justify-center"
                     >
                       <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -6647,7 +7512,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               ) : (
                 <div className="flex gap-2">
                   <button
-                    onClick={() => cameraInputRef.current?.click()}
+                    onClick={handleTakePhoto}
                     className="flex-1 flex items-center justify-center gap-2 p-3 rounded-xl bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10 transition-colors"
                   >
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -6657,7 +7522,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     <span className="text-sm">Camera</span>
                   </button>
                   <button
-                    onClick={() => photoInputRef.current?.click()}
+                    onClick={handleChooseFromLibrary}
                     className="flex-1 flex items-center justify-center gap-2 p-3 rounded-xl bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10 transition-colors"
                   >
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -6668,6 +7533,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 </div>
               )}
             </div>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -6776,6 +7643,19 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState(null);
 
+  // Helper to convert time string (e.g., "1:55 PM") to minutes since midnight for proper sorting
+  const parseTimeToMinutes = (timeStr) => {
+    if (!timeStr) return 0;
+    const match = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+    if (!match) return 0;
+    let hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    const period = match[3]?.toUpperCase();
+    if (period === 'PM' && hours !== 12) hours += 12;
+    if (period === 'AM' && hours === 12) hours = 0;
+    return hours * 60 + minutes;
+  };
+
   // Get latest activities for display (sorted by date/time, most recent first)
   const allLatestActivities = [...activities]
     .sort((a, b) => {
@@ -6783,7 +7663,11 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
       const dateCompare = b.date.localeCompare(a.date);
       if (dateCompare !== 0) return dateCompare;
       // If same date, sort by time (most recent first)
-      if (a.time && b.time) return b.time.localeCompare(a.time);
+      if (a.time && b.time) {
+        const aMinutes = parseTimeToMinutes(a.time);
+        const bMinutes = parseTimeToMinutes(b.time);
+        return bMinutes - aMinutes; // Higher minutes = later time = should come first
+      }
       return 0;
     })
     .slice(0, 10); // Cap at 10 total
@@ -10712,7 +11596,11 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
           weekActivities.sort((a, b) => {
             const dateCompare = b.date.localeCompare(a.date);
             if (dateCompare !== 0) return dateCompare;
-            if (a.time && b.time) return b.time.localeCompare(a.time);
+            if (a.time && b.time) {
+              const aMinutes = parseTimeToMinutes(a.time);
+              const bMinutes = parseTimeToMinutes(b.time);
+              return bMinutes - aMinutes;
+            }
             return 0;
           });
 
@@ -11957,6 +12845,11 @@ export default function DaySevenApp() {
     lastSynced: null
   });
 
+  // Active workout tracking (for "Start Workout" flow)
+  // Shape: { type, subtype, strengthType, focusArea, startTime: ISO string, icon, ... }
+  const [activeWorkout, setActiveWorkout] = useState(null);
+  const [showFinishWorkout, setShowFinishWorkout] = useState(false);
+
   // Ref to track last synced health data to Firestore (to avoid excessive writes)
   const lastSyncedHealthRef = useRef({ steps: null, calories: null, timestamp: 0 });
 
@@ -12051,6 +12944,28 @@ export default function DaySevenApp() {
     };
     updateBadge();
   }, [pendingFriendRequests]);
+
+  // Load active workout from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('activeWorkout');
+      if (saved) {
+        setActiveWorkout(JSON.parse(saved));
+      }
+    } catch (e) {
+      // Invalid data, ignore
+      localStorage.removeItem('activeWorkout');
+    }
+  }, []);
+
+  // Persist active workout to localStorage
+  useEffect(() => {
+    if (activeWorkout) {
+      localStorage.setItem('activeWorkout', JSON.stringify(activeWorkout));
+    } else {
+      localStorage.removeItem('activeWorkout');
+    }
+  }, [activeWorkout]);
 
   // Tab order for direction detection
   const tabOrder = ['home', 'history', 'feed', 'profile'];
@@ -13058,6 +13973,22 @@ export default function DaySevenApp() {
 
     // console.log('Saved activity:', newActivity, 'Cardio count:', newProgress.cardio?.completed);
 
+    // Write to HealthKit (fire-and-forget, don't block the save flow)
+    // Skip if: editing existing activity, came from Apple Health, is HealthKit-sourced, or already saved (live workout)
+    if (!isEdit && !activityData.fromAppleHealth && activityData.source !== 'healthkit' && !activityData.healthKitSaved) {
+      saveWorkoutToHealthKit(newActivity)
+        .then(result => {
+          if (result.success) {
+            console.log('Workout saved to HealthKit:', result.workoutUUID);
+          } else {
+            console.log('HealthKit write skipped:', result.reason);
+          }
+        })
+        .catch(err => console.error('HealthKit write error:', err));
+    } else if (activityData.healthKitSaved) {
+      console.log('Workout already saved to HealthKit via live session:', activityData.healthKitUUID);
+    }
+
     // Skip celebration for edits
     if (isEdit) return;
 
@@ -13588,6 +14519,51 @@ export default function DaySevenApp() {
       {/* Offline Indicator */}
       <OfflineIndicator />
 
+      {/* Active Workout Indicator */}
+      <ActiveWorkoutIndicator
+        workout={activeWorkout}
+        activeTab={activeTab}
+        onFinish={() => setShowFinishWorkout(true)}
+        onCancel={async () => {
+          if (window.confirm('Cancel this workout? Your progress will be lost.')) {
+            // Cancel the live HealthKit workout (discards without saving)
+            await cancelLiveWorkout();
+            setActiveWorkout(null);
+            triggerHaptic(ImpactStyle.Medium);
+          }
+        }}
+      />
+
+      {/* Finish Workout Modal */}
+      <FinishWorkoutModal
+        isOpen={showFinishWorkout}
+        workout={activeWorkout}
+        onClose={() => setShowFinishWorkout(false)}
+        onSave={async (finishedWorkout) => {
+          // End the live workout in HealthKit (this saves it automatically)
+          const liveResult = await endLiveWorkout({
+            calories: finishedWorkout.calories,
+            distance: finishedWorkout.distance
+          });
+          console.log('Ended live workout:', liveResult);
+
+          // Mark that this was a live workout (already saved to HealthKit)
+          const workoutData = {
+            ...finishedWorkout,
+            healthKitSaved: liveResult.success,
+            healthKitUUID: liveResult.workoutUUID,
+          };
+
+          // Save the finished workout to Firestore using the existing handler
+          handleActivitySaved(workoutData);
+
+          // Clear active workout state
+          setActiveWorkout(null);
+          setShowFinishWorkout(false);
+          triggerHaptic(ImpactStyle.Heavy);
+        }}
+      />
+
       {/* Fixed Header for Home tab */}
       {activeTab === 'home' && (
         <div
@@ -13885,6 +14861,18 @@ export default function DaySevenApp() {
         pendingActivity={pendingActivity}
         defaultDate={defaultActivityDate}
         userData={userData}
+        hasActiveWorkout={!!activeWorkout}
+        onStartWorkout={async (workoutData) => {
+          // Start a new active workout
+          setActiveWorkout(workoutData);
+          triggerHaptic(ImpactStyle.Heavy);
+
+          // Start a live HealthKit workout session
+          // This creates an actual workout in HealthKit and starts collecting metrics
+          const activityType = getHealthKitActivityType(workoutData);
+          const result = await startLiveWorkout(activityType);
+          console.log('Started live workout:', result);
+        }}
         onSaveCustomActivity={(customActivity) => {
           // Add custom activity to user's saved list (if not already saved)
           // customActivity is now an object: { name: string, emoji: string }

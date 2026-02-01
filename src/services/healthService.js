@@ -1,5 +1,8 @@
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { Health } from '@capgo/capacitor-health';
+
+// Register the local HealthKitWriter plugin for writing workouts
+const HealthKitWriter = registerPlugin('HealthKitWriter');
 
 // Helper to add timeout to promises
 const withTimeout = (promise, ms, errorMsg) => {
@@ -283,5 +286,479 @@ export async function syncHealthKitData() {
     workouts,
     todaySteps: steps,
     todayCalories: calories
+  };
+}
+
+// ============================================================
+// HealthKit WRITE functions (for saving workouts to Apple Health)
+// ============================================================
+
+// Request HealthKit write authorization for workouts
+export async function requestHealthKitWriteAuthorization() {
+  if (!Capacitor.isNativePlatform()) return false;
+
+  try {
+    const result = await HealthKitWriter.requestWriteAuthorization();
+    return result.authorized;
+  } catch (error) {
+    console.error('HealthKit write authorization failed:', error);
+    return false;
+  }
+}
+
+// Check if we have write authorization for workouts
+export async function checkHealthKitWriteAuthorization() {
+  if (!Capacitor.isNativePlatform()) return false;
+
+  try {
+    const result = await HealthKitWriter.checkWriteAuthorization();
+    return result.authorized;
+  } catch (error) {
+    console.error('Check write authorization failed:', error);
+    return false;
+  }
+}
+
+// Map DaySeven activity to HealthKit workout type string
+export function getHealthKitActivityType(activity) {
+  const { type, subtype, strengthType } = activity;
+
+  // Strength Training variations
+  if (type === 'Strength Training') {
+    if (subtype === 'HIIT') return 'hiit';
+    if (subtype === 'Cross Training') return 'cross training';
+    if (subtype === 'Core') return 'core training';
+    return strengthType?.toLowerCase() || 'strength training';
+  }
+
+  // Sports - use subtype for specific sport
+  if (type === 'Sports') {
+    const sportMap = {
+      'Basketball': 'basketball',
+      'Soccer': 'soccer',
+      'Football': 'football',
+      'Tennis': 'tennis',
+      'Golf': 'golf',
+      'Baseball': 'baseball',
+      'Boxing': 'boxing',
+      'Martial Arts': 'martial arts',
+      'Badminton': 'badminton',
+      'Volleyball': 'volleyball',
+      'Hockey': 'hockey',
+      'Lacrosse': 'lacrosse',
+      'Rugby': 'rugby',
+      'Softball': 'softball',
+      'Squash': 'squash',
+      'Table Tennis': 'table tennis',
+      'Racquetball': 'racquetball',
+      'Handball': 'handball',
+      'Cricket': 'cricket',
+    };
+    return sportMap[subtype] || 'other';
+  }
+
+  // "Other" activities - use subtype
+  if (type === 'Other') {
+    const otherMap = {
+      'Swimming': 'swimming',
+      'Walking': 'walking',
+      'Hiking': 'hiking',
+      'Rowing': 'rowing',
+      'Elliptical': 'elliptical',
+      'Stair Climbing': 'stair climbing',
+      'Dance': 'dance',
+      'Cooldown': 'cooldown',
+    };
+    return otherMap[subtype] || 'other';
+  }
+
+  // Direct type mappings
+  const typeMap = {
+    'Running': 'running',
+    'Cycle': 'cycle',
+    'Yoga': 'yoga',
+    'Pilates': 'pilates',
+    'Cold Plunge': 'other',
+    'Sauna': 'other',
+  };
+
+  return typeMap[type] || 'other';
+}
+
+// Convert 12-hour time string to 24-hour format for ISO date
+function convertTo24Hour(time) {
+  if (!time) return '12:00:00';
+
+  const match = time.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+  if (!match) return '12:00:00';
+
+  let hours = parseInt(match[1]);
+  const minutes = match[2];
+  const period = match[3]?.toUpperCase();
+
+  if (period === 'PM' && hours < 12) hours += 12;
+  if (period === 'AM' && hours === 12) hours = 0;
+
+  return `${hours.toString().padStart(2, '0')}:${minutes}:00`;
+}
+
+// Calculate workout start/end dates from activity data
+function calculateWorkoutDates(activity) {
+  const { date, time, duration, startTime, endTime } = activity;
+
+  // If we have exact startTime/endTime (from "Start Workout" flow), use those
+  if (startTime && endTime) {
+    return {
+      startDate: startTime,
+      endDate: endTime
+    };
+  }
+
+  // If we only have startTime (from "Start Workout" flow, with calculated duration)
+  if (startTime) {
+    const endDate = new Date(startTime);
+    endDate.setMinutes(endDate.getMinutes() + (duration || 60));
+    return {
+      startDate: startTime,
+      endDate: endDate.toISOString()
+    };
+  }
+
+  // Otherwise, calculate from date + time (legacy "Log Completed" flow)
+  let startDate;
+  if (time) {
+    const time24 = convertTo24Hour(time);
+    startDate = new Date(`${date}T${time24}`);
+  } else {
+    // Default to current time minus duration
+    startDate = new Date();
+    startDate.setMinutes(startDate.getMinutes() - (duration || 60));
+  }
+
+  // Calculate end date based on duration
+  const endDate = new Date(startDate);
+  endDate.setMinutes(endDate.getMinutes() + (duration || 60));
+
+  return {
+    startDate: startDate.toISOString(),
+    endDate: endDate.toISOString()
+  };
+}
+
+// Fetch workout metrics (calories and heart rate) for a specific time range
+// Used when finishing an active workout to auto-populate metrics from Apple Watch/Whoop
+export async function fetchWorkoutMetricsForTimeRange(startTime, endTime) {
+  if (!Capacitor.isNativePlatform()) {
+    console.log('Not on native platform, cannot fetch workout metrics');
+    return { success: false, reason: 'not_native' };
+  }
+
+  try {
+    // Ensure authorization
+    const authorized = await requestHealthKitAuthorization();
+    if (!authorized) {
+      return { success: false, reason: 'not_authorized' };
+    }
+
+    const metrics = {
+      calories: null,
+      avgHr: null,
+      maxHr: null,
+    };
+
+    // Fetch active calories for the time range
+    try {
+      const caloriesResult = await Health.queryAggregated({
+        dataType: 'calories',
+        startDate: startTime,
+        endDate: endTime
+      });
+      console.log('Calories for workout:', JSON.stringify(caloriesResult));
+
+      if (caloriesResult.value !== undefined && caloriesResult.value > 0) {
+        metrics.calories = Math.round(caloriesResult.value);
+      } else if (caloriesResult.samples && caloriesResult.samples.length > 0) {
+        const total = caloriesResult.samples.reduce((sum, sample) => sum + (sample.value || 0), 0);
+        if (total > 0) {
+          metrics.calories = Math.round(total);
+        }
+      }
+    } catch (error) {
+      console.log('Error fetching calories for workout:', error);
+    }
+
+    // Fetch heart rate samples for the time range
+    try {
+      const hrResult = await Health.query({
+        dataType: 'heartRate',
+        startDate: startTime,
+        endDate: endTime,
+        limit: 1000 // Get enough samples for good avg/max calculation
+      });
+      console.log('Heart rate samples for workout:', hrResult?.samples?.length || 0);
+
+      if (hrResult.samples && hrResult.samples.length > 0) {
+        const hrValues = hrResult.samples
+          .map(s => parseFloat(s.value))
+          .filter(v => !isNaN(v) && v > 0);
+
+        if (hrValues.length > 0) {
+          // Calculate average and max HR
+          const sum = hrValues.reduce((a, b) => a + b, 0);
+          metrics.avgHr = Math.round(sum / hrValues.length);
+          metrics.maxHr = Math.round(Math.max(...hrValues));
+        }
+      }
+    } catch (error) {
+      console.log('Error fetching heart rate for workout:', error);
+    }
+
+    const hasData = metrics.calories || metrics.avgHr || metrics.maxHr;
+
+    return {
+      success: true,
+      hasData,
+      metrics
+    };
+  } catch (error) {
+    console.error('Error fetching workout metrics:', error);
+    return { success: false, reason: 'error', error: error.message };
+  }
+}
+
+// Save a workout to HealthKit
+export async function saveWorkoutToHealthKit(activity) {
+  if (!Capacitor.isNativePlatform()) {
+    console.log('Not on native platform, skipping HealthKit write');
+    return { success: false, reason: 'not_native' };
+  }
+
+  try {
+    // Check authorization first
+    let authorized = await checkHealthKitWriteAuthorization();
+    if (!authorized) {
+      // Try to request authorization
+      authorized = await requestHealthKitWriteAuthorization();
+      if (!authorized) {
+        console.log('HealthKit write not authorized');
+        return { success: false, reason: 'not_authorized' };
+      }
+    }
+
+    // Get HealthKit activity type
+    const activityType = getHealthKitActivityType(activity);
+
+    // Calculate dates
+    const { startDate, endDate } = calculateWorkoutDates(activity);
+
+    // Build workout data
+    const workoutData = {
+      activityType,
+      startDate,
+      endDate,
+    };
+
+    // Add optional data if available
+    if (activity.calories && activity.calories > 0) {
+      workoutData.calories = activity.calories;
+    }
+
+    if (activity.distance && activity.distance > 0) {
+      // Convert miles to meters (HealthKit uses meters)
+      workoutData.distance = activity.distance * 1609.34;
+    }
+
+    console.log('Saving workout to HealthKit:', workoutData);
+
+    const result = await HealthKitWriter.saveWorkout(workoutData);
+
+    console.log('HealthKit save result:', result);
+    return { success: true, workoutUUID: result.workoutUUID };
+
+  } catch (error) {
+    console.error('Failed to save workout to HealthKit:', error);
+    return { success: false, reason: 'error', error: error.message };
+  }
+}
+
+// ============================================================
+// Live Workout Session (creates actual HealthKit workout)
+// ============================================================
+
+// Start a live workout session - this creates an actual workout in HealthKit
+// and will collect metrics in real-time. No need to start on Apple Watch separately.
+export async function startLiveWorkout(activityType) {
+  if (!Capacitor.isNativePlatform()) {
+    console.log('Not on native platform, cannot start live workout');
+    return { success: false, reason: 'not_native' };
+  }
+
+  try {
+    const result = await HealthKitWriter.startLiveWorkout({ activityType });
+    console.log('Started live workout:', result);
+    return {
+      success: true,
+      startDate: result.startDate,
+      activityType: result.activityType
+    };
+  } catch (error) {
+    console.error('Failed to start live workout:', error);
+    return { success: false, reason: 'error', error: error.message };
+  }
+}
+
+// End a live workout session - saves the workout to HealthKit with all collected metrics
+// Returns the final metrics and workout UUID
+export async function endLiveWorkout(options = {}) {
+  if (!Capacitor.isNativePlatform()) {
+    return { success: false, reason: 'not_native' };
+  }
+
+  try {
+    const params = {};
+    // Allow user to override/provide metrics
+    if (options.calories) params.calories = options.calories;
+    if (options.distance) params.distance = options.distance * 1609.34; // Convert miles to meters
+
+    const result = await HealthKitWriter.endLiveWorkout(params);
+    console.log('Ended live workout:', result);
+    return {
+      success: true,
+      workoutUUID: result.workoutUUID,
+      duration: result.duration,
+      calories: result.calories,
+      avgHr: result.avgHr,
+      maxHr: result.maxHr,
+      sampleCount: result.sampleCount
+    };
+  } catch (error) {
+    console.error('Failed to end live workout:', error);
+    return { success: false, reason: 'error', error: error.message };
+  }
+}
+
+// Cancel a live workout without saving
+export async function cancelLiveWorkout() {
+  if (!Capacitor.isNativePlatform()) {
+    return { success: false, reason: 'not_native' };
+  }
+
+  try {
+    const result = await HealthKitWriter.cancelLiveWorkout();
+    console.log('Cancelled live workout:', result);
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to cancel live workout:', error);
+    return { success: false, reason: 'error', error: error.message };
+  }
+}
+
+// Get current metrics from live workout
+export async function getLiveWorkoutMetrics() {
+  if (!Capacitor.isNativePlatform()) {
+    return { success: false, reason: 'not_native', isActive: false };
+  }
+
+  try {
+    const result = await HealthKitWriter.getLiveWorkoutMetrics();
+    return {
+      success: true,
+      isActive: result.isActive,
+      elapsed: result.elapsed,
+      calories: result.calories,
+      avgHr: result.avgHr,
+      maxHr: result.maxHr,
+      lastHr: result.lastHr,
+      sampleCount: result.sampleCount
+    };
+  } catch (error) {
+    console.error('Failed to get live workout metrics:', error);
+    return { success: false, reason: 'error', error: error.message, isActive: false };
+  }
+}
+
+// ============================================================
+// Legacy Observer Methods (backward compatibility)
+// ============================================================
+
+// Start observing HealthKit metrics in real-time
+// Call this when starting a workout to begin capturing HR and calories
+export async function startObservingWorkoutMetrics() {
+  if (!Capacitor.isNativePlatform()) {
+    console.log('Not on native platform, cannot observe metrics');
+    return { success: false, reason: 'not_native' };
+  }
+
+  try {
+    const result = await HealthKitWriter.startObservingMetrics();
+    console.log('Started observing HealthKit metrics:', result);
+    return { success: true, startDate: result.startDate, isLiveWorkout: result.isLiveWorkout };
+  } catch (error) {
+    console.error('Failed to start observing metrics:', error);
+    return { success: false, reason: 'error', error: error.message };
+  }
+}
+
+// Stop observing HealthKit metrics
+// Call this when finishing a workout to get final accumulated metrics
+export async function stopObservingWorkoutMetrics() {
+  if (!Capacitor.isNativePlatform()) {
+    return { success: false, reason: 'not_native' };
+  }
+
+  try {
+    const result = await HealthKitWriter.stopObservingMetrics();
+    console.log('Stopped observing HealthKit metrics:', result);
+    return {
+      success: true,
+      calories: result.calories,
+      avgHr: result.avgHr,
+      maxHr: result.maxHr,
+      sampleCount: result.sampleCount
+    };
+  } catch (error) {
+    console.error('Failed to stop observing metrics:', error);
+    return { success: false, reason: 'error', error: error.message };
+  }
+}
+
+// Get the latest accumulated metrics without stopping observation
+export async function getLatestWorkoutMetrics() {
+  if (!Capacitor.isNativePlatform()) {
+    return { success: false, reason: 'not_native' };
+  }
+
+  try {
+    const result = await HealthKitWriter.getLatestMetrics();
+    return {
+      success: true,
+      calories: result.calories,
+      avgHr: result.avgHr,
+      maxHr: result.maxHr,
+      lastHr: result.lastHr,
+      sampleCount: result.sampleCount,
+      isObserving: result.isObserving
+    };
+  } catch (error) {
+    console.error('Failed to get latest metrics:', error);
+    return { success: false, reason: 'error', error: error.message };
+  }
+}
+
+// Add listener for real-time metric updates
+// Returns a function to remove the listener
+export function addMetricsUpdateListener(callback) {
+  if (!Capacitor.isNativePlatform()) {
+    return () => {}; // No-op remove function
+  }
+
+  const handle = HealthKitWriter.addListener('metricsUpdated', (data) => {
+    console.log('HealthKit metrics updated:', data);
+    callback(data);
+  });
+
+  // Return function to remove listener
+  return () => {
+    handle.then(h => h.remove());
   };
 }

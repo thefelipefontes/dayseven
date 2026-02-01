@@ -68,7 +68,7 @@ const workoutTypeMap = {
   'functionalStrengthTraining': { type: 'Strength Training', subtype: 'Bodyweight', strengthType: 'Bodyweight', icon: '💪' },
   'highIntensityIntervalTraining': { type: 'Strength Training', subtype: 'HIIT', strengthType: 'Lifting', icon: '🔥' },
   'crossTraining': { type: 'Strength Training', subtype: 'Cross Training', strengthType: 'Lifting', icon: '💪' },
-  'walking': { type: 'Other', subtype: 'Walking', icon: '🚶' },
+  'walking': { type: 'Walking', icon: '🚶' },
   'hiking': { type: 'Other', subtype: 'Hiking', icon: '🥾' },
   'elliptical': { type: 'Other', subtype: 'Elliptical', icon: '🏃' },
   'rowing': { type: 'Other', subtype: 'Rowing', icon: '🚣' },

@@ -6,7 +6,7 @@ import Login from './Login';
 import UsernameSetup from './UsernameSetup';
 import Friends from './Friends';
 import ActivityFeed from './ActivityFeed';
-import { createUserProfile, getUserProfile, updateUserProfile, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, saveUserGoals, getUserGoals, setOnboardingComplete, setTourComplete, savePersonalRecords, getPersonalRecords } from './services/userService';
+import { createUserProfile, getUserProfile, updateUserProfile, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, saveUserGoals, getUserGoals, setOnboardingComplete, setTourComplete, savePersonalRecords, getPersonalRecords, saveDailyHealthData, getDailyHealthData } from './services/userService';
 import { getFriends, getReactions, getFriendRequests, getComments, addReply, getReplies, deleteReply, addReaction, removeReaction, addComment } from './services/friendService';
 import html2canvas from 'html2canvas';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
@@ -1686,7 +1686,7 @@ const Toast = ({ show, message, onDismiss, onTap, type = 'record' }) => {
         <span className="text-2xl">{icon}</span>
         <div className="flex-1">
           <div className="text-sm font-bold text-white" style={{ whiteSpace: 'pre-line' }}>{message}</div>
-          <div className="text-xs text-gray-400 mt-1">Tap to view Hall of Fame →</div>
+          {type === 'record' && <div className="text-xs text-gray-400 mt-1">Tap to view Hall of Fame →</div>}
         </div>
         <button
           onClick={(e) => {
@@ -11939,6 +11939,7 @@ export default function DaySevenApp() {
   const [showWeekStreakCelebration, setShowWeekStreakCelebration] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('record'); // 'record' or 'success'
   const [pendingToast, setPendingToast] = useState(null); // Queue toast to show after celebration
   const [historyView, setHistoryView] = useState('calendar');
   const [historyStatsSubView, setHistoryStatsSubView] = useState('overview');
@@ -11955,6 +11956,82 @@ export default function DaySevenApp() {
     pendingWorkouts: [], // Workouts from HealthKit not yet added to activities
     lastSynced: null
   });
+
+  // Ref to track last synced health data to Firestore (to avoid excessive writes)
+  const lastSyncedHealthRef = useRef({ steps: null, calories: null, timestamp: 0 });
+
+  // Sync HealthKit data to Firestore for desktop access
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    const syncToFirestore = async () => {
+      // Only sync on native platforms (where HealthKit data is available)
+      if (!Capacitor.isNativePlatform()) return;
+
+      const now = Date.now();
+      const lastSync = lastSyncedHealthRef.current;
+      const minSyncInterval = 5 * 60 * 1000; // 5 minutes minimum between syncs
+
+      // Check if we need to sync:
+      // 1. Steps changed by more than 100 OR
+      // 2. Calories changed by more than 50 OR
+      // 3. It's been more than 5 minutes since last sync
+      const stepsChanged = Math.abs((healthKitData.todaySteps || 0) - (lastSync.steps || 0)) > 100;
+      const caloriesChanged = Math.abs((healthKitData.todayCalories || 0) - (lastSync.calories || 0)) > 50;
+      const timeElapsed = now - lastSync.timestamp > minSyncInterval;
+
+      if ((stepsChanged || caloriesChanged || timeElapsed) && (healthKitData.todaySteps > 0 || healthKitData.todayCalories > 0)) {
+        // Get today's date in YYYY-MM-DD format
+        const today = new Date();
+        const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+        try {
+          await saveDailyHealthData(user.uid, dateStr, healthKitData.todaySteps, healthKitData.todayCalories);
+          lastSyncedHealthRef.current = {
+            steps: healthKitData.todaySteps,
+            calories: healthKitData.todayCalories,
+            timestamp: now
+          };
+        } catch (e) {
+          // Silently fail - will retry on next update
+        }
+      }
+    };
+
+    syncToFirestore();
+  }, [user?.uid, healthKitData.todaySteps, healthKitData.todayCalories]);
+
+  // Load health data from Firestore on non-native platforms (desktop/web)
+  useEffect(() => {
+    if (!user?.uid || Capacitor.isNativePlatform()) return;
+
+    const loadHealthDataFromFirestore = async () => {
+      // Get today's date in YYYY-MM-DD format
+      const today = new Date();
+      const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+      try {
+        const healthData = await getDailyHealthData(user.uid, dateStr);
+        if (healthData) {
+          setHealthKitData(prev => ({
+            ...prev,
+            todaySteps: healthData.steps || 0,
+            todayCalories: healthData.calories || 0,
+            lastSynced: healthData.lastUpdated
+          }));
+        }
+      } catch (e) {
+        // Silently fail
+      }
+    };
+
+    loadHealthDataFromFirestore();
+
+    // Refresh from Firestore every 5 minutes on desktop
+    const refreshInterval = setInterval(loadHealthDataFromFirestore, 5 * 60 * 1000);
+
+    return () => clearInterval(refreshInterval);
+  }, [user?.uid]);
 
   // Update app icon badge when pending requests change
   useEffect(() => {
@@ -12217,10 +12294,12 @@ export default function DaySevenApp() {
       await sendPasswordResetEmail(auth, user.email);
       triggerHaptic(ImpactStyle.Medium);
       setToastMessage('Password reset email sent!');
+      setToastType('success');
       setShowToast(true);
     } catch (error) {
       console.error('Error sending password reset email:', error);
       setToastMessage('Failed to send reset email. Please try again.');
+      setToastType('success');
       setShowToast(true);
     }
   };
@@ -13254,6 +13333,7 @@ export default function DaySevenApp() {
       const record = checkAndUpdateRecords();
       if (record) {
         setToastMessage(record.message);
+        setToastType('record');
         setShowToast(true);
       }
     }
@@ -13994,8 +14074,8 @@ export default function DaySevenApp() {
         show={showToast}
         message={toastMessage}
         onDismiss={() => setShowToast(false)}
-        onTap={navigateToHallOfFame}
-        type="record"
+        onTap={toastType === 'record' ? navigateToHallOfFame : null}
+        type={toastType}
       />
 
       {showFriends && (

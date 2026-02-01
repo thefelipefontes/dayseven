@@ -744,3 +744,153 @@ export async function deleteUserAccount(uid, username) {
     throw error;
   }
 }
+
+// Daily Health Data - for syncing HealthKit data to Firestore for desktop access
+
+// Cache for daily health data
+const dailyHealthCache = new Map();
+
+/**
+ * Save daily health data (steps and calories) to Firestore
+ * @param {string} uid - User ID
+ * @param {string} date - Date in YYYY-MM-DD format
+ * @param {number} steps - Step count for the day
+ * @param {number} calories - Calories burned for the day
+ * @returns {Promise<boolean>} - True if saved successfully
+ */
+export async function saveDailyHealthData(uid, date, steps, calories) {
+  const path = `users/${uid}/dailyHealth/${date}`;
+  const data = {
+    date,
+    steps: steps || 0,
+    calories: calories || 0,
+    lastUpdated: new Date().toISOString()
+  };
+
+  // Update cache immediately (optimistic update)
+  dailyHealthCache.set(`${uid}_${date}`, { ...data, _cachedAt: Date.now() });
+
+  try {
+    if (isNative) {
+      await FirebaseFirestore.setDocument({
+        reference: path,
+        data: data,
+        merge: true
+      });
+    } else {
+      const docRef = doc(db, 'users', uid, 'dailyHealth', date);
+      await withTimeout(setDoc(docRef, data, { merge: true }));
+    }
+    return true;
+  } catch (error) {
+    // console.error('saveDailyHealthData error:', error);
+    // Don't throw - optimistic update already applied
+    return false;
+  }
+}
+
+/**
+ * Get daily health data for a specific date
+ * @param {string} uid - User ID
+ * @param {string} date - Date in YYYY-MM-DD format
+ * @returns {Promise<{date: string, steps: number, calories: number, lastUpdated: string} | null>}
+ */
+export async function getDailyHealthData(uid, date) {
+  // Check cache first
+  const cacheKey = `${uid}_${date}`;
+  const cached = dailyHealthCache.get(cacheKey);
+  if (cached && (Date.now() - cached._cachedAt) < cache.cacheExpiry) {
+    const { _cachedAt, ...data } = cached;
+    return data;
+  }
+
+  const path = `users/${uid}/dailyHealth/${date}`;
+
+  try {
+    let data;
+    if (isNative) {
+      const { snapshot } = await FirebaseFirestore.getDocument({ reference: path });
+      data = snapshot?.data || null;
+    } else {
+      const docRef = doc(db, 'users', uid, 'dailyHealth', date);
+      const docSnap = await withTimeout(getDoc(docRef));
+      data = docSnap.exists() ? docSnap.data() : null;
+    }
+
+    // Cache the result
+    if (data) {
+      dailyHealthCache.set(cacheKey, { ...data, _cachedAt: Date.now() });
+    }
+
+    return data;
+  } catch (error) {
+    // console.error('getDailyHealthData error:', error);
+    // Return cached data if available
+    if (cached) {
+      const { _cachedAt, ...data } = cached;
+      return data;
+    }
+    return null;
+  }
+}
+
+/**
+ * Get daily health history for a range of days
+ * @param {string} uid - User ID
+ * @param {number} days - Number of days of history to fetch (default 30)
+ * @returns {Promise<Array<{date: string, steps: number, calories: number, lastUpdated: string}>>}
+ */
+export async function getDailyHealthHistory(uid, days = 30) {
+  try {
+    const results = [];
+    const today = new Date();
+
+    if (isNative) {
+      // For native, we need to fetch the collection and filter
+      const collectionPath = `users/${uid}/dailyHealth`;
+      const { snapshots } = await FirebaseFirestore.getCollection({
+        reference: collectionPath
+      });
+
+      if (snapshots) {
+        // Calculate the cutoff date
+        const cutoffDate = new Date(today);
+        cutoffDate.setDate(cutoffDate.getDate() - days);
+        const cutoffStr = cutoffDate.toISOString().split('T')[0];
+
+        for (const snap of snapshots) {
+          if (snap.data && snap.data.date >= cutoffStr) {
+            results.push(snap.data);
+            // Update cache
+            dailyHealthCache.set(`${uid}_${snap.data.date}`, { ...snap.data, _cachedAt: Date.now() });
+          }
+        }
+      }
+    } else {
+      // For web, fetch documents for each day
+      // This approach is simpler and avoids complex queries
+      const promises = [];
+      for (let i = 0; i < days; i++) {
+        const date = new Date(today);
+        date.setDate(date.getDate() - i);
+        const dateStr = date.toISOString().split('T')[0];
+        promises.push(getDailyHealthData(uid, dateStr));
+      }
+
+      const dayResults = await Promise.all(promises);
+      for (const data of dayResults) {
+        if (data) {
+          results.push(data);
+        }
+      }
+    }
+
+    // Sort by date descending (most recent first)
+    results.sort((a, b) => b.date.localeCompare(a.date));
+
+    return results;
+  } catch (error) {
+    // console.error('getDailyHealthHistory error:', error);
+    return [];
+  }
+}

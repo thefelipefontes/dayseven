@@ -6175,6 +6175,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   const [linkedWorkout, setLinkedWorkout] = useState(null);
   const [isLoadingWorkouts, setIsLoadingWorkouts] = useState(false);
   const [showOtherLinkableWorkouts, setShowOtherLinkableWorkouts] = useState(false);
+  const [showAllInitialWorkouts, setShowAllInitialWorkouts] = useState(false); // For expanding workouts on initial screen
   // Activity time (set from linked workout)
   const [activityTime, setActivityTime] = useState('');
   // Photo upload state
@@ -6260,12 +6261,14 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       hasInitializedRef.current = false;
       setIsChangingActivityType(false);
       setIsFromNotification(false);
+      setShowAllInitialWorkouts(false);
     }
   }, [isOpen, pendingActivity, defaultDate]);
 
-  // Fetch linkable Apple Health workouts when date changes (only in "completed" mode)
+  // Fetch linkable Apple Health workouts when modal opens or date changes
   useEffect(() => {
-    if (!isOpen || mode !== 'completed' || !date) return;
+    // Fetch on initial screen (mode === null) or in completed mode
+    if (!isOpen || (mode !== null && mode !== 'completed') || !date) return;
 
     const fetchWorkouts = async () => {
       setIsLoadingWorkouts(true);
@@ -6920,11 +6923,150 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 ✓
               </div>
               <div className="flex-1">
-                <div className="font-semibold text-lg">Log Completed</div>
+                <div className="font-semibold text-lg">Log Completed Activity</div>
                 <div className="text-sm text-gray-400 mt-0.5">Record a workout you already finished</div>
               </div>
               <div className="text-gray-500">→</div>
             </button>
+
+            {/* Apple Health Workouts Section */}
+            {(linkableWorkouts.length > 0 || isLoadingWorkouts) && (
+              <>
+                {/* Divider */}
+                <div className="flex items-center gap-3 my-2">
+                  <div className="flex-1 h-px bg-white/10" />
+                  <span className="text-xs text-gray-500 uppercase tracking-wider">or</span>
+                  <div className="flex-1 h-px bg-white/10" />
+                </div>
+
+                {/* Section Header */}
+                <div className="mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-white">Choose from Synced Workouts</span>
+                    {linkableWorkouts.length > 0 && (
+                      <span className="text-xs text-gray-500">({linkableWorkouts.length})</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5">These are activities logged directly on Apple Watch, Whoop, and other devices/apps</p>
+                </div>
+
+                {/* Workouts List */}
+                {isLoadingWorkouts ? (
+                  <div className="flex items-center justify-center py-4">
+                    <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {linkableWorkouts
+                      .slice()
+                      .sort((a, b) => {
+                        // Sort by date then time, most recent first
+                        const parseDateTime = (dateStr, timeStr) => {
+                          const date = dateStr ? new Date(dateStr + 'T12:00:00') : new Date();
+                          let hours = 0, minutes = 0;
+                          if (timeStr) {
+                            const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+                            if (match) {
+                              hours = parseInt(match[1], 10);
+                              minutes = parseInt(match[2], 10);
+                              const isPM = match[3].toUpperCase() === 'PM';
+                              if (isPM && hours !== 12) hours += 12;
+                              if (!isPM && hours === 12) hours = 0;
+                            }
+                          }
+                          date.setHours(hours, minutes, 0, 0);
+                          return date.getTime();
+                        };
+                        return parseDateTime(b.date, b.time) - parseDateTime(a.date, a.time);
+                      })
+                      .slice(0, showAllInitialWorkouts ? undefined : 3) // Show first 3 or all
+                      .map((workout) => {
+                        // Format date for display
+                        const formatWorkoutDate = (dateStr) => {
+                          if (!dateStr) return '';
+                          const workoutDate = new Date(dateStr + 'T12:00:00');
+                          const today = new Date();
+                          today.setHours(12, 0, 0, 0);
+                          const yesterday = new Date(today);
+                          yesterday.setDate(yesterday.getDate() - 1);
+
+                          if (workoutDate.toDateString() === today.toDateString()) {
+                            return 'Today';
+                          } else if (workoutDate.toDateString() === yesterday.toDateString()) {
+                            return 'Yesterday';
+                          } else {
+                            return workoutDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                          }
+                        };
+
+                        return (
+                          <button
+                            key={workout.healthKitUUID}
+                            onClick={() => {
+                              // Pre-fill the form with workout data
+                              setMode('completed');
+                              setActivityType(workout.type);
+                              setSubtype(workout.subtype || '');
+                              if (workout.date) setDate(workout.date);
+                              setLinkedWorkout(workout);
+                              setDurationHours(Math.floor((workout.duration || 0) / 60));
+                              setDurationMinutes((workout.duration || 0) % 60);
+                              if (workout.calories) setCalories(String(workout.calories));
+                              if (workout.distance) setDistance(String(workout.distance));
+                              if (workout.avgHr) setAvgHr(String(workout.avgHr));
+                              if (workout.maxHr) setMaxHr(String(workout.maxHr));
+                              triggerHaptic(ImpactStyle.Medium);
+                            }}
+                            className="w-full p-3 rounded-xl text-left transition-all duration-150 flex items-center gap-3"
+                            style={{
+                              backgroundColor: 'rgba(255,255,255,0.05)',
+                              border: '1px solid rgba(255,255,255,0.1)'
+                            }}
+                            onTouchStart={(e) => {
+                              e.currentTarget.style.transform = 'scale(0.98)';
+                              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
+                            }}
+                            onTouchEnd={(e) => {
+                              e.currentTarget.style.transform = 'scale(1)';
+                              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                            }}
+                          >
+                            <span className="text-2xl">{workout.icon || '💪'}</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-white font-medium truncate">
+                                {workout.appleWorkoutName || workout.subtype || workout.type}
+                              </div>
+                              <div className="text-xs text-gray-400 mt-0.5">
+                                {formatWorkoutDate(workout.date)} • {workout.time} • {workout.duration} min
+                              </div>
+                              {(workout.calories || workout.distance) && (
+                                <div className="flex gap-2 mt-1 text-xs text-gray-500">
+                                  {workout.calories && <span>🔥 {workout.calories} cal</span>}
+                                  {workout.distance && <span>📍 {workout.distance} mi</span>}
+                                </div>
+                              )}
+                            </div>
+                            <span className="text-gray-500">→</span>
+                          </button>
+                        );
+                      })}
+
+                    {/* See all link if more than 3 */}
+                    {linkableWorkouts.length > 3 && !showAllInitialWorkouts && (
+                      <button
+                        onClick={() => {
+                          setShowAllInitialWorkouts(true);
+                          triggerHaptic(ImpactStyle.Light);
+                        }}
+                        className="w-full py-2 text-center text-sm text-gray-400 hover:text-white transition-colors"
+                      >
+                        See all {linkableWorkouts.length} workouts →
+                      </button>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
           </div>
         ) : !activityType ? (
           <div className="grid grid-cols-2 gap-3">

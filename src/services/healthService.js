@@ -16,22 +16,19 @@ const withTimeout = (promise, ms, errorMsg) => {
 
 // Check if HealthKit is available
 export async function isHealthKitAvailable() {
-  console.log('isHealthKitAvailable() - isNative:', Capacitor.isNativePlatform());
   if (!Capacitor.isNativePlatform()) {
     return false;
   }
 
   try {
-    console.log('Calling Health.isAvailable()...');
     const result = await withTimeout(
       Health.isAvailable(),
       5000,
       'isAvailable timed out'
     );
-    console.log('isAvailable result:', JSON.stringify(result));
     return result.available;
   } catch (error) {
-    console.log('isHealthKitAvailable error:', error.message || error);
+    console.error('isHealthKitAvailable error:', error.message || error);
     return false;
   }
 }
@@ -41,12 +38,10 @@ export async function requestHealthKitAuthorization() {
   if (!Capacitor.isNativePlatform()) return false;
 
   try {
-    console.log('Requesting HealthKit authorization...');
-    const result = await Health.requestAuthorization({
+    await Health.requestAuthorization({
       read: ['steps', 'calories', 'workouts'],
       write: []
     });
-    console.log('HealthKit authorization result:', result);
     return true;
   } catch (error) {
     console.error('HealthKit authorization failed:', error);
@@ -127,8 +122,6 @@ const appleWorkoutNameMap = {
 
 // Convert HealthKit workout to our activity format
 function convertWorkoutToActivity(workout) {
-  console.log('Raw HealthKit workout:', JSON.stringify(workout, null, 2));
-
   const workoutType = workout.workoutActivityType || workout.workoutType || 'HKWorkoutActivityTypeOther';
   const mapped = workoutTypeMap[workoutType] || { type: 'Other', subtype: 'Workout', icon: '💪' };
   const appleWorkoutName = appleWorkoutNameMap[workoutType] || 'Workout';
@@ -148,13 +141,11 @@ function convertWorkoutToActivity(workout) {
   if (workout.duration !== undefined && workout.duration !== null) {
     // Duration from HealthKit is typically in seconds
     durationMinutes = Math.round(workout.duration / 60);
-    console.log('Using workout.duration (seconds):', workout.duration, '-> minutes:', durationMinutes);
   } else {
     // Fallback: calculate from start/end dates
     const endDate = new Date(workout.endDate);
     const durationMs = endDate - startDate;
     durationMinutes = Math.round(durationMs / (1000 * 60));
-    console.log('Calculated duration from dates:', workout.startDate, 'to', workout.endDate, '-> minutes:', durationMinutes);
   }
 
   // Get calories (active energy burned)
@@ -325,18 +316,21 @@ export async function fetchTodaySteps() {
     today.setHours(0, 0, 0, 0);
     const now = new Date();
 
+    // Use queryAggregated - HealthKit's HKStatisticsQuery should handle
+    // de-duplication automatically when using cumulativeSum
     const result = await Health.queryAggregated({
       dataType: 'steps',
       startDate: today.toISOString(),
       endDate: now.toISOString()
     });
 
-    // Handle both formats: direct value or samples array
-    if (result.value !== undefined) {
-      return Math.round(result.value);
-    } else if (result.samples && result.samples.length > 0) {
-      const total = result.samples.reduce((sum, sample) => sum + (sample.value || 0), 0);
+    // The result should have a single aggregated value
+    if (result.samples && result.samples.length > 0) {
+      // Sum all daily buckets (should typically be just one for today)
+      const total = result.samples.reduce((sum, s) => sum + (s.value || 0), 0);
       return Math.round(total);
+    } else if (result.value !== undefined) {
+      return Math.round(result.value);
     }
     return 0;
   } catch (error) {
@@ -354,44 +348,44 @@ export async function fetchTodayCalories() {
     today.setHours(0, 0, 0, 0);
     const now = new Date();
 
-    console.log('Fetching calories from', today.toISOString(), 'to', now.toISOString());
+    // Use queryAggregated - HealthKit's HKStatisticsQuery should handle
+    // de-duplication automatically when using cumulativeSum
     const result = await Health.queryAggregated({
       dataType: 'calories',
       startDate: today.toISOString(),
       endDate: now.toISOString()
     });
-    console.log('Calories result:', JSON.stringify(result));
 
-    // Handle both formats: direct value or samples array
-    if (result.value !== undefined) {
-      return Math.round(result.value);
-    } else if (result.samples && result.samples.length > 0) {
-      // Sum up all samples
-      const total = result.samples.reduce((sum, sample) => sum + (sample.value || 0), 0);
-      console.log('Calories total from samples:', total);
+    // The result should have a single aggregated value
+    if (result.samples && result.samples.length > 0) {
+      // If there's only one sample, use it directly
+      if (result.samples.length === 1) {
+        return Math.round(result.samples[0].value || 0);
+      }
+
+      // If multiple samples, they might be hourly buckets - sum them
+      const total = result.samples.reduce((sum, s) => sum + (s.value || 0), 0);
       return Math.round(total);
+    } else if (result.value !== undefined) {
+      return Math.round(result.value);
     }
     return 0;
   } catch (error) {
-    console.log('Error fetching calories:', error);
+    console.error('Error fetching calories:', error);
     return null;
   }
 }
 
 // Main function to sync HealthKit data
 export async function syncHealthKitData() {
-  console.log('Starting HealthKit sync...');
-
   // Check availability
   const available = await isHealthKitAvailable();
-  console.log('HealthKit available:', available);
   if (!available) {
     return { success: false, reason: 'not_available' };
   }
 
   // Request authorization
   const authorized = await requestHealthKitAuthorization();
-  console.log('HealthKit authorized:', authorized);
   if (!authorized) {
     return { success: false, reason: 'not_authorized' };
   }

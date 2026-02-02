@@ -6332,92 +6332,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
         // For now, we'll pass an empty array - in future could track this
         const workouts = await fetchLinkableWorkouts(date, []);
 
-        // DEBUG: Add mock workouts for testing (UUIDs match pending workouts)
-        const now = new Date();
-        const todayDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-        const mockWorkouts = [
-          {
-            healthKitUUID: 'mock-workout-001',
-            type: 'Running',
-            subtype: 'Outdoor Run',
-            appleWorkoutName: 'Outdoor Run',
-            icon: '🏃',
-            date: todayDate,
-            time: '7:30 AM',
-            duration: 45,
-            calories: 420,
-            distance: 4.2,
-            avgHr: 155,
-            sourceDevice: "Apple Watch"
-          },
-          {
-            healthKitUUID: 'mock-workout-002',
-            type: 'Strength Training',
-            appleWorkoutName: 'Traditional Strength Training',
-            icon: '🏋️',
-            date: todayDate,
-            time: '6:00 PM',
-            duration: 55,
-            calories: 280,
-            avgHr: 125,
-            sourceDevice: "Apple Watch"
-          },
-          {
-            healthKitUUID: 'mock-workout-003',
-            type: 'Walking',
-            appleWorkoutName: 'Walking',
-            icon: '🚶',
-            date: todayDate,
-            time: '12:30 PM',
-            duration: 20,
-            calories: 95,
-            distance: 1.1,
-            avgHr: 105,
-            sourceDevice: "Apple Watch"
-          },
-          {
-            healthKitUUID: 'mock-workout-004',
-            type: 'Cycle',
-            appleWorkoutName: 'Outdoor Cycling',
-            icon: '🚴',
-            date: todayDate,
-            time: '8:00 AM',
-            duration: 60,
-            calories: 520,
-            distance: 15.3,
-            avgHr: 142,
-            sourceDevice: "Apple Watch"
-          },
-          {
-            healthKitUUID: 'mock-workout-005',
-            type: 'Yoga',
-            appleWorkoutName: 'Yoga',
-            icon: '🧘',
-            date: todayDate,
-            time: '6:30 AM',
-            duration: 30,
-            calories: 120,
-            avgHr: 85,
-            sourceDevice: "Apple Watch"
-          },
-          {
-            healthKitUUID: 'mock-workout-006',
-            type: 'Sports',
-            subtype: 'Basketball',
-            appleWorkoutName: 'Basketball',
-            icon: '🏀',
-            date: todayDate,
-            time: '5:00 PM',
-            duration: 90,
-            calories: 650,
-            avgHr: 158,
-            sourceDevice: "Apple Watch"
-          }
-        ];
-
-        // Combine real workouts with mock workouts, then filter
-        const allWorkouts = [...workouts, ...mockWorkouts];
-        const filteredWorkouts = allWorkouts.filter(w =>
+        // Filter out already linked or dismissed workouts
+        const filteredWorkouts = workouts.filter(w =>
           !linkedWorkoutUUIDs.includes(w.healthKitUUID) &&
           !dismissedWorkoutUUIDs.includes(w.healthKitUUID)
         );
@@ -8536,12 +8452,17 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
       recovery: { completed: recovery.length, goal: goals.recoveryPerWeek, sessions: recovery.map(r => r.type), breakdown: { coldPlunge: coldPlunge.length, sauna: sauna.length, yoga: yoga.length, pilates: pilates.length }, otherActivities: otherRecovery },
       // Non-cardio walks (don't count toward goals but should be displayed)
       walks: { count: nonCardioWalks.length, activities: nonCardioWalks },
-      // Use HealthKit calories if available, otherwise fall back to activity sum
-      calories: { burned: healthKitData.todayCalories || totalCalories, goal: goals.caloriesPerDay },
+      // Use HealthKit calories if connected (even if 0), otherwise fall back to activity sum
+      // This prevents double-counting when user logs a workout that's already tracked by HealthKit
+      calories: {
+        burned: healthKitData.isConnected ? healthKitData.todayCalories : totalCalories,
+        goal: goals.caloriesPerDay,
+        source: healthKitData.isConnected ? 'healthkit' : 'manual'
+      },
       // Use HealthKit steps
       steps: { today: healthKitData.todaySteps || 0, goal: goals.stepsPerDay }
     };
-  }, [activities, userData?.goals, healthKitData.todaySteps, healthKitData.todayCalories]);
+  }, [activities, userData?.goals, healthKitData.todaySteps, healthKitData.todayCalories, healthKitData.isConnected]);
 
   const stepsPercent = weekProgress.steps?.goal > 0 ? Math.min((weekProgress.steps.today / weekProgress.steps.goal) * 100, 100) : 0;
   const caloriesPercent = weekProgress.calories.goal > 0 ? Math.min((weekProgress.calories.burned / weekProgress.calories.goal) * 100, 100) : 0;
@@ -14002,7 +13923,8 @@ export default function DaySevenApp() {
     todaySteps: 0,
     todayCalories: 0,
     pendingWorkouts: [], // Workouts from HealthKit not yet added to activities
-    lastSynced: null
+    lastSynced: null,
+    isConnected: false // True if HealthKit has ever returned data > 0
   });
 
   // Track daily goals celebrated (resets each day)
@@ -14107,11 +14029,13 @@ export default function DaySevenApp() {
       try {
         const healthData = await getDailyHealthData(user.uid, dateStr);
         if (healthData) {
+          const hasHealthData = (healthData.steps > 0 || healthData.calories > 0);
           setHealthKitData(prev => ({
             ...prev,
             todaySteps: healthData.steps || 0,
             todayCalories: healthData.calories || 0,
-            lastSynced: healthData.lastUpdated
+            lastSynced: healthData.lastUpdated,
+            isConnected: prev.isConnected || hasHealthData // Once connected, stays connected
           }));
         }
       } catch (e) {
@@ -14565,10 +14489,12 @@ export default function DaySevenApp() {
             fetchTodaySteps(),
             fetchTodayCalories()
           ]);
+          const hasHealthData = (steps > 0 || calories > 0);
           setHealthKitData(prev => ({
             ...prev,
             todaySteps: steps || prev.todaySteps,
-            todayCalories: calories || prev.todayCalories
+            todayCalories: calories || prev.todayCalories,
+            isConnected: prev.isConnected || hasHealthData
           }));
         } catch (e) {
           // Silently fail HealthKit refresh
@@ -14618,104 +14544,14 @@ export default function DaySevenApp() {
                !linkedUUIDs.has(w.healthKitUUID)
         );
 
-        // DEBUG: Add mock pending workouts for testing
-        const now = new Date();
-        const todayDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-        const mockPendingWorkouts = [
-          {
-            id: 'hk_mock-workout-001',
-            healthKitUUID: 'mock-workout-001',
-            type: 'Running',
-            subtype: 'Outdoor Run',
-            appleWorkoutName: 'Outdoor Run',
-            icon: '🏃',
-            date: todayDate,
-            time: '7:30 AM',
-            duration: 45,
-            calories: 420,
-            distance: 4.2,
-            avgHr: 155,
-            sourceDevice: "Apple Watch"
-          },
-          {
-            id: 'hk_mock-workout-002',
-            healthKitUUID: 'mock-workout-002',
-            type: 'Strength Training',
-            appleWorkoutName: 'Traditional Strength Training',
-            icon: '🏋️',
-            date: todayDate,
-            time: '6:00 PM',
-            duration: 55,
-            calories: 280,
-            avgHr: 125,
-            sourceDevice: "Apple Watch"
-          },
-          {
-            id: 'hk_mock-workout-003',
-            healthKitUUID: 'mock-workout-003',
-            type: 'Walking',
-            appleWorkoutName: 'Walking',
-            icon: '🚶',
-            date: todayDate,
-            time: '12:30 PM',
-            duration: 20,
-            calories: 95,
-            distance: 1.1,
-            avgHr: 105,
-            sourceDevice: "Apple Watch"
-          },
-          {
-            id: 'hk_mock-workout-004',
-            healthKitUUID: 'mock-workout-004',
-            type: 'Cycle',
-            appleWorkoutName: 'Outdoor Cycling',
-            icon: '🚴',
-            date: todayDate,
-            time: '8:00 AM',
-            duration: 60,
-            calories: 520,
-            distance: 15.3,
-            avgHr: 142,
-            sourceDevice: "Apple Watch"
-          },
-          {
-            id: 'hk_mock-workout-005',
-            healthKitUUID: 'mock-workout-005',
-            type: 'Yoga',
-            appleWorkoutName: 'Yoga',
-            icon: '🧘',
-            date: todayDate,
-            time: '6:30 AM',
-            duration: 30,
-            calories: 120,
-            avgHr: 85,
-            sourceDevice: "Apple Watch"
-          },
-          {
-            id: 'hk_mock-workout-006',
-            healthKitUUID: 'mock-workout-006',
-            type: 'Sports',
-            subtype: 'Basketball',
-            appleWorkoutName: 'Basketball',
-            icon: '🏀',
-            date: todayDate,
-            time: '5:00 PM',
-            duration: 90,
-            calories: 650,
-            avgHr: 158,
-            sourceDevice: "Apple Watch"
-          }
-        ].filter(m =>
-          !linkedUUIDs.has(m.healthKitUUID) &&
-          !existingUUIDs.has(m.healthKitUUID)
-        );
-
-        setHealthKitData({
+        const hasHealthData = (result.todaySteps > 0 || result.todayCalories > 0);
+        setHealthKitData(prev => ({
           todaySteps: result.todaySteps || 0,
           todayCalories: result.todayCalories || 0,
-          pendingWorkouts: [...newWorkouts, ...mockPendingWorkouts],
-          lastSynced: new Date().toISOString()
-        });
+          pendingWorkouts: newWorkouts,
+          lastSynced: new Date().toISOString(),
+          isConnected: prev.isConnected || hasHealthData
+        }));
       }
     } catch (error) {
       console.log('HealthKit sync error:', error);
@@ -14736,10 +14572,12 @@ export default function DaySevenApp() {
           fetchTodaySteps(),
           fetchTodayCalories()
         ]);
+        const hasHealthData = (steps > 0 || calories > 0);
         setHealthKitData(prev => ({
           ...prev,
           todaySteps: steps || prev.todaySteps,
-          todayCalories: calories || prev.todayCalories
+          todayCalories: calories || prev.todayCalories,
+          isConnected: prev.isConnected || hasHealthData
         }));
       } catch (e) {
         // Silently fail

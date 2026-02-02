@@ -12,10 +12,8 @@
   scrollbar-width: none;
 }
 
-/* Prevent overscroll bounce on iOS */
+/* iOS-style elastic bounce scrolling */
 html, body {
-  overscroll-behavior: none;
-  overscroll-behavior-y: none;
   -webkit-overflow-scrolling: touch;
   position: fixed;
   width: 100%;
@@ -33,8 +31,6 @@ html, body {
   overflow: auto;
   overflow-y: scroll;
   -webkit-overflow-scrolling: touch;
-  overscroll-behavior: none;
-  overscroll-behavior-y: none;
   background-color: #000;
 }
 

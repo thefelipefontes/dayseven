@@ -6,7 +6,7 @@ import Login from './Login';
 import UsernameSetup from './UsernameSetup';
 import Friends from './Friends';
 import ActivityFeed from './ActivityFeed';
-import { createUserProfile, getUserProfile, updateUserProfile, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, saveUserGoals, getUserGoals, setOnboardingComplete, setTourComplete, savePersonalRecords, getPersonalRecords, saveDailyHealthData, getDailyHealthData } from './services/userService';
+import { createUserProfile, getUserProfile, updateUserProfile, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, saveUserGoals, getUserGoals, setOnboardingComplete, setTourComplete, savePersonalRecords, getPersonalRecords, saveDailyHealthData, getDailyHealthData, getDailyHealthHistory } from './services/userService';
 import { getFriends, getReactions, getFriendRequests, getComments, addReply, getReplies, deleteReply, addReaction, removeReaction, addComment } from './services/friendService';
 import html2canvas from 'html2canvas';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
@@ -9632,11 +9632,37 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
 };
 
 // Trends View Component
-const TrendsView = ({ activities = [], calendarData = {} }) => {
+const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], healthKitData = {} }) => {
   const [metric, setMetric] = useState('calories');
   const [timeRange, setTimeRange] = useState('1M');
   const [selectedBar, setSelectedBar] = useState(null); // For detail view on click
   const [hoveredBar, setHoveredBar] = useState(null); // For hover highlighting
+
+  // Get today's date string
+  const todayStr = useMemo(() => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  }, []);
+
+  // Create a lookup map from healthHistory for quick date access
+  // Override today's data with live healthKitData
+  const healthDataByDate = useMemo(() => {
+    const map = {};
+    healthHistory.forEach(entry => {
+      if (entry.date) {
+        map[entry.date] = entry;
+      }
+    });
+    // Always use live healthKitData for today
+    if (healthKitData.todaySteps > 0 || healthKitData.todayCalories > 0) {
+      map[todayStr] = {
+        date: todayStr,
+        steps: healthKitData.todaySteps || 0,
+        calories: healthKitData.todayCalories || 0
+      };
+    }
+    return map;
+  }, [healthHistory, healthKitData.todaySteps, healthKitData.todayCalories, todayStr]);
 
   // Generate data points based on time range
   const generateTrendData = () => {
@@ -9691,19 +9717,26 @@ const TrendsView = ({ activities = [], calendarData = {} }) => {
         date.setDate(date.getDate() - i);
         const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
         const dayActivities = calendarData[dateStr] || [];
-        
+        const healthData = healthDataByDate[dateStr];
+
         let value = 0;
         if (metric === 'calories') {
-          value = dayActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+          // Use daily active calories from HealthKit if available
+          value = healthData?.calories || 0;
+          // Add calories from manually logged workouts (not from HealthKit)
+          const manualWorkoutCalories = dayActivities
+            .filter(a => !a.healthKitUUID)
+            .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+          value += manualWorkoutCalories;
         } else if (metric === 'steps') {
-          // Steps would come from health data integration - currently not tracked
-          value = 0;
+          // Use steps from HealthKit
+          value = healthData?.steps || 0;
         } else if (metric === 'miles') {
           value = dayActivities
             .filter(a => a.type === 'Running' || a.type === 'Cycle')
             .reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
         }
-        
+
         data.push({
           label: date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
           shortLabel: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
@@ -9718,19 +9751,26 @@ const TrendsView = ({ activities = [], calendarData = {} }) => {
         weekEnd.setDate(weekEnd.getDate() - (w * 7));
         const weekStart = new Date(weekEnd);
         weekStart.setDate(weekStart.getDate() - 6);
-        
+
         let value = 0;
         for (let d = 0; d < 7; d++) {
           const date = new Date(weekStart);
           date.setDate(date.getDate() + d);
           const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
           const dayActivities = calendarData[dateStr] || [];
-          
+          const healthData = healthDataByDate[dateStr];
+
           if (metric === 'calories') {
-            value += dayActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+            // Use daily active calories from HealthKit if available
+            value += healthData?.calories || 0;
+            // Add calories from manually logged workouts (not from HealthKit)
+            const manualWorkoutCalories = dayActivities
+              .filter(a => !a.healthKitUUID)
+              .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+            value += manualWorkoutCalories;
           } else if (metric === 'steps') {
-            // Steps would come from health data integration - currently not tracked
-            value += 0;
+            // Use steps from HealthKit
+            value += healthData?.steps || 0;
           } else if (metric === 'miles') {
             value += dayActivities
               .filter(a => a.type === 'Running' || a.type === 'Cycle')
@@ -9760,19 +9800,26 @@ const TrendsView = ({ activities = [], calendarData = {} }) => {
       for (let m = months - 1; m >= 0; m--) {
         const monthDate = new Date(today.getFullYear(), today.getMonth() - m, 1);
         const monthEnd = new Date(today.getFullYear(), today.getMonth() - m + 1, 0);
-        
+
         let value = 0;
         for (let d = 1; d <= monthEnd.getDate(); d++) {
           const date = new Date(monthDate.getFullYear(), monthDate.getMonth(), d);
           if (date > today) break;
           const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
           const dayActivities = calendarData[dateStr] || [];
-          
+          const healthData = healthDataByDate[dateStr];
+
           if (metric === 'calories') {
-            value += dayActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+            // Use daily active calories from HealthKit if available
+            value += healthData?.calories || 0;
+            // Add calories from manually logged workouts (not from HealthKit)
+            const manualWorkoutCalories = dayActivities
+              .filter(a => !a.healthKitUUID)
+              .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+            value += manualWorkoutCalories;
           } else if (metric === 'steps') {
-            // Steps would come from health data integration - currently not tracked
-            value += 0;
+            // Use steps from HealthKit
+            value += healthData?.steps || 0;
           } else if (metric === 'miles') {
             value += dayActivities
               .filter(a => a.type === 'Running' || a.type === 'Cycle')
@@ -10041,7 +10088,15 @@ const TrendsView = ({ activities = [], calendarData = {} }) => {
           a.type === 'Walking' && !a.countToward
         );
 
-        const dayCalories = fullDayActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+        // Get HealthKit data for this day
+        const dayHealthData = healthDataByDate[dateStr];
+        // HealthKit calories + manual workout calories (not from HealthKit)
+        const healthKitCalories = dayHealthData?.calories || 0;
+        const manualWorkoutCalories = fullDayActivities
+          .filter(a => !a.healthKitUUID)
+          .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+        const dayCalories = healthKitCalories + manualWorkoutCalories;
+        const daySteps = dayHealthData?.steps || 0;
         const dayMiles = fullDayActivities.reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
         const totalDuration = fullDayActivities.reduce((sum, a) => sum + (a.duration || 0), 0);
 
@@ -10078,10 +10133,14 @@ const TrendsView = ({ activities = [], calendarData = {} }) => {
                 </div>
 
                 {/* Daily Totals */}
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                    <div className="text-sm font-bold text-white">{dayCalories}</div>
+                <div className="grid grid-cols-4 gap-2">
+                  <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
+                    <div className="text-sm font-bold" style={{ color: '#FF9500' }}>{dayCalories.toLocaleString()}</div>
                     <div className="text-[9px] text-gray-400">Calories</div>
+                  </div>
+                  <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,107,157,0.1)' }}>
+                    <div className="text-sm font-bold" style={{ color: '#FF6B9D' }}>{daySteps.toLocaleString()}</div>
+                    <div className="text-[9px] text-gray-400">Steps</div>
                   </div>
                   <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                     <div className="text-sm font-bold text-white">{dayMiles.toFixed(1)}</div>
@@ -10147,12 +10206,38 @@ const TrendsView = ({ activities = [], calendarData = {} }) => {
 };
 
 // History Tab
-const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onAddActivity, onDeleteActivity, onEditActivity, initialView = 'calendar', initialStatsSubView = 'overview', activeStreaksRef, calendarRef, statsRef, progressPhotosRef, user, userProfile }) => {
+const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory = [], healthKitData = {}, userData, onAddActivity, onDeleteActivity, onEditActivity, initialView = 'calendar', initialStatsSubView = 'overview', activeStreaksRef, calendarRef, statsRef, progressPhotosRef, user, userProfile }) => {
   const [view, setView] = useState(initialView);
   const [statsSubView, setStatsSubView] = useState(initialStatsSubView); // 'overview' or 'records'
   const [calendarView, setCalendarView] = useState('heatmap');
   const [selectedDate, setSelectedDate] = useState(getTodayDate());
   const [selectedDayActivity, setSelectedDayActivity] = useState(null); // For activity detail modal
+
+  // Get today's date string
+  const todayStr = useMemo(() => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  }, []);
+
+  // Create a lookup map from healthHistory for quick date access
+  // Override today's data with live healthKitData
+  const healthDataByDate = useMemo(() => {
+    const map = {};
+    healthHistory.forEach(entry => {
+      if (entry.date) {
+        map[entry.date] = entry;
+      }
+    });
+    // Always use live healthKitData for today
+    if (healthKitData.todaySteps > 0 || healthKitData.todayCalories > 0) {
+      map[todayStr] = {
+        date: todayStr,
+        steps: healthKitData.todaySteps || 0,
+        calories: healthKitData.todayCalories || 0
+      };
+    }
+    return map;
+  }, [healthHistory, healthKitData.todaySteps, healthKitData.todayCalories, todayStr]);
 
   // Calendar hints state - shows first-visit tips
   const [showCalendarHints, setShowCalendarHints] = useState(() => {
@@ -10533,24 +10618,46 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
     const startOfWeek = new Date(today);
     startOfWeek.setDate(today.getDate() - today.getDay());
     startOfWeek.setHours(0, 0, 0, 0);
-    
+
     const weekActivities = activities.filter(a => {
       const actDate = parseLocalDate(a.date);
       return actDate >= startOfWeek && actDate <= today;
     });
-    
+
     const lifts = weekActivities.filter(a => getActivityCategory(a) === 'lifting').length;
     const cardio = weekActivities.filter(a => getActivityCategory(a) === 'cardio').length;
     const recovery = weekActivities.filter(a => getActivityCategory(a) === 'recovery').length;
     const miles = weekActivities.filter(a => a.type === 'Running' || a.type === 'Cycle' || a.type === 'Walking').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
 
+    // Calculate calories and steps for the week from healthDataByDate
+    let weekCalories = 0;
+    let weekSteps = 0;
+    for (let d = 0; d <= today.getDay(); d++) {
+      const date = new Date(startOfWeek);
+      date.setDate(startOfWeek.getDate() + d);
+      const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      const healthData = healthDataByDate[dateStr];
+      const dayActivities = calendarData[dateStr] || [];
+
+      // Add HealthKit calories
+      weekCalories += healthData?.calories || 0;
+      // Add calories from manually logged workouts (not from HealthKit)
+      const manualWorkoutCalories = dayActivities
+        .filter(a => !a.healthKitUUID)
+        .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+      weekCalories += manualWorkoutCalories;
+
+      // Add HealthKit steps
+      weekSteps += healthData?.steps || 0;
+    }
+
     return {
-      workouts: lifts + cardio, 
+      workouts: lifts + cardio,
       lifts,
       cardio,
-      recovery, 
-      calories: 0, 
-      steps: 0, 
+      recovery,
+      calories: weekCalories,
+      steps: weekSteps,
       miles,
       goalsMet: lifts >= goals.liftsPerWeek && cardio >= goals.cardioPerWeek && recovery >= goals.recoveryPerWeek
     };
@@ -11103,9 +11210,17 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
         // Format date nicely
         const dateObj = new Date(selectedDate + 'T12:00:00');
         const formattedDate = dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
-        
+
         // Calculate daily totals from actual data
-        const dayCalories = fullDayActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+        // Get HealthKit data for this day
+        const dayHealthData = healthDataByDate[selectedDate];
+        // HealthKit calories + manual workout calories (not from HealthKit)
+        const healthKitCalories = dayHealthData?.calories || 0;
+        const manualWorkoutCalories = fullDayActivities
+          .filter(a => !a.healthKitUUID)
+          .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+        const dayCalories = healthKitCalories + manualWorkoutCalories;
+        const daySteps = dayHealthData?.steps || 0;
         const dayMiles = fullDayActivities.reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
         const totalSessions = fullDayActivities.length;
         
@@ -11198,17 +11313,17 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
               <div className="mb-6">
                 <div className="text-sm font-semibold text-white mb-3">📊 Daily Totals</div>
                 <div className="grid grid-cols-2 gap-2">
-                  <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                    <div className="text-lg font-black">{dayCalories.toLocaleString()}</div>
+                  <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
+                    <div className="text-lg font-black" style={{ color: '#FF9500' }}>{dayCalories.toLocaleString()}</div>
                     <div className="text-[10px] text-gray-400">Calories Burned</div>
+                  </div>
+                  <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,107,157,0.1)' }}>
+                    <div className="text-lg font-black" style={{ color: '#FF6B9D' }}>{daySteps.toLocaleString()}</div>
+                    <div className="text-[10px] text-gray-400">Steps</div>
                   </div>
                   <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                     <div className="text-lg font-black">{dayMiles ? parseFloat(dayMiles).toFixed(1) : 0} mi</div>
                     <div className="text-[10px] text-gray-400">Distance Traveled</div>
-                  </div>
-                  <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                    <div className="text-lg font-black">{totalSessions}</div>
-                    <div className="text-[10px] text-gray-400">Total Sessions</div>
                   </div>
                   <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                     <div className="text-lg font-black">{fullDayActivities.reduce((sum, a) => sum + (a.duration || 0), 0)} min</div>
@@ -11787,7 +11902,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
 
           {/* Trends Sub-View */}
           {statsSubView === 'trends' && (
-            <TrendsView activities={activities} calendarData={calendarData} />
+            <TrendsView activities={activities} calendarData={calendarData} healthHistory={healthHistory} healthKitData={healthKitData} />
           )}
         </div>
       )}
@@ -14406,6 +14521,10 @@ export default function DaySevenApp() {
             setCalendarData(calendarMap);
           }
 
+          // Load daily health history for trends (365 days for full year view)
+          const healthHistoryData = await getDailyHealthHistory(user.uid, 365);
+          setHealthHistory(healthHistoryData);
+
           // Load friends list
           const friendsList = await getFriends(user.uid);
           setFriends(friendsList);
@@ -14473,6 +14592,10 @@ export default function DaySevenApp() {
         });
         setCalendarData(calendarMap);
       }
+
+      // Reload health history for trends
+      const healthHistoryData = await getDailyHealthHistory(user.uid, 365);
+      setHealthHistory(healthHistoryData);
 
       // Reload friends and pending requests
       const [friendsList, requests] = await Promise.all([
@@ -14674,6 +14797,7 @@ export default function DaySevenApp() {
   // Real state management
   const [activities, setActivities] = useState(initialActivities);
   const [calendarData, setCalendarData] = useState(initialCalendarData);
+  const [healthHistory, setHealthHistory] = useState([]);
   const [weeklyProgress, setWeeklyProgress] = useState(initialWeeklyProgress);
   const [userData, setUserData] = useState(initialUserData);
 
@@ -15876,6 +16000,8 @@ export default function DaySevenApp() {
                   }}
                   activities={activities}
                   calendarData={calendarData}
+                  healthHistory={healthHistory}
+                  healthKitData={healthKitData}
                   userData={userData}
                   onAddActivity={handleAddActivity}
                   onDeleteActivity={handleDeleteActivity}

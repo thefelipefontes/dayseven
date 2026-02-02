@@ -1220,25 +1220,10 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
           </button>
         </div>
 
-        {/* Live metrics from Apple Watch/Whoop */}
-        {(liveMetrics.lastHr > 0 || liveMetrics.calories > 0) && (
-          <div className="flex items-center gap-4 mt-2 py-2 px-3 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-            {liveMetrics.lastHr > 0 && (
-              <div className="flex items-center gap-1.5">
-                <span className="text-red-400">❤️</span>
-                <span className="text-sm font-medium text-white">{liveMetrics.lastHr}</span>
-                <span className="text-xs text-gray-500">bpm</span>
-              </div>
-            )}
-            {liveMetrics.calories > 0 && (
-              <div className="flex items-center gap-1.5">
-                <span className="text-orange-400">🔥</span>
-                <span className="text-sm font-medium text-white">{liveMetrics.calories}</span>
-                <span className="text-xs text-gray-500">cal</span>
-              </div>
-            )}
-          </div>
-        )}
+        {/* Timer-only reminder */}
+        <div className="mt-2 py-2 px-3 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+          <span className="text-xs text-gray-500">Track with your watch for heart rate & calories</span>
+        </div>
 
         {/* Finish button */}
         <button
@@ -1246,15 +1231,15 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
           className="w-full mt-3 py-2.5 rounded-xl font-semibold text-sm text-black transition-all active:scale-[0.98]"
           style={{ backgroundColor: '#00FF94' }}
         >
-          Finish Workout
+          Finish Timer
         </button>
       </div>
     </div>
   );
 };
 
-// Finish Workout Modal - Shown when user taps "Finish Workout"
-const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave }) => {
+// Finish Workout Modal - Shown when user taps "Finish Timer"
+const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUIDs = [] }) => {
   const [notes, setNotes] = useState('');
   const [calories, setCalories] = useState('');
   const [avgHr, setAvgHr] = useState('');
@@ -1265,6 +1250,9 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave }) => {
   const [isPhotoPrivate, setIsPhotoPrivate] = useState(false);
   const [isLoadingMetrics, setIsLoadingMetrics] = useState(false);
   const [healthKitDataFetched, setHealthKitDataFetched] = useState(false);
+  const [linkedWorkout, setLinkedWorkout] = useState(null);
+  const [linkableWorkouts, setLinkableWorkouts] = useState([]);
+  const [isLoadingWorkouts, setIsLoadingWorkouts] = useState(false);
 
   const fileInputRef = useRef(null);
 
@@ -1307,6 +1295,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave }) => {
       setPhotoPreview(null);
       setIsPhotoPrivate(false);
       setHealthKitDataFetched(false);
+      setLinkedWorkout(null);
 
       // Get current metrics from the live workout session (don't end it yet)
       const fetchMetrics = async () => {
@@ -1375,8 +1364,38 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave }) => {
       setIsPhotoPrivate(false);
       setHealthKitDataFetched(false);
       setIsLoadingMetrics(false);
+      setLinkedWorkout(null);
+      setLinkableWorkouts([]);
     }
   }, [isOpen, workout?.startTime]);
+
+  // Fetch linkable workouts from Apple Health when modal opens
+  useEffect(() => {
+    if (isOpen && workout?.startTime) {
+      const fetchWorkouts = async () => {
+        setIsLoadingWorkouts(true);
+        try {
+          const today = new Date();
+          const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+          const workouts = await fetchLinkableWorkouts(dateStr, []);
+
+          // Filter out already linked workouts
+          const filteredWorkouts = workouts.filter(w =>
+            !linkedWorkoutUUIDs.includes(w.healthKitUUID)
+          );
+
+          setLinkableWorkouts(filteredWorkouts);
+        } catch (error) {
+          console.error('Error fetching linkable workouts:', error);
+          setLinkableWorkouts([]);
+        } finally {
+          setIsLoadingWorkouts(false);
+        }
+      };
+
+      fetchWorkouts();
+    }
+  }, [isOpen, workout?.startTime, linkedWorkoutUUIDs]);
 
   // Handle photo from library using Capacitor Camera
   const handleChooseFromLibrary = async () => {
@@ -1473,21 +1492,30 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave }) => {
     const today = new Date();
     const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
+    // Use linked workout data if available, otherwise use manual entry
+    const finalCalories = linkedWorkout?.calories || (calories ? parseInt(calories) : undefined);
+    const finalAvgHr = linkedWorkout?.avgHr || (avgHr ? parseInt(avgHr) : undefined);
+    const finalMaxHr = linkedWorkout?.maxHr || (maxHr ? parseInt(maxHr) : undefined);
+    const finalDistance = linkedWorkout?.distance || (distance ? parseFloat(distance) : undefined);
+    const finalDuration = linkedWorkout?.duration || duration;
+
     onSave({
       ...workout,
       date: dateStr,
-      duration,
+      duration: finalDuration,
       notes: notes || undefined,
-      calories: calories ? parseInt(calories) : undefined,
-      avgHr: avgHr ? parseInt(avgHr) : undefined,
-      maxHr: maxHr ? parseInt(maxHr) : undefined,
-      distance: distance ? parseFloat(distance) : undefined,
+      calories: finalCalories,
+      avgHr: finalAvgHr,
+      maxHr: finalMaxHr,
+      distance: finalDistance,
       // Store exact timestamps for HealthKit
       startTime: workout.startTime,
       endTime,
       // Photo data
       photoFile: activityPhoto || undefined,
       isPhotoPrivate: activityPhoto ? isPhotoPrivate : undefined,
+      // Link to Apple Health workout if selected
+      linkedHealthKitUUID: linkedWorkout?.healthKitUUID || undefined,
     });
   };
 
@@ -1510,7 +1538,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave }) => {
           >
             Cancel
           </button>
-          <h2 className="font-bold text-white">Finish Workout</h2>
+          <h2 className="font-bold text-white">Save Workout</h2>
           <button
             onClick={handleSave}
             className="font-bold px-2 py-1"
@@ -1524,7 +1552,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave }) => {
         <div className="p-4 overflow-y-auto" style={{ maxHeight: 'calc(85vh - 60px)' }}>
           {/* Workout summary */}
           <div
-            className="p-4 rounded-2xl mb-6"
+            className="p-4 rounded-2xl mb-4"
             style={{ backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.2)' }}
           >
             <div className="flex items-center gap-4">
@@ -1540,15 +1568,105 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave }) => {
                   {subtypeName && <span className="text-gray-400 font-normal"> • {subtypeName}</span>}
                 </div>
                 <div className="text-3xl font-bold mt-1" style={{ color: '#00FF94' }}>
-                  {formatDuration(duration)}
+                  {formatDuration(linkedWorkout?.duration || duration)}
                 </div>
               </div>
             </div>
           </div>
 
+          {/* Link Apple Health Workout Section */}
+          <div className="mb-6">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-red-500">❤️</span>
+              <span className="text-sm font-medium text-white">Link Apple Health Workout</span>
+            </div>
+
+            {isLoadingWorkouts ? (
+              <div className="p-4 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <div className="flex items-center justify-center gap-2">
+                  <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+                  <span className="text-xs text-gray-400">Looking for workouts...</span>
+                </div>
+              </div>
+            ) : linkableWorkouts.length > 0 ? (
+              <div className="space-y-2">
+                {linkableWorkouts.slice(0, 5).map((w) => {
+                  const isSelected = linkedWorkout?.healthKitUUID === w.healthKitUUID;
+                  const workoutTime = w.time || '';
+                  const workoutDuration = w.duration ? `${w.duration} min` : '';
+                  const workoutCals = w.calories ? `${w.calories} cal` : '';
+
+                  return (
+                    <button
+                      key={w.healthKitUUID}
+                      onClick={() => {
+                        if (isSelected) {
+                          setLinkedWorkout(null);
+                          // Clear metrics when unlinking
+                          setCalories('');
+                          setAvgHr('');
+                          setMaxHr('');
+                          setDistance('');
+                        } else {
+                          setLinkedWorkout(w);
+                          // Auto-fill metrics from linked workout
+                          if (w.calories) setCalories(w.calories.toString());
+                          if (w.avgHr) setAvgHr(w.avgHr.toString());
+                          if (w.maxHr) setMaxHr(w.maxHr.toString());
+                          if (w.distance) setDistance(w.distance.toString());
+                        }
+                        triggerHaptic(ImpactStyle.Light);
+                      }}
+                      className="w-full p-3 rounded-xl text-left transition-all"
+                      style={{
+                        backgroundColor: isSelected ? 'rgba(0,255,148,0.15)' : 'rgba(255,255,255,0.05)',
+                        border: isSelected ? '1px solid rgba(0,255,148,0.4)' : '1px solid rgba(255,255,255,0.1)'
+                      }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(255,59,48,0.2)' }}>
+                            <span className="text-lg">{w.icon || '🏃'}</span>
+                          </div>
+                          <div>
+                            <div className="text-sm font-medium text-white">{w.type || 'Workout'}</div>
+                            <div className="text-xs text-gray-500">
+                              {workoutTime}{workoutDuration && ` • ${workoutDuration}`}{workoutCals && ` • ${workoutCals}`}
+                            </div>
+                          </div>
+                        </div>
+                        {isSelected && (
+                          <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ backgroundColor: '#00FF94' }}>
+                            <svg className="w-4 h-4 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="p-4 rounded-xl" style={{ backgroundColor: 'rgba(255,193,7,0.1)', border: '1px solid rgba(255,193,7,0.2)' }}>
+                <p className="text-xs text-yellow-500/90 text-center">
+                  No matching workouts found in Apple Health yet. If you tracked with your watch, it may take a minute to sync.
+                </p>
+              </div>
+            )}
+
+            {linkedWorkout && (
+              <div className="mt-2 p-2 rounded-lg" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
+                <p className="text-xs text-center" style={{ color: '#00FF94' }}>
+                  Stats from your tracker will be used for this workout
+                </p>
+              </div>
+            )}
+          </div>
+
           {/* Optional metrics */}
           <div className="space-y-4">
-            <div className="text-sm text-gray-400 mb-2">Optional Details</div>
+            <div className="text-sm text-gray-400 mb-2">{linkedWorkout ? 'Override Stats (optional)' : 'Add Stats Manually'}</div>
 
             {/* Notes */}
             <div>
@@ -1692,37 +1810,6 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave }) => {
               )}
             </div>
 
-            {/* HealthKit Info/Warning */}
-            {isLoadingMetrics ? (
-              <div className="mt-4 p-3 rounded-xl" style={{ backgroundColor: 'rgba(0,255,148,0.05)', border: '1px solid rgba(0,255,148,0.1)' }}>
-                <div className="flex items-center justify-center gap-2">
-                  <div className="w-4 h-4 border-2 border-[#00FF94] border-t-transparent rounded-full animate-spin"></div>
-                  <p className="text-xs text-gray-400">
-                    Fetching stats from Apple Health...
-                  </p>
-                </div>
-              </div>
-            ) : !hasMetrics && healthKitDataFetched ? (
-              <div className="mt-4 p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,193,7,0.1)', border: '1px solid rgba(255,193,7,0.3)' }}>
-                <div className="flex items-start gap-2">
-                  <span className="text-yellow-500 text-lg">⚠️</span>
-                  <div>
-                    <p className="text-xs text-yellow-500/90">
-                      No workout stats detected from Apple Health. Heart rate and calorie data from your Apple Watch or Whoop may take a few minutes to sync. You can add metrics manually above or save now and they'll link automatically later.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ) : hasMetrics ? (
-              <div className="mt-4 p-3 rounded-xl" style={{ backgroundColor: 'rgba(0,255,148,0.05)', border: '1px solid rgba(0,255,148,0.1)' }}>
-                <div className="flex items-start gap-2">
-                  <span className="text-[#00FF94] text-lg">✓</span>
-                  <p className="text-xs text-gray-400">
-                    Stats synced from Apple Health. Any additional data will be automatically linked to this workout.
-                  </p>
-                </div>
-              </div>
-            ) : null}
           </div>
         </div>
       </div>
@@ -6809,18 +6896,13 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
         style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}
         onTouchMove={(e) => e.stopPropagation()}
       >
-        {/* Initial choice: Start Workout vs Log Completed */}
+        {/* Initial choice: Log Completed vs Workout Timer */}
         {mode === null ? (
           <div className="flex flex-col gap-4 pt-4">
-            {/* Start Workout option */}
+            {/* Log Completed option - Primary */}
             <button
               onClick={() => {
-                if (hasActiveWorkout) {
-                  // Warn user there's already an active workout
-                  alert('You already have an active workout in progress. Finish it first before starting a new one.');
-                  return;
-                }
-                setMode('start');
+                setMode('completed');
                 triggerHaptic(ImpactStyle.Medium);
               }}
               className="p-5 rounded-2xl text-left transition-all duration-150 flex items-center gap-4"
@@ -6849,22 +6931,25 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
               }}
             >
-              <div className="w-14 h-14 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(0,255,148,0.2)' }}>
-                <svg className="w-7 h-7 ml-1" fill="#00FF94" viewBox="0 0 24 24">
-                  <path d="M8 5v14l11-7z"/>
-                </svg>
+              <div className="w-14 h-14 rounded-xl flex items-center justify-center text-2xl" style={{ backgroundColor: 'rgba(0,255,148,0.2)' }}>
+                ✓
               </div>
               <div className="flex-1">
-                <div className="font-semibold text-lg" style={{ color: '#00FF94' }}>Start Workout</div>
-                <div className="text-sm text-gray-400 mt-0.5">Begin tracking a new workout now</div>
+                <div className="font-semibold text-lg" style={{ color: '#00FF94' }}>Log Completed Activity</div>
+                <div className="text-sm text-gray-400 mt-0.5">Record a workout you already finished</div>
               </div>
               <div className="text-gray-500">→</div>
             </button>
 
-            {/* Log Completed option */}
+            {/* Workout Timer option - Secondary */}
             <button
               onClick={() => {
-                setMode('completed');
+                if (hasActiveWorkout) {
+                  // Warn user there's already an active workout
+                  alert('You already have an active timer in progress. Finish it first before starting a new one.');
+                  return;
+                }
+                setMode('start');
                 triggerHaptic(ImpactStyle.Light);
               }}
               className="p-5 rounded-2xl text-left transition-all duration-150 flex items-center gap-4"
@@ -6890,12 +6975,14 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
               }}
             >
-              <div className="w-14 h-14 rounded-xl flex items-center justify-center text-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
-                ✓
+              <div className="w-14 h-14 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
+                <svg className="w-7 h-7" fill="#9CA3AF" viewBox="0 0 24 24">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/>
+                </svg>
               </div>
               <div className="flex-1">
-                <div className="font-semibold text-lg">Log Completed Activity</div>
-                <div className="text-sm text-gray-400 mt-0.5">Record a workout you already finished</div>
+                <div className="font-semibold text-lg text-gray-300">Workout Timer</div>
+                <div className="text-sm text-gray-500 mt-0.5">Just a timer — track with your watch, link after</div>
               </div>
               <div className="text-gray-500">→</div>
             </button>
@@ -8344,6 +8431,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
 
 const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
+  const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
   const [showWorkoutPicker, setShowWorkoutPicker] = useState(false);
   const [workoutPickerDragY, setWorkoutPickerDragY] = useState(0);
   const [workoutPickerTouchStart, setWorkoutPickerTouchStart] = useState(null);
@@ -8975,14 +9063,16 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         </div>
       </div>
 
-      {/* Pending Workout Banner - Only shows when there's a detected workout */}
-      {pendingSync.length > 0 && showWorkoutNotification && (
+      {/* Pending Workout Banner - Only shows when there's a detected workout not hidden */}
+      {(() => {
+        const visiblePendingSync = pendingSync.filter(w => !hiddenNotificationUUIDs.includes(w.healthKitUUID));
+        return visiblePendingSync.length > 0 && showWorkoutNotification && (
         <div className="mx-4 mb-4">
           <button
             onClick={() => {
-              if (pendingSync.length === 1) {
+              if (visiblePendingSync.length === 1) {
                 // Single workout - go directly to add activity
-                onAddActivity(pendingSync[0]);
+                onAddActivity(visiblePendingSync[0]);
               } else {
                 // Multiple workouts - show picker
                 setShowWorkoutPicker(true);
@@ -9014,28 +9104,30 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
             <span className="text-lg">📱</span>
             <div className="flex-1 text-left">
               <div className="text-xs font-semibold" style={{ color: '#00FF94' }}>
-                {pendingSync.length === 1
+                {visiblePendingSync.length === 1
                   ? 'New workout detected'
-                  : `${pendingSync.length} new workouts detected`}
+                  : `${visiblePendingSync.length} new workouts detected`}
               </div>
               <div className="text-[10px] text-gray-400">
-                {pendingSync.length === 1
-                  ? `${pendingSync[0].appleWorkoutName || pendingSync[0].type} • ${pendingSync[0].time} • ${pendingSync[0].duration} min`
+                {visiblePendingSync.length === 1
+                  ? `${visiblePendingSync[0].appleWorkoutName || visiblePendingSync[0].type} • ${visiblePendingSync[0].time} • ${visiblePendingSync[0].duration} min`
                   : 'Tap to view and add'}
               </div>
             </div>
-            {pendingSync.length > 1 && (
+            {visiblePendingSync.length > 1 && (
               <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ backgroundColor: '#00FF94', color: '#000' }}>
-                {pendingSync.length}
+                {visiblePendingSync.length}
               </span>
             )}
             <span className="px-3 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: 'rgba(0,255,148,0.2)', color: '#00FF94' }}>
-              {pendingSync.length === 1 ? 'Add' : 'View'}
+              {visiblePendingSync.length === 1 ? 'Add' : 'View'}
             </span>
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                setShowWorkoutNotification(false);
+                // Hide notification for these specific workout UUIDs (but still available to link)
+                const uuidsToHide = visiblePendingSync.map(w => w.healthKitUUID).filter(Boolean);
+                setHiddenNotificationUUIDs(prev => [...new Set([...prev, ...uuidsToHide])]);
               }}
               className="w-6 h-6 rounded-full flex items-center justify-center transition-all duration-150"
               style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
@@ -9066,7 +9158,8 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
             </button>
           </button>
         </div>
-      )}
+      );
+      })()}
 
       {/* Workout Picker Modal - Shows when multiple workouts detected */}
       {showWorkoutPicker && (
@@ -10637,13 +10730,14 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
       date.setDate(startOfWeek.getDate() + d);
       const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
       const healthData = healthDataByDate[dateStr];
-      const dayActivities = calendarData[dateStr] || [];
+      // Use activities array (source of truth) instead of calendarData
+      const dayActivities = activities.filter(a => a.date === dateStr);
 
-      // Add HealthKit calories
+      // Add HealthKit calories (includes workout calories from Apple Watch/Whoop)
       weekCalories += healthData?.calories || 0;
-      // Add calories from manually logged workouts (not from HealthKit)
+      // Add calories from truly manual workouts (not from HealthKit and not linked to HealthKit)
       const manualWorkoutCalories = dayActivities
-        .filter(a => !a.healthKitUUID)
+        .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID)
         .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
       weekCalories += manualWorkoutCalories;
 
@@ -11214,10 +11308,11 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
         // Calculate daily totals from actual data
         // Get HealthKit data for this day
         const dayHealthData = healthDataByDate[selectedDate];
-        // HealthKit calories + manual workout calories (not from HealthKit)
+        // HealthKit calories (includes workout calories from Apple Watch/Whoop)
+        // + truly manual workout calories (not from HealthKit and not linked to HealthKit)
         const healthKitCalories = dayHealthData?.calories || 0;
         const manualWorkoutCalories = fullDayActivities
-          .filter(a => !a.healthKitUUID)
+          .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID)
           .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
         const dayCalories = healthKitCalories + manualWorkoutCalories;
         const daySteps = dayHealthData?.steps || 0;
@@ -12769,20 +12864,20 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
           onShare && onShare({ startDate: selectedWeek?.startDate, endDate: selectedWeek?.endDate });
         }}
         weekData={selectedWeek ? (() => {
-          // Calculate week data from calendarData
-          const weekActivities = [];
+          // Calculate week data from activities (source of truth)
           let currentDate = new Date(selectedWeek.startDate);
           const endDate = new Date(selectedWeek.endDate);
-          
+          const weekDates = [];
+
           while (currentDate <= endDate) {
             const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
-            const dayActivities = calendarData[dateStr] || [];
-            dayActivities.forEach(a => {
-              weekActivities.push({ ...a, date: dateStr });
-            });
+            weekDates.push(dateStr);
             currentDate.setDate(currentDate.getDate() + 1);
           }
-          
+
+          // Filter activities for this week
+          const weekActivities = activities.filter(a => weekDates.includes(a.date));
+
           // Sort by date and time (most recent first)
           weekActivities.sort((a, b) => {
             const dateCompare = b.date.localeCompare(a.date);
@@ -12800,12 +12895,28 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
           const recoveryArr = weekActivities.filter(a => ['Cold Plunge', 'Sauna', 'Yoga'].includes(a.type));
           const miles = weekActivities.filter(a => a.type === 'Running' || a.type === 'Cycle' || a.type === 'Walking').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
 
+          // Calculate calories: HealthKit active calories + manually logged (not from/linked to HealthKit)
+          let weekCalories = 0;
+          let weekSteps = 0;
+          weekDates.forEach(dateStr => {
+            const healthData = healthDataByDate[dateStr];
+            // Add HealthKit calories (includes workout calories from Apple Watch/Whoop)
+            weekCalories += healthData?.calories || 0;
+            weekSteps += healthData?.steps || 0;
+            // Add calories from truly manual workouts (not from HealthKit and not linked to HealthKit)
+            const dayActivities = weekActivities.filter(a => a.date === dateStr);
+            const manualWorkoutCalories = dayActivities
+              .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID)
+              .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+            weekCalories += manualWorkoutCalories;
+          });
+
           return {
             lifts: lifts.length,
             cardio: cardioArr.length,
             recovery: recoveryArr.length,
-            calories: 0,
-            steps: 0,
+            calories: weekCalories,
+            steps: weekSteps,
             miles: miles,
             activities: weekActivities,
             goalsMet: lifts.length >= goals.liftsPerWeek && cardioArr.length >= goals.cardioPerWeek && recoveryArr.length >= goals.recoveryPerWeek
@@ -15298,8 +15409,8 @@ export default function DaySevenApp() {
     // console.log('Saved activity:', newActivity, 'Cardio count:', newProgress.cardio?.completed);
 
     // Write to HealthKit (fire-and-forget, don't block the save flow)
-    // Skip if: editing existing activity, came from Apple Health, is HealthKit-sourced, or already saved (live workout)
-    if (!isEdit && !activityData.fromAppleHealth && activityData.source !== 'healthkit' && !activityData.healthKitSaved) {
+    // Skip if: editing existing activity, came from Apple Health, is HealthKit-sourced, linked to existing HealthKit workout, or already saved (live workout)
+    if (!isEdit && !activityData.fromAppleHealth && activityData.source !== 'healthkit' && !activityData.linkedHealthKitUUID && !activityData.healthKitSaved) {
       saveWorkoutToHealthKit(newActivity)
         .then(result => {
           if (result.success) {
@@ -15922,19 +16033,33 @@ export default function DaySevenApp() {
         isOpen={showFinishWorkout}
         workout={activeWorkout}
         onClose={() => setShowFinishWorkout(false)}
+        linkedWorkoutUUIDs={[
+          ...activities.filter(a => a.linkedHealthKitUUID).map(a => a.linkedHealthKitUUID),
+          ...activities.filter(a => a.healthKitUUID).map(a => a.healthKitUUID)
+        ]}
         onSave={async (finishedWorkout) => {
-          // End the live workout in HealthKit (this saves it automatically)
-          const liveResult = await endLiveWorkout({
-            calories: finishedWorkout.calories,
-            distance: finishedWorkout.distance
-          });
-          console.log('Ended live workout:', liveResult);
+          // If user linked to an Apple Health workout, don't create a duplicate in HealthKit
+          const shouldSkipHealthKitWrite = !!finishedWorkout.linkedHealthKitUUID;
 
-          // Mark that this was a live workout (already saved to HealthKit)
+          let liveResult = { success: false };
+          if (!shouldSkipHealthKitWrite) {
+            // End the live workout in HealthKit (this saves it automatically)
+            liveResult = await endLiveWorkout({
+              calories: finishedWorkout.calories,
+              distance: finishedWorkout.distance
+            });
+            console.log('Ended live workout:', liveResult);
+          } else {
+            // Just cancel the live workout builder without saving (we're linking to existing)
+            await cancelLiveWorkout();
+            console.log('Cancelled live workout - linking to existing Apple Health workout');
+          }
+
+          // Mark workout data appropriately
           const workoutData = {
             ...finishedWorkout,
-            healthKitSaved: liveResult.success,
-            healthKitUUID: liveResult.workoutUUID,
+            healthKitSaved: shouldSkipHealthKitWrite ? true : liveResult.success, // Prevent re-writing
+            healthKitUUID: shouldSkipHealthKitWrite ? undefined : liveResult.workoutUUID,
           };
 
           // Save the finished workout to Firestore using the existing handler
@@ -16000,7 +16125,16 @@ export default function DaySevenApp() {
               {activeTab === 'home' && (
                 <HomeTab
                   onAddActivity={handleAddActivity}
-                  pendingSync={(healthKitData.pendingWorkouts || []).filter(w => !dismissedWorkoutUUIDs.includes(w.healthKitUUID))}
+                  pendingSync={(healthKitData.pendingWorkouts || []).filter(w => {
+                    // Filter out dismissed workouts
+                    if (dismissedWorkoutUUIDs.includes(w.healthKitUUID)) return false;
+                    // Filter out workouts already saved/linked in activities
+                    const isAlreadySaved = activities.some(a =>
+                      a.healthKitUUID === w.healthKitUUID ||
+                      a.linkedHealthKitUUID === w.healthKitUUID
+                    );
+                    return !isAlreadySaved;
+                  })}
                   activities={activities}
                   weeklyProgress={weeklyProgress}
                   userData={userData}

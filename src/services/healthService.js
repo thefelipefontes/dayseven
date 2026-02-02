@@ -225,23 +225,55 @@ export async function fetchHealthKitWorkouts(days = 7) {
       return [];
     }
 
-    // Convert HealthKit workouts to our format and filter out DaySeven-created workouts
-    const activities = result.workouts
-      .map(convertWorkoutToActivity)
-      .filter(activity => {
-        // Exclude workouts created by DaySeven
-        const sourceName = (activity.sourceDevice || '').toLowerCase();
-        return !sourceName.includes('dayseven');
-      });
+    // Convert HealthKit workouts to our format, filter, and fetch heart rate data
+    const activitiesWithHR = await Promise.all(
+      result.workouts
+        .filter(workout => {
+          // Exclude workouts created by DaySeven
+          const sourceName = (workout.sourceName || '').toLowerCase();
+          return !sourceName.includes('dayseven');
+        })
+        .map(async (workout) => {
+          const activity = convertWorkoutToActivity(workout);
+
+          // Fetch heart rate data for this workout's time range if not already present
+          if (!activity.avgHr || !activity.maxHr) {
+            try {
+              const hrResult = await Health.query({
+                dataType: 'heartRate',
+                startDate: workout.startDate,
+                endDate: workout.endDate,
+                limit: 500
+              });
+
+              if (hrResult.samples && hrResult.samples.length > 0) {
+                const hrValues = hrResult.samples
+                  .map(s => parseFloat(s.value))
+                  .filter(v => !isNaN(v) && v > 0);
+
+                if (hrValues.length > 0) {
+                  const sum = hrValues.reduce((a, b) => a + b, 0);
+                  activity.avgHr = Math.round(sum / hrValues.length);
+                  activity.maxHr = Math.round(Math.max(...hrValues));
+                }
+              }
+            } catch (hrError) {
+              console.log('Error fetching HR for workout:', hrError);
+            }
+          }
+
+          return activity;
+        })
+    );
 
     // Sort by date (most recent first)
-    activities.sort((a, b) => {
+    activitiesWithHR.sort((a, b) => {
       const dateA = new Date(a.date + 'T' + (a.time || '00:00'));
       const dateB = new Date(b.date + 'T' + (b.time || '00:00'));
       return dateB - dateA;
     });
 
-    return activities;
+    return activitiesWithHR;
   } catch (error) {
     console.error('Error fetching HealthKit workouts:', error);
     return [];
@@ -268,19 +300,53 @@ export async function fetchLinkableWorkouts(date, linkedWorkoutIds = []) {
       return [];
     }
 
-    // Convert and filter workouts
-    const activities = result.workouts
-      .map(convertWorkoutToActivity)
-      .filter(activity => {
-        // Exclude workouts created by DaySeven
-        const sourceName = (activity.sourceDevice || '').toLowerCase();
-        if (sourceName.includes('dayseven')) return false;
+    // Convert and filter workouts, then fetch heart rate data for each
+    const activitiesWithHR = await Promise.all(
+      result.workouts
+        .filter(workout => {
+          // Exclude workouts created by DaySeven
+          const sourceName = (workout.sourceName || '').toLowerCase();
+          if (sourceName.includes('dayseven')) return false;
+          return true;
+        })
+        .map(async (workout) => {
+          const activity = convertWorkoutToActivity(workout);
 
-        // Exclude already linked workouts
-        if (linkedWorkoutIds.includes(activity.healthKitUUID)) return false;
+          // Exclude already linked workouts
+          if (linkedWorkoutIds.includes(activity.healthKitUUID)) return null;
 
-        return true;
-      });
+          // Fetch heart rate data for this workout's time range if not already present
+          if (!activity.avgHr || !activity.maxHr) {
+            try {
+              const hrResult = await Health.query({
+                dataType: 'heartRate',
+                startDate: workout.startDate,
+                endDate: workout.endDate,
+                limit: 500
+              });
+
+              if (hrResult.samples && hrResult.samples.length > 0) {
+                const hrValues = hrResult.samples
+                  .map(s => parseFloat(s.value))
+                  .filter(v => !isNaN(v) && v > 0);
+
+                if (hrValues.length > 0) {
+                  const sum = hrValues.reduce((a, b) => a + b, 0);
+                  activity.avgHr = Math.round(sum / hrValues.length);
+                  activity.maxHr = Math.round(Math.max(...hrValues));
+                }
+              }
+            } catch (hrError) {
+              console.log('Error fetching HR for workout:', hrError);
+            }
+          }
+
+          return activity;
+        })
+    );
+
+    // Filter out nulls (excluded workouts)
+    const activities = activitiesWithHR.filter(a => a !== null);
 
     // Sort by time (most recent first)
     activities.sort((a, b) => {

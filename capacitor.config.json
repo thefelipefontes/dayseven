@@ -12,7 +12,7 @@
     "backgroundColor": "#000000",
     "scrollEnabled": true,
     "allowsLinkPreview": false,
-    "webContentsDebuggingEnabled": false
+    "webContentsDebuggingEnabled": true
   },
   "android": {
     "backgroundColor": "#000000"

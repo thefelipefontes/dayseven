@@ -2731,7 +2731,7 @@ const WeekStreakCelebration = ({ show, onClose, onShare }) => {
 };
 
 // Share Modal
-const ShareModal = ({ isOpen, onClose, stats }) => {
+const ShareModal = ({ isOpen, onClose, stats, weekRange }) => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [cardType, setCardType] = useState('weekly');
@@ -3013,14 +3013,28 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
 
   // Get current week date range
   const getWeekDateRange = () => {
+    const formatDate = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+    // Use provided week range if available
+    if (weekRange?.startDate && weekRange?.endDate) {
+      // weekRange dates might be Date objects or strings
+      const start = weekRange.startDate instanceof Date
+        ? weekRange.startDate
+        : new Date(weekRange.startDate + 'T12:00:00');
+      const end = weekRange.endDate instanceof Date
+        ? weekRange.endDate
+        : new Date(weekRange.endDate + 'T12:00:00');
+      return `${formatDate(start)} - ${formatDate(end)}`;
+    }
+
+    // Default to current week (Sunday - Saturday)
     const today = new Date();
     const dayOfWeek = today.getDay();
-    const monday = new Date(today);
-    monday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
-    const sunday = new Date(monday);
-    sunday.setDate(monday.getDate() + 6);
-    const formatDate = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    return `${formatDate(monday)} - ${formatDate(sunday)}`;
+    const sunday = new Date(today);
+    sunday.setDate(today.getDate() - dayOfWeek);
+    const saturday = new Date(sunday);
+    saturday.setDate(sunday.getDate() + 6);
+    return `${formatDate(sunday)} - ${formatDate(saturday)}`;
   };
 
   // Streak milestone badges
@@ -16334,13 +16348,21 @@ export default function DaySevenApp() {
           setShowShare(false);
           setShareWeekRange(null);
         }}
+        weekRange={shareWeekRange}
         stats={(() => {
           // Determine which week to use for stats
           const getWeekRange = () => {
             if (shareWeekRange?.startDate && shareWeekRange?.endDate) {
+              // Convert Date objects to strings if needed
+              const formatDateStr = (d) => {
+                if (d instanceof Date) {
+                  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                }
+                return d; // Already a string
+              };
               return {
-                startStr: shareWeekRange.startDate,
-                endStr: shareWeekRange.endDate
+                startStr: formatDateStr(shareWeekRange.startDate),
+                endStr: formatDateStr(shareWeekRange.endDate)
               };
             }
             // Default to current week (Sunday - Saturday)
@@ -16357,45 +16379,21 @@ export default function DaySevenApp() {
           const weekRange = getWeekRange();
           const weekActivitiesForShare = activities.filter(a => a.date >= weekRange.startStr && a.date <= weekRange.endStr);
 
-          return {
-          // Streak stats
-          streak: userData.streaks.master,
-          longestStreak: userData.personalRecords.longestMasterStreak || userData.streaks.master,
-          strengthStreak: userData.streaks.lifts,
-          cardioStreak: userData.streaks.cardio,
-          recoveryStreak: userData.streaks.recovery,
-          longestStrengthStreak: userData.personalRecords.longestStrengthStreak || 0,
-          longestCardioStreak: userData.personalRecords.longestCardioStreak || 0,
-          longestRecoveryStreak: userData.personalRecords.longestRecoveryStreak || 0,
-          // Last 4 weeks history (true = won, false = missed)
-          last4Weeks: (() => {
-            const weeks = [];
+          // Calculate historical streaks at the time of the selected week
+          const calculateHistoricalStreaks = () => {
             const goals = userData.goals;
-            for (let i = 0; i < 4; i++) {
-              const weekStart = new Date();
-              weekStart.setDate(weekStart.getDate() - weekStart.getDay() - (i * 7));
-              const weekEnd = new Date(weekStart);
-              weekEnd.setDate(weekStart.getDate() + 6);
-              const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
-              const weekEndStr = `${weekEnd.getFullYear()}-${String(weekEnd.getMonth() + 1).padStart(2, '0')}-${String(weekEnd.getDate()).padStart(2, '0')}`;
+            const cardioTypes = ['Running', 'Cycle', 'Sports', 'Walking', 'Hiking', 'Swimming', 'Rowing', 'Stair Climbing', 'Elliptical', 'HIIT'];
+            const recoveryTypes = ['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'];
 
-              const weekActivities = activities.filter(a => a.date >= weekStartStr && a.date <= weekEndStr);
-              const lifts = weekActivities.filter(a => a.type === 'Strength Training').length;
-              const cardio = weekActivities.filter(a => ['Running', 'Cycle', 'Sports'].includes(a.type)).length;
-              const recovery = weekActivities.filter(a => ['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(a.type)).length;
+            // Get the end of the selected week
+            const selectedWeekEnd = new Date(weekRange.endStr + 'T23:59:59');
 
-              const won = lifts >= goals.liftsPerWeek && cardio >= goals.cardioPerWeek && recovery >= goals.recoveryPerWeek;
-              weeks.push(won);
-            }
-            return weeks.reverse(); // oldest to newest
-          })(),
-          // Total weeks won (all time)
-          weeksWon: (() => {
-            const goals = userData.goals;
+            // Filter activities up to and including the selected week
+            const historicalActivities = activities.filter(a => a.date <= weekRange.endStr);
+
+            // Build a map of weeks and their activity counts
             const weekMap = {};
-
-            // Group activities by week
-            activities.forEach(a => {
+            historicalActivities.forEach(a => {
               const date = new Date(a.date + 'T12:00:00');
               const weekStart = new Date(date);
               weekStart.setDate(date.getDate() - date.getDay());
@@ -16406,8 +16404,140 @@ export default function DaySevenApp() {
               }
 
               if (a.type === 'Strength Training') weekMap[weekKey].lifts++;
-              else if (['Running', 'Cycle', 'Sports'].includes(a.type)) weekMap[weekKey].cardio++;
-              else if (['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(a.type)) weekMap[weekKey].recovery++;
+              else if (cardioTypes.includes(a.type)) weekMap[weekKey].cardio++;
+              else if (recoveryTypes.includes(a.type)) weekMap[weekKey].recovery++;
+            });
+
+            // Get sorted week keys (newest first)
+            const sortedWeeks = Object.keys(weekMap).sort().reverse();
+
+            // Calculate streaks going backwards from the selected week
+            let masterStreak = 0;
+            let strengthStreak = 0;
+            let cardioStreak = 0;
+            let recoveryStreak = 0;
+
+            // Get the week key for the selected week
+            const selectedWeekStart = new Date(weekRange.startStr + 'T12:00:00');
+            const selectedWeekKey = `${selectedWeekStart.getFullYear()}-${String(selectedWeekStart.getMonth() + 1).padStart(2, '0')}-${String(selectedWeekStart.getDate()).padStart(2, '0')}`;
+
+            // Find the index of the selected week and iterate backwards
+            let currentWeekDate = new Date(weekRange.startStr + 'T12:00:00');
+            let masterBroken = false;
+            let strengthBroken = false;
+            let cardioBroken = false;
+            let recoveryBroken = false;
+
+            // Check consecutive weeks going backwards
+            for (let i = 0; i < 200; i++) { // Check up to 200 weeks back
+              const weekKey = `${currentWeekDate.getFullYear()}-${String(currentWeekDate.getMonth() + 1).padStart(2, '0')}-${String(currentWeekDate.getDate()).padStart(2, '0')}`;
+              const weekData = weekMap[weekKey] || { lifts: 0, cardio: 0, recovery: 0 };
+
+              const liftsGoalMet = weekData.lifts >= goals.liftsPerWeek;
+              const cardioGoalMet = weekData.cardio >= goals.cardioPerWeek;
+              const recoveryGoalMet = weekData.recovery >= goals.recoveryPerWeek;
+              const allGoalsMet = liftsGoalMet && cardioGoalMet && recoveryGoalMet;
+
+              if (!masterBroken && allGoalsMet) {
+                masterStreak++;
+              } else {
+                masterBroken = true;
+              }
+
+              if (!strengthBroken && liftsGoalMet) {
+                strengthStreak++;
+              } else {
+                strengthBroken = true;
+              }
+
+              if (!cardioBroken && cardioGoalMet) {
+                cardioStreak++;
+              } else {
+                cardioBroken = true;
+              }
+
+              if (!recoveryBroken && recoveryGoalMet) {
+                recoveryStreak++;
+              } else {
+                recoveryBroken = true;
+              }
+
+              // If all streaks are broken, stop checking
+              if (masterBroken && strengthBroken && cardioBroken && recoveryBroken) {
+                break;
+              }
+
+              // Move to the previous week
+              currentWeekDate.setDate(currentWeekDate.getDate() - 7);
+            }
+
+            return { masterStreak, strengthStreak, cardioStreak, recoveryStreak };
+          };
+
+          const historicalStreaks = calculateHistoricalStreaks();
+
+          return {
+          // Streak stats (historical at time of selected week)
+          streak: historicalStreaks.masterStreak,
+          longestStreak: userData.personalRecords.longestMasterStreak || userData.streaks.master,
+          strengthStreak: historicalStreaks.strengthStreak,
+          cardioStreak: historicalStreaks.cardioStreak,
+          recoveryStreak: historicalStreaks.recoveryStreak,
+          longestStrengthStreak: userData.personalRecords.longestStrengthStreak || 0,
+          longestCardioStreak: userData.personalRecords.longestCardioStreak || 0,
+          longestRecoveryStreak: userData.personalRecords.longestRecoveryStreak || 0,
+          // Last 4 weeks history relative to selected week (true = won, false = missed)
+          last4Weeks: (() => {
+            const weeks = [];
+            const goals = userData.goals;
+            const cardioTypes = ['Running', 'Cycle', 'Sports', 'Walking', 'Hiking', 'Swimming', 'Rowing', 'Stair Climbing', 'Elliptical', 'HIIT'];
+            const recoveryTypes = ['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'];
+
+            // Use the selected week as reference instead of today
+            const selectedWeekStart = new Date(weekRange.startStr + 'T12:00:00');
+
+            for (let i = 0; i < 4; i++) {
+              const weekStart = new Date(selectedWeekStart);
+              weekStart.setDate(weekStart.getDate() - (i * 7));
+              const weekEnd = new Date(weekStart);
+              weekEnd.setDate(weekStart.getDate() + 6);
+              const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
+              const weekEndStr = `${weekEnd.getFullYear()}-${String(weekEnd.getMonth() + 1).padStart(2, '0')}-${String(weekEnd.getDate()).padStart(2, '0')}`;
+
+              const weekActivities = activities.filter(a => a.date >= weekStartStr && a.date <= weekEndStr);
+              const lifts = weekActivities.filter(a => a.type === 'Strength Training').length;
+              const cardio = weekActivities.filter(a => cardioTypes.includes(a.type)).length;
+              const recovery = weekActivities.filter(a => recoveryTypes.includes(a.type)).length;
+
+              const won = lifts >= goals.liftsPerWeek && cardio >= goals.cardioPerWeek && recovery >= goals.recoveryPerWeek;
+              weeks.push(won);
+            }
+            return weeks.reverse(); // oldest to newest
+          })(),
+          // Total weeks won (up to and including selected week)
+          weeksWon: (() => {
+            const goals = userData.goals;
+            const cardioTypes = ['Running', 'Cycle', 'Sports', 'Walking', 'Hiking', 'Swimming', 'Rowing', 'Stair Climbing', 'Elliptical', 'HIIT'];
+            const recoveryTypes = ['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'];
+            const weekMap = {};
+
+            // Only count activities up to the selected week
+            const historicalActivities = activities.filter(a => a.date <= weekRange.endStr);
+
+            // Group activities by week
+            historicalActivities.forEach(a => {
+              const date = new Date(a.date + 'T12:00:00');
+              const weekStart = new Date(date);
+              weekStart.setDate(date.getDate() - date.getDay());
+              const weekKey = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
+
+              if (!weekMap[weekKey]) {
+                weekMap[weekKey] = { lifts: 0, cardio: 0, recovery: 0 };
+              }
+
+              if (a.type === 'Strength Training') weekMap[weekKey].lifts++;
+              else if (cardioTypes.includes(a.type)) weekMap[weekKey].cardio++;
+              else if (recoveryTypes.includes(a.type)) weekMap[weekKey].recovery++;
             });
 
             // Count weeks where all goals were met
@@ -16419,7 +16549,7 @@ export default function DaySevenApp() {
           })(),
           // Weekly stats - use selected week or current week
           weeklyLifts: weekActivitiesForShare.filter(a => a.type === 'Strength Training').length,
-          weeklyCardio: weekActivitiesForShare.filter(a => ['Running', 'Cycle', 'Sports'].includes(a.type)).length,
+          weeklyCardio: weekActivitiesForShare.filter(a => ['Running', 'Cycle', 'Sports', 'Walking', 'Hiking', 'Swimming', 'Rowing', 'Stair Climbing', 'Elliptical', 'HIIT'].includes(a.type)).length,
           weeklyRecovery: weekActivitiesForShare.filter(a => ['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(a.type)).length,
           liftsGoal: userData.goals.liftsPerWeek,
           cardioGoal: userData.goals.cardioPerWeek,

@@ -14163,7 +14163,18 @@ export default function DaySevenApp() {
     // Refresh from Firestore every 5 minutes on desktop
     const refreshInterval = setInterval(loadHealthDataFromFirestore, 5 * 60 * 1000);
 
-    return () => clearInterval(refreshInterval);
+    // Also refresh when tab becomes visible (user switches back to tab)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadHealthDataFromFirestore();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(refreshInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [user?.uid]);
 
   // Update app icon badge when pending requests change

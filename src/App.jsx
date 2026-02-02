@@ -6277,7 +6277,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
         // DEBUG: Add mock workouts for testing UI (UUIDs match the pending workouts)
         const mockWorkouts = [
           {
-            healthKitUUID: 'mock-fresh-run-abc',
+            healthKitUUID: 'mock-link-run-v2',
             type: 'Running',
             subtype: 'Outdoor Run',
             appleWorkoutName: 'Outdoor Run',
@@ -6290,7 +6290,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             sourceDevice: "Felipe's Apple Watch"
           },
           {
-            healthKitUUID: 'mock-fresh-strength-xyz',
+            healthKitUUID: 'mock-link-strength-v2',
             type: 'Strength Training',
             appleWorkoutName: 'Traditional Strength Training',
             icon: '🏋️',
@@ -6301,7 +6301,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             sourceDevice: "Felipe's Apple Watch"
           },
           {
-            healthKitUUID: 'mock-fresh-walk-123',
+            healthKitUUID: 'mock-link-walk-v2',
             type: 'Walking',
             appleWorkoutName: 'Walking',
             icon: '🚶',
@@ -7723,9 +7723,10 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                         return hours * 60 + minutes;
                       };
 
-                      // Filter out dismissed workouts and sort by time (most recent first)
+                      // Filter and sort workouts by time (most recent first)
+                      // Only filter out dismissed workouts when coming from notification flow
                       const filteredAndSortedWorkouts = linkableWorkouts
-                        .filter(w => !dismissedWorkoutUUIDs.includes(w.healthKitUUID))
+                        .filter(w => isFromNotification ? !dismissedWorkoutUUIDs.includes(w.healthKitUUID) : true)
                         .sort((a, b) => parseTime(b.time) - parseTime(a.time));
 
                       // Count of other workouts (excluding linked one)
@@ -7933,19 +7934,6 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 placeholder="How did it feel?"
               />
             </div>
-
-            {/* See Other Workouts - Only when from notification and there are others */}
-            {isFromNotification && otherPendingWorkoutsCount > 0 && onSeeOtherWorkouts && (
-              <button
-                onClick={onSeeOtherWorkouts}
-                className="w-full p-3 rounded-xl text-center transition-all active:scale-98"
-                style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
-              >
-                <span className="text-gray-400 text-sm">
-                  See {otherPendingWorkoutsCount} other workout{otherPendingWorkoutsCount > 1 ? 's' : ''}
-                </span>
-              </button>
-            )}
 
             {/* Photo Upload Section */}
             <div>
@@ -14271,11 +14259,11 @@ export default function DaySevenApp() {
                !dismissedSet.has(w.healthKitUUID)
         );
 
-        // DEBUG: Add mock pending workouts for testing UI (brand new UUIDs)
+        // DEBUG: Add mock pending workouts for testing UI (UUIDs match linkable workouts)
         const mockPendingWorkouts = [
           {
-            id: 'hk_mock-fresh-run-abc',
-            healthKitUUID: 'mock-fresh-run-abc',
+            id: 'hk_mock-link-run-v2',
+            healthKitUUID: 'mock-link-run-v2',
             type: 'Running',
             subtype: 'Outdoor Run',
             appleWorkoutName: 'Outdoor Run',
@@ -14289,8 +14277,8 @@ export default function DaySevenApp() {
             sourceDevice: "Felipe's Apple Watch"
           },
           {
-            id: 'hk_mock-fresh-strength-xyz',
-            healthKitUUID: 'mock-fresh-strength-xyz',
+            id: 'hk_mock-link-strength-v2',
+            healthKitUUID: 'mock-link-strength-v2',
             type: 'Strength Training',
             appleWorkoutName: 'Traditional Strength Training',
             icon: '🏋️',
@@ -14302,8 +14290,8 @@ export default function DaySevenApp() {
             sourceDevice: "Felipe's Apple Watch"
           },
           {
-            id: 'hk_mock-fresh-walk-123',
-            healthKitUUID: 'mock-fresh-walk-123',
+            id: 'hk_mock-link-walk-v2',
+            healthKitUUID: 'mock-link-walk-v2',
             type: 'Walking',
             appleWorkoutName: 'Walking',
             icon: '🚶',

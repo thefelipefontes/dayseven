@@ -6135,10 +6135,12 @@ const SwipeableActivityItem = ({ children, onDelete, activity, onTap, onEdit }) 
 };
 
 // Add Activity Modal
-const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, defaultDate = null, userData = null, onSaveCustomActivity = null, onStartWorkout = null, hasActiveWorkout = false }) => {
+const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, defaultDate = null, userData = null, onSaveCustomActivity = null, onStartWorkout = null, hasActiveWorkout = false, otherPendingWorkoutsCount = 0, onSeeOtherWorkouts = null }) => {
   // Mode: null = initial choice, 'start' = start new workout, 'completed' = log completed (existing flow)
   const [mode, setMode] = useState(null);
   const [activityType, setActivityType] = useState(null);
+  const [isFromNotification, setIsFromNotification] = useState(false); // Track if opened from notification
+  const [isChangingActivityType, setIsChangingActivityType] = useState(false); // Track if user clicked "Change" on activity type
   const [subtype, setSubtype] = useState('');
   const [strengthType, setStrengthType] = useState(''); // Lifting, Bodyweight
   const [focusArea, setFocusArea] = useState(''); // Full Body, Upper, Lower, etc.
@@ -6210,11 +6212,13 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 
       // Check if this is a workout from the notification banner (has healthKitUUID and id starts with 'hk_')
       // Workouts from notification have id like 'hk_com.apple.health...' while saved activities have Firebase IDs
-      const isFromNotification = pendingActivity?.healthKitUUID &&
+      const fromNotification = pendingActivity?.healthKitUUID &&
         !pendingActivity?.linkedHealthKitUUID &&
         pendingActivity?.id?.startsWith('hk_');
 
-      if (isFromNotification) {
+      setIsFromNotification(fromNotification);
+
+      if (fromNotification) {
         // Pre-fill all metrics from the workout and auto-link it
         setDistance(pendingActivity?.distance?.toString() || '');
         const duration = pendingActivity?.duration || 0;
@@ -6252,6 +6256,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
     // Reset the initialization flag when modal closes
     if (!isOpen) {
       hasInitializedRef.current = false;
+      setIsChangingActivityType(false);
+      setIsFromNotification(false);
     }
   }, [isOpen, pendingActivity, defaultDate]);
 
@@ -6830,11 +6836,25 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
           </div>
         ) : !activityType ? (
           <div className="grid grid-cols-2 gap-3">
-            {/* Back to mode selection */}
-            {!pendingActivity && (
+            {/* Back to mode selection or back to pre-filled workout */}
+            {!pendingActivity ? (
               <button
                 onClick={() => {
                   setMode(null);
+                  triggerHaptic(ImpactStyle.Light);
+                }}
+                className="col-span-2 mb-2 flex items-center gap-2 text-gray-400 text-sm"
+              >
+                <span>←</span>
+                <span>Back</span>
+              </button>
+            ) : isChangingActivityType && pendingActivity?.type && (
+              <button
+                onClick={() => {
+                  // Go back to the original workout type
+                  setActivityType(pendingActivity.type);
+                  setSubtype(pendingActivity.subtype || '');
+                  setIsChangingActivityType(false);
                   triggerHaptic(ImpactStyle.Light);
                 }}
                 className="col-span-2 mb-2 flex items-center gap-2 text-gray-400 text-sm"
@@ -6847,7 +6867,10 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             {activityTypes.filter(t => t.name !== 'Other').map((type) => (
               <button
                 key={type.name}
-                onClick={() => setActivityType(type.name)}
+                onClick={() => {
+                  setActivityType(type.name);
+                  setIsChangingActivityType(false);
+                }}
                 className="p-4 rounded-xl text-left transition-all duration-150"
                 style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
                 onTouchStart={(e) => {
@@ -6888,6 +6911,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     setActivityType('Other');
                     setCustomActivityName(activityName);
                     setCustomActivityEmoji(activityEmoji);
+                    setIsChangingActivityType(false);
                   }}
                   className="p-4 rounded-xl text-left transition-all duration-150"
                   style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(0,255,148,0.2)' }}
@@ -6955,8 +6979,14 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             {/* Back button */}
             <button
               onClick={() => {
-                setActivityType(null);
-                setSubtype('');
+                if (isFromNotification && pendingActivity?.type) {
+                  // If from notification and we're changing the activity type, go back to the original workout type
+                  setActivityType(pendingActivity.type);
+                  setSubtype(pendingActivity.subtype || '');
+                } else {
+                  setActivityType(null);
+                  setSubtype('');
+                }
                 setStrengthType('');
                 setFocusArea('');
                 setCustomSport('');
@@ -6995,6 +7025,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             {/* Selected activity display with Change option */}
             <button
               onClick={() => {
+                setIsChangingActivityType(true);
                 setActivityType(null);
                 setSubtype('');
                 setStrengthType('');
@@ -7616,8 +7647,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               })()}
             </div>
 
-            {/* Link to Apple Health Workout Section */}
-            {!isFromAppleHealth && (linkableWorkouts.length > 0 || isLoadingWorkouts || linkedWorkout) && (
+            {/* Link to Apple Health Workout Section - hide when from notification (already auto-linked) */}
+            {!isFromAppleHealth && !isFromNotification && (linkableWorkouts.length > 0 || isLoadingWorkouts || linkedWorkout) && (
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">
                   Link to Apple Health Workout
@@ -7772,6 +7803,19 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               />
             </div>
 
+            {/* See Other Workouts - Only when from notification and there are others */}
+            {isFromNotification && otherPendingWorkoutsCount > 0 && onSeeOtherWorkouts && (
+              <button
+                onClick={onSeeOtherWorkouts}
+                className="w-full p-3 rounded-xl text-center transition-all active:scale-98"
+                style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
+              >
+                <span className="text-gray-400 text-sm">
+                  See {otherPendingWorkoutsCount} other workout{otherPendingWorkoutsCount > 1 ? 's' : ''}
+                </span>
+              </button>
+            )}
+
             {/* Photo Upload Section */}
             <div>
               <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Photo (optional)</label>
@@ -7858,9 +7902,90 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 };
 
 // Home Tab - Simplified
-const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {} }) => {
+// Swipeable Workout Item for workout picker (swipe left to dismiss)
+const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
+  const [swipeX, setSwipeX] = useState(0);
+  const [touchStart, setTouchStart] = useState(null);
+  const dismissThreshold = -80;
+
+  return (
+    <div className="relative overflow-hidden rounded-xl">
+      {/* Dismiss background */}
+      <div
+        className="absolute inset-0 flex items-center justify-end px-4"
+        style={{ backgroundColor: 'rgba(255,69,58,0.3)' }}
+      >
+        <span className="text-red-400 text-sm font-medium">Dismiss</span>
+      </div>
+
+      {/* Swipeable content */}
+      <div
+        className="relative w-full p-4 text-left transition-transform"
+        style={{
+          backgroundColor: 'rgba(255,255,255,0.05)',
+          border: '1px solid rgba(255,255,255,0.1)',
+          transform: `translateX(${swipeX}px)`,
+          transition: touchStart ? 'none' : 'transform 0.3s ease-out'
+        }}
+        onTouchStart={(e) => {
+          setTouchStart(e.touches[0].clientX);
+        }}
+        onTouchMove={(e) => {
+          if (touchStart === null) return;
+          const diff = e.touches[0].clientX - touchStart;
+          if (diff < 0) {
+            setSwipeX(Math.max(-120, diff));
+          }
+        }}
+        onTouchEnd={() => {
+          if (swipeX < dismissThreshold) {
+            // Dismiss the workout
+            setSwipeX(-300);
+            setTimeout(() => onDismiss(), 200);
+          } else {
+            setSwipeX(0);
+          }
+          setTouchStart(null);
+        }}
+        onClick={() => {
+          if (Math.abs(swipeX) < 10) {
+            onSelect();
+          }
+        }}
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">{workout.icon || '💪'}</span>
+          <div className="flex-1">
+            <div className="text-white font-medium">
+              {workout.appleWorkoutName || workout.subtype || workout.type}
+            </div>
+            <div className="text-xs text-gray-400 mt-0.5">
+              {workout.time} • {workout.duration} min
+              {workout.sourceDevice && ` • ${workout.sourceDevice}`}
+            </div>
+            {(workout.calories || workout.distance) && (
+              <div className="flex gap-3 mt-1.5 text-xs text-gray-500">
+                {workout.calories && <span>🔥 {workout.calories} cal</span>}
+                {workout.distance && <span>📍 {workout.distance} mi</span>}
+              </div>
+            )}
+          </div>
+          <span className="text-[#00FF94]">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [showWorkoutPicker, setShowWorkoutPicker] = useState(false);
+  const [workoutPickerDragY, setWorkoutPickerDragY] = useState(0);
+  const [workoutPickerTouchStart, setWorkoutPickerTouchStart] = useState(null);
   const [activityReactions, setActivityReactions] = useState({});
   const [activityComments, setActivityComments] = useState({});
   const [reactionDetailModal, setReactionDetailModal] = useState(null); // { activityId, reactions, selectedEmoji }
@@ -8544,12 +8669,34 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
           {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/70"
+            style={{ opacity: Math.max(0, 1 - workoutPickerDragY / 200) }}
             onClick={() => setShowWorkoutPicker(false)}
           />
           {/* Modal */}
           <div
-            className="relative w-full max-h-[70vh] rounded-t-3xl overflow-hidden"
-            style={{ backgroundColor: '#1a1a1a' }}
+            className="relative w-full max-h-[70vh] rounded-t-3xl overflow-hidden transition-transform"
+            style={{
+              backgroundColor: '#1a1a1a',
+              transform: `translateY(${workoutPickerDragY}px)`,
+              transition: workoutPickerTouchStart ? 'none' : 'transform 0.3s ease-out'
+            }}
+            onTouchStart={(e) => {
+              setWorkoutPickerTouchStart(e.touches[0].clientY);
+            }}
+            onTouchMove={(e) => {
+              if (workoutPickerTouchStart === null) return;
+              const diff = e.touches[0].clientY - workoutPickerTouchStart;
+              if (diff > 0) {
+                setWorkoutPickerDragY(diff);
+              }
+            }}
+            onTouchEnd={() => {
+              if (workoutPickerDragY > 100) {
+                setShowWorkoutPicker(false);
+              }
+              setWorkoutPickerDragY(0);
+              setWorkoutPickerTouchStart(null);
+            }}
           >
             {/* Handle */}
             <div className="flex justify-center pt-3 pb-2">
@@ -8559,45 +8706,23 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
             {/* Header */}
             <div className="px-4 pb-3 border-b border-white/10">
               <h3 className="text-lg font-semibold text-white text-center">New Workouts from Apple Health</h3>
-              <p className="text-xs text-gray-400 text-center mt-1">Select a workout to add</p>
+              <p className="text-xs text-gray-400 text-center mt-1">Tap to add, swipe left to dismiss</p>
             </div>
 
             {/* Workout List */}
             <div className="overflow-y-auto p-4 space-y-3" style={{ maxHeight: 'calc(70vh - 100px)' }}>
               {pendingSync.map((workout) => (
-                <button
+                <SwipeableWorkoutItem
                   key={workout.healthKitUUID || workout.id}
-                  onClick={() => {
+                  workout={workout}
+                  onSelect={() => {
                     setShowWorkoutPicker(false);
                     onAddActivity(workout);
                   }}
-                  className="w-full p-4 rounded-xl text-left transition-all active:scale-98"
-                  style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">{workout.icon || '💪'}</span>
-                    <div className="flex-1">
-                      <div className="text-white font-medium">
-                        {workout.appleWorkoutName || workout.subtype || workout.type}
-                      </div>
-                      <div className="text-xs text-gray-400 mt-0.5">
-                        {workout.time} • {workout.duration} min
-                        {workout.sourceDevice && ` • ${workout.sourceDevice}`}
-                      </div>
-                      {(workout.calories || workout.distance) && (
-                        <div className="flex gap-3 mt-1.5 text-xs text-gray-500">
-                          {workout.calories && <span>🔥 {workout.calories} cal</span>}
-                          {workout.distance && <span>📍 {workout.distance} mi</span>}
-                        </div>
-                      )}
-                    </div>
-                    <span className="text-[#00FF94]">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </span>
-                  </div>
-                </button>
+                  onDismiss={() => {
+                    onDismissWorkout && onDismissWorkout(workout);
+                  }}
+                />
               ))}
             </div>
 
@@ -13305,6 +13430,7 @@ export default function DaySevenApp() {
   const [prevTab, setPrevTab] = useState('home');
   const [tabDirection, setTabDirection] = useState(0); // -1 = left, 0 = none, 1 = right
   const [showAddActivity, setShowAddActivity] = useState(false);
+  const [showWorkoutPicker, setShowWorkoutPicker] = useState(false);
   const [pendingActivity, setPendingActivity] = useState(null);
   const [defaultActivityDate, setDefaultActivityDate] = useState(null);
   const [showShare, setShowShare] = useState(false);
@@ -13333,6 +13459,31 @@ export default function DaySevenApp() {
     pendingWorkouts: [], // Workouts from HealthKit not yet added to activities
     lastSynced: null
   });
+
+  // Track dismissed workout UUIDs (to not show them again)
+  const [dismissedWorkoutUUIDs, setDismissedWorkoutUUIDs] = useState(() => {
+    try {
+      const saved = localStorage.getItem('dismissedWorkoutUUIDs');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Handler to dismiss a workout from notifications
+  const handleDismissWorkout = (workout) => {
+    const uuid = workout.healthKitUUID || workout.id;
+    if (uuid) {
+      const newDismissed = [...dismissedWorkoutUUIDs, uuid];
+      setDismissedWorkoutUUIDs(newDismissed);
+      localStorage.setItem('dismissedWorkoutUUIDs', JSON.stringify(newDismissed));
+      // Also remove from pending workouts
+      setHealthKitData(prev => ({
+        ...prev,
+        pendingWorkouts: prev.pendingWorkouts.filter(w => (w.healthKitUUID || w.id) !== uuid)
+      }));
+    }
+  };
 
   // Active workout tracking (for "Start Workout" flow)
   // Shape: { type, subtype, strengthType, focusArea, startTime: ISO string, icon, ... }
@@ -13874,15 +14025,35 @@ export default function DaySevenApp() {
     try {
       const result = await syncHealthKitData();
       if (result.success) {
-        // Find workouts that aren't already in activities (by healthKitUUID)
+        // Find workouts that aren't already in activities (by healthKitUUID) and not dismissed
         const existingUUIDs = new Set(
           existingActivities
             .filter(a => a.healthKitUUID)
             .map(a => a.healthKitUUID)
         );
 
+        // Also filter out linked workouts (where activity has linkedHealthKitUUID)
+        const linkedUUIDs = new Set(
+          existingActivities
+            .filter(a => a.linkedHealthKitUUID)
+            .map(a => a.linkedHealthKitUUID)
+        );
+
+        // Get dismissed UUIDs from localStorage
+        let dismissedUUIDs = [];
+        try {
+          const saved = localStorage.getItem('dismissedWorkoutUUIDs');
+          dismissedUUIDs = saved ? JSON.parse(saved) : [];
+        } catch {
+          dismissedUUIDs = [];
+        }
+        const dismissedSet = new Set(dismissedUUIDs);
+
         const newWorkouts = result.workouts.filter(
-          w => w.healthKitUUID && !existingUUIDs.has(w.healthKitUUID)
+          w => w.healthKitUUID &&
+               !existingUUIDs.has(w.healthKitUUID) &&
+               !linkedUUIDs.has(w.healthKitUUID) &&
+               !dismissedSet.has(w.healthKitUUID)
         );
 
         setHealthKitData({
@@ -15159,6 +15330,7 @@ export default function DaySevenApp() {
                   weeklyGoalsRef={weeklyGoalsRef}
                   latestActivityRef={latestActivityRef}
                   healthKitData={healthKitData}
+                  onDismissWorkout={handleDismissWorkout}
                 />
               )}
               {activeTab === 'history' && (
@@ -15414,7 +15586,62 @@ export default function DaySevenApp() {
             }));
           }
         }}
+        otherPendingWorkoutsCount={
+          pendingActivity?.id?.startsWith('hk_')
+            ? (healthKitData.pendingWorkouts || []).filter(w => (w.healthKitUUID || w.id) !== (pendingActivity.healthKitUUID || pendingActivity.id)).length
+            : 0
+        }
+        onSeeOtherWorkouts={() => {
+          // Close modal and re-open picker for other workouts
+          setShowAddActivity(false);
+          setPendingActivity(null);
+          // Trigger a state that opens the workout picker
+          setShowWorkoutPicker(true);
+        }}
       />
+
+      {/* Workout Picker Modal (shown from "See other workouts" or when multiple pending) */}
+      {showWorkoutPicker && (healthKitData.pendingWorkouts || []).length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center">
+          <div
+            className="absolute inset-0 bg-black/70"
+            onClick={() => setShowWorkoutPicker(false)}
+          />
+          <div
+            className="relative w-full max-h-[70vh] rounded-t-3xl overflow-hidden"
+            style={{ backgroundColor: '#1a1a1a' }}
+          >
+            <div className="flex justify-center pt-3 pb-2">
+              <div className="w-10 h-1 rounded-full bg-gray-600" />
+            </div>
+            <div className="px-4 pb-3 border-b border-white/10">
+              <h3 className="text-lg font-semibold text-white text-center">Pending Workouts</h3>
+              <p className="text-xs text-gray-400 text-center mt-1">Tap to add, swipe left to dismiss</p>
+            </div>
+            <div className="overflow-y-auto p-4 space-y-3" style={{ maxHeight: 'calc(70vh - 100px)' }}>
+              {(healthKitData.pendingWorkouts || []).map((workout) => (
+                <SwipeableWorkoutItem
+                  key={workout.healthKitUUID || workout.id}
+                  workout={workout}
+                  onSelect={() => {
+                    setShowWorkoutPicker(false);
+                    handleAddActivity(workout);
+                  }}
+                  onDismiss={() => handleDismissWorkout(workout)}
+                />
+              ))}
+            </div>
+            <div className="p-4 border-t border-white/10">
+              <button
+                onClick={() => setShowWorkoutPicker(false)}
+                className="w-full py-3 rounded-xl text-gray-400 font-medium transition-all active:bg-white/5"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ChangePasswordModal
         isOpen={showChangePassword}

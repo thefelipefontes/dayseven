@@ -14104,14 +14104,19 @@ export default function DaySevenApp() {
       const minSyncInterval = 5 * 60 * 1000; // 5 minutes minimum between syncs
 
       // Check if we need to sync:
-      // 1. Steps changed by more than 100 OR
-      // 2. Calories changed by more than 50 OR
-      // 3. It's been more than 5 minutes since last sync
+      // 1. First sync ever (timestamp is 0) OR
+      // 2. Steps changed by more than 100 OR
+      // 3. Calories changed by more than 50 OR
+      // 4. It's been more than 5 minutes since last sync
+      const firstSync = lastSync.timestamp === 0;
       const stepsChanged = Math.abs((healthKitData.todaySteps || 0) - (lastSync.steps || 0)) > 100;
       const caloriesChanged = Math.abs((healthKitData.todayCalories || 0) - (lastSync.calories || 0)) > 50;
       const timeElapsed = now - lastSync.timestamp > minSyncInterval;
 
-      if ((stepsChanged || caloriesChanged || timeElapsed) && (healthKitData.todaySteps > 0 || healthKitData.todayCalories > 0)) {
+      const shouldSync = (firstSync || stepsChanged || caloriesChanged || timeElapsed) &&
+                         (healthKitData.todaySteps > 0 || healthKitData.todayCalories > 0);
+
+      if (shouldSync) {
         // Get today's date in YYYY-MM-DD format
         const today = new Date();
         const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;

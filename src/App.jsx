@@ -6135,7 +6135,7 @@ const SwipeableActivityItem = ({ children, onDelete, activity, onTap, onEdit }) 
 };
 
 // Add Activity Modal
-const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, defaultDate = null, userData = null, onSaveCustomActivity = null, onStartWorkout = null, hasActiveWorkout = false, otherPendingWorkoutsCount = 0, onSeeOtherWorkouts = null }) => {
+const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, defaultDate = null, userData = null, onSaveCustomActivity = null, onStartWorkout = null, hasActiveWorkout = false, otherPendingWorkoutsCount = 0, onSeeOtherWorkouts = null, onBackToWorkoutPicker = null, dismissedWorkoutUUIDs = [], linkedWorkoutUUIDs = [] }) => {
   // Mode: null = initial choice, 'start' = start new workout, 'completed' = log completed (existing flow)
   const [mode, setMode] = useState(null);
   const [activityType, setActivityType] = useState(null);
@@ -6174,6 +6174,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   const [linkableWorkouts, setLinkableWorkouts] = useState([]);
   const [linkedWorkout, setLinkedWorkout] = useState(null);
   const [isLoadingWorkouts, setIsLoadingWorkouts] = useState(false);
+  const [showOtherLinkableWorkouts, setShowOtherLinkableWorkouts] = useState(false);
   // Activity time (set from linked workout)
   const [activityTime, setActivityTime] = useState('');
   // Photo upload state
@@ -6247,6 +6248,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       // Reset linked workout state
       setLinkableWorkouts([]);
       setIsLoadingWorkouts(false);
+      setShowOtherLinkableWorkouts(false);
       // Reset photo state
       setActivityPhoto(null);
       setPhotoPreview(pendingActivity?.photoURL || null);
@@ -6271,7 +6273,52 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
         // Get list of already linked workout IDs from user's activities
         // For now, we'll pass an empty array - in future could track this
         const workouts = await fetchLinkableWorkouts(date, []);
-        setLinkableWorkouts(workouts);
+
+        // DEBUG: Add mock workouts for testing UI (UUIDs match the pending workouts)
+        const mockWorkouts = [
+          {
+            healthKitUUID: 'mock-fresh-run-abc',
+            type: 'Running',
+            subtype: 'Outdoor Run',
+            appleWorkoutName: 'Outdoor Run',
+            icon: '🏃',
+            time: '7:30 AM',
+            duration: 45,
+            calories: 420,
+            distance: 4.2,
+            avgHr: 155,
+            sourceDevice: "Felipe's Apple Watch"
+          },
+          {
+            healthKitUUID: 'mock-fresh-strength-xyz',
+            type: 'Strength Training',
+            appleWorkoutName: 'Traditional Strength Training',
+            icon: '🏋️',
+            time: '6:00 PM',
+            duration: 55,
+            calories: 280,
+            avgHr: 125,
+            sourceDevice: "Felipe's Apple Watch"
+          },
+          {
+            healthKitUUID: 'mock-fresh-walk-123',
+            type: 'Walking',
+            appleWorkoutName: 'Walking',
+            icon: '🚶',
+            time: '12:30 PM',
+            duration: 20,
+            calories: 95,
+            distance: 1.1,
+            avgHr: 105,
+            sourceDevice: "Felipe's Apple Watch"
+          }
+        ];
+        // Combine real workouts with mock workouts, then filter out already-linked ones
+        const allWorkouts = [...workouts, ...mockWorkouts];
+        const filteredWorkouts = allWorkouts.filter(w =>
+          !linkedWorkoutUUIDs.includes(w.healthKitUUID)
+        );
+        setLinkableWorkouts(filteredWorkouts);
       } catch (error) {
         console.error('Error fetching linkable workouts:', error);
         setLinkableWorkouts([]);
@@ -6281,7 +6328,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
     };
 
     fetchWorkouts();
-  }, [isOpen, mode, date]);
+  }, [isOpen, mode, date, linkedWorkoutUUIDs]);
 
   // Generate calendar days for date picker
   const getCalendarDays = () => {
@@ -6979,10 +7026,9 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             {/* Back button */}
             <button
               onClick={() => {
-                if (isFromNotification && pendingActivity?.type) {
-                  // If from notification and we're changing the activity type, go back to the original workout type
-                  setActivityType(pendingActivity.type);
-                  setSubtype(pendingActivity.subtype || '');
+                if (isFromNotification && onBackToWorkoutPicker) {
+                  // If from notification, go back to the workout picker modal
+                  onBackToWorkoutPicker();
                 } else {
                   setActivityType(null);
                   setSubtype('');
@@ -7019,7 +7065,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               }}
             >
               <span>←</span>
-              <span>Back to activities</span>
+              <span>{isFromNotification ? 'Back to linked activities' : 'Back to activities'}</span>
             </button>
 
             {/* Selected activity display with Change option */}
@@ -7663,91 +7709,176 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {linkableWorkouts.map((workout) => {
-                      const isLinked = linkedWorkout?.healthKitUUID === workout.healthKitUUID;
-                      return (
+                    {(() => {
+                      // Helper function to parse time strings like "7:30 AM" for sorting
+                      const parseTime = (timeStr) => {
+                        if (!timeStr) return 0;
+                        const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+                        if (!match) return 0;
+                        let hours = parseInt(match[1], 10);
+                        const minutes = parseInt(match[2], 10);
+                        const isPM = match[3].toUpperCase() === 'PM';
+                        if (isPM && hours !== 12) hours += 12;
+                        if (!isPM && hours === 12) hours = 0;
+                        return hours * 60 + minutes;
+                      };
+
+                      // Filter out dismissed workouts and sort by time (most recent first)
+                      const filteredAndSortedWorkouts = linkableWorkouts
+                        .filter(w => !dismissedWorkoutUUIDs.includes(w.healthKitUUID))
+                        .sort((a, b) => parseTime(b.time) - parseTime(a.time));
+
+                      // Count of other workouts (excluding linked one)
+                      const otherWorkoutsCount = filteredAndSortedWorkouts.filter(w => w.healthKitUUID !== linkedWorkout?.healthKitUUID).length;
+
+                      return isFromNotification && linkedWorkout && !showOtherLinkableWorkouts ? (
+                      <>
                         <div
-                          key={workout.healthKitUUID || workout.id}
-                          onClick={() => handleLinkWorkout(workout)}
-                          className={`w-full p-3 rounded-xl text-left transition-all cursor-pointer ${
-                            isLinked
-                              ? 'bg-[#00FF94]/20 border-2 border-[#00FF94]'
-                              : 'bg-white/5 border border-white/10 active:bg-white/20'
-                          }`}
+                          className="p-3 rounded-xl bg-[#00FF94]/20 border-2 border-[#00FF94] cursor-pointer transition-all"
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                              <span className="text-xl">{workout.icon || '💪'}</span>
+                              <span className="text-xl">{linkedWorkout.icon || '💪'}</span>
                               <div>
                                 <div className="text-white text-sm font-medium">
-                                  {workout.appleWorkoutName || workout.subtype || workout.type}
+                                  {linkedWorkout.appleWorkoutName || linkedWorkout.subtype || linkedWorkout.type}
                                 </div>
                                 <div className="text-xs text-gray-500">
-                                  {workout.time} • {workout.duration} min
-                                  {workout.sourceDevice && ` • ${workout.sourceDevice}`}
+                                  {linkedWorkout.time} • {linkedWorkout.duration} min
+                                  {linkedWorkout.sourceDevice && ` • ${linkedWorkout.sourceDevice}`}
                                 </div>
                               </div>
                             </div>
                             <div className="text-right">
-                              {isLinked ? (
-                                <span className="text-[#00FF94] text-xs font-medium">✓ Linked</span>
-                              ) : (
-                                <span className="text-gray-500 text-xs">Tap to link</span>
-                              )}
+                              <span className="text-[#00FF94] text-xs font-medium">✓ Linked</span>
                             </div>
                           </div>
                           {/* Show metrics preview */}
-                          {(workout.calories || workout.avgHr) && (
+                          {(linkedWorkout.calories || linkedWorkout.avgHr || linkedWorkout.distance) && (
                             <div className="flex gap-4 mt-2 text-xs text-gray-400">
-                              {workout.calories && (
-                                <span>🔥 {workout.calories} cal</span>
+                              {linkedWorkout.calories && (
+                                <span>🔥 {linkedWorkout.calories} cal</span>
                               )}
-                              {workout.avgHr && (
-                                <span>❤️ {workout.avgHr} bpm avg</span>
+                              {linkedWorkout.avgHr && (
+                                <span>❤️ {linkedWorkout.avgHr} bpm avg</span>
                               )}
-                              {workout.distance && (
-                                <span>📍 {workout.distance} mi</span>
+                              {linkedWorkout.distance && (
+                                <span>📍 {linkedWorkout.distance} mi</span>
                               )}
                             </div>
                           )}
                         </div>
-                      );
-                    })}
-                    {linkedWorkout && !linkableWorkouts.find(w => w.healthKitUUID === linkedWorkout.healthKitUUID) && (
-                      <div
-                        onClick={() => handleLinkWorkout(linkedWorkout)}
-                        className="p-3 rounded-xl bg-[#00FF94]/20 border-2 border-[#00FF94] cursor-pointer transition-all"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <span className="text-xl">{linkedWorkout.icon || '💪'}</span>
-                            <div>
-                              <div className="text-white text-sm font-medium">
-                                {linkedWorkout.appleWorkoutName || linkedWorkout.subtype || linkedWorkout.type}
+                        {/* Show "See others" button if there are other non-dismissed workouts available */}
+                        {otherWorkoutsCount > 0 && (
+                          <button
+                            onClick={() => setShowOtherLinkableWorkouts(true)}
+                            className="w-full py-2 text-center text-sm transition-all active:opacity-70"
+                            style={{ color: '#00FF94' }}
+                          >
+                            See other workouts ({otherWorkoutsCount})
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        {/* Show all linkable workouts (filtered and sorted) */}
+                        {filteredAndSortedWorkouts.map((workout) => {
+                          const isLinked = linkedWorkout?.healthKitUUID === workout.healthKitUUID;
+                          return (
+                            <div
+                              key={workout.healthKitUUID || workout.id}
+                              onClick={() => handleLinkWorkout(workout)}
+                              className={`w-full p-3 rounded-xl text-left transition-all cursor-pointer ${
+                                isLinked
+                                  ? 'bg-[#00FF94]/20 border-2 border-[#00FF94]'
+                                  : 'bg-white/5 border border-white/10 active:bg-white/20'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  <span className="text-xl">{workout.icon || '💪'}</span>
+                                  <div>
+                                    <div className="text-white text-sm font-medium">
+                                      {workout.appleWorkoutName || workout.subtype || workout.type}
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                      {workout.time} • {workout.duration} min
+                                      {workout.sourceDevice && ` • ${workout.sourceDevice}`}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  {isLinked ? (
+                                    <span className="text-[#00FF94] text-xs font-medium">✓ Linked</span>
+                                  ) : (
+                                    <span className="text-gray-500 text-xs">Tap to link</span>
+                                  )}
+                                </div>
                               </div>
-                              <div className="text-xs text-gray-500">
-                                {linkedWorkout.time} • {linkedWorkout.duration} min
-                                {linkedWorkout.sourceDevice && ` • ${linkedWorkout.sourceDevice}`}
+                              {/* Show metrics preview */}
+                              {(workout.calories || workout.avgHr) && (
+                                <div className="flex gap-4 mt-2 text-xs text-gray-400">
+                                  {workout.calories && (
+                                    <span>🔥 {workout.calories} cal</span>
+                                  )}
+                                  {workout.avgHr && (
+                                    <span>❤️ {workout.avgHr} bpm avg</span>
+                                  )}
+                                  {workout.distance && (
+                                    <span>📍 {workout.distance} mi</span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {linkedWorkout && !linkableWorkouts.find(w => w.healthKitUUID === linkedWorkout.healthKitUUID) && (
+                          <div
+                            onClick={() => handleLinkWorkout(linkedWorkout)}
+                            className="p-3 rounded-xl bg-[#00FF94]/20 border-2 border-[#00FF94] cursor-pointer transition-all"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <span className="text-xl">{linkedWorkout.icon || '💪'}</span>
+                                <div>
+                                  <div className="text-white text-sm font-medium">
+                                    {linkedWorkout.appleWorkoutName || linkedWorkout.subtype || linkedWorkout.type}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {linkedWorkout.time} • {linkedWorkout.duration} min
+                                    {linkedWorkout.sourceDevice && ` • ${linkedWorkout.sourceDevice}`}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-[#00FF94] text-xs font-medium">✓ Linked</span>
                               </div>
                             </div>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-[#00FF94] text-xs font-medium">✓ Linked</span>
-                          </div>
-                        </div>
-                        {/* Show metrics preview */}
-                        {(linkedWorkout.calories || linkedWorkout.distance) && (
-                          <div className="flex gap-4 mt-2 text-xs text-gray-400">
-                            {linkedWorkout.calories && (
-                              <span>🔥 {linkedWorkout.calories} cal</span>
-                            )}
-                            {linkedWorkout.distance && (
-                              <span>📍 {linkedWorkout.distance} mi</span>
+                            {/* Show metrics preview */}
+                            {(linkedWorkout.calories || linkedWorkout.distance) && (
+                              <div className="flex gap-4 mt-2 text-xs text-gray-400">
+                                {linkedWorkout.calories && (
+                                  <span>🔥 {linkedWorkout.calories} cal</span>
+                                )}
+                                {linkedWorkout.distance && (
+                                  <span>📍 {linkedWorkout.distance} mi</span>
+                                )}
+                              </div>
                             )}
                           </div>
                         )}
-                      </div>
-                    )}
+                        {/* Show "Show less" button when in notification flow and showing others */}
+                        {isFromNotification && showOtherLinkableWorkouts && (
+                          <button
+                            onClick={() => setShowOtherLinkableWorkouts(false)}
+                            className="w-full py-2 text-center text-sm text-gray-400 transition-all active:opacity-70"
+                          >
+                            Show less
+                          </button>
+                        )}
+                      </>
+                    );
+                    })()}
                   </div>
                 )}
               </div>
@@ -7906,87 +8037,108 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
   const [swipeX, setSwipeX] = useState(0);
   const [touchStart, setTouchStart] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const deleteButtonWidth = 80;
+  const deleteButtonWidth = 100;
   const snapThreshold = 40;
 
-  const handleDelete = () => {
+  const handleDeleteClick = (e) => {
+    e.stopPropagation();
+    triggerHaptic(ImpactStyle.Medium);
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDelete = () => {
     setShowDeleteConfirm(false);
     setSwipeX(-300);
     setTimeout(() => onDismiss(), 200);
   };
 
-  return (
-    <div className="relative overflow-hidden rounded-xl">
-      {/* Delete button background */}
-      <div
-        className="absolute right-0 top-0 bottom-0 flex items-center justify-center"
-        style={{ width: deleteButtonWidth, backgroundColor: '#FF453A' }}
-      >
-        <button
-          onClick={handleDelete}
-          className="w-full h-full flex items-center justify-center"
-        >
-          <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
-        </button>
-      </div>
+  const handleCancelDelete = () => {
+    setShowDeleteConfirm(false);
+    setSwipeX(0);
+  };
 
-      {/* Swipeable content */}
+  const showDeleteButton = swipeX < 0;
+
+  return (
+    <>
       <div
-        className="relative w-full p-4 text-left rounded-xl"
+        className="relative overflow-hidden rounded-xl"
         style={{
-          backgroundColor: 'rgba(255,255,255,0.05)',
-          border: '1px solid rgba(255,255,255,0.1)',
-          transform: `translateX(${swipeX}px)`,
-          transition: touchStart ? 'none' : 'transform 0.3s ease-out'
-        }}
-        onTouchStart={(e) => {
-          setTouchStart(e.touches[0].clientX);
-        }}
-        onTouchMove={(e) => {
-          if (touchStart === null) return;
-          const diff = e.touches[0].clientX - touchStart;
-          if (diff < 0) {
-            setSwipeX(Math.max(-deleteButtonWidth - 20, diff));
-          } else if (swipeX < 0) {
-            setSwipeX(Math.min(0, swipeX + diff));
-          }
-        }}
-        onTouchEnd={() => {
-          // Snap to open or closed position
-          if (swipeX < -snapThreshold) {
-            setSwipeX(-deleteButtonWidth);
-          } else {
-            setSwipeX(0);
-          }
-          setTouchStart(null);
-        }}
-        onClick={() => {
-          if (swipeX === 0) {
-            onSelect();
-          } else {
-            // Close the swipe if it's open
-            setSwipeX(0);
-          }
+          backgroundColor: showDeleteButton ? '#FF453A' : 'transparent'
         }}
       >
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">{workout.icon || '💪'}</span>
-          <div className="flex-1">
-            <div className="text-white font-medium">
-              {workout.appleWorkoutName || workout.subtype || workout.type}
-            </div>
-            <div className="text-xs text-gray-400 mt-0.5">
-              {workout.time} • {workout.duration} min
-              {workout.sourceDevice && ` • ${workout.sourceDevice}`}
-            </div>
-            {(workout.calories || workout.distance) && (
-              <div className="flex gap-3 mt-1.5 text-xs text-gray-500">
-                {workout.calories && <span>🔥 {workout.calories} cal</span>}
-                {workout.distance && <span>📍 {workout.distance} mi</span>}
+        {/* Delete button - only visible when swiped */}
+        {showDeleteButton && (
+          <div
+            className="absolute right-0 top-0 bottom-0 flex items-center justify-center"
+            style={{ width: deleteButtonWidth }}
+          >
+            <button
+              onClick={handleDeleteClick}
+              className="w-full h-full flex items-center justify-center"
+            >
+              <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          </div>
+        )}
+
+        {/* Swipeable content */}
+        <div
+          className="relative w-full p-4 text-left rounded-xl"
+          style={{
+            backgroundColor: '#1a1a1a',
+            border: '1px solid rgba(255,255,255,0.1)',
+            transform: `translateX(${swipeX}px)`,
+            transition: touchStart ? 'none' : 'transform 0.3s ease-out'
+          }}
+          onTouchStart={(e) => {
+            setTouchStart(e.touches[0].clientX);
+          }}
+          onTouchMove={(e) => {
+            if (touchStart === null) return;
+            const diff = e.touches[0].clientX - touchStart;
+            if (diff < 0) {
+              setSwipeX(Math.max(-deleteButtonWidth - 20, diff));
+            } else if (swipeX < 0) {
+              setSwipeX(Math.min(0, swipeX + diff));
+            }
+          }}
+          onTouchEnd={() => {
+            // Snap to open or closed position
+            if (swipeX < -snapThreshold) {
+              setSwipeX(-deleteButtonWidth);
+            } else {
+              setSwipeX(0);
+            }
+            setTouchStart(null);
+          }}
+          onClick={() => {
+            if (swipeX === 0) {
+              onSelect();
+            } else {
+              // Close the swipe if it's open
+              setSwipeX(0);
+            }
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">{workout.icon || '💪'}</span>
+            <div className="flex-1">
+              <div className="text-white font-medium">
+                {workout.appleWorkoutName || workout.subtype || workout.type}
               </div>
-            )}
+              <div className="text-xs text-gray-400 mt-0.5">
+                {workout.time} • {workout.duration} min
+                {workout.sourceDevice && ` • ${workout.sourceDevice}`}
+              </div>
+              {(workout.calories || workout.distance) && (
+                <div className="flex gap-3 mt-1.5 text-xs text-gray-500">
+                  {workout.calories && <span>🔥 {workout.calories} cal</span>}
+                  {workout.distance && <span>📍 {workout.distance} mi</span>}
+                </div>
+              )}
           </div>
           <span className="text-[#00FF94]">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -7995,23 +8147,24 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
           </span>
         </div>
       </div>
+      </div>
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" onClick={() => setShowDeleteConfirm(false)}>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" onClick={handleCancelDelete}>
           <div className="absolute inset-0 bg-black/70" />
           <div className="relative bg-zinc-900 rounded-2xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-semibold text-white mb-2">Dismiss Workout?</h3>
             <p className="text-gray-400 text-sm mb-6">This workout won't appear in notifications again.</p>
             <div className="flex gap-3">
               <button
-                onClick={() => setShowDeleteConfirm(false)}
+                onClick={handleCancelDelete}
                 className="flex-1 py-3 rounded-xl font-medium bg-zinc-800 text-white"
               >
                 Cancel
               </button>
               <button
-                onClick={handleDelete}
+                onClick={handleConfirmDelete}
                 className="flex-1 py-3 rounded-xl font-medium bg-red-500 text-white"
               >
                 Dismiss
@@ -8020,7 +8173,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 };
 
@@ -8756,7 +8909,24 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
 
             {/* Workout List */}
             <div className="overflow-y-auto p-4 space-y-3" style={{ maxHeight: 'calc(70vh - 100px)' }}>
-              {pendingSync.map((workout) => (
+              {pendingSync
+                .slice()
+                .sort((a, b) => {
+                  // Sort by time, most recent first (descending)
+                  const parseTime = (timeStr) => {
+                    if (!timeStr) return 0;
+                    const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+                    if (!match) return 0;
+                    let hours = parseInt(match[1], 10);
+                    const minutes = parseInt(match[2], 10);
+                    const isPM = match[3].toUpperCase() === 'PM';
+                    if (isPM && hours !== 12) hours += 12;
+                    if (!isPM && hours === 12) hours = 0;
+                    return hours * 60 + minutes;
+                  };
+                  return parseTime(b.time) - parseTime(a.time);
+                })
+                .map((workout) => (
                 <SwipeableWorkoutItem
                   key={workout.healthKitUUID || workout.id}
                   workout={workout}
@@ -14101,10 +14271,60 @@ export default function DaySevenApp() {
                !dismissedSet.has(w.healthKitUUID)
         );
 
+        // DEBUG: Add mock pending workouts for testing UI (brand new UUIDs)
+        const mockPendingWorkouts = [
+          {
+            id: 'hk_mock-fresh-run-abc',
+            healthKitUUID: 'mock-fresh-run-abc',
+            type: 'Running',
+            subtype: 'Outdoor Run',
+            appleWorkoutName: 'Outdoor Run',
+            icon: '🏃',
+            date: new Date().toISOString().split('T')[0],
+            time: '7:30 AM',
+            duration: 45,
+            calories: 420,
+            distance: 4.2,
+            avgHr: 155,
+            sourceDevice: "Felipe's Apple Watch"
+          },
+          {
+            id: 'hk_mock-fresh-strength-xyz',
+            healthKitUUID: 'mock-fresh-strength-xyz',
+            type: 'Strength Training',
+            appleWorkoutName: 'Traditional Strength Training',
+            icon: '🏋️',
+            date: new Date().toISOString().split('T')[0],
+            time: '6:00 PM',
+            duration: 55,
+            calories: 280,
+            avgHr: 125,
+            sourceDevice: "Felipe's Apple Watch"
+          },
+          {
+            id: 'hk_mock-fresh-walk-123',
+            healthKitUUID: 'mock-fresh-walk-123',
+            type: 'Walking',
+            appleWorkoutName: 'Walking',
+            icon: '🚶',
+            date: new Date().toISOString().split('T')[0],
+            time: '12:30 PM',
+            duration: 20,
+            calories: 95,
+            distance: 1.1,
+            avgHr: 105,
+            sourceDevice: "Felipe's Apple Watch"
+          }
+        ].filter(m =>
+          !dismissedSet.has(m.healthKitUUID) &&
+          !linkedUUIDs.has(m.healthKitUUID) &&
+          !existingUUIDs.has(m.healthKitUUID)
+        );
+
         setHealthKitData({
           todaySteps: result.todaySteps || 0,
           todayCalories: result.todayCalories || 0,
-          pendingWorkouts: newWorkouts,
+          pendingWorkouts: [...newWorkouts, ...mockPendingWorkouts],
           lastSynced: new Date().toISOString()
         });
       }
@@ -14680,11 +14900,12 @@ export default function DaySevenApp() {
     
     setActivities(updatedActivities);
 
-    // If this was a HealthKit workout, remove it from pending list
-    if (activityData.healthKitUUID) {
+    // If this was a HealthKit workout or linked to one, remove it from pending list
+    const workoutUUIDToRemove = activityData.healthKitUUID || activityData.linkedHealthKitUUID;
+    if (workoutUUIDToRemove) {
       setHealthKitData(prev => ({
         ...prev,
-        pendingWorkouts: prev.pendingWorkouts.filter(w => w.healthKitUUID !== activityData.healthKitUUID)
+        pendingWorkouts: prev.pendingWorkouts.filter(w => w.healthKitUUID !== workoutUUIDToRemove)
       }));
     }
 
@@ -15643,6 +15864,14 @@ export default function DaySevenApp() {
           // Trigger a state that opens the workout picker
           setShowWorkoutPicker(true);
         }}
+        onBackToWorkoutPicker={() => {
+          // Close modal and go back to the workout picker
+          setShowAddActivity(false);
+          setPendingActivity(null);
+          setShowWorkoutPicker(true);
+        }}
+        dismissedWorkoutUUIDs={dismissedWorkoutUUIDs}
+        linkedWorkoutUUIDs={activities.filter(a => a.linkedHealthKitUUID).map(a => a.linkedHealthKitUUID)}
       />
 
       {/* Workout Picker Modal (shown from "See other workouts" or when multiple pending) */}
@@ -15664,7 +15893,25 @@ export default function DaySevenApp() {
               <p className="text-xs text-gray-400 text-center mt-1">Tap to add, swipe left to dismiss</p>
             </div>
             <div className="overflow-y-auto p-4 space-y-3" style={{ maxHeight: 'calc(70vh - 100px)' }}>
-              {(healthKitData.pendingWorkouts || []).map((workout) => (
+              {(healthKitData.pendingWorkouts || [])
+                .slice()
+                .sort((a, b) => {
+                  // Sort by time, most recent first (descending)
+                  // Parse time strings like "7:30 AM" or "6:00 PM"
+                  const parseTime = (timeStr) => {
+                    if (!timeStr) return 0;
+                    const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+                    if (!match) return 0;
+                    let hours = parseInt(match[1], 10);
+                    const minutes = parseInt(match[2], 10);
+                    const isPM = match[3].toUpperCase() === 'PM';
+                    if (isPM && hours !== 12) hours += 12;
+                    if (!isPM && hours === 12) hours = 0;
+                    return hours * 60 + minutes;
+                  };
+                  return parseTime(b.time) - parseTime(a.time);
+                })
+                .map((workout) => (
                 <SwipeableWorkoutItem
                   key={workout.healthKitUUID || workout.id}
                   workout={workout}

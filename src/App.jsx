@@ -6274,49 +6274,10 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
         // For now, we'll pass an empty array - in future could track this
         const workouts = await fetchLinkableWorkouts(date, []);
 
-        // DEBUG: Add mock workouts for testing UI (UUIDs match the pending workouts)
-        const mockWorkouts = [
-          {
-            healthKitUUID: 'mock-link-run-v2',
-            type: 'Running',
-            subtype: 'Outdoor Run',
-            appleWorkoutName: 'Outdoor Run',
-            icon: '🏃',
-            time: '7:30 AM',
-            duration: 45,
-            calories: 420,
-            distance: 4.2,
-            avgHr: 155,
-            sourceDevice: "Felipe's Apple Watch"
-          },
-          {
-            healthKitUUID: 'mock-link-strength-v2',
-            type: 'Strength Training',
-            appleWorkoutName: 'Traditional Strength Training',
-            icon: '🏋️',
-            time: '6:00 PM',
-            duration: 55,
-            calories: 280,
-            avgHr: 125,
-            sourceDevice: "Felipe's Apple Watch"
-          },
-          {
-            healthKitUUID: 'mock-link-walk-v2',
-            type: 'Walking',
-            appleWorkoutName: 'Walking',
-            icon: '🚶',
-            time: '12:30 PM',
-            duration: 20,
-            calories: 95,
-            distance: 1.1,
-            avgHr: 105,
-            sourceDevice: "Felipe's Apple Watch"
-          }
-        ];
-        // Combine real workouts with mock workouts, then filter out already-linked ones
-        const allWorkouts = [...workouts, ...mockWorkouts];
-        const filteredWorkouts = allWorkouts.filter(w =>
-          !linkedWorkoutUUIDs.includes(w.healthKitUUID)
+        // Filter out already-linked and dismissed workouts
+        const filteredWorkouts = workouts.filter(w =>
+          !linkedWorkoutUUIDs.includes(w.healthKitUUID) &&
+          !dismissedWorkoutUUIDs.includes(w.healthKitUUID)
         );
         setLinkableWorkouts(filteredWorkouts);
       } catch (error) {
@@ -6328,7 +6289,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
     };
 
     fetchWorkouts();
-  }, [isOpen, mode, date, linkedWorkoutUUIDs]);
+  }, [isOpen, mode, date, linkedWorkoutUUIDs, dismissedWorkoutUUIDs]);
 
   // Generate calendar days for date picker
   const getCalendarDays = () => {
@@ -7724,9 +7685,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                       };
 
                       // Filter and sort workouts by time (most recent first)
-                      // Only filter out dismissed workouts when coming from notification flow
+                      // Dismissed workouts are already filtered at fetch time, just sort here
                       const filteredAndSortedWorkouts = linkableWorkouts
-                        .filter(w => isFromNotification ? !dismissedWorkoutUUIDs.includes(w.healthKitUUID) : true)
                         .sort((a, b) => parseTime(b.time) - parseTime(a.time));
 
                       // Count of other workouts (excluding linked one)
@@ -14252,67 +14212,18 @@ export default function DaySevenApp() {
         }
         const dismissedSet = new Set(dismissedUUIDs);
 
+        // Filter workouts - only exclude already saved/linked activities
+        // Dismissed workouts are filtered at render time for notification banner only
         const newWorkouts = result.workouts.filter(
           w => w.healthKitUUID &&
                !existingUUIDs.has(w.healthKitUUID) &&
-               !linkedUUIDs.has(w.healthKitUUID) &&
-               !dismissedSet.has(w.healthKitUUID)
-        );
-
-        // DEBUG: Add mock pending workouts for testing UI (UUIDs match linkable workouts)
-        const mockPendingWorkouts = [
-          {
-            id: 'hk_mock-link-run-v2',
-            healthKitUUID: 'mock-link-run-v2',
-            type: 'Running',
-            subtype: 'Outdoor Run',
-            appleWorkoutName: 'Outdoor Run',
-            icon: '🏃',
-            date: new Date().toISOString().split('T')[0],
-            time: '7:30 AM',
-            duration: 45,
-            calories: 420,
-            distance: 4.2,
-            avgHr: 155,
-            sourceDevice: "Felipe's Apple Watch"
-          },
-          {
-            id: 'hk_mock-link-strength-v2',
-            healthKitUUID: 'mock-link-strength-v2',
-            type: 'Strength Training',
-            appleWorkoutName: 'Traditional Strength Training',
-            icon: '🏋️',
-            date: new Date().toISOString().split('T')[0],
-            time: '6:00 PM',
-            duration: 55,
-            calories: 280,
-            avgHr: 125,
-            sourceDevice: "Felipe's Apple Watch"
-          },
-          {
-            id: 'hk_mock-link-walk-v2',
-            healthKitUUID: 'mock-link-walk-v2',
-            type: 'Walking',
-            appleWorkoutName: 'Walking',
-            icon: '🚶',
-            date: new Date().toISOString().split('T')[0],
-            time: '12:30 PM',
-            duration: 20,
-            calories: 95,
-            distance: 1.1,
-            avgHr: 105,
-            sourceDevice: "Felipe's Apple Watch"
-          }
-        ].filter(m =>
-          !dismissedSet.has(m.healthKitUUID) &&
-          !linkedUUIDs.has(m.healthKitUUID) &&
-          !existingUUIDs.has(m.healthKitUUID)
+               !linkedUUIDs.has(w.healthKitUUID)
         );
 
         setHealthKitData({
           todaySteps: result.todaySteps || 0,
           todayCalories: result.todayCalories || 0,
-          pendingWorkouts: [...newWorkouts, ...mockPendingWorkouts],
+          pendingWorkouts: newWorkouts,
           lastSynced: new Date().toISOString()
         });
       }
@@ -14858,11 +14769,12 @@ export default function DaySevenApp() {
       setCalendarData(updatedCalendar);
     } else {
       // Create new activity with ID and timestamp
+      // Use the time from activityData (from linked workout) if available, otherwise use current time
       newActivity = {
         ...activityData,
         photoURL,
         id: activityId,
-        time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+        time: activityData.time || new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
       };
 
       // Add to activities list
@@ -15566,7 +15478,7 @@ export default function DaySevenApp() {
               {activeTab === 'home' && (
                 <HomeTab
                   onAddActivity={handleAddActivity}
-                  pendingSync={healthKitData.pendingWorkouts || []}
+                  pendingSync={(healthKitData.pendingWorkouts || []).filter(w => !dismissedWorkoutUUIDs.includes(w.healthKitUUID))}
                   activities={activities}
                   weeklyProgress={weeklyProgress}
                   userData={userData}
@@ -15859,11 +15771,14 @@ export default function DaySevenApp() {
           setShowWorkoutPicker(true);
         }}
         dismissedWorkoutUUIDs={dismissedWorkoutUUIDs}
-        linkedWorkoutUUIDs={activities.filter(a => a.linkedHealthKitUUID).map(a => a.linkedHealthKitUUID)}
+        linkedWorkoutUUIDs={[
+          ...activities.filter(a => a.linkedHealthKitUUID).map(a => a.linkedHealthKitUUID),
+          ...activities.filter(a => a.healthKitUUID).map(a => a.healthKitUUID)
+        ]}
       />
 
       {/* Workout Picker Modal (shown from "See other workouts" or when multiple pending) */}
-      {showWorkoutPicker && (healthKitData.pendingWorkouts || []).length > 0 && (
+      {showWorkoutPicker && (healthKitData.pendingWorkouts || []).filter(w => !dismissedWorkoutUUIDs.includes(w.healthKitUUID)).length > 0 && (
         <div className="fixed inset-0 z-50 flex items-end justify-center">
           <div
             className="absolute inset-0 bg-black/70"
@@ -15882,6 +15797,7 @@ export default function DaySevenApp() {
             </div>
             <div className="overflow-y-auto p-4 space-y-3" style={{ maxHeight: 'calc(70vh - 100px)' }}>
               {(healthKitData.pendingWorkouts || [])
+                .filter(w => !dismissedWorkoutUUIDs.includes(w.healthKitUUID))
                 .slice()
                 .sort((a, b) => {
                   // Sort by time, most recent first (descending)

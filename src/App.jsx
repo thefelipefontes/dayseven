@@ -14704,8 +14704,8 @@ export default function DaySevenApp() {
     // Initial sync
     syncHealthKit(activities);
 
-    // Refresh steps and calories every 5 minutes (these update frequently)
-    const refreshInterval = setInterval(async () => {
+    // Function to refresh steps and calories from HealthKit
+    const refreshHealthKitData = async () => {
       try {
         const [steps, calories] = await Promise.all([
           fetchTodaySteps(),
@@ -14721,9 +14721,23 @@ export default function DaySevenApp() {
       } catch (e) {
         // Silently fail
       }
-    }, 5 * 60 * 1000); // 5 minutes
+    };
 
-    return () => clearInterval(refreshInterval);
+    // Refresh steps and calories every 5 minutes (these update frequently)
+    const refreshInterval = setInterval(refreshHealthKitData, 5 * 60 * 1000); // 5 minutes
+
+    // Also refresh when app comes back to foreground
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshHealthKitData();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(refreshInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [user?.uid, syncHealthKit]);
 
   // Pull-to-refresh hook (enabled on home tab and feed tab, but not on leaderboard view)

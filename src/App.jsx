@@ -665,6 +665,7 @@ const ActivityIcon = ({ type, size = 20, sportEmoji, customEmoji }) => {
   const icons = {
     'Strength Training': '🏋️',
     'Running': '🏃',
+    'Walking': '🚶',
     'Cold Plunge': '🧊',
     'Sauna': '🔥',
     'Yoga': '🧘',
@@ -3057,7 +3058,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
     if (!activities || activities.length === 0) return null;
 
     // Define workout vs recovery types
-    const workoutTypes = ['Strength Training', 'Running', 'Cycle', 'Sports', 'Other'];
+    const workoutTypes = ['Strength Training', 'Running', 'Cycle', 'Walking', 'Sports', 'Other'];
     const recoveryTypes = ['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'];
 
     // Count workouts (strength + cardio)
@@ -3121,6 +3122,7 @@ const ShareModal = ({ isOpen, onClose, stats }) => {
       'Strength Training': '🏋️',
       'Running': '🏃',
       'Cycle': '🚴',
+      'Walking': '🚶',
       'Sports': '🏀',
       'Cold Plunge': '🧊',
       'Sauna': '🔥',
@@ -4359,7 +4361,7 @@ const DeleteAccountModal = ({ isOpen, onClose, user, userProfile, onDeleteComple
 };
 
 // Week Stats Modal
-const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity, onSelectActivity, onShare }) => {
+const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity, onSelectActivity, onShare, userData }) => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   
@@ -4400,7 +4402,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
     a.type === 'Walking' && !a.countToward
   ) || [];
 
-  const goals = initialUserData.goals;
+  const goals = userData?.goals || initialUserData.goals;
   const liftsGoalMet = (weekData?.lifts || 0) >= goals.liftsPerWeek;
   const cardioGoalMet = (weekData?.cardio || 0) >= goals.cardioPerWeek;
   const recoveryGoalMet = (weekData?.recovery || 0) >= goals.recoveryPerWeek;
@@ -4516,7 +4518,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
               <div className="text-[10px] text-gray-500 mt-1">~{Math.round((weekData?.calories || 0) / 7).toLocaleString()}/day avg</div>
             </div>
             <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              <div className="text-lg font-black">{weekData?.miles || 0} mi</div>
+              <div className="text-lg font-black">{(weekData?.miles || 0).toFixed(2)} mi</div>
               <div className="text-[10px] text-gray-400">Distance Traveled</div>
             </div>
             <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
@@ -4598,7 +4600,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
           <div className="mb-4">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-gray-300">🏋️ Strength</span>
+                <span className="text-xs font-medium text-gray-300">🏋️ Strength ({lifts.length})</span>
               </div>
               {weekData?.liftBreakdown && (
                 <div className="flex gap-1">
@@ -4646,7 +4648,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
           <div className="mb-4">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-gray-300">🏃 Cardio</span>
+                <span className="text-xs font-medium text-gray-300">🏃 Cardio ({cardioActivities.length})</span>
               </div>
               {weekData?.cardioBreakdown && (
                 <div className="flex gap-1">
@@ -4694,7 +4696,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
           <div className="mb-6">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-gray-300">🧊 Recovery</span>
+                <span className="text-xs font-medium text-gray-300">🧊 Recovery ({recoveryActivities.length})</span>
               </div>
               {weekData?.recoveryBreakdown && (
                 <div className="flex gap-1 flex-wrap justify-end">
@@ -11093,7 +11095,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
                   <div className="text-[10px] mt-1 opacity-0">-</div>
                 </div>
                 <div>
-                  <div className="text-lg font-black">{compareWeek === 'average' ? weeklyStats['average']?.miles || 0 : weeklyStats['week-2']?.miles || 0}</div>
+                  <div className="text-lg font-black">{(compareWeek === 'average' ? weeklyStats['average']?.miles || 0 : weeklyStats['week-2']?.miles || 0).toFixed(1)}</div>
                   <div className="text-[10px] text-gray-400 whitespace-nowrap">📍 Miles</div>
                   <div className="text-[10px] mt-1 opacity-0">-</div>
                 </div>
@@ -12723,6 +12725,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, userData, onA
         weekLabel={selectedWeek?.label || ''}
         onDeleteActivity={onDeleteActivity}
         onSelectActivity={(activity) => setSelectedDayActivity(activity)}
+        userData={userData}
       />
 
       {/* Activity Detail Modal for calendar day view */}
@@ -13946,6 +13949,22 @@ export default function DaySevenApp() {
     todayCalories: 0,
     pendingWorkouts: [], // Workouts from HealthKit not yet added to activities
     lastSynced: null
+  });
+
+  // Track daily goals celebrated (resets each day)
+  const [dailyGoalsCelebrated, setDailyGoalsCelebrated] = useState(() => {
+    try {
+      const saved = localStorage.getItem('dailyGoalsCelebrated');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Check if it's from today
+        const today = new Date().toISOString().split('T')[0];
+        if (parsed.date === today) {
+          return parsed;
+        }
+      }
+    } catch {}
+    return { date: new Date().toISOString().split('T')[0], steps: false, calories: false };
   });
 
   // Track dismissed workout UUIDs (to not show them again)
@@ -15692,6 +15711,41 @@ export default function DaySevenApp() {
 
     // console.log('Deleted activity:', activityId, 'Records recalculated');
   };
+
+  // Check for daily steps/calories goal completion and celebrate
+  useEffect(() => {
+    if (!userData?.goals) return;
+
+    const stepsGoal = userData.goals.stepsPerDay || 10000;
+    const caloriesGoal = userData.goals.caloriesPerDay || 500;
+    const today = new Date().toISOString().split('T')[0];
+
+    // Reset if it's a new day
+    if (dailyGoalsCelebrated.date !== today) {
+      setDailyGoalsCelebrated({ date: today, steps: false, calories: false });
+      localStorage.setItem('dailyGoalsCelebrated', JSON.stringify({ date: today, steps: false, calories: false }));
+      return;
+    }
+
+    // Check steps goal
+    if (!dailyGoalsCelebrated.steps && healthKitData.todaySteps >= stepsGoal && healthKitData.todaySteps > 0) {
+      setCelebrationMessage('Steps goal hit! 👟');
+      setShowCelebration(true);
+      triggerHaptic(ImpactStyle.Medium);
+      const updated = { ...dailyGoalsCelebrated, steps: true };
+      setDailyGoalsCelebrated(updated);
+      localStorage.setItem('dailyGoalsCelebrated', JSON.stringify(updated));
+    }
+    // Check calories goal (only if steps celebration isn't showing)
+    else if (!dailyGoalsCelebrated.calories && healthKitData.todayCalories >= caloriesGoal && healthKitData.todayCalories > 0 && !showCelebration) {
+      setCelebrationMessage('Calories goal hit! 🔥');
+      setShowCelebration(true);
+      triggerHaptic(ImpactStyle.Medium);
+      const updated = { ...dailyGoalsCelebrated, calories: true };
+      setDailyGoalsCelebrated(updated);
+      localStorage.setItem('dailyGoalsCelebrated', JSON.stringify(updated));
+    }
+  }, [healthKitData.todaySteps, healthKitData.todayCalories, userData?.goals, dailyGoalsCelebrated, showCelebration]);
 
   // Show loading spinner while checking auth
   if (authLoading) {

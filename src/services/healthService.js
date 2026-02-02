@@ -643,6 +643,10 @@ export async function fetchWorkoutMetricsForTimeRange(startTime, endTime) {
 }
 
 // Save a workout to HealthKit
+// Note: We intentionally do NOT write calories for manually logged workouts.
+// If users have a tracker (Apple Watch, Whoop, etc.), those devices already record
+// active calories to HealthKit. Writing manually entered calories would cause
+// double-counting when we read back the daily total from HealthKit.
 export async function saveWorkoutToHealthKit(activity) {
   if (!Capacitor.isNativePlatform()) {
     console.log('Not on native platform, skipping HealthKit write');
@@ -667,18 +671,16 @@ export async function saveWorkoutToHealthKit(activity) {
     // Calculate dates
     const { startDate, endDate } = calculateWorkoutDates(activity);
 
-    // Build workout data
+    // Build workout data - only include type and dates, NOT calories
+    // Calories are tracked by the user's devices (Apple Watch, Whoop, etc.)
+    // and writing them here would cause double-counting
     const workoutData = {
       activityType,
       startDate,
       endDate,
     };
 
-    // Add optional data if available
-    if (activity.calories && activity.calories > 0) {
-      workoutData.calories = activity.calories;
-    }
-
+    // Add distance if available (this doesn't cause double-counting issues)
     if (activity.distance && activity.distance > 0) {
       // Convert miles to meters (HealthKit uses meters)
       workoutData.distance = activity.distance * 1609.34;
@@ -725,6 +727,8 @@ export async function startLiveWorkout(activityType) {
 
 // End a live workout session - saves the workout to HealthKit with all collected metrics
 // Returns the final metrics and workout UUID
+// Note: We do NOT write calories to HealthKit here - they're already tracked by the user's
+// Apple Watch/device during the workout. Writing them would cause double-counting.
 export async function endLiveWorkout(options = {}) {
   if (!Capacitor.isNativePlatform()) {
     return { success: false, reason: 'not_native' };
@@ -732,8 +736,7 @@ export async function endLiveWorkout(options = {}) {
 
   try {
     const params = {};
-    // Allow user to override/provide metrics
-    if (options.calories) params.calories = options.calories;
+    // Only pass distance - calories are already in HealthKit from the user's device
     if (options.distance) params.distance = options.distance * 1609.34; // Convert miles to meters
 
     const result = await HealthKitWriter.endLiveWorkout(params);
@@ -742,7 +745,7 @@ export async function endLiveWorkout(options = {}) {
       success: true,
       workoutUUID: result.workoutUUID,
       duration: result.duration,
-      calories: result.calories,
+      calories: result.calories, // This is read from HealthKit, not written
       avgHr: result.avgHr,
       maxHr: result.maxHr,
       sampleCount: result.sampleCount

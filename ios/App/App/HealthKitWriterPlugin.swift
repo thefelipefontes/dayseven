@@ -202,9 +202,11 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         // Stop observer queries
         stopObserverQueries()
 
-        // Optional: get user-provided metrics
-        let userCalories = call.getDouble("calories")
+        // Optional: get user-provided distance (we don't write calories to avoid double-counting)
         let userDistance = call.getDouble("distance") // in meters
+
+        // Store the accumulated calories for reporting (but we won't write them)
+        let finalCalories = self.accumulatedCalories
 
         // End the workout collection
         builder.endCollection(withEnd: endDate) { [weak self] success, error in
@@ -218,24 +220,12 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
 
             // Add samples before finishing
+            // NOTE: We intentionally do NOT write calories here to avoid double-counting.
+            // The user's Apple Watch/device has already written calorie samples to HealthKit
+            // during the workout. Writing them again would duplicate the values.
             var samples: [HKSample] = []
 
-            // Use user-provided calories or accumulated calories
-            let finalCalories = userCalories ?? self.accumulatedCalories
-            if finalCalories > 0 {
-                if let energyType = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned) {
-                    let energyQuantity = HKQuantity(unit: .kilocalorie(), doubleValue: finalCalories)
-                    let energySample = HKQuantitySample(
-                        type: energyType,
-                        quantity: energyQuantity,
-                        start: startDate,
-                        end: endDate
-                    )
-                    samples.append(energySample)
-                }
-            }
-
-            // Add distance if provided
+            // Add distance if provided (this doesn't cause double-counting issues)
             if let distance = userDistance, distance > 0 {
                 if let distanceType = HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning) {
                     let distanceQuantity = HKQuantity(unit: .meter(), doubleValue: distance)
@@ -249,17 +239,14 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
             }
 
-            // Add heart rate samples collected during the workout
-            if !self.heartRateHKSamples.isEmpty {
-                samples.append(contentsOf: self.heartRateHKSamples)
-                print("HealthKitWriter: Adding \(self.heartRateHKSamples.count) heart rate samples to workout")
-            }
+            // NOTE: We also don't add heart rate samples here - they're already in HealthKit
+            // from the Apple Watch. Adding them again would create duplicates.
 
             let finishWorkout = { [weak self] in
                 guard let self = self else { return }
 
                 builder.finishWorkout { workout, error in
-                    // Calculate final metrics
+                    // Calculate final metrics for reporting back to the app
                     let avgHr = self.heartRateSamples.isEmpty ? 0 : self.heartRateSamples.reduce(0, +) / Double(self.heartRateSamples.count)
                     let maxHr = self.heartRateSamples.max() ?? 0
                     let duration = endDate.timeIntervalSince(startDate) / 60.0 // in minutes

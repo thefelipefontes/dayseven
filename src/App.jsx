@@ -7647,8 +7647,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               })()}
             </div>
 
-            {/* Link to Apple Health Workout Section - hide when from notification (already auto-linked) */}
-            {!isFromAppleHealth && !isFromNotification && (linkableWorkouts.length > 0 || isLoadingWorkouts || linkedWorkout) && (
+            {/* Link to Apple Health Workout Section */}
+            {!isFromAppleHealth && (linkableWorkouts.length > 0 || isLoadingWorkouts || linkedWorkout) && (
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">
                   Link to Apple Health Workout
@@ -7901,26 +7901,40 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   );
 };
 
-// Home Tab - Simplified
-// Swipeable Workout Item for workout picker (swipe left to dismiss)
+// Swipeable Workout Item for workout picker (swipe left to delete, like activity items)
 const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
   const [swipeX, setSwipeX] = useState(0);
   const [touchStart, setTouchStart] = useState(null);
-  const dismissThreshold = -80;
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const deleteButtonWidth = 80;
+  const snapThreshold = 40;
+
+  const handleDelete = () => {
+    setShowDeleteConfirm(false);
+    setSwipeX(-300);
+    setTimeout(() => onDismiss(), 200);
+  };
 
   return (
     <div className="relative overflow-hidden rounded-xl">
-      {/* Dismiss background */}
+      {/* Delete button background */}
       <div
-        className="absolute inset-0 flex items-center justify-end px-4"
-        style={{ backgroundColor: 'rgba(255,69,58,0.3)' }}
+        className="absolute right-0 top-0 bottom-0 flex items-center justify-center"
+        style={{ width: deleteButtonWidth, backgroundColor: '#FF453A' }}
       >
-        <span className="text-red-400 text-sm font-medium">Dismiss</span>
+        <button
+          onClick={handleDelete}
+          className="w-full h-full flex items-center justify-center"
+        >
+          <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
       </div>
 
       {/* Swipeable content */}
       <div
-        className="relative w-full p-4 text-left transition-transform"
+        className="relative w-full p-4 text-left rounded-xl"
         style={{
           backgroundColor: 'rgba(255,255,255,0.05)',
           border: '1px solid rgba(255,255,255,0.1)',
@@ -7934,22 +7948,26 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
           if (touchStart === null) return;
           const diff = e.touches[0].clientX - touchStart;
           if (diff < 0) {
-            setSwipeX(Math.max(-120, diff));
+            setSwipeX(Math.max(-deleteButtonWidth - 20, diff));
+          } else if (swipeX < 0) {
+            setSwipeX(Math.min(0, swipeX + diff));
           }
         }}
         onTouchEnd={() => {
-          if (swipeX < dismissThreshold) {
-            // Dismiss the workout
-            setSwipeX(-300);
-            setTimeout(() => onDismiss(), 200);
+          // Snap to open or closed position
+          if (swipeX < -snapThreshold) {
+            setSwipeX(-deleteButtonWidth);
           } else {
             setSwipeX(0);
           }
           setTouchStart(null);
         }}
         onClick={() => {
-          if (Math.abs(swipeX) < 10) {
+          if (swipeX === 0) {
             onSelect();
+          } else {
+            // Close the swipe if it's open
+            setSwipeX(0);
           }
         }}
       >
@@ -7977,9 +7995,36 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
           </span>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" onClick={() => setShowDeleteConfirm(false)}>
+          <div className="absolute inset-0 bg-black/70" />
+          <div className="relative bg-zinc-900 rounded-2xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-white mb-2">Dismiss Workout?</h3>
+            <p className="text-gray-400 text-sm mb-6">This workout won't appear in notifications again.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 py-3 rounded-xl font-medium bg-zinc-800 text-white"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                className="flex-1 py-3 rounded-xl font-medium bg-red-500 text-white"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
+// Home Tab - Simplified
 
 const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);

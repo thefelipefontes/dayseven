@@ -2418,9 +2418,42 @@ const Toast = ({ show, message, onDismiss, onTap, type = 'record' }) => {
 };
 
 // Celebration Animation Component
-const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!" }) => {
+const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!", type = "weekly" }) => {
   const [isVisible, setIsVisible] = useState(false);
   const [isFadingOut, setIsFadingOut] = useState(false);
+
+  // Different styles based on celebration type
+  const isDaily = type === 'daily-steps' || type === 'daily-calories';
+  const colorConfig = {
+    'weekly': {
+      primary: '#00FF94',
+      bgGradient: 'radial-gradient(circle at center, rgba(0,255,148,0.15) 0%, transparent 70%)',
+      ringColor1: 'rgba(0,255,148,0.3)',
+      ringColor2: 'rgba(0,255,148,0.2)',
+      emoji: '🎉',
+      confettiColors: ['#00FF94', '#00D1FF', '#FF9500', '#BF5AF2', '#FFD700', '#FF453A'],
+      subtext: 'Keep pushing!'
+    },
+    'daily-steps': {
+      primary: '#00D1FF',
+      bgGradient: 'radial-gradient(circle at center, rgba(0,209,255,0.2) 0%, transparent 70%)',
+      ringColor1: 'rgba(0,209,255,0.3)',
+      ringColor2: 'rgba(0,209,255,0.2)',
+      emoji: '👟',
+      confettiColors: ['#00D1FF', '#00FF94', '#87CEEB', '#4FC3F7', '#29B6F6', '#03A9F4'],
+      subtext: 'Way to move!'
+    },
+    'daily-calories': {
+      primary: '#FF9500',
+      bgGradient: 'radial-gradient(circle at center, rgba(255,149,0,0.2) 0%, transparent 70%)',
+      ringColor1: 'rgba(255,149,0,0.3)',
+      ringColor2: 'rgba(255,149,0,0.2)',
+      emoji: '🔥',
+      confettiColors: ['#FF9500', '#FFD700', '#FF6B00', '#FFAB00', '#FFC107', '#FF453A'],
+      subtext: 'Crushing it!'
+    }
+  };
+  const config = colorConfig[type] || colorConfig['weekly'];
 
   useEffect(() => {
     if (show) {
@@ -2457,61 +2490,65 @@ const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!" }) =>
       }}
     >
       {/* Background pulse */}
-      <div 
+      <div
         className="absolute inset-0 animate-pulse-bg"
-        style={{ 
-          background: 'radial-gradient(circle at center, rgba(0,255,148,0.15) 0%, transparent 70%)'
+        style={{
+          background: config.bgGradient
         }}
       />
-      
+
       {/* Main content */}
       <div className="text-center animate-bounce-in relative z-10">
         {/* Pulsing ring behind emoji */}
         <div className="relative inline-block mb-4">
-          <div className="absolute inset-0 rounded-full animate-ping-slow" style={{ backgroundColor: 'rgba(0,255,148,0.3)', transform: 'scale(1.5)' }} />
-          <div className="absolute inset-0 rounded-full animate-ping-slower" style={{ backgroundColor: 'rgba(0,255,148,0.2)', transform: 'scale(2)' }} />
-          <div className="text-6xl relative z-10 animate-wiggle">🎉</div>
+          <div className="absolute inset-0 rounded-full animate-ping-slow" style={{ backgroundColor: config.ringColor1, transform: 'scale(1.5)' }} />
+          <div className="absolute inset-0 rounded-full animate-ping-slower" style={{ backgroundColor: config.ringColor2, transform: 'scale(2)' }} />
+          <div className="text-6xl relative z-10 animate-wiggle">{config.emoji}</div>
         </div>
-        <div className="text-2xl font-black animate-text-glow text-center" style={{ color: '#00FF94', whiteSpace: 'pre-line' }}>{message}</div>
-        <div className="text-gray-400 mt-2 animate-fade-in-delayed">Keep pushing!</div>
+        <div className="text-2xl font-black animate-text-glow text-center" style={{ color: config.primary, whiteSpace: 'pre-line', '--glow-color': config.primary }}>{message}</div>
+        <div className="text-gray-400 mt-2 animate-fade-in-delayed">{config.subtext}</div>
       </div>
-      
-      {/* Confetti particles */}
-      <div className="absolute inset-0 overflow-hidden">
-        {[...Array(20)].map((_, i) => (
-          <div
-            key={i}
-            className="absolute animate-confetti"
-            style={{
-              width: `${6 + Math.random() * 8}px`,
-              height: `${6 + Math.random() * 8}px`,
-              borderRadius: Math.random() > 0.5 ? '50%' : '2px',
-              backgroundColor: ['#00FF94', '#00D1FF', '#FF9500', '#BF5AF2', '#FFD700', '#FF453A'][i % 6],
-              left: `${Math.random() * 100}%`,
-              top: '-20px',
-              animationDelay: `${Math.random() * 0.3}s`,
-              animationDuration: `${1 + Math.random() * 0.8}s`
-            }}
-          />
-        ))}
-      </div>
-      
-      {/* Sparkles */}
-      <div className="absolute inset-0 overflow-hidden">
-        {[...Array(8)].map((_, i) => (
-          <div
-            key={`sparkle-${i}`}
-            className="absolute text-xl animate-sparkle"
-            style={{
-              left: `${10 + Math.random() * 80}%`,
-              top: `${10 + Math.random() * 80}%`,
-              animationDelay: `${Math.random() * 0.5}s`
-            }}
-          >
-            ✨
-          </div>
-        ))}
-      </div>
+
+      {/* Confetti particles - only for weekly celebrations */}
+      {!isDaily && (
+        <div className="absolute inset-0 overflow-hidden">
+          {[...Array(20)].map((_, i) => (
+            <div
+              key={i}
+              className="absolute animate-confetti"
+              style={{
+                width: `${6 + Math.random() * 8}px`,
+                height: `${6 + Math.random() * 8}px`,
+                borderRadius: Math.random() > 0.5 ? '50%' : '2px',
+                backgroundColor: config.confettiColors[i % config.confettiColors.length],
+                left: `${Math.random() * 100}%`,
+                top: '-20px',
+                animationDelay: `${Math.random() * 0.3}s`,
+                animationDuration: `${1 + Math.random() * 0.8}s`
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Sparkles - only for weekly celebrations */}
+      {!isDaily && (
+        <div className="absolute inset-0 overflow-hidden">
+          {[...Array(8)].map((_, i) => (
+            <div
+              key={`sparkle-${i}`}
+              className="absolute text-xl animate-sparkle"
+              style={{
+                left: `${10 + Math.random() * 80}%`,
+                top: `${10 + Math.random() * 80}%`,
+                animationDelay: `${Math.random() * 0.5}s`
+              }}
+            >
+              ✨
+            </div>
+          ))}
+        </div>
+      )}
       
       <style>{`
         @keyframes bounceIn {
@@ -13945,6 +13982,7 @@ export default function DaySevenApp() {
   const [friends, setFriends] = useState([]);
   const [showCelebration, setShowCelebration] = useState(false);
   const [celebrationMessage, setCelebrationMessage] = useState('');
+  const [celebrationType, setCelebrationType] = useState('weekly'); // 'weekly', 'daily-steps', 'daily-calories'
   const [showWeekStreakCelebration, setShowWeekStreakCelebration] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -15506,6 +15544,7 @@ export default function DaySevenApp() {
         } else {
           setCelebrationMessage('Strength goal complete! 🏋️');
         }
+        setCelebrationType('weekly');
         triggerHaptic(ImpactStyle.Heavy);
         setShowCelebration(true);
       }
@@ -15528,6 +15567,7 @@ export default function DaySevenApp() {
         } else {
           setCelebrationMessage('Cardio goal complete! 🏃');
         }
+        setCelebrationType('weekly');
         triggerHaptic(ImpactStyle.Heavy);
         setShowCelebration(true);
       }
@@ -15550,6 +15590,7 @@ export default function DaySevenApp() {
         } else {
           setCelebrationMessage('Recovery goal complete! 🧊');
         }
+        setCelebrationType('weekly');
         triggerHaptic(ImpactStyle.Heavy);
         setShowCelebration(true);
       }
@@ -15745,7 +15786,8 @@ export default function DaySevenApp() {
 
     // Check steps goal
     if (!dailyGoalsCelebrated.steps && healthKitData.todaySteps >= stepsGoal && healthKitData.todaySteps > 0) {
-      setCelebrationMessage('Steps goal hit! 👟');
+      setCelebrationMessage('Steps Goal Hit!');
+      setCelebrationType('daily-steps');
       setShowCelebration(true);
       triggerHaptic(ImpactStyle.Medium);
       const updated = { ...dailyGoalsCelebrated, steps: true };
@@ -15754,7 +15796,8 @@ export default function DaySevenApp() {
     }
     // Check calories goal (only if steps celebration isn't showing)
     else if (!dailyGoalsCelebrated.calories && healthKitData.todayCalories >= caloriesGoal && healthKitData.todayCalories > 0 && !showCelebration) {
-      setCelebrationMessage('Calories goal hit! 🔥');
+      setCelebrationMessage('Calories Goal Hit!');
+      setCelebrationType('daily-calories');
       setShowCelebration(true);
       triggerHaptic(ImpactStyle.Medium);
       const updated = { ...dailyGoalsCelebrated, calories: true };
@@ -16587,8 +16630,10 @@ export default function DaySevenApp() {
       <CelebrationOverlay
         show={showCelebration}
         message={celebrationMessage}
+        type={celebrationType}
         onComplete={() => {
           setShowCelebration(false);
+          setCelebrationType('weekly'); // Reset to default
           // Show pending toast after celebration completes
           if (pendingToast) {
             setTimeout(() => {

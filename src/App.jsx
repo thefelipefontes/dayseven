@@ -8072,6 +8072,24 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
   const deleteButtonWidth = 100;
   const snapThreshold = 40;
 
+  // Format date for display
+  const formatWorkoutDate = (dateStr) => {
+    if (!dateStr) return '';
+    const workoutDate = new Date(dateStr + 'T12:00:00');
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    if (workoutDate.toDateString() === today.toDateString()) {
+      return 'Today';
+    } else if (workoutDate.toDateString() === yesterday.toDateString()) {
+      return 'Yesterday';
+    } else {
+      return workoutDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    }
+  };
+
   const handleDeleteClick = (e) => {
     e.stopPropagation();
     triggerHaptic(ImpactStyle.Medium);
@@ -8162,7 +8180,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
                 {workout.appleWorkoutName || workout.subtype || workout.type}
               </div>
               <div className="text-xs text-gray-400 mt-0.5">
-                {workout.time} • {workout.duration} min
+                {formatWorkoutDate(workout.date)}{workout.date && ' • '}{workout.time} • {workout.duration} min
                 {workout.sourceDevice && ` • ${workout.sourceDevice}`}
               </div>
               {(workout.calories || workout.distance) && (
@@ -8211,7 +8229,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
 
 // Home Tab - Simplified
 
-const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout }) => {
+const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [showWorkoutPicker, setShowWorkoutPicker] = useState(false);
   const [workoutPickerDragY, setWorkoutPickerDragY] = useState(0);
@@ -8220,6 +8238,45 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
   const [activityComments, setActivityComments] = useState({});
   const [reactionDetailModal, setReactionDetailModal] = useState(null); // { activityId, reactions, selectedEmoji }
   const [commentDetailModal, setCommentDetailModal] = useState(null); // { activityId, comments }
+
+  // Lock body scroll when workout picker modal is open
+  useEffect(() => {
+    if (showWorkoutPicker) {
+      // Store current scroll position
+      const scrollY = window.scrollY;
+      document.body.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.top = `-${scrollY}px`;
+      document.body.style.width = '100%';
+      document.body.style.overscrollBehavior = 'none';
+      document.documentElement.style.overscrollBehavior = 'none';
+    } else {
+      // Restore scroll position
+      const scrollY = document.body.style.top;
+      document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.width = '';
+      document.body.style.overscrollBehavior = '';
+      document.documentElement.style.overscrollBehavior = '';
+      if (scrollY) {
+        window.scrollTo(0, parseInt(scrollY || '0') * -1);
+      }
+    }
+    return () => {
+      document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.width = '';
+      document.body.style.overscrollBehavior = '';
+      document.documentElement.style.overscrollBehavior = '';
+    };
+  }, [showWorkoutPicker]);
+
+  // Notify parent when workout picker visibility changes
+  useEffect(() => {
+    onWorkoutPickerChange?.(showWorkoutPicker);
+  }, [showWorkoutPicker, onWorkoutPickerChange]);
 
   // Calculate weekly progress directly from activities to ensure it's always in sync
   const weekProgress = useMemo(() => {
@@ -8895,12 +8952,23 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
 
       {/* Workout Picker Modal - Shows when multiple workouts detected */}
       {showWorkoutPicker && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center">
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center"
+          style={{ touchAction: 'none' }}
+          onTouchMove={(e) => e.preventDefault()}
+        >
           {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/70"
             style={{ opacity: Math.max(0, 1 - workoutPickerDragY / 200) }}
-            onClick={() => setShowWorkoutPicker(false)}
+            onClick={() => {
+              // Animate slide down then close
+              setWorkoutPickerDragY(500);
+              setTimeout(() => {
+                setShowWorkoutPicker(false);
+                setWorkoutPickerDragY(0);
+              }, 300);
+            }}
           />
           {/* Modal */}
           <div
@@ -8910,53 +8978,83 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
               transform: `translateY(${workoutPickerDragY}px)`,
               transition: workoutPickerTouchStart ? 'none' : 'transform 0.3s ease-out'
             }}
-            onTouchStart={(e) => {
-              setWorkoutPickerTouchStart(e.touches[0].clientY);
-            }}
-            onTouchMove={(e) => {
-              if (workoutPickerTouchStart === null) return;
-              const diff = e.touches[0].clientY - workoutPickerTouchStart;
-              if (diff > 0) {
-                setWorkoutPickerDragY(diff);
-              }
-            }}
-            onTouchEnd={() => {
-              if (workoutPickerDragY > 100) {
-                setShowWorkoutPicker(false);
-              }
-              setWorkoutPickerDragY(0);
-              setWorkoutPickerTouchStart(null);
-            }}
           >
-            {/* Handle */}
-            <div className="flex justify-center pt-3 pb-2">
+            {/* Handle - swipe down from here to dismiss */}
+            <div
+              className="flex justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing"
+              onTouchStart={(e) => {
+                setWorkoutPickerTouchStart(e.touches[0].clientY);
+              }}
+              onTouchMove={(e) => {
+                if (workoutPickerTouchStart === null) return;
+                const diff = e.touches[0].clientY - workoutPickerTouchStart;
+                if (diff > 0) {
+                  setWorkoutPickerDragY(diff);
+                }
+              }}
+              onTouchEnd={() => {
+                if (workoutPickerDragY > 100) {
+                  setShowWorkoutPicker(false);
+                }
+                setWorkoutPickerDragY(0);
+                setWorkoutPickerTouchStart(null);
+              }}
+            >
               <div className="w-10 h-1 rounded-full bg-gray-600" />
             </div>
 
-            {/* Header */}
-            <div className="px-4 pb-3 border-b border-white/10">
+            {/* Header - also draggable */}
+            <div
+              className="px-4 pb-3 border-b border-white/10"
+              onTouchStart={(e) => {
+                setWorkoutPickerTouchStart(e.touches[0].clientY);
+              }}
+              onTouchMove={(e) => {
+                if (workoutPickerTouchStart === null) return;
+                const diff = e.touches[0].clientY - workoutPickerTouchStart;
+                if (diff > 0) {
+                  setWorkoutPickerDragY(diff);
+                }
+              }}
+              onTouchEnd={() => {
+                if (workoutPickerDragY > 100) {
+                  setShowWorkoutPicker(false);
+                }
+                setWorkoutPickerDragY(0);
+                setWorkoutPickerTouchStart(null);
+              }}
+            >
               <h3 className="text-lg font-semibold text-white text-center">New Workouts from Apple Health</h3>
               <p className="text-xs text-gray-400 text-center mt-1">Tap to add, swipe left to dismiss</p>
             </div>
 
             {/* Workout List */}
-            <div className="overflow-y-auto p-4 space-y-3" style={{ maxHeight: 'calc(70vh - 100px)' }}>
+            <div
+              className="overflow-y-auto p-4 space-y-3"
+              style={{ maxHeight: 'calc(70vh - 100px)', touchAction: 'pan-y' }}
+              onTouchMove={(e) => e.stopPropagation()}
+            >
               {pendingSync
                 .slice()
                 .sort((a, b) => {
-                  // Sort by time, most recent first (descending)
-                  const parseTime = (timeStr) => {
-                    if (!timeStr) return 0;
-                    const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
-                    if (!match) return 0;
-                    let hours = parseInt(match[1], 10);
-                    const minutes = parseInt(match[2], 10);
-                    const isPM = match[3].toUpperCase() === 'PM';
-                    if (isPM && hours !== 12) hours += 12;
-                    if (!isPM && hours === 12) hours = 0;
-                    return hours * 60 + minutes;
+                  // Sort by date then time, most recent first (descending)
+                  const parseDateTime = (dateStr, timeStr) => {
+                    const date = dateStr ? new Date(dateStr + 'T12:00:00') : new Date();
+                    let hours = 0, minutes = 0;
+                    if (timeStr) {
+                      const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+                      if (match) {
+                        hours = parseInt(match[1], 10);
+                        minutes = parseInt(match[2], 10);
+                        const isPM = match[3].toUpperCase() === 'PM';
+                        if (isPM && hours !== 12) hours += 12;
+                        if (!isPM && hours === 12) hours = 0;
+                      }
+                    }
+                    date.setHours(hours, minutes, 0, 0);
+                    return date.getTime();
                   };
-                  return parseTime(b.time) - parseTime(a.time);
+                  return parseDateTime(b.date, b.time) - parseDateTime(a.date, a.time);
                 })
                 .map((workout) => (
                 <SwipeableWorkoutItem
@@ -13698,6 +13796,7 @@ export default function DaySevenApp() {
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [feedActiveView, setFeedActiveView] = useState('feed'); // 'feed' or 'leaderboard'
+  const [isHomeWorkoutPickerOpen, setIsHomeWorkoutPickerOpen] = useState(false); // Track if HomeTab's workout picker is open
 
   // HealthKit data state
   const [healthKitData, setHealthKitData] = useState({
@@ -14441,7 +14540,7 @@ export default function DaySevenApp() {
   const { pullDistance, isRefreshing } = usePullToRefresh(refreshData, {
     threshold: 80,
     resistance: 0.5,
-    enabled: !showAddActivity && (activeTab === 'home' || (activeTab === 'feed' && feedActiveView === 'feed'))
+    enabled: !showAddActivity && !isHomeWorkoutPickerOpen && (activeTab === 'home' || (activeTab === 'feed' && feedActiveView === 'feed'))
   });
 
   // Listen to auth state
@@ -15673,6 +15772,7 @@ export default function DaySevenApp() {
                   latestActivityRef={latestActivityRef}
                   healthKitData={healthKitData}
                   onDismissWorkout={handleDismissWorkout}
+                  onWorkoutPickerChange={setIsHomeWorkoutPickerOpen}
                 />
               )}
               {activeTab === 'history' && (

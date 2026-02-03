@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, createContext, useContext } from 'react';
-import { getUserActivities } from './services/userService';
-import { addReaction, getReactions, removeReaction, addComment, getComments, deleteComment, addReply, getReplies, deleteReply } from './services/friendService';
+import { getUserActivities, getPersonalRecords, getDailyHealthHistory } from './services/userService';
+import { addReaction, getReactions, removeReaction, addComment, getComments, deleteComment, addReply, getReplies, deleteReply, getFriends } from './services/friendService';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
@@ -13,6 +13,130 @@ const triggerHaptic = async (style = ImpactStyle.Medium) => {
     // Fallback to vibrate API for web/Android
     if (navigator.vibrate) navigator.vibrate(10);
   }
+};
+
+// Helper to determine effective category of an activity (same logic as App.jsx)
+const getActivityCategory = (activity) => {
+  if (activity.countToward) {
+    if (activity.countToward === 'strength') return 'lifting';
+    return activity.countToward;
+  }
+  if (activity.customActivityCategory) {
+    if (activity.customActivityCategory === 'strength') return 'lifting';
+    return activity.customActivityCategory;
+  }
+  if (activity.type === 'Strength Training') return 'lifting';
+  if (['Running', 'Cycle', 'Sports'].includes(activity.type)) return 'cardio';
+  if (['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
+  return 'other';
+};
+
+// Helper to calculate leaderboard stats from activities and health data
+const calculateLeaderboardStats = (activities, healthHistory, personalRecords) => {
+  const now = new Date();
+  const today = now.toISOString().split('T')[0];
+
+  // Calculate date boundaries
+  const weekStart = new Date(now);
+  weekStart.setDate(now.getDate() - now.getDay()); // Start of week (Sunday)
+  weekStart.setHours(0, 0, 0, 0);
+  const weekStartStr = weekStart.toISOString().split('T')[0];
+
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthStartStr = monthStart.toISOString().split('T')[0];
+
+  const yearStart = new Date(now.getFullYear(), 0, 1);
+  const yearStartStr = yearStart.toISOString().split('T')[0];
+
+  // Filter activities by time period
+  const weekActivities = activities.filter(a => a.date >= weekStartStr);
+  const monthActivities = activities.filter(a => a.date >= monthStartStr);
+  const yearActivities = activities.filter(a => a.date >= yearStartStr);
+  const allActivities = activities;
+
+  // Filter health data by time period
+  const weekHealth = healthHistory.filter(h => h.date >= weekStartStr);
+  const monthHealth = healthHistory.filter(h => h.date >= monthStartStr);
+  const yearHealth = healthHistory.filter(h => h.date >= yearStartStr);
+  const allHealth = healthHistory;
+
+  // Helper to calculate stats for a period
+  const calcPeriodStats = (periodActivities, periodHealth) => {
+    const calories = periodActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+    const steps = periodHealth.reduce((sum, h) => sum + (parseInt(h.steps) || 0), 0);
+    return { calories, steps };
+  };
+
+  // Helper to calculate volume for a period
+  const calcPeriodVolume = (periodActivities) => {
+    const running = periodActivities.filter(a => a.type === 'Running');
+    const cycling = periodActivities.filter(a => a.type === 'Cycle');
+    const strength = periodActivities.filter(a => getActivityCategory(a) === 'lifting');
+    const recovery = periodActivities.filter(a => getActivityCategory(a) === 'recovery');
+    const coldPlunge = periodActivities.filter(a => a.type === 'Cold Plunge');
+    const sauna = periodActivities.filter(a => a.type === 'Sauna');
+    const yoga = periodActivities.filter(a => a.type === 'Yoga');
+
+    return {
+      runs: running.length,
+      miles: running.reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0),
+      runMinutes: running.reduce((sum, a) => sum + (parseInt(a.duration) || 0), 0),
+      strengthSessions: strength.length,
+      liftingMinutes: strength.reduce((sum, a) => sum + (parseInt(a.duration) || 0), 0),
+      recoverySessions: recovery.length,
+      coldPlunges: coldPlunge.length,
+      saunaSessions: sauna.length,
+      yogaSessions: yoga.length,
+      rides: cycling.length,
+      cycleMiles: cycling.reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0),
+      cycleMinutes: cycling.reduce((sum, a) => sum + (parseInt(a.duration) || 0), 0)
+    };
+  };
+
+  // Calculate stats for each period
+  const weekStats = calcPeriodStats(weekActivities, weekHealth);
+  const monthStats = calcPeriodStats(monthActivities, monthHealth);
+  const yearStats = calcPeriodStats(yearActivities, yearHealth);
+  const allStats = calcPeriodStats(allActivities, allHealth);
+
+  // Calculate volume for each period
+  const weekVolume = calcPeriodVolume(weekActivities);
+  const monthVolume = calcPeriodVolume(monthActivities);
+  const yearVolume = calcPeriodVolume(yearActivities);
+  const allVolume = calcPeriodVolume(allActivities);
+
+  // Count total workouts (strength + cardio, not recovery)
+  const totalWorkouts = allActivities.filter(a => {
+    const cat = getActivityCategory(a);
+    return cat === 'lifting' || cat === 'cardio';
+  }).length;
+
+  return {
+    masterStreak: personalRecords?.longestMasterStreak || 0,
+    strengthStreak: personalRecords?.longestStrengthStreak || 0,
+    cardioStreak: personalRecords?.longestCardioStreak || 0,
+    recoveryStreak: personalRecords?.longestRecoveryStreak || 0,
+    weeksWon: 0, // TODO: implement weeks won tracking if needed
+    totalWorkouts,
+    stats: {
+      calories: { week: weekStats.calories, month: monthStats.calories, year: yearStats.calories, all: allStats.calories },
+      steps: { week: weekStats.steps, month: monthStats.steps, year: yearStats.steps, all: allStats.steps }
+    },
+    volume: {
+      runs: { week: weekVolume.runs, month: monthVolume.runs, year: yearVolume.runs, all: allVolume.runs },
+      miles: { week: weekVolume.miles, month: monthVolume.miles, year: yearVolume.miles, all: allVolume.miles },
+      runMinutes: { week: weekVolume.runMinutes, month: monthVolume.runMinutes, year: yearVolume.runMinutes, all: allVolume.runMinutes },
+      strengthSessions: { week: weekVolume.strengthSessions, month: monthVolume.strengthSessions, year: yearVolume.strengthSessions, all: allVolume.strengthSessions },
+      liftingMinutes: { week: weekVolume.liftingMinutes, month: monthVolume.liftingMinutes, year: yearVolume.liftingMinutes, all: allVolume.liftingMinutes },
+      recoverySessions: { week: weekVolume.recoverySessions, month: monthVolume.recoverySessions, year: yearVolume.recoverySessions, all: allVolume.recoverySessions },
+      coldPlunges: { week: weekVolume.coldPlunges, month: monthVolume.coldPlunges, year: yearVolume.coldPlunges, all: allVolume.coldPlunges },
+      saunaSessions: { week: weekVolume.saunaSessions, month: monthVolume.saunaSessions, year: yearVolume.saunaSessions, all: allVolume.saunaSessions },
+      yogaSessions: { week: weekVolume.yogaSessions, month: monthVolume.yogaSessions, year: yearVolume.yogaSessions, all: allVolume.yogaSessions },
+      rides: { week: weekVolume.rides, month: monthVolume.rides, year: yearVolume.rides, all: allVolume.rides },
+      cycleMiles: { week: weekVolume.cycleMiles, month: monthVolume.cycleMiles, year: yearVolume.cycleMiles, all: allVolume.cycleMiles },
+      cycleMinutes: { week: weekVolume.cycleMinutes, month: monthVolume.cycleMinutes, year: yearVolume.cycleMinutes, all: allVolume.cycleMinutes }
+    }
+  };
 };
 
 // Section header icon component - SVG line icons in brand cyan
@@ -346,7 +470,7 @@ const SegmentedControl = ({ activeView, setActiveView }) => (
         <TouchButton
           key={tab.key}
           onClick={() => setActiveView(tab.key)}
-          className="flex-1 py-2 px-4 rounded-lg text-sm font-medium relative z-10"
+          className="flex-1 py-2 px-4 rounded-lg text-sm font-medium relative z-10 text-center"
           style={{
             color: activeView === tab.key ? 'white' : 'rgba(255,255,255,0.5)',
             transition: 'color 0.2s ease-out'
@@ -1229,232 +1353,360 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     }
     setLeaderboardLoading(true);
 
-    // Dummy data for demo purposes
-    const dummyFriends = [
-      {
-        uid: 'dummy1',
-        username: 'alex_fitness',
-        displayName: 'Alex Thompson',
-        photoURL: 'https://i.pravatar.cc/150?img=1',
-        masterStreak: 28,
-        strengthStreak: 15,
-        cardioStreak: 12,
-        recoveryStreak: 8,
-        weeksWon: 12,
-        totalWorkouts: 156,
-        stats: {
-          calories: { week: 4850, month: 18200, year: 198000, all: 485000 },
-          steps: { week: 68000, month: 285000, year: 3200000, all: 9500000 }
-        },
-        volume: {
-          runs: { week: 4, month: 16, year: 180, all: 420 },
-          miles: { week: 18.5, month: 72, year: 820, all: 1950 },
-          runMinutes: { week: 180, month: 720, year: 8200, all: 19500 },
-          strengthSessions: { week: 5, month: 20, year: 220, all: 520 },
-          liftingMinutes: { week: 300, month: 1200, year: 13200, all: 31200 },
-          recoverySessions: { week: 2, month: 8, year: 90, all: 210 },
-          coldPlunges: { week: 1, month: 4, year: 45, all: 108 },
-          saunaSessions: { week: 1, month: 3, year: 35, all: 84 },
-          yogaSessions: { week: 0, month: 1, year: 10, all: 18 },
-          rides: { week: 3, month: 12, year: 140, all: 336 },
-          cycleMiles: { week: 45, month: 180, year: 2100, all: 5040 },
-          cycleMinutes: { week: 150, month: 600, year: 7000, all: 16800 }
-        }
-      },
-      {
-        uid: 'dummy2',
-        username: 'sarah_runs',
-        displayName: 'Sarah Chen',
-        photoURL: 'https://i.pravatar.cc/150?img=5',
-        masterStreak: 45,
-        strengthStreak: 8,
-        cardioStreak: 32,
-        recoveryStreak: 14,
-        weeksWon: 18,
-        totalWorkouts: 234,
-        stats: {
-          calories: { week: 5200, month: 21500, year: 245000, all: 620000 },
-          steps: { week: 92000, month: 380000, year: 4100000, all: 12000000 }
-        },
-        volume: {
-          runs: { week: 6, month: 24, year: 280, all: 680 },
-          miles: { week: 32, month: 128, year: 1480, all: 3600 },
-          runMinutes: { week: 320, month: 1280, year: 14800, all: 36000 },
-          strengthSessions: { week: 2, month: 8, year: 96, all: 230 },
-          liftingMinutes: { week: 90, month: 360, year: 4320, all: 10350 },
-          recoverySessions: { week: 3, month: 12, year: 140, all: 340 },
-          coldPlunges: { week: 1, month: 4, year: 46, all: 112 },
-          saunaSessions: { week: 1, month: 4, year: 48, all: 116 },
-          yogaSessions: { week: 1, month: 4, year: 46, all: 112 },
-          rides: { week: 2, month: 8, year: 96, all: 230 },
-          cycleMiles: { week: 30, month: 120, year: 1440, all: 3450 },
-          cycleMinutes: { week: 100, month: 400, year: 4800, all: 11500 }
-        }
-      },
-      {
-        uid: 'dummy3',
-        username: 'mike_lifts',
-        displayName: 'Mike Johnson',
-        photoURL: 'https://i.pravatar.cc/150?img=8',
-        masterStreak: 21,
-        strengthStreak: 35,
-        cardioStreak: 5,
-        recoveryStreak: 18,
-        weeksWon: 8,
-        totalWorkouts: 189,
-        stats: {
-          calories: { week: 3800, month: 15600, year: 172000, all: 380000 },
-          steps: { week: 42000, month: 175000, year: 1900000, all: 5200000 }
-        },
-        volume: {
-          runs: { week: 1, month: 4, year: 48, all: 115 },
-          miles: { week: 3, month: 12, year: 144, all: 345 },
-          runMinutes: { week: 30, month: 120, year: 1440, all: 3450 },
-          strengthSessions: { week: 6, month: 24, year: 288, all: 690 },
-          liftingMinutes: { week: 420, month: 1680, year: 20160, all: 48300 },
-          recoverySessions: { week: 3, month: 12, year: 144, all: 345 },
-          coldPlunges: { week: 2, month: 8, year: 96, all: 230 },
-          saunaSessions: { week: 1, month: 4, year: 48, all: 115 },
-          yogaSessions: { week: 0, month: 0, year: 0, all: 0 },
-          rides: { week: 1, month: 4, year: 48, all: 115 },
-          cycleMiles: { week: 15, month: 60, year: 720, all: 1725 },
-          cycleMinutes: { week: 50, month: 200, year: 2400, all: 5750 }
-        }
-      },
-      {
-        uid: 'dummy4',
-        username: 'emma_yoga',
-        displayName: 'Emma Williams',
-        photoURL: 'https://i.pravatar.cc/150?img=9',
-        masterStreak: 62,
-        strengthStreak: 12,
-        cardioStreak: 18,
-        recoveryStreak: 45,
-        weeksWon: 24,
-        totalWorkouts: 312,
-        stats: {
-          calories: { week: 2900, month: 12400, year: 142000, all: 340000 },
-          steps: { week: 55000, month: 230000, year: 2600000, all: 7800000 }
-        },
-        volume: {
-          runs: { week: 3, month: 12, year: 140, all: 336 },
-          miles: { week: 12, month: 48, year: 560, all: 1344 },
-          runMinutes: { week: 120, month: 480, year: 5600, all: 13440 },
-          strengthSessions: { week: 3, month: 12, year: 144, all: 345 },
-          liftingMinutes: { week: 135, month: 540, year: 6480, all: 15525 },
-          recoverySessions: { week: 7, month: 28, year: 336, all: 806 },
-          coldPlunges: { week: 1, month: 4, year: 48, all: 115 },
-          saunaSessions: { week: 1, month: 4, year: 48, all: 115 },
-          yogaSessions: { week: 5, month: 20, year: 240, all: 576 },
-          rides: { week: 4, month: 16, year: 192, all: 460 },
-          cycleMiles: { week: 60, month: 240, year: 2880, all: 6900 },
-          cycleMinutes: { week: 200, month: 800, year: 9600, all: 23000 }
-        }
-      },
-      {
-        uid: 'dummy5',
-        username: 'jake_athlete',
-        displayName: 'Jake Martinez',
-        photoURL: 'https://i.pravatar.cc/150?img=12',
-        masterStreak: 35,
-        strengthStreak: 22,
-        cardioStreak: 28,
-        recoveryStreak: 10,
-        weeksWon: 15,
-        totalWorkouts: 267,
-        stats: {
-          calories: { week: 6100, month: 24800, year: 285000, all: 720000 },
-          steps: { week: 78000, month: 320000, year: 3600000, all: 10500000 }
-        },
-        volume: {
-          runs: { week: 5, month: 20, year: 240, all: 576 },
-          miles: { week: 28, month: 112, year: 1344, all: 3225 },
-          runMinutes: { week: 280, month: 1120, year: 13440, all: 32250 },
-          strengthSessions: { week: 5, month: 20, year: 240, all: 576 },
-          liftingMinutes: { week: 350, month: 1400, year: 16800, all: 40320 },
-          recoverySessions: { week: 2, month: 8, year: 96, all: 230 },
-          coldPlunges: { week: 1, month: 4, year: 48, all: 115 },
-          saunaSessions: { week: 1, month: 4, year: 48, all: 115 },
-          yogaSessions: { week: 0, month: 0, year: 0, all: 0 },
-          rides: { week: 5, month: 20, year: 240, all: 576 },
-          cycleMiles: { week: 75, month: 300, year: 3600, all: 8640 },
-          cycleMinutes: { week: 250, month: 1000, year: 12000, all: 28800 }
-        }
-      },
-      {
-        uid: 'dummy6',
-        username: 'lisa_cardio',
-        displayName: 'Lisa Park',
-        photoURL: 'https://i.pravatar.cc/150?img=16',
-        masterStreak: 18,
-        strengthStreak: 6,
-        cardioStreak: 42,
-        recoveryStreak: 8,
-        weeksWon: 9,
-        totalWorkouts: 198,
-        stats: {
-          calories: { week: 4200, month: 17500, year: 195000, all: 465000 },
-          steps: { week: 105000, month: 420000, year: 4800000, all: 14000000 }
-        },
-        volume: {
-          runs: { week: 7, month: 28, year: 336, all: 806 },
-          miles: { week: 35, month: 140, year: 1680, all: 4032 },
-          runMinutes: { week: 350, month: 1400, year: 16800, all: 40320 },
-          strengthSessions: { week: 1, month: 4, year: 48, all: 115 },
-          liftingMinutes: { week: 45, month: 180, year: 2160, all: 5175 },
-          recoverySessions: { week: 2, month: 8, year: 96, all: 230 },
-          coldPlunges: { week: 0, month: 2, year: 24, all: 58 },
-          saunaSessions: { week: 1, month: 4, year: 48, all: 115 },
-          yogaSessions: { week: 1, month: 2, year: 24, all: 57 },
-          rides: { week: 6, month: 24, year: 288, all: 690 },
-          cycleMiles: { week: 90, month: 360, year: 4320, all: 10350 },
-          cycleMinutes: { week: 300, month: 1200, year: 14400, all: 34500 }
-        }
-      }
-    ];
+    try {
+      // Check if this is the appreview account
+      const isAppReviewAccount = userProfile?.username?.toLowerCase() === 'appreview' ||
+                                 user.email?.toLowerCase() === 'appreview@dayseven.app';
 
-    // Only show dummy friends for the appreview account (for App Store review demo)
-    const isAppReviewAccount = userProfile?.username?.toLowerCase() === 'appreview' ||
-                               user.email?.toLowerCase() === 'appreview@dayseven.app';
+      // Dummy data for appreview account (App Store demo)
+      const dummyFriends = [
+        {
+          uid: 'dummy1',
+          username: 'alex_fitness',
+          displayName: 'Alex Thompson',
+          photoURL: 'https://i.pravatar.cc/150?img=1',
+          masterStreak: 28,
+          strengthStreak: 15,
+          cardioStreak: 12,
+          recoveryStreak: 8,
+          weeksWon: 12,
+          totalWorkouts: 156,
+          stats: {
+            calories: { week: 4850, month: 18200, year: 198000, all: 485000 },
+            steps: { week: 68000, month: 285000, year: 3200000, all: 9500000 }
+          },
+          volume: {
+            runs: { week: 4, month: 16, year: 180, all: 420 },
+            miles: { week: 18.5, month: 72, year: 820, all: 1950 },
+            runMinutes: { week: 180, month: 720, year: 8200, all: 19500 },
+            strengthSessions: { week: 5, month: 20, year: 220, all: 520 },
+            liftingMinutes: { week: 300, month: 1200, year: 13200, all: 31200 },
+            recoverySessions: { week: 2, month: 8, year: 90, all: 210 },
+            coldPlunges: { week: 1, month: 4, year: 45, all: 108 },
+            saunaSessions: { week: 1, month: 3, year: 35, all: 84 },
+            yogaSessions: { week: 0, month: 1, year: 10, all: 18 },
+            rides: { week: 3, month: 12, year: 140, all: 336 },
+            cycleMiles: { week: 45, month: 180, year: 2100, all: 5040 },
+            cycleMinutes: { week: 150, month: 600, year: 7000, all: 16800 }
+          }
+        },
+        {
+          uid: 'dummy2',
+          username: 'sarah_runs',
+          displayName: 'Sarah Chen',
+          photoURL: 'https://i.pravatar.cc/150?img=5',
+          masterStreak: 45,
+          strengthStreak: 8,
+          cardioStreak: 32,
+          recoveryStreak: 14,
+          weeksWon: 18,
+          totalWorkouts: 234,
+          stats: {
+            calories: { week: 5200, month: 21500, year: 245000, all: 620000 },
+            steps: { week: 92000, month: 380000, year: 4100000, all: 12000000 }
+          },
+          volume: {
+            runs: { week: 6, month: 24, year: 280, all: 680 },
+            miles: { week: 32, month: 128, year: 1480, all: 3600 },
+            runMinutes: { week: 320, month: 1280, year: 14800, all: 36000 },
+            strengthSessions: { week: 2, month: 8, year: 96, all: 230 },
+            liftingMinutes: { week: 90, month: 360, year: 4320, all: 10350 },
+            recoverySessions: { week: 3, month: 12, year: 140, all: 340 },
+            coldPlunges: { week: 1, month: 4, year: 46, all: 112 },
+            saunaSessions: { week: 1, month: 4, year: 48, all: 116 },
+            yogaSessions: { week: 1, month: 4, year: 46, all: 112 },
+            rides: { week: 2, month: 8, year: 96, all: 230 },
+            cycleMiles: { week: 30, month: 120, year: 1440, all: 3450 },
+            cycleMinutes: { week: 100, month: 400, year: 4800, all: 11500 }
+          }
+        },
+        {
+          uid: 'dummy3',
+          username: 'mike_lifts',
+          displayName: 'Mike Johnson',
+          photoURL: 'https://i.pravatar.cc/150?img=8',
+          masterStreak: 21,
+          strengthStreak: 35,
+          cardioStreak: 5,
+          recoveryStreak: 18,
+          weeksWon: 8,
+          totalWorkouts: 189,
+          stats: {
+            calories: { week: 3800, month: 15600, year: 172000, all: 380000 },
+            steps: { week: 42000, month: 175000, year: 1900000, all: 5200000 }
+          },
+          volume: {
+            runs: { week: 1, month: 4, year: 48, all: 115 },
+            miles: { week: 3, month: 12, year: 144, all: 345 },
+            runMinutes: { week: 30, month: 120, year: 1440, all: 3450 },
+            strengthSessions: { week: 6, month: 24, year: 288, all: 690 },
+            liftingMinutes: { week: 420, month: 1680, year: 20160, all: 48300 },
+            recoverySessions: { week: 3, month: 12, year: 144, all: 345 },
+            coldPlunges: { week: 2, month: 8, year: 96, all: 230 },
+            saunaSessions: { week: 1, month: 4, year: 48, all: 115 },
+            yogaSessions: { week: 0, month: 0, year: 0, all: 0 },
+            rides: { week: 1, month: 4, year: 48, all: 115 },
+            cycleMiles: { week: 15, month: 60, year: 720, all: 1725 },
+            cycleMinutes: { week: 50, month: 200, year: 2400, all: 5750 }
+          }
+        },
+        {
+          uid: 'dummy4',
+          username: 'emma_yoga',
+          displayName: 'Emma Williams',
+          photoURL: 'https://i.pravatar.cc/150?img=9',
+          masterStreak: 62,
+          strengthStreak: 12,
+          cardioStreak: 18,
+          recoveryStreak: 45,
+          weeksWon: 24,
+          totalWorkouts: 312,
+          stats: {
+            calories: { week: 2900, month: 12400, year: 142000, all: 340000 },
+            steps: { week: 55000, month: 230000, year: 2600000, all: 7800000 }
+          },
+          volume: {
+            runs: { week: 3, month: 12, year: 140, all: 336 },
+            miles: { week: 12, month: 48, year: 560, all: 1344 },
+            runMinutes: { week: 120, month: 480, year: 5600, all: 13440 },
+            strengthSessions: { week: 3, month: 12, year: 144, all: 345 },
+            liftingMinutes: { week: 135, month: 540, year: 6480, all: 15525 },
+            recoverySessions: { week: 7, month: 28, year: 336, all: 806 },
+            coldPlunges: { week: 1, month: 4, year: 48, all: 115 },
+            saunaSessions: { week: 1, month: 4, year: 48, all: 115 },
+            yogaSessions: { week: 5, month: 20, year: 240, all: 576 },
+            rides: { week: 4, month: 16, year: 192, all: 460 },
+            cycleMiles: { week: 60, month: 240, year: 2880, all: 6900 },
+            cycleMinutes: { week: 200, month: 800, year: 9600, all: 23000 }
+          }
+        },
+        {
+          uid: 'dummy5',
+          username: 'jake_athlete',
+          displayName: 'Jake Martinez',
+          photoURL: 'https://i.pravatar.cc/150?img=12',
+          masterStreak: 35,
+          strengthStreak: 22,
+          cardioStreak: 28,
+          recoveryStreak: 10,
+          weeksWon: 15,
+          totalWorkouts: 267,
+          stats: {
+            calories: { week: 6100, month: 24800, year: 285000, all: 720000 },
+            steps: { week: 78000, month: 320000, year: 3600000, all: 10500000 }
+          },
+          volume: {
+            runs: { week: 5, month: 20, year: 240, all: 576 },
+            miles: { week: 28, month: 112, year: 1344, all: 3225 },
+            runMinutes: { week: 280, month: 1120, year: 13440, all: 32250 },
+            strengthSessions: { week: 5, month: 20, year: 240, all: 576 },
+            liftingMinutes: { week: 350, month: 1400, year: 16800, all: 40320 },
+            recoverySessions: { week: 2, month: 8, year: 96, all: 230 },
+            coldPlunges: { week: 1, month: 4, year: 48, all: 115 },
+            saunaSessions: { week: 1, month: 4, year: 48, all: 115 },
+            yogaSessions: { week: 0, month: 0, year: 0, all: 0 },
+            rides: { week: 5, month: 20, year: 240, all: 576 },
+            cycleMiles: { week: 75, month: 300, year: 3600, all: 8640 },
+            cycleMinutes: { week: 250, month: 1000, year: 12000, all: 28800 }
+          }
+        },
+        {
+          uid: 'dummy6',
+          username: 'lisa_cardio',
+          displayName: 'Lisa Park',
+          photoURL: 'https://i.pravatar.cc/150?img=16',
+          masterStreak: 18,
+          strengthStreak: 6,
+          cardioStreak: 42,
+          recoveryStreak: 8,
+          weeksWon: 9,
+          totalWorkouts: 198,
+          stats: {
+            calories: { week: 4200, month: 17500, year: 195000, all: 465000 },
+            steps: { week: 105000, month: 420000, year: 4800000, all: 14000000 }
+          },
+          volume: {
+            runs: { week: 7, month: 28, year: 336, all: 806 },
+            miles: { week: 35, month: 140, year: 1680, all: 4032 },
+            runMinutes: { week: 350, month: 1400, year: 16800, all: 40320 },
+            strengthSessions: { week: 1, month: 4, year: 48, all: 115 },
+            liftingMinutes: { week: 45, month: 180, year: 2160, all: 5175 },
+            recoverySessions: { week: 2, month: 8, year: 96, all: 230 },
+            coldPlunges: { week: 0, month: 2, year: 24, all: 58 },
+            saunaSessions: { week: 1, month: 4, year: 48, all: 115 },
+            yogaSessions: { week: 1, month: 2, year: 24, all: 57 },
+            rides: { week: 6, month: 24, year: 288, all: 690 },
+            cycleMiles: { week: 90, month: 360, year: 4320, all: 10350 },
+            cycleMinutes: { week: 300, month: 1200, year: 14400, all: 34500 }
+          }
+        }
+      ];
 
-    // Build leaderboard - use dummy data only for appreview account, real friends for everyone else
-    const allUsers = [
-      ...(isAppReviewAccount ? dummyFriends : []),
-      {
+      // Fetch current user's real data
+      const [userActivities, userRecords, userHealthHistory] = await Promise.all([
+        getUserActivities(user.uid),
+        getPersonalRecords(user.uid),
+        getDailyHealthHistory(user.uid, 365) // Get full year of health data
+      ]);
+
+      // Calculate current user's stats from real data
+      const currentUserStats = calculateLeaderboardStats(
+        userActivities || [],
+        userHealthHistory || [],
+        userRecords
+      );
+
+      // Build current user entry with real stats
+      const currentUserEntry = {
         uid: user.uid,
         username: userProfile?.username || 'You',
         displayName: userProfile?.displayName || 'You',
         photoURL: userProfile?.photoURL,
-        masterStreak: isAppReviewAccount ? 24 : 0,
-        strengthStreak: isAppReviewAccount ? 18 : 0,
-        cardioStreak: isAppReviewAccount ? 14 : 0,
-        recoveryStreak: isAppReviewAccount ? 9 : 0,
-        weeksWon: isAppReviewAccount ? 10 : 0,
-        totalWorkouts: isAppReviewAccount ? 145 : 0,
+        ...currentUserStats,
+        isCurrentUser: true
+      };
+
+      let allUsers = [];
+
+      if (isAppReviewAccount) {
+        // For appreview account, use dummy friends + current user with dummy stats
+        allUsers = [
+          ...dummyFriends,
+          {
+            uid: user.uid,
+            username: userProfile?.username || 'You',
+            displayName: userProfile?.displayName || 'You',
+            photoURL: userProfile?.photoURL,
+            masterStreak: 24,
+            strengthStreak: 18,
+            cardioStreak: 14,
+            recoveryStreak: 9,
+            weeksWon: 10,
+            totalWorkouts: 145,
+            stats: {
+              calories: { week: 3800, month: 16200, year: 185000, all: 420000 },
+              steps: { week: 58000, month: 245000, year: 2800000, all: 8500000 }
+            },
+            volume: {
+              runs: { week: 4, month: 15, year: 175, all: 420 },
+              miles: { week: 20, month: 78, year: 910, all: 2184 },
+              runMinutes: { week: 200, month: 780, year: 9100, all: 21840 },
+              strengthSessions: { week: 4, month: 16, year: 192, all: 460 },
+              liftingMinutes: { week: 240, month: 960, year: 11520, all: 27600 },
+              recoverySessions: { week: 2, month: 9, year: 105, all: 252 },
+              coldPlunges: { week: 1, month: 3, year: 35, all: 84 },
+              saunaSessions: { week: 1, month: 4, year: 45, all: 108 },
+              yogaSessions: { week: 0, month: 2, year: 25, all: 60 },
+              rides: { week: 3, month: 11, year: 130, all: 312 },
+              cycleMiles: { week: 40, month: 150, year: 1750, all: 4200 },
+              cycleMinutes: { week: 130, month: 500, year: 5800, all: 13900 }
+            },
+            isCurrentUser: true
+          }
+        ];
+      } else {
+        // For regular users, fetch real friends and their data
+        const friends = await getFriends(user.uid);
+
+        // Fetch activities, records, and health data for each friend in parallel
+        const friendDataPromises = friends.map(async (friend) => {
+          try {
+            const [friendActivities, friendRecords, friendHealthHistory] = await Promise.all([
+              getUserActivities(friend.uid),
+              getPersonalRecords(friend.uid),
+              getDailyHealthHistory(friend.uid, 365)
+            ]);
+
+            const friendStats = calculateLeaderboardStats(
+              friendActivities || [],
+              friendHealthHistory || [],
+              friendRecords
+            );
+
+            return {
+              uid: friend.uid,
+              username: friend.username,
+              displayName: friend.displayName,
+              photoURL: friend.photoURL,
+              ...friendStats
+            };
+          } catch (error) {
+            // If we can't fetch a friend's data, return them with zero stats
+            return {
+              uid: friend.uid,
+              username: friend.username,
+              displayName: friend.displayName,
+              photoURL: friend.photoURL,
+              masterStreak: 0,
+              strengthStreak: 0,
+              cardioStreak: 0,
+              recoveryStreak: 0,
+              weeksWon: 0,
+              totalWorkouts: 0,
+              stats: {
+                calories: { week: 0, month: 0, year: 0, all: 0 },
+                steps: { week: 0, month: 0, year: 0, all: 0 }
+              },
+              volume: {
+                runs: { week: 0, month: 0, year: 0, all: 0 },
+                miles: { week: 0, month: 0, year: 0, all: 0 },
+                runMinutes: { week: 0, month: 0, year: 0, all: 0 },
+                strengthSessions: { week: 0, month: 0, year: 0, all: 0 },
+                liftingMinutes: { week: 0, month: 0, year: 0, all: 0 },
+                recoverySessions: { week: 0, month: 0, year: 0, all: 0 },
+                coldPlunges: { week: 0, month: 0, year: 0, all: 0 },
+                saunaSessions: { week: 0, month: 0, year: 0, all: 0 },
+                yogaSessions: { week: 0, month: 0, year: 0, all: 0 },
+                rides: { week: 0, month: 0, year: 0, all: 0 },
+                cycleMiles: { week: 0, month: 0, year: 0, all: 0 },
+                cycleMinutes: { week: 0, month: 0, year: 0, all: 0 }
+              }
+            };
+          }
+        });
+
+        const friendsWithStats = await Promise.all(friendDataPromises);
+        allUsers = [...friendsWithStats, currentUserEntry];
+      }
+
+      setLeaderboardData(allUsers);
+    } catch (error) {
+      console.error('Error loading leaderboard:', error);
+      // On error, show just the current user with zero stats
+      setLeaderboardData([{
+        uid: user.uid,
+        username: userProfile?.username || 'You',
+        displayName: userProfile?.displayName || 'You',
+        photoURL: userProfile?.photoURL,
+        masterStreak: 0,
+        strengthStreak: 0,
+        cardioStreak: 0,
+        recoveryStreak: 0,
+        weeksWon: 0,
+        totalWorkouts: 0,
         stats: {
-          calories: { week: isAppReviewAccount ? 3800 : 0, month: isAppReviewAccount ? 16200 : 0, year: isAppReviewAccount ? 185000 : 0, all: isAppReviewAccount ? 420000 : 0 },
-          steps: { week: isAppReviewAccount ? 58000 : 0, month: isAppReviewAccount ? 245000 : 0, year: isAppReviewAccount ? 2800000 : 0, all: isAppReviewAccount ? 8500000 : 0 }
+          calories: { week: 0, month: 0, year: 0, all: 0 },
+          steps: { week: 0, month: 0, year: 0, all: 0 }
         },
         volume: {
-          runs: { week: isAppReviewAccount ? 4 : 0, month: isAppReviewAccount ? 15 : 0, year: isAppReviewAccount ? 175 : 0, all: isAppReviewAccount ? 420 : 0 },
-          miles: { week: isAppReviewAccount ? 20 : 0, month: isAppReviewAccount ? 78 : 0, year: isAppReviewAccount ? 910 : 0, all: isAppReviewAccount ? 2184 : 0 },
-          runMinutes: { week: isAppReviewAccount ? 200 : 0, month: isAppReviewAccount ? 780 : 0, year: isAppReviewAccount ? 9100 : 0, all: isAppReviewAccount ? 21840 : 0 },
-          strengthSessions: { week: isAppReviewAccount ? 4 : 0, month: isAppReviewAccount ? 16 : 0, year: isAppReviewAccount ? 192 : 0, all: isAppReviewAccount ? 460 : 0 },
-          liftingMinutes: { week: isAppReviewAccount ? 240 : 0, month: isAppReviewAccount ? 960 : 0, year: isAppReviewAccount ? 11520 : 0, all: isAppReviewAccount ? 27600 : 0 },
-          recoverySessions: { week: isAppReviewAccount ? 2 : 0, month: isAppReviewAccount ? 9 : 0, year: isAppReviewAccount ? 105 : 0, all: isAppReviewAccount ? 252 : 0 },
-          coldPlunges: { week: isAppReviewAccount ? 1 : 0, month: isAppReviewAccount ? 3 : 0, year: isAppReviewAccount ? 35 : 0, all: isAppReviewAccount ? 84 : 0 },
-          saunaSessions: { week: isAppReviewAccount ? 1 : 0, month: isAppReviewAccount ? 4 : 0, year: isAppReviewAccount ? 45 : 0, all: isAppReviewAccount ? 108 : 0 },
-          yogaSessions: { week: 0, month: isAppReviewAccount ? 2 : 0, year: isAppReviewAccount ? 25 : 0, all: isAppReviewAccount ? 60 : 0 },
-          rides: { week: isAppReviewAccount ? 3 : 0, month: isAppReviewAccount ? 11 : 0, year: isAppReviewAccount ? 130 : 0, all: isAppReviewAccount ? 312 : 0 },
-          cycleMiles: { week: isAppReviewAccount ? 40 : 0, month: isAppReviewAccount ? 150 : 0, year: isAppReviewAccount ? 1750 : 0, all: isAppReviewAccount ? 4200 : 0 },
-          cycleMinutes: { week: isAppReviewAccount ? 130 : 0, month: isAppReviewAccount ? 500 : 0, year: isAppReviewAccount ? 5800 : 0, all: isAppReviewAccount ? 13900 : 0 }
+          runs: { week: 0, month: 0, year: 0, all: 0 },
+          miles: { week: 0, month: 0, year: 0, all: 0 },
+          runMinutes: { week: 0, month: 0, year: 0, all: 0 },
+          strengthSessions: { week: 0, month: 0, year: 0, all: 0 },
+          liftingMinutes: { week: 0, month: 0, year: 0, all: 0 },
+          recoverySessions: { week: 0, month: 0, year: 0, all: 0 },
+          coldPlunges: { week: 0, month: 0, year: 0, all: 0 },
+          saunaSessions: { week: 0, month: 0, year: 0, all: 0 },
+          yogaSessions: { week: 0, month: 0, year: 0, all: 0 },
+          rides: { week: 0, month: 0, year: 0, all: 0 },
+          cycleMiles: { week: 0, month: 0, year: 0, all: 0 },
+          cycleMinutes: { week: 0, month: 0, year: 0, all: 0 }
         },
         isCurrentUser: true
-      }
-    ];
-
-    setLeaderboardData(allUsers);
-    setLeaderboardLoading(false);
+      }]);
+    } finally {
+      setLeaderboardLoading(false);
+    }
   }, [user, userProfile]);
 
   useEffect(() => {
@@ -2330,11 +2582,40 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
 
         {/* Leaderboard content */}
         <div className="px-4 pb-32">
-          {/* Leaderboard headline */}
+          {/* Leaderboard headline with Time Dropdown */}
           <div className="mb-4" style={{ touchAction: 'pan-y' }}>
-            <div className="flex items-center gap-2">
-              <SectionIcon type="leaderboard" />
-              <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Leaderboard</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <SectionIcon type="leaderboard" />
+                <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Leaderboard</span>
+              </div>
+              {/* Time Range Dropdown */}
+              <select
+                value={leaderboardTimeRange}
+                onChange={(e) => setLeaderboardTimeRange(e.target.value)}
+                className="px-2.5 py-1.5 rounded-lg bg-zinc-800/50 border border-white/10 text-white text-xs appearance-none cursor-pointer shrink-0"
+                style={{
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23999'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
+                  backgroundRepeat: 'no-repeat',
+                  backgroundPosition: 'right 6px center',
+                  backgroundSize: '12px',
+                  paddingRight: '24px'
+                }}
+              >
+                {leaderboardSection === 'activity' ? (
+                  <>
+                    <option value="week">Week</option>
+                    <option value="month">Month</option>
+                    <option value="year">Year</option>
+                    <option value="all">All Time</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="year">This Year</option>
+                    <option value="all">All Time</option>
+                  </>
+                )}
+              </select>
             </div>
             <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>See how you rank among friends</p>
           </div>
@@ -2370,7 +2651,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                     }
                   }
                 }}
-                className="flex-1 py-1.5 rounded-md text-xs font-semibold transition-colors duration-200 relative z-10"
+                className="flex-1 py-1.5 rounded-md text-xs font-semibold transition-colors duration-200 relative z-10 text-center"
                 style={{ color: leaderboardSection === section.key ? 'black' : 'rgba(255,255,255,0.5)' }}
               >
                 {section.label}
@@ -2378,76 +2659,45 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             ))}
           </div>
 
-          {/* Category Pills + Time Dropdown Row */}
-          <div className="flex items-center justify-between mb-4">
-            {/* Category Pills - using ScrollablePill for proper scroll + tap behavior */}
-            <div className="flex gap-1.5 overflow-x-auto no-scrollbar flex-1 mr-3 -mx-1 px-1" style={{ WebkitOverflowScrolling: 'touch' }}>
-              {leaderboardSection === 'activity' ? (
-                [
-                  { key: 'calories', label: '🔥 Calories', color: '#FF6B6B' },
-                  { key: 'steps', label: '👟 Steps', color: '#3498DB' },
-                  { key: 'workouts', label: '💪 Workouts', color: '#00FF94' },
-                  { key: 'strengthSessions', label: '🏋️ Strength', color: '#00FF94' },
-                  { key: 'cardioSessions', label: '🏃 Cardio', color: '#FF9500' },
-                  { key: 'recoverySessions', label: '🧊 Recovery', color: '#00D1FF' }
-                ].map((cat) => (
-                  <ScrollablePill
-                    key={cat.key}
-                    onClick={() => setLeaderboardCategory(cat.key)}
-                    isSelected={leaderboardCategory === cat.key}
-                    color={cat.color}
-                    textColor="black"
-                  >
-                    {cat.label}
-                  </ScrollablePill>
-                ))
-              ) : (
-                [
-                  { key: 'master', label: '🏆 Overall', color: '#FFD700' },
-                  { key: 'strength', label: '💪 Strength', color: '#00FF94' },
-                  { key: 'cardio', label: '🏃 Cardio', color: '#FF9500' },
-                  { key: 'recovery', label: '🧊 Recovery', color: '#00D1FF' }
-                ].map((cat) => (
-                  <ScrollablePill
-                    key={cat.key}
-                    onClick={() => setLeaderboardCategory(cat.key)}
-                    isSelected={leaderboardCategory === cat.key}
-                    color={cat.color}
-                    textColor={cat.key === 'master' ? 'black' : 'white'}
-                  >
-                    {cat.label}
-                  </ScrollablePill>
-                ))
-              )}
-            </div>
-
-            {/* Time Range Dropdown */}
-            <select
-              value={leaderboardTimeRange}
-              onChange={(e) => setLeaderboardTimeRange(e.target.value)}
-              className="px-2.5 py-1.5 rounded-lg bg-zinc-800/50 border border-white/10 text-white text-xs appearance-none cursor-pointer shrink-0"
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23999'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
-                backgroundRepeat: 'no-repeat',
-                backgroundPosition: 'right 6px center',
-                backgroundSize: '12px',
-                paddingRight: '24px'
-              }}
-            >
-              {leaderboardSection === 'activity' ? (
-                <>
-                  <option value="week">Week</option>
-                  <option value="month">Month</option>
-                  <option value="year">Year</option>
-                  <option value="all">All Time</option>
-                </>
-              ) : (
-                <>
-                  <option value="year">This Year</option>
-                  <option value="all">All Time</option>
-                </>
-              )}
-            </select>
+          {/* Category Pills */}
+          <div className="flex gap-1.5 overflow-x-auto no-scrollbar mb-4 -mx-1 px-1" style={{ WebkitOverflowScrolling: 'touch' }}>
+            {leaderboardSection === 'activity' ? (
+              [
+                { key: 'calories', label: '🔥 Calories', color: '#FF6B6B' },
+                { key: 'steps', label: '👟 Steps', color: '#3498DB' },
+                { key: 'workouts', label: '💪 Workouts', color: '#00FF94' },
+                { key: 'strengthSessions', label: '🏋️ Strength', color: '#00FF94' },
+                { key: 'cardioSessions', label: '🏃 Cardio', color: '#FF9500' },
+                { key: 'recoverySessions', label: '🧊 Recovery', color: '#00D1FF' }
+              ].map((cat) => (
+                <ScrollablePill
+                  key={cat.key}
+                  onClick={() => setLeaderboardCategory(cat.key)}
+                  isSelected={leaderboardCategory === cat.key}
+                  color={cat.color}
+                  textColor="black"
+                >
+                  {cat.label}
+                </ScrollablePill>
+              ))
+            ) : (
+              [
+                { key: 'master', label: '🏆 Overall', color: '#FFD700' },
+                { key: 'strength', label: '💪 Strength', color: '#00FF94' },
+                { key: 'cardio', label: '🏃 Cardio', color: '#FF9500' },
+                { key: 'recovery', label: '🧊 Recovery', color: '#00D1FF' }
+              ].map((cat) => (
+                <ScrollablePill
+                  key={cat.key}
+                  onClick={() => setLeaderboardCategory(cat.key)}
+                  isSelected={leaderboardCategory === cat.key}
+                  color={cat.color}
+                  textColor={cat.key === 'master' ? 'black' : 'white'}
+                >
+                  {cat.label}
+                </ScrollablePill>
+              ))
+            )}
           </div>
 
           {leaderboardLoading ? (

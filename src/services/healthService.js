@@ -208,6 +208,23 @@ function convertWorkoutToActivity(workout) {
   return activity;
 }
 
+// Query heart rate samples from HealthKit for a specific time range
+// Uses the native HealthKitWriter plugin to access HR data
+export async function queryHeartRateForTimeRange(startDate, endDate) {
+  if (!Capacitor.isNativePlatform()) return null;
+
+  try {
+    const result = await HealthKitWriter.queryHeartRate({
+      startDate: typeof startDate === 'string' ? startDate : startDate.toISOString(),
+      endDate: typeof endDate === 'string' ? endDate : endDate.toISOString()
+    });
+    return result.hasData ? { avgHr: result.avgHr, maxHr: result.maxHr } : null;
+  } catch (error) {
+    console.error('[HR Query] Error querying heart rate:', error);
+    return null;
+  }
+}
+
 // Fetch workouts from HealthKit
 export async function fetchHealthKitWorkouts(days = 7) {
   if (!Capacitor.isNativePlatform()) return [];
@@ -228,54 +245,38 @@ export async function fetchHealthKitWorkouts(days = 7) {
     }
 
     // Convert HealthKit workouts to our format, filter, and fetch heart rate data
-    const activitiesWithHR = await Promise.all(
-      result.workouts
-        .filter(workout => {
-          // Exclude workouts created by DaySeven
-          const sourceName = (workout.sourceName || '').toLowerCase();
-          return !sourceName.includes('dayseven');
-        })
-        .map(async (workout) => {
-          const activity = convertWorkoutToActivity(workout);
+    const filteredWorkouts = result.workouts.filter(workout => {
+      // Exclude workouts created by DaySeven
+      const sourceName = (workout.sourceName || '').toLowerCase();
+      return !sourceName.includes('dayseven');
+    });
 
-          // Fetch heart rate data for this workout's time range if not already present
-          if (!activity.avgHr || !activity.maxHr) {
-            try {
-              const hrResult = await Health.query({
-                dataType: 'heartRate',
-                startDate: workout.startDate,
-                endDate: workout.endDate,
-                limit: 500
-              });
+    // Convert workouts and fetch heart rate for each
+    const activities = await Promise.all(
+      filteredWorkouts.map(async (workout) => {
+        const activity = convertWorkoutToActivity(workout);
 
-              if (hrResult.samples && hrResult.samples.length > 0) {
-                const hrValues = hrResult.samples
-                  .map(s => parseFloat(s.value))
-                  .filter(v => !isNaN(v) && v > 0);
-
-                if (hrValues.length > 0) {
-                  const sum = hrValues.reduce((a, b) => a + b, 0);
-                  activity.avgHr = Math.round(sum / hrValues.length);
-                  activity.maxHr = Math.round(Math.max(...hrValues));
-                }
-              }
-            } catch (hrError) {
-              console.log('Error fetching HR for workout:', hrError);
-            }
+        // If no heart rate data from the workout object, query it separately
+        if (!activity.avgHr && !activity.maxHr) {
+          const hrData = await queryHeartRateForTimeRange(workout.startDate, workout.endDate);
+          if (hrData) {
+            activity.avgHr = hrData.avgHr;
+            activity.maxHr = hrData.maxHr;
           }
+        }
 
-          return activity;
-        })
+        return activity;
+      })
     );
 
     // Sort by date (most recent first)
-    activitiesWithHR.sort((a, b) => {
+    activities.sort((a, b) => {
       const dateA = new Date(a.date + 'T' + (a.time || '00:00'));
       const dateB = new Date(b.date + 'T' + (b.time || '00:00'));
       return dateB - dateA;
     });
 
-    return activitiesWithHR;
+    return activities;
   } catch (error) {
     console.error('Error fetching HealthKit workouts:', error);
     return [];
@@ -302,56 +303,39 @@ export async function fetchLinkableWorkouts(date, linkedWorkoutIds = []) {
       return [];
     }
 
-    // Convert and filter workouts, then fetch heart rate data for each
-    const activitiesWithHR = await Promise.all(
-      result.workouts
-        .filter(workout => {
-          // Exclude workouts created by DaySeven
-          const sourceName = (workout.sourceName || '').toLowerCase();
-          if (sourceName.includes('dayseven')) return false;
-          return true;
-        })
-        .map(async (workout) => {
-          const activity = convertWorkoutToActivity(workout);
+    // Filter workouts and convert
+    const filteredWorkouts = result.workouts
+      .filter(workout => {
+        // Exclude workouts created by DaySeven
+        const sourceName = (workout.sourceName || '').toLowerCase();
+        return !sourceName.includes('dayseven');
+      });
 
-          // Exclude already linked workouts
-          if (linkedWorkoutIds.includes(activity.healthKitUUID)) return null;
+    // Convert workouts and fetch heart rate for each
+    const activities = await Promise.all(
+      filteredWorkouts.map(async (workout) => {
+        const activity = convertWorkoutToActivity(workout);
 
-          // Fetch heart rate data for this workout's time range if not already present
-          if (!activity.avgHr || !activity.maxHr) {
-            try {
-              const hrResult = await Health.query({
-                dataType: 'heartRate',
-                startDate: workout.startDate,
-                endDate: workout.endDate,
-                limit: 500
-              });
-
-              if (hrResult.samples && hrResult.samples.length > 0) {
-                const hrValues = hrResult.samples
-                  .map(s => parseFloat(s.value))
-                  .filter(v => !isNaN(v) && v > 0);
-
-                if (hrValues.length > 0) {
-                  const sum = hrValues.reduce((a, b) => a + b, 0);
-                  activity.avgHr = Math.round(sum / hrValues.length);
-                  activity.maxHr = Math.round(Math.max(...hrValues));
-                }
-              }
-            } catch (hrError) {
-              console.log('Error fetching HR for workout:', hrError);
-            }
+        // If no heart rate data from the workout object, query it separately
+        if (!activity.avgHr && !activity.maxHr) {
+          const hrData = await queryHeartRateForTimeRange(workout.startDate, workout.endDate);
+          if (hrData) {
+            activity.avgHr = hrData.avgHr;
+            activity.maxHr = hrData.maxHr;
           }
+        }
 
-          return activity;
-        })
+        return activity;
+      })
     );
 
-    // Filter out nulls (excluded workouts)
-    const activities = activitiesWithHR.filter(a => a !== null);
+    // Filter out already linked workouts
+    const unlinkedActivities = activities.filter(
+      activity => !linkedWorkoutIds.includes(activity.healthKitUUID)
+    );
 
     // Sort by time (most recent first)
-    activities.sort((a, b) => {
+    unlinkedActivities.sort((a, b) => {
       const timeA = a.time || '00:00 AM';
       const timeB = b.time || '00:00 AM';
       // Parse 12-hour time to comparable format
@@ -368,7 +352,7 @@ export async function fetchLinkableWorkouts(date, linkedWorkoutIds = []) {
       return parseTime(timeB) - parseTime(timeA);
     });
 
-    return activities;
+    return unlinkedActivities;
   } catch (error) {
     console.error('Error fetching linkable workouts:', error);
     return [];
@@ -671,31 +655,10 @@ export async function fetchWorkoutMetricsForTimeRange(startTime, endTime) {
       console.log('Error fetching calories for workout:', error);
     }
 
-    // Fetch heart rate samples for the time range
-    try {
-      const hrResult = await Health.query({
-        dataType: 'heartRate',
-        startDate: startTime,
-        endDate: endTime,
-        limit: 1000 // Get enough samples for good avg/max calculation
-      });
-      console.log('Heart rate samples for workout:', hrResult?.samples?.length || 0);
-
-      if (hrResult.samples && hrResult.samples.length > 0) {
-        const hrValues = hrResult.samples
-          .map(s => parseFloat(s.value))
-          .filter(v => !isNaN(v) && v > 0);
-
-        if (hrValues.length > 0) {
-          // Calculate average and max HR
-          const sum = hrValues.reduce((a, b) => a + b, 0);
-          metrics.avgHr = Math.round(sum / hrValues.length);
-          metrics.maxHr = Math.round(Math.max(...hrValues));
-        }
-      }
-    } catch (error) {
-      console.log('Error fetching heart rate for workout:', error);
-    }
+    // Note: Heart rate querying via Health.query({ dataType: 'heartRate' }) is not
+    // supported by the @capgo/capacitor-health plugin. HR data is available directly
+    // from workout objects when using queryWorkouts(). For live workouts, HR comes
+    // from the native HealthKitWriter plugin's observer queries.
 
     const hasData = metrics.calories || metrics.avgHr || metrics.maxHr;
 

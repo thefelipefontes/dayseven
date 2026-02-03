@@ -1213,12 +1213,16 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       const limitedActivities = flatActivities.slice(0, 50);
       setFeedActivities(limitedActivities);
 
-      // Fetch reactions and comments for each activity
+      // Only fetch reactions/comments for the first batch of visible activities
+      // This reduces initial Firestore calls from 100+ to ~20
+      const INITIAL_FETCH_COUNT = 10;
+      const initialActivities = limitedActivities.slice(0, INITIAL_FETCH_COUNT);
+
       const reactionsMap = {};
       const commentsMap = {};
       const repliesMap = {};
       await Promise.all(
-        limitedActivities.map(async (activity) => {
+        initialActivities.map(async (activity) => {
           if (activity.id) {
             const key = `${activity.friend.uid}-${activity.id}`;
             const [reactions, comments] = await Promise.all([
@@ -1246,6 +1250,44 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       setActivityReactions(reactionsMap);
       setActivityComments(commentsMap);
       setCommentReplies(repliesMap);
+
+      // Fetch remaining activities' reactions/comments in the background
+      if (limitedActivities.length > INITIAL_FETCH_COUNT) {
+        const remainingActivities = limitedActivities.slice(INITIAL_FETCH_COUNT);
+        // Don't await - let this run in background
+        Promise.all(
+          remainingActivities.map(async (activity) => {
+            if (activity.id) {
+              const key = `${activity.friend.uid}-${activity.id}`;
+              const [reactions, comments] = await Promise.all([
+                getReactions(activity.friend.uid, activity.id),
+                getComments(activity.friend.uid, activity.id)
+              ]);
+              // Update state incrementally
+              setActivityReactions(prev => ({ ...prev, [key]: reactions }));
+              setActivityComments(prev => ({ ...prev, [key]: comments }));
+
+              // Load replies for each comment
+              if (comments.length > 0) {
+                const activityReplies = {};
+                await Promise.all(
+                  comments.map(async (comment) => {
+                    const replies = await getReplies(activity.friend.uid, activity.id, comment.id);
+                    if (replies.length > 0) {
+                      activityReplies[comment.id] = replies;
+                    }
+                  })
+                );
+                if (Object.keys(activityReplies).length > 0) {
+                  setCommentReplies(prev => ({ ...prev, [key]: activityReplies }));
+                }
+              }
+            }
+          })
+        ).catch(() => {
+          // Silently handle background fetch errors
+        });
+      }
     } catch (error) {
       // console.error('Error loading activity feed:', error);
     }

@@ -14,6 +14,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "endLiveWorkout", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancelLiveWorkout", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getLiveWorkoutMetrics", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "queryHeartRate", returnType: CAPPluginReturnPromise),
         // Legacy observer methods (keeping for backward compatibility)
         CAPPluginMethod(name: "startObservingMetrics", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopObservingMetrics", returnType: CAPPluginReturnPromise),
@@ -699,6 +700,77 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         healthStore.execute(query)
+    }
+
+    // MARK: - Heart Rate Query
+
+    @objc func queryHeartRate(_ call: CAPPluginCall) {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            call.resolve(["hasData": false])
+            return
+        }
+
+        guard let startDateString = call.getString("startDate"),
+              let endDateString = call.getString("endDate"),
+              let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate) else {
+            call.resolve(["hasData": false])
+            return
+        }
+
+        guard let startDate = isoFormatter.date(from: startDateString) ?? isoFormatterNoFraction.date(from: startDateString),
+              let endDate = isoFormatter.date(from: endDateString) ?? isoFormatterNoFraction.date(from: endDateString) else {
+            call.reject("Invalid date format. Use ISO 8601 (e.g., 2024-01-15T14:30:00.000Z)")
+            return
+        }
+
+        // Request read authorization for heart rate
+        let typesToRead: Set<HKObjectType> = [heartRateType]
+
+        healthStore.requestAuthorization(toShare: nil, read: typesToRead) { [weak self] success, error in
+            guard let self = self else { return }
+
+            if !success {
+                DispatchQueue.main.async {
+                    call.resolve(["hasData": false])
+                }
+                return
+            }
+
+            let predicate = HKQuery.predicateForSamples(
+                withStart: startDate,
+                end: endDate,
+                options: [.strictStartDate, .strictEndDate]
+            )
+
+            let query = HKSampleQuery(
+                sampleType: heartRateType,
+                predicate: predicate,
+                limit: HKObjectQueryNoLimit,
+                sortDescriptors: nil
+            ) { _, samples, _ in
+                DispatchQueue.main.async {
+                    guard let samples = samples as? [HKQuantitySample], !samples.isEmpty else {
+                        call.resolve(["hasData": false])
+                        return
+                    }
+
+                    let hrUnit = HKUnit.count().unitDivided(by: .minute())
+                    let hrValues = samples.map { $0.quantity.doubleValue(for: hrUnit) }
+
+                    let avgHr = hrValues.reduce(0, +) / Double(hrValues.count)
+                    let maxHr = hrValues.max() ?? 0
+
+                    call.resolve([
+                        "hasData": true,
+                        "avgHr": Int(round(avgHr)),
+                        "maxHr": Int(round(maxHr)),
+                        "sampleCount": hrValues.count
+                    ])
+                }
+            }
+
+            self.healthStore.execute(query)
+        }
     }
 
     // MARK: - Activity Type Mapping

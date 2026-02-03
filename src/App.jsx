@@ -12,7 +12,7 @@ import html2canvas from 'html2canvas';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
-import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts } from './services/healthService';
+import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange } from './services/healthService';
 
 // Helper function for haptic feedback that works on iOS
 const triggerHaptic = async (style = ImpactStyle.Medium) => {
@@ -6077,14 +6077,25 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
         <div className="p-5 overflow-y-auto flex-1">
           {/* Activity Type Header */}
           <div className="flex items-center gap-4 mb-6">
-            <div 
+            <div
               className="w-14 h-14 rounded-2xl flex items-center justify-center"
               style={{ backgroundColor: `${color}20` }}
             >
               <ActivityIcon type={activity.type} size={28} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} />
             </div>
             <div className="flex-1">
-              <div className="text-xl font-bold">{activity.type}</div>
+              <div className="flex items-center gap-2">
+                <span className="text-xl font-bold">{activity.type}</span>
+                {(activity.avgHr || activity.maxHr) && (
+                  <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                    <span className="text-red-400">♥</span>
+                    {activity.avgHr && <span>{activity.avgHr}</span>}
+                    {activity.avgHr && activity.maxHr && <span>/</span>}
+                    {activity.maxHr && <span>{activity.maxHr}</span>}
+                    <span>bpm</span>
+                  </div>
+                )}
+              </div>
               {activity.strengthType && activity.focusArea ? (
                 <div className="text-sm text-gray-400">{activity.strengthType} • {activity.focusArea}</div>
               ) : activity.subtype && (
@@ -6126,18 +6137,6 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
               <div className="p-4 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                 <div className="text-xs text-gray-500 mb-1">Calories</div>
                 <div className="text-lg font-bold">{activity.calories} cal</div>
-              </div>
-            )}
-            {activity.avgHr && (
-              <div className="p-4 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                <div className="text-xs text-gray-500 mb-1">Avg Heart Rate</div>
-                <div className="text-lg font-bold">{activity.avgHr} bpm</div>
-              </div>
-            )}
-            {activity.maxHr && (
-              <div className="p-4 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                <div className="text-xs text-gray-500 mb-1">Max Heart Rate</div>
-                <div className="text-lg font-bold">{activity.maxHr} bpm</div>
               </div>
             )}
             {parseFloat(activity.distance) > 0 && activity.duration && (
@@ -7394,6 +7393,47 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       setShowAllInitialWorkouts(false);
     }
   }, [isOpen, pendingActivity, defaultDate]);
+
+  // Fetch HR data from HealthKit when editing an activity that's linked but missing HR
+  useEffect(() => {
+    if (!isOpen || !pendingActivity) return;
+
+    // Fetch HR if activity is linked to Apple Health but missing HR data
+    const isFromAppleHealth = pendingActivity?.linkedHealthKitUUID ||
+      pendingActivity?.healthKitUUID ||
+      pendingActivity?.fromAppleHealth ||
+      pendingActivity?.source === 'healthkit';
+    const missingHR = !pendingActivity?.avgHr && !pendingActivity?.maxHr;
+
+    if (isFromAppleHealth && missingHR && pendingActivity?.date && pendingActivity?.time && pendingActivity?.duration) {
+      // Construct time range from date, time, and duration
+      const parseActivityTime = (dateStr, timeStr) => {
+        const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+        if (!match) return null;
+        let hours = parseInt(match[1], 10);
+        const minutes = parseInt(match[2], 10);
+        const isPM = match[3].toUpperCase() === 'PM';
+        if (isPM && hours !== 12) hours += 12;
+        if (!isPM && hours === 12) hours = 0;
+        const date = new Date(dateStr + 'T00:00:00');
+        date.setHours(hours, minutes, 0, 0);
+        return date;
+      };
+
+      const startTime = parseActivityTime(pendingActivity.date, pendingActivity.time);
+      if (startTime) {
+        const endTime = new Date(startTime.getTime() + pendingActivity.duration * 60 * 1000);
+        queryHeartRateForTimeRange(startTime.toISOString(), endTime.toISOString())
+          .then(hrData => {
+            if (hrData) {
+              setAvgHr(hrData.avgHr.toString());
+              setMaxHr(hrData.maxHr.toString());
+            }
+          })
+          .catch(() => {});
+      }
+    }
+  }, [isOpen, pendingActivity]);
 
   // Fetch linkable Apple Health workouts when modal opens or date changes
   useEffect(() => {
@@ -9424,10 +9464,11 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
                 {formatWorkoutDate(workout.date)}{workout.date && ' • '}{workout.time} • {workout.duration} min
                 {workout.sourceDevice && ` • ${workout.sourceDevice}`}
               </div>
-              {(workout.calories || workout.distance) && (
+              {(workout.calories || workout.distance || workout.avgHr) && (
                 <div className="flex gap-3 mt-1.5 text-xs text-gray-500">
                   {workout.calories && <span>🔥 {workout.calories} cal</span>}
                   {workout.distance && <span>📍 {workout.distance} mi</span>}
+                  {workout.avgHr && <span>♥ {workout.avgHr} bpm</span>}
                 </div>
               )}
           </div>
@@ -16678,8 +16719,9 @@ export default function DaySevenApp() {
     // console.log('Saved activity:', newActivity, 'Cardio count:', newProgress.cardio?.completed);
 
     // Write to HealthKit (fire-and-forget, don't block the save flow)
-    // Skip if: editing existing activity, came from Apple Health, is HealthKit-sourced, linked to existing HealthKit workout, or already saved (live workout)
-    if (!isEdit && !activityData.fromAppleHealth && activityData.source !== 'healthkit' && !activityData.linkedHealthKitUUID && !activityData.healthKitSaved) {
+    // Skip if: editing existing activity, came from Apple Health, is HealthKit-sourced, linked to existing HealthKit workout, already saved (live workout), or is Cold Plunge/Sauna
+    const skipHealthKitTypes = ['Cold Plunge', 'Sauna'];
+    if (!isEdit && !activityData.fromAppleHealth && activityData.source !== 'healthkit' && !activityData.linkedHealthKitUUID && !activityData.healthKitSaved && !skipHealthKitTypes.includes(newActivity.type)) {
       saveWorkoutToHealthKit(newActivity)
         .then(result => {
           if (result.success) {
@@ -17417,7 +17459,9 @@ export default function DaySevenApp() {
                   onAddActivity={handleAddActivity}
                   pendingSync={(healthKitData.pendingWorkouts || []).filter(w => {
                     // Filter out dismissed workouts
-                    if (dismissedWorkoutUUIDs.includes(w.healthKitUUID)) return false;
+                    if (dismissedWorkoutUUIDs.includes(w.healthKitUUID)) {
+                      return false;
+                    }
                     // Filter out workouts already saved/linked in activities
                     const isAlreadySaved = activities.some(a => {
                       // Direct UUID match

@@ -139,6 +139,14 @@ const SectionIcon = ({ type, size = 22, color = '#04d1ff' }) => {
         <polyline points="12 6 12 12 16 14"/>
       </svg>
     ),
+    compare: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M16 3l4 4-4 4"/>
+        <path d="M20 7H4"/>
+        <path d="M8 21l-4-4 4-4"/>
+        <path d="M4 17h16"/>
+      </svg>
+    ),
   };
   return icons[type] || null;
 };
@@ -3360,7 +3368,7 @@ const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1, goals 
 };
 
 // Share Modal
-const ShareModal = ({ isOpen, onClose, stats, weekRange }) => {
+const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange }) => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [cardType, setCardType] = useState('weekly');
@@ -4299,7 +4307,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange }) => {
             {/* Header with stats as subtext */}
             <div className="flex-1 flex flex-col justify-center w-full">
               <div className={`text-center ${isPostFormat ? 'mb-2' : 'mb-2.5'}`}>
-                <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500 uppercase tracking-wider`}>{currentMonth} {currentYear}</div>
+                <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500 uppercase tracking-wider`}>{stats?.shareMonthName || currentMonth} {stats?.shareMonthYear || currentYear}</div>
                 <div className={`font-black ${isPostFormat ? 'text-xl' : 'text-2xl'}`} style={{ color: colors.primary, textShadow: `0 0 20px ${colors.glow}` }}>Monthly Recap</div>
                 {/* Stats as subtext row */}
                 <div className={`flex flex-wrap justify-center items-center ${isPostFormat ? 'gap-x-2 gap-y-0.5 mt-1.5' : 'gap-x-3 gap-y-1 mt-2'}`}>
@@ -4358,19 +4366,28 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange }) => {
                   </div>
                 </div>
 
-                {/* Highlights Section - just Best Burn and Longest Session */}
-                <div className={`w-full grid grid-cols-2 ${isPostFormat ? 'gap-1.5' : 'gap-2'}`}>
+                {/* Highlights Section - Best Burn, Longest Session, Furthest Distance */}
+                <div className={`w-full grid grid-cols-3 ${isPostFormat ? 'gap-1' : 'gap-1.5'}`}>
                   {/* Best Burn */}
-                  <div className={`${isPostFormat ? 'p-1.5' : 'p-2'} rounded-xl text-center`} style={{ backgroundColor: 'rgba(255,149,0,0.08)' }}>
-                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500 uppercase`}>Best Burn</div>
-                    <div className={isPostFormat ? 'text-sm' : 'text-base'}>{getActivityEmoji(stats?.monthlyHighestCalorieSession?.type)}</div>
-                    <div className={`${isPostFormat ? 'text-xs' : 'text-sm'} font-black`} style={{ color: '#FF9500' }}>{(stats?.monthlyHighestCalorieSession?.calories || 0).toLocaleString()} <span className="font-normal text-gray-500">cal</span></div>
+                  <div className={`${isPostFormat ? 'p-1' : 'p-1.5'} rounded-xl text-center`} style={{ backgroundColor: 'rgba(255,149,0,0.08)' }}>
+                    <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500 uppercase`}>Best Burn</div>
+                    <div className={isPostFormat ? 'text-xs' : 'text-sm'}>{getActivityEmoji(stats?.monthlyHighestCalorieSession?.type)}</div>
+                    <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} font-black`} style={{ color: '#FF9500' }}>{(stats?.monthlyHighestCalorieSession?.calories || 0).toLocaleString()}</div>
+                    <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500`}>cal</div>
                   </div>
                   {/* Longest Session */}
-                  <div className={`${isPostFormat ? 'p-1.5' : 'p-2'} rounded-xl text-center`} style={{ backgroundColor: 'rgba(0,255,148,0.08)' }}>
-                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500 uppercase`}>Longest Session</div>
-                    <div className={isPostFormat ? 'text-sm' : 'text-base'}>{getActivityEmoji(stats?.monthlyLongestSession?.type)}</div>
-                    <div className={`${isPostFormat ? 'text-xs' : 'text-sm'} font-black`} style={{ color: '#00FF94' }}>{stats?.monthlyLongestSession?.duration || 0} <span className="font-normal text-gray-500">min</span></div>
+                  <div className={`${isPostFormat ? 'p-1' : 'p-1.5'} rounded-xl text-center`} style={{ backgroundColor: 'rgba(147,112,219,0.08)' }}>
+                    <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500 uppercase`}>Longest</div>
+                    <div className={isPostFormat ? 'text-xs' : 'text-sm'}>{getActivityEmoji(stats?.monthlyLongestSession?.type)}</div>
+                    <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} font-black`} style={{ color: '#9370DB' }}>{stats?.monthlyLongestSession?.duration || 0}</div>
+                    <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500`}>min</div>
+                  </div>
+                  {/* Furthest Distance */}
+                  <div className={`${isPostFormat ? 'p-1' : 'p-1.5'} rounded-xl text-center`} style={{ backgroundColor: 'rgba(50,205,50,0.08)' }}>
+                    <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500 uppercase`}>Furthest</div>
+                    <div className={isPostFormat ? 'text-xs' : 'text-sm'}>{getActivityEmoji(stats?.monthlyFurthestDistance?.type)}</div>
+                    <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} font-black`} style={{ color: '#32CD32' }}>{(stats?.monthlyFurthestDistance?.distance || 0).toFixed(1)}</div>
+                    <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500`}>mi</div>
                   </div>
                 </div>
 
@@ -5485,6 +5502,385 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
         )}
         </SwipeableProvider>
       </div>
+      </div>
+    </div>
+  );
+};
+
+// Month Stats Modal - Similar to WeekStatsModal but for monthly data
+const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, userData, activities, healthHistory }) => {
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setIsClosing(false);
+      setTimeout(() => setIsAnimating(true), 10);
+    } else {
+      setIsAnimating(false);
+    }
+  }, [isOpen]);
+
+  const handleClose = () => {
+    setIsAnimating(false);
+    setIsClosing(true);
+    setTimeout(() => {
+      setIsClosing(false);
+      onClose();
+    }, 300);
+  };
+
+  if (!isOpen && !isClosing) return null;
+
+  const goals = userData?.goals || initialUserData.goals;
+
+  // Activity type definitions
+  const cardioTypes = ['Running', 'Cycle', 'Sports', 'Walking', 'Hiking', 'Swimming', 'Rowing', 'Stair Climbing', 'Elliptical', 'HIIT'];
+  const recoveryTypes = ['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'];
+
+  // Calculate stats from monthData
+  const monthActivities = monthData?.activities || [];
+  const monthDates = monthData?.dates || [];
+
+  // Session counts
+  const liftsCount = monthActivities.filter(a =>
+    a.type === 'Strength Training' ||
+    (a.type === 'Other' && (a.customActivityCategory === 'strength' || a.countToward === 'strength'))
+  ).length;
+
+  const cardioCount = monthActivities.filter(a =>
+    cardioTypes.includes(a.type) ||
+    (a.type === 'Other' && (a.customActivityCategory === 'cardio' || a.countToward === 'cardio'))
+  ).length;
+
+  const recoveryCount = monthActivities.filter(a =>
+    recoveryTypes.includes(a.type) ||
+    (a.type === 'Other' && (a.customActivityCategory === 'recovery' || a.countToward === 'recovery'))
+  ).length;
+
+  // Calculate totals
+  const totalCalories = monthData?.calories || 0;
+  const totalMiles = monthActivities
+    .filter(a => a.distance)
+    .reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+  const totalSteps = monthData?.steps || 0;
+  const daysActive = new Set(monthActivities.map(a => a.date)).size;
+
+  // Calculate weeks hitting goals
+  const calculateWeeksHittingGoals = () => {
+    if (monthDates.length === 0) return { lift: 0, cardio: 0, recovery: 0, all: 0, total: 0 };
+
+    // Group dates by week (Sunday-Saturday)
+    const weekMap = {};
+    monthDates.forEach(dateStr => {
+      const date = new Date(dateStr + 'T12:00:00');
+      const dayOfWeek = date.getDay();
+      const weekStart = new Date(date);
+      weekStart.setDate(date.getDate() - dayOfWeek);
+      const weekKey = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
+      if (!weekMap[weekKey]) weekMap[weekKey] = [];
+      weekMap[weekKey].push(dateStr);
+    });
+
+    let liftWeeks = 0, cardioWeeks = 0, recoveryWeeks = 0, allGoalsWeeks = 0;
+    const totalWeeks = Object.keys(weekMap).length;
+
+    Object.values(weekMap).forEach(weekDates => {
+      const weekActivities = monthActivities.filter(a => weekDates.includes(a.date));
+
+      const weekLifts = weekActivities.filter(a =>
+        a.type === 'Strength Training' ||
+        (a.type === 'Other' && (a.customActivityCategory === 'strength' || a.countToward === 'strength'))
+      ).length;
+
+      const weekCardio = weekActivities.filter(a =>
+        cardioTypes.includes(a.type) ||
+        (a.type === 'Other' && (a.customActivityCategory === 'cardio' || a.countToward === 'cardio'))
+      ).length;
+
+      const weekRecovery = weekActivities.filter(a =>
+        recoveryTypes.includes(a.type) ||
+        (a.type === 'Other' && (a.customActivityCategory === 'recovery' || a.countToward === 'recovery'))
+      ).length;
+
+      const liftMet = weekLifts >= goals.liftsPerWeek;
+      const cardioMet = weekCardio >= goals.cardioPerWeek;
+      const recoveryMet = weekRecovery >= goals.recoveryPerWeek;
+
+      if (liftMet) liftWeeks++;
+      if (cardioMet) cardioWeeks++;
+      if (recoveryMet) recoveryWeeks++;
+      if (liftMet && cardioMet && recoveryMet) allGoalsWeeks++;
+    });
+
+    return { lift: liftWeeks, cardio: cardioWeeks, recovery: recoveryWeeks, all: allGoalsWeeks, total: totalWeeks };
+  };
+
+  const weeksData = calculateWeeksHittingGoals();
+
+  // Best burn activity
+  const bestBurn = monthActivities.reduce((best, a) => {
+    const cal = parseInt(a.calories) || 0;
+    if (!best || cal > best.calories) {
+      return { calories: cal, type: a.type };
+    }
+    return best;
+  }, null);
+
+  // Longest session
+  const longestSession = monthActivities.reduce((best, a) => {
+    const dur = parseInt(a.duration) || 0;
+    if (!best || dur > best.duration) {
+      return { duration: dur, type: a.type };
+    }
+    return best;
+  }, null);
+
+  // Furthest distance (any activity with distance - walking, running, cycling, etc.)
+  const furthestDistance = monthActivities.reduce((best, a) => {
+    const dist = parseFloat(a.distance) || 0;
+    if (dist > 0 && (!best || dist > best.distance)) {
+      return { distance: dist, type: a.type };
+    }
+    return best;
+  }, null);
+
+  // Most frequent activity types
+  const strengthFocusCounts = {};
+  monthActivities.filter(a => a.type === 'Strength Training' && a.focusArea).forEach(a => {
+    strengthFocusCounts[a.focusArea] = (strengthFocusCounts[a.focusArea] || 0) + 1;
+  });
+  const mostFrequentStrength = Object.entries(strengthFocusCounts).sort((a, b) => b[1] - a[1])[0];
+
+  const cardioTypeCounts = {};
+  monthActivities.filter(a => cardioTypes.includes(a.type)).forEach(a => {
+    cardioTypeCounts[a.type] = (cardioTypeCounts[a.type] || 0) + 1;
+  });
+  const mostFrequentCardio = Object.entries(cardioTypeCounts).sort((a, b) => b[1] - a[1])[0];
+
+  const recoveryTypeCounts = {};
+  monthActivities.filter(a => recoveryTypes.includes(a.type)).forEach(a => {
+    recoveryTypeCounts[a.type] = (recoveryTypeCounts[a.type] || 0) + 1;
+  });
+  const mostFrequentRecovery = Object.entries(recoveryTypeCounts).sort((a, b) => b[1] - a[1])[0];
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex flex-col transition-all duration-300"
+      style={{ backgroundColor: isAnimating ? 'rgba(0,0,0,0.95)' : 'rgba(0,0,0,0)' }}
+      onClick={(e) => e.target === e.currentTarget && handleClose()}
+    >
+      <div
+        className="flex-1 flex flex-col transition-all duration-300 ease-out overflow-hidden"
+        style={{
+          backgroundColor: '#0A0A0A',
+          transform: isAnimating ? 'translateY(0)' : 'translateY(100%)'
+        }}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-white/10" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)' }}>
+          <button
+            onClick={handleClose}
+            className="text-gray-400 transition-all duration-150 px-2 py-1 rounded-lg"
+            onTouchStart={(e) => {
+              e.currentTarget.style.transform = 'scale(0.9)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            }}
+            onTouchEnd={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
+          >
+            ← Back
+          </button>
+          <h2 className="font-bold">{monthLabel}</h2>
+          <button
+            onClick={() => onShare && onShare()}
+            className="px-3 py-1 rounded-lg text-xs font-medium flex items-center gap-1 transition-all duration-150"
+            style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+            onTouchStart={(e) => {
+              e.currentTarget.style.transform = 'scale(0.9)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.2)';
+            }}
+            onTouchEnd={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            }}
+          >
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+              <polyline points="16 6 12 2 8 6" />
+              <line x1="12" y1="2" x2="12" y2="15" />
+            </svg>
+            <span>Share</span>
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-auto p-4">
+          {/* Summary Stats */}
+          <div className="grid grid-cols-3 gap-2 mb-4">
+            <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
+              <div className="text-2xl font-black" style={{ color: '#00FF94' }}>{liftsCount}</div>
+              <div className="text-[10px] text-gray-400">🏋️ Strength</div>
+            </div>
+            <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
+              <div className="text-2xl font-black" style={{ color: '#FF9500' }}>{cardioCount}</div>
+              <div className="text-[10px] text-gray-400">🏃 Cardio</div>
+            </div>
+            <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
+              <div className="text-2xl font-black" style={{ color: '#00D1FF' }}>{recoveryCount}</div>
+              <div className="text-[10px] text-gray-400">🧊 Recovery</div>
+            </div>
+          </div>
+
+          {/* Month Totals */}
+          <div className="mb-4">
+            <div className="flex items-center gap-2 mb-3">
+              <SectionIcon type="chart" />
+              <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Month Totals</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <div className="text-lg font-black">{totalCalories.toLocaleString()}</div>
+                <div className="text-[10px] text-gray-400">🔥 Calories Burned</div>
+              </div>
+              <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <div className="text-lg font-black">{totalMiles.toFixed(1)} mi</div>
+                <div className="text-[10px] text-gray-400">🏃 Distance</div>
+              </div>
+              <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <div className="text-lg font-black">{(totalSteps / 1000).toFixed(0)}k</div>
+                <div className="text-[10px] text-gray-400">👟 Steps</div>
+              </div>
+              <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <div className="text-lg font-black">{daysActive}</div>
+                <div className="text-[10px] text-gray-400">📅 Days Active</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Highlights */}
+          {(bestBurn || longestSession || furthestDistance) && (
+            <div className="mb-4">
+              <div className="flex items-center gap-2 mb-3">
+                <SectionIcon type="trophy" />
+                <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Highlights</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {bestBurn && bestBurn.calories > 0 && (
+                  <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,69,58,0.1)' }}>
+                    <div className="text-lg font-black" style={{ color: '#FF453A' }}>{bestBurn.calories.toLocaleString()}</div>
+                    <div className="text-[10px] text-gray-400">🔥 Best Burn</div>
+                    <div className="text-[10px] text-gray-500">{bestBurn.type}</div>
+                  </div>
+                )}
+                {longestSession && longestSession.duration > 0 && (
+                  <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(147,112,219,0.1)' }}>
+                    <div className="text-lg font-black" style={{ color: '#9370DB' }}>{longestSession.duration} min</div>
+                    <div className="text-[10px] text-gray-400">⏱️ Longest Session</div>
+                    <div className="text-[10px] text-gray-500">{longestSession.type}</div>
+                  </div>
+                )}
+                {furthestDistance && furthestDistance.distance > 0 && (
+                  <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(50,205,50,0.1)' }}>
+                    <div className="text-lg font-black" style={{ color: '#32CD32' }}>{furthestDistance.distance.toFixed(2)} mi</div>
+                    <div className="text-[10px] text-gray-400">📍 Furthest Distance</div>
+                    <div className="text-[10px] text-gray-500">{furthestDistance.type}</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Most Frequent */}
+          {(mostFrequentStrength || mostFrequentCardio || mostFrequentRecovery) && (
+            <div className="mb-4">
+              <div className="flex items-center gap-2 mb-3">
+                <SectionIcon type="activity" />
+                <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Most Frequent</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {mostFrequentStrength && (
+                  <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,255,148,0.05)' }}>
+                    <div className="text-sm font-bold" style={{ color: '#00FF94' }}>{mostFrequentStrength[0]}</div>
+                    <div className="text-[10px] text-gray-500">{mostFrequentStrength[1]}x this month</div>
+                  </div>
+                )}
+                {mostFrequentCardio && (
+                  <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,149,0,0.05)' }}>
+                    <div className="text-sm font-bold" style={{ color: '#FF9500' }}>{mostFrequentCardio[0]}</div>
+                    <div className="text-[10px] text-gray-500">{mostFrequentCardio[1]}x this month</div>
+                  </div>
+                )}
+                {mostFrequentRecovery && (
+                  <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,209,255,0.05)' }}>
+                    <div className="text-sm font-bold" style={{ color: '#00D1FF' }}>{mostFrequentRecovery[0]}</div>
+                    <div className="text-[10px] text-gray-500">{mostFrequentRecovery[1]}x this month</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Weeks Hitting Goals */}
+          <div className="mb-4">
+            <div className="flex items-center gap-2 mb-3">
+              <SectionIcon type="streak" />
+              <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Weeks Hitting Goals</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="p-3 rounded-xl flex items-center justify-between" style={{
+                backgroundColor: weeksData.lift === weeksData.total && weeksData.total > 0 ? 'rgba(0,255,148,0.1)' : 'rgba(255,255,255,0.05)',
+                border: weeksData.lift === weeksData.total && weeksData.total > 0 ? '1px solid rgba(0,255,148,0.2)' : 'none'
+              }}>
+                <div>
+                  <span className="text-xs">🏋️ Strength</span>
+                  <div className="text-[10px] text-gray-500">{goals.liftsPerWeek}+ per week</div>
+                </div>
+                <span className="text-sm font-bold" style={{ color: '#00FF94' }}>
+                  {weeksData.lift}/{weeksData.total}
+                </span>
+              </div>
+              <div className="p-3 rounded-xl flex items-center justify-between" style={{
+                backgroundColor: weeksData.cardio === weeksData.total && weeksData.total > 0 ? 'rgba(255,149,0,0.1)' : 'rgba(255,255,255,0.05)',
+                border: weeksData.cardio === weeksData.total && weeksData.total > 0 ? '1px solid rgba(255,149,0,0.2)' : 'none'
+              }}>
+                <div>
+                  <span className="text-xs">🏃 Cardio</span>
+                  <div className="text-[10px] text-gray-500">{goals.cardioPerWeek}+ per week</div>
+                </div>
+                <span className="text-sm font-bold" style={{ color: '#FF9500' }}>
+                  {weeksData.cardio}/{weeksData.total}
+                </span>
+              </div>
+              <div className="p-3 rounded-xl flex items-center justify-between" style={{
+                backgroundColor: weeksData.recovery === weeksData.total && weeksData.total > 0 ? 'rgba(0,209,255,0.1)' : 'rgba(255,255,255,0.05)',
+                border: weeksData.recovery === weeksData.total && weeksData.total > 0 ? '1px solid rgba(0,209,255,0.2)' : 'none'
+              }}>
+                <div>
+                  <span className="text-xs">🧊 Recovery</span>
+                  <div className="text-[10px] text-gray-500">{goals.recoveryPerWeek}+ per week</div>
+                </div>
+                <span className="text-sm font-bold" style={{ color: '#00D1FF' }}>
+                  {weeksData.recovery}/{weeksData.total}
+                </span>
+              </div>
+              <div className="p-3 rounded-xl flex items-center justify-between" style={{
+                backgroundColor: weeksData.all === weeksData.total && weeksData.total > 0 ? 'rgba(255,215,0,0.1)' : 'rgba(255,255,255,0.05)',
+                border: weeksData.all === weeksData.total && weeksData.total > 0 ? '1px solid rgba(255,215,0,0.2)' : 'none'
+              }}>
+                <div>
+                  <span className="text-xs">🏆 All Goals</span>
+                  <div className="text-[10px] text-gray-500">Perfect weeks</div>
+                </div>
+                <span className="text-sm font-bold" style={{ color: '#FFD700' }}>
+                  {weeksData.all}/{weeksData.total}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -11025,6 +11421,8 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
   }, [initialStatsSubView]);
   const [selectedWeek, setSelectedWeek] = useState(null);
   const [showWeekStats, setShowWeekStats] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState(null); // { month: 0-11, year: YYYY }
+  const [showMonthStats, setShowMonthStats] = useState(false);
 
   // Dismiss calendar hints
   const dismissCalendarHints = () => {
@@ -11685,7 +12083,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                 <div>
                   <p className="text-xs text-white font-medium mb-1">Pro tips</p>
                   <p className="text-[11px] text-gray-300 leading-relaxed">
-                    Tap the <span className="inline-flex items-center justify-center w-4 h-4 rounded text-[8px]" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>📊</span> buttons on the left for weekly breakdowns. Scroll down below the calendar to compare this week vs your average or last week.
+                    Tap the <span className="inline-flex items-center justify-center w-4 h-4 rounded" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}><SectionIcon type="chart" size={10} /></span> buttons on the left for weekly breakdowns. Scroll down below the calendar to compare this week vs your average or last week.
                   </p>
                 </div>
               </div>
@@ -11708,11 +12106,15 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
               </svg>
             </button>
             <button
-              onClick={goToToday}
-              className="text-lg font-bold transition-all duration-150"
+              onClick={() => {
+                setSelectedMonth({ month: displayedMonth, year: displayedYear });
+                setShowMonthStats(true);
+              }}
+              className="text-lg font-bold transition-all duration-150 flex items-center gap-1.5"
               style={{ color: isCurrentMonth ? 'white' : '#00FF94' }}
             >
               {new Date(displayedYear, displayedMonth).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+              <span className="opacity-60"><SectionIcon type="chart" size={14} /></span>
             </button>
             <button
               onClick={goToNextMonth}
@@ -11770,7 +12172,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                     e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
                   }}
                 >
-                  📊
+                  <SectionIcon type="chart" size={12} />
                 </button>
                 {/* Day cells (includes overflow days from adjacent months) */}
                 {week.days.map((day) => {
@@ -11831,7 +12233,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500 uppercase tracking-wider">How This Week Compares</span>
-                <span>📊</span>
+                <SectionIcon type="compare" size={14} />
               </div>
             </div>
             
@@ -13651,6 +14053,58 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
         userData={userData}
       />
 
+      {/* Month Stats Modal */}
+      <MonthStatsModal
+        isOpen={showMonthStats}
+        onClose={() => setShowMonthStats(false)}
+        onShare={() => {
+          setShowMonthStats(false);
+          // Pass month range to parent for sharing
+          if (selectedMonth) {
+            const startDate = new Date(selectedMonth.year, selectedMonth.month, 1);
+            const endDate = new Date(selectedMonth.year, selectedMonth.month + 1, 0); // Last day of month
+            onShare && onShare({ startDate, endDate, isMonthShare: true });
+          }
+        }}
+        monthData={selectedMonth ? (() => {
+          // Calculate all dates in the month
+          const daysInMonth = new Date(selectedMonth.year, selectedMonth.month + 1, 0).getDate();
+          const monthDates = [];
+          for (let d = 1; d <= daysInMonth; d++) {
+            monthDates.push(`${selectedMonth.year}-${String(selectedMonth.month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+          }
+
+          // Filter activities for this month
+          const monthActivities = activities.filter(a => monthDates.includes(a.date));
+
+          // Calculate calories and steps from health history
+          let monthCalories = 0;
+          let monthSteps = 0;
+          monthDates.forEach(dateStr => {
+            const healthData = healthDataByDate[dateStr];
+            monthCalories += healthData?.calories || 0;
+            monthSteps += healthData?.steps || 0;
+            // Add calories from truly manual workouts
+            const dayActivities = monthActivities.filter(a => a.date === dateStr);
+            const manualWorkoutCalories = dayActivities
+              .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID && a.source !== 'healthkit' && !a.fromAppleHealth)
+              .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+            monthCalories += manualWorkoutCalories;
+          });
+
+          return {
+            activities: monthActivities,
+            dates: monthDates,
+            calories: monthCalories,
+            steps: monthSteps
+          };
+        })() : null}
+        monthLabel={selectedMonth ? new Date(selectedMonth.year, selectedMonth.month).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : ''}
+        userData={userData}
+        activities={activities}
+        healthHistory={healthHistory}
+      />
+
       {/* Activity Detail Modal for calendar day view */}
       <ActivityDetailModal
         isOpen={!!selectedDayActivity}
@@ -14895,6 +15349,7 @@ export default function DaySevenApp() {
   const [defaultActivityDate, setDefaultActivityDate] = useState(null);
   const [showShare, setShowShare] = useState(false);
   const [shareWeekRange, setShareWeekRange] = useState(null); // { startDate, endDate } for week-specific sharing
+  const [shareMonthRange, setShareMonthRange] = useState(null); // { startDate, endDate } for month-specific sharing
   const [showFriends, setShowFriends] = useState(false);
   const [friends, setFriends] = useState([]);
   const [showCelebration, setShowCelebration] = useState(false);
@@ -16963,8 +17418,14 @@ export default function DaySevenApp() {
               )}
               {activeTab === 'history' && (
                 <HistoryTab
-                  onShare={(weekRange) => {
-                    setShareWeekRange(weekRange || null);
+                  onShare={(range) => {
+                    if (range?.isMonthShare) {
+                      setShareMonthRange({ startDate: range.startDate, endDate: range.endDate });
+                      setShareWeekRange(null);
+                    } else {
+                      setShareWeekRange(range || null);
+                      setShareMonthRange(null);
+                    }
                     setShowShare(true);
                   }}
                   activities={activities}
@@ -17323,8 +17784,10 @@ export default function DaySevenApp() {
         onClose={() => {
           setShowShare(false);
           setShareWeekRange(null);
+          setShareMonthRange(null);
         }}
         weekRange={shareWeekRange}
+        monthRange={shareMonthRange}
         stats={(() => {
           // Determine which week to use for stats
           const getWeekRange = () => {
@@ -17536,12 +17999,41 @@ export default function DaySevenApp() {
           weeklyActivities: weekActivitiesForShare,
           // Monthly stats
           ...(() => {
-            const today = new Date();
-            const monthStart = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
             const cardioTypes = ['Running', 'Cycle', 'Sports', 'Walking', 'Hiking', 'Swimming', 'Rowing', 'Stair Climbing', 'Elliptical', 'HIIT'];
             const recoveryTypes = ['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'];
 
-            const monthlyActivities = activities.filter(a => a.date >= monthStart);
+            // Use monthRange if provided, otherwise current month
+            const getMonthRange = () => {
+              if (shareMonthRange?.startDate && shareMonthRange?.endDate) {
+                const formatDateStr = (d) => {
+                  if (d instanceof Date) {
+                    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                  }
+                  return d;
+                };
+                return {
+                  startStr: formatDateStr(shareMonthRange.startDate),
+                  endStr: formatDateStr(shareMonthRange.endDate),
+                  monthDate: shareMonthRange.startDate instanceof Date ? shareMonthRange.startDate : new Date(shareMonthRange.startDate + 'T12:00:00')
+                };
+              }
+              // Default to current month
+              const today = new Date();
+              const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+              const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+              return {
+                startStr: `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`,
+                endStr: `${monthEnd.getFullYear()}-${String(monthEnd.getMonth() + 1).padStart(2, '0')}-${String(monthEnd.getDate()).padStart(2, '0')}`,
+                monthDate: monthStart
+              };
+            };
+            const monthRangeData = getMonthRange();
+            const monthStart = monthRangeData.startStr;
+            const monthEnd = monthRangeData.endStr;
+            const monthDate = monthRangeData.monthDate;
+            const today = new Date();
+
+            const monthlyActivities = activities.filter(a => a.date >= monthStart && a.date <= monthEnd);
 
             // Calculate monthly session counts
             const monthlyLifts = monthlyActivities.filter(a => a.type === 'Strength Training').length;
@@ -17553,14 +18045,16 @@ export default function DaySevenApp() {
 
             // Calculate monthly steps from healthHistory
             const monthlySteps = healthHistory
-              .filter(h => h.date >= monthStart)
+              .filter(h => h.date >= monthStart && h.date <= monthEnd)
               .reduce((sum, h) => sum + (h.steps || 0), 0);
 
             // Calculate weekly streaks for the month (how many weeks hit each goal)
-            // Get all weeks that start in the current month
+            // Get all weeks that overlap with the selected month
             const getWeeksInMonth = () => {
               const weeks = [];
-              const monthStartDate = new Date(today.getFullYear(), today.getMonth(), 1);
+              const monthStartDate = new Date(monthDate);
+              const monthEndDate = new Date(monthEnd + 'T23:59:59');
+              const effectiveEndDate = monthEndDate < today ? monthEndDate : today;
 
               // Find the first Sunday of or before the month start
               let weekStart = new Date(monthStartDate);
@@ -17571,20 +18065,20 @@ export default function DaySevenApp() {
                 const weekEnd = new Date(weekStart);
                 weekEnd.setDate(weekStart.getDate() + 6);
 
-                // Only include weeks that overlap with the current month
+                // Only include weeks that overlap with the selected month
                 // AND where the week has ended (or is current week with some days passed)
                 const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
                 const weekEndStr = `${weekEnd.getFullYear()}-${String(weekEnd.getMonth() + 1).padStart(2, '0')}-${String(weekEnd.getDate()).padStart(2, '0')}`;
 
-                // Check if week overlaps with current month and is not in the future
-                if (weekEnd >= monthStartDate && weekStart <= today) {
+                // Check if week overlaps with selected month and is not in the future
+                if (weekEnd >= monthStartDate && weekStart <= effectiveEndDate) {
                   weeks.push({ startStr: weekStartStr, endStr: weekEndStr });
                 }
 
                 weekStart = new Date(weekStart);
                 weekStart.setDate(weekStart.getDate() + 7);
 
-                if (weekStart > today) break;
+                if (weekStart > effectiveEndDate) break;
               }
               return weeks;
             };
@@ -17658,6 +18152,15 @@ export default function DaySevenApp() {
               return best;
             }, null);
 
+            // Find furthest distance (any activity with distance - walking, running, cycling, etc.)
+            const furthestDistance = monthlyActivities.reduce((best, a) => {
+              const dist = parseFloat(a.distance) || 0;
+              if (dist > 0 && (!best || dist > best.distance)) {
+                return { distance: dist, type: a.type };
+              }
+              return best;
+            }, null);
+
             return {
               monthlyWorkouts: monthlyActivities.length,
               monthlyCalories: monthlyActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0),
@@ -17680,11 +18183,15 @@ export default function DaySevenApp() {
               // Highlights
               monthlyHighestCalorieSession: highestCalorieSession,
               monthlyLongestSession: longestSession,
+              monthlyFurthestDistance: furthestDistance,
               monthlyMostFrequentWorkout: mostFrequentWorkout ? { type: mostFrequentWorkout[0], count: mostFrequentWorkout[1] } : null,
               monthlyMostFrequentRecovery: mostFrequentRecovery ? { type: mostFrequentRecovery[0], count: mostFrequentRecovery[1] } : null,
               // Most frequent by category (for Total Sessions box)
               monthlyMostFrequentStrength: mostFrequentStrength ? mostFrequentStrength[0] : null,
-              monthlyMostFrequentCardio: mostFrequentCardio ? mostFrequentCardio[0] : null
+              monthlyMostFrequentCardio: mostFrequentCardio ? mostFrequentCardio[0] : null,
+              // Month info for display
+              shareMonthName: monthDate.toLocaleDateString('en-US', { month: 'long' }),
+              shareMonthYear: monthDate.getFullYear()
             };
           })(),
           // Personal records

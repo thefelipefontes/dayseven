@@ -2812,147 +2812,504 @@ const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!", type
   );
 };
 
-// Week Streak Celebration Modal - shown when user completes all goals for the week
-const WeekStreakCelebration = ({ show, onClose, onShare }) => {
-  const [isVisible, setIsVisible] = useState(false);
+// Week Streak Celebration Modal - Animated ring convergence celebration
+const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1 }) => {
+  const [phase, setPhase] = useState('hidden'); // hidden, fadeIn, converge, burst, content, fadeOut
+  const [ringStates, setRingStates] = useState([
+    { animate: false, converged: false, hasAnimated: false },
+    { animate: false, converged: false, hasAnimated: false },
+    { animate: false, converged: false, hasAnimated: false }
+  ]); // Strength, Cardio, Recovery
+  const [showCheckmark, setShowCheckmark] = useState(false);
+  const [showParticles, setShowParticles] = useState(false);
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [showContent, setShowContent] = useState(false);
+  const [particles, setParticles] = useState([]);
+  const [confetti, setConfetti] = useState([]);
 
+  const COLORS = {
+    strength: '#00FF94',
+    cardio: '#FF9500',
+    recovery: '#00D1FF'
+  };
+
+  // Ring SVG component with CSS keyframe animation for stroke
+  // hasAnimated: ring already animated and should stay filled (no animation)
+  // animate: ring should start animating now
+  const AnimatedRing = ({ animate, hasAnimated, color, size, strokeWidth, scale = 1 }) => {
+    const radius = (size - strokeWidth) / 2;
+    const circumference = 2 * Math.PI * radius;
+
+    // If already animated, show full ring without animation
+    // If animate is true but not yet animated, play the animation
+    // Otherwise show empty ring
+    const shouldAnimate = animate && !hasAnimated;
+    const isFilled = hasAnimated;
+
+    return (
+      <svg
+        width={size}
+        height={size}
+        style={{
+          overflow: 'visible',
+          transform: `scale(${scale})`,
+          transition: 'transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)'
+        }}
+      >
+        <defs>
+          <style>{`
+            @keyframes fillRing-${color.replace('#', '')} {
+              from {
+                stroke-dashoffset: ${circumference};
+              }
+              to {
+                stroke-dashoffset: 0;
+              }
+            }
+          `}</style>
+        </defs>
+        {/* Background ring (dim outline) */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="rgba(255,255,255,0.15)"
+          strokeWidth={strokeWidth}
+        />
+        {/* Animated progress ring */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke={color}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={isFilled ? 0 : circumference}
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          style={{
+            animation: shouldAnimate ? `fillRing-${color.replace('#', '')} 0.7s cubic-bezier(0.4, 0, 0.2, 1) forwards` : 'none',
+            filter: `drop-shadow(0 0 8px ${color})`
+          }}
+        />
+      </svg>
+    );
+  };
+
+  // Generate particle burst (from center)
+  const generateParticles = useCallback(() => {
+    const newParticles = [];
+    const colors = [COLORS.strength, COLORS.cardio, COLORS.recovery, '#FFD700', '#FF453A', '#BF5AF2'];
+
+    for (let i = 0; i < 40; i++) {
+      const angle = (i / 40) * Math.PI * 2;
+      const velocity = 100 + Math.random() * 80;
+      newParticles.push({
+        id: i,
+        vx: Math.cos(angle) * velocity,
+        vy: Math.sin(angle) * velocity,
+        color: colors[i % colors.length],
+        size: 4 + Math.random() * 6,
+        rotation: Math.random() * 360,
+        isCircle: Math.random() > 0.5
+      });
+    }
+    setParticles(newParticles);
+  }, []);
+
+  // Generate confetti (falling from top)
+  const generateConfetti = useCallback(() => {
+    const newConfetti = [];
+    const colors = [COLORS.strength, COLORS.cardio, COLORS.recovery, '#FFD700', '#FF453A', '#BF5AF2', '#FFFFFF'];
+
+    for (let i = 0; i < 50; i++) {
+      newConfetti.push({
+        id: i,
+        x: Math.random() * 100, // percentage across screen
+        delay: Math.random() * 0.5,
+        duration: 2 + Math.random() * 1.5,
+        color: colors[i % colors.length],
+        size: 6 + Math.random() * 8,
+        rotation: Math.random() * 360,
+        isCircle: Math.random() > 0.6
+      });
+    }
+    setConfetti(newConfetti);
+  }, []);
+
+  // Animation sequence
   useEffect(() => {
-    if (show) {
-      setIsVisible(true);
+    if (show && phase === 'hidden') {
+      setPhase('fadeIn');
+
+      // Phase 1: Fade in background, then converge rings one at a time
+      // Each ring fills (closes) as it moves to the center
+      setTimeout(() => {
+        setPhase('converge');
+
+        // First: Recovery ring (rightmost) - fills and moves to center as innermost
+        setTimeout(() => {
+          setRingStates(prev => [
+            prev[0],
+            prev[1],
+            { animate: true, converged: true, hasAnimated: false }
+          ]);
+          triggerHaptic(ImpactStyle.Light);
+          // Mark as animated after animation completes
+          setTimeout(() => {
+            setRingStates(prev => [
+              prev[0],
+              prev[1],
+              { ...prev[2], hasAnimated: true }
+            ]);
+          }, 700);
+        }, 100);
+
+        // Second: Cardio ring - fills and moves to center as middle ring
+        setTimeout(() => {
+          setRingStates(prev => [
+            prev[0],
+            { animate: true, converged: true, hasAnimated: false },
+            prev[2]
+          ]);
+          triggerHaptic(ImpactStyle.Light);
+          // Mark as animated after animation completes
+          setTimeout(() => {
+            setRingStates(prev => [
+              prev[0],
+              { ...prev[1], hasAnimated: true },
+              prev[2]
+            ]);
+          }, 700);
+        }, 900);
+
+        // Third: Strength ring - fills and moves to center as outermost ring
+        setTimeout(() => {
+          setRingStates(prev => [
+            { animate: true, converged: true, hasAnimated: false },
+            prev[1],
+            prev[2]
+          ]);
+          triggerHaptic(ImpactStyle.Heavy);
+          // Mark as animated after animation completes
+          setTimeout(() => {
+            setRingStates(prev => [
+              { ...prev[0], hasAnimated: true },
+              prev[1],
+              prev[2]
+            ]);
+          }, 700);
+        }, 1700);
+
+        // Phase 2: Show particle burst and checkmark
+        setTimeout(() => {
+          setPhase('burst');
+          setShowParticles(true);
+          generateParticles();
+          setShowCheckmark(true);
+          triggerHaptic(ImpactStyle.Medium);
+        }, 2500);
+
+        // Phase 3: Show content and confetti
+        setTimeout(() => {
+          setPhase('content');
+          setShowContent(true);
+          setShowConfetti(true);
+          generateConfetti();
+        }, 2900);
+
+      }, 300);
+    }
+  }, [show, phase, generateParticles, generateConfetti]);
+
+  // Reset state when closed
+  useEffect(() => {
+    if (!show) {
+      setTimeout(() => {
+        setPhase('hidden');
+        setRingStates([
+          { animate: false, converged: false, hasAnimated: false },
+          { animate: false, converged: false, hasAnimated: false },
+          { animate: false, converged: false, hasAnimated: false }
+        ]);
+        setShowCheckmark(false);
+        setShowParticles(false);
+        setShowConfetti(false);
+        setShowContent(false);
+        setParticles([]);
+        setConfetti([]);
+      }, 300);
     }
   }, [show]);
 
   const handleClose = () => {
-    setIsVisible(false);
+    setPhase('fadeOut');
     setTimeout(onClose, 300);
   };
 
   const handleShare = () => {
-    setIsVisible(false);
+    setPhase('fadeOut');
     setTimeout(onShare, 300);
   };
 
-  if (!show && !isVisible) return null;
+  if (!show && phase === 'hidden') return null;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 transition-opacity duration-300"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{
-        backgroundColor: 'rgba(0,0,0,0.9)',
-        opacity: isVisible ? 1 : 0
+        backgroundColor: 'rgba(0,0,0,0.95)',
+        opacity: phase === 'hidden' || phase === 'fadeOut' ? 0 : 1,
+        transition: 'opacity 0.3s ease-out'
       }}
     >
       {/* Radial glow background */}
       <div
         className="absolute inset-0"
         style={{
-          background: 'radial-gradient(circle at center, rgba(255,215,0,0.15) 0%, rgba(0,255,148,0.1) 30%, transparent 70%)',
-          animation: 'pulseBg 2s ease-in-out infinite'
+          background: showContent
+            ? 'radial-gradient(circle at center, rgba(255,215,0,0.15) 0%, rgba(0,255,148,0.08) 40%, transparent 70%)'
+            : 'transparent',
+          transition: 'background 0.5s ease-out'
         }}
       />
 
-      {/* Confetti particles */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        {[...Array(30)].map((_, i) => (
-          <div
-            key={i}
-            className="absolute"
-            style={{
-              width: `${8 + Math.random() * 10}px`,
-              height: `${8 + Math.random() * 10}px`,
-              borderRadius: Math.random() > 0.5 ? '50%' : '2px',
-              backgroundColor: ['#00FF94', '#00D1FF', '#FF9500', '#FFD700', '#FF453A', '#BF5AF2'][i % 6],
-              left: `${Math.random() * 100}%`,
-              top: '-20px',
-              animation: `confetti ${2 + Math.random()}s ease-out forwards`,
-              animationDelay: `${Math.random() * 0.5}s`
-            }}
-          />
-        ))}
-      </div>
-
-      {/* Sparkles */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        {[...Array(12)].map((_, i) => (
-          <div
-            key={`sparkle-${i}`}
-            className="absolute text-2xl"
-            style={{
-              left: `${10 + Math.random() * 80}%`,
-              top: `${10 + Math.random() * 80}%`,
-              animation: 'sparkle 1.5s ease-in-out infinite',
-              animationDelay: `${Math.random() * 1}s`
-            }}
-          >
-            ✨
-          </div>
-        ))}
-      </div>
-
-      {/* Main content */}
-      <div
-        className="relative z-10 text-center transition-all duration-500"
-        style={{
-          transform: isVisible ? 'scale(1) translateY(0)' : 'scale(0.8) translateY(20px)',
-          opacity: isVisible ? 1 : 0
-        }}
-      >
-        {/* Fire emoji with glow rings */}
-        <div className="relative inline-block mb-6">
-          <div
-            className="absolute inset-0 rounded-full"
-            style={{
-              background: 'radial-gradient(circle, rgba(255,215,0,0.4) 0%, transparent 70%)',
-              transform: 'scale(3)',
-              animation: 'pingSlow 1.5s ease-out infinite'
-            }}
-          />
-          <div
-            className="absolute inset-0 rounded-full"
-            style={{
-              background: 'radial-gradient(circle, rgba(0,255,148,0.3) 0%, transparent 70%)',
-              transform: 'scale(4)',
-              animation: 'pingSlower 2s ease-out infinite'
-            }}
-          />
-          <div className="text-7xl relative z-10" style={{ animation: 'wiggle 0.5s ease-in-out' }}>🔥</div>
+      {/* Particle burst */}
+      {showParticles && (
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          {particles.map((particle) => (
+            <div
+              key={particle.id}
+              className="absolute"
+              style={{
+                left: '50%',
+                top: '40%',
+                width: particle.size,
+                height: particle.size,
+                borderRadius: particle.isCircle ? '50%' : '2px',
+                backgroundColor: particle.color,
+                transform: `translate(-50%, -50%) translate(${particle.vx}px, ${particle.vy}px) rotate(${particle.rotation}deg)`,
+                opacity: 0,
+                animation: 'particleBurst 1s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards'
+              }}
+            />
+          ))}
         </div>
+      )}
 
-        {/* Title with gradient */}
+      {/* Confetti falling from top */}
+      {showConfetti && (
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          {confetti.map((piece) => (
+            <div
+              key={piece.id}
+              className="absolute"
+              style={{
+                left: `${piece.x}%`,
+                top: '-20px',
+                width: piece.size,
+                height: piece.isCircle ? piece.size : piece.size * 0.6,
+                borderRadius: piece.isCircle ? '50%' : '2px',
+                backgroundColor: piece.color,
+                animation: `confettiFall ${piece.duration}s ease-out ${piece.delay}s forwards`,
+                transform: `rotate(${piece.rotation}deg)`
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Rings container */}
+      <div className="relative z-10 flex flex-col items-center">
+        {/* Ring animation area */}
         <div
-          className="text-3xl font-black mb-2"
+          className="relative flex items-center justify-center mb-3"
           style={{
-            background: 'linear-gradient(135deg, #FFD700 0%, #00FF94 100%)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            animation: 'textGlow 1s ease-in-out infinite'
+            width: 240,
+            height: 120,
+            transition: 'all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)'
           }}
         >
-          You Streaked the Week!
-        </div>
-        <div className="text-gray-400 mb-8">All goals crushed. 💪</div>
-
-        {/* Buttons */}
-        <div className="flex flex-col gap-3 w-64 mx-auto">
-          <button
-            onClick={handleShare}
-            className="w-full py-3 px-6 rounded-xl font-bold text-black transition-all active:scale-95"
+          {/* Strength Ring (outer when converged) */}
+          <div
+            className="absolute"
             style={{
-              background: 'linear-gradient(135deg, #FFD700 0%, #00FF94 100%)',
-              boxShadow: '0 4px 20px rgba(255, 215, 0, 0.4)'
+              transform: `translateX(${ringStates[0].converged ? 0 : -80}px)`,
+              transition: 'transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
+              zIndex: 1
             }}
           >
-            Share My Week
-          </button>
-          <button
-            onClick={handleClose}
-            className="w-full py-3 px-6 rounded-xl font-medium text-gray-400 transition-all active:scale-95"
-            style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+            <AnimatedRing
+              animate={ringStates[0].animate}
+              hasAnimated={ringStates[0].hasAnimated}
+              color={COLORS.strength}
+              size={100}
+              strokeWidth={8}
+              scale={1}
+            />
+          </div>
+
+          {/* Cardio Ring (middle when converged) */}
+          <div
+            className="absolute"
+            style={{
+              transform: `translateX(0px)`,
+              transition: 'transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
+              zIndex: 2
+            }}
           >
-            Close
-          </button>
+            <AnimatedRing
+              animate={ringStates[1].animate}
+              hasAnimated={ringStates[1].hasAnimated}
+              color={COLORS.cardio}
+              size={100}
+              strokeWidth={8}
+              scale={ringStates[1].converged ? 0.75 : 1}
+            />
+          </div>
+
+          {/* Recovery Ring (inner when converged) */}
+          <div
+            className="absolute"
+            style={{
+              transform: `translateX(${ringStates[2].converged ? 0 : 80}px)`,
+              transition: 'transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
+              zIndex: 3
+            }}
+          >
+            <AnimatedRing
+              animate={ringStates[2].animate}
+              hasAnimated={ringStates[2].hasAnimated}
+              color={COLORS.recovery}
+              size={100}
+              strokeWidth={8}
+              scale={ringStates[2].converged ? 0.5 : 1}
+            />
+          </div>
+
+          {/* Checkmark */}
+          {showCheckmark && (
+            <div
+              className="absolute z-10 flex items-center justify-center"
+              style={{
+                animation: 'checkmarkPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards'
+              }}
+            >
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M5 13l4 4L19 7"
+                  stroke="#00FF94"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{
+                    strokeDasharray: 24,
+                    strokeDashoffset: 24,
+                    animation: 'checkmarkDraw 0.4s ease-out 0.1s forwards',
+                    filter: 'drop-shadow(0 0 6px #00FF94)'
+                  }}
+                />
+              </svg>
+            </div>
+          )}
+        </div>
+
+        {/* Content */}
+        <div
+          className="text-center"
+          style={{
+            opacity: showContent ? 1 : 0,
+            transform: showContent ? 'translateY(0)' : 'translateY(20px)',
+            transition: 'all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)'
+          }}
+        >
+          {/* Title */}
+          <div
+            className="text-3xl font-black mb-2"
+            style={{
+              background: 'linear-gradient(135deg, #FFD700 0%, #00FF94 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent'
+            }}
+          >
+            Week Complete!
+          </div>
+
+          {/* Streak count */}
+          <div className="flex items-center justify-center gap-2 mb-6">
+            <span className="text-2xl">🔥</span>
+            <span className="text-xl font-bold text-white">{streakCount} Week Streak</span>
+          </div>
+
+          {/* Buttons */}
+          <div className="flex flex-col gap-3 w-64 mx-auto">
+            <button
+              onClick={handleShare}
+              className="w-full py-3 px-6 rounded-xl font-bold text-black transition-all active:scale-95"
+              style={{
+                background: 'linear-gradient(135deg, #FFD700 0%, #00FF94 100%)',
+                boxShadow: '0 4px 20px rgba(255, 215, 0, 0.4)'
+              }}
+            >
+              Share My Week
+            </button>
+            <button
+              onClick={handleClose}
+              className="w-full py-3 px-6 rounded-xl font-medium text-gray-400 transition-all active:scale-95"
+              style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+            >
+              Close
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* CSS Animations */}
+      <style>{`
+        @keyframes particleBurst {
+          0% {
+            transform: translate(-50%, -50%) translate(0, 0) rotate(0deg) scale(1);
+            opacity: 1;
+          }
+          100% {
+            transform: translate(-50%, -50%) translate(var(--vx, 0), var(--vy, 0)) rotate(360deg) scale(0);
+            opacity: 0;
+          }
+        }
+
+        @keyframes confettiFall {
+          0% {
+            transform: translateY(0) rotate(0deg);
+            opacity: 1;
+          }
+          100% {
+            transform: translateY(100vh) rotate(720deg);
+            opacity: 0;
+          }
+        }
+
+        @keyframes checkmarkPop {
+          0% {
+            transform: scale(0);
+            opacity: 0;
+          }
+          50% {
+            transform: scale(1.2);
+          }
+          100% {
+            transform: scale(1);
+            opacity: 1;
+          }
+        }
+
+        @keyframes checkmarkDraw {
+          to {
+            stroke-dashoffset: 0;
+          }
+        }
+      `}</style>
     </div>
   );
 };
@@ -17078,6 +17435,7 @@ export default function DaySevenApp() {
 
       <WeekStreakCelebration
         show={showWeekStreakCelebration}
+        streakCount={userData?.streaks?.master || 1}
         onClose={() => {
           setShowWeekStreakCelebration(false);
           // Show pending toast after week streak celebration closes

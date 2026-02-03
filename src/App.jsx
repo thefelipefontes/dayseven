@@ -4294,49 +4294,101 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange }) => {
         );
 
       case 'monthly':
-        const monthlyWorkouts = stats?.monthlyWorkouts || 0;
-        const avgPerWeek = monthlyWorkouts > 0 ? (monthlyWorkouts / 4).toFixed(1) : 0;
-        const daysIntoMonth = new Date().getDate();
-        const workoutsPerDay = monthlyWorkouts > 0 ? (monthlyWorkouts / daysIntoMonth).toFixed(2) : 0;
         return (
-          <div className={`relative h-full flex flex-col items-center justify-between ${isPostFormat ? 'py-4 px-4' : 'py-6 px-5'}`}>
-            <div className={isPostFormat ? 'text-2xl' : 'text-3xl'} style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>📊</div>
-            <div className="flex-1 flex flex-col items-center justify-center w-full">
-              <div className={`text-center ${isPostFormat ? 'mb-2' : 'mb-3'}`}>
-                <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-500 uppercase tracking-wider mb-1`}>{currentMonth} {currentYear}</div>
-                <div className={`font-black ${isPostFormat ? 'text-xl' : 'text-2xl'}`} style={{ color: colors.primary, textShadow: `0 0 30px ${colors.glow}` }}>Monthly Recap</div>
+          <div className={`relative h-full flex flex-col items-center ${isPostFormat ? 'py-3 px-3' : 'py-4 px-4'}`}>
+            {/* Header with stats as subtext */}
+            <div className="flex-1 flex flex-col justify-center w-full">
+              <div className={`text-center ${isPostFormat ? 'mb-2' : 'mb-2.5'}`}>
+                <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500 uppercase tracking-wider`}>{currentMonth} {currentYear}</div>
+                <div className={`font-black ${isPostFormat ? 'text-xl' : 'text-2xl'}`} style={{ color: colors.primary, textShadow: `0 0 20px ${colors.glow}` }}>Monthly Recap</div>
+                {/* Stats as subtext row */}
+                <div className={`flex flex-wrap justify-center items-center ${isPostFormat ? 'gap-x-2 gap-y-0.5 mt-1.5' : 'gap-x-3 gap-y-1 mt-2'}`}>
+                  <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>
+                    🔥 {(stats?.monthlyCalories || 0).toLocaleString()} cal
+                  </span>
+                  <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>
+                    🏃 {(stats?.monthlyMiles || 0).toFixed(1)} mi
+                  </span>
+                  <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>
+                    👟 {((stats?.monthlySteps || 0) / 1000).toFixed(0)}k steps
+                  </span>
+                  <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>
+                    📅 {stats?.monthlyDaysActive || 0} days active
+                  </span>
+                </div>
               </div>
-              <div className={`w-full ${isPostFormat ? 'space-y-2' : 'space-y-3'}`}>
-                <div className={`text-center ${isPostFormat ? 'p-2.5' : 'p-4'} rounded-2xl`} style={{ backgroundColor: 'rgba(139,92,246,0.1)' }}>
-                  <div className={`${isPostFormat ? 'text-2xl' : 'text-4xl'} font-black`} style={{ color: colors.primary }}>{monthlyWorkouts}</div>
-                  <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-400 uppercase tracking-wider mt-0.5`}>Workouts Completed</div>
-                  <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500 mt-0.5`}>~{avgPerWeek} per week</div>
+
+              {/* Main content */}
+              <div className={`w-full ${isPostFormat ? 'space-y-2' : 'space-y-2.5'}`}>
+                {/* Total Sessions in grey box */}
+                <div className={`${isPostFormat ? 'p-2' : 'p-2.5'} rounded-xl`} style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500 uppercase tracking-wider text-center mb-1.5`}>Total Sessions</div>
+                  <div className="grid grid-cols-3 w-full">
+                    <div className="text-center">
+                      <div className={`${isPostFormat ? 'text-lg' : 'text-xl'} font-black`} style={{ color: '#00FF94' }}>{stats?.monthlyLifts || 0}</div>
+                      <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>💪 lift</div>
+                    </div>
+                    <div className="text-center">
+                      <div className={`${isPostFormat ? 'text-lg' : 'text-xl'} font-black`} style={{ color: '#FF9500' }}>{stats?.monthlyCardio || 0}</div>
+                      <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>🏃 cardio</div>
+                    </div>
+                    <div className="text-center">
+                      <div className={`${isPostFormat ? 'text-lg' : 'text-xl'} font-black`} style={{ color: '#00D1FF' }}>{stats?.monthlyRecovery || 0}</div>
+                      <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>❄️ recovery</div>
+                    </div>
+                  </div>
+
+                  {/* Divider line */}
+                  <div className={`border-t border-gray-700 ${isPostFormat ? 'my-1.5' : 'my-2'}`}></div>
+
+                  {/* Most Frequent subsection */}
+                  <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500 uppercase tracking-wider text-center mb-1`}>Most Frequent</div>
+                  <div className={`flex justify-center items-center ${isPostFormat ? 'gap-2' : 'gap-3'} text-center`}>
+                    <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>
+                      {stats?.monthlyMostFrequentStrength || 'Full Body'}
+                    </span>
+                    <span className="text-gray-600">•</span>
+                    <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>
+                      {stats?.monthlyMostFrequentCardio || 'Running'}
+                    </span>
+                    <span className="text-gray-600">•</span>
+                    <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>
+                      {stats?.monthlyMostFrequentRecovery?.type || 'Sauna'}
+                    </span>
+                  </div>
                 </div>
-                <div className={`grid grid-cols-2 ${isPostFormat ? 'gap-1.5' : 'gap-2'}`}>
-                  <div className={`text-center ${isPostFormat ? 'p-2' : 'p-3'} rounded-xl`} style={{ backgroundColor: 'rgba(139,92,246,0.05)' }}>
-                    <div className={`${isPostFormat ? 'text-lg' : 'text-2xl'} font-bold`} style={{ color: colors.secondary }}>{(stats?.monthlyCalories || 0).toLocaleString()}</div>
-                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>🔥 Calories</div>
+
+                {/* Highlights Section - just Best Burn and Longest Session */}
+                <div className={`w-full grid grid-cols-2 ${isPostFormat ? 'gap-1.5' : 'gap-2'}`}>
+                  {/* Best Burn */}
+                  <div className={`${isPostFormat ? 'p-1.5' : 'p-2'} rounded-xl text-center`} style={{ backgroundColor: 'rgba(255,149,0,0.08)' }}>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500 uppercase`}>Best Burn</div>
+                    <div className={isPostFormat ? 'text-sm' : 'text-base'}>{getActivityEmoji(stats?.monthlyHighestCalorieSession?.type)}</div>
+                    <div className={`${isPostFormat ? 'text-xs' : 'text-sm'} font-black`} style={{ color: '#FF9500' }}>{(stats?.monthlyHighestCalorieSession?.calories || 0).toLocaleString()} <span className="font-normal text-gray-500">cal</span></div>
                   </div>
-                  <div className={`text-center ${isPostFormat ? 'p-2' : 'p-3'} rounded-xl`} style={{ backgroundColor: 'rgba(139,92,246,0.05)' }}>
-                    <div className={`${isPostFormat ? 'text-lg' : 'text-2xl'} font-bold`} style={{ color: colors.secondary }}>{(stats?.monthlyMiles || 0).toFixed(1)}</div>
-                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>🏃 Miles</div>
+                  {/* Longest Session */}
+                  <div className={`${isPostFormat ? 'p-1.5' : 'p-2'} rounded-xl text-center`} style={{ backgroundColor: 'rgba(0,255,148,0.08)' }}>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500 uppercase`}>Longest Session</div>
+                    <div className={isPostFormat ? 'text-sm' : 'text-base'}>{getActivityEmoji(stats?.monthlyLongestSession?.type)}</div>
+                    <div className={`${isPostFormat ? 'text-xs' : 'text-sm'} font-black`} style={{ color: '#00FF94' }}>{stats?.monthlyLongestSession?.duration || 0} <span className="font-normal text-gray-500">min</span></div>
                   </div>
                 </div>
-                <div className={`grid grid-cols-2 ${isPostFormat ? 'gap-1.5' : 'gap-2'}`}>
-                  <div className={`text-center ${isPostFormat ? 'p-2' : 'p-3'} rounded-xl`} style={{ backgroundColor: 'rgba(139,92,246,0.05)' }}>
-                    <div className={`${isPostFormat ? 'text-base' : 'text-xl'} font-bold text-white`}>{stats?.streak || 0}</div>
-                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>🔥 Week Streak</div>
-                  </div>
-                  <div className={`text-center ${isPostFormat ? 'p-2' : 'p-3'} rounded-xl`} style={{ backgroundColor: 'rgba(139,92,246,0.05)' }}>
-                    <div className={`${isPostFormat ? 'text-base' : 'text-xl'} font-bold text-white`}>{daysIntoMonth}</div>
-                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>📅 Days In</div>
-                  </div>
+
+                {/* Weeks Hitting All Goals - gold box */}
+                <div className={`${isPostFormat ? 'p-2' : 'p-2.5'} rounded-xl flex items-center justify-center gap-2`} style={{ backgroundColor: 'rgba(255,215,0,0.1)' }}>
+                  <span className={isPostFormat ? 'text-sm' : 'text-base'}>🏆</span>
+                  <span className={`${isPostFormat ? 'text-xl' : 'text-2xl'} font-black`} style={{ color: '#FFD700' }}>
+                    {stats?.monthAllGoalsWeeksHit || 0}/4
+                  </span>
+                  <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>weeks hitting all goals</span>
                 </div>
               </div>
             </div>
-            <div className="text-center mt-auto w-full mt-1">
+
+            {/* Footer */}
+            <div className="text-center mt-auto w-full">
               <DaySevenLogo gradient={['#8B5CF6', '#06B6D4']} size={isPostFormat ? 'sm' : 'base'} />
-              <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-600 tracking-widest uppercase -mt-0.5`}>Monthly Stats</div>
+              <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-600 tracking-widest uppercase -mt-0.5`}>Monthly Stats</div>
             </div>
           </div>
         );
@@ -17483,21 +17535,158 @@ export default function DaySevenApp() {
           // Weekly activities for analysis
           weeklyActivities: weekActivitiesForShare,
           // Monthly stats
-          monthlyWorkouts: activities.filter(a => {
+          ...(() => {
             const today = new Date();
             const monthStart = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
-            return a.date >= monthStart;
-          }).length,
-          monthlyCalories: activities.filter(a => {
-            const today = new Date();
-            const monthStart = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
-            return a.date >= monthStart;
-          }).reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0),
-          monthlyMiles: activities.filter(a => {
-            const today = new Date();
-            const monthStart = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
-            return a.date >= monthStart && a.distance;
-          }).reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0),
+            const cardioTypes = ['Running', 'Cycle', 'Sports', 'Walking', 'Hiking', 'Swimming', 'Rowing', 'Stair Climbing', 'Elliptical', 'HIIT'];
+            const recoveryTypes = ['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'];
+
+            const monthlyActivities = activities.filter(a => a.date >= monthStart);
+
+            // Calculate monthly session counts
+            const monthlyLifts = monthlyActivities.filter(a => a.type === 'Strength Training').length;
+            const monthlyCardio = monthlyActivities.filter(a => cardioTypes.includes(a.type)).length;
+            const monthlyRecovery = monthlyActivities.filter(a => recoveryTypes.includes(a.type)).length;
+
+            // Calculate days active (unique days with activities)
+            const monthlyDaysActive = new Set(monthlyActivities.map(a => a.date)).size;
+
+            // Calculate monthly steps from healthHistory
+            const monthlySteps = healthHistory
+              .filter(h => h.date >= monthStart)
+              .reduce((sum, h) => sum + (h.steps || 0), 0);
+
+            // Calculate weekly streaks for the month (how many weeks hit each goal)
+            // Get all weeks that start in the current month
+            const getWeeksInMonth = () => {
+              const weeks = [];
+              const monthStartDate = new Date(today.getFullYear(), today.getMonth(), 1);
+
+              // Find the first Sunday of or before the month start
+              let weekStart = new Date(monthStartDate);
+              weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+
+              // Include up to 5 possible weeks (some months span 5 weeks)
+              for (let i = 0; i < 5; i++) {
+                const weekEnd = new Date(weekStart);
+                weekEnd.setDate(weekStart.getDate() + 6);
+
+                // Only include weeks that overlap with the current month
+                // AND where the week has ended (or is current week with some days passed)
+                const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
+                const weekEndStr = `${weekEnd.getFullYear()}-${String(weekEnd.getMonth() + 1).padStart(2, '0')}-${String(weekEnd.getDate()).padStart(2, '0')}`;
+
+                // Check if week overlaps with current month and is not in the future
+                if (weekEnd >= monthStartDate && weekStart <= today) {
+                  weeks.push({ startStr: weekStartStr, endStr: weekEndStr });
+                }
+
+                weekStart = new Date(weekStart);
+                weekStart.setDate(weekStart.getDate() + 7);
+
+                if (weekStart > today) break;
+              }
+              return weeks;
+            };
+
+            const weeksInMonth = getWeeksInMonth();
+            const goals = userData.goals;
+
+            // Count weeks where each goal was met
+            let liftWeeksHit = 0;
+            let cardioWeeksHit = 0;
+            let recoveryWeeksHit = 0;
+            let allGoalsWeeksHit = 0;
+
+            weeksInMonth.forEach(week => {
+              const weekActivities = activities.filter(a => a.date >= week.startStr && a.date <= week.endStr);
+              const lifts = weekActivities.filter(a => a.type === 'Strength Training').length;
+              const cardio = weekActivities.filter(a => cardioTypes.includes(a.type)).length;
+              const recovery = weekActivities.filter(a => recoveryTypes.includes(a.type)).length;
+
+              if (lifts >= goals.liftsPerWeek) liftWeeksHit++;
+              if (cardio >= goals.cardioPerWeek) cardioWeeksHit++;
+              if (recovery >= goals.recoveryPerWeek) recoveryWeeksHit++;
+              if (lifts >= goals.liftsPerWeek && cardio >= goals.cardioPerWeek && recovery >= goals.recoveryPerWeek) {
+                allGoalsWeeksHit++;
+              }
+            });
+
+            // Find highest calorie session this month
+            const highestCalorieSession = monthlyActivities.reduce((best, a) => {
+              const cal = parseInt(a.calories) || 0;
+              if (!best || cal > best.calories) {
+                return { calories: cal, type: a.type };
+              }
+              return best;
+            }, null);
+
+            // Find most frequent strength focus area (Full Body, Upper, Lower, etc.)
+            const strengthFocusCounts = {};
+            monthlyActivities.filter(a => a.type === 'Strength Training' && a.focusArea).forEach(a => {
+              strengthFocusCounts[a.focusArea] = (strengthFocusCounts[a.focusArea] || 0) + 1;
+            });
+            const mostFrequentStrength = Object.entries(strengthFocusCounts).sort((a, b) => b[1] - a[1])[0];
+
+            // Find most frequent cardio type (Running, Cycle, etc.)
+            const cardioTypeCounts = {};
+            monthlyActivities.filter(a => cardioTypes.includes(a.type)).forEach(a => {
+              cardioTypeCounts[a.type] = (cardioTypeCounts[a.type] || 0) + 1;
+            });
+            const mostFrequentCardio = Object.entries(cardioTypeCounts).sort((a, b) => b[1] - a[1])[0];
+
+            // Find most frequent workout type (for highlights - cardio or strength)
+            const workoutTypeCounts = {};
+            monthlyActivities.filter(a => cardioTypes.includes(a.type) || a.type === 'Strength Training').forEach(a => {
+              workoutTypeCounts[a.type] = (workoutTypeCounts[a.type] || 0) + 1;
+            });
+            const mostFrequentWorkout = Object.entries(workoutTypeCounts).sort((a, b) => b[1] - a[1])[0];
+
+            // Find most frequent recovery type
+            const recoveryTypeCounts = {};
+            monthlyActivities.filter(a => recoveryTypes.includes(a.type)).forEach(a => {
+              recoveryTypeCounts[a.type] = (recoveryTypeCounts[a.type] || 0) + 1;
+            });
+            const mostFrequentRecovery = Object.entries(recoveryTypeCounts).sort((a, b) => b[1] - a[1])[0];
+
+            // Find longest session this month
+            const longestSession = monthlyActivities.reduce((best, a) => {
+              const dur = parseInt(a.duration) || 0;
+              if (!best || dur > best.duration) {
+                return { duration: dur, type: a.type };
+              }
+              return best;
+            }, null);
+
+            return {
+              monthlyWorkouts: monthlyActivities.length,
+              monthlyCalories: monthlyActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0),
+              monthlyMiles: monthlyActivities.filter(a => a.distance).reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0),
+              monthlyLifts,
+              monthlyCardio,
+              monthlyRecovery,
+              monthlyDaysActive,
+              monthlySteps,
+              // Week streak data for the month
+              monthWeeksTotal: weeksInMonth.length,
+              monthLiftWeeksHit: liftWeeksHit,
+              monthCardioWeeksHit: cardioWeeksHit,
+              monthRecoveryWeeksHit: recoveryWeeksHit,
+              monthAllGoalsWeeksHit: allGoalsWeeksHit,
+              // User goals for context
+              liftsGoalMonthly: goals.liftsPerWeek,
+              cardioGoalMonthly: goals.cardioPerWeek,
+              recoveryGoalMonthly: goals.recoveryPerWeek,
+              // Highlights
+              monthlyHighestCalorieSession: highestCalorieSession,
+              monthlyLongestSession: longestSession,
+              monthlyMostFrequentWorkout: mostFrequentWorkout ? { type: mostFrequentWorkout[0], count: mostFrequentWorkout[1] } : null,
+              monthlyMostFrequentRecovery: mostFrequentRecovery ? { type: mostFrequentRecovery[0], count: mostFrequentRecovery[1] } : null,
+              // Most frequent by category (for Total Sessions box)
+              monthlyMostFrequentStrength: mostFrequentStrength ? mostFrequentStrength[0] : null,
+              monthlyMostFrequentCardio: mostFrequentCardio ? mostFrequentCardio[0] : null
+            };
+          })(),
           // Personal records
           records: userData.personalRecords,
           // Totals

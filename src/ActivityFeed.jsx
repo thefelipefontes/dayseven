@@ -766,7 +766,7 @@ const MemoizedActivityCard = React.memo(({
   );
 });
 
-const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingRequestsCount = 0, isRefreshing: isRefreshingProp = false, pullDistance = 0, onActiveViewChange }) => {
+const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingRequestsCount = 0, onActiveViewChange }) => {
   const [feedActivities, setFeedActivities] = useState([]);
   const [activityReactions, setActivityReactions] = useState({});
   const [activityComments, setActivityComments] = useState({});
@@ -781,6 +781,16 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   const [leaderboardTimeRange, setLeaderboardTimeRange] = useState('week'); // Activity: 'week', 'month', 'year', 'all' | Streak: 'year', 'all'
   const [selectedFriend, setSelectedFriend] = useState(null); // For viewing friend profile
   const [expandedComments, setExpandedComments] = useState({}); // Track which activities have expanded comments
+
+  // Local pull-to-refresh state (only for feed cards area)
+  const [localPullDistance, setLocalPullDistance] = useState(0);
+  const [localIsRefreshing, setLocalIsRefreshing] = useState(false);
+  const feedCardsRef = useRef(null);
+  const touchStartY = useRef(0);
+  const touchStartedInFeed = useRef(false);
+  const isPulling = useRef(false);
+  const localIsRefreshingRef = useRef(false);
+  const hasTriggeredRefresh = useRef(false);
 
   // Notify parent when active view changes (for pull-to-refresh threshold)
   useEffect(() => {
@@ -1102,7 +1112,116 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     }
     setIsLoading(false);
     setIsRefreshing(false);
+    setLocalIsRefreshing(false);
   }, [friends, user, userProfile]);
+
+  // Keep ref in sync with state for use in event handlers
+  useEffect(() => {
+    localIsRefreshingRef.current = localIsRefreshing;
+  }, [localIsRefreshing]);
+
+  // Local pull-to-refresh handler for feed cards area only
+  const handleLocalRefresh = useCallback(async () => {
+    if (localIsRefreshingRef.current) return;
+    localIsRefreshingRef.current = true;
+    hasTriggeredRefresh.current = true;
+    setLocalIsRefreshing(true);
+    triggerHaptic(ImpactStyle.Heavy);
+
+    const startTime = Date.now();
+    try {
+      await loadFeed();
+    } finally {
+      // Ensure minimum 600ms refresh animation for visual feedback
+      const elapsed = Date.now() - startTime;
+      const remainingTime = Math.max(600 - elapsed, 0);
+
+      setTimeout(() => {
+        setLocalIsRefreshing(false);
+        localIsRefreshingRef.current = false;
+        setLocalPullDistance(0);
+        hasTriggeredRefresh.current = false;
+      }, remainingTime);
+    }
+  }, [loadFeed]);
+
+  // Touch handlers for local pull-to-refresh (window-level, but only active when touch starts in feed area)
+  useEffect(() => {
+    if (activeView !== 'feed') return;
+
+    const getScrollTop = () => {
+      const root = document.getElementById('root');
+      const rootScroll = root?.scrollTop || 0;
+      const windowScroll = window.pageYOffset || 0;
+      const docScroll = document.documentElement.scrollTop || 0;
+      const bodyScroll = document.body.scrollTop || 0;
+      const appContainer = root?.firstElementChild;
+      const appScroll = appContainer ? appContainer.scrollTop || 0 : 0;
+      return Math.max(rootScroll, windowScroll, docScroll, bodyScroll, appScroll);
+    };
+
+    const handleTouchStart = (e) => {
+      if (localIsRefreshingRef.current) return;
+
+      // Check if touch started in feed cards area
+      const feedCards = feedCardsRef.current;
+      if (feedCards && feedCards.contains(e.target)) {
+        touchStartY.current = e.touches[0].clientY;
+        touchStartedInFeed.current = true;
+        isPulling.current = false;
+        hasTriggeredRefresh.current = false;
+      } else {
+        touchStartedInFeed.current = false;
+      }
+    };
+
+    const handleTouchMove = (e) => {
+      if (!touchStartedInFeed.current || localIsRefreshingRef.current) return;
+
+      const scrollTop = getScrollTop();
+      const touchY = e.touches[0].clientY;
+      const diff = touchY - touchStartY.current;
+
+      // Only allow pull when at top of page and pulling down
+      if (scrollTop <= 5 && diff > 0) {
+        // Prevent default scroll/bounce behavior when pulling to refresh
+        e.preventDefault();
+
+        isPulling.current = true;
+        const distance = Math.min(diff * 0.5, 100);
+        setLocalPullDistance(distance);
+
+        // Trigger refresh when threshold reached
+        if (distance >= 60 && !hasTriggeredRefresh.current) {
+          handleLocalRefresh();
+        }
+      } else if (isPulling.current && scrollTop > 5) {
+        // Cancel pull if scrolled away from top
+        isPulling.current = false;
+        setLocalPullDistance(0);
+      }
+    };
+
+    const handleTouchEnd = () => {
+      if (touchStartedInFeed.current && !localIsRefreshingRef.current) {
+        isPulling.current = false;
+        setLocalPullDistance(0);
+      }
+      touchStartedInFeed.current = false;
+    };
+
+    // Use window-level listeners with capture phase to get events before children
+    // touchmove needs passive: false to allow preventDefault() for stopping page scroll
+    window.addEventListener('touchstart', handleTouchStart, { passive: true, capture: true });
+    window.addEventListener('touchmove', handleTouchMove, { passive: false, capture: true });
+    window.addEventListener('touchend', handleTouchEnd, { passive: true, capture: true });
+
+    return () => {
+      window.removeEventListener('touchstart', handleTouchStart, { capture: true });
+      window.removeEventListener('touchmove', handleTouchMove, { capture: true });
+      window.removeEventListener('touchend', handleTouchEnd, { capture: true });
+    };
+  }, [activeView, handleLocalRefresh]);
 
   const loadLeaderboard = useCallback(async () => {
     if (!user) {
@@ -2111,7 +2230,6 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       <div>
         <FriendsHeaderTop />
         <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
-        <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} visualThreshold={activeView === 'leaderboard' ? 120 : 40} />
         <div className="flex items-center justify-center py-12">
           <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
         </div>
@@ -2128,7 +2246,6 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       <div>
         <FriendsHeaderTop />
         <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
-        <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} visualThreshold={activeView === 'leaderboard' ? 120 : 40} />
         <div className="text-center py-12 px-6">
           <div className="text-5xl mb-4">👥</div>
           <p className="text-white font-medium mb-2">Find your workout buddies</p>
@@ -2211,16 +2328,9 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       <div style={{ touchAction: 'pan-y' }}>
         <FriendsHeaderTop />
         <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
-        <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} visualThreshold={activeView === 'leaderboard' ? 120 : 40} />
 
         {/* Leaderboard content */}
-        <div
-          className="px-4 pb-32"
-          style={{
-            transform: pullDistance > 0 ? `translateY(${Math.min(pullDistance * 0.5, 60)}px)` : 'none',
-            transition: pullDistance === 0 ? 'transform 0.3s ease-out' : 'none',
-          }}
-        >
+        <div className="px-4 pb-32">
           {/* Leaderboard headline */}
           <div className="mb-4" style={{ touchAction: 'pan-y' }}>
             <div className="flex items-center gap-2">
@@ -2667,7 +2777,6 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       <div>
         <FriendsHeaderTop />
         <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
-        <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} visualThreshold={activeView === 'leaderboard' ? 120 : 40} />
         <div className="text-center py-12 px-6">
           <div className="text-5xl mb-4">📭</div>
           <p className="text-white font-medium mb-2">No activity yet</p>
@@ -2681,17 +2790,10 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     <div>
       <FriendsHeaderTop />
       <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
-      <FeedPullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshingProp} visualThreshold={activeView === 'leaderboard' ? 8 : 40} />
 
       {/* Feed content */}
-      <div
-        className="px-4 pb-32"
-        style={{
-          transform: pullDistance > 0 ? `translateY(${Math.min(pullDistance * 0.5, 60)}px)` : 'none',
-          transition: pullDistance === 0 ? 'transform 0.3s ease-out' : 'none',
-        }}
-      >
-        {/* Feed headline */}
+      <div className="px-4 pb-32">
+        {/* Feed headline - stays completely fixed, doesn't move with pull */}
         <div className="mb-4">
           <div className="flex items-center gap-2">
             <SectionIcon type="feed" />
@@ -2700,6 +2802,45 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Recent activity from friends</p>
         </div>
 
+        {/* Pull-to-refresh indicator - positioned below headline, uses local state */}
+        {(localPullDistance > 0 || localIsRefreshing) && (
+          <div
+            className="flex items-center justify-center mb-4"
+            style={{
+              height: localPullDistance > 0 ? `${Math.min(localPullDistance * 0.8, 50)}px` : localIsRefreshing ? '40px' : '0px',
+              opacity: localIsRefreshing ? 1 : Math.min(localPullDistance / 40, 1),
+              transition: localPullDistance === 0 ? 'all 0.3s ease-out' : 'none',
+            }}
+          >
+            <div
+              className="w-7 h-7 rounded-full flex items-center justify-center"
+              style={{
+                backgroundColor: 'rgba(0, 255, 148, 0.15)',
+                transform: `rotate(${localIsRefreshing ? 0 : Math.min(localPullDistance / 40, 1) * 180}deg)`,
+              }}
+            >
+              {localIsRefreshing ? (
+                <div
+                  className="w-4 h-4 border-2 border-[#00FF94] border-t-transparent rounded-full"
+                  style={{ animation: 'dynamicSpin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite' }}
+                />
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="#00FF94" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                </svg>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Feed activities - these move down with pull, ref for touch detection */}
+        <div
+          ref={feedCardsRef}
+          style={{
+            transform: localPullDistance > 0 ? `translateY(${Math.min(localPullDistance * 0.3, 30)}px)` : 'none',
+            transition: localPullDistance === 0 ? 'transform 0.3s ease-out' : 'none',
+          }}
+        >
         {feedActivities.map((activity, index) => {
           const key = `${activity.friend.uid}-${activity.id || index}`;
           return (
@@ -2729,10 +2870,22 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             />
           );
         })}
+        </div>
       </div>
 
       {/* Friend Profile Modal */}
       <FriendProfileModal friend={selectedFriend} onClose={() => setSelectedFriend(null)} />
+
+      {/* Keyframes for pull-to-refresh spinner */}
+      <style>{`
+        @keyframes dynamicSpin {
+          0% { transform: rotate(0deg); }
+          25% { transform: rotate(120deg); }
+          50% { transform: rotate(180deg); }
+          75% { transform: rotate(270deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 };

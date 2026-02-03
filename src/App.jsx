@@ -15003,13 +15003,13 @@ export default function DaySevenApp() {
     };
   }, [user?.uid, syncHealthKit]);
 
-  // Pull-to-refresh hook (enabled on home tab and feed tab, but not on leaderboard view)
+  // Pull-to-refresh hook (enabled on home tab only - feed tab has its own local pull-to-refresh)
   // Threshold of 80 matches native iOS UIRefreshControl feel
   // Disabled when modals are open to prevent accidental refresh
   const { pullDistance, isRefreshing } = usePullToRefresh(refreshData, {
     threshold: 80,
     resistance: 0.5,
-    enabled: !showAddActivity && !isHomeWorkoutPickerOpen && (activeTab === 'home' || (activeTab === 'feed' && feedActiveView === 'feed'))
+    enabled: !showAddActivity && !isHomeWorkoutPickerOpen && activeTab === 'home'
   });
 
   // Listen to auth state
@@ -16368,8 +16368,6 @@ export default function DaySevenApp() {
                   friends={friends}
                   onOpenFriends={() => setShowFriends(true)}
                   pendingRequestsCount={pendingFriendRequests}
-                  isRefreshing={isRefreshing}
-                  pullDistance={pullDistance}
                   onActiveViewChange={setFeedActiveView}
                 />
               )}

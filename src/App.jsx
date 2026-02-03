@@ -5767,26 +5767,26 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
                 <SectionIcon type="trophy" />
                 <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Highlights</span>
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 {bestBurn && bestBurn.calories > 0 && (
-                  <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,69,58,0.1)' }}>
-                    <div className="text-lg font-black" style={{ color: '#FF453A' }}>{bestBurn.calories.toLocaleString()}</div>
-                    <div className="text-[10px] text-gray-400">🔥 Best Burn</div>
-                    <div className="text-[10px] text-gray-500">{bestBurn.type}</div>
+                  <div className="p-2.5 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,69,58,0.1)' }}>
+                    <div className="text-base font-black" style={{ color: '#FF453A' }}>{bestBurn.calories.toLocaleString()}</div>
+                    <div className="text-[9px] text-gray-400">🔥 Best Burn</div>
+                    <div className="text-[9px] text-gray-500">{bestBurn.type}</div>
                   </div>
                 )}
                 {longestSession && longestSession.duration > 0 && (
-                  <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(147,112,219,0.1)' }}>
-                    <div className="text-lg font-black" style={{ color: '#9370DB' }}>{longestSession.duration} min</div>
-                    <div className="text-[10px] text-gray-400">⏱️ Longest Session</div>
-                    <div className="text-[10px] text-gray-500">{longestSession.type}</div>
+                  <div className="p-2.5 rounded-xl text-center" style={{ backgroundColor: 'rgba(147,112,219,0.1)' }}>
+                    <div className="text-base font-black" style={{ color: '#9370DB' }}>{longestSession.duration} min</div>
+                    <div className="text-[9px] text-gray-400">⏱️ Longest</div>
+                    <div className="text-[9px] text-gray-500">{longestSession.type}</div>
                   </div>
                 )}
                 {furthestDistance && furthestDistance.distance > 0 && (
-                  <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(50,205,50,0.1)' }}>
-                    <div className="text-lg font-black" style={{ color: '#32CD32' }}>{furthestDistance.distance.toFixed(2)} mi</div>
-                    <div className="text-[10px] text-gray-400">📍 Furthest Distance</div>
-                    <div className="text-[10px] text-gray-500">{furthestDistance.type}</div>
+                  <div className="p-2.5 rounded-xl text-center" style={{ backgroundColor: 'rgba(50,205,50,0.1)' }}>
+                    <div className="text-base font-black" style={{ color: '#32CD32' }}>{furthestDistance.distance.toFixed(2)} mi</div>
+                    <div className="text-[9px] text-gray-400">📍 Furthest</div>
+                    <div className="text-[9px] text-gray-500">{furthestDistance.type}</div>
                   </div>
                 )}
               </div>
@@ -7320,7 +7320,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       // Workouts from notification have id like 'hk_com.apple.health...' while saved activities have Firebase IDs
       const fromNotification = pendingActivity?.healthKitUUID &&
         !pendingActivity?.linkedHealthKitUUID &&
-        pendingActivity?.id?.startsWith('hk_');
+        (typeof pendingActivity?.id === 'string' && pendingActivity.id.startsWith('hk_'));
 
       setIsFromNotification(fromNotification);
 
@@ -17676,7 +17676,7 @@ export default function DaySevenApp() {
           }
         }}
         otherPendingWorkoutsCount={
-          pendingActivity?.id?.startsWith('hk_')
+          (typeof pendingActivity?.id === 'string' && pendingActivity.id.startsWith('hk_'))
             ? (healthKitData.pendingWorkouts || []).filter(w => (w.healthKitUUID || w.id) !== (pendingActivity.healthKitUUID || pendingActivity.id)).length
             : 0
         }

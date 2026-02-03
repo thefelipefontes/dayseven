@@ -2064,8 +2064,17 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
     if (!root) return;
 
     const getScrollTop = () => {
-      // Try multiple sources for scroll position for maximum compatibility
-      return root.scrollTop || window.pageYOffset || document.documentElement.scrollTop || 0;
+      // Get scroll position from all possible sources and return the maximum
+      // This ensures we don't incorrectly think we're at top when scrolled
+      // The main scrolling container is the first child of root (the app div with overflow-y-auto)
+      const rootScroll = root.scrollTop || 0;
+      const windowScroll = window.pageYOffset || 0;
+      const docScroll = document.documentElement.scrollTop || 0;
+      const bodyScroll = document.body.scrollTop || 0;
+      // Also check the first child of root which is the main app container
+      const appContainer = root.firstElementChild;
+      const appScroll = appContainer ? appContainer.scrollTop || 0 : 0;
+      return Math.max(rootScroll, windowScroll, docScroll, bodyScroll, appScroll);
     };
 
     const handleTouchStart = (e) => {
@@ -2134,8 +2143,17 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
         maxPullDistance.current = Math.max(maxPullDistance.current, diff / resistance);
       }
 
-      // If already pulling, continue tracking regardless of scroll position
+      // If already pulling, continue tracking - but cancel if we've scrolled away from top
       if (isPulling.current) {
+        // Cancel pull if we've scrolled away from the top
+        if (currentScrollTop > 10) {
+          isPulling.current = false;
+          globalIsPulling.current = false;
+          pullDistanceRef.current = 0;
+          setPullDistance(0);
+          return;
+        }
+
         // Calculate new distance - use the max of new value and slightly decayed previous value
         const newDistance = diff / resistance;
         // Keep the higher of: new distance, or previous distance minus small decay
@@ -4735,7 +4753,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
 
         {/* Week Totals */}
         <div className="mb-4">
-          <div className="flex items-center gap-2.5 mb-3">
+          <div className="flex items-center gap-2 mb-3">
             <SectionIcon type="chart" />
             <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Week Totals</span>
           </div>
@@ -4763,7 +4781,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
 
         {/* Streaks Maintained */}
         <div className="mb-6">
-          <div className="flex items-center gap-2.5 mb-3">
+          <div className="flex items-center gap-2 mb-3">
             <SectionIcon type="streak" />
             <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Streaks Maintained</span>
           </div>
@@ -4821,11 +4839,11 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
 
         {/* Activities Completed Header */}
         <div className="mb-4">
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <SectionIcon type="activity" />
             <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Activities Completed</span>
           </div>
-          <p className="text-[13px] -mt-1 pl-8" style={{ color: '#777' }}>All sessions from this week</p>
+          <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>All sessions from this week</p>
         </div>
 
         <SwipeableProvider>
@@ -9106,11 +9124,11 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
       <div className="px-4 mb-4">
         <div className="flex items-center justify-between mb-3">
           <div>
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2">
               <SectionIcon type="activity" />
               <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Today's Activity</span>
             </div>
-            <p className="text-[13px] -mt-1 pl-8" style={{ color: '#777' }}>Synced from Apple Health</p>
+            <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Synced from Apple Health</p>
           </div>
         </div>
         
@@ -9424,11 +9442,11 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         {/* Weekly Goals - tour highlight wraps header + card */}
         <div ref={weeklyGoalsRef}>
           <div className="mb-3">
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2">
               <SectionIcon type="target" />
               <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>This Week's Goals</span>
             </div>
-            <p className="text-[13px] -mt-1 pl-8" style={{ color: '#777' }}>Hit these to keep your streaks alive · {daysLeft} days left</p>
+            <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Hit these to keep your streaks alive · {daysLeft} days left</p>
           </div>
 
           {/* Individual Goals - The Main Event */}
@@ -9620,11 +9638,11 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
           {/* Tour highlight wrapper - includes header + first activity */}
           <div ref={latestActivityRef}>
             <div className="mb-3">
-              <div className="flex items-center gap-2.5">
+              <div className="flex items-center gap-2">
                 <SectionIcon type="clock" />
                 <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Latest Activity</span>
               </div>
-              <p className="text-[13px] -mt-1 pl-8" style={{ color: '#777' }}>Your recent workout and recovery sessions</p>
+              <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Your recent workout and recovery sessions</p>
             </div>
             {/* Show first activity inside the tour highlight, or empty state */}
             {latestActivities.length > 0 ? (
@@ -10063,11 +10081,11 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
     <div className="mx-4">
       {/* Header */}
       <div className="mb-4">
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
           <SectionIcon type="trending" />
           <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Trends</span>
         </div>
-        <p className="text-[13px] -mt-1 pl-8" style={{ color: '#777' }}>Track your progress over time</p>
+        <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Track your progress over time</p>
       </div>
 
       {/* Metric Toggle */}
@@ -11084,11 +11102,11 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
         {view === 'calendar' && (
           <div ref={calendarRef} className="mx-4 mt-2">
           <div className="mb-4">
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2">
               <SectionIcon type="calendar" />
               <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Activity Calendar</span>
             </div>
-            <p className="text-[13px] -mt-1 pl-8" style={{ color: '#777' }}>Tap any day or week to see details</p>
+            <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Tap any day or week to see details</p>
           </div>
 
           {/* First-visit calendar hints */}
@@ -11513,7 +11531,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
 
               {/* Daily Totals */}
               <div className="mb-6">
-                <div className="flex items-center gap-2.5 mb-3">
+                <div className="flex items-center gap-2 mb-3">
                   <SectionIcon type="chart" />
                   <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Daily Totals</span>
                 </div>
@@ -11539,11 +11557,11 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
 
               {/* Activities Completed Header */}
               <div className="mb-4">
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2">
                   <SectionIcon type="activity" />
                   <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Activities Completed</span>
                 </div>
-                <p className="text-[13px] -mt-1 pl-8" style={{ color: '#777' }}>Swipe left to delete, tap for details</p>
+                <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Swipe left to delete, tap for details</p>
               </div>
 
               <SwipeableProvider>
@@ -11705,11 +11723,11 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
         <div ref={statsRef} className="mx-4 mt-2">
           {/* Stats Headline */}
           <div className="mb-4">
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2">
               <SectionIcon type="chart" />
               <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Your Stats</span>
             </div>
-            <p className="text-[13px] -mt-1 pl-8" style={{ color: '#777' }}>Your totals over time</p>
+            <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Your totals over time</p>
           </div>
 
           {/* Toggle and Dropdown Row */}
@@ -11881,11 +11899,11 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
             <div className="space-y-6">
               {/* Hall of Fame Header */}
               <div className="mb-4">
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2">
                   <SectionIcon type="trophy" />
                   <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Hall of Fame</span>
                 </div>
-                <p className="text-[13px] -mt-1 pl-8" style={{ color: '#777' }}>Your personal bests</p>
+                <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Your personal bests</p>
               </div>
 
               {/* Streaks Section */}

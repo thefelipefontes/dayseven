@@ -2223,11 +2223,11 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         >
           {/* Leaderboard headline */}
           <div className="mb-4" style={{ touchAction: 'pan-y' }}>
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2">
               <SectionIcon type="leaderboard" />
               <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Leaderboard</span>
             </div>
-            <p className="text-[13px] -mt-1 pl-8" style={{ color: '#777' }}>See how you rank among friends</p>
+            <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>See how you rank among friends</p>
           </div>
 
           {/* Section Toggle - Activity vs Streak */}
@@ -2432,11 +2432,11 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               {/* Category Leaders - Volume Stats */}
               <div className="mt-8">
                 <div className="mb-4">
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2">
                     <SectionIcon type="trophy" />
                     <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Category Leaders</span>
                   </div>
-                  <p className="text-[13px] -mt-1 pl-8" style={{ color: '#777' }}>Top performers by volume this {leaderboardTimeRange === 'all' ? 'all time' : leaderboardTimeRange}</p>
+                  <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Top performers by volume this {leaderboardTimeRange === 'all' ? 'all time' : leaderboardTimeRange}</p>
                 </div>
 
                 {/* Running Leaders */}
@@ -2693,11 +2693,11 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       >
         {/* Feed headline */}
         <div className="mb-4">
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <SectionIcon type="feed" />
             <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Feed</span>
           </div>
-          <p className="text-[13px] -mt-1 pl-8" style={{ color: '#777' }}>Recent activity from friends</p>
+          <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Recent activity from friends</p>
         </div>
 
         {feedActivities.map((activity, index) => {

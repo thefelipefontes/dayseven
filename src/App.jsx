@@ -42,6 +42,30 @@ const DaySevenLogo = ({ size = 'base', opacity = 0.7 }) => {
   );
 };
 
+// D7 Icon component - compact logo mark (D with 7 nested inside)
+const D7Icon = ({ size = 28, className = '' }) => (
+  <svg width={size} height={size} viewBox="0 0 1024 1024" fill="none" className={className}>
+    {/* D outline with rounded corners */}
+    <path
+      d="M250 160 L250 864 L500 864 C740 864 820 680 820 512 C820 344 740 160 500 160 L250 160"
+      stroke="white"
+      strokeWidth="65"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      fill="none"
+    />
+    {/* 7 nested inside the D */}
+    <path
+      d="M400 330 L600 330 L460 694"
+      stroke="white"
+      strokeWidth="50"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      fill="none"
+    />
+  </svg>
+);
+
 // Status bar blur overlay for non-home tabs
 // Creates a blurred backdrop that extends just below the Dynamic Island with soft edges
 const StatusBarBlur = () => (
@@ -14212,6 +14236,7 @@ export default function DaySevenApp() {
   const [isOnboarded, setIsOnboarded] = useState(null); // null = loading, true = onboarded, false = needs onboarding
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('home');
+  const [scrollY, setScrollY] = useState(0);
   const [prevTab, setPrevTab] = useState('home');
   const [tabDirection, setTabDirection] = useState(0); // -1 = left, 0 = none, 1 = right
   const [showAddActivity, setShowAddActivity] = useState(false);
@@ -14543,6 +14568,20 @@ export default function DaySevenApp() {
   // Triple-tap logo refs
   const logoTapCountRef = useRef(0);
   const logoTapTimerRef = useRef(null);
+
+  // Track scroll position for collapsing header
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
+      setScrollY(scrollTop);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    document.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      document.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
 
   // Triple-tap logo to trigger tour
   const handleLogoTap = () => {
@@ -16089,10 +16128,16 @@ export default function DaySevenApp() {
   // Custom refresh indicator component
   return (
     <div
-      className="min-h-screen text-white"
+      className="min-h-screen text-white overflow-y-auto"
       style={{
         backgroundColor: '#0A0A0A',
-        fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif'
+        fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif',
+        height: '100vh'
+      }}
+      onScroll={(e) => {
+        if (activeTab === 'home') {
+          setScrollY(e.currentTarget.scrollTop);
+        }
       }}
     >
       {/* Pull-to-Refresh Indicator (Home tab only) */}
@@ -16167,26 +16212,41 @@ export default function DaySevenApp() {
         }}
       />
 
-      {/* Fixed Header for Home tab */}
-      {activeTab === 'home' && (
-        <div
-          className="fixed top-0 left-0 right-0 z-40 px-4 pb-4"
-          style={{
-            backgroundColor: '#0A0A0A',
-            paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)'
-          }}
-        >
-          <div>
-            <img
-              src="/wordmark.png"
-              alt="Day Seven"
-              className="h-6 cursor-pointer"
-              onClick={handleLogoTap}
-            />
-            <p className="text-xs" style={{ color: '#00FF94' }}>Win the week.</p>
+      {/* Fixed Header for Home tab - collapses on scroll */}
+      {activeTab === 'home' && (() => {
+        const isCollapsed = scrollY > 50;
+        const iconSize = isCollapsed ? 'h-9 w-9' : 'h-11 w-11';
+        const wordmarkOpacity = isCollapsed ? 0 : 0.7;
+        const wordmarkWidth = isCollapsed ? 'w-0' : 'w-auto';
+
+        return (
+          <div
+            className="fixed top-0 left-0 right-0 z-40 px-4 pb-6 pointer-events-none"
+            style={{
+              paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)',
+              background: 'linear-gradient(to bottom, rgba(10, 10, 10, 1) 0%, rgba(10, 10, 10, 1) 78%, rgba(10, 10, 10, 0.5) 92%, rgba(10, 10, 10, 0) 100%)',
+              backdropFilter: 'blur(30px)',
+              WebkitBackdropFilter: 'blur(30px)',
+              maskImage: 'linear-gradient(to bottom, black 0%, black 82%, transparent 100%)',
+              WebkitMaskImage: 'linear-gradient(to bottom, black 0%, black 82%, transparent 100%)'
+            }}
+          >
+            <div className="flex items-center gap-0 cursor-pointer pointer-events-auto" onClick={handleLogoTap}>
+              <img
+                src="/icon-transparent.png"
+                alt="Day Seven"
+                className={`${iconSize} transition-all duration-300 ease-out`}
+              />
+              <img
+                src="/wordmark.png"
+                alt="dayseven"
+                className={`h-4 ${wordmarkWidth} transition-all duration-300 ease-out overflow-hidden`}
+                style={{ opacity: wordmarkOpacity }}
+              />
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Status bar blur overlay for non-home tabs */}
       {activeTab !== 'home' && <StatusBarBlur />}

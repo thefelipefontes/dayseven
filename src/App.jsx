@@ -12105,7 +12105,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <span className="text-sm">🏋️</span>
-                      <div className="text-xs text-gray-500">Longest Strength</div>
+                      <div className="text-xs text-gray-500">Longest Strength Session</div>
                     </div>
                     <div className="text-base font-bold text-white">
                       {getRecordValue(records.longestStrength) ? (() => {
@@ -12123,7 +12123,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <span className="text-sm">🏃</span>
-                      <div className="text-xs text-gray-500">Longest Cardio</div>
+                      <div className="text-xs text-gray-500">Longest Cardio Session</div>
                     </div>
                     <div className="text-right">
                       <div className="text-base font-bold text-white">

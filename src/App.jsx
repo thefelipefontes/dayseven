@@ -11100,7 +11100,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
               <span className="text-xl font-bold" style={{ color: '#00D1FF' }}>{streaks.recovery} Weeks</span>
             </div>
             <div className="flex items-center justify-between mt-0.5">
-              <span className="text-xs text-gray-400 whitespace-nowrap">Recov</span>
+              <span className="text-xs text-gray-400">Recovery</span>
               <span className="text-[10px] text-gray-500">{goals.recoveryPerWeek}+ per week</span>
             </div>
           </div>

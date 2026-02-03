@@ -380,6 +380,13 @@ const TouchButton = ({ onClick, disabled = false, className, style, children, to
   const ref = useRef(null);
   const touchStartRef = useRef({ x: 0, y: 0, time: 0 });
   const [isPressed, setIsPressed] = useState(false);
+  const [transitionsEnabled, setTransitionsEnabled] = useState(false);
+
+  // Delay enabling transitions to prevent flash on mount/refresh from cached styles
+  useEffect(() => {
+    const timer = setTimeout(() => setTransitionsEnabled(true), 150);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     const el = ref.current;
@@ -439,9 +446,11 @@ const TouchButton = ({ onClick, disabled = false, className, style, children, to
         ...style,
         touchAction: touchAction,
         cursor: disabled ? 'default' : 'pointer',
-        transform: isPressed ? 'scale(0.95)' : 'scale(1)',
-        opacity: isPressed ? 0.7 : 1,
-        transition: 'transform 0.1s ease-out, opacity 0.1s ease-out'
+        // Only apply transform/opacity when pressed, use undefined (not explicit value) otherwise
+        // This prevents the browser from animating from a cached value on refresh
+        transform: isPressed ? 'scale(0.95)' : undefined,
+        opacity: isPressed ? 0.7 : undefined,
+        transition: transitionsEnabled ? 'transform 0.1s ease-out, opacity 0.1s ease-out' : 'none'
       }}
     >
       {children}

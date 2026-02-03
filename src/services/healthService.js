@@ -171,8 +171,10 @@ function convertWorkoutToActivity(workout) {
   }
 
   // Create a unique identifier for this workout
-  // Use uuid if available, otherwise create from sourceId or timestamp
-  const uniqueId = workout.uuid || workout.sourceId || `${startDate.getTime()}_${durationMinutes}`;
+  // The plugin doesn't return a unique workout UUID, only sourceId (which is the device ID)
+  // So we create a unique ID from startDate + duration + workoutType to distinguish workouts
+  const workoutSignature = `${workout.startDate}_${workout.duration || durationMinutes}_${workout.workoutType || 'other'}`;
+  const uniqueId = workout.uuid || workoutSignature;
 
   // Create activity object
   const activity = {

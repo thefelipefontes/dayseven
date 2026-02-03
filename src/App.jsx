@@ -15982,20 +15982,38 @@ export default function DaySevenApp() {
       setFriends(friendsList);
       setPendingFriendRequests(requests.length);
 
-      // Refresh HealthKit data on pull-to-refresh
+      // Refresh HealthKit data on pull-to-refresh (including workouts)
       if (Capacitor.isNativePlatform()) {
         try {
-          const [steps, calories] = await Promise.all([
-            fetchTodaySteps(),
-            fetchTodayCalories()
-          ]);
-          const hasHealthData = (steps > 0 || calories > 0);
-          setHealthKitData(prev => ({
-            ...prev,
-            todaySteps: steps || prev.todaySteps,
-            todayCalories: calories || prev.todayCalories,
-            isConnected: prev.isConnected || hasHealthData
-          }));
+          // Re-sync workouts from HealthKit to detect new ones
+          const result = await syncHealthKitData();
+          if (result.success) {
+            // Find workouts that aren't already in activities
+            const existingUUIDs = new Set(
+              userActivities
+                .filter(a => a.healthKitUUID)
+                .map(a => a.healthKitUUID)
+            );
+            const linkedUUIDs = new Set(
+              userActivities
+                .filter(a => a.linkedHealthKitUUID)
+                .map(a => a.linkedHealthKitUUID)
+            );
+            const newWorkouts = result.workouts.filter(
+              w => w.healthKitUUID &&
+                   !existingUUIDs.has(w.healthKitUUID) &&
+                   !linkedUUIDs.has(w.healthKitUUID)
+            );
+
+            const hasHealthData = (result.todaySteps > 0 || result.todayCalories > 0);
+            setHealthKitData(prev => ({
+              todaySteps: result.todaySteps || prev.todaySteps,
+              todayCalories: result.todayCalories || prev.todayCalories,
+              pendingWorkouts: newWorkouts,
+              lastSynced: new Date().toISOString(),
+              isConnected: prev.isConnected || hasHealthData
+            }));
+          }
         } catch (e) {
           // Silently fail HealthKit refresh
         }
@@ -16025,16 +16043,6 @@ export default function DaySevenApp() {
             .filter(a => a.linkedHealthKitUUID)
             .map(a => a.linkedHealthKitUUID)
         );
-
-        // Get dismissed UUIDs from localStorage
-        let dismissedUUIDs = [];
-        try {
-          const saved = localStorage.getItem('dismissedWorkoutUUIDs');
-          dismissedUUIDs = saved ? JSON.parse(saved) : [];
-        } catch {
-          dismissedUUIDs = [];
-        }
-        const dismissedSet = new Set(dismissedUUIDs);
 
         // Filter workouts - only exclude already saved/linked activities
         // Dismissed workouts are filtered at render time for notification banner only
@@ -16087,10 +16095,21 @@ export default function DaySevenApp() {
     // Refresh steps and calories every 5 minutes (these update frequently)
     const refreshInterval = setInterval(refreshHealthKitData, 5 * 60 * 1000); // 5 minutes
 
-    // Also refresh when app comes back to foreground
-    const handleVisibilityChange = () => {
+    // Also refresh when app comes back to foreground (full sync including workouts)
+    const handleVisibilityChange = async () => {
       if (document.visibilityState === 'visible') {
         refreshHealthKitData();
+        // Re-sync workouts when returning to foreground
+        // Fetch fresh activities to compare against
+        if (user?.uid) {
+          try {
+            const currentActivities = await getUserActivities(user.uid);
+            syncHealthKit(currentActivities);
+          } catch (e) {
+            // Fall back to syncing without activities comparison
+            syncHealthKit([]);
+          }
+        }
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -17400,10 +17419,36 @@ export default function DaySevenApp() {
                     // Filter out dismissed workouts
                     if (dismissedWorkoutUUIDs.includes(w.healthKitUUID)) return false;
                     // Filter out workouts already saved/linked in activities
-                    const isAlreadySaved = activities.some(a =>
-                      a.healthKitUUID === w.healthKitUUID ||
-                      a.linkedHealthKitUUID === w.healthKitUUID
-                    );
+                    const isAlreadySaved = activities.some(a => {
+                      // Direct UUID match
+                      if (a.healthKitUUID === w.healthKitUUID || a.linkedHealthKitUUID === w.healthKitUUID) {
+                        return true;
+                      }
+                      // Also check for same date + similar time (within 2 hours) + same type
+                      // This handles cases where UUID format changed
+                      if (a.date === w.date && a.type === w.type) {
+                        // Parse times and check if they're close
+                        const parseTime = (timeStr) => {
+                          if (!timeStr) return null;
+                          const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+                          if (!match) return null;
+                          let hours = parseInt(match[1], 10);
+                          const minutes = parseInt(match[2], 10);
+                          if (match[3].toUpperCase() === 'PM' && hours !== 12) hours += 12;
+                          if (match[3].toUpperCase() === 'AM' && hours === 12) hours = 0;
+                          return hours * 60 + minutes;
+                        };
+                        const activityTime = parseTime(a.time);
+                        const workoutTime = parseTime(w.time);
+                        if (activityTime !== null && workoutTime !== null) {
+                          const timeDiff = Math.abs(activityTime - workoutTime);
+                          if (timeDiff <= 120) { // Within 2 hours
+                            return true;
+                          }
+                        }
+                      }
+                      return false;
+                    });
                     return !isAlreadySaved;
                   })}
                   activities={activities}

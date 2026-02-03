@@ -2813,7 +2813,7 @@ const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!", type
 };
 
 // Week Streak Celebration Modal - Animated ring convergence celebration
-const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1 }) => {
+const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1, goals = {}, weekCounts = {} }) => {
   const [phase, setPhase] = useState('hidden'); // hidden, fadeIn, converge, burst, content, fadeOut
   const [ringStates, setRingStates] = useState([
     { animate: false, converged: false, hasAnimated: false },
@@ -3129,7 +3129,8 @@ const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1 }) => {
           style={{
             width: 240,
             height: 120,
-            transition: 'all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)'
+            transition: 'all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
+            animation: showContent ? 'floatRings 3s ease-in-out infinite' : 'none'
           }}
         >
           {/* Strength Ring (outer when converged) */}
@@ -3222,7 +3223,8 @@ const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1 }) => {
           style={{
             opacity: showContent ? 1 : 0,
             transform: showContent ? 'translateY(0)' : 'translateY(20px)',
-            transition: 'all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)'
+            transition: 'all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
+            animation: showContent ? 'floatContent 3.5s ease-in-out infinite 0.2s' : 'none'
           }}
         >
           {/* Title */}
@@ -3238,9 +3240,34 @@ const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1 }) => {
           </div>
 
           {/* Streak count */}
-          <div className="flex items-center justify-center gap-2 mb-6">
+          <div className="flex items-center justify-center gap-2 mb-4">
             <span className="text-2xl">🔥</span>
             <span className="text-xl font-bold text-white">{streakCount} Week Streak</span>
+          </div>
+
+          {/* Goals summary */}
+          <div className="flex items-center justify-center gap-6 mb-6">
+            <div className="flex flex-col items-center">
+              <div className="w-3 h-3 rounded-full mb-1" style={{ backgroundColor: COLORS.strength, boxShadow: `0 0 8px ${COLORS.strength}` }} />
+              <span className="text-[11px] text-gray-400">Strength</span>
+              <span className="text-base font-bold" style={{ color: COLORS.strength }}>
+                {weekCounts.strength || 0}/{goals.liftsPerWeek || 3}
+              </span>
+            </div>
+            <div className="flex flex-col items-center">
+              <div className="w-3 h-3 rounded-full mb-1" style={{ backgroundColor: COLORS.cardio, boxShadow: `0 0 8px ${COLORS.cardio}` }} />
+              <span className="text-[11px] text-gray-400">Cardio</span>
+              <span className="text-base font-bold" style={{ color: COLORS.cardio }}>
+                {weekCounts.cardio || 0}/{goals.cardioPerWeek || 3}
+              </span>
+            </div>
+            <div className="flex flex-col items-center">
+              <div className="w-3 h-3 rounded-full mb-1" style={{ backgroundColor: COLORS.recovery, boxShadow: `0 0 8px ${COLORS.recovery}` }} />
+              <span className="text-[11px] text-gray-400">Recovery</span>
+              <span className="text-base font-bold" style={{ color: COLORS.recovery }}>
+                {weekCounts.recovery || 0}/{goals.recoveryPerWeek || 2}
+              </span>
+            </div>
           </div>
 
           {/* Buttons */}
@@ -3307,6 +3334,24 @@ const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1 }) => {
         @keyframes checkmarkDraw {
           to {
             stroke-dashoffset: 0;
+          }
+        }
+
+        @keyframes floatRings {
+          0%, 100% {
+            transform: translateY(0);
+          }
+          50% {
+            transform: translateY(-4px);
+          }
+        }
+
+        @keyframes floatContent {
+          0%, 100% {
+            transform: translateY(0);
+          }
+          50% {
+            transform: translateY(-3px);
           }
         }
       `}</style>
@@ -17436,6 +17481,12 @@ export default function DaySevenApp() {
       <WeekStreakCelebration
         show={showWeekStreakCelebration}
         streakCount={userData?.streaks?.master || 1}
+        goals={userData?.goals || {}}
+        weekCounts={{
+          strength: calculateWeeklyProgress(activities)?.lifts?.completed || 0,
+          cardio: calculateWeeklyProgress(activities)?.cardio?.completed || 0,
+          recovery: calculateWeeklyProgress(activities)?.recovery?.completed || 0
+        }}
         onClose={() => {
           setShowWeekStreakCelebration(false);
           // Show pending toast after week streak celebration closes

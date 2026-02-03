@@ -6489,9 +6489,24 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       } else {
         // Normal edit flow or manual entry
         setDistance(pendingActivity?.distance || '');
-        // Default to 1 hour for manual input, use synced duration if from Apple Health
-        setDurationHours(pendingActivity?.durationHours ?? 1);
-        setDurationMinutes(pendingActivity?.durationMinutes ?? 0);
+        // Set duration based on activity type or existing data
+        if (pendingActivity?.durationHours !== undefined || pendingActivity?.durationMinutes !== undefined) {
+          // Use existing duration from the activity
+          setDurationHours(pendingActivity?.durationHours ?? 0);
+          setDurationMinutes(pendingActivity?.durationMinutes ?? 0);
+        } else if (pendingActivity?.type === 'Sauna') {
+          // Default to 10 minutes for Sauna
+          setDurationHours(0);
+          setDurationMinutes(10);
+        } else if (pendingActivity?.type === 'Cold Plunge') {
+          // Default to 5 minutes for Cold Plunge
+          setDurationHours(0);
+          setDurationMinutes(5);
+        } else {
+          // Default to 1 hour for other activities
+          setDurationHours(1);
+          setDurationMinutes(0);
+        }
         setCalories(pendingActivity?.calories || '');
         setAvgHr(pendingActivity?.avgHr || '');
         setMaxHr(pendingActivity?.maxHr || '');
@@ -6580,10 +6595,9 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   };
 
   const activityTypes = [
-    { name: 'Strength Training', icon: '🏋️', subtypes: [] }, // Handled separately
-    { name: 'Running', icon: '🏃', subtypes: ['Easy', 'Tempo', 'Long', 'Sprints', 'Recovery'] },
-    { name: 'Cycle', icon: '🚴', subtypes: ['Road', 'Spin', 'Mountain'] },
-    { name: 'Walking', icon: '🚶', subtypes: ['Casual', 'Power Walk', 'Incline', 'Treadmill'] },
+    { name: 'Strength Training', icon: '🏋️', subtypes: [], category: 'strength' },
+    { name: 'Running', icon: '🏃', subtypes: ['Easy', 'Tempo', 'Long', 'Sprints', 'Recovery'], category: 'cardio' },
+    { name: 'Cycle', icon: '🚴', subtypes: ['Road', 'Spin', 'Mountain'], category: 'cardio' },
     { name: 'Sports', icon: '🏀', subtypes: [
       { name: 'Basketball', icon: '🏀' },
       { name: 'Soccer', icon: '⚽' },
@@ -6591,12 +6605,49 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       { name: 'Tennis', icon: '🎾' },
       { name: 'Golf', icon: '⛳' },
       { name: 'Other', icon: '🏆' }
-    ]},
-    { name: 'Yoga', icon: '🧘', subtypes: ['Vinyasa', 'Power', 'Hot', 'Yin', 'Restorative'] },
-    { name: 'Pilates', icon: '🤸', subtypes: ['Mat', 'Reformer', 'Tower', 'Chair'] },
-    { name: 'Cold Plunge', icon: '🧊', subtypes: [] },
-    { name: 'Sauna', icon: '🔥', subtypes: [] },
-    { name: 'Other', icon: '🏊', subtypes: [] }
+    ], category: 'cardio' },
+    { name: 'Yoga', icon: '🧘', subtypes: ['Vinyasa', 'Power', 'Hot', 'Yin', 'Restorative'], category: 'hybrid' },
+    { name: 'Pilates', icon: '🤸', subtypes: ['Mat', 'Reformer', 'Tower', 'Chair'], category: 'hybrid' },
+    { name: 'Walking', icon: '🚶', subtypes: ['Casual', 'Power Walk', 'Incline', 'Treadmill'], category: 'hybrid' },
+    { name: 'Cold Plunge', icon: '🧊', subtypes: [], category: 'recovery' },
+    { name: 'Sauna', icon: '🔥', subtypes: [], category: 'recovery' },
+    { name: 'Other', icon: '🏊', subtypes: [], category: 'other' }
+  ];
+
+  // SVG icons for activity categories
+  const categoryIcons = {
+    strength: (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M6.5 6.5L17.5 17.5M6.5 17.5L17.5 6.5M2 12h4M18 12h4M12 2v4M12 18v4"/>
+      </svg>
+    ),
+    cardio: (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+      </svg>
+    ),
+    hybrid: (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+      </svg>
+    ),
+    recovery: (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 4v16M20 4v16M4 12h16M8 4v8M16 12v8"/>
+      </svg>
+    ),
+    other: (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>
+      </svg>
+    )
+  };
+
+  const activityCategories = [
+    { id: 'strength', label: 'Strength' },
+    { id: 'cardio', label: 'Cardio' },
+    { id: 'hybrid', label: 'Hybrid' },
+    { id: 'recovery', label: 'Recovery' }
   ];
 
   // Strength training configuration
@@ -7239,7 +7290,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             )}
           </div>
         ) : !activityType ? (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="flex flex-wrap gap-2">
             {/* Back to mode selection or back to pre-filled workout */}
             {!pendingActivity ? (
               <button
@@ -7247,7 +7298,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                   setMode(null);
                   triggerHaptic(ImpactStyle.Light);
                 }}
-                className="col-span-2 mb-2 flex items-center gap-2 text-gray-400 text-sm"
+                className="w-full mb-2 flex items-center gap-2 text-gray-400 text-sm"
               >
                 <span>←</span>
                 <span>Back</span>
@@ -7261,48 +7312,75 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                   setIsChangingActivityType(false);
                   triggerHaptic(ImpactStyle.Light);
                 }}
-                className="col-span-2 mb-2 flex items-center gap-2 text-gray-400 text-sm"
+                className="w-full mb-2 flex items-center gap-2 text-gray-400 text-sm"
               >
                 <span>←</span>
                 <span>Back</span>
               </button>
             )}
-            {/* Standard activity types (excluding "Other" which will be shown last) */}
-            {activityTypes.filter(t => t.name !== 'Other').map((type) => (
-              <button
-                key={type.name}
-                onClick={() => {
-                  setActivityType(type.name);
-                  setIsChangingActivityType(false);
-                }}
-                className="p-4 rounded-xl text-left transition-all duration-150"
-                style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
-                onTouchStart={(e) => {
-                  e.currentTarget.style.transform = 'scale(0.95)';
-                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-                  triggerHaptic(ImpactStyle.Light);
-                }}
-                onTouchEnd={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-                }}
-                onMouseDown={(e) => {
-                  e.currentTarget.style.transform = 'scale(0.95)';
-                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-                }}
-                onMouseUp={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-                }}
-              >
-                <span className="text-2xl">{type.icon}</span>
-                <div className="mt-2 font-semibold">{type.name}</div>
-              </button>
-            ))}
+            {/* Activity types organized by category - compact design */}
+            {activityCategories.map((category, catIndex) => {
+              const categoryTypes = activityTypes.filter(t => t.category === category.id);
+              if (categoryTypes.length === 0) return null;
+              return (
+                <React.Fragment key={category.id}>
+                  {/* Category header */}
+                  <div className={`w-full flex items-center gap-2 ${catIndex === 0 ? '' : 'mt-3'} mb-2`}>
+                    <span className="text-gray-400">{categoryIcons[category.id]}</span>
+                    <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">{category.label}</span>
+                  </div>
+                  {/* Category activities - horizontal pill buttons */}
+                  {categoryTypes.map((type) => (
+                    <button
+                      key={type.name}
+                      onClick={() => {
+                        setActivityType(type.name);
+                        // Set default duration based on activity type
+                        if (type.name === 'Sauna') {
+                          setDurationHours(0);
+                          setDurationMinutes(10);
+                        } else if (type.name === 'Cold Plunge') {
+                          setDurationHours(0);
+                          setDurationMinutes(5);
+                        } else if (!pendingActivity?.durationHours && !pendingActivity?.durationMinutes) {
+                          // Reset to default 1 hour for other activities (only if not editing)
+                          setDurationHours(1);
+                          setDurationMinutes(0);
+                        }
+                        setIsChangingActivityType(false);
+                      }}
+                      className="flex items-center gap-2 px-3 py-2 rounded-full transition-all duration-150 active:scale-95"
+                      style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+                      onTouchStart={(e) => {
+                        e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.12)';
+                        triggerHaptic(ImpactStyle.Light);
+                      }}
+                      onTouchEnd={(e) => {
+                        e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                      }}
+                      onMouseDown={(e) => {
+                        e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.12)';
+                      }}
+                      onMouseUp={(e) => {
+                        e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                      }}
+                    >
+                      <span className="text-base">{type.icon}</span>
+                      <span className="text-sm font-medium whitespace-nowrap">{type.name}</span>
+                    </button>
+                  ))}
+                </React.Fragment>
+              );
+            })}
+
+            {/* Other section with custom activities */}
+            <div className="w-full flex items-center gap-2 mt-3 mb-2">
+              <span className="text-gray-400">{categoryIcons.other}</span>
+              <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">Other</span>
+            </div>
             {/* User's saved custom activities */}
             {customActivities.map((customItem) => {
               // Support both old string format and new object format { name, emoji }
@@ -7317,32 +7395,27 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     setCustomActivityEmoji(activityEmoji);
                     setIsChangingActivityType(false);
                   }}
-                  className="p-4 rounded-xl text-left transition-all duration-150"
+                  className="flex items-center gap-2 px-3 py-2 rounded-full transition-all duration-150 active:scale-95"
                   style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(0,255,148,0.2)' }}
                   onTouchStart={(e) => {
-                    e.currentTarget.style.transform = 'scale(0.95)';
-                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.12)';
                     triggerHaptic(ImpactStyle.Light);
                   }}
                   onTouchEnd={(e) => {
-                    e.currentTarget.style.transform = 'scale(1)';
                     e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
                   }}
                   onMouseDown={(e) => {
-                    e.currentTarget.style.transform = 'scale(0.95)';
-                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.12)';
                   }}
                   onMouseUp={(e) => {
-                    e.currentTarget.style.transform = 'scale(1)';
                     e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'scale(1)';
                     e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
                   }}
                 >
-                  <span className="text-2xl">{activityEmoji}</span>
-                  <div className="mt-2 font-semibold">{activityName}</div>
+                  <span className="text-base">{activityEmoji}</span>
+                  <span className="text-sm font-medium whitespace-nowrap">{activityName}</span>
                 </button>
               );
             })}
@@ -7350,32 +7423,27 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             <button
               key="Other"
               onClick={() => setActivityType('Other')}
-              className="p-4 rounded-xl text-left transition-all duration-150"
+              className="flex items-center gap-2 px-3 py-2 rounded-full transition-all duration-150 active:scale-95"
               style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
               onTouchStart={(e) => {
-                e.currentTarget.style.transform = 'scale(0.95)';
-                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.12)';
                 triggerHaptic(ImpactStyle.Light);
               }}
               onTouchEnd={(e) => {
-                e.currentTarget.style.transform = 'scale(1)';
                 e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
               }}
               onMouseDown={(e) => {
-                e.currentTarget.style.transform = 'scale(0.95)';
-                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.12)';
               }}
               onMouseUp={(e) => {
-                e.currentTarget.style.transform = 'scale(1)';
                 e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'scale(1)';
                 e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
               }}
             >
-              <span className="text-2xl">🏊</span>
-              <div className="mt-2 font-semibold">Other</div>
+              <span className="text-base">➕</span>
+              <span className="text-sm font-medium">Custom</span>
             </button>
           </div>
         ) : (

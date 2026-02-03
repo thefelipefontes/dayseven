@@ -5760,68 +5760,79 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
             </div>
           </div>
 
-          {/* Highlights */}
-          {(bestBurn || longestSession || furthestDistance) && (
-            <div className="mb-4">
-              <div className="flex items-center gap-2 mb-3">
-                <SectionIcon type="trophy" />
-                <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Highlights</span>
+          {/* Highlights - always show all 3 cards */}
+          <div className="mb-4">
+            <div className="flex items-center gap-2 mb-3">
+              <SectionIcon type="trophy" />
+              <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Highlights</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {/* Best Burn */}
+              <div className="p-2.5 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,69,58,0.1)' }}>
+                <div className="text-base font-black" style={{ color: bestBurn?.calories > 0 ? '#FF453A' : '#555' }}>
+                  {bestBurn?.calories > 0 ? bestBurn.calories.toLocaleString() : 'N/A'}
+                </div>
+                <div className="text-[9px] text-gray-400">🔥 Best Burn</div>
+                <div className="text-[9px] text-gray-500">{bestBurn?.calories > 0 ? bestBurn.type : '—'}</div>
               </div>
-              <div className="grid grid-cols-3 gap-2">
-                {bestBurn && bestBurn.calories > 0 && (
-                  <div className="p-2.5 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,69,58,0.1)' }}>
-                    <div className="text-base font-black" style={{ color: '#FF453A' }}>{bestBurn.calories.toLocaleString()}</div>
-                    <div className="text-[9px] text-gray-400">🔥 Best Burn</div>
-                    <div className="text-[9px] text-gray-500">{bestBurn.type}</div>
-                  </div>
-                )}
-                {longestSession && longestSession.duration > 0 && (
-                  <div className="p-2.5 rounded-xl text-center" style={{ backgroundColor: 'rgba(147,112,219,0.1)' }}>
-                    <div className="text-base font-black" style={{ color: '#9370DB' }}>{longestSession.duration} min</div>
-                    <div className="text-[9px] text-gray-400">⏱️ Longest</div>
-                    <div className="text-[9px] text-gray-500">{longestSession.type}</div>
-                  </div>
-                )}
-                {furthestDistance && furthestDistance.distance > 0 && (
-                  <div className="p-2.5 rounded-xl text-center" style={{ backgroundColor: 'rgba(50,205,50,0.1)' }}>
-                    <div className="text-base font-black" style={{ color: '#32CD32' }}>{furthestDistance.distance.toFixed(2)} mi</div>
-                    <div className="text-[9px] text-gray-400">📍 Furthest</div>
-                    <div className="text-[9px] text-gray-500">{furthestDistance.type}</div>
-                  </div>
-                )}
+              {/* Longest Session */}
+              <div className="p-2.5 rounded-xl text-center" style={{ backgroundColor: 'rgba(147,112,219,0.1)' }}>
+                <div className="text-base font-black" style={{ color: longestSession?.duration > 0 ? '#9370DB' : '#555' }}>
+                  {longestSession?.duration > 0 ? `${longestSession.duration} min` : 'N/A'}
+                </div>
+                <div className="text-[9px] text-gray-400">⏱️ Longest</div>
+                <div className="text-[9px] text-gray-500">{longestSession?.duration > 0 ? longestSession.type : '—'}</div>
+              </div>
+              {/* Furthest Distance */}
+              <div className="p-2.5 rounded-xl text-center" style={{ backgroundColor: 'rgba(50,205,50,0.1)' }}>
+                <div className="text-base font-black" style={{ color: furthestDistance?.distance > 0 ? '#32CD32' : '#555' }}>
+                  {furthestDistance?.distance > 0 ? `${furthestDistance.distance.toFixed(2)} mi` : 'N/A'}
+                </div>
+                <div className="text-[9px] text-gray-400">📍 Furthest</div>
+                <div className="text-[9px] text-gray-500">{furthestDistance?.distance > 0 ? furthestDistance.type : '—'}</div>
               </div>
             </div>
-          )}
+          </div>
 
-          {/* Most Frequent */}
-          {(mostFrequentStrength || mostFrequentCardio || mostFrequentRecovery) && (
-            <div className="mb-4">
-              <div className="flex items-center gap-2 mb-3">
-                <SectionIcon type="activity" />
-                <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Most Frequent</span>
+          {/* Most Frequent - always show all 3 cards */}
+          <div className="mb-4">
+            <div className="flex items-center gap-2 mb-3">
+              <SectionIcon type="activity" />
+              <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Most Frequent</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {/* Strength */}
+              <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,255,148,0.05)' }}>
+                <div className="text-sm font-bold" style={{ color: mostFrequentStrength ? '#00FF94' : '#555' }}>
+                  {mostFrequentStrength ? mostFrequentStrength[0] : 'N/A'}
+                </div>
+                <div className="text-[10px] text-gray-500">
+                  {mostFrequentStrength ? `${mostFrequentStrength[1]}x` : '—'}
+                </div>
+                <div className="text-[9px] text-gray-600">Strength</div>
               </div>
-              <div className="grid grid-cols-3 gap-2">
-                {mostFrequentStrength && (
-                  <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,255,148,0.05)' }}>
-                    <div className="text-sm font-bold" style={{ color: '#00FF94' }}>{mostFrequentStrength[0]}</div>
-                    <div className="text-[10px] text-gray-500">{mostFrequentStrength[1]}x this month</div>
-                  </div>
-                )}
-                {mostFrequentCardio && (
-                  <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,149,0,0.05)' }}>
-                    <div className="text-sm font-bold" style={{ color: '#FF9500' }}>{mostFrequentCardio[0]}</div>
-                    <div className="text-[10px] text-gray-500">{mostFrequentCardio[1]}x this month</div>
-                  </div>
-                )}
-                {mostFrequentRecovery && (
-                  <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,209,255,0.05)' }}>
-                    <div className="text-sm font-bold" style={{ color: '#00D1FF' }}>{mostFrequentRecovery[0]}</div>
-                    <div className="text-[10px] text-gray-500">{mostFrequentRecovery[1]}x this month</div>
-                  </div>
-                )}
+              {/* Cardio */}
+              <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,149,0,0.05)' }}>
+                <div className="text-sm font-bold" style={{ color: mostFrequentCardio ? '#FF9500' : '#555' }}>
+                  {mostFrequentCardio ? mostFrequentCardio[0] : 'N/A'}
+                </div>
+                <div className="text-[10px] text-gray-500">
+                  {mostFrequentCardio ? `${mostFrequentCardio[1]}x` : '—'}
+                </div>
+                <div className="text-[9px] text-gray-600">Cardio</div>
+              </div>
+              {/* Recovery */}
+              <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,209,255,0.05)' }}>
+                <div className="text-sm font-bold" style={{ color: mostFrequentRecovery ? '#00D1FF' : '#555' }}>
+                  {mostFrequentRecovery ? mostFrequentRecovery[0] : 'N/A'}
+                </div>
+                <div className="text-[10px] text-gray-500">
+                  {mostFrequentRecovery ? `${mostFrequentRecovery[1]}x` : '—'}
+                </div>
+                <div className="text-[9px] text-gray-600">Recovery</div>
               </div>
             </div>
-          )}
+          </div>
 
           {/* Weeks Hitting Goals */}
           <div className="mb-4">

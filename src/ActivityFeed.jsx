@@ -315,7 +315,6 @@ const TouchButton = ({ onClick, disabled = false, className, style, children, to
         ...style,
         touchAction: touchAction,
         cursor: disabled ? 'default' : 'pointer',
-        textAlign: 'center',
         transform: isPressed ? 'scale(0.95)' : 'scale(1)',
         opacity: isPressed ? 0.7 : 1,
         transition: 'transform 0.1s ease-out, opacity 0.1s ease-out'
@@ -463,7 +462,7 @@ const MemoizedActivityCard = React.memo(({
           <ProfilePhoto photoURL={friend.photoURL} displayName={friend.displayName} />
         </TouchButton>
         <div className="flex-1 min-w-0">
-          <TouchButton onClick={() => onSelectFriend(friend)} className="text-left inline-block max-w-full">
+          <TouchButton onClick={() => onSelectFriend(friend)} className="text-left block w-full">
             <p className="text-white font-medium truncate">{friend.displayName || friend.username}</p>
             <p className="text-gray-500 text-xs truncate">@{friend.username}</p>
           </TouchButton>

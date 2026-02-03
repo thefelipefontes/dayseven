@@ -9731,7 +9731,17 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                   <ActivityIcon type={latestActivities[0].type} size={20} sportEmoji={latestActivities[0].sportEmoji} customEmoji={latestActivities[0].customEmoji} />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-semibold truncate">{latestActivities[0].type}{latestActivities[0].subtype ? ` • ${latestActivities[0].subtype}` : ''}</div>
-                    <div className="text-xs text-gray-400">{formatFriendlyDate(latestActivities[0].date)}{latestActivities[0].time ? ` at ${latestActivities[0].time}` : ''}{latestActivities[0].duration ? ` (${latestActivities[0].duration} min)` : ''}</div>
+                    <div className="text-xs text-gray-400 flex items-center gap-2">
+                      <span>{formatFriendlyDate(latestActivities[0].date)}{latestActivities[0].time ? ` at ${latestActivities[0].time}` : ''}{latestActivities[0].duration ? ` (${latestActivities[0].duration} min)` : ''}</span>
+                      {(latestActivities[0].healthKitUUID || latestActivities[0].linkedHealthKitUUID || latestActivities[0].source === 'healthkit' || latestActivities[0].fromAppleHealth) && (
+                        <span className="flex items-center gap-1 text-red-400">
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                          </svg>
+                          <span className="text-[10px]">Apple Health</span>
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <span className="text-gray-600 text-xs">›</span>
                 </div>
@@ -9844,7 +9854,17 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                             );
                           })()}
                         </div>
-                        <div className="text-[10px] text-gray-500">{formatFriendlyDate(activity.date)} at {activity.time}{activity.duration ? ` (${activity.duration} min)` : ''}</div>
+                        <div className="text-[10px] text-gray-500 flex items-center gap-2">
+                          <span>{formatFriendlyDate(activity.date)} at {activity.time}{activity.duration ? ` (${activity.duration} min)` : ''}</span>
+                          {(activity.healthKitUUID || activity.linkedHealthKitUUID || activity.source === 'healthkit' || activity.fromAppleHealth) && (
+                            <span className="flex items-center gap-1 text-red-400">
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                              </svg>
+                              <span className="text-[10px]">Apple Health</span>
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <span className="text-gray-600 text-xs">›</span>
                     </div>
@@ -9996,18 +10016,18 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
         const date = new Date(today);
         date.setDate(date.getDate() - i);
         const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-        const dayActivities = calendarData[dateStr] || [];
+        // Use activities array (source of truth) instead of calendarData
+        const dayActivities = activities.filter(a => a.date === dateStr);
         const healthData = healthDataByDate[dateStr];
 
         let value = 0;
         if (metric === 'calories') {
-          // Use daily active calories from HealthKit if available
-          value = healthData?.calories || 0;
-          // Add calories from manually logged workouts (not from HealthKit)
-          const manualWorkoutCalories = dayActivities
-            .filter(a => !a.healthKitUUID)
+          // HealthKit calories + manually logged calories (not from HealthKit)
+          const healthKitCals = healthData?.calories || 0;
+          const manualCals = dayActivities
+            .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID && a.source !== 'healthkit' && !a.fromAppleHealth)
             .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
-          value += manualWorkoutCalories;
+          value = healthKitCals + manualCals;
         } else if (metric === 'steps') {
           // Use steps from HealthKit
           value = healthData?.steps || 0;
@@ -10037,17 +10057,17 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
           const date = new Date(weekStart);
           date.setDate(date.getDate() + d);
           const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-          const dayActivities = calendarData[dateStr] || [];
           const healthData = healthDataByDate[dateStr];
+          // Use activities array (source of truth) instead of calendarData
+          const dayActivities = activities.filter(a => a.date === dateStr);
 
           if (metric === 'calories') {
-            // Use daily active calories from HealthKit if available
-            value += healthData?.calories || 0;
-            // Add calories from manually logged workouts (not from HealthKit)
-            const manualWorkoutCalories = dayActivities
-              .filter(a => !a.healthKitUUID)
+            // HealthKit calories + manually logged calories (not from HealthKit)
+            const healthKitCals = healthData?.calories || 0;
+            const manualCals = dayActivities
+              .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID && a.source !== 'healthkit' && !a.fromAppleHealth)
               .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
-            value += manualWorkoutCalories;
+            value += healthKitCals + manualCals;
           } else if (metric === 'steps') {
             // Use steps from HealthKit
             value += healthData?.steps || 0;
@@ -10064,10 +10084,10 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
         const weekEndDate = new Date(weekStart);
         weekEndDate.setDate(weekStart.getDate() + 6);
         const startLabel = weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        const endLabel = weekStart.getMonth() === weekEndDate.getMonth() 
+        const endLabel = weekStart.getMonth() === weekEndDate.getMonth()
           ? weekEndDate.getDate() // Same month: "Dec 15 - 21"
           : weekEndDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); // Different month: "Dec 29 - Jan 4"
-        
+
         data.push({
           label: `${startLabel} - ${endLabel}`,
           shortLabel: weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
@@ -10086,17 +10106,17 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
           const date = new Date(monthDate.getFullYear(), monthDate.getMonth(), d);
           if (date > today) break;
           const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-          const dayActivities = calendarData[dateStr] || [];
           const healthData = healthDataByDate[dateStr];
+          // Use activities array (source of truth) instead of calendarData
+          const dayActivities = activities.filter(a => a.date === dateStr);
 
           if (metric === 'calories') {
-            // Use daily active calories from HealthKit if available
-            value += healthData?.calories || 0;
-            // Add calories from manually logged workouts (not from HealthKit)
-            const manualWorkoutCalories = dayActivities
-              .filter(a => !a.healthKitUUID)
+            // HealthKit calories + manually logged calories (not from HealthKit)
+            const healthKitCals = healthData?.calories || 0;
+            const manualCals = dayActivities
+              .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID && a.source !== 'healthkit' && !a.fromAppleHealth)
               .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
-            value += manualWorkoutCalories;
+            value += healthKitCals + manualCals;
           } else if (metric === 'steps') {
             // Use steps from HealthKit
             value += healthData?.steps || 0;
@@ -10373,12 +10393,12 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
 
         // Get HealthKit data for this day
         const dayHealthData = healthDataByDate[dateStr];
-        // HealthKit calories + manual workout calories (not from HealthKit)
-        const healthKitCalories = dayHealthData?.calories || 0;
-        const manualWorkoutCalories = fullDayActivities
-          .filter(a => !a.healthKitUUID)
+        // HealthKit calories + manually logged calories (not from HealthKit)
+        const healthKitCals = dayHealthData?.calories || 0;
+        const manualCals = fullDayActivities
+          .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID && a.source !== 'healthkit' && !a.fromAppleHealth)
           .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
-        const dayCalories = healthKitCalories + manualWorkoutCalories;
+        const dayCalories = healthKitCals + manualCals;
         const daySteps = dayHealthData?.steps || 0;
         const dayMiles = fullDayActivities.reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
         const totalDuration = fullDayActivities.reduce((sum, a) => sum + (a.duration || 0), 0);
@@ -10495,6 +10515,19 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
   const [calendarView, setCalendarView] = useState('heatmap');
   const [selectedDate, setSelectedDate] = useState(getTodayDate());
   const [selectedDayActivity, setSelectedDayActivity] = useState(null); // For activity detail modal
+
+  // Helper function to parse time string to minutes for sorting
+  const parseTimeToMinutes = (timeStr) => {
+    if (!timeStr) return 0;
+    const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)?/i);
+    if (!match) return 0;
+    let hours = parseInt(match[1]);
+    const minutes = parseInt(match[2]);
+    const period = match[3]?.toUpperCase();
+    if (period === 'PM' && hours !== 12) hours += 12;
+    if (period === 'AM' && hours === 12) hours = 0;
+    return hours * 60 + minutes;
+  };
 
   // Get today's date string
   const todayStr = useMemo(() => {
@@ -10927,7 +10960,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
       weekCalories += healthData?.calories || 0;
       // Add calories from truly manual workouts (not from HealthKit and not linked to HealthKit)
       const manualWorkoutCalories = dayActivities
-        .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID)
+        .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID && a.source !== 'healthkit' && !a.fromAppleHealth)
         .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
       weekCalories += manualWorkoutCalories;
 
@@ -11501,13 +11534,12 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
         // Calculate daily totals from actual data
         // Get HealthKit data for this day
         const dayHealthData = healthDataByDate[selectedDate];
-        // HealthKit calories (includes workout calories from Apple Watch/Whoop)
-        // + truly manual workout calories (not from HealthKit and not linked to HealthKit)
-        const healthKitCalories = dayHealthData?.calories || 0;
-        const manualWorkoutCalories = fullDayActivities
-          .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID)
+        // HealthKit calories + manually logged calories (not from HealthKit)
+        const healthKitCals = dayHealthData?.calories || 0;
+        const manualCals = fullDayActivities
+          .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID && a.source !== 'healthkit' && !a.fromAppleHealth)
           .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
-        const dayCalories = healthKitCalories + manualWorkoutCalories;
+        const dayCalories = healthKitCals + manualCals;
         const daySteps = dayHealthData?.steps || 0;
         const dayMiles = fullDayActivities.reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
         const totalSessions = fullDayActivities.length;
@@ -11662,6 +11694,14 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                             {activity.duration && <span>{activity.duration} min</span>}
                             {activity.calories && <span>{activity.calories} cal</span>}
                             {activity.avgHr && <span>♥ {activity.avgHr}</span>}
+                            {(activity.healthKitUUID || activity.linkedHealthKitUUID || activity.source === 'healthkit' || activity.fromAppleHealth) && (
+                              <span className="flex items-center gap-1 text-red-400">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                                </svg>
+                                Apple Health
+                              </span>
+                            )}
                           </div>
                         </div>
                       </SwipeableActivityItem>
@@ -11699,6 +11739,14 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                             {activity.distance && <span>{activity.distance} mi</span>}
                             {activity.duration && <span>{activity.duration} min</span>}
                             {activity.calories && <span>{activity.calories} cal</span>}
+                            {(activity.healthKitUUID || activity.linkedHealthKitUUID || activity.source === 'healthkit' || activity.fromAppleHealth) && (
+                              <span className="flex items-center gap-1 text-red-400">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                                </svg>
+                                Apple Health
+                              </span>
+                            )}
                           </div>
                         </div>
                       </SwipeableActivityItem>
@@ -11735,6 +11783,14 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                           <div className="flex gap-4 text-xs text-gray-400">
                             {activity.duration && <span>{activity.duration} min</span>}
                             {activity.calories && <span>{activity.calories} cal</span>}
+                            {(activity.healthKitUUID || activity.linkedHealthKitUUID || activity.source === 'healthkit' || activity.fromAppleHealth) && (
+                              <span className="flex items-center gap-1 text-red-400">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                                </svg>
+                                Apple Health
+                              </span>
+                            )}
                           </div>
                         </div>
                       </SwipeableActivityItem>
@@ -11772,6 +11828,14 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                             {activity.distance && <span>{activity.distance} mi</span>}
                             {activity.duration && <span>{activity.duration} min</span>}
                             {activity.calories && <span>{activity.calories} cal</span>}
+                            {(activity.healthKitUUID || activity.linkedHealthKitUUID || activity.source === 'healthkit' || activity.fromAppleHealth) && (
+                              <span className="flex items-center gap-1 text-red-400">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                                </svg>
+                                Apple Health
+                              </span>
+                            )}
                           </div>
                         </div>
                       </SwipeableActivityItem>
@@ -13111,7 +13175,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
             // Add calories from truly manual workouts (not from HealthKit and not linked to HealthKit)
             const dayActivities = weekActivities.filter(a => a.date === dateStr);
             const manualWorkoutCalories = dayActivities
-              .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID)
+              .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID && a.source !== 'healthkit' && !a.fromAppleHealth)
               .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
             weekCalories += manualWorkoutCalories;
           });

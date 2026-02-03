@@ -61,8 +61,15 @@ const calculateLeaderboardStats = (activities, healthHistory, personalRecords) =
   const allHealth = healthHistory;
 
   // Helper to calculate stats for a period
+  // Calories: HealthKit calories + manual workout calories (not from HealthKit, to avoid double counting)
   const calcPeriodStats = (periodActivities, periodHealth) => {
-    const calories = periodActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+    // Get HealthKit calories from health history (includes workout calories from Apple Watch/Whoop)
+    const healthKitCalories = periodHealth.reduce((sum, h) => sum + (parseInt(h.calories) || 0), 0);
+    // Add calories from truly manual workouts (not from HealthKit and not linked to HealthKit)
+    const manualWorkoutCalories = periodActivities
+      .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID)
+      .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+    const calories = healthKitCalories + manualWorkoutCalories;
     const steps = periodHealth.reduce((sum, h) => sum + (parseInt(h.steps) || 0), 0);
     return { calories, steps };
   };

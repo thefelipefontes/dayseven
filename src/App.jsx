@@ -58,6 +58,67 @@ const StatusBarBlur = () => (
   />
 );
 
+// Section header icon component - SVG line icons in brand cyan
+const SectionIcon = ({ type, size = 22, color = '#04d1ff' }) => {
+  const icons = {
+    activity: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+      </svg>
+    ),
+    target: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <circle cx="12" cy="12" r="6"/>
+        <circle cx="12" cy="12" r="2"/>
+      </svg>
+    ),
+    calendar: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+        <line x1="16" y1="2" x2="16" y2="6"/>
+        <line x1="8" y1="2" x2="8" y2="6"/>
+        <line x1="3" y1="10" x2="21" y2="10"/>
+      </svg>
+    ),
+    streak: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+      </svg>
+    ),
+    chart: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="18" y1="20" x2="18" y2="10"/>
+        <line x1="12" y1="20" x2="12" y2="4"/>
+        <line x1="6" y1="20" x2="6" y2="14"/>
+      </svg>
+    ),
+    trophy: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/>
+        <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/>
+        <path d="M4 22h16"/>
+        <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/>
+        <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/>
+        <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>
+      </svg>
+    ),
+    trending: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+        <polyline points="17 6 23 6 23 12"/>
+      </svg>
+    ),
+    clock: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <polyline points="12 6 12 12 16 14"/>
+      </svg>
+    ),
+  };
+  return icons[type] || null;
+};
+
 // Get today's date in YYYY-MM-DD format (local timezone)
 const getTodayDate = () => {
   const today = new Date();
@@ -4650,7 +4711,10 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
 
         {/* Week Totals */}
         <div className="mb-4">
-          <div className="text-sm font-semibold text-white mb-3">📊 Week Totals</div>
+          <div className="flex items-center gap-2.5 mb-3">
+            <SectionIcon type="chart" />
+            <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Week Totals</span>
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
               <div className="text-lg font-black">{weekData?.calories?.toLocaleString() || 0}</div>
@@ -4675,7 +4739,10 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
 
         {/* Streaks Maintained */}
         <div className="mb-6">
-          <div className="text-sm font-semibold text-white mb-3">🔥 Streaks Maintained</div>
+          <div className="flex items-center gap-2.5 mb-3">
+            <SectionIcon type="streak" />
+            <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Streaks Maintained</span>
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <div className="p-3 rounded-xl flex items-center justify-between" style={{ 
               backgroundColor: liftsGoalMet ? 'rgba(0,255,148,0.1)' : 'rgba(255,255,255,0.05)',
@@ -4730,8 +4797,11 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
 
         {/* Activities Completed Header */}
         <div className="mb-4">
-          <div className="text-sm font-semibold text-white">💪 Activities Completed</div>
-          <p className="text-[11px] text-gray-500 mt-0.5">All sessions from this week</p>
+          <div className="flex items-center gap-2.5">
+            <SectionIcon type="activity" />
+            <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Activities Completed</span>
+          </div>
+          <p className="text-[13px] -mt-1 pl-8" style={{ color: '#777' }}>All sessions from this week</p>
         </div>
 
         <SwipeableProvider>
@@ -9012,11 +9082,11 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
       <div className="px-4 mb-4">
         <div className="flex items-center justify-between mb-3">
           <div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-white">Today's Activity</span>
-              <span>📊</span>
+            <div className="flex items-center gap-2.5">
+              <SectionIcon type="activity" />
+              <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Today's Activity</span>
             </div>
-            <p className="text-[11px] text-gray-500 mt-0.5">Synced from Apple Health</p>
+            <p className="text-[13px] -mt-1 pl-8" style={{ color: '#777' }}>Synced from Apple Health</p>
           </div>
         </div>
         
@@ -9295,6 +9365,11 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         </div>
       )}
 
+      {/* Section Divider */}
+      <div className="mx-4 mb-4">
+        <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
+      </div>
+
       {/* Weekly Goals - Hero Section */}
       <div className="mx-4 mb-4">
         {/* Streak at Risk Warning */}
@@ -9324,15 +9399,12 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         
         {/* Weekly Goals - tour highlight wraps header + card */}
         <div ref={weeklyGoalsRef}>
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-white">This Week's Goals</span>
-                <span>🎯</span>
-              </div>
-              <p className="text-[11px] text-gray-500 mt-0.5">Hit these to keep your streaks alive</p>
+          <div className="mb-3">
+            <div className="flex items-center gap-2.5">
+              <SectionIcon type="target" />
+              <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>This Week's Goals</span>
             </div>
-            <span className="text-xs text-gray-500">{daysLeft} days left</span>
+            <p className="text-[13px] -mt-1 pl-8" style={{ color: '#777' }}>Hit these to keep your streaks alive · {daysLeft} days left</p>
           </div>
 
           {/* Individual Goals - The Main Event */}
@@ -9513,17 +9585,22 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         )}
       </div>
 
+      {/* Section Divider */}
+      <div className="mx-4 mb-4">
+        <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
+      </div>
+
       {/* Latest Activity */}
       <div className="mx-4 mb-4">
         <SwipeableProvider>
           {/* Tour highlight wrapper - includes header + first activity */}
           <div ref={latestActivityRef}>
             <div className="mb-3">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-white">Latest Activity</span>
-                <span>📋</span>
+              <div className="flex items-center gap-2.5">
+                <SectionIcon type="clock" />
+                <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Latest Activity</span>
               </div>
-              <p className="text-[11px] text-gray-500 mt-0.5">Your recent workout and recovery sessions</p>
+              <p className="text-[13px] -mt-1 pl-8" style={{ color: '#777' }}>Your recent workout and recovery sessions</p>
             </div>
             {/* Show first activity inside the tour highlight, or empty state */}
             {latestActivities.length > 0 ? (
@@ -9962,8 +10039,11 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
     <div className="mx-4">
       {/* Header */}
       <div className="mb-4">
-        <div className="text-sm font-semibold text-white">Trends</div>
-        <p className="text-[11px] text-gray-500 mt-0.5">Track your progress over time</p>
+        <div className="flex items-center gap-2.5">
+          <SectionIcon type="trending" />
+          <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Trends</span>
+        </div>
+        <p className="text-[13px] -mt-1 pl-8" style={{ color: '#777' }}>Track your progress over time</p>
       </div>
 
       {/* Metric Toggle */}
@@ -10980,8 +11060,11 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
         {view === 'calendar' && (
           <div ref={calendarRef} className="mx-4 mt-2">
           <div className="mb-4">
-            <div className="text-sm font-semibold text-white">Activity Calendar</div>
-            <p className="text-[11px] text-gray-500 mt-0.5">Tap any day or week to see details</p>
+            <div className="flex items-center gap-2.5">
+              <SectionIcon type="calendar" />
+              <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Activity Calendar</span>
+            </div>
+            <p className="text-[13px] -mt-1 pl-8" style={{ color: '#777' }}>Tap any day or week to see details</p>
           </div>
 
           {/* First-visit calendar hints */}
@@ -11406,7 +11489,10 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
 
               {/* Daily Totals */}
               <div className="mb-6">
-                <div className="text-sm font-semibold text-white mb-3">📊 Daily Totals</div>
+                <div className="flex items-center gap-2.5 mb-3">
+                  <SectionIcon type="chart" />
+                  <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Daily Totals</span>
+                </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
                     <div className="text-lg font-black" style={{ color: '#FF9500' }}>{dayCalories.toLocaleString()}</div>
@@ -11429,8 +11515,11 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
 
               {/* Activities Completed Header */}
               <div className="mb-4">
-                <div className="text-sm font-semibold text-white">💪 Activities Completed</div>
-                <p className="text-[11px] text-gray-500 mt-0.5">Swipe left to delete, tap for details</p>
+                <div className="flex items-center gap-2.5">
+                  <SectionIcon type="activity" />
+                  <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Activities Completed</span>
+                </div>
+                <p className="text-[13px] -mt-1 pl-8" style={{ color: '#777' }}>Swipe left to delete, tap for details</p>
               </div>
 
               <SwipeableProvider>
@@ -11592,8 +11681,11 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
         <div ref={statsRef} className="mx-4 mt-2">
           {/* Stats Headline */}
           <div className="mb-4">
-            <div className="text-sm font-semibold text-white">Your Stats</div>
-            <p className="text-[11px] text-gray-500 mt-0.5">Your totals over time</p>
+            <div className="flex items-center gap-2.5">
+              <SectionIcon type="chart" />
+              <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Your Stats</span>
+            </div>
+            <p className="text-[13px] -mt-1 pl-8" style={{ color: '#777' }}>Your totals over time</p>
           </div>
 
           {/* Toggle and Dropdown Row */}
@@ -11765,8 +11857,11 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
             <div className="space-y-6">
               {/* Hall of Fame Header */}
               <div className="mb-4">
-                <div className="text-sm font-semibold text-white">Hall of Fame</div>
-                <p className="text-[11px] text-gray-500 mt-0.5">Your personal bests</p>
+                <div className="flex items-center gap-2.5">
+                  <SectionIcon type="trophy" />
+                  <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Hall of Fame</span>
+                </div>
+                <p className="text-[13px] -mt-1 pl-8" style={{ color: '#777' }}>Your personal bests</p>
               </div>
 
               {/* Streaks Section */}

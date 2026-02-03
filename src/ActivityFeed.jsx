@@ -15,6 +15,35 @@ const triggerHaptic = async (style = ImpactStyle.Medium) => {
   }
 };
 
+// Section header icon component - SVG line icons in brand cyan
+const SectionIcon = ({ type, size = 22, color = '#04d1ff' }) => {
+  const icons = {
+    leaderboard: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M8 21V11M16 21V7M12 21V3"/>
+      </svg>
+    ),
+    trophy: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/>
+        <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/>
+        <path d="M4 22h16"/>
+        <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/>
+        <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/>
+        <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>
+      </svg>
+    ),
+    feed: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 11a9 9 0 0 1 9 9"/>
+        <path d="M4 4a16 16 0 0 1 16 16"/>
+        <circle cx="5" cy="19" r="1"/>
+      </svg>
+    ),
+  };
+  return icons[type] || null;
+};
+
 // ScrollablePill - a pill button that allows horizontal scrolling through it
 // Uses onPointerUp for tap detection which doesn't block scroll gestures
 const ScrollablePill = ({ onClick, isSelected, color, textColor, children }) => {
@@ -2194,8 +2223,11 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         >
           {/* Leaderboard headline */}
           <div className="mb-4" style={{ touchAction: 'pan-y' }}>
-            <div className="text-sm font-semibold text-white">Leaderboard</div>
-            <p className="text-[11px] text-gray-500 mt-0.5">See how you rank among friends</p>
+            <div className="flex items-center gap-2.5">
+              <SectionIcon type="leaderboard" />
+              <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Leaderboard</span>
+            </div>
+            <p className="text-[13px] -mt-1 pl-8" style={{ color: '#777' }}>See how you rank among friends</p>
           </div>
 
           {/* Section Toggle - Activity vs Streak */}
@@ -2400,8 +2432,11 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               {/* Category Leaders - Volume Stats */}
               <div className="mt-8">
                 <div className="mb-4">
-                  <div className="text-sm font-semibold text-white">Category Leaders</div>
-                  <p className="text-[11px] text-gray-500 mt-0.5">Top performers by volume this {leaderboardTimeRange === 'all' ? 'all time' : leaderboardTimeRange}</p>
+                  <div className="flex items-center gap-2.5">
+                    <SectionIcon type="trophy" />
+                    <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Category Leaders</span>
+                  </div>
+                  <p className="text-[13px] -mt-1 pl-8" style={{ color: '#777' }}>Top performers by volume this {leaderboardTimeRange === 'all' ? 'all time' : leaderboardTimeRange}</p>
                 </div>
 
                 {/* Running Leaders */}
@@ -2658,8 +2693,11 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       >
         {/* Feed headline */}
         <div className="mb-4">
-          <div className="text-sm font-semibold text-white">Feed</div>
-          <p className="text-[11px] text-gray-500 mt-0.5">Recent activity from friends</p>
+          <div className="flex items-center gap-2.5">
+            <SectionIcon type="feed" />
+            <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Feed</span>
+          </div>
+          <p className="text-[13px] -mt-1 pl-8" style={{ color: '#777' }}>Recent activity from friends</p>
         </div>
 
         {feedActivities.map((activity, index) => {

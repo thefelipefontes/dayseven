@@ -6087,12 +6087,11 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
               <div className="flex items-center gap-2">
                 <span className="text-xl font-bold">{activity.type}</span>
                 {(activity.avgHr || activity.maxHr) && (
-                  <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                  <div className="flex items-center gap-2 text-xs text-gray-400">
                     <span className="text-red-400">♥</span>
-                    {activity.avgHr && <span>{activity.avgHr}</span>}
-                    {activity.avgHr && activity.maxHr && <span>/</span>}
-                    {activity.maxHr && <span>{activity.maxHr}</span>}
-                    <span>bpm</span>
+                    {activity.avgHr && <span>{activity.avgHr} avg</span>}
+                    {activity.avgHr && activity.maxHr && <span>•</span>}
+                    {activity.maxHr && <span>{activity.maxHr} max</span>}
                   </div>
                 )}
               </div>

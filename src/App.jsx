@@ -7371,7 +7371,21 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
         setMaxHr(pendingActivity?.maxHr || '');
         setActivityTime(pendingActivity?.time || '');
         // Set linked workout if editing an activity that was previously linked
-        setLinkedWorkout(pendingActivity?.linkedHealthKitUUID ? { healthKitUUID: pendingActivity.linkedHealthKitUUID } : null);
+        // Include activity data so the linked workout box shows details
+        setLinkedWorkout(pendingActivity?.linkedHealthKitUUID ? {
+          healthKitUUID: pendingActivity.linkedHealthKitUUID,
+          type: pendingActivity.type,
+          subtype: pendingActivity.subtype,
+          appleWorkoutName: pendingActivity.appleWorkoutName,
+          time: pendingActivity.time,
+          duration: pendingActivity.duration,
+          calories: pendingActivity.calories,
+          distance: pendingActivity.distance,
+          avgHr: pendingActivity.avgHr,
+          maxHr: pendingActivity.maxHr,
+          icon: pendingActivity.icon || (pendingActivity.type === 'Walking' ? '🚶' : '💪'),
+          sourceDevice: pendingActivity.sourceDevice
+        } : null);
       }
 
       // Reset linked workout state

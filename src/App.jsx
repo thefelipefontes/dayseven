@@ -6160,22 +6160,42 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
               {/* Reactions Row */}
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-1">
-                  {reactionEmojis.map((emoji) => {
-                    const count = reactions.filter(r => r.reactionType === emoji).length;
-                    const isSelected = reactions.find(r => r.reactorUid === user?.uid)?.reactionType === emoji;
-                    const canReact = activity?.id && activityOwnerId;
-                    return (
-                      <button
-                        key={emoji}
-                        onClick={() => canReact && handleReaction(emoji)}
-                        disabled={!canReact}
-                        className={`flex items-center gap-1 px-2 py-1 rounded-full transition-all duration-150 ${!canReact ? 'opacity-50' : ''} ${isSelected ? 'bg-zinc-700 ring-1 ring-white/20' : 'bg-zinc-800 hover:bg-zinc-700'}`}
-                      >
-                        <span className="text-sm">{emoji}</span>
-                        {count > 0 && <span className={`text-xs ${isSelected ? 'text-white' : 'text-gray-400'}`}>{count}</span>}
-                      </button>
-                    );
-                  })}
+                  {/* Only show reaction buttons if viewing someone else's activity */}
+                  {activityOwnerId !== user?.uid ? (
+                    reactionEmojis.map((emoji) => {
+                      const count = reactions.filter(r => r.reactionType === emoji).length;
+                      const isSelected = reactions.find(r => r.reactorUid === user?.uid)?.reactionType === emoji;
+                      const canReact = activity?.id && activityOwnerId;
+                      return (
+                        <button
+                          key={emoji}
+                          onClick={() => canReact && handleReaction(emoji)}
+                          disabled={!canReact}
+                          className={`flex items-center gap-1 px-2 py-1 rounded-full transition-all duration-150 ${!canReact ? 'opacity-50' : ''} ${isSelected ? 'bg-zinc-700 ring-1 ring-white/20' : 'bg-zinc-800 hover:bg-zinc-700'}`}
+                        >
+                          <span className="text-sm">{emoji}</span>
+                          {count > 0 && <span className={`text-xs ${isSelected ? 'text-white' : 'text-gray-400'}`}>{count}</span>}
+                        </button>
+                      );
+                    })
+                  ) : (
+                    /* For own activities, show reactions others left (display only) */
+                    reactions.length > 0 ? (
+                      reactionEmojis.map((emoji) => {
+                        const count = reactions.filter(r => r.reactionType === emoji).length;
+                        if (count === 0) return null;
+                        return (
+                          <div
+                            key={emoji}
+                            className="flex items-center gap-1 px-2 py-1 rounded-full bg-zinc-800"
+                          >
+                            <span className="text-sm">{emoji}</span>
+                            <span className="text-xs text-gray-400">{count}</span>
+                          </div>
+                        );
+                      })
+                    ) : null
+                  )}
                   <button
                     onClick={() => setShowComments(!showComments)}
                     onTouchStart={() => triggerHaptic(ImpactStyle.Light)}

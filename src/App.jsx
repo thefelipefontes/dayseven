@@ -17488,7 +17488,7 @@ export default function DaySevenApp() {
                         const workoutTime = parseTime(w.time);
                         if (activityTime !== null && workoutTime !== null) {
                           const timeDiff = Math.abs(activityTime - workoutTime);
-                          if (timeDiff <= 120) { // Within 2 hours
+                          if (timeDiff <= 1) { // Within 1 minute - true duplicates have nearly identical times
                             return true;
                           }
                         }

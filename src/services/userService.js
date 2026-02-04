@@ -91,10 +91,17 @@ export async function createUserProfile(user) {
             email: user.email,
             displayName: user.displayName,
             photoURL: user.photoURL,
+            authProvider: user.authProvider || null,
             createdAt: new Date().toISOString(),
             hasCompletedOnboarding: false,
             goals: null
           }
+        });
+      } else if (user.authProvider && !snapshot.data.authProvider) {
+        // Update authProvider if it wasn't set before (for existing users)
+        await FirebaseFirestore.updateDocument({
+          reference: path,
+          data: { authProvider: user.authProvider }
         });
       }
     } else {
@@ -108,10 +115,14 @@ export async function createUserProfile(user) {
           email: user.email,
           displayName: user.displayName,
           photoURL: user.photoURL,
+          authProvider: user.authProvider || null,
           createdAt: new Date().toISOString(),
           hasCompletedOnboarding: false,
           goals: null
         }));
+      } else if (user.authProvider && !userDoc.data().authProvider) {
+        // Update authProvider if it wasn't set before (for existing users)
+        await withTimeout(updateDoc(userRef, { authProvider: user.authProvider }));
       }
     }
   } catch (error) {

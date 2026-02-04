@@ -1246,14 +1246,15 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
     );
   }
 
-  // Expanded view - appears below the header
+  // Expanded view - appears across the header at the top
   return (
     <div
-      className="fixed left-4 right-4 z-[100] rounded-2xl shadow-2xl overflow-hidden"
+      className="fixed left-0 right-0 z-[100] shadow-2xl overflow-hidden"
       style={{
-        top: 'calc(70px + env(safe-area-inset-top, 0px))',
-        backgroundColor: 'rgba(0,0,0,0.95)',
-        border: '1px solid rgba(0,255,148,0.3)',
+        top: '0',
+        paddingTop: 'env(safe-area-inset-top, 0px)',
+        backgroundColor: 'rgba(0,0,0,0.98)',
+        borderBottom: '1px solid rgba(0,255,148,0.3)',
         backdropFilter: 'blur(20px)',
       }}
     >
@@ -11470,11 +11471,6 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
     return map;
   }, [healthHistory, healthKitData.todaySteps, healthKitData.todayCalories, todayStr]);
 
-  // Calendar hints state - shows first-visit tips
-  const [showCalendarHints, setShowCalendarHints] = useState(() => {
-    return !localStorage.getItem('hasSeenCalendarHints');
-  });
-
   // Update view when initialView prop changes
   useEffect(() => {
     setView(initialView);
@@ -11488,12 +11484,6 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
   const [showWeekStats, setShowWeekStats] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(null); // { month: 0-11, year: YYYY }
   const [showMonthStats, setShowMonthStats] = useState(false);
-
-  // Dismiss calendar hints
-  const dismissCalendarHints = () => {
-    setShowCalendarHints(false);
-    localStorage.setItem('hasSeenCalendarHints', 'true');
-  };
 
   // Progress photos hints state - shows first-visit tips
   const [showPhotosHints, setShowPhotosHints] = useState(() => {
@@ -12124,37 +12114,9 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
               <SectionIcon type="calendar" />
               <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Activity Calendar</span>
             </div>
-            <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Tap any day or week to see details</p>
+            <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Tap any day, week or month to see stats for that specific time period</p>
           </div>
 
-          {/* First-visit calendar hints */}
-          {showCalendarHints && (
-            <div
-              className="mb-4 p-3 rounded-xl relative"
-              style={{
-                backgroundColor: 'rgba(0,209,255,0.1)',
-                border: '1px solid rgba(0,209,255,0.3)'
-              }}
-            >
-              <button
-                onClick={dismissCalendarHints}
-                className="absolute top-2 right-2 w-6 h-6 flex items-center justify-center rounded-full"
-                style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
-              >
-                <span className="text-gray-400 text-sm">×</span>
-              </button>
-              <div className="flex items-start gap-2 pr-6">
-                <span className="text-base">💡</span>
-                <div>
-                  <p className="text-xs text-white font-medium mb-1">Pro tips</p>
-                  <p className="text-[11px] text-gray-300 leading-relaxed">
-                    Tap the <span className="inline-flex items-center justify-center w-4 h-4 rounded" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}><SectionIcon type="chart" size={10} /></span> buttons on the left for weekly breakdowns. Scroll down below the calendar to compare this week vs your average or last week.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-          
           {/* Month navigation */}
           <div className="flex items-center justify-between mb-3">
             <button
@@ -14737,10 +14699,14 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
                 <span className="text-sm text-gray-400">Sign-in method</span>
                 <span className="text-sm text-white flex items-center gap-1.5">
                   {(() => {
-                    const providers = user?.providerData || [];
-                    const hasGoogle = providers.some(p => p.providerId === 'google.com');
-                    const hasApple = providers.some(p => p.providerId === 'apple.com');
-                    const hasPassword = providers.some(p => p.providerId === 'password');
+                    // First check userProfile.authProvider (most reliable for native)
+                    const storedProvider = userProfile?.authProvider;
+                    // Fallback to providerData for web
+                    const currentUser = auth.currentUser;
+                    const providers = currentUser?.providerData || user?.providerData || [];
+                    const hasGoogle = storedProvider === 'google' || providers.some(p => p.providerId === 'google.com');
+                    const hasApple = storedProvider === 'apple' || providers.some(p => p.providerId === 'apple.com');
+                    const hasPassword = storedProvider === 'email' || providers.some(p => p.providerId === 'password');
 
                     if (hasGoogle) {
                       return (
@@ -14763,8 +14729,7 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
                           Apple
                         </>
                       );
-                    } else if (hasPassword || user?.email) {
-                      // Fallback to Email if user has email but providerData is empty
+                    } else if (hasPassword) {
                       return (
                         <>
                           <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -15900,6 +15865,10 @@ export default function DaySevenApp() {
         if (!profile) {
           await createUserProfile(user);
           profile = await getUserProfile(user.uid);
+        } else if (user.authProvider && !profile.authProvider) {
+          // Update authProvider for existing users who don't have it set
+          await createUserProfile(user); // This will update authProvider
+          profile = await getUserProfile(user.uid, true); // Force refresh
         }
       } catch (error) {
         // console.error('Error loading profile:', error);

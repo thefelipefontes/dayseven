@@ -34,6 +34,7 @@ const Login = ({ onLogin }) => {
             email: result.user.email,
             displayName: result.user.displayName,
             photoURL: result.user.photoUrl,
+            authProvider: 'google',
           };
           // Don't set isLoading to false - let the parent handle the transition
           await onLogin(user);
@@ -42,7 +43,7 @@ const Login = ({ onLogin }) => {
       } else {
         // Use popup for web
         const result = await signInWithPopup(auth, googleProvider);
-        onLogin(result.user);
+        onLogin({ ...result.user, authProvider: 'google' });
       }
     } catch (error) {
       // console.error('Error signing in with Google:', error);
@@ -69,13 +70,14 @@ const Login = ({ onLogin }) => {
             email: result.user.email,
             displayName: result.user.displayName,
             photoURL: result.user.photoUrl,
+            authProvider: 'apple',
           };
           onLogin(user);
         }
       } else {
-        // Use popup for web
-        await signInWithPopup(auth, appleProvider);
-        // onLogin not needed - onAuthStateChanged in App.jsx will handle it
+        // Use popup for web - onAuthStateChanged will handle it but we store authProvider
+        const result = await signInWithPopup(auth, appleProvider);
+        onLogin({ ...result.user, authProvider: 'apple' });
       }
     } catch (error) {
       // console.error('Error signing in with Apple:', error);
@@ -130,6 +132,7 @@ const Login = ({ onLogin }) => {
             email: result.user.email,
             displayName: displayName.trim(),
             photoURL: result.user.photoUrl,
+            authProvider: 'email',
           };
           onLogin(user);
         }
@@ -139,7 +142,7 @@ const Login = ({ onLogin }) => {
         // console.log('Account created, updating profile...');
         await updateProfile(result.user, { displayName: displayName.trim() });
         // console.log('Profile updated');
-        // onAuthStateChanged will handle it
+        onLogin({ ...result.user, authProvider: 'email' });
       }
     } catch (error) {
       // console.error('Error signing up:', error);
@@ -177,6 +180,7 @@ const Login = ({ onLogin }) => {
             email: result.user.email,
             displayName: result.user.displayName,
             photoURL: result.user.photoUrl,
+            authProvider: 'email',
           };
           onLogin(user);
         }
@@ -184,7 +188,7 @@ const Login = ({ onLogin }) => {
         // Use web Firebase SDK directly
         const result = await signInWithEmailAndPassword(auth, email, password);
         // console.log('Sign in successful:', result.user?.uid);
-        // onAuthStateChanged will handle the rest
+        onLogin({ ...result.user, authProvider: 'email' });
       }
     } catch (error) {
       // console.error('Error signing in:', error);

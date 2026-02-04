@@ -15875,6 +15875,168 @@ export default function DaySevenApp() {
     }
   };
 
+  // Recalculate all personal records from activities and health history
+  // This ensures records are always accurate and fixes any data corruption
+  const recalculateAllRecordsFromActivities = (activitiesList, existingRecords = {}, healthHistoryData = []) => {
+    const newRecords = {
+      highestCalories: { value: 0, activityType: null },
+      longestStrength: { value: 0, activityType: null },
+      longestCardio: { value: 0, activityType: null },
+      longestDistance: { value: 0, activityType: null },
+      longestRun: { value: 0, activityType: null },
+      longestCycle: { value: 0, activityType: null },
+      longestWalk: { value: 0, activityType: null },
+      fastestPace: { value: null, activityType: null },
+      fastestCyclingPace: { value: null, activityType: null },
+      mostWorkoutsWeek: 0,
+      mostCaloriesWeek: 0,
+      mostMilesWeek: 0,
+    };
+
+    const recoveryTypes = ['Cold Plunge', 'Sauna'];
+
+    // Calculate single-activity records
+    activitiesList.forEach(activity => {
+      const yogaPilatesAsRecovery = ['Yoga', 'Pilates'].includes(activity.type) &&
+        (!activity.countToward || activity.countToward === 'recovery');
+      const isRecovery = recoveryTypes.includes(activity.type) || yogaPilatesAsRecovery;
+      const isStrength = activity.type === 'Strength Training' || activity.countToward === 'strength';
+      const isCardio = ['Running', 'Cycle', 'Sports'].includes(activity.type) || activity.countToward === 'cardio';
+
+      // Highest calories (all activities)
+      if (activity.calories && activity.calories > (newRecords.highestCalories.value || 0)) {
+        newRecords.highestCalories = { value: activity.calories, activityType: activity.type };
+      }
+
+      // Non-recovery records
+      if (!isRecovery) {
+        // Longest strength
+        if (isStrength && activity.duration && activity.duration > (newRecords.longestStrength.value || 0)) {
+          newRecords.longestStrength = { value: activity.duration, activityType: activity.type };
+        }
+
+        // Longest cardio
+        if (isCardio && activity.duration && activity.duration > (newRecords.longestCardio.value || 0)) {
+          newRecords.longestCardio = { value: activity.duration, activityType: activity.type };
+        }
+
+        // Longest distance
+        if (activity.distance && activity.distance > (newRecords.longestDistance.value || 0)) {
+          newRecords.longestDistance = { value: activity.distance, activityType: activity.type };
+        }
+
+        // Longest run
+        if (activity.type === 'Running' && activity.distance && activity.distance > (newRecords.longestRun.value || 0)) {
+          newRecords.longestRun = { value: activity.distance, activityType: 'Running' };
+        }
+
+        // Longest cycle
+        if (activity.type === 'Cycle' && activity.distance && activity.distance > (newRecords.longestCycle.value || 0)) {
+          newRecords.longestCycle = { value: activity.distance, activityType: 'Cycle' };
+        }
+
+        // Longest walk
+        if (activity.type === 'Walking' && activity.distance && activity.distance > (newRecords.longestWalk.value || 0)) {
+          newRecords.longestWalk = { value: activity.distance, activityType: 'Walking' };
+        }
+
+        // Fastest pace (running) - lower is better
+        if (activity.type === 'Running' && activity.distance && activity.distance >= 0.1 && activity.duration) {
+          const pace = activity.duration / activity.distance;
+          if (pace >= 3 && pace <= 30) { // Reasonable range
+            if (newRecords.fastestPace.value === null || pace < newRecords.fastestPace.value) {
+              newRecords.fastestPace = { value: pace, activityType: 'Running' };
+            }
+          }
+        }
+
+        // Fastest cycling pace - lower is better
+        if (activity.type === 'Cycle' && activity.distance && activity.distance >= 0.1 && activity.duration) {
+          const pace = activity.duration / activity.distance;
+          if (pace >= 0.5 && pace <= 30) { // Reasonable range
+            if (newRecords.fastestCyclingPace.value === null || pace < newRecords.fastestCyclingPace.value) {
+              newRecords.fastestCyclingPace = { value: pace, activityType: 'Cycle' };
+            }
+          }
+        }
+      }
+    });
+
+    // Build health data map from healthHistoryData
+    const healthDataByDate = {};
+    const safeHealthHistory = healthHistoryData || [];
+    safeHealthHistory.forEach(entry => {
+      if (entry.date) {
+        healthDataByDate[entry.date] = entry;
+      }
+    });
+
+    // Calculate weekly records - group activities by week
+    const weeklyData = {};
+
+    // First, collect all unique dates from both activities and health history
+    const allDates = new Set();
+    activitiesList.forEach(a => a.date && allDates.add(a.date));
+    safeHealthHistory.forEach(h => h.date && allDates.add(h.date));
+
+    // Group dates by week and calculate stats
+    allDates.forEach(dateStr => {
+      const actDate = new Date(dateStr + 'T12:00:00'); // Use noon to avoid timezone issues
+      const weekStart = new Date(actDate);
+      weekStart.setDate(actDate.getDate() - actDate.getDay());
+      const weekKey = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
+
+      if (!weeklyData[weekKey]) {
+        weeklyData[weekKey] = { workouts: 0, calories: 0, miles: 0, dates: new Set() };
+      }
+      weeklyData[weekKey].dates.add(dateStr);
+    });
+
+    // Now calculate stats for each week
+    Object.keys(weeklyData).forEach(weekKey => {
+      const week = weeklyData[weekKey];
+      let weekCalories = 0;
+
+      week.dates.forEach(dateStr => {
+        // Get activities for this day
+        const dayActivities = activitiesList.filter(a => a.date === dateStr);
+
+        // Count workouts and miles from activities
+        dayActivities.forEach(activity => {
+          week.workouts++;
+          week.miles += (parseFloat(activity.distance) || 0);
+        });
+
+        // Calculate calories: HealthKit data + manual workout calories (same logic as UI)
+        const healthData = healthDataByDate[dateStr];
+        weekCalories += healthData?.calories || 0;
+
+        // Add calories from truly manual workouts (not from HealthKit)
+        const manualWorkoutCalories = dayActivities
+          .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID && a.source !== 'healthkit' && !a.fromAppleHealth)
+          .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+        weekCalories += manualWorkoutCalories;
+      });
+
+      week.calories = weekCalories;
+    });
+
+    Object.values(weeklyData).forEach(week => {
+      if (week.workouts > newRecords.mostWorkoutsWeek) newRecords.mostWorkoutsWeek = week.workouts;
+      if (week.calories > newRecords.mostCaloriesWeek) newRecords.mostCaloriesWeek = Math.round(week.calories);
+      if (week.miles > newRecords.mostMilesWeek) newRecords.mostMilesWeek = parseFloat(week.miles.toFixed(1));
+    });
+
+    // Preserve streak records from existing records (these are tracked separately)
+    return {
+      ...newRecords,
+      longestMasterStreak: existingRecords?.longestMasterStreak || 0,
+      longestStrengthStreak: existingRecords?.longestStrengthStreak || 0,
+      longestCardioStreak: existingRecords?.longestCardioStreak || 0,
+      longestRecoveryStreak: existingRecords?.longestRecoveryStreak || 0,
+    };
+  };
+
   // Handle user authentication (shared by onAuthStateChanged and native login)
   const handleUserAuth = useCallback(async (user) => {
     if (user) {
@@ -15962,16 +16124,40 @@ export default function DaySevenApp() {
             }));
           }
 
-          // Load user's personal records
+          // Load user's personal records, then recalculate from activities to ensure accuracy
           const userRecords = await getPersonalRecords(user.uid);
-          if (userRecords) {
+
+          // Recalculate records from activities and health history to ensure they're accurate
+          // This fixes any corruption from race conditions or data issues
+          try {
+            const recalculatedRecords = recalculateAllRecordsFromActivities(userActivities || [], userRecords, healthHistoryData || []);
+
             setUserData(prev => ({
               ...prev,
-              personalRecords: { ...prev.personalRecords, ...userRecords }
+              personalRecords: { ...prev.personalRecords, ...recalculatedRecords }
             }));
+
+            // Save recalculated records if they differ from stored records
+            if (JSON.stringify(recalculatedRecords) !== JSON.stringify(userRecords)) {
+              savePersonalRecords(user.uid, recalculatedRecords);
+            }
+          } catch (recalcError) {
+            // If recalculation fails, just use stored records
+            console.log('Record recalculation error:', recalcError);
+            if (userRecords) {
+              setUserData(prev => ({
+                ...prev,
+                personalRecords: { ...prev.personalRecords, ...userRecords }
+              }));
+            }
           }
+
+          // Mark records as loaded (even if null - means user has no records yet)
+          setRecordsLoaded(true);
         } catch (error) {
           // console.error('Error loading user data:', error);
+          // Still mark as loaded on error so we don't block record checking forever
+          setRecordsLoaded(true);
         }
       })();
     } else {
@@ -15980,6 +16166,7 @@ export default function DaySevenApp() {
       setPendingFriendRequests(0);
       setIsOnboarded(null);
       setAuthLoading(false);
+      setRecordsLoaded(false); // Reset on logout
     }
   }, []);
 
@@ -16253,12 +16440,17 @@ export default function DaySevenApp() {
   const [healthHistory, setHealthHistory] = useState([]);
   const [weeklyProgress, setWeeklyProgress] = useState(initialWeeklyProgress);
   const [userData, setUserData] = useState(initialUserData);
+  const [recordsLoaded, setRecordsLoaded] = useState(false); // Track if records have been loaded from Firestore
 
   // Ref to always have access to latest userData (avoids stale closure issues)
   const userDataRef = useRef(userData);
+  const recordsLoadedRef = useRef(false);
   useEffect(() => {
     userDataRef.current = userData;
   }, [userData]);
+  useEffect(() => {
+    recordsLoadedRef.current = recordsLoaded;
+  }, [recordsLoaded]);
 
   // DEV: Add dummy data function (call window.__addDummyData() from console)
   useEffect(() => {
@@ -16751,6 +16943,12 @@ export default function DaySevenApp() {
     
     // Check for personal records and return all broken records
     const checkAndUpdateRecords = () => {
+      // Skip record checking if records haven't been loaded from Firestore yet
+      // This prevents false "new record" notifications when comparing against initial zeros
+      if (!recordsLoadedRef.current) {
+        return null;
+      }
+
       // Only track records that are actually updated (don't spread all records to avoid overwriting other concurrent updates)
       const updatedRecords = {};
       const recordsBroken = []; // Collect all broken records
@@ -16850,18 +17048,48 @@ export default function DaySevenApp() {
         }
       }
       
-      // Calculate weekly calories from activities this week (workouts only, not recovery)
+      // Calculate weekly calories using HealthKit data + manual workout calories (same as UI)
       // Use today's date consistently
       const today = new Date();
       today.setHours(0, 0, 0, 0); // Reset to midnight to avoid timezone issues
       const weekStart = new Date(today);
       weekStart.setDate(weekStart.getDate() - weekStart.getDay()); // Sunday of current week
-      const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
-      
-      const weeklyCalories = updatedActivities
-        .filter(a => a.date >= weekStartStr && !recoveryTypes.includes(a.type))
-        .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
-      
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+      // Build health data map from healthHistory + today's live data
+      const healthDataByDate = {};
+      healthHistory.forEach(entry => {
+        if (entry.date) {
+          healthDataByDate[entry.date] = entry;
+        }
+      });
+      // Use live HealthKit data for today
+      if (healthKitData.todayCalories > 0) {
+        healthDataByDate[todayStr] = {
+          date: todayStr,
+          calories: healthKitData.todayCalories
+        };
+      }
+
+      // Calculate weekly calories: HealthKit active energy + manual workout calories
+      let weeklyCalories = 0;
+      for (let d = 0; d <= today.getDay(); d++) {
+        const date = new Date(weekStart);
+        date.setDate(weekStart.getDate() + d);
+        const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+        // Add HealthKit calories for this day
+        const healthData = healthDataByDate[dateStr];
+        weeklyCalories += healthData?.calories || 0;
+
+        // Add calories from truly manual workouts (not from HealthKit)
+        const dayActivities = updatedActivities.filter(a => a.date === dateStr);
+        const manualWorkoutCalories = dayActivities
+          .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID && a.source !== 'healthkit' && !a.fromAppleHealth)
+          .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+        weeklyCalories += manualWorkoutCalories;
+      }
+
       const currentMostCalories = getRecordValue('mostCaloriesWeek');
       if (weeklyCalories > currentMostCalories) {
         updatedRecords.mostCaloriesWeek = weeklyCalories;

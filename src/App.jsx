@@ -10969,8 +10969,8 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
           // Use steps from HealthKit
           value = healthData?.steps || 0;
         } else if (metric === 'miles') {
+          // Include all activities with distance (Running, Cycling, Walking, etc.)
           value = dayActivities
-            .filter(a => a.type === 'Running' || a.type === 'Cycle')
             .reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
         }
 
@@ -11009,8 +11009,8 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
             // Use steps from HealthKit
             value += healthData?.steps || 0;
           } else if (metric === 'miles') {
+            // Include all activities with distance (Running, Cycling, Walking, etc.)
             value += dayActivities
-              .filter(a => a.type === 'Running' || a.type === 'Cycle')
               .reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
           }
         }
@@ -11058,8 +11058,8 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
             // Use steps from HealthKit
             value += healthData?.steps || 0;
           } else if (metric === 'miles') {
+            // Include all activities with distance (Running, Cycling, Walking, etc.)
             value += dayActivities
-              .filter(a => a.type === 'Running' || a.type === 'Cycle')
               .reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
           }
         }

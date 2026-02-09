@@ -10968,6 +10968,9 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
   const [selectedBar, setSelectedBar] = useState(null); // For detail view on click
   const [hoveredBar, setHoveredBar] = useState(null); // For hover highlighting
 
+  // Stacked bar colors for miles breakdown
+  const milesColors = { ran: '#FF5757', biked: '#00D1FF', walked: '#00FF94' };
+
   // Get today's date string
   const todayStr = useMemo(() => {
     const today = new Date();
@@ -11067,12 +11070,20 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
             .reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
         }
 
-        data.push({
+        const point = {
           label: date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
           shortLabel: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
           value,
           date: dateStr
-        });
+        };
+
+        if (metric === 'miles') {
+          point.milesRan = dayActivities.filter(a => a.type === 'Running').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+          point.milesBiked = dayActivities.filter(a => a.type === 'Cycle').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+          point.milesWalked = dayActivities.filter(a => a.type === 'Walking' || a.type === 'Hiking').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+        }
+
+        data.push(point);
       }
     } else if (groupBy === 'week') {
       const weeks = Math.ceil(daysToShow / 7);
@@ -11083,6 +11094,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
         weekStart.setDate(weekStart.getDate() - 6);
 
         let value = 0;
+        let weekRan = 0, weekBiked = 0, weekWalked = 0;
         for (let d = 0; d < 7; d++) {
           const date = new Date(weekStart);
           date.setDate(date.getDate() + d);
@@ -11105,6 +11117,9 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
             // Include all activities with distance (Running, Cycling, Walking, etc.)
             value += dayActivities
               .reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+            weekRan += dayActivities.filter(a => a.type === 'Running').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+            weekBiked += dayActivities.filter(a => a.type === 'Cycle').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+            weekWalked += dayActivities.filter(a => a.type === 'Walking' || a.type === 'Hiking').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
           }
         }
 
@@ -11118,12 +11133,18 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
           ? weekEndDate.getDate() // Same month: "Dec 15 - 21"
           : weekEndDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); // Different month: "Dec 29 - Jan 4"
 
-        data.push({
+        const weekPoint = {
           label: `${startLabel} - ${endLabel}`,
           shortLabel: weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
           value,
           date: weekStart.toISOString().split('T')[0]
-        });
+        };
+        if (metric === 'miles') {
+          weekPoint.milesRan = weekRan;
+          weekPoint.milesBiked = weekBiked;
+          weekPoint.milesWalked = weekWalked;
+        }
+        data.push(weekPoint);
       }
     } else if (groupBy === 'month') {
       const months = Math.ceil(daysToShow / 30);
@@ -11132,6 +11153,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
         const monthEnd = new Date(today.getFullYear(), today.getMonth() - m + 1, 0);
 
         let value = 0;
+        let monthRan = 0, monthBiked = 0, monthWalked = 0;
         for (let d = 1; d <= monthEnd.getDate(); d++) {
           const date = new Date(monthDate.getFullYear(), monthDate.getMonth(), d);
           if (date > today) break;
@@ -11154,17 +11176,26 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
             // Include all activities with distance (Running, Cycling, Walking, etc.)
             value += dayActivities
               .reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+            monthRan += dayActivities.filter(a => a.type === 'Running').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+            monthBiked += dayActivities.filter(a => a.type === 'Cycle').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+            monthWalked += dayActivities.filter(a => a.type === 'Walking' || a.type === 'Hiking').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
           }
         }
 
         if (metric === 'steps') value = Math.round(value);
 
-        data.push({
+        const monthPoint = {
           label: monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
           shortLabel: monthDate.toLocaleDateString('en-US', { month: 'short' }),
           value,
           date: monthDate.toISOString().split('T')[0]
-        });
+        };
+        if (metric === 'miles') {
+          monthPoint.milesRan = monthRan;
+          monthPoint.milesBiked = monthBiked;
+          monthPoint.milesWalked = monthWalked;
+        }
+        data.push(monthPoint);
       }
     }
     
@@ -11262,26 +11293,42 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
       {/* Chart */}
       <div className="p-4 rounded-2xl mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
         {/* Tooltip - fixed height container to prevent layout shift */}
-        <div style={{ minHeight: '72px' }}>
-          {(hoveredBar !== null || selectedBar !== null) && trendData[hoveredBar !== null ? hoveredBar : selectedBar] ? (
-            <div
-              className="p-3 rounded-xl text-center transition-all duration-200"
-              style={{
-                backgroundColor: `${config.color}15`,
-                border: `1px solid ${config.color}40`
-              }}
-            >
-              <div className="text-sm font-bold" style={{ color: config.color }}>
-                {trendData[hoveredBar !== null ? hoveredBar : selectedBar].label}
+        <div style={{ minHeight: metric === 'miles' ? '90px' : '72px' }}>
+          {(hoveredBar !== null || selectedBar !== null) && trendData[hoveredBar !== null ? hoveredBar : selectedBar] ? (() => {
+            const activePoint = trendData[hoveredBar !== null ? hoveredBar : selectedBar];
+            return (
+              <div
+                className="p-3 rounded-xl text-center transition-all duration-200"
+                style={{
+                  backgroundColor: `${config.color}15`,
+                  border: `1px solid ${config.color}40`
+                }}
+              >
+                <div className="text-sm font-bold" style={{ color: config.color }}>
+                  {activePoint.label}
+                </div>
+                <div className="text-xl font-black text-white mt-1">
+                  {metric === 'miles'
+                    ? activePoint.value.toFixed(1)
+                    : activePoint.value.toLocaleString()
+                  } {config.unit}
+                </div>
+                {metric === 'miles' && activePoint.value > 0 && (
+                  <div className="flex items-center justify-center gap-3 mt-1.5 text-[11px]">
+                    {(activePoint.milesRan || 0) > 0 && (
+                      <span style={{ color: milesColors.ran }}>🏃 {activePoint.milesRan.toFixed(1)}</span>
+                    )}
+                    {(activePoint.milesBiked || 0) > 0 && (
+                      <span style={{ color: milesColors.biked }}>🚴 {activePoint.milesBiked.toFixed(1)}</span>
+                    )}
+                    {(activePoint.milesWalked || 0) > 0 && (
+                      <span style={{ color: milesColors.walked }}>🚶 {activePoint.milesWalked.toFixed(1)}</span>
+                    )}
+                  </div>
+                )}
               </div>
-              <div className="text-xl font-black text-white mt-1">
-                {metric === 'miles'
-                  ? trendData[hoveredBar !== null ? hoveredBar : selectedBar].value.toFixed(1)
-                  : trendData[hoveredBar !== null ? hoveredBar : selectedBar].value.toLocaleString()
-                } {config.unit}
-              </div>
-            </div>
-          ) : (
+            );
+          })() : (
             <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
               <div className="text-sm text-gray-500">Tap a bar to see details</div>
               <div className="text-xl font-black text-gray-600 mt-1">—</div>
@@ -11299,6 +11346,12 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
             const heightPercent = maxValue > 0 ? (point.value / maxValue) * 100 : 0;
             const isHighlighted = selectedBar === i || hoveredBar === i;
 
+            // Stacked bar segments for miles
+            const isMiles = metric === 'miles';
+            const ranPct = isMiles && maxValue > 0 ? ((point.milesRan || 0) / maxValue) * 100 : 0;
+            const bikedPct = isMiles && maxValue > 0 ? ((point.milesBiked || 0) / maxValue) * 100 : 0;
+            const walkedPct = isMiles && maxValue > 0 ? ((point.milesWalked || 0) / maxValue) * 100 : 0;
+
             return (
               <button
                 key={i}
@@ -11307,18 +11360,55 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
                 onClick={() => setSelectedBar(selectedBar === i ? null : i)}
                 type="button"
               >
-                {/* Visible bar */}
-                <div
-                  className="w-full rounded-t-sm transition-all duration-200 pointer-events-none"
-                  style={{
-                    height: `${Math.max(heightPercent, 2)}%`,
-                    backgroundColor: config.color,
-                    opacity: isHighlighted ? 1 : 0.6,
-                    minHeight: point.value > 0 ? '4px' : '2px',
-                    transform: isHighlighted ? 'scaleX(1.1)' : 'scaleX(1)',
-                    boxShadow: isHighlighted ? `0 0 10px ${config.color}50` : 'none'
-                  }}
-                />
+                {isMiles ? (
+                  /* Stacked bar for miles breakdown */
+                  <div
+                    className="w-full flex flex-col justify-end pointer-events-none transition-all duration-200"
+                    style={{
+                      height: `${Math.max(heightPercent, 2)}%`,
+                      minHeight: point.value > 0 ? '4px' : '2px',
+                      opacity: isHighlighted ? 1 : 0.6,
+                      transform: isHighlighted ? 'scaleX(1.1)' : 'scaleX(1)',
+                    }}
+                  >
+                    {(point.milesRan || 0) > 0 && (
+                      <div className="w-full rounded-t-sm" style={{
+                        flex: `0 0 ${ranPct / (ranPct + bikedPct + walkedPct) * 100}%`,
+                        backgroundColor: milesColors.ran,
+                        minHeight: '1px'
+                      }} />
+                    )}
+                    {(point.milesBiked || 0) > 0 && (
+                      <div className="w-full" style={{
+                        flex: `0 0 ${bikedPct / (ranPct + bikedPct + walkedPct) * 100}%`,
+                        backgroundColor: milesColors.biked,
+                        minHeight: '1px',
+                        ...((point.milesRan || 0) === 0 ? { borderRadius: '2px 2px 0 0' } : {})
+                      }} />
+                    )}
+                    {(point.milesWalked || 0) > 0 && (
+                      <div className="w-full" style={{
+                        flex: `0 0 ${walkedPct / (ranPct + bikedPct + walkedPct) * 100}%`,
+                        backgroundColor: milesColors.walked,
+                        minHeight: '1px',
+                        ...((point.milesRan || 0) === 0 && (point.milesBiked || 0) === 0 ? { borderRadius: '2px 2px 0 0' } : {})
+                      }} />
+                    )}
+                  </div>
+                ) : (
+                  /* Single bar for other metrics */
+                  <div
+                    className="w-full rounded-t-sm transition-all duration-200 pointer-events-none"
+                    style={{
+                      height: `${Math.max(heightPercent, 2)}%`,
+                      backgroundColor: config.color,
+                      opacity: isHighlighted ? 1 : 0.6,
+                      minHeight: point.value > 0 ? '4px' : '2px',
+                      transform: isHighlighted ? 'scaleX(1.1)' : 'scaleX(1)',
+                      boxShadow: isHighlighted ? `0 0 10px ${config.color}50` : 'none'
+                    }}
+                  />
+                )}
               </button>
             );
           }) : (
@@ -11353,6 +11443,21 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* Stacked bar legend for miles */}
+        {metric === 'miles' && (
+          <div className="flex items-center justify-center gap-4 mt-2 mb-1">
+            <span className="flex items-center gap-1.5 text-[10px] text-gray-400">
+              <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: milesColors.ran }} /> Ran
+            </span>
+            <span className="flex items-center gap-1.5 text-[10px] text-gray-400">
+              <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: milesColors.biked }} /> Biked
+            </span>
+            <span className="flex items-center gap-1.5 text-[10px] text-gray-400">
+              <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: milesColors.walked }} /> Walked
+            </span>
           </div>
         )}
       </div>

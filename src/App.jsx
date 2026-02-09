@@ -7358,7 +7358,7 @@ const SwipeableActivityItem = ({ children, onDelete, activity, onTap, onEdit }) 
 };
 
 // Add Activity Modal
-const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, defaultDate = null, userData = null, onSaveCustomActivity = null, onStartWorkout = null, hasActiveWorkout = false, otherPendingWorkoutsCount = 0, onSeeOtherWorkouts = null, onBackToWorkoutPicker = null, dismissedWorkoutUUIDs = [], linkedWorkoutUUIDs = [] }) => {
+const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, defaultDate = null, userData = null, onSaveCustomActivity = null, onStartWorkout = null, hasActiveWorkout = false, otherPendingWorkoutsCount = 0, onSeeOtherWorkouts = null, onBackToWorkoutPicker = null, dismissedWorkoutUUIDs = [], linkedWorkoutUUIDs = [], pendingWorkouts = [] }) => {
   // Mode: null = initial choice, 'start' = start new workout, 'completed' = log completed (existing flow)
   const [mode, setMode] = useState(null);
   const [activityType, setActivityType] = useState(null);
@@ -7559,6 +7559,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   }, [isOpen, pendingActivity]);
 
   // Fetch linkable Apple Health workouts when modal opens or date changes
+  // Also merge in pending workouts from the notification banner
   useEffect(() => {
     // Fetch on initial screen (mode === null) or in completed mode
     if (!isOpen || (mode !== null && mode !== 'completed') || !date) return;
@@ -7567,25 +7568,37 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       setIsLoadingWorkouts(true);
       try {
         // Get list of already linked workout IDs from user's activities
-        // For now, we'll pass an empty array - in future could track this
         const workouts = await fetchLinkableWorkouts(date, []);
 
+        // Merge in pending workouts (from notification banner) that aren't already in the list
+        // These may be from different dates, so they expand what the user sees
+        const fetchedUUIDs = new Set(workouts.map(w => w.healthKitUUID));
+        const extraPending = (pendingWorkouts || []).filter(w =>
+          w.healthKitUUID && !fetchedUUIDs.has(w.healthKitUUID)
+        );
+        const allWorkouts = [...workouts, ...extraPending];
+
         // Filter out already linked or dismissed workouts
-        const filteredWorkouts = workouts.filter(w =>
+        const filteredWorkouts = allWorkouts.filter(w =>
           !linkedWorkoutUUIDs.includes(w.healthKitUUID) &&
           !dismissedWorkoutUUIDs.includes(w.healthKitUUID)
         );
         setLinkableWorkouts(filteredWorkouts);
       } catch (error) {
         console.error('Error fetching linkable workouts:', error);
-        setLinkableWorkouts([]);
+        // Fall back to pending workouts if fetch fails
+        const filteredPending = (pendingWorkouts || []).filter(w =>
+          !linkedWorkoutUUIDs.includes(w.healthKitUUID) &&
+          !dismissedWorkoutUUIDs.includes(w.healthKitUUID)
+        );
+        setLinkableWorkouts(filteredPending);
       } finally {
         setIsLoadingWorkouts(false);
       }
     };
 
     fetchWorkouts();
-  }, [isOpen, mode, date, linkedWorkoutUUIDs, dismissedWorkoutUUIDs]);
+  }, [isOpen, mode, date, linkedWorkoutUUIDs, dismissedWorkoutUUIDs, pendingWorkouts]);
 
   // Generate calendar days for date picker
   const getCalendarDays = () => {
@@ -16627,6 +16640,8 @@ export default function DaySevenApp() {
           const userActivities = await getUserActivities(user.uid);
           if (userActivities.length > 0) {
             setActivities(userActivities);
+            // Update ref immediately so syncHealthKit can see loaded activities
+            activitiesRef.current = userActivities;
             // Build calendar data from loaded activities
             const calendarMap = {};
             userActivities.forEach(activity => {
@@ -16646,6 +16661,12 @@ export default function DaySevenApp() {
               }
             });
             setCalendarData(calendarMap);
+          }
+
+          // Sync HealthKit AFTER activities are loaded so it can properly
+          // detect already-saved/linked workouts via activitiesRef
+          if (Capacitor.isNativePlatform()) {
+            syncHealthKit();
           }
 
           // Load daily health history for trends (365 days for full year view)
@@ -16911,12 +16932,11 @@ export default function DaySevenApp() {
     }
   }, []);
 
-  // Sync HealthKit when user logs in and periodically refresh steps/calories
+  // Periodically refresh HealthKit steps/calories and re-sync workouts on foreground
+  // NOTE: Initial syncHealthKit() is called in the data loading block above AFTER
+  // activities are loaded from Firebase, to avoid race condition with activitiesRef
   useEffect(() => {
     if (!user?.uid || !Capacitor.isNativePlatform()) return;
-
-    // Initial sync
-    syncHealthKit();
 
     // Function to refresh steps and calories from HealthKit
     const refreshHealthKitData = async () => {
@@ -17670,6 +17690,7 @@ export default function DaySevenApp() {
       today.setHours(0, 0, 0, 0); // Reset to midnight to avoid timezone issues
       const weekStart = new Date(today);
       weekStart.setDate(weekStart.getDate() - weekStart.getDay()); // Sunday of current week
+      const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
       const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
       // Build health data map from healthHistory + today's live data
@@ -18645,6 +18666,7 @@ export default function DaySevenApp() {
           ...activities.filter(a => a.linkedHealthKitUUID).map(a => a.linkedHealthKitUUID),
           ...activities.filter(a => a.healthKitUUID).map(a => a.healthKitUUID)
         ]}
+        pendingWorkouts={healthKitData.pendingWorkouts || []}
       />
 
       {/* Workout Picker Modal (shown from "See other workouts" or when multiple pending) */}

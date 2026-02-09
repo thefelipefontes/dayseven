@@ -12,7 +12,7 @@ import html2canvas from 'html2canvas';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
-import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange } from './services/healthService';
+import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit } from './services/healthService';
 
 // Helper function for haptic feedback that works on iOS
 const triggerHaptic = async (style = ImpactStyle.Medium) => {
@@ -162,6 +162,38 @@ const getTodayDate = () => {
 
 // Get current year
 const getCurrentYear = () => new Date().getFullYear();
+
+// --- Smart Save: Zone calculation helpers (pure functions, no state) ---
+
+// Determine which HR zone an average heart rate falls into (1-5, or null)
+const getHRZone = (avgHR, maxHR) => {
+  if (!avgHR || !maxHR || maxHR < 100) return null;
+  const pct = avgHR / maxHR;
+  if (pct < 0.60) return 1;
+  if (pct < 0.70) return 2;
+  if (pct < 0.80) return 3;
+  if (pct < 0.90) return 4;
+  return 5;
+};
+
+// Check if a walk qualifies for Smart Save (auto-save without notification)
+// Rules: Zone 1 (any duration), Zone 2 under 40min, Zone 3 under 15min
+const shouldSmartSaveWalk = (workout, maxHR, smartSaveEnabled) => {
+  if (!smartSaveEnabled) return false;
+  if (!maxHR || maxHR < 100) return false;
+  if (workout.type !== 'Walking') return false;
+  if (!workout.avgHr) return false;
+
+  const duration = workout.duration || 0;
+  const zone = getHRZone(workout.avgHr, maxHR);
+  if (!zone) return false;
+
+  if (zone === 1) return true;
+  if (zone === 2 && duration < 40) return true;
+  if (zone === 3 && duration < 15) return true;
+
+  return false;
+};
 
 // Parse date string (YYYY-MM-DD) to Date object at noon local time
 // This avoids timezone issues where "2026-01-24" would be interpreted as UTC midnight
@@ -5067,6 +5099,60 @@ const DeleteAccountModal = ({ isOpen, onClose, user, userProfile, onDeleteComple
               </button>
             </>
           )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Smart Save Explanation Modal - shown once when the first walk is auto-saved
+const SmartSaveExplainModal = ({ onClose, onDisable }) => {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+      <div
+        className="mx-6 p-6 rounded-3xl max-w-sm w-full"
+        style={{ backgroundColor: '#1a1a1a' }}
+      >
+        <div className="w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
+          <svg className="w-8 h-8" fill="none" stroke="#00FF94" viewBox="0 0 24 24" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+          </svg>
+        </div>
+
+        <h2 className="text-xl font-bold text-white text-center mb-2">
+          Smart Save Active
+        </h2>
+
+        <p className="text-sm text-gray-400 text-center mb-4">
+          Your casual walk was automatically saved to your history. Smart Save detects low-intensity walks based on your heart rate zones and saves them without notifications.
+        </p>
+
+        <div className="bg-zinc-800/50 rounded-xl p-3 mb-6">
+          <p className="text-xs text-gray-500 mb-2">
+            Walks are auto-saved when:
+          </p>
+          <ul className="text-xs text-gray-400 space-y-1">
+            <li>• Heart rate is in Zone 1 (any duration)</li>
+            <li>• Zone 2 walks under 40 minutes</li>
+            <li>• Zone 3 walks under 15 minutes</li>
+          </ul>
+        </div>
+
+        <div className="space-y-3">
+          <button
+            onClick={onClose}
+            className="w-full py-3 rounded-xl font-semibold text-black"
+            style={{ backgroundColor: '#00FF94' }}
+          >
+            Got It
+          </button>
+          <button
+            onClick={onDisable}
+            className="w-full py-3 rounded-xl font-medium text-gray-400"
+            style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+          >
+            Turn Off Smart Save
+          </button>
         </div>
       </div>
     </div>
@@ -14174,7 +14260,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
 };
 
 // Profile Tab Component
-const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onChangePassword, onResetPassword, onDeleteAccount }) => {
+const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onUpdateMaxHeartRate, onChangePassword, onResetPassword, onDeleteAccount }) => {
   const [isEmailPasswordUser, setIsEmailPasswordUser] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
@@ -14220,6 +14306,8 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
   // Privacy settings (default to true if not set)
   const showInActivityFeed = userProfile?.privacySettings?.showInActivityFeed !== false;
   const showOnLeaderboard = userProfile?.privacySettings?.showOnLeaderboard !== false;
+  const smartSaveWalks = userProfile?.privacySettings?.smartSaveWalks !== false; // default true
+  const [showSmartSaveInfo, setShowSmartSaveInfo] = useState(false);
 
   const handlePrivacyToggle = (setting, value) => {
     if (onUpdatePrivacy) {
@@ -14228,6 +14316,30 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
         [setting]: value
       });
     }
+  };
+
+  // Debounce timer ref for max HR input
+  const maxHrTimerRef = useRef(null);
+  const [localMaxHr, setLocalMaxHr] = useState(userProfile?.maxHeartRate || '');
+
+  // Sync local input when profile value changes (e.g., auto-detected)
+  useEffect(() => {
+    if (userProfile?.maxHeartRate && !maxHrTimerRef.current) {
+      setLocalMaxHr(userProfile.maxHeartRate);
+    }
+  }, [userProfile?.maxHeartRate]);
+
+  const handleMaxHeartRateChange = (value) => {
+    setLocalMaxHr(value);
+    if (maxHrTimerRef.current) clearTimeout(maxHrTimerRef.current);
+    maxHrTimerRef.current = setTimeout(() => {
+      const hr = parseInt(value, 10);
+      if (value === '' || value === undefined) {
+        if (onUpdateMaxHeartRate) onUpdateMaxHeartRate(null);
+      } else if (hr >= 100 && hr <= 220) {
+        if (onUpdateMaxHeartRate) onUpdateMaxHeartRate(hr);
+      }
+    }, 800);
   };
 
   const goalLabels = {
@@ -14960,6 +15072,119 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
                 />
               </button>
             </div>
+
+          </div>
+        </div>
+
+        {/* Health Section */}
+        <div className="mb-6">
+          <h3 className="text-sm font-semibold text-gray-400 mb-3">HEALTH</h3>
+          <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+            {/* Smart Save Toggle */}
+            <div className="flex items-center justify-between py-2">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
+                  <svg className="w-4 h-4" fill="none" stroke="#00FF94" viewBox="0 0 24 24" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                  </svg>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div>
+                    <span className="text-sm text-white">Smart Save Walks</span>
+                    <p className="text-[11px] text-gray-500">Auto-save low-intensity walks as non-cardio</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      triggerHaptic(ImpactStyle.Light);
+                      setShowSmartSaveInfo(prev => !prev);
+                    }}
+                    className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center mr-3"
+                    style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+                  >
+                    <span className="text-[10px] text-gray-400 font-semibold">i</span>
+                  </button>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  if (!userProfile?.maxHeartRate) return;
+                  triggerHaptic(ImpactStyle.Light);
+                  handlePrivacyToggle('smartSaveWalks', !smartSaveWalks);
+                }}
+                className="w-12 h-7 rounded-full transition-all duration-200 relative flex-shrink-0"
+                style={{
+                  backgroundColor: smartSaveWalks && userProfile?.maxHeartRate ? '#00FF94' : 'rgba(255,255,255,0.2)',
+                  opacity: userProfile?.maxHeartRate ? 1 : 0.4
+                }}
+              >
+                <div
+                  className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-200"
+                  style={{
+                    left: smartSaveWalks && userProfile?.maxHeartRate ? '26px' : '4px'
+                  }}
+                />
+              </button>
+            </div>
+            {showSmartSaveInfo && (
+              <div className="mt-2 mb-1 p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.04)' }}>
+                <p className="text-[11px] text-gray-400 mb-2">
+                  Walks are automatically saved without a notification when they meet any of these criteria:
+                </p>
+                <ul className="text-[11px] text-gray-400 space-y-1.5">
+                  <li className="flex items-start gap-2">
+                    <span className="text-gray-500 mt-px">•</span>
+                    <span><span className="text-gray-300">Zone 1</span> — Heart rate below 60% of your max (any duration)</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-gray-500 mt-px">•</span>
+                    <span><span className="text-gray-300">Zone 2</span> — Heart rate 60-70% of your max, under 40 min</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-gray-500 mt-px">•</span>
+                    <span><span className="text-gray-300">Zone 3</span> — Heart rate 70-80% of your max, under 15 min</span>
+                  </li>
+                </ul>
+                {userProfile?.maxHeartRate && (
+                  <p className="text-[10px] text-gray-500 mt-2">
+                    Your max HR: {userProfile.maxHeartRate} bpm — Z1: &lt;{Math.floor(userProfile.maxHeartRate * 0.6)}, Z2: {Math.floor(userProfile.maxHeartRate * 0.6)}-{Math.floor(userProfile.maxHeartRate * 0.7)}, Z3: {Math.floor(userProfile.maxHeartRate * 0.7)}-{Math.floor(userProfile.maxHeartRate * 0.8)} bpm
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Max Heart Rate */}
+            <div className="flex items-center justify-between py-2 border-t border-zinc-700/50 mt-2 pt-4">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(255,59,48,0.1)' }}>
+                  <svg className="w-4 h-4" fill="none" stroke="#FF3B30" viewBox="0 0 24 24" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z" />
+                  </svg>
+                </div>
+                <div>
+                  <span className="text-sm text-white">Max Heart Rate</span>
+                  <p className="text-[11px] text-gray-500">Used for Smart Save zones</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  value={localMaxHr}
+                  placeholder="e.g. 190"
+                  onChange={(e) => handleMaxHeartRateChange(e.target.value)}
+                  className="w-20 px-3 py-1.5 rounded-lg text-white text-sm text-right outline-none"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+                  min="100"
+                  max="220"
+                />
+                <span className="text-xs text-gray-400">bpm</span>
+              </div>
+            </div>
+            {!userProfile?.maxHeartRate && (
+              <p className="text-[10px] text-amber-500 mt-2 ml-11">
+                Set your max HR to enable Smart Save for walks
+              </p>
+            )}
           </div>
         </div>
 
@@ -15470,6 +15695,58 @@ export default function DaySevenApp() {
     }
   };
 
+  // Smart Save state
+  const [showSmartSaveExplainModal, setShowSmartSaveExplainModal] = useState(false);
+  // Refs to access user/profile/activities in syncHealthKit callback without adding as dependencies
+  const userProfileRef = useRef(userProfile);
+  useEffect(() => { userProfileRef.current = userProfile; }, [userProfile]);
+  const userRef = useRef(user);
+  useEffect(() => { userRef.current = user; }, [user]);
+  const activitiesRef = useRef([]);
+  // activitiesRef is synced after activities state is declared (see below)
+
+  // Auto-detect max heart rate from HealthKit + workout history when not set
+  // NOTE: This useEffect is declared before activities state — uses activitiesRef to avoid TDZ
+  useEffect(() => {
+    if (!user?.uid || userProfile?.maxHeartRate) return;
+
+    const detectMaxHR = async () => {
+      let maxFromHealthKit = null;
+      let maxFromActivities = null;
+
+      // Source 1: Query HealthKit for highest recorded HR (last 90 days)
+      try {
+        maxFromHealthKit = await queryMaxHeartRateFromHealthKit(90);
+      } catch (e) {
+        // Silently fail
+      }
+
+      // Source 2: Scan existing activities for highest maxHr (via ref)
+      const currentActivities = activitiesRef.current || [];
+      if (currentActivities.length > 0) {
+        maxFromActivities = currentActivities.reduce((max, a) => {
+          return a.maxHr && a.maxHr > (max || 0) ? a.maxHr : max;
+        }, null);
+      }
+
+      // Use the higher of the two
+      const detectedMax = Math.max(maxFromHealthKit || 0, maxFromActivities || 0);
+      if (detectedMax >= 120) { // Only use if it's a reasonable max HR
+        try {
+          await updateUserProfile(user.uid, { maxHeartRate: detectedMax });
+          setUserProfile(prev => ({ ...prev, maxHeartRate: detectedMax }));
+          console.log('Auto-detected max HR:', detectedMax);
+        } catch (e) {
+          console.error('Error auto-setting max HR:', e);
+        }
+      }
+    };
+
+    // Small delay to avoid running during initial load burst
+    const timer = setTimeout(detectMaxHR, 3000);
+    return () => clearTimeout(timer);
+  }, [user?.uid, userProfile?.maxHeartRate]);
+
   // Active workout tracking (for "Start Workout" flow)
   // Shape: { type, subtype, strengthType, focusArea, startTime: ISO string, icon, ... }
   const [activeWorkout, setActiveWorkout] = useState(null);
@@ -15856,6 +16133,54 @@ export default function DaySevenApp() {
       setUserProfile(prev => ({ ...prev, privacySettings }));
     } catch (error) {
       // console.error('Error updating privacy settings:', error);
+    }
+  };
+
+  // Handle max heart rate update
+  const handleUpdateMaxHeartRate = async (maxHeartRate) => {
+    if (!user) return;
+    try {
+      await updateUserProfile(user.uid, { maxHeartRate });
+      setUserProfile(prev => ({ ...prev, maxHeartRate }));
+    } catch (error) {
+      console.error('Error updating max heart rate:', error);
+    }
+  };
+
+  // Handle Smart Save explanation modal close
+  const handleSmartSaveExplainClose = async () => {
+    setShowSmartSaveExplainModal(false);
+    if (user) {
+      try {
+        await updateUserProfile(user.uid, { smartSaveExplained: true });
+        setUserProfile(prev => ({ ...prev, smartSaveExplained: true }));
+      } catch (error) {
+        console.error('Error marking smart save explained:', error);
+      }
+    }
+  };
+
+  // Handle Smart Save disable from explanation modal
+  const handleSmartSaveDisable = async () => {
+    setShowSmartSaveExplainModal(false);
+    if (user) {
+      try {
+        const newPrivacy = {
+          ...userProfile?.privacySettings,
+          smartSaveWalks: false
+        };
+        await updateUserProfile(user.uid, {
+          privacySettings: newPrivacy,
+          smartSaveExplained: true
+        });
+        setUserProfile(prev => ({
+          ...prev,
+          privacySettings: newPrivacy,
+          smartSaveExplained: true
+        }));
+      } catch (error) {
+        console.error('Error disabling smart save:', error);
+      }
     }
   };
 
@@ -16255,22 +16580,25 @@ export default function DaySevenApp() {
   }, [user?.uid]);
 
   // Sync HealthKit data function
-  const syncHealthKit = useCallback(async (existingActivities = []) => {
+  const syncHealthKit = useCallback(async () => {
     if (!Capacitor.isNativePlatform()) return;
 
     try {
       const result = await syncHealthKitData();
       if (result.success) {
+        // Use ref to get current activities without needing as dependency
+        const currentActivities = activitiesRef.current || [];
+
         // Find workouts that aren't already in activities (by healthKitUUID) and not dismissed
         const existingUUIDs = new Set(
-          existingActivities
+          currentActivities
             .filter(a => a.healthKitUUID)
             .map(a => a.healthKitUUID)
         );
 
         // Also filter out linked workouts (where activity has linkedHealthKitUUID)
         const linkedUUIDs = new Set(
-          existingActivities
+          currentActivities
             .filter(a => a.linkedHealthKitUUID)
             .map(a => a.linkedHealthKitUUID)
         );
@@ -16283,11 +16611,78 @@ export default function DaySevenApp() {
                !linkedUUIDs.has(w.healthKitUUID)
         );
 
+        // --- Smart Save: auto-save qualifying walks ---
+        const profile = userProfileRef.current;
+        const maxHR = profile?.maxHeartRate;
+        const smartSaveEnabled = profile?.privacySettings?.smartSaveWalks !== false;
+        const smartSaveExplained = profile?.smartSaveExplained;
+
+        const workoutsForNotification = [];
+        const walksToSmartSave = [];
+
+        for (const workout of newWorkouts) {
+          if (shouldSmartSaveWalk(workout, maxHR, smartSaveEnabled)) {
+            walksToSmartSave.push(workout);
+          } else {
+            workoutsForNotification.push(workout);
+          }
+        }
+
+        // Auto-save qualifying walks inline (no separate function to avoid hoisting issues)
+        if (walksToSmartSave.length > 0) {
+          const smartSavedActivities = walksToSmartSave.map((walk, i) => ({
+            ...walk,
+            id: Date.now() + i,
+            time: walk.time || new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+            smartSaved: true,
+            source: 'healthkit',
+          }));
+
+          setActivities(prev => {
+            const updated = [...smartSavedActivities, ...prev];
+            // Fire-and-forget Firebase save using uid from ref
+            const uid = userRef.current?.uid;
+            if (uid) {
+              saveUserActivities(uid, updated).catch(err =>
+                console.error('Error saving smart-saved walks:', err)
+              );
+            }
+            return updated;
+          });
+
+          setCalendarData(prev => {
+            const updated = { ...prev };
+            for (const walk of walksToSmartSave) {
+              const dateKey = walk.date;
+              if (!updated[dateKey]) updated[dateKey] = [];
+              updated[dateKey] = [...updated[dateKey], {
+                type: walk.type,
+                subtype: walk.subtype,
+                duration: walk.duration,
+                distance: walk.distance,
+                calories: walk.calories,
+                avgHr: walk.avgHr,
+                maxHr: walk.maxHr
+              }];
+            }
+            return updated;
+          });
+
+          for (const a of smartSavedActivities) {
+            console.log('Smart-saved walk:', a.id, a.duration, 'min, avgHr:', a.avgHr);
+          }
+
+          // Show explanation modal on first smart-save
+          if (!smartSaveExplained) {
+            setShowSmartSaveExplainModal(true);
+          }
+        }
+
         const hasHealthData = (result.todaySteps > 0 || result.todayCalories > 0);
         setHealthKitData(prev => ({
           todaySteps: result.todaySteps || 0,
           todayCalories: result.todayCalories || 0,
-          pendingWorkouts: newWorkouts,
+          pendingWorkouts: workoutsForNotification,
           lastSynced: new Date().toISOString(),
           isConnected: prev.isConnected || hasHealthData
         }));
@@ -16302,7 +16697,7 @@ export default function DaySevenApp() {
     if (!user?.uid || !Capacitor.isNativePlatform()) return;
 
     // Initial sync
-    syncHealthKit(activities);
+    syncHealthKit();
 
     // Function to refresh steps and calories from HealthKit
     const refreshHealthKitData = async () => {
@@ -16331,14 +16726,14 @@ export default function DaySevenApp() {
       if (document.visibilityState === 'visible') {
         refreshHealthKitData();
         // Re-sync workouts when returning to foreground
-        // Fetch fresh activities to compare against
         if (user?.uid) {
           try {
-            const currentActivities = await getUserActivities(user.uid);
-            syncHealthKit(currentActivities);
+            // Fetch fresh activities to update the ref before syncing
+            const freshActivities = await getUserActivities(user.uid);
+            activitiesRef.current = freshActivities;
+            syncHealthKit();
           } catch (e) {
-            // Fall back to syncing without activities comparison
-            syncHealthKit([]);
+            syncHealthKit();
           }
         }
       }
@@ -16437,6 +16832,7 @@ export default function DaySevenApp() {
 
   // Real state management
   const [activities, setActivities] = useState(initialActivities);
+  useEffect(() => { activitiesRef.current = activities; }, [activities]);
   const [calendarData, setCalendarData] = useState(initialCalendarData);
   const [healthHistory, setHealthHistory] = useState([]);
   const [weeklyProgress, setWeeklyProgress] = useState(initialWeeklyProgress);
@@ -17810,6 +18206,7 @@ export default function DaySevenApp() {
                     setShowTour(true);
                   }}
                   onUpdatePrivacy={handleUpdatePrivacy}
+                  onUpdateMaxHeartRate={handleUpdateMaxHeartRate}
                   onChangePassword={() => setShowChangePassword(true)}
                   onResetPassword={handleResetPassword}
                   onDeleteAccount={() => setShowDeleteAccount(true)}
@@ -18109,6 +18506,13 @@ export default function DaySevenApp() {
           // User will be automatically signed out when auth account is deleted
         }}
       />
+
+      {showSmartSaveExplainModal && (
+        <SmartSaveExplainModal
+          onClose={handleSmartSaveExplainClose}
+          onDisable={handleSmartSaveDisable}
+        />
+      )}
 
       <ShareModal
         isOpen={showShare}

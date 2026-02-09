@@ -225,6 +225,28 @@ export async function queryHeartRateForTimeRange(startDate, endDate) {
   }
 }
 
+// Query the highest recorded heart rate from HealthKit over a time range
+// Used to auto-detect the user's max heart rate for Smart Save zones
+export async function queryMaxHeartRateFromHealthKit(days = 90) {
+  if (!Capacitor.isNativePlatform()) return null;
+
+  try {
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    const result = await HealthKitWriter.queryHeartRate({
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString()
+    });
+
+    return result.hasData ? result.maxHr : null;
+  } catch (error) {
+    console.error('[Max HR Query] Error:', error);
+    return null;
+  }
+}
+
 // Fetch workouts from HealthKit
 export async function fetchHealthKitWorkouts(days = 7) {
   if (!Capacitor.isNativePlatform()) return [];

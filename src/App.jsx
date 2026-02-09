@@ -13,6 +13,8 @@ import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
 import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit } from './services/healthService';
+import NotificationSettings from './NotificationSettings';
+import { initializePushNotifications, handleNotificationNavigation } from './services/notificationService';
 
 // Helper function for haptic feedback that works on iOS
 const triggerHaptic = async (style = ImpactStyle.Medium) => {
@@ -14492,7 +14494,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
 };
 
 // Profile Tab Component
-const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onUpdateMaxHeartRate, onChangePassword, onResetPassword, onDeleteAccount }) => {
+const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onUpdateMaxHeartRate, onChangePassword, onResetPassword, onDeleteAccount, onNotificationSettings }) => {
   const [isEmailPasswordUser, setIsEmailPasswordUser] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
@@ -15308,6 +15310,36 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
           </div>
         </div>
 
+        {/* Notifications Section - Only on native */}
+        {Capacitor.isNativePlatform() && (
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold text-gray-400 mb-3">NOTIFICATIONS</h3>
+            <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+              <button
+                onClick={onNotificationSettings}
+                className="w-full flex items-center justify-between py-2 transition-all duration-150"
+                onTouchStart={(e) => e.currentTarget.style.opacity = '0.7'}
+                onTouchEnd={(e) => e.currentTarget.style.opacity = '1'}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
+                    <svg className="w-4 h-4" fill="none" stroke="#00D1FF" viewBox="0 0 24 24" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0" />
+                    </svg>
+                  </div>
+                  <div className="text-left">
+                    <span className="text-sm text-white block">Notification Preferences</span>
+                    <p className="text-[11px] text-gray-500">Manage what notifications you receive</p>
+                  </div>
+                </div>
+                <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Health Section */}
         <div className="mb-6">
           <h3 className="text-sm font-semibold text-gray-400 mb-3">HEALTH</h3>
@@ -15859,6 +15891,7 @@ export default function DaySevenApp() {
   const [shareWeekRange, setShareWeekRange] = useState(null); // { startDate, endDate } for week-specific sharing
   const [shareMonthRange, setShareMonthRange] = useState(null); // { startDate, endDate } for month-specific sharing
   const [showFriends, setShowFriends] = useState(false);
+  const [showNotificationSettings, setShowNotificationSettings] = useState(false);
   const [friends, setFriends] = useState([]);
   const [showCelebration, setShowCelebration] = useState(false);
   const [celebrationMessage, setCelebrationMessage] = useState('');
@@ -16720,6 +16753,27 @@ export default function DaySevenApp() {
 
           // Mark records as loaded (even if null - means user has no records yet)
           setRecordsLoaded(true);
+
+          // Initialize push notifications on native platforms
+          if (Capacitor.isNativePlatform()) {
+            try {
+              await initializePushNotifications(
+                user.uid,
+                (notification) => {
+                  // Handle foreground notification - could show in-app toast
+                  console.log('Push notification received in foreground:', notification);
+                },
+                (notification, actionId) => {
+                  // Handle notification tap - navigate to appropriate screen
+                  handleNotificationNavigation(notification, (tab) => {
+                    setActiveTab(tab);
+                  });
+                }
+              );
+            } catch (notifError) {
+              console.log('Push notification setup error:', notifError);
+            }
+          }
         } catch (error) {
           // console.error('Error loading user data:', error);
           // Still mark as loaded on error so we don't block record checking forever
@@ -18450,6 +18504,7 @@ export default function DaySevenApp() {
                   onChangePassword={() => setShowChangePassword(true)}
                   onResetPassword={handleResetPassword}
                   onDeleteAccount={() => setShowDeleteAccount(true)}
+                  onNotificationSettings={() => setShowNotificationSettings(true)}
                 />
               )}
             </>
@@ -19246,6 +19301,14 @@ export default function DaySevenApp() {
               setPendingFriendRequests(requests.length);
             }
           }}
+        />
+      )}
+
+      {/* Notification Settings Modal */}
+      {showNotificationSettings && (
+        <NotificationSettings
+          userId={user?.uid}
+          onClose={() => setShowNotificationSettings(false)}
         />
       )}
 

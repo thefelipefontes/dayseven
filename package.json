@@ -14,6 +14,7 @@
     "@capacitor-community/media": "^9.0.1",
     "@capacitor-firebase/authentication": "^8.0.1",
     "@capacitor-firebase/firestore": "^8.0.1",
+    "@capacitor-firebase/messaging": "^8.0.1",
     "@capacitor-firebase/storage": "^8.0.1",
     "@capacitor/android": "^8.0.2",
     "@capacitor/camera": "^8.0.0",

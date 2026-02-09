@@ -370,8 +370,8 @@ exports.onActivityCreated = onDocumentCreated(
 // ==========================================
 
 /**
- * Daily streak reminder - runs every day at 8 PM
- * Reminds users who haven't logged activity today but have an active streak
+ * Streak reminder - runs every day at 8 PM
+ * Only reminds users who haven't logged activity in 48+ hours
  */
 exports.sendStreakReminders = onSchedule(
   {
@@ -381,7 +381,10 @@ exports.sendStreakReminders = onSchedule(
   async () => {
     console.log('Running streak reminder job');
 
-    const today = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const twoDaysAgo = new Date(now);
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+    const twoDaysAgoStr = twoDaysAgo.toISOString().split('T')[0];
 
     // Get users with active streaks who want reminders
     const usersSnapshot = await db.collection('users')
@@ -392,22 +395,22 @@ exports.sendStreakReminders = onSchedule(
       const userId = userDoc.id;
       const userData = userDoc.data();
 
-      // Check if they already logged today
-      const activitiesSnapshot = await db.collection('activities')
+      // Check if they've logged any activity in the last 48 hours
+      const recentActivities = await db.collection('activities')
         .where('userId', '==', userId)
-        .where('date', '==', today)
+        .where('date', '>=', twoDaysAgoStr)
         .limit(1)
         .get();
 
-      if (!activitiesSnapshot.empty) continue; // Already logged today
+      if (!recentActivities.empty) continue; // Has recent activity, skip
 
       const prefs = await getUserPreferences(userId);
       if (!prefs.streakReminders) continue;
 
       await sendNotificationToUser(
         userId,
-        'Protect Your Streak!',
-        `You have a ${userData.streak}-day streak. Log activity today to keep it going!`,
+        'Missing You! 👋',
+        `It's been a couple days. Your ${userData.streak}-week streak is waiting for you!`,
         {
           type: NotificationType.STREAK_REMINDER,
           streak: userData.streak.toString(),
@@ -469,8 +472,109 @@ exports.sendDailyReminders = onSchedule(
 );
 
 /**
+ * End of week goal reminder - runs Thursday at 6 PM
+ * Reminds users what they need to hit their weekly goals
+ */
+exports.sendGoalReminder = onSchedule(
+  {
+    schedule: '0 18 * * 4', // 6 PM every Thursday
+    timeZone: 'America/New_York',
+  },
+  async () => {
+    console.log('Sending end-of-week goal reminders');
+
+    const cardioTypes = ['Running', 'Cycle', 'Sports', 'Walking', 'Hiking', 'Swimming', 'Rowing', 'Stair Climbing', 'Elliptical', 'HIIT'];
+    const recoveryTypes = ['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'];
+
+    // Get start of current week (Sunday)
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - dayOfWeek);
+    weekStart.setHours(0, 0, 0, 0);
+    const weekStartStr = weekStart.toISOString().split('T')[0];
+
+    const usersSnapshot = await db.collection('users').get();
+
+    for (const userDoc of usersSnapshot.docs) {
+      const userId = userDoc.id;
+      const userData = userDoc.data();
+
+      const prefs = await getUserPreferences(userId);
+      if (!prefs.goalReminders) continue;
+
+      // Get user's goals
+      const goals = userData.goals || { liftsPerWeek: 3, cardioPerWeek: 2, recoveryPerWeek: 2 };
+
+      // Count activities this week by category
+      const activitiesSnapshot = await db.collection('activities')
+        .where('userId', '==', userId)
+        .where('date', '>=', weekStartStr)
+        .get();
+
+      let strength = 0;
+      let cardio = 0;
+      let recovery = 0;
+
+      activitiesSnapshot.docs.forEach(doc => {
+        const activity = doc.data();
+        if (activity.type === 'Strength Training') {
+          strength++;
+        } else if (cardioTypes.includes(activity.type)) {
+          cardio++;
+        } else if (recoveryTypes.includes(activity.type)) {
+          recovery++;
+        }
+      });
+
+      // Calculate remaining
+      const strengthRemaining = Math.max(0, goals.liftsPerWeek - strength);
+      const cardioRemaining = Math.max(0, goals.cardioPerWeek - cardio);
+      const recoveryRemaining = Math.max(0, goals.recoveryPerWeek - recovery);
+
+      // Check if all goals are met
+      if (strengthRemaining === 0 && cardioRemaining === 0 && recoveryRemaining === 0) {
+        // Already hit all goals!
+        await sendNotificationToUser(
+          userId,
+          'Goals Complete! 🎯',
+          'You\'ve hit all your weekly goals with days to spare. Amazing!',
+          {
+            type: NotificationType.GOAL_REMINDER,
+            allGoalsMet: 'true',
+          }
+        );
+        continue;
+      }
+
+      // Build the remaining message
+      const remaining = [];
+      if (strengthRemaining > 0) remaining.push(`${strengthRemaining} strength`);
+      if (cardioRemaining > 0) remaining.push(`${cardioRemaining} cardio`);
+      if (recoveryRemaining > 0) remaining.push(`${recoveryRemaining} recovery`);
+
+      const daysLeft = 7 - dayOfWeek; // Days until end of week (Saturday)
+      const remainingStr = remaining.join(', ');
+
+      await sendNotificationToUser(
+        userId,
+        `${daysLeft} Days Left This Week`,
+        `You need ${remainingStr} to hit your goals. You've got this! 💪`,
+        {
+          type: NotificationType.GOAL_REMINDER,
+          strengthRemaining: strengthRemaining.toString(),
+          cardioRemaining: cardioRemaining.toString(),
+          recoveryRemaining: recoveryRemaining.toString(),
+          daysLeft: daysLeft.toString(),
+        }
+      );
+    }
+  }
+);
+
+/**
  * Weekly summary - runs every Sunday at 10 AM
- * Includes social sharing prompt for users who had a great week
+ * Shows "You crushed your week!" if all category goals were met
  */
 exports.sendWeeklySummary = onSchedule(
   {
@@ -479,6 +583,9 @@ exports.sendWeeklySummary = onSchedule(
   },
   async () => {
     console.log('Sending weekly summaries');
+
+    const cardioTypes = ['Running', 'Cycle', 'Sports', 'Walking', 'Hiking', 'Swimming', 'Rowing', 'Stair Climbing', 'Elliptical', 'HIIT'];
+    const recoveryTypes = ['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'];
 
     const usersSnapshot = await db.collection('users').get();
     const oneWeekAgo = new Date();
@@ -492,23 +599,42 @@ exports.sendWeeklySummary = onSchedule(
       const prefs = await getUserPreferences(userId);
       if (!prefs.weeklySummary) continue;
 
-      // Count activities this week
+      // Get user's goals
+      const goals = userData.goals || { liftsPerWeek: 3, cardioPerWeek: 2, recoveryPerWeek: 2 };
+
+      // Count activities this week by category
       const activitiesSnapshot = await db.collection('activities')
         .where('userId', '==', userId)
         .where('date', '>=', weekAgoStr)
         .get();
 
-      const count = activitiesSnapshot.size;
-      const currentStreak = userData.streak || 0;
+      let strength = 0;
+      let cardio = 0;
+      let recovery = 0;
+      let totalCalories = 0;
 
-      // Calculate total duration this week
-      let totalMinutes = 0;
       activitiesSnapshot.docs.forEach(doc => {
         const activity = doc.data();
-        totalMinutes += Math.round((activity.duration || 0) / 60);
+        totalCalories += activity.calories || 0;
+
+        if (activity.type === 'Strength Training') {
+          strength++;
+        } else if (cardioTypes.includes(activity.type)) {
+          cardio++;
+        } else if (recoveryTypes.includes(activity.type)) {
+          recovery++;
+        }
       });
 
-      if (count === 0) {
+      const workouts = strength + cardio; // Combined strength and cardio
+      const totalCount = activitiesSnapshot.size;
+
+      // Check if all goals were met
+      const allGoalsMet = strength >= goals.liftsPerWeek &&
+                          cardio >= goals.cardioPerWeek &&
+                          recovery >= goals.recoveryPerWeek;
+
+      if (totalCount === 0) {
         await sendNotificationToUser(
           userId,
           'Weekly Check-in',
@@ -516,34 +642,40 @@ exports.sendWeeklySummary = onSchedule(
           {
             type: NotificationType.WEEKLY_SUMMARY,
             activitiesCount: '0',
-            totalMinutes: '0',
+            totalCalories: '0',
             showSharePrompt: 'false',
           }
         );
-      } else if (count >= 5 || currentStreak >= 7) {
-        // Great week - prompt to share with friends!
+      } else if (allGoalsMet) {
+        // All goals met - celebrate!
+        const caloriesStr = totalCalories >= 1000 ? `${(totalCalories / 1000).toFixed(1)}k` : totalCalories.toString();
         await sendNotificationToUser(
           userId,
-          'Amazing Week! Share with Friends?',
-          `${count} workouts, ${totalMinutes} minutes${currentStreak >= 7 ? `, ${currentStreak}-day streak` : ''}! Your friends would love to see this.`,
+          'You Crushed Your Week! 🔥',
+          `${workouts} workouts, ${recovery} recovery, ${caloriesStr} cal. Tap to share with friends!`,
           {
             type: NotificationType.WEEKLY_SUMMARY,
-            activitiesCount: count.toString(),
-            totalMinutes: totalMinutes.toString(),
-            streak: currentStreak.toString(),
+            workouts: workouts.toString(),
+            recovery: recovery.toString(),
+            totalCalories: totalCalories.toString(),
+            allGoalsMet: 'true',
             showSharePrompt: 'true',
           }
         );
       } else {
+        // Regular summary
+        const caloriesStr = totalCalories >= 1000 ? `${(totalCalories / 1000).toFixed(1)}k` : totalCalories.toString();
         await sendNotificationToUser(
           userId,
           'Your Week in Review',
-          `You crushed ${count} workout${count > 1 ? 's' : ''} (${totalMinutes} min) this week! Keep it up!`,
+          `${workouts} workouts, ${recovery} recovery, ${caloriesStr} cal. Tap to share with friends!`,
           {
             type: NotificationType.WEEKLY_SUMMARY,
-            activitiesCount: count.toString(),
-            totalMinutes: totalMinutes.toString(),
-            showSharePrompt: 'false',
+            workouts: workouts.toString(),
+            recovery: recovery.toString(),
+            totalCalories: totalCalories.toString(),
+            allGoalsMet: 'false',
+            showSharePrompt: 'true',
           }
         );
       }
@@ -643,16 +775,15 @@ exports.sendMonthlySummary = onSchedule(
             showSharePrompt: 'false',
           }
         );
-      } else if (lastMonthCount >= 15 || currentStreak >= 30) {
-        // Amazing month - definitely prompt to share!
+      } else {
         const hours = Math.floor(lastMonthMinutes / 60);
         const mins = lastMonthMinutes % 60;
         const timeStr = hours > 0 ? `${hours}h ${mins}m` : `${lastMonthMinutes}m`;
 
         await sendNotificationToUser(
           userId,
-          `Incredible ${monthName}! Share Your Progress?`,
-          `${lastMonthCount} workouts, ${timeStr} total${comparisonText}. Your dedication is inspiring!`,
+          `Your ${monthName} Recap 📊`,
+          `${lastMonthCount} workouts, ${timeStr} total${comparisonText}. Tap to share with friends!`,
           {
             type: NotificationType.MONTHLY_SUMMARY,
             month: monthName,
@@ -661,23 +792,6 @@ exports.sendMonthlySummary = onSchedule(
             streak: currentStreak.toString(),
             showSharePrompt: 'true',
             comparison: (lastMonthCount - prevMonthCount).toString(),
-          }
-        );
-      } else {
-        const hours = Math.floor(lastMonthMinutes / 60);
-        const mins = lastMonthMinutes % 60;
-        const timeStr = hours > 0 ? `${hours}h ${mins}m` : `${lastMonthMinutes}m`;
-
-        await sendNotificationToUser(
-          userId,
-          `Your ${monthName} Recap`,
-          `${lastMonthCount} workouts, ${timeStr} total${comparisonText}. Keep building momentum!`,
-          {
-            type: NotificationType.MONTHLY_SUMMARY,
-            month: monthName,
-            activitiesCount: lastMonthCount.toString(),
-            totalMinutes: lastMonthMinutes.toString(),
-            showSharePrompt: lastMonthCount >= 10 ? 'true' : 'false',
           }
         );
       }
@@ -739,7 +853,8 @@ exports.onPendingWorkoutCreated = onDocumentCreated(
 // ==========================================
 
 /**
- * Notify user when they hit a streak milestone
+ * Notify user when they hit a streak milestone (in weeks)
+ * Milestones: 5, 10, 25, 52 (1 year), 78 (1.5 years), 104 (2 years)
  */
 exports.onStreakMilestone = onDocumentUpdated(
   'users/{userId}',
@@ -751,8 +866,8 @@ exports.onStreakMilestone = onDocumentUpdated(
     const oldStreak = before.streak || 0;
     const newStreak = after.streak || 0;
 
-    // Check if they just hit a milestone (7, 14, 30, 60, 90, 100, 365 days)
-    const milestones = [7, 14, 30, 60, 90, 100, 200, 365];
+    // Check if they just hit a milestone (weeks)
+    const milestones = [5, 10, 25, 52, 78, 104];
     const hitMilestone = milestones.find(m => newStreak >= m && oldStreak < m);
 
     if (!hitMilestone) return;
@@ -761,19 +876,26 @@ exports.onStreakMilestone = onDocumentUpdated(
     if (!prefs.streakMilestones) return;
 
     const messages = {
-      7: 'One week strong! You\'re building a habit.',
-      14: 'Two weeks! You\'re unstoppable!',
-      30: 'A whole month! You\'re a machine!',
-      60: '60 days! This is who you are now.',
-      90: '90 days! You\'ve transformed.',
-      100: '100 days! Legendary status achieved!',
-      200: '200 days! You\'re an inspiration.',
-      365: 'ONE YEAR! You\'re officially elite!',
+      5: '5 weeks strong! You\'re building a habit. 💪',
+      10: '10 weeks! Double digits, you\'re unstoppable! 🔥',
+      25: '25 weeks! Half a year of consistency! 🏆',
+      52: 'ONE YEAR STREAK! 52 weeks of pure dedication! 👑',
+      78: '78 weeks! 1.5 years of crushing it! 🌟',
+      104: 'TWO YEAR STREAK! 104 weeks. You\'re a legend! 🎉',
+    };
+
+    const titles = {
+      5: '5-Week Streak! 💪',
+      10: '10-Week Streak! 🔥',
+      25: '25-Week Streak! 🏆',
+      52: '1 Year Streak! 👑',
+      78: '1.5 Year Streak! 🌟',
+      104: '2 Year Streak! 🎉',
     };
 
     await sendNotificationToUser(
       userId,
-      `${hitMilestone}-Day Streak!`,
+      titles[hitMilestone],
       messages[hitMilestone],
       {
         type: NotificationType.STREAK_MILESTONE,

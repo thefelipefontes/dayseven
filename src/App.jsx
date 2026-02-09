@@ -797,6 +797,8 @@ const ActivityIcon = ({ type, size = 20, sportEmoji, customEmoji }) => {
     'Pilates': '🤸',
     'Cycle': '🚴',
     'Sports': '🏀',
+    'Stair Climbing': '🪜',
+    'Elliptical': '🏃‍♂️',
     'Other': '🏊'
   };
 
@@ -5189,7 +5191,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
     (a.type === 'Other' && (a.customActivityCategory === 'strength' || a.countToward === 'strength'))
   ) || [];
   const cardioActivities = weekData?.activities?.filter(a =>
-    a.type === 'Running' || a.type === 'Cycle' || a.type === 'Sports' ||
+    a.type === 'Running' || a.type === 'Cycle' || a.type === 'Sports' || a.type === 'Stair Climbing' || a.type === 'Elliptical' ||
     (a.type === 'Walking' && a.countToward === 'cardio') ||
     (a.type === 'Other' && (a.customActivityCategory === 'cardio' || a.countToward === 'cardio'))
   ) || [];
@@ -6108,7 +6110,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
 
   const getActivityColor = (type) => {
     if (type === 'Strength Training') return '#00FF94';
-    if (type === 'Running' || type === 'Cycle' || type === 'Sports') return '#FF9500';
+    if (type === 'Running' || type === 'Cycle' || type === 'Sports' || type === 'Stair Climbing' || type === 'Elliptical') return '#FF9500';
     return '#00D1FF';
   };
 
@@ -6428,10 +6430,13 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
           )}
 
           {/* Source indicator */}
-          {activity.fromAppleHealth && (
+          {(activity.fromAppleHealth || activity.healthKitUUID || activity.linkedHealthKitUUID || activity.source === 'healthkit') && (
             <div className="flex items-center gap-2 text-xs text-gray-500 mb-4">
               <span>📱</span>
               <span>Synced from Apple Health</span>
+              {activity.sourceDevice && (
+                <span className="text-cyan-400">• {activity.sourceDevice}</span>
+              )}
             </div>
           )}
 
@@ -7625,6 +7630,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       { name: 'Golf', icon: '⛳' },
       { name: 'Other', icon: '🏆' }
     ], category: 'cardio' },
+    { name: 'Stair Climbing', icon: '🪜', subtypes: ['StairMaster', 'Stair Stepper', 'Outdoor Stairs'], category: 'cardio' },
+    { name: 'Elliptical', icon: '🏃‍♂️', subtypes: [], category: 'cardio' },
     { name: 'Yoga', icon: '🧘', subtypes: ['Vinyasa', 'Power', 'Hot', 'Yin', 'Restorative'], category: 'hybrid' },
     { name: 'Pilates', icon: '🤸', subtypes: ['Mat', 'Reformer', 'Tower', 'Chair'], category: 'hybrid' },
     { name: 'Walking', icon: '🚶', subtypes: ['Casual', 'Power Walk', 'Incline', 'Treadmill'], category: 'hybrid' },
@@ -9190,7 +9197,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                                 </div>
                                 <div className="text-xs text-gray-500">
                                   {linkedWorkout.time} • {linkedWorkout.duration} min
-                                  {linkedWorkout.sourceDevice && ` • ${linkedWorkout.sourceDevice}`}
+                                  {linkedWorkout.sourceDevice && <span className="text-cyan-400"> • {linkedWorkout.sourceDevice}</span>}
                                 </div>
                               </div>
                             </div>
@@ -9248,7 +9255,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                                     </div>
                                     <div className="text-xs text-gray-500">
                                       {workout.time} • {workout.duration} min
-                                      {workout.sourceDevice && ` • ${workout.sourceDevice}`}
+                                      {workout.sourceDevice && <span className="text-cyan-400"> • {workout.sourceDevice}</span>}
                                     </div>
                                   </div>
                                 </div>
@@ -9291,7 +9298,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                                   </div>
                                   <div className="text-xs text-gray-500">
                                     {linkedWorkout.time} • {linkedWorkout.duration} min
-                                    {linkedWorkout.sourceDevice && ` • ${linkedWorkout.sourceDevice}`}
+                                    {linkedWorkout.sourceDevice && <span className="text-cyan-400"> • {linkedWorkout.sourceDevice}</span>}
                                   </div>
                                 </div>
                               </div>
@@ -9581,7 +9588,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
               </div>
               <div className="text-xs text-gray-400 mt-0.5">
                 {formatWorkoutDate(workout.date)}{workout.date && ' • '}{workout.time} • {workout.duration} min
-                {workout.sourceDevice && ` • ${workout.sourceDevice}`}
+                {workout.sourceDevice && <span className="text-cyan-400"> • {workout.sourceDevice}</span>}
               </div>
               {(workout.calories || workout.distance || workout.avgHr) && (
                 <div className="flex gap-3 mt-1.5 text-xs text-gray-500">
@@ -9700,7 +9707,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     const getCategory = (activity) => {
       if (activity.countToward) return activity.countToward;
       if (activity.type === 'Strength Training') return 'lifting';
-      if (['Running', 'Cycle', 'Sports'].includes(activity.type)) return 'cardio';
+      if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(activity.type)) return 'cardio';
       if (['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
       return 'other';
     };
@@ -10755,7 +10762,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                     <div className="text-xs text-gray-400 flex items-center gap-2">
                       <span>{formatFriendlyDate(latestActivities[0].date)}{latestActivities[0].time ? ` at ${latestActivities[0].time}` : ''}{latestActivities[0].duration ? ` (${latestActivities[0].duration} min)` : ''}</span>
                       {(latestActivities[0].healthKitUUID || latestActivities[0].linkedHealthKitUUID || latestActivities[0].source === 'healthkit' || latestActivities[0].fromAppleHealth) && (
-                        <span className="flex items-center gap-1 text-gray-400">
+                        <span className="flex items-center gap-1 text-cyan-400">
                           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
                             <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
@@ -10879,7 +10886,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                         <div className="text-[10px] text-gray-500 flex items-center gap-2">
                           <span>{formatFriendlyDate(activity.date)} at {activity.time}{activity.duration ? ` (${activity.duration} min)` : ''}</span>
                           {(activity.healthKitUUID || activity.linkedHealthKitUUID || activity.source === 'healthkit' || activity.fromAppleHealth) && (
-                            <span className="flex items-center gap-1 text-gray-400">
+                            <span className="flex items-center gap-1 text-cyan-400">
                               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
                                 <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
@@ -11402,7 +11409,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
           (a.type === 'Other' && (a.customActivityCategory === 'strength' || a.countToward === 'strength'))
         );
         const cardioActivities = fullDayActivities.filter(a =>
-          a.type === 'Running' || a.type === 'Cycle' || a.type === 'Sports' ||
+          a.type === 'Running' || a.type === 'Cycle' || a.type === 'Sports' || a.type === 'Stair Climbing' || a.type === 'Elliptical' ||
           (a.type === 'Walking' && a.countToward === 'cardio') ||
           (a.type === 'Other' && (a.customActivityCategory === 'cardio' || a.countToward === 'cardio'))
         );
@@ -11834,7 +11841,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
       return activity.customActivityCategory;
     }
     if (activity.type === 'Strength Training') return 'lifting';
-    if (['Running', 'Cycle', 'Sports'].includes(activity.type)) return 'cardio';
+    if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(activity.type)) return 'cardio';
     if (['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
     return 'other';
   };
@@ -12052,10 +12059,19 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
       return breakdown;
     };
     
+    // Distance breakdowns
+    const milesRan = filteredActivities.filter(a => a.type === 'Running').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+    const milesBiked = filteredActivities.filter(a => a.type === 'Cycle').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+    const milesWalked = filteredActivities.filter(a => a.type === 'Walking' || a.type === 'Hiking').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+    const totalMiles = milesRan + milesBiked + milesWalked;
+
     return {
       workouts: lifts.length + cardioActs.length,
       recovery: recoveryActs.length,
-      miles: cardioActs.filter(a => a.type === 'Running' || a.type === 'Cycle').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0),
+      miles: totalMiles,
+      milesRan,
+      milesBiked,
+      milesWalked,
       lifting: calcBreakdown(lifts),
       cardio: calcBreakdown(cardioActs),
       recoveryBreakdown: calcBreakdown(recoveryActs)
@@ -12505,7 +12521,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
           (a.type === 'Other' && (a.customActivityCategory === 'strength' || a.countToward === 'strength'))
         );
         const cardioActivities = fullDayActivities.filter(a =>
-          a.type === 'Running' || a.type === 'Cycle' || a.type === 'Sports' ||
+          a.type === 'Running' || a.type === 'Cycle' || a.type === 'Sports' || a.type === 'Stair Climbing' || a.type === 'Elliptical' ||
           (a.type === 'Walking' && a.countToward === 'cardio') ||
           (a.type === 'Other' && (a.customActivityCategory === 'cardio' || a.countToward === 'cardio'))
         );
@@ -12922,34 +12938,94 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
           {statsSubView === 'overview' && (
             <>
 
-              {/* Main Stats Grid */}
-              <div className="grid grid-cols-2 gap-3 mb-4">
-                <div className="p-4 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(0, 255, 148, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
-                  <div className="text-4xl font-black" style={{ color: '#00FF94' }}>{Object.values(totalsData.lifting || {}).reduce((a, b) => a + b, 0)}</div>
-                  <div className="text-sm text-gray-400 flex items-center gap-1.5 mt-1">
+              {/* Main Stats Row - Strength / Cardio / Recovery */}
+              <div className="grid grid-cols-3 gap-2.5 mb-3">
+                <div className="p-3.5 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(0, 255, 148, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
+                  <div className="text-3xl font-black" style={{ color: '#00FF94' }}>{Object.values(totalsData.lifting || {}).reduce((a, b) => a + b, 0)}</div>
+                  <div className="text-xs text-gray-400 flex items-center gap-1 mt-1">
                     <span>🏋️</span>
                     <span>Strength</span>
                   </div>
                 </div>
-                <div className="p-4 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(255, 149, 0, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
-                  <div className="text-4xl font-black" style={{ color: '#FF9500' }}>{Object.values(totalsData.cardio || {}).reduce((a, b) => a + b, 0)}</div>
-                  <div className="text-sm text-gray-400 flex items-center gap-1.5 mt-1">
+                <div className="p-3.5 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(255, 149, 0, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
+                  <div className="text-3xl font-black" style={{ color: '#FF9500' }}>{Object.values(totalsData.cardio || {}).reduce((a, b) => a + b, 0)}</div>
+                  <div className="text-xs text-gray-400 flex items-center gap-1 mt-1">
                     <span>🏃</span>
                     <span>Cardio</span>
                   </div>
                 </div>
-                <div className="p-4 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(0, 209, 255, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
-                  <div className="text-4xl font-black" style={{ color: '#00D1FF' }}>{totalsData.recovery}</div>
-                  <div className="text-sm text-gray-400 flex items-center gap-1.5 mt-1">
+                <div className="p-3.5 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(0, 209, 255, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
+                  <div className="text-3xl font-black" style={{ color: '#00D1FF' }}>{totalsData.recovery}</div>
+                  <div className="text-xs text-gray-400 flex items-center gap-1 mt-1">
                     <span>🧊</span>
                     <span>Recovery</span>
                   </div>
                 </div>
-                <div className="p-4 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(255, 87, 87, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
-                  <div className="text-4xl font-black" style={{ color: '#FF5757' }}>{totalsData.miles.toFixed(1)}</div>
-                  <div className="text-sm text-gray-400 flex items-center gap-1.5 mt-1">
+              </div>
+
+              {/* Distance & Steps Row */}
+              <div className="grid grid-cols-2 gap-2.5 mb-4">
+                {/* Total Distance with breakdown */}
+                <div className="p-3.5 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(255, 87, 87, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
+                  <div className="text-2xl font-black" style={{ color: '#FF5757' }}>{totalsData.miles.toFixed(1)}</div>
+                  <div className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
                     <span>📍</span>
-                    <span>Miles Run</span>
+                    <span>Total Miles</span>
+                  </div>
+                  {totalsData.miles > 0 && (
+                    <div className="mt-2 pt-2 space-y-1" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                      {totalsData.milesRan > 0 && (
+                        <div className="flex items-center justify-between text-[10px]">
+                          <span className="text-gray-500">🏃 Ran</span>
+                          <span className="text-gray-400 font-medium">{totalsData.milesRan.toFixed(1)} mi</span>
+                        </div>
+                      )}
+                      {totalsData.milesBiked > 0 && (
+                        <div className="flex items-center justify-between text-[10px]">
+                          <span className="text-gray-500">🚴 Biked</span>
+                          <span className="text-gray-400 font-medium">{totalsData.milesBiked.toFixed(1)} mi</span>
+                        </div>
+                      )}
+                      {totalsData.milesWalked > 0 && (
+                        <div className="flex items-center justify-between text-[10px]">
+                          <span className="text-gray-500">🚶 Walked</span>
+                          <span className="text-gray-400 font-medium">{totalsData.milesWalked.toFixed(1)} mi</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {/* Steps */}
+                <div className="p-3.5 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(168, 130, 255, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
+                  <div className="text-2xl font-black" style={{ color: '#A882FF' }}>
+                    {(() => {
+                      // Sum steps from healthHistory for the selected period
+                      const today = new Date();
+                      const thisMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+                      const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+                      const lastMonthStr = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}`;
+                      const currentYearStr = String(getCurrentYear());
+
+                      let filteredHistory = healthHistory || [];
+                      if (totalsView === 'this-month') {
+                        filteredHistory = filteredHistory.filter(h => h.date?.startsWith(thisMonthStr));
+                      } else if (totalsView === 'last-month') {
+                        filteredHistory = filteredHistory.filter(h => h.date?.startsWith(lastMonthStr));
+                      } else if (totalsView.match(/^\d{4}-\d{2}$/)) {
+                        filteredHistory = filteredHistory.filter(h => h.date?.startsWith(totalsView));
+                      } else if (totalsView === currentYearStr) {
+                        filteredHistory = filteredHistory.filter(h => h.date?.startsWith(currentYearStr));
+                      }
+
+                      const totalSteps = filteredHistory.reduce((sum, h) => sum + (h.steps || 0), 0);
+                      if (totalSteps >= 1000000) return `${(totalSteps / 1000000).toFixed(1)}M`;
+                      if (totalSteps >= 1000) return `${(totalSteps / 1000).toFixed(1)}K`;
+                      return totalSteps.toLocaleString();
+                    })()}
+                  </div>
+                  <div className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
+                    <span>👟</span>
+                    <span>Steps</span>
                   </div>
                 </div>
               </div>
@@ -14150,7 +14226,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
           });
 
           const lifts = weekActivities.filter(a => a.type === 'Strength Training');
-          const cardioArr = weekActivities.filter(a => ['Running', 'Cycle', 'Sports'].includes(a.type));
+          const cardioArr = weekActivities.filter(a => ['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(a.type));
           const recoveryArr = weekActivities.filter(a => ['Cold Plunge', 'Sauna', 'Yoga'].includes(a.type));
           const miles = weekActivities.filter(a => a.type === 'Running' || a.type === 'Cycle' || a.type === 'Walking').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
 
@@ -16227,7 +16303,7 @@ export default function DaySevenApp() {
         (!activity.countToward || activity.countToward === 'recovery');
       const isRecovery = recoveryTypes.includes(activity.type) || yogaPilatesAsRecovery;
       const isStrength = activity.type === 'Strength Training' || activity.countToward === 'strength';
-      const isCardio = ['Running', 'Cycle', 'Sports'].includes(activity.type) || activity.countToward === 'cardio';
+      const isCardio = ['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(activity.type) || activity.countToward === 'cardio';
 
       // Highest calories (all activities)
       if (activity.calories && activity.calories > (newRecords.highestCalories.value || 0)) {
@@ -17119,7 +17195,7 @@ export default function DaySevenApp() {
     }
     // Default categorization
     if (activity.type === 'Strength Training') return 'lifting';
-    if (['Running', 'Cycle', 'Sports'].includes(activity.type)) return 'cardio';
+    if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(activity.type)) return 'cardio';
     if (['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
     return 'other';
   };
@@ -17355,7 +17431,7 @@ export default function DaySevenApp() {
       const yogaPilatesAsRecovery = ['Yoga', 'Pilates'].includes(activity.type) && (!activity.countToward || activity.countToward === 'recovery');
       const isRecovery = recoveryTypes.includes(activity.type) || yogaPilatesAsRecovery;
       const isStrength = activity.type === 'Strength Training' || activity.countToward === 'strength';
-      const isCardio = ['Running', 'Cycle', 'Sports'].includes(activity.type) || activity.countToward === 'cardio';
+      const isCardio = ['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(activity.type) || activity.countToward === 'cardio';
 
       // Helper to get current record value (handles both old number format and new object format)
       // Check updatedRecords first in case we updated it earlier in this function
@@ -17735,7 +17811,7 @@ export default function DaySevenApp() {
           (!activity.countToward || activity.countToward === 'recovery');
         const isRecovery = recoveryTypes.includes(activity.type) || yogaPilatesAsRecovery;
         const isStrength = activity.type === 'Strength Training' || activity.countToward === 'strength';
-        const isCardio = ['Running', 'Cycle', 'Sports'].includes(activity.type) || activity.countToward === 'cardio';
+        const isCardio = ['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(activity.type) || activity.countToward === 'cardio';
 
         // Highest calories (all activities)
         if (activity.calories && activity.calories > (newRecords.highestCalories.value || 0)) {

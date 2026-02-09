@@ -8369,6 +8369,9 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                         } else if (type.name === 'Cold Plunge') {
                           setDurationHours(0);
                           setDurationMinutes(5);
+                        } else if (type.name === 'Stair Climbing' || type.name === 'Elliptical') {
+                          setDurationHours(0);
+                          setDurationMinutes(20);
                         } else if (!pendingActivity?.durationHours && !pendingActivity?.durationMinutes) {
                           // Reset to default 1 hour for other activities (only if not editing)
                           setDurationHours(1);
@@ -12837,11 +12840,12 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                             {activity.calories && <span>{activity.calories} cal</span>}
                             {activity.avgHr && <span>♥ {activity.avgHr}</span>}
                             {(activity.healthKitUUID || activity.linkedHealthKitUUID || activity.source === 'healthkit' || activity.fromAppleHealth) && (
-                              <span className="flex items-center gap-1 text-red-400">
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-                                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                              <span className="flex items-center gap-1 text-cyan-400">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
                                 </svg>
-                                Apple Health
+                                {activity.sourceDevice || 'Apple Health'}
                               </span>
                             )}
                           </div>
@@ -12882,11 +12886,12 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                             {activity.duration && <span>{activity.duration} min</span>}
                             {activity.calories && <span>{activity.calories} cal</span>}
                             {(activity.healthKitUUID || activity.linkedHealthKitUUID || activity.source === 'healthkit' || activity.fromAppleHealth) && (
-                              <span className="flex items-center gap-1 text-red-400">
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-                                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                              <span className="flex items-center gap-1 text-cyan-400">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
                                 </svg>
-                                Apple Health
+                                {activity.sourceDevice || 'Apple Health'}
                               </span>
                             )}
                           </div>
@@ -12926,11 +12931,12 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                             {activity.duration && <span>{activity.duration} min</span>}
                             {activity.calories && <span>{activity.calories} cal</span>}
                             {(activity.healthKitUUID || activity.linkedHealthKitUUID || activity.source === 'healthkit' || activity.fromAppleHealth) && (
-                              <span className="flex items-center gap-1 text-red-400">
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-                                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                              <span className="flex items-center gap-1 text-cyan-400">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
                                 </svg>
-                                Apple Health
+                                {activity.sourceDevice || 'Apple Health'}
                               </span>
                             )}
                           </div>
@@ -12971,11 +12977,12 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                             {activity.duration && <span>{activity.duration} min</span>}
                             {activity.calories && <span>{activity.calories} cal</span>}
                             {(activity.healthKitUUID || activity.linkedHealthKitUUID || activity.source === 'healthkit' || activity.fromAppleHealth) && (
-                              <span className="flex items-center gap-1 text-red-400">
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-                                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                              <span className="flex items-center gap-1 text-cyan-400">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
                                 </svg>
-                                Apple Health
+                                {activity.sourceDevice || 'Apple Health'}
                               </span>
                             )}
                           </div>

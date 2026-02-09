@@ -11970,8 +11970,23 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
     const lastWeekLifts = lastWeekActivities.filter(a => getActivityCategory(a) === 'lifting').length;
     const lastWeekCardio = lastWeekActivities.filter(a => getActivityCategory(a) === 'cardio').length;
     const lastWeekRecovery = lastWeekActivities.filter(a => getActivityCategory(a) === 'recovery').length;
-    const lastWeekMiles = lastWeekActivities.filter(a => a.type === 'Running' || a.type === 'Cycle').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
-    
+    const lastWeekMiles = lastWeekActivities.reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+
+    // Calculate last week calories from healthDataByDate
+    let lastWeekCalories = 0;
+    for (let d = 0; d < 7; d++) {
+      const date = new Date(lastWeekStart);
+      date.setDate(lastWeekStart.getDate() + d);
+      const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      const healthData = healthDataByDate[dateStr];
+      const dayActivities = activities.filter(a => a.date === dateStr);
+      lastWeekCalories += healthData?.calories || 0;
+      // Add calories from truly manual workouts
+      lastWeekCalories += dayActivities
+        .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID && a.source !== 'healthkit' && !a.fromAppleHealth)
+        .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+    }
+
     // Calculate average from first activity to now
     let avgLifts = 0, avgCardio = 0, avgRecovery = 0, avgMiles = 0, avgCalories = 0;
     
@@ -12003,12 +12018,28 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
         const totalLifts = pastActivities.filter(a => getActivityCategory(a) === 'lifting').length;
         const totalCardio = pastActivities.filter(a => getActivityCategory(a) === 'cardio').length;
         const totalRecovery = pastActivities.filter(a => getActivityCategory(a) === 'recovery').length;
-        const totalMiles = pastActivities.filter(a => a.type === 'Running' || a.type === 'Cycle').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
-        
+        const totalMiles = pastActivities.reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+
+        // Calculate total calories from healthDataByDate for all past weeks
+        let totalCalories = 0;
+        for (let d = 0; d < weeksBetween * 7; d++) {
+          const date = new Date(firstWeekStart);
+          date.setDate(firstWeekStart.getDate() + d);
+          if (date >= currentWeekStart) break;
+          const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+          const healthData = healthDataByDate[dateStr];
+          const dayActivities = activities.filter(a => a.date === dateStr);
+          totalCalories += healthData?.calories || 0;
+          totalCalories += dayActivities
+            .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID && a.source !== 'healthkit' && !a.fromAppleHealth)
+            .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+        }
+
         avgLifts = Math.round((totalLifts / weeksBetween) * 10) / 10;
         avgCardio = Math.round((totalCardio / weeksBetween) * 10) / 10;
         avgRecovery = Math.round((totalRecovery / weeksBetween) * 10) / 10;
         avgMiles = Math.round((totalMiles / weeksBetween) * 10) / 10;
+        avgCalories = Math.round(totalCalories / weeksBetween);
       }
     }
     
@@ -12018,7 +12049,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
         cardio: lastWeekCardio,
         recovery: lastWeekRecovery,
         miles: lastWeekMiles,
-        calories: 0
+        calories: lastWeekCalories
       },
       'average': {
         lifts: avgLifts,
@@ -12069,7 +12100,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
     const lifts = weekActivities.filter(a => getActivityCategory(a) === 'lifting').length;
     const cardio = weekActivities.filter(a => getActivityCategory(a) === 'cardio').length;
     const recovery = weekActivities.filter(a => getActivityCategory(a) === 'recovery').length;
-    const miles = weekActivities.filter(a => a.type === 'Running' || a.type === 'Cycle' || a.type === 'Walking').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+    const miles = weekActivities.reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
 
     // Calculate calories and steps for the week from healthDataByDate
     let weekCalories = 0;

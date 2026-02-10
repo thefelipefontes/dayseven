@@ -32,13 +32,13 @@ export async function isHealthKitAvailable() {
   }
 }
 
-// Request authorization for reading workout data
+// Request authorization for reading workout data (including heart rate)
 export async function requestHealthKitAuthorization() {
   if (!Capacitor.isNativePlatform()) return false;
 
   try {
     await Health.requestAuthorization({
-      read: ['steps', 'calories', 'workouts'],
+      read: ['steps', 'calories', 'workouts', 'heartRate'],
       write: []
     });
     return true;
@@ -275,11 +275,20 @@ export async function fetchHealthKitWorkouts(days = 7) {
         const activity = convertWorkoutToActivity(workout);
 
         // If no heart rate data from the workout object, query it separately
+        // Use timeout to prevent blocking if HR permission dialog is pending
         if (!activity.avgHr && !activity.maxHr) {
-          const hrData = await queryHeartRateForTimeRange(workout.startDate, workout.endDate);
-          if (hrData) {
-            activity.avgHr = hrData.avgHr;
-            activity.maxHr = hrData.maxHr;
+          try {
+            const hrData = await withTimeout(
+              queryHeartRateForTimeRange(workout.startDate, workout.endDate),
+              5000,
+              'HR query timed out'
+            );
+            if (hrData) {
+              activity.avgHr = hrData.avgHr;
+              activity.maxHr = hrData.maxHr;
+            }
+          } catch {
+            // HR query timed out or failed - continue without HR data
           }
         }
 
@@ -334,11 +343,20 @@ export async function fetchLinkableWorkouts(date, linkedWorkoutIds = []) {
         const activity = convertWorkoutToActivity(workout);
 
         // If no heart rate data from the workout object, query it separately
+        // Use timeout to prevent blocking if HR permission dialog is pending
         if (!activity.avgHr && !activity.maxHr) {
-          const hrData = await queryHeartRateForTimeRange(workout.startDate, workout.endDate);
-          if (hrData) {
-            activity.avgHr = hrData.avgHr;
-            activity.maxHr = hrData.maxHr;
+          try {
+            const hrData = await withTimeout(
+              queryHeartRateForTimeRange(workout.startDate, workout.endDate),
+              5000,
+              'HR query timed out'
+            );
+            if (hrData) {
+              activity.avgHr = hrData.avgHr;
+              activity.maxHr = hrData.maxHr;
+            }
+          } catch {
+            // HR query timed out or failed - continue without HR data
           }
         }
 

@@ -16787,10 +16787,14 @@ export default function DaySevenApp() {
       setPendingFriendRequests(requests.length);
 
       // Refresh HealthKit data on pull-to-refresh (including workouts)
+      // Use timeout so pull-to-refresh doesn't hang if HealthKit permission dialog is pending
       if (Capacitor.isNativePlatform()) {
         try {
-          // Re-sync workouts from HealthKit to detect new ones
-          const result = await syncHealthKitData();
+          const healthKitPromise = syncHealthKitData();
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('HealthKit sync timeout')), 10000)
+          );
+          const result = await Promise.race([healthKitPromise, timeoutPromise]);
           if (result.success) {
             // Find workouts that aren't already in activities
             const existingUUIDs = new Set(
@@ -16819,7 +16823,7 @@ export default function DaySevenApp() {
             }));
           }
         } catch (e) {
-          // Silently fail HealthKit refresh
+          // Silently fail HealthKit refresh (timeout or permission pending)
         }
       }
     } catch (error) {

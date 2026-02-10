@@ -51,16 +51,13 @@ export const isNotificationSupported = () => {
  */
 export const requestNotificationPermission = async () => {
   if (!isNotificationSupported()) {
-    console.log('Push notifications not supported on this platform');
     return { granted: false };
   }
 
   try {
     const result = await FirebaseMessaging.requestPermissions();
-    console.log('Notification permission result:', result);
     return { granted: result.receive === 'granted' };
   } catch (error) {
-    console.error('Error requesting notification permission:', error);
     return { granted: false };
   }
 };
@@ -78,7 +75,6 @@ export const checkNotificationPermission = async () => {
     const result = await FirebaseMessaging.checkPermissions();
     return { granted: result.receive === 'granted' };
   } catch (error) {
-    console.error('Error checking notification permission:', error);
     return { granted: false };
   }
 };
@@ -94,10 +90,8 @@ export const getFCMToken = async () => {
 
   try {
     const result = await FirebaseMessaging.getToken();
-    console.log('FCM Token:', result.token);
     return result.token;
   } catch (error) {
-    console.error('Error getting FCM token:', error);
     return null;
   }
 };
@@ -129,9 +123,8 @@ export const saveFCMToken = async (userId, token) => {
       updatedAt: serverTimestamp(),
     }, { merge: true });
 
-    console.log('FCM token saved to Firestore');
   } catch (error) {
-    console.error('Error saving FCM token:', error);
+    // token save failed
   }
 };
 
@@ -150,14 +143,14 @@ export const removeFCMToken = async (userId, token) => {
       [`devices.${token}`]: null,
       updatedAt: serverTimestamp(),
     });
-    console.log('FCM token removed from Firestore');
   } catch (error) {
-    console.error('Error removing FCM token:', error);
+    // token removal failed
   }
 };
 
 /**
  * Get user's notification preferences
+ * Reads from users/{uid} document (notificationPreferences field)
  * @param {string} userId - The user's Firebase UID
  * @returns {Promise<Object>}
  */
@@ -165,38 +158,28 @@ export const getNotificationPreferences = async (userId) => {
   if (!userId) return getDefaultPreferences();
 
   try {
-    const prefsRef = doc(db, 'notificationPreferences', userId);
-    const prefsSnap = await getDoc(prefsRef);
-
-    if (prefsSnap.exists()) {
-      return { ...getDefaultPreferences(), ...prefsSnap.data() };
+    const { getUserProfile } = await import('./userService');
+    const profile = await getUserProfile(userId);
+    if (profile?.notificationPreferences) {
+      return { ...getDefaultPreferences(), ...profile.notificationPreferences };
     }
     return getDefaultPreferences();
   } catch (error) {
-    console.error('Error getting notification preferences:', error);
     return getDefaultPreferences();
   }
 };
 
 /**
  * Save user's notification preferences
+ * Writes to users/{uid} document (notificationPreferences field)
  * @param {string} userId - The user's Firebase UID
  * @param {Object} preferences - The notification preferences
  */
 export const saveNotificationPreferences = async (userId, preferences) => {
-  if (!userId) return;
+  if (!userId) throw new Error('No userId');
 
-  try {
-    const prefsRef = doc(db, 'notificationPreferences', userId);
-    await setDoc(prefsRef, {
-      ...preferences,
-      userId,
-      updatedAt: serverTimestamp(),
-    }, { merge: true });
-    console.log('Notification preferences saved');
-  } catch (error) {
-    console.error('Error saving notification preferences:', error);
-  }
+  const { updateUserProfile } = await import('./userService');
+  await updateUserProfile(userId, { notificationPreferences: preferences });
 };
 
 /**
@@ -240,7 +223,6 @@ export const getDefaultPreferences = () => ({
  */
 export const initializePushNotifications = async (userId, onNotificationReceived, onNotificationTapped) => {
   if (!isNotificationSupported()) {
-    console.log('Push notifications not supported');
     return { cleanup: () => {} };
   }
 
@@ -251,7 +233,6 @@ export const initializePushNotifications = async (userId, onNotificationReceived
     const { granted } = await requestNotificationPermission();
 
     if (!granted) {
-      console.log('Notification permission not granted');
       return { cleanup: () => {} };
     }
 
@@ -263,7 +244,6 @@ export const initializePushNotifications = async (userId, onNotificationReceived
 
     // Listen for token refresh
     const tokenListener = await FirebaseMessaging.addListener('tokenReceived', async (event) => {
-      console.log('New FCM token received:', event.token);
       if (userId) {
         await saveFCMToken(userId, event.token);
       }
@@ -272,7 +252,6 @@ export const initializePushNotifications = async (userId, onNotificationReceived
 
     // Listen for foreground notifications
     const foregroundListener = await FirebaseMessaging.addListener('notificationReceived', (notification) => {
-      console.log('Notification received in foreground:', notification);
       if (onNotificationReceived) {
         onNotificationReceived(notification);
       }
@@ -281,7 +260,6 @@ export const initializePushNotifications = async (userId, onNotificationReceived
 
     // Listen for notification taps (when user taps notification)
     const tapListener = await FirebaseMessaging.addListener('notificationActionPerformed', (event) => {
-      console.log('Notification tapped:', event);
       if (onNotificationTapped) {
         onNotificationTapped(event.notification, event.actionId);
       }
@@ -299,7 +277,6 @@ export const initializePushNotifications = async (userId, onNotificationReceived
       }
     };
   } catch (error) {
-    console.error('Error initializing push notifications:', error);
     return { cleanup: () => {} };
   }
 };
@@ -380,7 +357,6 @@ export const getBadgeCount = async () => {
     // FCM doesn't provide a direct way to get badge count
     return 0;
   } catch (error) {
-    console.error('Error getting badge count:', error);
     return 0;
   }
 };
@@ -393,9 +369,8 @@ export const clearAllNotifications = async () => {
 
   try {
     await FirebaseMessaging.removeAllDeliveredNotifications();
-    console.log('All notifications cleared');
   } catch (error) {
-    console.error('Error clearing notifications:', error);
+    // clear failed
   }
 };
 
@@ -408,9 +383,8 @@ export const subscribeToTopic = async (topic) => {
 
   try {
     await FirebaseMessaging.subscribeToTopic({ topic });
-    console.log(`Subscribed to topic: ${topic}`);
   } catch (error) {
-    console.error(`Error subscribing to topic ${topic}:`, error);
+    // subscribe failed
   }
 };
 
@@ -423,8 +397,7 @@ export const unsubscribeFromTopic = async (topic) => {
 
   try {
     await FirebaseMessaging.unsubscribeFromTopic({ topic });
-    console.log(`Unsubscribed from topic: ${topic}`);
   } catch (error) {
-    console.error(`Error unsubscribing from topic ${topic}:`, error);
+    // unsubscribe failed
   }
 };

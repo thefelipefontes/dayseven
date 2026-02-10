@@ -46,11 +46,14 @@ async function getUserTokens(userId) {
 
 /**
  * Helper: Get user's notification preferences
+ * Reads from users/{uid} document's notificationPreferences field
  */
 async function getUserPreferences(userId) {
-  const prefsDoc = await db.collection('notificationPreferences').doc(userId).get();
-  if (!prefsDoc.exists) return getDefaultPreferences();
-  return { ...getDefaultPreferences(), ...prefsDoc.data() };
+  const userDoc = await db.collection('users').doc(userId).get();
+  if (!userDoc.exists) return getDefaultPreferences();
+  const prefs = userDoc.data().notificationPreferences;
+  if (!prefs) return getDefaultPreferences();
+  return { ...getDefaultPreferences(), ...prefs };
 }
 
 /**
@@ -63,13 +66,32 @@ async function getUserDisplayName(userId) {
 }
 
 /**
- * Helper: Check if current time is within quiet hours
+ * Helper: Check if current time is within quiet hours (timezone-aware)
  */
 function isQuietHours(preferences) {
   if (!preferences.quietHoursEnabled) return false;
 
-  const now = new Date();
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  // Get current time in user's timezone
+  const tz = preferences.timezone || 'America/New_York';
+  let currentHour, currentMin;
+  try {
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(now);
+    currentHour = parseInt(parts.find(p => p.type === 'hour').value, 10);
+    currentMin = parseInt(parts.find(p => p.type === 'minute').value, 10);
+  } catch {
+    const now = new Date();
+    currentHour = now.getUTCHours();
+    currentMin = now.getUTCMinutes();
+  }
+
+  const currentMinutes = currentHour * 60 + currentMin;
 
   const [startHour, startMin] = preferences.quietHoursStart.split(':').map(Number);
   const [endHour, endMin] = preferences.quietHoursEnd.split(':').map(Number);
@@ -421,43 +443,77 @@ exports.sendStreakReminders = onSchedule(
 );
 
 /**
- * Daily scheduled reminder - runs every hour to check for users' preferred time
- * Users can set their preferred daily reminder time
+ * Helper: Get the current time in a user's timezone as "HH:MM" (rounded to 15-min)
+ * Returns { time: "HH:MM", dateStr: "YYYY-MM-DD" } in the user's local timezone
+ */
+function getUserLocalTime(timezone) {
+  const tz = timezone || 'America/New_York';
+  try {
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(now);
+    const hour = parts.find(p => p.type === 'hour').value;
+    const minuteRaw = parseInt(parts.find(p => p.type === 'minute').value, 10);
+    const roundedMinute = (Math.floor(minuteRaw / 15) * 15).toString().padStart(2, '0');
+
+    // Also get the local date for activity check
+    const dateFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: tz }); // en-CA gives YYYY-MM-DD
+    const dateStr = dateFormatter.format(now);
+
+    return { time: `${hour}:${roundedMinute}`, dateStr };
+  } catch {
+    // Fallback if timezone is invalid
+    const now = new Date();
+    const h = now.getUTCHours().toString().padStart(2, '0');
+    const m = (Math.floor(now.getUTCMinutes() / 15) * 15).toString().padStart(2, '0');
+    const d = now.toISOString().split('T')[0];
+    return { time: `${h}:${m}`, dateStr: d };
+  }
+}
+
+/**
+ * Daily scheduled reminder - runs every 15 minutes to match users' preferred time
+ * Uses each user's stored timezone for accurate local time matching
  */
 exports.sendDailyReminders = onSchedule(
   {
-    schedule: '0 * * * *', // Every hour
-    timeZone: 'America/New_York',
+    schedule: '*/15 * * * *', // Every 15 minutes
+    timeZone: 'UTC',
   },
   async () => {
-    const now = new Date();
-    const currentHour = now.getHours().toString().padStart(2, '0');
-    const currentTime = `${currentHour}:00`;
+    console.log(`Running daily reminders check at ${new Date().toISOString()}`);
 
-    console.log(`Checking daily reminders for time: ${currentTime}`);
+    // Get all users and check their notificationPreferences field
+    const usersSnapshot = await db.collection('users').get();
 
-    // Get users who want reminders at this time
-    const prefsSnapshot = await db.collection('notificationPreferences')
-      .where('dailyReminders', '==', true)
-      .get();
+    for (const userDoc of usersSnapshot.docs) {
+      const userId = userDoc.id;
+      const userData = userDoc.data();
+      const prefs = userData.notificationPreferences;
 
-    for (const prefDoc of prefsSnapshot.docs) {
-      const prefs = prefDoc.data();
-      const reminderHour = prefs.dailyReminderTime?.split(':')[0] || '09';
+      // Skip users without preferences or with daily reminders disabled
+      if (!prefs || !prefs.dailyReminders) continue;
 
-      if (reminderHour !== currentHour) continue;
+      const reminderTime = prefs.dailyReminderTime || '09:00';
+      const { time: userLocalTime, dateStr: userToday } = getUserLocalTime(prefs.timezone);
 
-      const userId = prefDoc.id;
+      if (reminderTime !== userLocalTime) continue;
 
-      // Check if they already logged today
-      const today = new Date().toISOString().split('T')[0];
+      // Check if they already logged today (in their timezone)
       const activitiesSnapshot = await db.collection('activities')
         .where('userId', '==', userId)
-        .where('date', '==', today)
+        .where('date', '==', userToday)
         .limit(1)
         .get();
 
       if (!activitiesSnapshot.empty) continue; // Already logged today
+
+      console.log(`Sending daily reminder to ${userId} (tz: ${prefs.timezone || 'default'}, local: ${userLocalTime})`);
 
       await sendNotificationToUser(
         userId,

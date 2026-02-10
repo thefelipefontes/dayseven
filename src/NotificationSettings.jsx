@@ -16,7 +16,9 @@ import {
 
 const NotificationSettings = ({ userId, onClose }) => {
   const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState(null); // null, 'saved', 'error'
   const [permissionGranted, setPermissionGranted] = useState(null); // null = checking, true/false = known
+  const [allEnabled, setAllEnabled] = useState(true);
   const [preferences, setPreferences] = useState({
     // Social
     friendRequests: true,
@@ -32,7 +34,6 @@ const NotificationSettings = ({ userId, onClose }) => {
     newActivityDetected: true,
     // Achievements & Summaries
     streakMilestones: true,
-    goalAchievements: true,
     weeklySummary: true,
     monthlySummary: true,
     // Quiet hours
@@ -61,9 +62,15 @@ const NotificationSettings = ({ userId, onClose }) => {
     if (userId) {
       getNotificationPreferences(userId)
         .then(prefs => {
-          if (prefs) setPreferences(prev => ({ ...prev, ...prefs }));
+          if (prefs) {
+            setPreferences(prev => ({ ...prev, ...prefs }));
+            // Check if all toggleable preferences are off
+            const toggleKeys = ['friendRequests', 'reactions', 'comments', 'friendActivity', 'streakReminders', 'goalReminders', 'dailyReminders', 'newActivityDetected', 'streakMilestones', 'weeklySummary', 'monthlySummary'];
+            const anyEnabled = toggleKeys.some(key => prefs[key]);
+            setAllEnabled(anyEnabled);
+          }
         })
-        .catch(err => console.log('Failed to load preferences:', err));
+        .catch(() => {});
     }
   };
 
@@ -76,36 +83,81 @@ const NotificationSettings = ({ userId, onClose }) => {
     }
   };
 
+  const saveWithTimeout = async (prefs) => {
+    // Always include the user's timezone so cloud functions send at the right local time
+    const prefsWithTz = { ...prefs, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone };
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Save timeout')), 5000)
+    );
+    await Promise.race([
+      saveNotificationPreferences(userId, prefsWithTz),
+      timeoutPromise
+    ]);
+  };
+
   const handleToggle = async (key) => {
     const newValue = !preferences[key];
     const newPrefs = { ...preferences, [key]: newValue };
     setPreferences(newPrefs);
 
-    // Auto-save
+    // Update master toggle state
+    const toggleKeys = ['friendRequests', 'reactions', 'comments', 'friendActivity', 'streakReminders', 'goalReminders', 'dailyReminders', 'newActivityDetected', 'streakMilestones', 'weeklySummary', 'monthlySummary'];
+    const anyEnabled = toggleKeys.some(k => k === key ? newValue : newPrefs[k]);
+    setAllEnabled(anyEnabled);
+
+    // Auto-save with timeout
     setSaving(true);
+    setSaveStatus(null);
     try {
-      await saveNotificationPreferences(userId, newPrefs);
+      await saveWithTimeout(newPrefs);
+      setSaveStatus('saved');
     } catch (error) {
-      console.error('Error saving preferences:', error);
-      // Revert on error
+      setSaveStatus('error');
       setPreferences(preferences);
     }
     setSaving(false);
+    setTimeout(() => setSaveStatus(null), 2000);
+  };
+
+  const handleToggleAll = async () => {
+    const newEnabled = !allEnabled;
+    setAllEnabled(newEnabled);
+
+    const toggleKeys = ['friendRequests', 'reactions', 'comments', 'friendActivity', 'streakReminders', 'goalReminders', 'dailyReminders', 'newActivityDetected', 'streakMilestones', 'weeklySummary', 'monthlySummary'];
+    const newPrefs = { ...preferences };
+    toggleKeys.forEach(key => { newPrefs[key] = newEnabled; });
+    setPreferences(newPrefs);
+
+    setSaving(true);
+    setSaveStatus(null);
+    try {
+      await saveWithTimeout(newPrefs);
+      setSaveStatus('saved');
+    } catch (error) {
+      setSaveStatus('error');
+      setPreferences(preferences);
+      setAllEnabled(!newEnabled);
+    }
+    setSaving(false);
+    setTimeout(() => setSaveStatus(null), 2000);
   };
 
   const handleTimeChange = async (key, value) => {
     const newPrefs = { ...preferences, [key]: value };
     setPreferences(newPrefs);
 
-    // Auto-save
+    // Auto-save with timeout
     setSaving(true);
+    setSaveStatus(null);
     try {
-      await saveNotificationPreferences(userId, newPrefs);
+      await saveWithTimeout(newPrefs);
+      setSaveStatus('saved');
     } catch (error) {
-      console.error('Error saving preferences:', error);
+      setSaveStatus('error');
       setPreferences(preferences);
     }
     setSaving(false);
+    setTimeout(() => setSaveStatus(null), 2000);
   };
 
   const Toggle = ({ enabled, onToggle, disabled = false }) => (
@@ -157,12 +209,23 @@ const NotificationSettings = ({ userId, onClose }) => {
     <div
       className="fixed inset-0 bg-zinc-950 z-50 overflow-auto"
       style={{
-        paddingTop: 'env(safe-area-inset-top)',
         WebkitOverflowScrolling: 'touch',
         overscrollBehavior: 'contain'
       }}
     >
-      <div className="min-h-full px-4 py-4 pb-20">
+      {/* Status bar blur overlay */}
+      <div
+        className="fixed top-0 left-0 right-0 z-[60] pointer-events-none"
+        style={{
+          height: 'calc(env(safe-area-inset-top, 0px) + 30px)',
+          background: 'linear-gradient(to bottom, rgba(10, 10, 10, 1) 0%, rgba(10, 10, 10, 1) 50%, rgba(10, 10, 10, 0.9) 70%, rgba(10, 10, 10, 0.6) 85%, transparent 100%)',
+          maskImage: 'linear-gradient(to bottom, black 0%, black 50%, rgba(0,0,0,0.7) 70%, rgba(0,0,0,0.3) 85%, transparent 100%)',
+          WebkitMaskImage: 'linear-gradient(to bottom, black 0%, black 50%, rgba(0,0,0,0.7) 70%, rgba(0,0,0,0.3) 85%, transparent 100%)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+        }}
+      />
+      <div className="min-h-full px-4 py-4 pb-20" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)' }}>
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-bold text-white">Notifications</h2>
@@ -178,6 +241,12 @@ const NotificationSettings = ({ userId, onClose }) => {
 
         {saving && (
           <div className="text-cyan-400 text-sm mb-4">Saving...</div>
+        )}
+        {!saving && saveStatus === 'saved' && (
+          <div className="text-green-400 text-sm mb-4">Saved</div>
+        )}
+        {!saving && saveStatus === 'error' && (
+          <div className="text-red-400 text-sm mb-4">Failed to save. Please try again.</div>
         )}
 
         {/* Permission banner */}
@@ -217,6 +286,19 @@ const NotificationSettings = ({ userId, onClose }) => {
 
         {/* Settings sections */}
         <div className={notSupported || !permissionGranted ? 'opacity-50 pointer-events-none' : ''}>
+          {/* Master Toggle */}
+          <div className="bg-zinc-900/50 rounded-xl px-4 mb-4">
+            <div className="flex items-center justify-between py-4">
+              <div className="flex-1 pr-4">
+                <p className="text-white font-semibold text-lg">All Notifications</p>
+                <p className="text-zinc-500 text-sm mt-0.5">
+                  {allEnabled ? 'Turn off all notifications' : 'Turn on all notifications'}
+                </p>
+              </div>
+              <Toggle enabled={allEnabled} onToggle={handleToggleAll} />
+            </div>
+          </div>
+
           {/* Social Notifications */}
           <SectionHeader>Social</SectionHeader>
           <div className="bg-zinc-900/50 rounded-xl px-4">
@@ -251,13 +333,13 @@ const NotificationSettings = ({ userId, onClose }) => {
           <div className="bg-zinc-900/50 rounded-xl px-4">
             <SettingRow
               label="Streak Reminders"
-              description="Remind me to log activity before losing my streak"
+              description="Nudge me if I haven't logged in 2+ days"
               enabled={preferences.streakReminders}
               onToggle={() => handleToggle('streakReminders')}
             />
             <SettingRow
               label="Goal Reminders"
-              description="Remind me about my weekly goals"
+              description="Thursday reminder of what I need to hit my goals"
               enabled={preferences.goalReminders}
               onToggle={() => handleToggle('goalReminders')}
             />
@@ -282,14 +364,17 @@ const NotificationSettings = ({ userId, onClose }) => {
                     onChange={(e) => handleTimeChange('dailyReminderTime', e.target.value)}
                     className="ml-3 bg-zinc-800 text-white rounded-lg px-3 py-1.5 text-sm"
                   >
-                    {Array.from({ length: 24 }, (_, i) => {
-                      const hour = i.toString().padStart(2, '0');
-                      const label = i === 0 ? '12:00 AM' :
-                        i < 12 ? `${i}:00 AM` :
-                        i === 12 ? '12:00 PM' :
-                        `${i - 12}:00 PM`;
+                    {Array.from({ length: 24 * 4 }, (_, i) => {
+                      const hour = Math.floor(i / 4);
+                      const minute = (i % 4) * 15;
+                      const hourStr = hour.toString().padStart(2, '0');
+                      const minuteStr = minute.toString().padStart(2, '0');
+                      const value = `${hourStr}:${minuteStr}`;
+                      const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+                      const ampm = hour < 12 ? 'AM' : 'PM';
+                      const label = `${displayHour}:${minuteStr} ${ampm}`;
                       return (
-                        <option key={hour} value={`${hour}:00`}>
+                        <option key={value} value={value}>
                           {label}
                         </option>
                       );
@@ -316,25 +401,19 @@ const NotificationSettings = ({ userId, onClose }) => {
           <div className="bg-zinc-900/50 rounded-xl px-4">
             <SettingRow
               label="Streak Milestones"
-              description="Celebrate when you hit 7, 30, 100 day streaks"
+              description="Celebrate 5, 10, 25, 52, 78, and 104-week streaks"
               enabled={preferences.streakMilestones}
               onToggle={() => handleToggle('streakMilestones')}
             />
             <SettingRow
-              label="Goal Achievements"
-              description="When you complete your weekly goals"
-              enabled={preferences.goalAchievements}
-              onToggle={() => handleToggle('goalAchievements')}
-            />
-            <SettingRow
               label="Weekly Summary"
-              description="Get a summary of your week every Sunday with option to share"
+              description="Sunday recap with workouts, recovery, and calories"
               enabled={preferences.weeklySummary}
               onToggle={() => handleToggle('weeklySummary')}
             />
             <SettingRow
               label="Monthly Summary"
-              description="Get a recap on the 1st of each month with option to share"
+              description="1st of each month recap with comparison to last month"
               enabled={preferences.monthlySummary}
               onToggle={() => handleToggle('monthlySummary')}
             />

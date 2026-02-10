@@ -209,13 +209,15 @@ const formatFriendlyDate = (dateStr) => {
   const today = new Date();
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
-  
-  const todayStr = today.toISOString().split('T')[0];
-  const yesterdayStr = yesterday.toISOString().split('T')[0];
-  
+
+  // Use local date parts instead of toISOString() which uses UTC
+  const pad = (n) => String(n).padStart(2, '0');
+  const todayStr = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+  const yesterdayStr = `${yesterday.getFullYear()}-${pad(yesterday.getMonth() + 1)}-${pad(yesterday.getDate())}`;
+
   if (dateStr === todayStr) return 'Today';
   if (dateStr === yesterdayStr) return 'Yesterday';
-  
+
   const date = new Date(dateStr + 'T12:00:00');
   return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 };
@@ -822,7 +824,7 @@ const HeatMapCalendar = ({ data, onSelectDate, selectedDate, onSelectWeek }) => 
   // Generate last N months of dates
   const generateHeatMapData = () => {
     const days = [];
-    const today = new Date(2026, 0, 21); // January 21, 2026
+    const today = new Date();
     const startDate = new Date(today);
     startDate.setMonth(startDate.getMonth() - viewMonths + 1);
     startDate.setDate(1);
@@ -834,9 +836,12 @@ const HeatMapCalendar = ({ data, onSelectDate, selectedDate, onSelectWeek }) => 
     const endDate = new Date(today);
     endDate.setDate(endDate.getDate() + (6 - today.getDay())); // End of current week
     
+    const toLocalDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const todayStr = toLocalDateStr(today);
+
     let currentDate = new Date(startDate);
     while (currentDate <= endDate) {
-      const dateStr = currentDate.toISOString().split('T')[0];
+      const dateStr = toLocalDateStr(currentDate);
       const activities = data[dateStr] || [];
       days.push({
         date: dateStr,
@@ -845,7 +850,7 @@ const HeatMapCalendar = ({ data, onSelectDate, selectedDate, onSelectWeek }) => 
         year: currentDate.getFullYear(),
         activities,
         activityCount: activities.length,
-        isToday: dateStr === '2026-01-21',
+        isToday: dateStr === todayStr,
         isFuture: currentDate > today,
         dayOfWeek: currentDate.getDay()
       });
@@ -1433,8 +1438,6 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
         try {
           // Get metrics from the live workout without ending it
           const liveResult = await getLiveWorkoutMetrics();
-          console.log('Live workout metrics:', liveResult);
-
           let hasData = false;
 
           if (liveResult.success && liveResult.isActive) {
@@ -1457,8 +1460,6 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
           if (!hasData) {
             const endTime = new Date().toISOString();
             const result = await fetchWorkoutMetricsForTimeRange(workout.startTime, endTime);
-            console.log('Fallback HealthKit query:', result);
-
             if (result.success && result.hasData) {
               if (result.metrics.calories) {
                 setCalories(result.metrics.calories.toString());
@@ -1474,7 +1475,6 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
 
           setHealthKitDataFetched(true);
         } catch (error) {
-          console.error('Error fetching HealthKit metrics:', error);
           setHealthKitDataFetched(true);
         } finally {
           setIsLoadingMetrics(false);
@@ -1516,7 +1516,6 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
 
           setLinkableWorkouts(filteredWorkouts);
         } catch (error) {
-          console.error('Error fetching linkable workouts:', error);
           setLinkableWorkouts([]);
         } finally {
           setIsLoadingWorkouts(false);
@@ -1547,7 +1546,6 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
         }
       } catch (error) {
         if (error.message !== 'User cancelled photos app') {
-          console.error('Error picking photo:', error);
         }
       }
     } else {
@@ -1575,7 +1573,6 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
         }
       } catch (error) {
         if (error.message !== 'User cancelled photos app') {
-          console.error('Error taking photo:', error);
         }
       }
     }
@@ -3535,7 +3532,6 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange }) => {
       return roundedCanvas;
       return canvas;
     } catch (error) {
-      // console.error('Error generating image:', error);
       return null;
     }
   };
@@ -3565,7 +3561,6 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange }) => {
           triggerHaptic(ImpactStyle.Medium);
           return;
         } catch (e) {
-          // console.log('Native save error:', e);
           // Fall through to web method
         }
       }
@@ -3623,7 +3618,6 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange }) => {
             setIsSharing(false);
             return;
           }
-          // console.log('Share failed, falling back to download:', e);
         }
       }
 
@@ -3633,7 +3627,6 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange }) => {
       link.href = canvas.toDataURL('image/png', 1.0);
       link.click();
     } catch (error) {
-      // console.error('Error in executeShare:', error);
       alert('Failed to generate image. Please try again.');
     } finally {
       setIsSharing(false);
@@ -4740,7 +4733,6 @@ const ChangePasswordModal = ({ isOpen, onClose, user }) => {
         handleClose();
       }, 1500);
     } catch (err) {
-      console.error('Password change error:', err);
       const errorCode = err.code || err.message || '';
       if (errorCode.includes('wrong-password') || errorCode.includes('invalid-credential') || errorCode.includes('INVALID_LOGIN_CREDENTIALS')) {
         setError('Current password is incorrect');
@@ -4947,7 +4939,6 @@ const DeleteAccountModal = ({ isOpen, onClose, user, userProfile, onDeleteComple
       triggerHaptic(ImpactStyle.Heavy);
       onDeleteComplete();
     } catch (err) {
-      console.error('Delete account error:', err);
       const errorCode = err.code || err.message || '';
       if (errorCode.includes('wrong-password') || errorCode.includes('invalid-credential') || errorCode.includes('INVALID_LOGIN_CREDENTIALS')) {
         setError('Incorrect password. Please try again.');
@@ -6031,7 +6022,6 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
       setReactions(rxns || []);
       setComments(cmts || []);
     } catch (err) {
-      // console.error('Error fetching interactions:', err);
     }
     setLoadingInteractions(false);
   };
@@ -6059,7 +6049,6 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
       }
       triggerHaptic(ImpactStyle.Light);
     } catch (err) {
-      // console.error('Error handling reaction:', err);
     }
   };
 
@@ -6079,7 +6068,6 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
       setNewComment('');
       triggerHaptic(ImpactStyle.Light);
     } catch (err) {
-      // console.error('Error adding comment:', err);
     }
   };
 
@@ -7587,7 +7575,6 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
         );
         setLinkableWorkouts(filteredWorkouts);
       } catch (error) {
-        console.error('Error fetching linkable workouts:', error);
         // Fall back to pending workouts if fetch fails
         const filteredPending = (pendingWorkouts || []).filter(w =>
           !linkedWorkoutUUIDs.includes(w.healthKitUUID) &&
@@ -7748,8 +7735,6 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
     } else {
       // Link and auto-fill metrics
       setLinkedWorkout(workout);
-      console.log('Linking workout - FULL OBJECT:', JSON.stringify(workout, null, 2));
-      console.log('Linking workout - duration field:', workout.duration, 'type:', typeof workout.duration);
       if (workout.calories) setCalories(workout.calories.toString());
       if (workout.avgHr) setAvgHr(workout.avgHr.toString());
       if (workout.maxHr) setMaxHr(workout.maxHr.toString());
@@ -7758,11 +7743,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       if (workout.duration !== undefined && workout.duration !== null) {
         const hours = Math.floor(workout.duration / 60);
         const mins = Math.round(workout.duration % 60);
-        console.log('Setting duration:', workout.duration, 'hours:', hours, 'mins:', mins);
         setDurationHours(hours);
         setDurationMinutes(mins);
-      } else {
-        console.log('WARNING: workout.duration is undefined or null!');
       }
       if (workout.time) setActivityTime(workout.time);
     }
@@ -7788,7 +7770,6 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
         }
       } catch (error) {
         if (error.message !== 'User cancelled photos app') {
-          console.error('Error picking photo:', error);
         }
       }
     } else {
@@ -7815,7 +7796,6 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
         }
       } catch (error) {
         if (error.message !== 'User cancelled photos app') {
-          console.error('Error taking photo:', error);
         }
       }
     } else {
@@ -9859,7 +9839,6 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                 commentsMap[activity.id] = comments;
               }
             } catch (error) {
-              // console.error('Error fetching reactions/comments for activity:', activity.id, error);
             }
           }
         })
@@ -9970,7 +9949,6 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                   repliesMap[comment.id] = replies;
                 }
               } catch (error) {
-                // console.error('Error loading replies:', error);
               }
             })
           );
@@ -10039,7 +10017,6 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         }));
         setExpandedReplies(prev => ({ ...prev, [commentId]: true }));
       } catch (error) {
-        // console.error('Error adding reply:', error);
       }
     };
 
@@ -10051,7 +10028,6 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
           [commentId]: (prev[commentId] || []).filter(r => r.id !== replyId)
         }));
       } catch (error) {
-        // console.error('Error deleting reply:', error);
       }
     };
 
@@ -11224,16 +11200,11 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
   const maxValue = Math.max(...trendData.map(d => d.value), 1);
   const total = trendData.reduce((sum, d) => sum + d.value, 0);
 
-  // Calculate average based on days since first activity
+  // Calculate average based on the number of bars shown (matches chart grouping)
   let avg = 0;
-  if (activities.length > 0) {
-    const dates = activities.map(a => parseLocalDate(a.date)).sort((a, b) => a - b);
-    const earliestDate = new Date(dates[0]);
-    earliestDate.setHours(0, 0, 0, 0);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const daysSinceFirst = Math.round((today - earliestDate) / (1000 * 60 * 60 * 24)) + 1;
-    avg = total / daysSinceFirst;
+  const barsWithData = trendData.filter(d => d.value > 0).length;
+  if (barsWithData > 0) {
+    avg = total / barsWithData;
   }
 
   const metricConfig = {
@@ -14288,7 +14259,6 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                                 if (e.name === 'AbortError') {
                                   return;
                                 }
-                                // console.log('Share failed, falling back to download:', e);
                               }
                             }
 
@@ -14298,7 +14268,6 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                             link.href = canvas.toDataURL('image/png', 1.0);
                             link.click();
                           } catch (err) {
-                            // console.error('Failed to generate share image:', err);
                             alert('Failed to generate share image. Please try again.');
                           } finally {
                             setIsShareGenerating(false);
@@ -14618,7 +14587,6 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
         }
       } catch (error) {
         if (error.message !== 'User cancelled photos app') {
-          // console.error('Error picking photo:', error);
         }
       }
     } else {
@@ -14650,7 +14618,6 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
         }
       } catch (error) {
         if (error.message !== 'User cancelled photos app') {
-          // console.error('Error taking photo:', error);
         }
       }
     } else {
@@ -14734,7 +14701,6 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
       setImagePosition({ x: 0, y: 0 });
       setImageScale(1);
     } catch (error) {
-      // console.error('Error uploading photo:', error);
       alert('Failed to upload photo. Please try again.');
     }
     setIsUploadingPhoto(false);
@@ -14965,7 +14931,6 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
     try {
       await onUpdatePhoto(file);
     } catch (error) {
-      // console.error('Error uploading photo:', error);
       alert('Failed to upload photo. Please try again.');
     }
     setIsUploadingPhoto(false);
@@ -16000,9 +15965,7 @@ export default function DaySevenApp() {
         try {
           await updateUserProfile(user.uid, { maxHeartRate: detectedMax });
           setUserProfile(prev => ({ ...prev, maxHeartRate: detectedMax }));
-          console.log('Auto-detected max HR:', detectedMax);
         } catch (e) {
-          console.error('Error auto-setting max HR:', e);
         }
       }
     };
@@ -16123,7 +16086,6 @@ export default function DaySevenApp() {
             await Badge.clear();
           }
         } catch (e) {
-          // console.log('Badge update error:', e);
         }
       }
     };
@@ -16397,7 +16359,6 @@ export default function DaySevenApp() {
       await updateUserProfile(user.uid, { privacySettings });
       setUserProfile(prev => ({ ...prev, privacySettings }));
     } catch (error) {
-      // console.error('Error updating privacy settings:', error);
     }
   };
 
@@ -16408,7 +16369,6 @@ export default function DaySevenApp() {
       await updateUserProfile(user.uid, { maxHeartRate });
       setUserProfile(prev => ({ ...prev, maxHeartRate }));
     } catch (error) {
-      console.error('Error updating max heart rate:', error);
     }
   };
 
@@ -16420,7 +16380,6 @@ export default function DaySevenApp() {
         await updateUserProfile(user.uid, { smartSaveExplained: true });
         setUserProfile(prev => ({ ...prev, smartSaveExplained: true }));
       } catch (error) {
-        console.error('Error marking smart save explained:', error);
       }
     }
   };
@@ -16444,7 +16403,6 @@ export default function DaySevenApp() {
           smartSaveExplained: true
         }));
       } catch (error) {
-        console.error('Error disabling smart save:', error);
       }
     }
   };
@@ -16459,7 +16417,6 @@ export default function DaySevenApp() {
       setToastType('success');
       setShowToast(true);
     } catch (error) {
-      console.error('Error sending password reset email:', error);
       setToastMessage('Failed to send reset email. Please try again.');
       setToastType('success');
       setShowToast(true);
@@ -16644,7 +16601,6 @@ export default function DaySevenApp() {
           profile = await getUserProfile(user.uid, true); // Force refresh
         }
       } catch (error) {
-        // console.error('Error loading profile:', error);
       }
 
       // Check onboarding status
@@ -16742,7 +16698,6 @@ export default function DaySevenApp() {
             }
           } catch (recalcError) {
             // If recalculation fails, just use stored records
-            console.log('Record recalculation error:', recalcError);
             if (userRecords) {
               setUserData(prev => ({
                 ...prev,
@@ -16761,7 +16716,6 @@ export default function DaySevenApp() {
                 user.uid,
                 (notification) => {
                   // Handle foreground notification - could show in-app toast
-                  console.log('Push notification received in foreground:', notification);
                 },
                 (notification, actionId) => {
                   // Handle notification tap - navigate to appropriate screen
@@ -16771,11 +16725,9 @@ export default function DaySevenApp() {
                 }
               );
             } catch (notifError) {
-              console.log('Push notification setup error:', notifError);
             }
           }
         } catch (error) {
-          // console.error('Error loading user data:', error);
           // Still mark as loaded on error so we don't block record checking forever
           setRecordsLoaded(true);
         }
@@ -16869,7 +16821,6 @@ export default function DaySevenApp() {
         }
       }
     } catch (error) {
-      // console.error('Error refreshing data:', error);
     }
   }, [user?.uid]);
 
@@ -16937,9 +16888,7 @@ export default function DaySevenApp() {
             // Fire-and-forget Firebase save using uid from ref
             const uid = userRef.current?.uid;
             if (uid) {
-              saveUserActivities(uid, updated).catch(err =>
-                console.error('Error saving smart-saved walks:', err)
-              );
+              saveUserActivities(uid, updated).catch(() => {});
             }
             return updated;
           });
@@ -16962,9 +16911,8 @@ export default function DaySevenApp() {
             return updated;
           });
 
-          for (const a of smartSavedActivities) {
-            console.log('Smart-saved walk:', a.id, a.duration, 'min, avgHr:', a.avgHr);
-          }
+
+
 
           // Show explanation modal on first smart-save
           if (!smartSaveExplained) {
@@ -16982,7 +16930,6 @@ export default function DaySevenApp() {
         }));
       }
     } catch (error) {
-      console.log('HealthKit sync error:', error);
     }
   }, []);
 
@@ -17061,7 +17008,6 @@ export default function DaySevenApp() {
           const result = await FirebaseAuthentication.getCurrentUser();
 
           if (result.user) {
-            // console.log('Native user found:', result.user.uid);
             // Convert native user to our user format
             const user = {
               uid: result.user.uid,
@@ -17072,12 +17018,10 @@ export default function DaySevenApp() {
             await handleUserAuth(user);
           } else {
             // No native user - show login immediately
-            // console.log('No native user - showing login');
             setAuthLoading(false);
           }
           return; // Don't set up web listener on native
         } catch (error) {
-          // console.log('Native auth check failed:', error);
           setAuthLoading(false);
           return;
         }
@@ -17085,7 +17029,6 @@ export default function DaySevenApp() {
 
       // Web auth listener (only for web, not native)
       const authTimeout = setTimeout(() => {
-        // console.log('Auth timeout - showing login');
         setAuthLoading(false);
       }, 3000);
 
@@ -17179,63 +17122,87 @@ export default function DaySevenApp() {
       const newCalendarData = {};
       const today = new Date();
       let photoCounter = 0;
-      for (let i = 0; i < 90; i++) {
-        const date = new Date(today);
-        date.setDate(date.getDate() - i);
-        const dateStr = formatDate(date);
-        const dayOfWeek = date.getDay();
-        const isRestDay = (dayOfWeek === 0 && Math.random() > 0.3) || (Math.random() < 0.15);
-        if (isRestDay && i > 0 && i < 85) continue;
-        if (!newCalendarData[dateStr]) newCalendarData[dateStr] = [];
-        if (dayOfWeek === 1 || dayOfWeek === 3 || dayOfWeek === 5 || (dayOfWeek === 6 && Math.random() > 0.5)) {
-          const muscleGroup = muscleGroups[randomInt(0, muscleGroups.length - 1)];
-          const shouldAddPhoto = Math.random() > 0.6; // 40% chance of having a photo
-          const activity = {
-            id: generateId(),
-            type: 'Strength Training',
-            subtype: `Lifting - ${muscleGroup}`,
-            strengthType: 'Lifting',
-            date: dateStr,
-            time: generateTime(),
-            duration: randomInt(45, 75),
-            calories: randomInt(250, 450),
-            ...(shouldAddPhoto && { photoURL: photoUrls[photoCounter++ % photoUrls.length] })
-          };
-          newActivities.push(activity);
-          newCalendarData[dateStr].push({ type: activity.type, subtype: activity.subtype, duration: activity.duration, calories: activity.calories });
-        }
-        if (dayOfWeek === 2 || dayOfWeek === 4 || (dayOfWeek === 6 && Math.random() > 0.6)) {
-          if (Math.random() > 0.3) {
-            const distance = parseFloat(randomFloat(2.5, 5.0));
-            const duration = randomInt(20, 45);
-            const shouldAddPhoto = Math.random() > 0.7; // 30% chance of having a photo
+
+      // Generate week by week (13 weeks) to guarantee goal completion
+      const goals = userData?.goals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2 };
+      for (let week = 0; week < 13; week++) {
+        // Find Sunday of this week going backwards
+        const weekEnd = new Date(today);
+        weekEnd.setDate(today.getDate() - today.getDay() - (week * 7) + 6); // Saturday
+        const weekStart = new Date(weekEnd);
+        weekStart.setDate(weekEnd.getDate() - 6); // Sunday
+
+        // Assign activities to specific days to guarantee goals are met
+        // Strength: Mon, Wed, Fri, Sat (4 per week)
+        const strengthDays = [1, 3, 5, 6].slice(0, goals.liftsPerWeek);
+        // Cardio: Tue, Thu, Sat (3 per week)
+        const cardioDays = [2, 4, 6].slice(0, goals.cardioPerWeek);
+        // Recovery: Sun, Wed (2 per week)
+        const recoveryDays = [0, 3, 6].slice(0, goals.recoveryPerWeek);
+
+        for (let d = 0; d < 7; d++) {
+          const date = new Date(weekStart);
+          date.setDate(weekStart.getDate() + d);
+          if (date > today) continue; // Don't generate future dates
+          const dateStr = formatDate(date);
+          const dayOfWeek = date.getDay();
+          if (!newCalendarData[dateStr]) newCalendarData[dateStr] = [];
+
+          // Strength training
+          if (strengthDays.includes(dayOfWeek)) {
+            const muscleGroup = muscleGroups[randomInt(0, muscleGroups.length - 1)];
+            const shouldAddPhoto = Math.random() > 0.6;
             const activity = {
               id: generateId(),
-              type: 'Running',
+              type: 'Strength Training',
+              subtype: `Lifting - ${muscleGroup}`,
+              strengthType: 'Lifting',
               date: dateStr,
               time: generateTime(),
-              duration,
-              distance,
-              pace: (duration / distance).toFixed(2),
-              calories: randomInt(200, 400),
-              avgHr: randomInt(140, 165),
-              maxHr: randomInt(170, 185),
+              duration: randomInt(45, 75),
+              calories: randomInt(250, 450),
               ...(shouldAddPhoto && { photoURL: photoUrls[photoCounter++ % photoUrls.length] })
             };
             newActivities.push(activity);
-            newCalendarData[dateStr].push({ type: activity.type, duration: activity.duration, distance: activity.distance, calories: activity.calories, avgHr: activity.avgHr, maxHr: activity.maxHr });
-          } else {
-            const activity = { id: generateId(), type: 'Cycle', date: dateStr, time: generateTime(), duration: randomInt(30, 60), distance: parseFloat(randomFloat(8, 15)), calories: randomInt(250, 450), avgHr: randomInt(130, 155), maxHr: randomInt(160, 175) };
-            newActivities.push(activity);
-            newCalendarData[dateStr].push({ type: activity.type, duration: activity.duration, distance: activity.distance, calories: activity.calories, avgHr: activity.avgHr, maxHr: activity.maxHr });
+            newCalendarData[dateStr].push({ type: activity.type, subtype: activity.subtype, duration: activity.duration, calories: activity.calories });
           }
-        }
-        if ((dayOfWeek === 0 || dayOfWeek === 3 || dayOfWeek === 6) && Math.random() > 0.5) {
-          const recoveryTypes = ['Cold Plunge', 'Sauna', 'Yoga'];
-          const recoveryType = recoveryTypes[randomInt(0, 2)];
-          const activity = { id: generateId(), type: recoveryType, date: dateStr, time: generateTime(), duration: recoveryType === 'Cold Plunge' ? randomInt(3, 10) : recoveryType === 'Sauna' ? randomInt(15, 25) : randomInt(30, 60) };
-          newActivities.push(activity);
-          newCalendarData[dateStr].push({ type: activity.type, duration: activity.duration });
+
+          // Cardio
+          if (cardioDays.includes(dayOfWeek)) {
+            if (Math.random() > 0.3) {
+              const distance = parseFloat(randomFloat(2.5, 5.0));
+              const duration = randomInt(20, 45);
+              const shouldAddPhoto = Math.random() > 0.7;
+              const activity = {
+                id: generateId(),
+                type: 'Running',
+                date: dateStr,
+                time: generateTime(),
+                duration,
+                distance,
+                pace: (duration / distance).toFixed(2),
+                calories: randomInt(200, 400),
+                avgHr: randomInt(140, 165),
+                maxHr: randomInt(170, 185),
+                ...(shouldAddPhoto && { photoURL: photoUrls[photoCounter++ % photoUrls.length] })
+              };
+              newActivities.push(activity);
+              newCalendarData[dateStr].push({ type: activity.type, duration: activity.duration, distance: activity.distance, calories: activity.calories, avgHr: activity.avgHr, maxHr: activity.maxHr });
+            } else {
+              const activity = { id: generateId(), type: 'Cycle', date: dateStr, time: generateTime(), duration: randomInt(30, 60), distance: parseFloat(randomFloat(8, 15)), calories: randomInt(250, 450), avgHr: randomInt(130, 155), maxHr: randomInt(160, 175) };
+              newActivities.push(activity);
+              newCalendarData[dateStr].push({ type: activity.type, duration: activity.duration, distance: activity.distance, calories: activity.calories, avgHr: activity.avgHr, maxHr: activity.maxHr });
+            }
+          }
+
+          // Recovery
+          if (recoveryDays.includes(dayOfWeek)) {
+            const recoveryTypes = ['Cold Plunge', 'Sauna', 'Yoga'];
+            const recoveryType = recoveryTypes[randomInt(0, 2)];
+            const activity = { id: generateId(), type: recoveryType, date: dateStr, time: generateTime(), duration: recoveryType === 'Cold Plunge' ? randomInt(3, 10) : recoveryType === 'Sauna' ? randomInt(15, 25) : randomInt(30, 60) };
+            newActivities.push(activity);
+            newCalendarData[dateStr].push({ type: activity.type, duration: activity.duration });
+          }
         }
       }
 
@@ -17325,24 +17292,25 @@ export default function DaySevenApp() {
         if (week.miles > records.mostMilesWeek) records.mostMilesWeek = parseFloat(week.miles.toFixed(1));
       });
 
-      const activitiesWithPhotos = newActivities.filter(a => a.photoURL).length;
-      console.log(`Generated ${newActivities.length} activities (${activitiesWithPhotos} with photos), saving...`);
       setActivities(newActivities);
       setCalendarData(newCalendarData);
       setUserData(prev => ({
         ...prev,
-        personalRecords: records
+        personalRecords: records,
+        streaks: {
+          master: 12,
+          lifts: 12,
+          cardio: 12,
+          recovery: 12,
+          stepsGoal: 3
+        }
       }));
-      // Also save records to Firestore if user is logged in
+      // Also save records and streaks to Firestore if user is logged in
       if (user?.uid) {
-        savePersonalRecords(user.uid, records).then(() => {
-          console.log('Records persisted to Firestore');
-        }).catch(err => {
-          console.error('Error saving records:', err);
-        });
+        const streaksData = { master: 12, lifts: 12, cardio: 12, recovery: 12, stepsGoal: 3 };
+        savePersonalRecords(user.uid, records).catch(() => {});
+        updateUserProfile(user.uid, { streaks: streaksData, personalRecords: records }).catch(() => {});
       }
-      console.log('Done! Activities, calendar data, and records saved.');
-      console.log('Records:', records);
       return newActivities.length;
     };
     return () => { delete window.__addDummyData; };
@@ -17353,23 +17321,18 @@ export default function DaySevenApp() {
 
   // Save activities to Firestore when they change
   useEffect(() => {
-    // console.log('Activities effect triggered:', { user: !!user, activitiesCount: activities.length, hasLoaded: hasLoadedActivities.current });
-
     if (!user) {
-      // console.log('No user, skipping save');
       return;
     }
 
     // Skip the initial load - only save after user makes changes
     if (!hasLoadedActivities.current) {
-      // console.log('Initial load, marking as loaded');
       hasLoadedActivities.current = true;
       return;
     }
 
     // Debounce the save to avoid too many writes
     const timeoutId = setTimeout(() => {
-      // console.log('Saving activities:', activities);
       saveUserActivities(user.uid, activities);
     }, 1000);
 
@@ -17509,7 +17472,6 @@ export default function DaySevenApp() {
       try {
         photoURL = await uploadActivityPhoto(user.uid, activityId, activity.photoFile);
       } catch (error) {
-        // console.error('Error uploading activity photo:', error);
         // Continue saving the activity without the photo
       }
     }
@@ -17600,23 +17562,13 @@ export default function DaySevenApp() {
     const newProgress = calculateWeeklyProgress(updatedActivities);
     setWeeklyProgress(newProgress);
 
-    // console.log('Saved activity:', newActivity, 'Cardio count:', newProgress.cardio?.completed);
-
     // Write to HealthKit (fire-and-forget, don't block the save flow)
     // Skip if: editing existing activity, came from Apple Health, is HealthKit-sourced, linked to existing HealthKit workout, already saved (live workout), or is Cold Plunge/Sauna
     const skipHealthKitTypes = ['Cold Plunge', 'Sauna'];
     if (!isEdit && !activityData.fromAppleHealth && activityData.source !== 'healthkit' && !activityData.linkedHealthKitUUID && !activityData.healthKitSaved && !skipHealthKitTypes.includes(newActivity.type)) {
       saveWorkoutToHealthKit(newActivity)
-        .then(result => {
-          if (result.success) {
-            console.log('Workout saved to HealthKit:', result.workoutUUID);
-          } else {
-            console.log('HealthKit write skipped:', result.reason);
-          }
-        })
-        .catch(err => console.error('HealthKit write error:', err));
-    } else if (activityData.healthKitSaved) {
-      console.log('Workout already saved to HealthKit via live session:', activityData.healthKitUUID);
+        .then(() => {})
+        .catch(() => {});
     }
 
     // Skip celebration for edits
@@ -18101,7 +18053,6 @@ export default function DaySevenApp() {
       personalRecords: updatedRecords
     }));
 
-    // console.log('Deleted activity:', activityId, 'Records recalculated');
   };
 
   // Check for daily steps/calories goal completion and celebrate
@@ -18286,11 +18237,9 @@ export default function DaySevenApp() {
               calories: finishedWorkout.calories,
               distance: finishedWorkout.distance
             });
-            console.log('Ended live workout:', liveResult);
           } else {
             // Just cancel the live workout builder without saving (we're linking to existing)
             await cancelLiveWorkout();
-            console.log('Cancelled live workout - linking to existing Apple Health workout');
           }
 
           // Mark workout data appropriately
@@ -18681,8 +18630,7 @@ export default function DaySevenApp() {
           // Start a live HealthKit workout session
           // This creates an actual workout in HealthKit and starts collecting metrics
           const activityType = getHealthKitActivityType(workoutData);
-          const result = await startLiveWorkout(activityType);
-          console.log('Started live workout:', result);
+          await startLiveWorkout(activityType);
         }}
         onSaveCustomActivity={(customActivity) => {
           // Add custom activity to user's saved list (if not already saved)

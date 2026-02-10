@@ -138,7 +138,6 @@ async function sendNotificationToUser(userId, title, body, data = {}, options = 
   try {
     const tokens = await getUserTokens(userId);
     if (tokens.length === 0) {
-      console.log(`No tokens found for user ${userId}`);
       return { success: false, reason: 'no_tokens' };
     }
 
@@ -146,7 +145,6 @@ async function sendNotificationToUser(userId, title, body, data = {}, options = 
 
     // Check quiet hours
     if (isQuietHours(preferences) && !options.ignoreQuietHours) {
-      console.log(`Quiet hours active for user ${userId}, skipping notification`);
       return { success: false, reason: 'quiet_hours' };
     }
 
@@ -406,7 +404,6 @@ exports.sendStreakReminders = onSchedule(
     timeZone: 'America/New_York',
   },
   async () => {
-    console.log('Running streak reminder job');
 
     const now = new Date();
     const twoDaysAgo = new Date(now);
@@ -488,7 +485,6 @@ exports.sendDailyReminders = onSchedule(
     timeZone: 'UTC',
   },
   async () => {
-    console.log(`Running daily reminders check at ${new Date().toISOString()}`);
 
     // Get all users and check their notificationPreferences field
     const usersSnapshot = await db.collection('users').get();
@@ -515,8 +511,6 @@ exports.sendDailyReminders = onSchedule(
 
       if (!activitiesSnapshot.empty) continue; // Already logged today
 
-      console.log(`Sending daily reminder to ${userId} (tz: ${prefs.timezone || 'default'}, local: ${userLocalTime})`);
-
       await sendNotificationToUser(
         userId,
         'Time to Move!',
@@ -539,7 +533,6 @@ exports.sendGoalReminder = onSchedule(
     timeZone: 'America/New_York',
   },
   async () => {
-    console.log('Sending end-of-week goal reminders');
 
     const cardioTypes = ['Running', 'Cycle', 'Sports', 'Walking', 'Hiking', 'Swimming', 'Rowing', 'Stair Climbing', 'Elliptical', 'HIIT'];
     const recoveryTypes = ['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'];
@@ -640,7 +633,6 @@ exports.sendWeeklySummary = onSchedule(
     timeZone: 'America/New_York',
   },
   async () => {
-    console.log('Sending weekly summaries');
 
     const cardioTypes = ['Running', 'Cycle', 'Sports', 'Walking', 'Hiking', 'Swimming', 'Rowing', 'Stair Climbing', 'Elliptical', 'HIIT'];
     const recoveryTypes = ['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'];
@@ -751,7 +743,6 @@ exports.sendMonthlySummary = onSchedule(
     timeZone: 'America/New_York',
   },
   async () => {
-    console.log('Sending monthly summaries');
 
     const usersSnapshot = await db.collection('users').get();
 

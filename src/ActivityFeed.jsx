@@ -123,7 +123,7 @@ const calculateLeaderboardStats = (activities, healthHistory, personalRecords) =
     strengthStreak: personalRecords?.longestStrengthStreak || 0,
     cardioStreak: personalRecords?.longestCardioStreak || 0,
     recoveryStreak: personalRecords?.longestRecoveryStreak || 0,
-    weeksWon: 0, // TODO: implement weeks won tracking if needed
+    weeksWon: 0,
     totalWorkouts,
     stats: {
       calories: { week: weekStats.calories, month: monthStats.calories, year: yearStats.calories, all: allStats.calories },

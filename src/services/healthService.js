@@ -28,7 +28,6 @@ export async function isHealthKitAvailable() {
     );
     return result.available;
   } catch (error) {
-    console.error('isHealthKitAvailable error:', error.message || error);
     return false;
   }
 }
@@ -44,7 +43,6 @@ export async function requestHealthKitAuthorization() {
     });
     return true;
   } catch (error) {
-    console.error('HealthKit authorization failed:', error);
     return false;
   }
 }
@@ -220,7 +218,6 @@ export async function queryHeartRateForTimeRange(startDate, endDate) {
     });
     return result.hasData ? { avgHr: result.avgHr, maxHr: result.maxHr } : null;
   } catch (error) {
-    console.error('[HR Query] Error querying heart rate:', error);
     return null;
   }
 }
@@ -242,7 +239,6 @@ export async function queryMaxHeartRateFromHealthKit(days = 90) {
 
     return result.hasData ? result.maxHr : null;
   } catch (error) {
-    console.error('[Max HR Query] Error:', error);
     return null;
   }
 }
@@ -300,7 +296,6 @@ export async function fetchHealthKitWorkouts(days = 7) {
 
     return activities;
   } catch (error) {
-    console.error('Error fetching HealthKit workouts:', error);
     return [];
   }
 }
@@ -376,7 +371,6 @@ export async function fetchLinkableWorkouts(date, linkedWorkoutIds = []) {
 
     return unlinkedActivities;
   } catch (error) {
-    console.error('Error fetching linkable workouts:', error);
     return [];
   }
 }
@@ -408,7 +402,6 @@ export async function fetchTodaySteps() {
     }
     return 0;
   } catch (error) {
-    console.log('Error fetching steps:', error);
     return null;
   }
 }
@@ -445,7 +438,6 @@ export async function fetchTodayCalories() {
     }
     return 0;
   } catch (error) {
-    console.error('Error fetching calories:', error);
     return null;
   }
 }
@@ -491,7 +483,6 @@ export async function requestHealthKitWriteAuthorization() {
     const result = await HealthKitWriter.requestWriteAuthorization();
     return result.authorized;
   } catch (error) {
-    console.error('HealthKit write authorization failed:', error);
     return false;
   }
 }
@@ -504,7 +495,6 @@ export async function checkHealthKitWriteAuthorization() {
     const result = await HealthKitWriter.checkWriteAuthorization();
     return result.authorized;
   } catch (error) {
-    console.error('Check write authorization failed:', error);
     return false;
   }
 }
@@ -639,7 +629,6 @@ function calculateWorkoutDates(activity) {
 // Used when finishing an active workout to auto-populate metrics from Apple Watch/Whoop
 export async function fetchWorkoutMetricsForTimeRange(startTime, endTime) {
   if (!Capacitor.isNativePlatform()) {
-    console.log('Not on native platform, cannot fetch workout metrics');
     return { success: false, reason: 'not_native' };
   }
 
@@ -663,8 +652,6 @@ export async function fetchWorkoutMetricsForTimeRange(startTime, endTime) {
         startDate: startTime,
         endDate: endTime
       });
-      console.log('Calories for workout:', JSON.stringify(caloriesResult));
-
       if (caloriesResult.value !== undefined && caloriesResult.value > 0) {
         metrics.calories = Math.round(caloriesResult.value);
       } else if (caloriesResult.samples && caloriesResult.samples.length > 0) {
@@ -674,7 +661,7 @@ export async function fetchWorkoutMetricsForTimeRange(startTime, endTime) {
         }
       }
     } catch (error) {
-      console.log('Error fetching calories for workout:', error);
+      // calories fetch failed
     }
 
     // Note: Heart rate querying via Health.query({ dataType: 'heartRate' }) is not
@@ -690,7 +677,6 @@ export async function fetchWorkoutMetricsForTimeRange(startTime, endTime) {
       metrics
     };
   } catch (error) {
-    console.error('Error fetching workout metrics:', error);
     return { success: false, reason: 'error', error: error.message };
   }
 }
@@ -702,7 +688,6 @@ export async function fetchWorkoutMetricsForTimeRange(startTime, endTime) {
 // double-counting when we read back the daily total from HealthKit.
 export async function saveWorkoutToHealthKit(activity) {
   if (!Capacitor.isNativePlatform()) {
-    console.log('Not on native platform, skipping HealthKit write');
     return { success: false, reason: 'not_native' };
   }
 
@@ -713,7 +698,6 @@ export async function saveWorkoutToHealthKit(activity) {
       // Try to request authorization
       authorized = await requestHealthKitWriteAuthorization();
       if (!authorized) {
-        console.log('HealthKit write not authorized');
         return { success: false, reason: 'not_authorized' };
       }
     }
@@ -739,15 +723,11 @@ export async function saveWorkoutToHealthKit(activity) {
       workoutData.distance = activity.distance * 1609.34;
     }
 
-    console.log('Saving workout to HealthKit:', workoutData);
-
     const result = await HealthKitWriter.saveWorkout(workoutData);
 
-    console.log('HealthKit save result:', result);
     return { success: true, workoutUUID: result.workoutUUID };
 
   } catch (error) {
-    console.error('Failed to save workout to HealthKit:', error);
     return { success: false, reason: 'error', error: error.message };
   }
 }
@@ -760,20 +740,17 @@ export async function saveWorkoutToHealthKit(activity) {
 // and will collect metrics in real-time. No need to start on Apple Watch separately.
 export async function startLiveWorkout(activityType) {
   if (!Capacitor.isNativePlatform()) {
-    console.log('Not on native platform, cannot start live workout');
     return { success: false, reason: 'not_native' };
   }
 
   try {
     const result = await HealthKitWriter.startLiveWorkout({ activityType });
-    console.log('Started live workout:', result);
     return {
       success: true,
       startDate: result.startDate,
       activityType: result.activityType
     };
   } catch (error) {
-    console.error('Failed to start live workout:', error);
     return { success: false, reason: 'error', error: error.message };
   }
 }
@@ -793,7 +770,6 @@ export async function endLiveWorkout(options = {}) {
     if (options.distance) params.distance = options.distance * 1609.34; // Convert miles to meters
 
     const result = await HealthKitWriter.endLiveWorkout(params);
-    console.log('Ended live workout:', result);
     return {
       success: true,
       workoutUUID: result.workoutUUID,
@@ -804,7 +780,6 @@ export async function endLiveWorkout(options = {}) {
       sampleCount: result.sampleCount
     };
   } catch (error) {
-    console.error('Failed to end live workout:', error);
     return { success: false, reason: 'error', error: error.message };
   }
 }
@@ -817,10 +792,8 @@ export async function cancelLiveWorkout() {
 
   try {
     const result = await HealthKitWriter.cancelLiveWorkout();
-    console.log('Cancelled live workout:', result);
     return { success: true };
   } catch (error) {
-    console.error('Failed to cancel live workout:', error);
     return { success: false, reason: 'error', error: error.message };
   }
 }
@@ -844,7 +817,6 @@ export async function getLiveWorkoutMetrics() {
       sampleCount: result.sampleCount
     };
   } catch (error) {
-    console.error('Failed to get live workout metrics:', error);
     return { success: false, reason: 'error', error: error.message, isActive: false };
   }
 }
@@ -857,16 +829,13 @@ export async function getLiveWorkoutMetrics() {
 // Call this when starting a workout to begin capturing HR and calories
 export async function startObservingWorkoutMetrics() {
   if (!Capacitor.isNativePlatform()) {
-    console.log('Not on native platform, cannot observe metrics');
     return { success: false, reason: 'not_native' };
   }
 
   try {
     const result = await HealthKitWriter.startObservingMetrics();
-    console.log('Started observing HealthKit metrics:', result);
     return { success: true, startDate: result.startDate, isLiveWorkout: result.isLiveWorkout };
   } catch (error) {
-    console.error('Failed to start observing metrics:', error);
     return { success: false, reason: 'error', error: error.message };
   }
 }
@@ -880,7 +849,6 @@ export async function stopObservingWorkoutMetrics() {
 
   try {
     const result = await HealthKitWriter.stopObservingMetrics();
-    console.log('Stopped observing HealthKit metrics:', result);
     return {
       success: true,
       calories: result.calories,
@@ -889,7 +857,6 @@ export async function stopObservingWorkoutMetrics() {
       sampleCount: result.sampleCount
     };
   } catch (error) {
-    console.error('Failed to stop observing metrics:', error);
     return { success: false, reason: 'error', error: error.message };
   }
 }
@@ -912,7 +879,6 @@ export async function getLatestWorkoutMetrics() {
       isObserving: result.isObserving
     };
   } catch (error) {
-    console.error('Failed to get latest metrics:', error);
     return { success: false, reason: 'error', error: error.message };
   }
 }
@@ -925,7 +891,6 @@ export function addMetricsUpdateListener(callback) {
   }
 
   const handle = HealthKitWriter.addListener('metricsUpdated', (data) => {
-    console.log('HealthKit metrics updated:', data);
     callback(data);
   });
 

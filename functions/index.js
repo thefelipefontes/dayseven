@@ -163,8 +163,13 @@ async function sendNotificationToUser(userId, title, body, data = {}, options = 
       apns: {
         payload: {
           aps: {
+            alert: {
+              title,
+              body,
+            },
             badge: data.badge ? parseInt(data.badge) : 1,
             sound: 'default',
+            'mutable-content': 1,
           },
         },
       },
@@ -443,8 +448,8 @@ exports.sendStreakReminders = onSchedule(
 );
 
 /**
- * Helper: Get the current time in a user's timezone as "HH:MM" (rounded to 15-min)
- * Returns { time: "HH:MM", dateStr: "YYYY-MM-DD" } in the user's local timezone
+ * Helper: Get the current time in a user's timezone as "HH:00" (rounded to the hour)
+ * Returns { time: "HH:00", dateStr: "YYYY-MM-DD" } in the user's local timezone
  */
 function getUserLocalTime(timezone) {
   const tz = timezone || 'America/New_York';
@@ -458,31 +463,28 @@ function getUserLocalTime(timezone) {
     });
     const parts = formatter.formatToParts(now);
     const hour = parts.find(p => p.type === 'hour').value;
-    const minuteRaw = parseInt(parts.find(p => p.type === 'minute').value, 10);
-    const roundedMinute = (Math.floor(minuteRaw / 15) * 15).toString().padStart(2, '0');
 
     // Also get the local date for activity check
     const dateFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: tz }); // en-CA gives YYYY-MM-DD
     const dateStr = dateFormatter.format(now);
 
-    return { time: `${hour}:${roundedMinute}`, dateStr };
+    return { time: `${hour}:00`, dateStr };
   } catch {
     // Fallback if timezone is invalid
     const now = new Date();
     const h = now.getUTCHours().toString().padStart(2, '0');
-    const m = (Math.floor(now.getUTCMinutes() / 15) * 15).toString().padStart(2, '0');
     const d = now.toISOString().split('T')[0];
-    return { time: `${h}:${m}`, dateStr: d };
+    return { time: `${h}:00`, dateStr: d };
   }
 }
 
 /**
- * Daily scheduled reminder - runs every 15 minutes to match users' preferred time
+ * Daily scheduled reminder - runs every hour to match users' preferred time
  * Uses each user's stored timezone for accurate local time matching
  */
 exports.sendDailyReminders = onSchedule(
   {
-    schedule: '*/15 * * * *', // Every 15 minutes
+    schedule: '0 * * * *', // Every hour on the hour
     timeZone: 'UTC',
   },
   async () => {

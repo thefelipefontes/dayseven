@@ -364,15 +364,12 @@ const NotificationSettings = ({ userId, onClose }) => {
                     onChange={(e) => handleTimeChange('dailyReminderTime', e.target.value)}
                     className="ml-3 bg-zinc-800 text-white rounded-lg px-3 py-1.5 text-sm"
                   >
-                    {Array.from({ length: 24 * 4 }, (_, i) => {
-                      const hour = Math.floor(i / 4);
-                      const minute = (i % 4) * 15;
-                      const hourStr = hour.toString().padStart(2, '0');
-                      const minuteStr = minute.toString().padStart(2, '0');
-                      const value = `${hourStr}:${minuteStr}`;
-                      const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
-                      const ampm = hour < 12 ? 'AM' : 'PM';
-                      const label = `${displayHour}:${minuteStr} ${ampm}`;
+                    {Array.from({ length: 24 }, (_, i) => {
+                      const hourStr = i.toString().padStart(2, '0');
+                      const value = `${hourStr}:00`;
+                      const displayHour = i === 0 ? 12 : i > 12 ? i - 12 : i;
+                      const ampm = i < 12 ? 'AM' : 'PM';
+                      const label = `${displayHour}:00 ${ampm}`;
                       return (
                         <option key={value} value={value}>
                           {label}

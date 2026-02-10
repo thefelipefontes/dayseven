@@ -133,7 +133,6 @@ export async function searchUsers(searchQuery, currentUid) {
       return users;
     }
   } catch (error) {
-    // console.error('searchUsers error:', error);
     return [];
   }
 }
@@ -145,7 +144,6 @@ export async function sendFriendRequest(fromUid, toUid) {
       const friendPath = `users/${fromUid}/friends/${toUid}`;
       const { snapshot: friendSnapshot } = await FirebaseFirestore.getDocument({ reference: friendPath });
       if (friendSnapshot?.data) {
-        // console.log('Already friends');
         return { error: 'already_friends' };
       }
 
@@ -163,14 +161,12 @@ export async function sendFriendRequest(fromUid, toUid) {
       // Check for request from current user to target
       const existingTo = allRequests?.find(s => s.data?.fromUid === fromUid && s.data?.toUid === toUid);
       if (existingTo) {
-        // console.log('Request already sent');
         return { error: 'request_already_sent' };
       }
 
       // Check for request from target to current user
       const existingFrom = allRequests?.find(s => s.data?.fromUid === toUid && s.data?.toUid === fromUid);
       if (existingFrom) {
-        // console.log('Request already received from this user');
         return { error: 'request_already_received' };
       }
 
@@ -197,7 +193,6 @@ export async function sendFriendRequest(fromUid, toUid) {
       const friendRef = doc(db, 'users', fromUid, 'friends', toUid);
       const friendDoc = await withTimeout(getDoc(friendRef));
       if (friendDoc.exists()) {
-        // console.log('Already friends');
         return { error: 'already_friends' };
       }
 
@@ -211,7 +206,6 @@ export async function sendFriendRequest(fromUid, toUid) {
       );
       const existingToSnapshot = await withTimeout(getDocs(existingToQuery));
       if (!existingToSnapshot.empty) {
-        // console.log('Request already sent');
         return { error: 'request_already_sent' };
       }
 
@@ -223,7 +217,6 @@ export async function sendFriendRequest(fromUid, toUid) {
       );
       const existingFromSnapshot = await withTimeout(getDocs(existingFromQuery));
       if (!existingFromSnapshot.empty) {
-        // console.log('Request already received from this user');
         return { error: 'request_already_received' };
       }
 
@@ -243,7 +236,6 @@ export async function sendFriendRequest(fromUid, toUid) {
       return { success: true, requestId: requestRef.id };
     }
   } catch (error) {
-    // console.error('sendFriendRequest error:', error);
     throw error;
   }
 }
@@ -334,7 +326,6 @@ export async function getFriendRequests(uid, forceRefresh = false) {
 
     return requests;
   } catch (error) {
-    // console.error('getFriendRequests error:', error);
     // Return cached data if available, even if expired
     if (friendCache.requests.has(uid)) {
       return friendCache.requests.get(uid);
@@ -427,7 +418,6 @@ export async function getSentRequests(uid, forceRefresh = false) {
 
     return requests;
   } catch (error) {
-    // console.error('getSentRequests error:', error);
     // Return cached data if available, even if expired
     const cached = friendCache.requests.get(`sent_${uid}`);
     if (cached) {
@@ -484,7 +474,6 @@ export async function acceptFriendRequest(requestId, fromUid, toUid) {
     clearFriendCache(fromUid);
     clearFriendCache(toUid);
   } catch (error) {
-    // console.error('acceptFriendRequest error:', error);
     throw error;
   }
 }
@@ -505,7 +494,6 @@ export async function declineFriendRequest(requestId, currentUid) {
       clearFriendCache(currentUid);
     }
   } catch (error) {
-    // console.error('declineFriendRequest error:', error);
     throw error;
   }
 }
@@ -574,7 +562,6 @@ export async function getFriends(uid, forceRefresh = false) {
 
     return friends;
   } catch (error) {
-    // console.error('getFriends error:', error);
     // Return cached data if available, even if expired
     if (friendCache.friends.has(uid)) {
       return friendCache.friends.get(uid);
@@ -604,7 +591,6 @@ export async function removeFriend(uid, friendUid) {
     clearFriendCache(uid);
     clearFriendCache(friendUid);
   } catch (error) {
-    // console.error('removeFriend error:', error);
     throw error;
   }
 }
@@ -612,7 +598,6 @@ export async function removeFriend(uid, friendUid) {
 export async function addReaction(activityId, activityOwnerUid, reactorUid, reactorName, reactorPhoto, reactionType) {
   const activityIdStr = String(activityId);
   const path = `users/${activityOwnerUid}/activityReactions/${activityIdStr}/reactions/${reactorUid}`;
-  // console.log('addReaction: Writing to path:', path);
 
   try {
     if (isNative) {
@@ -626,7 +611,6 @@ export async function addReaction(activityId, activityOwnerUid, reactorUid, reac
           createdAt: new Date().toISOString()
         }
       });
-      // console.log('addReaction: Successfully wrote to Firestore');
       return reactorUid;
     } else {
       const reactionRef = doc(db, 'users', activityOwnerUid, 'activityReactions', activityIdStr, 'reactions', reactorUid);
@@ -638,12 +622,9 @@ export async function addReaction(activityId, activityOwnerUid, reactorUid, reac
         reactionType,
         createdAt: serverTimestamp()
       }));
-      // console.log('addReaction: Successfully wrote to Firestore');
       return reactionRef.id;
     }
   } catch (error) {
-    // console.error('addReaction: Error writing to Firestore:', error);
-    // console.error('addReaction: Error code:', error.code, 'Error message:', error.message);
     throw error;
   }
 }
@@ -679,7 +660,6 @@ export async function getReactions(ownerUid, activityId) {
       }));
     }
   } catch (error) {
-    // console.error('getReactions error:', error);
     return [];
   }
 }
@@ -697,7 +677,6 @@ export async function removeReaction(ownerUid, activityId, reactorUid) {
       await withTimeout(deleteDoc(reactionRef));
     }
   } catch (error) {
-    // console.error('removeReaction error:', error);
     throw error;
   }
 }
@@ -736,7 +715,6 @@ export async function addComment(activityId, ownerUid, commenterUid, commenterNa
       return commentRef.id;
     }
   } catch (error) {
-    // console.error('addComment: Error writing to Firestore:', error);
     throw error;
   }
 }
@@ -781,7 +759,6 @@ export async function getComments(ownerUid, activityId) {
           ...doc.data()
         }));
       } catch (error) {
-        // console.warn('getComments: Ordered query failed, falling back to unordered:', error);
         const fallbackSnapshot = await withTimeout(getDocs(commentsRef));
         return fallbackSnapshot.docs.map(doc => ({
           id: doc.id,
@@ -790,7 +767,6 @@ export async function getComments(ownerUid, activityId) {
       }
     }
   } catch (error) {
-    // console.error('getComments error:', error);
     return [];
   }
 }
@@ -808,7 +784,6 @@ export async function deleteComment(ownerUid, activityId, commentId) {
       await withTimeout(deleteDoc(commentRef));
     }
   } catch (error) {
-    // console.error('deleteComment error:', error);
     throw error;
   }
 }
@@ -847,7 +822,6 @@ export async function addReply(ownerUid, activityId, commentId, replierUid, repl
       return replyRef.id;
     }
   } catch (error) {
-    // console.error('addReply: Error writing to Firestore:', error);
     throw error;
   }
 }
@@ -891,7 +865,6 @@ export async function getReplies(ownerUid, activityId, commentId) {
           ...doc.data()
         }));
       } catch (error) {
-        // console.warn('getReplies: Ordered query failed, falling back to unordered:', error);
         const fallbackSnapshot = await withTimeout(getDocs(repliesRef));
         return fallbackSnapshot.docs.map(doc => ({
           id: doc.id,
@@ -900,7 +873,6 @@ export async function getReplies(ownerUid, activityId, commentId) {
       }
     }
   } catch (error) {
-    // console.error('getReplies error:', error);
     return [];
   }
 }
@@ -918,7 +890,6 @@ export async function deleteReply(ownerUid, activityId, commentId, replyId) {
       await withTimeout(deleteDoc(replyRef));
     }
   } catch (error) {
-    // console.error('deleteReply error:', error);
     throw error;
   }
 }

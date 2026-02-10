@@ -52,6 +52,10 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         return formatter
     }()
 
+    deinit {
+        stopObserverQueries()
+    }
+
     // MARK: - Authorization
 
     @objc func requestWriteAuthorization(_ call: CAPPluginCall) {
@@ -167,7 +171,14 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             self.observerStartDate = self.liveWorkoutStartDate
 
             // Begin workout data collection
-            builder.beginCollection(withStart: self.liveWorkoutStartDate!) { success, error in
+            guard let startDate = self.liveWorkoutStartDate else {
+                DispatchQueue.main.async {
+                    call.reject("Failed to initialize workout start date")
+                }
+                return
+            }
+
+            builder.beginCollection(withStart: startDate) { success, error in
                 if !success {
                     DispatchQueue.main.async {
                         self.workoutBuilder = nil
@@ -178,13 +189,13 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
 
                 // Start observing heart rate and calories
-                self.startHeartRateObserver(from: self.liveWorkoutStartDate!)
-                self.startCaloriesObserver(from: self.liveWorkoutStartDate!)
+                self.startHeartRateObserver(from: startDate)
+                self.startCaloriesObserver(from: startDate)
 
                 DispatchQueue.main.async {
                     call.resolve([
                         "success": true,
-                        "startDate": self.isoFormatter.string(from: self.liveWorkoutStartDate!),
+                        "startDate": self.isoFormatter.string(from: startDate),
                         "activityType": activityTypeString
                     ])
                 }
@@ -284,7 +295,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             if !samples.isEmpty {
                 builder.add(samples) { success, error in
                     if !success {
-                        print("HealthKitWriter: Failed to add samples: \(error?.localizedDescription ?? "unknown")")
+                        // Sample addition failed, continuing with workout finish
                     }
                     finishWorkout()
                 }
@@ -331,9 +342,14 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
+        guard let startDate = liveWorkoutStartDate else {
+            call.resolve(["isActive": false, "calories": 0, "avgHr": 0, "maxHr": 0, "lastHr": 0, "sampleCount": 0])
+            return
+        }
+
         let avgHr = heartRateSamples.isEmpty ? 0 : heartRateSamples.reduce(0, +) / Double(heartRateSamples.count)
         let maxHr = heartRateSamples.max() ?? 0
-        let elapsed = Date().timeIntervalSince(liveWorkoutStartDate!) / 60.0
+        let elapsed = Date().timeIntervalSince(startDate) / 60.0
 
         call.resolve([
             "isActive": true,
@@ -457,7 +473,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             if !samples.isEmpty {
                 builder.add(samples) { success, error in
                     if !success {
-                        print("HealthKitWriter: Failed to add samples: \(error?.localizedDescription ?? "unknown")")
+                        // Sample addition failed, continuing with workout finish
                     }
                     finishWorkout()
                 }
@@ -471,10 +487,10 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func startObservingMetrics(_ call: CAPPluginCall) {
         // If there's a live workout, just return its metrics
-        if liveWorkoutStartDate != nil {
+        if let existingStart = liveWorkoutStartDate {
             call.resolve([
                 "success": true,
-                "startDate": isoFormatter.string(from: liveWorkoutStartDate!),
+                "startDate": isoFormatter.string(from: existingStart),
                 "isLiveWorkout": true
             ])
             return
@@ -512,19 +528,20 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
 
             self.stopObserverQueries()
 
-            self.observerStartDate = Date()
+            let observerStart = Date()
+            self.observerStartDate = observerStart
             self.accumulatedCalories = 0
             self.heartRateSamples = []
             self.heartRateHKSamples = []
             self.lastHeartRate = 0
 
-            self.startHeartRateObserver(from: self.observerStartDate!)
-            self.startCaloriesObserver(from: self.observerStartDate!)
+            self.startHeartRateObserver(from: observerStart)
+            self.startCaloriesObserver(from: observerStart)
 
             DispatchQueue.main.async {
                 call.resolve([
                     "success": true,
-                    "startDate": self.isoFormatter.string(from: self.observerStartDate!)
+                    "startDate": self.isoFormatter.string(from: observerStart)
                 ])
             }
         }

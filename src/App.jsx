@@ -15909,6 +15909,8 @@ export default function DaySevenApp() {
       return [];
     }
   });
+  const dismissedWorkoutUUIDsRef = useRef(dismissedWorkoutUUIDs);
+  useEffect(() => { dismissedWorkoutUUIDsRef.current = dismissedWorkoutUUIDs; }, [dismissedWorkoutUUIDs]);
 
   // Handler to dismiss a workout from notifications
   const handleDismissWorkout = (workout) => {
@@ -16848,12 +16850,13 @@ export default function DaySevenApp() {
             .map(a => a.linkedHealthKitUUID)
         );
 
-        // Filter workouts - only exclude already saved/linked activities
-        // Dismissed workouts are filtered at render time for notification banner only
+        // Filter workouts - exclude already saved, linked, and dismissed activities
+        const dismissedSet = new Set(dismissedWorkoutUUIDsRef.current);
         const newWorkouts = result.workouts.filter(
           w => w.healthKitUUID &&
                !existingUUIDs.has(w.healthKitUUID) &&
-               !linkedUUIDs.has(w.healthKitUUID)
+               !linkedUUIDs.has(w.healthKitUUID) &&
+               !dismissedSet.has(w.healthKitUUID)
         );
 
         // --- Smart Save: auto-save qualifying walks ---
@@ -17934,6 +17937,14 @@ export default function DaySevenApp() {
     // Haptic feedback for delete action
     triggerHaptic(ImpactStyle.Medium);
 
+    // If this was a HealthKit workout, dismiss its UUID so it won't re-sync
+    const hkUUID = activityToDelete.healthKitUUID || activityToDelete.linkedHealthKitUUID;
+    if (hkUUID) {
+      const newDismissed = [...dismissedWorkoutUUIDs, hkUUID];
+      setDismissedWorkoutUUIDs(newDismissed);
+      localStorage.setItem('dismissedWorkoutUUIDs', JSON.stringify(newDismissed));
+    }
+
     // Remove from activities
     const updatedActivities = activities.filter(a => a.id !== activityId);
     setActivities(updatedActivities);
@@ -18052,6 +18063,11 @@ export default function DaySevenApp() {
       ...prev,
       personalRecords: updatedRecords
     }));
+
+    // Persist deletion to Firestore
+    if (user?.uid) {
+      saveUserActivities(user.uid, updatedActivities).catch(() => {});
+    }
 
   };
 

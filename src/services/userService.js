@@ -126,7 +126,6 @@ export async function createUserProfile(user) {
       }
     }
   } catch (error) {
-    // console.error('createUserProfile error:', error);
     // Continue anyway - profile will be created later
   }
 
@@ -161,7 +160,6 @@ export async function getUserProfile(uid, forceRefresh = false) {
 
     return profile;
   } catch (error) {
-    // console.error('getUserProfile error:', error);
     // Return cached data if available, even if expired
     if (cache.userProfiles.has(uid)) {
       return cache.userProfiles.get(uid);
@@ -191,7 +189,6 @@ export async function updateUserProfile(uid, data) {
       await withTimeout(updateDoc(userRef, data));
     }
   } catch (error) {
-    // console.error('updateUserProfile error:', error);
     // If doc doesn't exist, try to create it
     if (error.message?.includes('No document') || error.message?.includes('not-found') || error.code === 'not-found') {
       if (isNative) {
@@ -238,7 +235,6 @@ export async function saveUserActivities(uid, activities) {
       }
     });
   } catch (error) {
-    // console.error('saveUserActivities error:', error);
     // Cache is already updated, so user sees changes immediately
     // Error will be logged but won't block the UI
     // On next refresh, data will sync
@@ -270,7 +266,6 @@ export async function getUserActivities(uid, forceRefresh = false) {
 
     return activities;
   } catch (error) {
-    // console.error('getUserActivities error:', error);
     // Return cached data if available, even if expired
     if (cache.userActivities.has(uid)) {
       return cache.userActivities.get(uid);
@@ -292,7 +287,6 @@ export async function checkUsernameAvailable(username) {
       return !usernameDoc.exists();
     }
   } catch (error) {
-    // console.error('checkUsernameAvailable error:', error);
     return true; // Assume available on error
   }
 }
@@ -319,7 +313,6 @@ export async function saveUsername(uid, username) {
       await setDoc(usernameRef, { uid });
     }
   } catch (error) {
-    // console.error('saveUsername error:', error);
     throw error;
   }
 }
@@ -344,7 +337,6 @@ export async function saveCustomActivities(uid, customActivities) {
       }
     });
   } catch (error) {
-    // console.error('saveCustomActivities error:', error);
     // Don't throw - optimistic update already applied
   }
 }
@@ -374,7 +366,6 @@ export async function getCustomActivities(uid, forceRefresh = false) {
 
     return customActivities;
   } catch (error) {
-    // console.error('getCustomActivities error:', error);
     // Return cached data if available
     if (cache.customActivities.has(uid)) {
       return cache.customActivities.get(uid);
@@ -403,7 +394,6 @@ export async function saveUserGoals(uid, goals) {
       }
     });
   } catch (error) {
-    // console.error('saveUserGoals error:', error);
     // Don't throw - optimistic update already applied
   }
 }
@@ -435,7 +425,6 @@ export async function getUserGoals(uid, forceRefresh = false) {
 
     return goals;
   } catch (error) {
-    // console.error('getUserGoals error:', error);
     // Return cached data if available
     if (cache.userGoals.has(uid)) {
       return cache.userGoals.get(uid);
@@ -458,7 +447,6 @@ export async function setOnboardingComplete(uid) {
       await updateDoc(userRef, { hasCompletedOnboarding: true });
     }
   } catch (error) {
-    // console.error('setOnboardingComplete error:', error);
     throw error;
   }
 }
@@ -477,7 +465,6 @@ export async function setTourComplete(uid) {
       await updateDoc(userRef, { hasCompletedTour: true });
     }
   } catch (error) {
-    // console.error('setTourComplete error:', error);
     throw error;
   }
 }
@@ -498,7 +485,6 @@ export async function savePersonalRecords(uid, personalRecords) {
       }
     });
   } catch (error) {
-    // console.error('savePersonalRecords error:', error);
     // Don't throw - optimistic update already applied
   }
 }
@@ -519,7 +505,6 @@ export async function getPersonalRecords(uid) {
 
     return personalRecords;
   } catch (error) {
-    // console.error('getPersonalRecords error:', error);
     return null;
   }
 }
@@ -664,7 +649,7 @@ export async function deleteUserAccount(uid, username) {
             reference: `usernames/${username.toLowerCase()}`
           });
         } catch (e) {
-          console.error('Error deleting username:', e);
+          // username deletion failed
         }
       }
 
@@ -690,7 +675,7 @@ export async function deleteUserAccount(uid, username) {
           }
         }
       } catch (e) {
-        console.error('Error deleting friends:', e);
+        // friends deletion failed
       }
 
       // Native: Delete the user document
@@ -722,7 +707,7 @@ export async function deleteUserAccount(uid, username) {
           batch.delete(friendDoc.ref);
         }
       } catch (e) {
-        console.error('Error processing friends:', e);
+        // friends processing failed
       }
 
       // Delete friend requests involving this user
@@ -735,7 +720,7 @@ export async function deleteUserAccount(uid, username) {
         const receivedSnapshot = await getDocs(receivedRequestsQuery);
         receivedSnapshot.docs.forEach(doc => batch.delete(doc.ref));
       } catch (e) {
-        console.error('Error deleting friend requests:', e);
+        // friend requests deletion failed
       }
 
       // Delete the user document
@@ -751,7 +736,6 @@ export async function deleteUserAccount(uid, username) {
 
     return true;
   } catch (error) {
-    console.error('deleteUserAccount error:', error);
     throw error;
   }
 }
@@ -794,7 +778,6 @@ export async function saveDailyHealthData(uid, date, steps, calories) {
     }
     return true;
   } catch (error) {
-    // console.error('saveDailyHealthData error:', error);
     // Don't throw - optimistic update already applied
     return false;
   }
@@ -835,7 +818,6 @@ export async function getDailyHealthData(uid, date) {
 
     return data;
   } catch (error) {
-    // console.error('getDailyHealthData error:', error);
     // Return cached data if available
     if (cached) {
       const { _cachedAt, ...data } = cached;
@@ -901,7 +883,6 @@ export async function getDailyHealthHistory(uid, days = 30) {
 
     return results;
   } catch (error) {
-    // console.error('getDailyHealthHistory error:', error);
     return [];
   }
 }

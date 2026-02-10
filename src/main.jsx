@@ -13,9 +13,9 @@ Sentry.init({
   ],
   // Only send errors in production
   enabled: import.meta.env.PROD,
-  tracesSampleRate: 1.0,
-  replaysSessionSampleRate: 0.1,
-  replaysOnErrorSampleRate: 1.0,
+  tracesSampleRate: 0.1,
+  replaysSessionSampleRate: 0.01,
+  replaysOnErrorSampleRate: 0.5,
 })
 
 ReactDOM.createRoot(document.getElementById('root')).render(

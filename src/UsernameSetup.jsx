@@ -50,7 +50,6 @@ const UsernameSetup = ({ user, onComplete }) => {
           setIsTaken(!querySnapshot.empty);
         }
       } catch (error) {
-        // console.error('Error checking username:', error);
         // On error, assume username is available to let user proceed
         setIsTaken(false);
       }
@@ -69,7 +68,6 @@ const UsernameSetup = ({ user, onComplete }) => {
       await updateUserProfile(user.uid, { username: username.toLowerCase() });
       onComplete(username);
     } catch (error) {
-      // console.error('Error saving username:', error);
       // Still proceed on error - will sync later
       onComplete(username);
     }

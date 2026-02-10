@@ -9,9 +9,12 @@
  */
 
 import { FirebaseMessaging } from '@capacitor-firebase/messaging';
+import { FirebaseFirestore } from '@capacitor-firebase/firestore';
 import { Capacitor } from '@capacitor/core';
 import { doc, setDoc, updateDoc, arrayUnion, arrayRemove, getDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
+
+const isNative = Capacitor.isNativePlatform();
 
 // Notification types for your app
 export const NotificationType = {
@@ -106,25 +109,55 @@ export const saveFCMToken = async (userId, token) => {
   if (!userId || !token) return;
 
   try {
-    const userTokensRef = doc(db, 'userTokens', userId);
-    const deviceInfo = {
-      token,
-      platform: Capacitor.getPlatform(),
-      lastUpdated: serverTimestamp(),
-    };
+    if (isNative) {
+      // First, read existing tokens to merge
+      let existingTokens = [];
+      try {
+        const { snapshot } = await FirebaseFirestore.getDocument({
+          reference: `userTokens/${userId}`,
+        });
+        existingTokens = snapshot?.data?.tokens || [];
+      } catch {
+        // Document may not exist yet
+      }
 
-    // Use setDoc with merge to create or update
-    await setDoc(userTokensRef, {
-      userId,
-      tokens: arrayUnion(token),
-      devices: {
-        [token]: deviceInfo
-      },
-      updatedAt: serverTimestamp(),
-    }, { merge: true });
+      // Add token if not already present
+      const tokensSet = new Set(existingTokens);
+      tokensSet.add(token);
 
+      await FirebaseFirestore.setDocument({
+        reference: `userTokens/${userId}`,
+        data: {
+          userId,
+          tokens: Array.from(tokensSet),
+          [`devices.${token}`]: {
+            token,
+            platform: Capacitor.getPlatform(),
+            lastUpdated: new Date().toISOString(),
+          },
+          updatedAt: new Date().toISOString(),
+        },
+        merge: true,
+      });
+    } else {
+      const userTokensRef = doc(db, 'userTokens', userId);
+      const deviceInfo = {
+        token,
+        platform: Capacitor.getPlatform(),
+        lastUpdated: serverTimestamp(),
+      };
+
+      await setDoc(userTokensRef, {
+        userId,
+        tokens: arrayUnion(token),
+        devices: {
+          [token]: deviceInfo
+        },
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+    }
   } catch (error) {
-    // token save failed
+    console.error('Failed to save FCM token:', error);
   }
 };
 

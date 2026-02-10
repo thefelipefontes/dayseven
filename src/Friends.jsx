@@ -57,7 +57,6 @@ const Friends = ({ user, userProfile, onClose }) => {
   }, [user.uid]);
 
   const loadData = async () => {
-    // console.log('Loading friends data for uid:', user.uid);
     setIsLoading(true);
     try {
       const [friendsList, requestsList, sentList] = await Promise.all([
@@ -65,14 +64,10 @@ const Friends = ({ user, userProfile, onClose }) => {
         getFriendRequests(user.uid),
         getSentRequests(user.uid)
       ]);
-      // console.log('Friends loaded:', friendsList);
-      // console.log('Friend requests received:', requestsList);
-      // console.log('Sent requests:', sentList);
       setFriends(friendsList);
       setRequests(requestsList);
       setSentRequests(sentList);
     } catch (error) {
-      // console.error('Error loading friends data:', error);
     }
     setIsLoading(false);
   };
@@ -90,7 +85,6 @@ const Friends = ({ user, userProfile, onClose }) => {
         const results = await searchUsers(searchQuery, user.uid);
         setSearchResults(results);
       } catch (error) {
-        // console.error('Error searching users:', error);
       }
       setIsSearching(false);
     }, 300);
@@ -99,27 +93,22 @@ const Friends = ({ user, userProfile, onClose }) => {
   }, [searchQuery, user.uid]);
 
   const handleSendRequest = async (toUid) => {
-    // console.log('Add friend clicked', toUid);
-    // console.log('From user:', user.uid);
     triggerHaptic(ImpactStyle.Medium);
     setSendingTo(toUid);
     try {
       const result = await sendFriendRequest(user.uid, toUid);
-      // console.log('Friend request result:', result);
 
       if (result.success) {
         // Show success animation
         setJustSent(prev => new Set(prev).add(toUid));
         // Refresh sent requests
         const sentList = await getSentRequests(user.uid);
-        // console.log('Updated sent requests:', sentList);
         setSentRequests(sentList);
       } else if (result.error === 'request_already_received') {
         // They already sent us a request, refresh to show Accept button
         await loadData();
       }
     } catch (error) {
-      // console.error('Error sending friend request:', error);
     }
     setSendingTo(null);
   };
@@ -130,7 +119,6 @@ const Friends = ({ user, userProfile, onClose }) => {
       await acceptFriendRequest(request.id, request.fromUid, request.toUid);
       await loadData();
     } catch (error) {
-      // console.error('Error accepting friend request:', error);
     }
   };
 
@@ -139,7 +127,6 @@ const Friends = ({ user, userProfile, onClose }) => {
       await declineFriendRequest(requestId);
       setRequests(requests.filter(r => r.id !== requestId));
     } catch (error) {
-      // console.error('Error declining friend request:', error);
     }
   };
 
@@ -148,7 +135,6 @@ const Friends = ({ user, userProfile, onClose }) => {
       await declineFriendRequest(requestId);
       setSentRequests(sentRequests.filter(r => r.id !== requestId));
     } catch (error) {
-      // console.error('Error canceling friend request:', error);
     }
   };
 
@@ -157,7 +143,6 @@ const Friends = ({ user, userProfile, onClose }) => {
       await removeFriend(user.uid, friendUid);
       setFriends(friends.filter(f => f.uid !== friendUid));
     } catch (error) {
-      // console.error('Error removing friend:', error);
     }
   };
 

@@ -5,5 +5,11 @@ export default defineConfig({
   plugins: [react()],
   server: {
     allowedHosts: true
+  },
+  build: {
+    sourcemap: false,
+  },
+  esbuild: {
+    drop: ['console', 'debugger']
   }
 })

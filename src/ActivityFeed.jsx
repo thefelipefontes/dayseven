@@ -816,7 +816,6 @@ const MemoizedActivityCard = React.memo(({
                                           setReplyingTo(null);
                                           setExpandedReplies(prev => ({ ...prev, [comment.id]: true }));
                                         } catch (error) {
-                                          // console.error('Failed to post reply:', error);
                                         }
                                       }
                                     } else if (e.key === 'Escape') {
@@ -837,7 +836,6 @@ const MemoizedActivityCard = React.memo(({
                                         setReplyingTo(null);
                                         setExpandedReplies(prev => ({ ...prev, [comment.id]: true }));
                                       } catch (error) {
-                                        // console.error('Failed to post reply:', error);
                                       }
                                     }
                                   }}
@@ -1000,75 +998,79 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       };
 
       const dummyActivities = [
-        // Today's activities
+        // Today's activities - 4 consecutive posts with gym selfie photos
+        // Order top to bottom: 2, 3, 1, 4
         {
           id: 'demo-1',
+          type: 'Strength Training',
+          subtype: 'Lifting - Back',
+          strengthType: 'Lifting',
+          date: formatDate(today),
+          time: '7:30 AM',
+          duration: 58,
+          calories: 385,
+          friend: dummyFriends[0],
+          photoURL: '/feed-photos/2.png'
+        },
+        {
+          id: 'demo-2',
+          type: 'Strength Training',
+          subtype: 'Lifting - Legs',
+          strengthType: 'Lifting',
+          date: formatDate(today),
+          time: '6:45 AM',
+          duration: 72,
+          calories: 410,
+          friend: dummyFriends[1],
+          photoURL: '/feed-photos/3.png'
+        },
+        {
+          id: 'demo-3',
           type: 'Strength Training',
           subtype: 'Lifting - Push',
           strengthType: 'Lifting',
           date: formatDate(today),
-          time: '7:30 AM',
+          time: '6:00 AM',
           duration: 65,
           calories: 420,
-          friend: dummyFriends[0],
-          photoURL: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=400&h=400&fit=crop'
+          friend: dummyFriends[2],
+          photoURL: '/feed-photos/1.png'
         },
         {
-          id: 'demo-2',
-          type: 'Running',
+          id: 'demo-4',
+          type: 'Strength Training',
+          subtype: 'Lifting - Shoulders',
+          strengthType: 'Lifting',
           date: formatDate(today),
+          time: '5:30 AM',
+          duration: 55,
+          calories: 350,
+          friend: dummyFriends[3],
+          photoURL: '/feed-photos/4.png'
+        },
+        // Yesterday's activities
+        {
+          id: 'demo-5',
+          type: 'Running',
+          date: formatDate(new Date(today.getTime() - 86400000)),
           time: '6:15 AM',
           duration: 42,
           distance: 5.2,
           pace: '8:05',
           calories: 485,
-          friend: dummyFriends[1]
-        },
-        // Yesterday's activities
-        {
-          id: 'demo-3',
-          type: 'Yoga',
-          date: formatDate(new Date(today.getTime() - 86400000)),
-          time: '6:00 AM',
-          duration: 45,
-          friend: dummyFriends[3],
-          photoURL: 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=400&h=400&fit=crop'
+          friend: dummyFriends[4]
         },
         {
-          id: 'demo-4',
-          type: 'Strength Training',
-          subtype: 'Lifting - Legs',
-          strengthType: 'Lifting',
-          date: formatDate(new Date(today.getTime() - 86400000)),
-          time: '5:45 PM',
-          duration: 72,
-          calories: 380,
-          friend: dummyFriends[2],
-          photoURL: 'https://images.unsplash.com/photo-1574680096145-d05b474e2155?w=400&h=400&fit=crop'
-        },
-        {
-          id: 'demo-5',
+          id: 'demo-6',
           type: 'Cycle',
           date: formatDate(new Date(today.getTime() - 86400000)),
           time: '7:00 AM',
           duration: 55,
           distance: 18.5,
           calories: 520,
-          friend: dummyFriends[4]
+          friend: dummyFriends[5]
         },
         // 2 days ago
-        {
-          id: 'demo-6',
-          type: 'Running',
-          date: formatDate(new Date(today.getTime() - 2 * 86400000)),
-          time: '6:30 AM',
-          duration: 38,
-          distance: 4.8,
-          pace: '7:55',
-          calories: 445,
-          friend: dummyFriends[5],
-          photoURL: 'https://images.unsplash.com/photo-1476480862126-209bfaa8edc8?w=400&h=400&fit=crop'
-        },
         {
           id: 'demo-7',
           type: 'Cold Plunge',
@@ -1119,25 +1121,21 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           { reactorUid: 'dummy4', reactionType: '🔥', reactorName: 'Emma Williams', reactorPhoto: 'https://i.pravatar.cc/150?img=9' }
         ],
         'dummy2-demo-2': [
-          { reactorUid: 'dummy1', reactionType: '🏃', reactorName: 'Alex Thompson', reactorPhoto: 'https://i.pravatar.cc/150?img=1' },
+          { reactorUid: 'dummy1', reactionType: '💪', reactorName: 'Alex Thompson', reactorPhoto: 'https://i.pravatar.cc/150?img=1' },
           { reactorUid: 'dummy5', reactionType: '🔥', reactorName: 'Jake Martinez', reactorPhoto: 'https://i.pravatar.cc/150?img=12' }
         ],
-        'dummy4-demo-3': [
-          { reactorUid: 'dummy6', reactionType: '🧘', reactorName: 'Lisa Park', reactorPhoto: 'https://i.pravatar.cc/150?img=16' },
-          { reactorUid: 'dummy2', reactionType: '💚', reactorName: 'Sarah Chen', reactorPhoto: 'https://i.pravatar.cc/150?img=5' }
+        'dummy3-demo-3': [
+          { reactorUid: 'dummy6', reactionType: '💪', reactorName: 'Lisa Park', reactorPhoto: 'https://i.pravatar.cc/150?img=16' },
+          { reactorUid: 'dummy1', reactionType: '🔥', reactorName: 'Alex Thompson', reactorPhoto: 'https://i.pravatar.cc/150?img=1' },
+          { reactorUid: 'dummy2', reactionType: '💪', reactorName: 'Sarah Chen', reactorPhoto: 'https://i.pravatar.cc/150?img=5' }
         ],
-        'dummy3-demo-4': [
+        'dummy4-demo-4': [
           { reactorUid: 'dummy1', reactionType: '💪', reactorName: 'Alex Thompson', reactorPhoto: 'https://i.pravatar.cc/150?img=1' },
           { reactorUid: 'dummy5', reactionType: '🔥', reactorName: 'Jake Martinez', reactorPhoto: 'https://i.pravatar.cc/150?img=12' },
-          { reactorUid: 'dummy6', reactionType: '💪', reactorName: 'Lisa Park', reactorPhoto: 'https://i.pravatar.cc/150?img=16' },
-          { reactorUid: 'dummy4', reactionType: '🔥', reactorName: 'Emma Williams', reactorPhoto: 'https://i.pravatar.cc/150?img=9' }
+          { reactorUid: 'dummy3', reactionType: '🔥', reactorName: 'Mike Johnson', reactorPhoto: 'https://i.pravatar.cc/150?img=8' }
         ],
         'dummy5-demo-5': [
-          { reactorUid: 'dummy3', reactionType: '🚴', reactorName: 'Mike Johnson', reactorPhoto: 'https://i.pravatar.cc/150?img=8' }
-        ],
-        'dummy6-demo-6': [
-          { reactorUid: 'dummy2', reactionType: '🏃', reactorName: 'Sarah Chen', reactorPhoto: 'https://i.pravatar.cc/150?img=5' },
-          { reactorUid: 'dummy4', reactionType: '🔥', reactorName: 'Emma Williams', reactorPhoto: 'https://i.pravatar.cc/150?img=9' }
+          { reactorUid: 'dummy3', reactionType: '🏃', reactorName: 'Mike Johnson', reactorPhoto: 'https://i.pravatar.cc/150?img=8' }
         ],
         'dummy1-demo-7': [
           { reactorUid: 'dummy3', reactionType: '🧊', reactorName: 'Mike Johnson', reactorPhoto: 'https://i.pravatar.cc/150?img=8' }
@@ -1155,12 +1153,11 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           { id: 'c1', commenterUid: 'dummy2', commenterName: 'Sarah Chen', commenterPhoto: 'https://i.pravatar.cc/150?img=5', text: 'Beast mode! 💪', createdAt: new Date(today.getTime() - 3600000).toISOString() },
           { id: 'c2', commenterUid: 'dummy3', commenterName: 'Mike Johnson', commenterPhoto: 'https://i.pravatar.cc/150?img=8', text: 'What exercises did you do?', createdAt: new Date(today.getTime() - 1800000).toISOString() }
         ],
-        'dummy3-demo-4': [
-          { id: 'c3', commenterUid: 'dummy1', commenterName: 'Alex Thompson', commenterPhoto: 'https://i.pravatar.cc/150?img=1', text: 'Leg day is the best day! 🦵', createdAt: new Date(today.getTime() - 86400000 - 3600000).toISOString() }
+        'dummy3-demo-3': [
+          { id: 'c3', commenterUid: 'dummy1', commenterName: 'Alex Thompson', commenterPhoto: 'https://i.pravatar.cc/150?img=1', text: 'Leg day is the best day! 🦵', createdAt: new Date(today.getTime() - 3600000).toISOString() }
         ],
-        'dummy6-demo-6': [
-          { id: 'c4', commenterUid: 'dummy2', commenterName: 'Sarah Chen', commenterPhoto: 'https://i.pravatar.cc/150?img=5', text: 'Great pace! Keep it up 🏃‍♀️', createdAt: new Date(today.getTime() - 2 * 86400000 - 7200000).toISOString() },
-          { id: 'c5', commenterUid: 'dummy5', commenterName: 'Jake Martinez', commenterPhoto: 'https://i.pravatar.cc/150?img=12', text: 'We should run together sometime!', createdAt: new Date(today.getTime() - 2 * 86400000 - 3600000).toISOString() }
+        'dummy4-demo-4': [
+          { id: 'c4', commenterUid: 'dummy2', commenterName: 'Sarah Chen', commenterPhoto: 'https://i.pravatar.cc/150?img=5', text: 'Looking strong! 💪🔥', createdAt: new Date(today.getTime() - 7200000).toISOString() }
         ],
         'dummy5-demo-10': [
           { id: 'c6', commenterUid: 'dummy6', commenterName: 'Lisa Park', commenterPhoto: 'https://i.pravatar.cc/150?img=16', text: 'Beautiful sunrise run! 🌅', createdAt: new Date(today.getTime() - 3 * 86400000 - 3600000).toISOString() }
@@ -1289,7 +1286,6 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         });
       }
     } catch (error) {
-      // console.error('Error loading activity feed:', error);
     }
     setIsLoading(false);
     setIsRefreshing(false);
@@ -1729,7 +1725,6 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
 
       setLeaderboardData(allUsers);
     } catch (error) {
-      console.error('Error loading leaderboard:', error);
       // On error, show just the current user with zero stats
       setLeaderboardData([{
         uid: user.uid,
@@ -1888,7 +1883,6 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         [key]: updatedComments
       }));
     } catch (error) {
-      // console.error('Error adding comment:', error);
       throw error;
     }
   };
@@ -1916,21 +1910,16 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         return newReplies;
       });
     } catch (error) {
-      // console.error('Error deleting comment:', error);
     }
   };
 
   const handleAddReply = async (commentId, text, activity) => {
-    // console.log('handleAddReply called:', { commentId, text, activity });
     if (!activity || !text.trim()) {
-      // console.log('handleAddReply: early return - activity or text missing');
       return;
     }
     const key = `${activity.friend.uid}-${activity.id}`;
-    // console.log('handleAddReply: key =', key);
 
     try {
-      // console.log('handleAddReply: calling addReply...');
       const replierName = userProfile?.displayName || user?.displayName || userProfile?.username || user?.email?.split('@')[0] || 'User';
       const replierPhoto = userProfile?.photoURL || user?.photoURL || null;
 
@@ -1943,7 +1932,6 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         replierPhoto,
         text.trim()
       );
-      // console.log('handleAddReply: replyId =', replyId);
 
       const newReply = {
         id: replyId,
@@ -1963,7 +1951,6 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         }
       }));
     } catch (error) {
-      // console.error('Error adding reply:', error);
       throw error;
     }
   };
@@ -1984,7 +1971,6 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         }
       }));
     } catch (error) {
-      // console.error('Error deleting reply:', error);
     }
   };
 
@@ -2002,7 +1988,6 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       await handleAddComment(text, activity);
       if (input) input.value = '';
     } catch (error) {
-      // console.error('Error adding comment:', error);
     }
     submittingRef.current[activityKey] = false;
   };

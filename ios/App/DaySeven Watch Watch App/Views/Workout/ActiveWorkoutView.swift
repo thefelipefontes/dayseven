@@ -5,6 +5,8 @@ import HealthKit
 
 struct ActiveWorkoutView: View {
     @EnvironmentObject var appVM: AppViewModel
+    /// Direct observation of workoutManager at full frame rate for smooth timer
+    @ObservedObject var workoutMgr: WorkoutManager
     let activityType: String
     let strengthType: String?
     var preSelectedSubtype: String? = nil
@@ -15,6 +17,20 @@ struct ActiveWorkoutView: View {
     @State private var showSummary = false
     @State private var workoutResult: WorkoutResult?
     @State private var errorMessage: String?
+
+    private var wm: WorkoutManager { workoutMgr }
+
+    /// Whether this activity tracks distance (running, cycling, walking, etc.)
+    private var tracksDistance: Bool {
+        let distanceTypes = ["running", "cycle", "walking", "hiking", "swimming"]
+        return distanceTypes.contains(activityType.lowercased())
+    }
+
+    /// Whether this activity should show pace (running, walking)
+    private var showsPace: Bool {
+        let paceTypes = ["running", "walking"]
+        return paceTypes.contains(activityType.lowercased())
+    }
 
     var body: some View {
         VStack(spacing: 6) {
@@ -62,19 +78,19 @@ struct ActiveWorkoutView: View {
     // MARK: - Active Workout Content
 
     private var activeWorkoutContent: some View {
-        VStack(spacing: 3) {
-            // Elapsed time
-            Text(formatElapsedTime(appVM.workoutManager.elapsedSeconds))
-                .font(.system(size: 36, weight: .bold, design: .monospaced))
+        VStack(spacing: 2) {
+            // Elapsed time — prominent at the top, with hundredths like Apple Workout
+            Text(formatElapsedTimePrecise(wm.elapsedTime))
+                .font(.system(size: 30, weight: .bold, design: .monospaced))
                 .foregroundColor(.white)
-                .minimumScaleFactor(0.7)
+                .minimumScaleFactor(0.6)
 
             // Heart rate
             HStack(spacing: 4) {
                 Image(systemName: "heart.fill")
                     .foregroundColor(.red)
                     .font(.system(size: 14))
-                Text("\(Int(appVM.workoutManager.heartRate))")
+                Text("\(Int(wm.heartRate))")
                     .font(.system(size: 24, weight: .semibold, design: .rounded))
                     .foregroundColor(.white)
                 Text("BPM")
@@ -84,59 +100,81 @@ struct ActiveWorkoutView: View {
 
             // Heart Rate Zone Bar
             HeartRateZoneBarView(
-                currentZone: appVM.workoutManager.currentZone,
-                heartRate: appVM.workoutManager.heartRate,
-                maxHR: appVM.workoutManager.estimatedMaxHR,
-                zoneSeconds: appVM.workoutManager.currentZoneSeconds
+                currentZone: wm.currentZone,
+                heartRate: wm.heartRate,
+                maxHR: wm.estimatedMaxHR,
+                zoneSeconds: wm.currentZoneSeconds
             )
             .padding(.horizontal, 4)
 
-            // Calories
-            HStack(spacing: 4) {
-                Image(systemName: "flame.fill")
-                    .foregroundColor(.orange)
-                    .font(.system(size: 12))
-                Text("\(Int(appVM.workoutManager.activeCalories))")
-                    .font(.system(size: 16, weight: .medium, design: .rounded))
-                    .foregroundColor(.white)
-                Text("CAL")
-                    .font(.system(size: 9))
-                    .foregroundColor(.gray)
+            // Calories + Distance row — side by side for compact layout
+            HStack(spacing: 12) {
+                // Calories
+                HStack(spacing: 3) {
+                    Image(systemName: "flame.fill")
+                        .foregroundColor(.orange)
+                        .font(.system(size: 12))
+                    Text("\(Int(wm.activeCalories))")
+                        .font(.system(size: 15, weight: .medium, design: .rounded))
+                        .foregroundColor(.white)
+                    Text("CAL")
+                        .font(.system(size: 9))
+                        .foregroundColor(.gray)
+                }
+
+                // Distance (if applicable)
+                if tracksDistance && wm.distance > 10 {
+                    HStack(spacing: 3) {
+                        Image(systemName: distanceIcon)
+                            .foregroundColor(.blue)
+                            .font(.system(size: 12))
+                        Text(String(format: "%.2f", wm.distance / 1609.34))
+                            .font(.system(size: 15, weight: .medium, design: .rounded))
+                            .foregroundColor(.white)
+                        Text("MI")
+                            .font(.system(size: 9))
+                            .foregroundColor(.gray)
+                    }
+                }
             }
 
-            // Distance (if applicable)
-            if appVM.workoutManager.distance > 10 {
-                HStack(spacing: 4) {
-                    Image(systemName: "figure.run")
-                        .foregroundColor(.blue)
-                        .font(.system(size: 12))
-                    Text(String(format: "%.2f", appVM.workoutManager.distance / 1609.34))
+            // Pace (for running/walking)
+            if showsPace, wm.distance > 10 {
+                let paceString = currentPace(
+                    elapsedTime: wm.elapsedTime,
+                    distanceMeters: wm.distance
+                )
+                HStack(spacing: 3) {
+                    Image(systemName: "speedometer")
+                        .foregroundColor(.cyan)
+                        .font(.system(size: 11))
+                    Text(paceString)
                         .font(.system(size: 14, weight: .medium, design: .rounded))
                         .foregroundColor(.white)
-                    Text("MI")
+                    Text("/MI")
                         .font(.system(size: 9))
                         .foregroundColor(.gray)
                 }
             }
 
-            Spacer().frame(height: 2)
+            Spacer().frame(height: 4)
 
             // Pause / End buttons
             HStack(spacing: 12) {
                 // Pause / Resume
                 Button {
-                    if appVM.workoutManager.isPaused {
-                        appVM.workoutManager.resume()
+                    if wm.isPaused {
+                        wm.resume()
                     } else {
-                        appVM.workoutManager.pause()
+                        wm.pause()
                     }
                 } label: {
-                    Image(systemName: appVM.workoutManager.isPaused ? "play.fill" : "pause.fill")
-                        .font(.system(size: 16))
-                        .frame(width: 50, height: 40)
+                    Image(systemName: wm.isPaused ? "play.fill" : "pause.fill")
+                        .font(.system(size: 18))
+                        .frame(width: 54, height: 44)
                         .background(Color.yellow)
                         .foregroundColor(.black)
-                        .cornerRadius(10)
+                        .cornerRadius(12)
                 }
                 .buttonStyle(.plain)
 
@@ -145,11 +183,11 @@ struct ActiveWorkoutView: View {
                     Task { await endWorkout() }
                 } label: {
                     Text("End")
-                        .font(.system(size: 14, weight: .bold))
-                        .frame(width: 70, height: 40)
+                        .font(.system(size: 15, weight: .bold))
+                        .frame(width: 74, height: 44)
                         .background(Color.red)
                         .foregroundColor(.white)
-                        .cornerRadius(10)
+                        .cornerRadius(12)
                 }
                 .buttonStyle(.plain)
             }
@@ -162,12 +200,41 @@ struct ActiveWorkoutView: View {
         }
     }
 
+    // MARK: - Distance Icon
+
+    private var distanceIcon: String {
+        switch activityType.lowercased() {
+        case "running": return "figure.run"
+        case "cycle": return "figure.indoor.cycle"
+        case "walking": return "figure.walk"
+        case "swimming": return "figure.pool.swim"
+        default: return "location.fill"
+        }
+    }
+
+    // MARK: - Pace Calculation (min:sec per mile)
+
+    private func currentPace(elapsedTime: TimeInterval, distanceMeters: Double) -> String {
+        let miles = distanceMeters / 1609.34
+        guard miles > 0.01 else { return "--:--" }
+        let paceSecondsPerMile = elapsedTime / miles
+        let mins = Int(paceSecondsPerMile) / 60
+        let secs = Int(paceSecondsPerMile) % 60
+        return "\(mins):\(String(format: "%02d", secs))"
+    }
+
     // MARK: - Start Workout
 
     private func startWorkout() async {
+        // If workout is already active (e.g. navigated away and back), just show it
+        if wm.isActive {
+            isStarted = true
+            return
+        }
+
         let hkType = ActivityTypes.mapToHKActivityType(activityType, subtype: nil)
         do {
-            try await appVM.workoutManager.startWorkout(activityType: hkType)
+            try await wm.startWorkout(activityType: hkType)
             isStarted = true
         } catch {
             errorMessage = error.localizedDescription
@@ -178,7 +245,7 @@ struct ActiveWorkoutView: View {
 
     private func endWorkout() async {
         do {
-            let result = try await appVM.workoutManager.endWorkout()
+            let result = try await wm.endWorkout()
             workoutResult = result
             showSummary = true
         } catch {

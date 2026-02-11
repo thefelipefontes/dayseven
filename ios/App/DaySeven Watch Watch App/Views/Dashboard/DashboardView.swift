@@ -1,4 +1,5 @@
 import SwiftUI
+import FirebaseAuth
 
 // MARK: - Dashboard View
 
@@ -24,6 +25,11 @@ struct DashboardView: View {
 
                     // Daily Details Link
                     todayButton
+
+                    Spacer().frame(height: 8)
+
+                    // Account section
+                    accountSection
                 }
             }
             .padding(.horizontal, 4)
@@ -33,6 +39,38 @@ struct DashboardView: View {
                 Text("DaySeven")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundColor(.gray)
+            }
+        }
+    }
+
+    // MARK: - Account Section
+
+    @State private var showSignOutAlert = false
+
+    private var accountSection: some View {
+        VStack(spacing: 6) {
+            if let email = appVM.authService.currentUser?.email {
+                Text(email)
+                    .font(.system(size: 10))
+                    .foregroundColor(.gray)
+                    .lineLimit(1)
+            }
+
+            Button {
+                showSignOutAlert = true
+            } label: {
+                Text("Sign Out")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.red.opacity(0.8))
+            }
+            .buttonStyle(.plain)
+            .alert("Sign Out?", isPresented: $showSignOutAlert) {
+                Button("Sign Out", role: .destructive) {
+                    appVM.authService.signOut()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("You can sign back in anytime.")
             }
         }
     }

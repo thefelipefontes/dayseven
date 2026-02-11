@@ -40,7 +40,7 @@ class WorkoutManager: NSObject, ObservableObject {
     // Published state
     @Published var isActive = false
     @Published var isPaused = false
-    @Published var elapsedSeconds: Int = 0
+    @Published var elapsedTime: TimeInterval = 0
     @Published var heartRate: Double = 0
     @Published var activeCalories: Double = 0
     @Published var distance: Double = 0 // meters
@@ -56,11 +56,30 @@ class WorkoutManager: NSObject, ObservableObject {
     private var session: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
     private var heartRateSamples: [Double] = []
-    private var timer: Timer?
     private var startDate: Date?
     private var workoutActivityType: HKWorkoutActivityType = .other
-    private var accumulatedSeconds: Int = 0
-    private var pauseDate: Date?
+    private var accumulatedPauseTime: TimeInterval = 0
+    private var lastPauseDate: Date?
+
+    // Timer — use a display-link style timer that reads wall-clock time
+    // so elapsed time stays accurate even if watchOS throttles the timer
+    private var timer: Timer?
+    private var activeStartDate: Date?
+    private var zoneStartDate: Date?
+
+    // MARK: - Location Type for Activity
+
+    private static func locationType(for activityType: HKWorkoutActivityType) -> HKWorkoutSessionLocationType {
+        switch activityType {
+        case .running, .walking, .cycling, .hiking,
+             .soccer, .basketball, .americanFootball, .tennis, .golf:
+            return .outdoor
+        case .swimming:
+            return .indoor
+        default:
+            return .indoor
+        }
+    }
 
     // MARK: - Start Workout
 
@@ -70,7 +89,13 @@ class WorkoutManager: NSObject, ObservableObject {
 
         let config = HKWorkoutConfiguration()
         config.activityType = activityType
-        config.locationType = .unknown
+        config.locationType = WorkoutManager.locationType(for: activityType)
+
+        // For swimming, set a default lap length
+        if activityType == .swimming {
+            config.swimmingLocationType = .pool
+            config.lapLength = HKQuantity(unit: .yard(), doubleValue: 25)
+        }
 
         do {
             session = try HKWorkoutSession(healthStore: healthStore, configuration: config)
@@ -92,17 +117,19 @@ class WorkoutManager: NSObject, ObservableObject {
         )
 
         workoutActivityType = activityType
-        startDate = Date()
+        let now = Date()
+        startDate = now
 
         // Reset metrics
         resetMetrics()
 
-        let start = startDate!
-        session.startActivity(with: start)
-        try await builder.beginCollection(at: start)
+        session.startActivity(with: now)
+        try await builder.beginCollection(at: now)
 
         isActive = true
         isPaused = false
+        activeStartDate = now
+        zoneStartDate = now
         startTimer()
     }
 
@@ -139,6 +166,9 @@ class WorkoutManager: NSObject, ObservableObject {
         self.session = nil
         self.builder = nil
         self.startDate = nil
+        self.activeStartDate = nil
+        self.zoneStartDate = nil
+        self.lastPauseDate = nil
 
         return result
     }
@@ -148,14 +178,17 @@ class WorkoutManager: NSObject, ObservableObject {
     func pause() {
         session?.pause()
         isPaused = true
-        pauseDate = Date()
+        lastPauseDate = Date()
         stopTimer()
     }
 
     func resume() {
         session?.resume()
         isPaused = false
-        pauseDate = nil
+        if let pauseStart = lastPauseDate {
+            accumulatedPauseTime += Date().timeIntervalSince(pauseStart)
+        }
+        lastPauseDate = nil
         startTimer()
     }
 
@@ -170,16 +203,40 @@ class WorkoutManager: NSObject, ObservableObject {
         isPaused = false
         session = nil
         builder = nil
+        activeStartDate = nil
+        zoneStartDate = nil
+        lastPauseDate = nil
     }
 
     // MARK: - Timer
+    // Uses wall-clock difference so elapsed time is always accurate,
+    // even if watchOS throttles the timer frequency.
 
     private func startTimer() {
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        // Record the reference point so we can compute elapsed on each tick
+        if activeStartDate == nil {
+            activeStartDate = Date()
+        }
+
+        // ~30 fps for smooth hundredths-of-second display (like Apple Workout app)
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            guard let mgr = self else { return }
             Task { @MainActor in
-                self?.elapsedSeconds += 1
-                self?.currentZoneSeconds += 1
+                guard let start = mgr.startDate else { return }
+                let now = Date()
+                let totalInterval = now.timeIntervalSince(start)
+                let activeInterval = totalInterval - mgr.accumulatedPauseTime
+                mgr.elapsedTime = max(0, activeInterval)
+
+                // Update zone seconds from zone start date
+                if let zs = mgr.zoneStartDate {
+                    mgr.currentZoneSeconds = max(0, Int(now.timeIntervalSince(zs)))
+                }
             }
+        }
+        // Ensure the timer fires even during tracking scroll
+        if let timer = timer {
+            RunLoop.current.add(timer, forMode: .common)
         }
     }
 
@@ -191,14 +248,14 @@ class WorkoutManager: NSObject, ObservableObject {
     // MARK: - Reset
 
     private func resetMetrics() {
-        elapsedSeconds = 0
+        elapsedTime = 0
         heartRate = 0
         activeCalories = 0
         distance = 0
         averageHeartRate = 0
         maxHeartRate = 0
         heartRateSamples = []
-        accumulatedSeconds = 0
+        accumulatedPauseTime = 0
         currentZone = .recovery
         currentZoneSeconds = 0
     }
@@ -252,6 +309,7 @@ extension WorkoutManager: HKLiveWorkoutBuilderDelegate {
                         let newZone = HeartRateZone.zone(for: value, maxHR: self.estimatedMaxHR)
                         if newZone != self.currentZone {
                             self.currentZone = newZone
+                            self.zoneStartDate = Date()
                             self.currentZoneSeconds = 0
                         }
                     }
@@ -261,7 +319,9 @@ extension WorkoutManager: HKLiveWorkoutBuilderDelegate {
                         self.activeCalories = value
                     }
 
-                case HKQuantityType(.distanceWalkingRunning), HKQuantityType(.distanceCycling):
+                case HKQuantityType(.distanceWalkingRunning),
+                     HKQuantityType(.distanceCycling),
+                     HKQuantityType(.distanceSwimming):
                     if let value = statistics?.sumQuantity()?.doubleValue(for: .meter()) {
                         self.distance = value
                     }

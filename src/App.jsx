@@ -16749,8 +16749,8 @@ export default function DaySevenApp() {
     if (!user?.uid) return;
 
     try {
-      // Reload activities
-      const userActivities = await getUserActivities(user.uid);
+      // Reload activities — force refresh to pick up watch workouts
+      const userActivities = await getUserActivities(user.uid, true);
       if (userActivities.length > 0) {
         setActivities(userActivities);
         // Rebuild calendar data
@@ -16890,15 +16890,26 @@ export default function DaySevenApp() {
             source: 'healthkit',
           }));
 
-          setActivities(prev => {
-            const updated = [...smartSavedActivities, ...prev];
-            // Fire-and-forget Firebase save using uid from ref
-            const uid = userRef.current?.uid;
-            if (uid) {
-              saveUserActivities(uid, updated).catch(() => {});
+          // Fetch fresh activities from Firestore before merging to avoid overwriting watch workouts
+          const uid = userRef.current?.uid;
+          if (uid) {
+            try {
+              const freshActivities = await getUserActivities(uid, true);
+              const merged = [...smartSavedActivities, ...freshActivities];
+              activitiesRef.current = merged;
+              setActivities(merged);
+              saveUserActivities(uid, merged).catch(() => {});
+            } catch (e) {
+              // Fallback to local state if fetch fails
+              setActivities(prev => {
+                const updated = [...smartSavedActivities, ...prev];
+                saveUserActivities(uid, updated).catch(() => {});
+                return updated;
+              });
             }
-            return updated;
-          });
+          } else {
+            setActivities(prev => [...smartSavedActivities, ...prev]);
+          }
 
           setCalendarData(prev => {
             const updated = { ...prev };
@@ -16975,9 +16986,12 @@ export default function DaySevenApp() {
         // Re-sync workouts when returning to foreground
         if (user?.uid) {
           try {
-            // Fetch fresh activities to update the ref before syncing
-            const freshActivities = await getUserActivities(user.uid);
+            // Fetch fresh activities (force refresh to pick up watch workouts)
+            const freshActivities = await getUserActivities(user.uid, true);
             activitiesRef.current = freshActivities;
+            setActivities(freshActivities);
+            // Small delay to ensure state is updated before syncHealthKit reads it
+            await new Promise(r => setTimeout(r, 100));
             syncHealthKit();
           } catch (e) {
             syncHealthKit();

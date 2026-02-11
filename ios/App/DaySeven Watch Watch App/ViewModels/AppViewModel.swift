@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import FirebaseAuth
+import WatchConnectivity
 
 // MARK: - App View Model
 
@@ -35,6 +36,17 @@ class AppViewModel: ObservableObject {
         // Forward authService changes to trigger view updates
         authService.objectWillChange
             .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+
+        // Forward workoutManager changes so views observing appVM
+        // also update when workout metrics (timer, HR, etc.) change.
+        // Throttle to avoid 30fps re-renders across the entire view tree —
+        // the ActiveWorkoutView reads workoutManager directly for smooth updates.
+        workoutManager.objectWillChange
+            .throttle(for: .milliseconds(500), scheduler: DispatchQueue.main, latest: true)
             .sink { [weak self] _ in
                 self?.objectWillChange.send()
             }
@@ -105,7 +117,24 @@ class AppViewModel: ObservableObject {
     // MARK: - Save Activity (after workout ends)
 
     func saveActivity(_ activity: Activity) async {
-        guard let uid = authService.currentUser?.uid else { return }
+        guard let uid = authService.currentUser?.uid else {
+            print("[SaveActivity] No user uid — skipping save")
+            errorMessage = "Not signed in"
+            return
+        }
+        print("[SaveActivity] Saving for uid: \(uid), type: \(activity.type)")
+
+        // Fetch fresh data from Firestore to avoid overwriting activities added from phone
+        do {
+            let freshData = try await firestoreService.getUserData(uid: uid)
+            activities = freshData.activities
+            goals = freshData.goals
+            streaks = freshData.streaks
+            personalRecords = freshData.personalRecords
+            print("[SaveActivity] Refreshed \(activities.count) activities from Firestore before save")
+        } catch {
+            print("[SaveActivity] Warning: Could not refresh from Firestore, using local data: \(error.localizedDescription)")
+        }
 
         // Store previous progress for streak comparison
         let oldProgress = weeklyProgress
@@ -133,7 +162,18 @@ class AppViewModel: ObservableObject {
                 streaks: streaks,
                 recordUpdates: recordUpdates
             )
+            print("[SaveActivity] Successfully saved \(updatedActivities.count) activities to Firestore")
+
+            // Notify the iPhone to refresh its Firestore cache
+            if WCSession.default.isReachable {
+                WCSession.default.sendMessage(["action": "activitySaved"], replyHandler: { reply in
+                    print("[SaveActivity] iPhone cache refresh: \(reply)")
+                }, errorHandler: { error in
+                    print("[SaveActivity] iPhone notify failed: \(error.localizedDescription)")
+                })
+            }
         } catch {
+            print("[SaveActivity] FAILED: \(error.localizedDescription)")
             errorMessage = "Failed to save: \(error.localizedDescription)"
         }
     }

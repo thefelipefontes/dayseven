@@ -2,6 +2,7 @@ import UIKit
 import Capacitor
 import FirebaseCore
 import FirebaseMessaging
+import WatchConnectivity
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -22,6 +23,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         DispatchQueue.main.async {
             application.registerForRemoteNotifications()
         }
+
+        // Activate WatchConnectivity for Apple Watch auth relay
+        WatchSessionManager.shared.activate()
 
         return true
     }

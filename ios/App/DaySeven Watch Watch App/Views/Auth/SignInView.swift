@@ -6,64 +6,124 @@ import AuthenticationServices
 struct SignInView: View {
     @EnvironmentObject var appVM: AppViewModel
 
+    @StateObject private var phoneService = PhoneConnectivityService()
+
     var body: some View {
-        VStack(spacing: 16) {
-            // App icon/branding
-            VStack(spacing: 8) {
-                Text("D7")
-                    .font(.system(size: 36, weight: .black, design: .rounded))
-                    .foregroundColor(.white)
+        ScrollView {
+            VStack(spacing: 14) {
+                // App icon/branding
+                VStack(spacing: 8) {
+                    Text("D7")
+                        .font(.system(size: 36, weight: .black, design: .rounded))
+                        .foregroundColor(.white)
 
-                Text("DaySeven")
-                    .font(.headline)
-                    .foregroundColor(.white)
+                    Text("DaySeven")
+                        .font(.headline)
+                        .foregroundColor(.white)
 
-                Text("Sign in to sync your data")
-                    .font(.caption2)
-                    .foregroundColor(.gray)
-                    .multilineTextAlignment(.center)
-            }
-
-            // Sign in with Apple button
-            SignInWithAppleButton(.signIn) { request in
-                let nonce = appVM.authService.generateNonce()
-                request.requestedScopes = [.email, .fullName]
-                request.nonce = appVM.authService.sha256(nonce)
-            } onCompletion: { result in
-                switch result {
-                case .success(let authorization):
-                    appVM.authService.handleSignInWithApple(authorization: authorization)
-                case .failure(let error):
-                    appVM.authService.handleSignInError(error)
+                    Text("Sign in to sync your data")
+                        .font(.caption2)
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.center)
                 }
-            }
-            .signInWithAppleButtonStyle(.white)
-            .frame(height: 45)
 
-            if let error = appVM.authService.errorMessage {
-                Text(error)
-                    .font(.caption2)
-                    .foregroundColor(.red)
-                    .multilineTextAlignment(.center)
-            }
+                // Sign in via iPhone (primary — works with Google, Apple, any auth)
+                Button {
+                    Task {
+                        await phoneService.requestSignInFromPhone()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        if phoneService.isRequesting {
+                            ProgressView()
+                                .tint(.black)
+                                .scaleEffect(0.7)
+                        } else {
+                            Image(systemName: "iphone")
+                                .font(.system(size: 14))
+                        }
+                        Text(phoneService.isRequesting ? "Connecting..." : "Sign in via iPhone")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(Color.green)
+                    .foregroundColor(.black)
+                    .cornerRadius(12)
+                }
+                .buttonStyle(.plain)
+                .disabled(phoneService.isRequesting)
 
-            #if targetEnvironment(simulator)
-            Divider()
-                .padding(.vertical, 4)
+                if !phoneService.isReachable {
+                    Text("Make sure DaySeven is open on your iPhone")
+                        .font(.system(size: 9))
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.center)
+                }
 
-            Button {
-                appVM.authService.simulatorSignIn()
-            } label: {
+                // Divider
                 HStack {
-                    Image(systemName: "hammer.fill")
-                    Text("Dev Sign In")
+                    Rectangle()
+                        .fill(Color.gray.opacity(0.3))
+                        .frame(height: 1)
+                    Text("or")
+                        .font(.system(size: 10))
+                        .foregroundColor(.gray)
+                    Rectangle()
+                        .fill(Color.gray.opacity(0.3))
+                        .frame(height: 1)
                 }
-                .font(.caption)
-                .foregroundColor(.orange)
+                .padding(.horizontal, 8)
+
+                // Sign in with Apple (fallback — creates separate Apple account)
+                SignInWithAppleButton(.signIn) { request in
+                    let nonce = appVM.authService.generateNonce()
+                    request.requestedScopes = [.email, .fullName]
+                    request.nonce = appVM.authService.sha256(nonce)
+                } onCompletion: { result in
+                    switch result {
+                    case .success(let authorization):
+                        appVM.authService.handleSignInWithApple(authorization: authorization)
+                    case .failure(let error):
+                        appVM.authService.handleSignInError(error)
+                    }
+                }
+                .signInWithAppleButtonStyle(.white)
+                .frame(height: 40)
+
+                // Error messages
+                if let error = phoneService.errorMessage {
+                    Text(error)
+                        .font(.caption2)
+                        .foregroundColor(.orange)
+                        .multilineTextAlignment(.center)
+                }
+
+                if let error = appVM.authService.errorMessage {
+                    Text(error)
+                        .font(.caption2)
+                        .foregroundColor(.red)
+                        .multilineTextAlignment(.center)
+                }
+
+                #if targetEnvironment(simulator)
+                Divider()
+                    .padding(.vertical, 4)
+
+                Button {
+                    appVM.authService.simulatorSignIn()
+                } label: {
+                    HStack {
+                        Image(systemName: "hammer.fill")
+                        Text("Dev Sign In")
+                    }
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                }
+                .buttonStyle(.plain)
+                #endif
             }
-            .buttonStyle(.plain)
-            #endif
+            .padding(.horizontal, 8)
         }
-        .padding()
     }
 }

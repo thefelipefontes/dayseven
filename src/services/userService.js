@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, getDocFromServer, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, writeBatch } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { Capacitor } from '@capacitor/core';
@@ -251,7 +251,43 @@ export async function getUserActivities(uid, forceRefresh = false) {
 
   try {
     let activities;
-    if (isNative) {
+    if (isNative && forceRefresh) {
+      // Bypass Capacitor Firestore cache by calling REST API directly
+      try {
+        const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+        const { token } = await FirebaseAuthentication.getIdToken();
+        const restUrl = `https://firestore.googleapis.com/v1/projects/dayseven-f1a89/databases/(default)/documents/users/${uid}?mask.fieldPaths=activities`;
+        console.log('[getUserActivities] REST fetch starting...');
+        const response = await fetch(restUrl, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        console.log('[getUserActivities] REST response status:', response.status);
+        const json = await response.json();
+        // Parse Firestore REST format
+        const activitiesField = json?.fields?.activities;
+        if (activitiesField?.arrayValue?.values) {
+          activities = activitiesField.arrayValue.values.map(v => {
+            const fields = v.mapValue?.fields || {};
+            const parsed = {};
+            for (const [key, val] of Object.entries(fields)) {
+              if (val.stringValue !== undefined) parsed[key] = val.stringValue;
+              else if (val.integerValue !== undefined) parsed[key] = parseInt(val.integerValue);
+              else if (val.doubleValue !== undefined) parsed[key] = val.doubleValue;
+              else if (val.booleanValue !== undefined) parsed[key] = val.booleanValue;
+            }
+            return parsed;
+          });
+          console.log('[getUserActivities] REST got', activities.length, 'activities');
+        } else {
+          console.log('[getUserActivities] REST: no activities array in response, keys:', Object.keys(json?.fields || {}));
+          activities = [];
+        }
+      } catch (restErr) {
+        console.warn('[getUserActivities] REST failed, using Capacitor:', restErr);
+        const { snapshot } = await FirebaseFirestore.getDocument({ reference: path });
+        activities = snapshot?.data?.activities || [];
+      }
+    } else if (isNative) {
       const { snapshot } = await FirebaseFirestore.getDocument({ reference: path });
       activities = snapshot?.data?.activities || [];
     } else {

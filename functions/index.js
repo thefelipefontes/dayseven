@@ -7,15 +7,61 @@
 
 const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { onCall, HttpsError, onRequest } = require("firebase-functions/v2/https");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
+const { getAuth } = require("firebase-admin/auth");
 
 // Initialize Firebase Admin
 initializeApp();
 
 const db = getFirestore();
 const messaging = getMessaging();
+
+// ==========================================
+// WATCH APP AUTHENTICATION
+// ==========================================
+
+/**
+ * Generate a custom auth token for the Apple Watch app.
+ * Called by the iOS app when the watch requests authentication.
+ * The caller must be authenticated — the token is generated for their UID.
+ */
+exports.generateWatchToken = onRequest(async (req, res) => {
+  console.log("[generateWatchToken] Called with method:", req.method);
+
+  if (req.method !== "POST") {
+    res.status(405).json({ error: "Method not allowed" });
+    return;
+  }
+
+  // Extract the Bearer token from Authorization header
+  const authHeader = req.headers.authorization || "";
+  if (!authHeader.startsWith("Bearer ")) {
+    console.log("[generateWatchToken] No Bearer token in Authorization header");
+    res.status(401).json({ error: "Missing authorization token" });
+    return;
+  }
+
+  const idToken = authHeader.split("Bearer ")[1];
+
+  try {
+    // Verify the ID token to get the user's UID
+    const decodedToken = await getAuth().verifyIdToken(idToken);
+    const uid = decodedToken.uid;
+    console.log("[generateWatchToken] Verified user uid:", uid);
+
+    // Generate a custom token for the watch
+    const customToken = await getAuth().createCustomToken(uid);
+    console.log("[generateWatchToken] Custom token generated successfully");
+
+    res.status(200).json({ token: customToken, uid: uid });
+  } catch (err) {
+    console.error("[generateWatchToken] Error:", err.message);
+    res.status(500).json({ error: "Failed to generate token: " + err.message });
+  }
+});
 
 // Notification types
 const NotificationType = {

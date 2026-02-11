@@ -11,6 +11,7 @@ enum WorkoutDestination: Hashable {
 // MARK: - Start Activity View (One-Tap Start)
 
 struct StartActivityView: View {
+    @EnvironmentObject var appVM: AppViewModel
     @Binding var path: NavigationPath
 
     private let strengthDef = ActivityTypes.all.first { $0.name == "Strength Training" }
@@ -73,6 +74,7 @@ struct StartActivityView: View {
             switch destination {
             case .quickStart(let activityType, let strengthType):
                 ActiveWorkoutView(
+                    workoutMgr: appVM.workoutManager,
                     activityType: activityType,
                     strengthType: strengthType,
                     navigationPath: $path
@@ -85,6 +87,7 @@ struct StartActivityView: View {
                 )
             case .customStart(let activityType, let strengthType, let subtype, let focusArea):
                 ActiveWorkoutView(
+                    workoutMgr: appVM.workoutManager,
                     activityType: activityType,
                     strengthType: strengthType,
                     preSelectedSubtype: subtype,
@@ -114,13 +117,13 @@ struct StartActivityView: View {
                     path.append(WorkoutDestination.quickStart(activityType: activityType, strengthType: strengthType))
                 }
             } label: {
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
                     Image(systemName: symbol)
-                        .font(.system(size: 16))
+                        .font(.system(size: 20))
                         .foregroundColor(color)
-                        .frame(width: 26)
+                        .frame(width: 28)
                     Text(name)
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.system(size: 16, weight: .medium))
                         .foregroundColor(.white)
                 }
             }
@@ -128,17 +131,17 @@ struct StartActivityView: View {
 
             Spacer()
 
-            // Right side: play button for instant start
+            // Right side: play button for instant start — large touch target
             Button {
                 path.append(WorkoutDestination.quickStart(activityType: activityType, strengthType: strengthType))
             } label: {
                 Image(systemName: "play.circle.fill")
-                    .font(.system(size: 26))
+                    .font(.system(size: 36))
                     .foregroundColor(.green)
             }
             .buttonStyle(.plain)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 6)
     }
 
     // MARK: - Section Header

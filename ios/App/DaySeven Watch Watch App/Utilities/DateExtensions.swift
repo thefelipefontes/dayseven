@@ -27,7 +27,7 @@ func formatTimeString(_ date: Date) -> String {
     return formatter.string(from: date)
 }
 
-// MARK: - Format elapsed seconds to "MM:SS" or "H:MM:SS"
+// MARK: - Format elapsed seconds to "MM:SS" or "H:MM:SS" (whole seconds)
 
 func formatElapsedTime(_ seconds: Int) -> String {
     let hours = seconds / 3600
@@ -38,6 +38,22 @@ func formatElapsedTime(_ seconds: Int) -> String {
         return String(format: "%d:%02d:%02d", hours, minutes, secs)
     } else {
         return String(format: "%02d:%02d", minutes, secs)
+    }
+}
+
+// MARK: - Format elapsed time with hundredths "MM:SS.cc" or "H:MM:SS.cc"
+
+func formatElapsedTimePrecise(_ interval: TimeInterval) -> String {
+    let totalSeconds = Int(interval)
+    let hundredths = Int((interval - Double(totalSeconds)) * 100)
+    let hours = totalSeconds / 3600
+    let minutes = (totalSeconds % 3600) / 60
+    let secs = totalSeconds % 60
+
+    if hours > 0 {
+        return String(format: "%d:%02d:%02d.%02d", hours, minutes, secs, hundredths)
+    } else {
+        return String(format: "%02d:%02d.%02d", minutes, secs, hundredths)
     }
 }
 

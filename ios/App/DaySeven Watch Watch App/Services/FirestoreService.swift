@@ -207,12 +207,17 @@ class FirestoreService {
         let body: [String: Any] = ["fields": fields]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (responseData, response) = try await URLSession.shared.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+            let responseStr = String(data: responseData, encoding: .utf8) ?? "no body"
+            print("[Firestore] updateDocument FAILED status=\(statusCode) path=\(path)")
+            print("[Firestore] Response: \(String(responseStr.prefix(500)))")
             throw FirestoreError.saveFailed
         }
+        print("[Firestore] updateDocument SUCCESS path=\(path)")
     }
 
     private func updateDocumentWithFieldMask(_ path: String, nestedField: String, fields: [String: Any]) async throws {

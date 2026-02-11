@@ -5,6 +5,7 @@ import HealthKit
 
 struct ActiveWorkoutView: View {
     @EnvironmentObject var appVM: AppViewModel
+    @Environment(\.isLuminanceReduced) var isLuminanceReduced
     /// Direct observation of workoutManager at full frame rate for smooth timer
     @ObservedObject var workoutMgr: WorkoutManager
     let activityType: String
@@ -17,8 +18,14 @@ struct ActiveWorkoutView: View {
     @State private var showSummary = false
     @State private var workoutResult: WorkoutResult?
     @State private var errorMessage: String?
+    @State private var workoutTab = 1
 
     private var wm: WorkoutManager { workoutMgr }
+
+    /// Whether the user selected "Indoor" for this workout
+    private var isIndoor: Bool {
+        preSelectedSubtype?.lowercased() == "indoor"
+    }
 
     /// Whether this activity tracks distance (running, cycling, walking, etc.)
     private var tracksDistance: Bool {
@@ -26,10 +33,21 @@ struct ActiveWorkoutView: View {
         return distanceTypes.contains(activityType.lowercased())
     }
 
-    /// Whether this activity should show pace (running, walking)
+    /// Whether this activity should show pace (running, walking, cycling)
     private var showsPace: Bool {
-        let paceTypes = ["running", "walking"]
+        let paceTypes = ["running", "walking", "cycle"]
         return paceTypes.contains(activityType.lowercased())
+    }
+
+    /// Whether this is a recovery timer activity (Sauna, Cold Plunge) — simplified UI
+    private var isRecoveryTimer: Bool {
+        let recoveryTypes = ["sauna", "cold plunge"]
+        return recoveryTypes.contains(activityType.lowercased())
+    }
+
+    /// Whether this is a strength activity (wider metric spacing)
+    private var isStrengthActivity: Bool {
+        activityType.lowercased() == "strength" || activityType.lowercased() == "strength training"
     }
 
     var body: some View {
@@ -41,6 +59,7 @@ struct ActiveWorkoutView: View {
                     strengthType: strengthType,
                     initialSubtype: preSelectedSubtype,
                     initialFocusArea: preSelectedFocusArea,
+                    workoutMgr: workoutMgr,
                     navigationPath: $navigationPath
                 )
             } else if isStarted {
@@ -78,25 +97,38 @@ struct ActiveWorkoutView: View {
     // MARK: - Active Workout Content
 
     private var activeWorkoutContent: some View {
-        VStack(spacing: 2) {
-            // Elapsed time — prominent at the top, with hundredths like Apple Workout
-            Text(formatElapsedTimePrecise(wm.elapsedTime))
-                .font(.system(size: 30, weight: .bold, design: .monospaced))
-                .foregroundColor(.white)
-                .minimumScaleFactor(0.6)
+        TabView(selection: $workoutTab) {
+            // Page 0: Controls (swipe right to reach)
+            controlsPage
+                .tag(0)
 
-            // Heart rate
-            HStack(spacing: 4) {
-                Image(systemName: "heart.fill")
-                    .foregroundColor(.red)
-                    .font(.system(size: 14))
-                Text("\(Int(wm.heartRate))")
-                    .font(.system(size: 24, weight: .semibold, design: .rounded))
-                    .foregroundColor(.white)
-                Text("BPM")
-                    .font(.system(size: 10))
-                    .foregroundColor(.gray)
+            // Page 1: Live stats (default landing page — swipe left goes to dashboard)
+            Group {
+                if isRecoveryTimer {
+                    recoveryStatsPage
+                } else {
+                    fullStatsPage
+                }
             }
+            .tag(1)
+        }
+        .tabViewStyle(.page(indexDisplayMode: .automatic))
+    }
+
+    // MARK: - Full Stats Page (big numbers, no buttons)
+
+    private var fullStatsPage: some View {
+        VStack(spacing: 0) {
+            // Push content down to vertically center everything
+            Spacer()
+
+            // Elapsed time — massive white timer
+            // When watch dims (always-on), show seconds only (no centiseconds)
+            Text(isLuminanceReduced ? formatElapsedTime(wm.elapsedSeconds) : formatElapsedTimePrecise(wm.elapsedTime))
+                .font(.system(size: 70, weight: .bold, design: .monospaced))
+                .foregroundColor(.white)
+                .minimumScaleFactor(0.4)
+                .lineLimit(1)
 
             // Heart Rate Zone Bar
             HeartRateZoneBarView(
@@ -106,91 +138,181 @@ struct ActiveWorkoutView: View {
                 zoneSeconds: wm.currentZoneSeconds
             )
             .padding(.horizontal, 4)
+            .padding(.top, 4)
 
-            // Calories + Distance row — side by side for compact layout
-            HStack(spacing: 12) {
-                // Calories
-                HStack(spacing: 3) {
-                    Image(systemName: "flame.fill")
-                        .foregroundColor(.orange)
-                        .font(.system(size: 12))
-                    Text("\(Int(wm.activeCalories))")
-                        .font(.system(size: 15, weight: .medium, design: .rounded))
-                        .foregroundColor(.white)
-                    Text("CAL")
-                        .font(.system(size: 9))
-                        .foregroundColor(.gray)
-                }
+            // Time in zone — small, centered, colored to match active zone
+            HStack(spacing: 4) {
+                Text(formatZoneTime(wm.currentZoneSeconds))
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                Text("TIME IN ZONE")
+                    .font(.system(size: 9, weight: .medium))
+            }
+            .foregroundColor(wm.currentZone.color)
+            .padding(.top, 3)
+            .padding(.bottom, 4)
 
-                // Distance (if applicable)
-                if tracksDistance && wm.distance > 10 {
-                    HStack(spacing: 3) {
-                        Image(systemName: distanceIcon)
-                            .foregroundColor(.blue)
-                            .font(.system(size: 12))
-                        Text(String(format: "%.2f", wm.distance / 1609.34))
-                            .font(.system(size: 15, weight: .medium, design: .rounded))
+            // Metrics row — distance activities show HR + Cal + Distance in one compact row
+            if tracksDistance {
+                HStack(alignment: .top, spacing: 8) {
+                    // Heart Rate
+                    VStack(spacing: 0) {
+                        Text("\(Int(wm.heartRate))")
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
+                        HStack(spacing: 2) {
+                            Image(systemName: "heart.fill")
+                                .foregroundColor(.red)
+                                .font(.system(size: 8))
+                            Text("BPM")
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundColor(.gray)
+                        }
+                    }
+
+                    // Calories
+                    VStack(spacing: 0) {
+                        Text("\(Int(wm.activeCalories))")
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
+                            .foregroundColor(.orange)
+                        HStack(spacing: 2) {
+                            Image(systemName: "flame.fill")
+                                .foregroundColor(.orange)
+                                .font(.system(size: 8))
+                            Text("CAL")
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundColor(.gray)
+                        }
+                    }
+
+                    // Distance
+                    VStack(spacing: 0) {
+                        Text(wm.distance > 10 ? String(format: "%.2f", wm.distance / 1609.34) : "0.00")
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
+                            .foregroundColor(.blue)
                         Text("MI")
-                            .font(.system(size: 9))
+                            .font(.system(size: 9, weight: .medium))
                             .foregroundColor(.gray)
                     }
                 }
-            }
+            } else {
+                // Non-distance activities: HR + Calories, larger
+                HStack(alignment: .top, spacing: isStrengthActivity ? 24 : 12) {
+                    // Heart Rate
+                    VStack(spacing: 0) {
+                        Text("\(Int(wm.heartRate))")
+                            .font(.system(size: 34, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                        HStack(spacing: 3) {
+                            Image(systemName: "heart.fill")
+                                .foregroundColor(.red)
+                                .font(.system(size: 10))
+                            Text("BPM")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(.gray)
+                        }
+                        Text("AVG \(Int(wm.averageHeartRate))")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.gray)
+                            .padding(.top, 1)
+                    }
 
-            // Pace (for running/walking)
-            if showsPace, wm.distance > 10 {
-                let paceString = currentPace(
-                    elapsedTime: wm.elapsedTime,
-                    distanceMeters: wm.distance
-                )
-                HStack(spacing: 3) {
-                    Image(systemName: "speedometer")
-                        .foregroundColor(.cyan)
-                        .font(.system(size: 11))
-                    Text(paceString)
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
-                        .foregroundColor(.white)
-                    Text("/MI")
-                        .font(.system(size: 9))
-                        .foregroundColor(.gray)
+                    // Calories
+                    VStack(spacing: 0) {
+                        Text("\(Int(wm.activeCalories))")
+                            .font(.system(size: 34, weight: .bold, design: .rounded))
+                            .foregroundColor(.orange)
+                        HStack(spacing: 3) {
+                            Image(systemName: "flame.fill")
+                                .foregroundColor(.orange)
+                                .font(.system(size: 10))
+                            Text("CAL")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(.gray)
+                        }
+                    }
                 }
             }
 
-            Spacer().frame(height: 4)
+            // Push content up to vertically center everything
+            Spacer()
+        }
+    }
 
-            // Pause / End buttons
-            HStack(spacing: 12) {
-                // Pause / Resume
-                Button {
-                    if wm.isPaused {
-                        wm.resume()
-                    } else {
-                        wm.pause()
-                    }
-                } label: {
+    // MARK: - Recovery Stats Page (Sauna / Cold Plunge — big timer + HR)
+
+    private var recoveryStatsPage: some View {
+        VStack(spacing: 12) {
+            Spacer()
+
+            // Big elapsed time — white, slightly smaller for recovery
+            Text(isLuminanceReduced ? formatElapsedTime(wm.elapsedSeconds) : formatElapsedTimePrecise(wm.elapsedTime))
+                .font(.system(size: 38, weight: .bold, design: .monospaced))
+                .foregroundColor(.white)
+                .minimumScaleFactor(0.5)
+
+            // Large heart rate
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("\(Int(wm.heartRate))")
+                    .font(.system(size: 40, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                Image(systemName: "heart.fill")
+                    .foregroundColor(.red)
+                    .font(.system(size: 18))
+            }
+
+            Spacer()
+        }
+    }
+
+    // MARK: - Controls Page (Pause / End)
+
+    private var controlsPage: some View {
+        VStack(spacing: 16) {
+            Spacer()
+
+            if wm.isPaused {
+                Text("Paused")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.yellow)
+            }
+
+            // Pause / Resume
+            Button {
+                if wm.isPaused { wm.resume() } else { wm.pause() }
+            } label: {
+                HStack(spacing: 8) {
                     Image(systemName: wm.isPaused ? "play.fill" : "pause.fill")
                         .font(.system(size: 18))
-                        .frame(width: 54, height: 44)
-                        .background(Color.yellow)
-                        .foregroundColor(.black)
-                        .cornerRadius(12)
+                    Text(wm.isPaused ? "Resume" : "Pause")
+                        .font(.system(size: 16, weight: .bold))
                 }
-                .buttonStyle(.plain)
-
-                // End
-                Button {
-                    Task { await endWorkout() }
-                } label: {
-                    Text("End")
-                        .font(.system(size: 15, weight: .bold))
-                        .frame(width: 74, height: 44)
-                        .background(Color.red)
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
-                }
-                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(Color.yellow)
+                .foregroundColor(.black)
+                .cornerRadius(14)
             }
+            .buttonStyle(.plain)
+
+            // End
+            Button {
+                Task { await endWorkout() }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 16, weight: .bold))
+                    Text("End")
+                        .font(.system(size: 16, weight: .bold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(Color.red)
+                .foregroundColor(.white)
+                .cornerRadius(14)
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
 
             if let error = errorMessage {
                 Text(error)
@@ -198,6 +320,7 @@ struct ActiveWorkoutView: View {
                     .foregroundColor(.red)
             }
         }
+        .padding(.horizontal, 8)
     }
 
     // MARK: - Distance Icon
@@ -223,6 +346,17 @@ struct ActiveWorkoutView: View {
         return "\(mins):\(String(format: "%02d", secs))"
     }
 
+    // MARK: - Zone Time Formatting
+
+    private func formatZoneTime(_ seconds: Int) -> String {
+        let mins = seconds / 60
+        let secs = seconds % 60
+        if mins > 0 {
+            return "\(mins):\(String(format: "%02d", secs))"
+        }
+        return "0:\(String(format: "%02d", secs))"
+    }
+
     // MARK: - Start Workout
 
     private func startWorkout() async {
@@ -234,8 +368,13 @@ struct ActiveWorkoutView: View {
 
         let hkType = ActivityTypes.mapToHKActivityType(activityType, subtype: nil)
         do {
-            try await wm.startWorkout(activityType: hkType)
+            try await wm.startWorkout(activityType: hkType, isIndoor: isIndoor)
             isStarted = true
+            // Notify the phone so it shows the active workout indicator
+            appVM.phoneService.notifyPhoneWorkoutStarted(
+                activityType: activityType,
+                strengthType: strengthType
+            )
         } catch {
             errorMessage = error.localizedDescription
         }

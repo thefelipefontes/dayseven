@@ -12,7 +12,7 @@ import html2canvas from 'html2canvas';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
-import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit } from './services/healthService';
+import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener } from './services/healthService';
 import NotificationSettings from './NotificationSettings';
 import { initializePushNotifications, handleNotificationNavigation } from './services/notificationService';
 
@@ -1156,11 +1156,12 @@ const OfflineIndicator = () => {
 };
 
 // Active Workout Indicator Component - Shows when a workout is in progress
-const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFinishing }) => {
+const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFinishing, onResumedFromWatch }) => {
   const [elapsed, setElapsed] = useState(0);
   const [frozenElapsed, setFrozenElapsed] = useState(null); // Stores elapsed time when finishing
   const [isExpanded, setIsExpanded] = useState(false);
   const [liveMetrics, setLiveMetrics] = useState({ lastHr: 0, calories: 0 });
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
   // Collapse and freeze timer when finishing
   useEffect(() => {
@@ -1172,46 +1173,81 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
     }
   }, [isFinishing]);
 
-  // Update elapsed time every second (only when not finishing)
+  // Update elapsed time every second (phone workouts only)
+  // Watch workouts get elapsed time directly from the 1s poll below
   useEffect(() => {
     if (!workout?.startTime || isFinishing) return;
+    if (workout.source === 'watch') return;
 
     const updateElapsed = () => {
       const start = new Date(workout.startTime).getTime();
       const now = Date.now();
       setElapsed(Math.floor((now - start) / 1000));
     };
-
-    updateElapsed(); // Initial update
+    updateElapsed();
     const interval = setInterval(updateElapsed, 1000);
-
     return () => clearInterval(interval);
-  }, [workout?.startTime, isFinishing]);
+  }, [workout?.startTime, isFinishing, workout?.source]);
 
-  // Listen for real-time HealthKit metric updates
+  // Listen for real-time metric updates (watch or phone)
   useEffect(() => {
     if (!workout?.startTime) return;
 
-    const removeListener = addMetricsUpdateListener((data) => {
-      setLiveMetrics(prev => ({
-        ...prev,
-        ...(data.type === 'heartRate' && { lastHr: data.lastHr }),
-        ...(data.type === 'calories' && { calories: data.calories }),
-      }));
-    });
+    if (workout.source === 'watch') {
+      // Poll watch metrics every 2 seconds
+      const pollWatch = async () => {
+        try {
+          const metrics = await getWatchWorkoutMetrics();
+          if (metrics.isActive) {
+            // Detect if watch was resumed while phone is showing end workout modal
+            if (isFinishing && !metrics.isPaused && onResumedFromWatch) {
+              // Watch was resumed by user on the watch — close the end workout modal on phone
+              onResumedFromWatch();
+            }
 
-    // Also poll for initial metrics in case some were already recorded
-    getLiveWorkoutMetrics().then(result => {
-      if (result.success && result.isActive) {
-        setLiveMetrics({
-          lastHr: result.lastHr || 0,
-          calories: result.calories || 0,
-        });
-      }
-    });
+            setLiveMetrics({
+              lastHr: metrics.heartRate || 0,
+              avgHr: metrics.avgHeartRate || 0,
+              calories: metrics.calories || 0,
+              distance: metrics.distance || 0,
+              isPaused: metrics.isPaused || false,
+              currentZone: metrics.currentZone || '',
+            });
+            // Use watch elapsed time directly — 1:1 mirror
+            if (metrics.elapsedSeconds !== undefined) {
+              setElapsed(metrics.elapsedSeconds);
+            }
+          }
+        } catch (e) {
+          console.log('[WatchMetrics] Poll error:', e.message);
+        }
+      };
 
-    return () => removeListener();
-  }, [workout?.startTime]);
+      pollWatch();
+      const interval = setInterval(pollWatch, 1000);
+      return () => clearInterval(interval);
+    } else {
+      // Phone workout: use HealthKit listener
+      const removeListener = addMetricsUpdateListener((data) => {
+        setLiveMetrics(prev => ({
+          ...prev,
+          ...(data.type === 'heartRate' && { lastHr: data.lastHr }),
+          ...(data.type === 'calories' && { calories: data.calories }),
+        }));
+      });
+
+      getLiveWorkoutMetrics().then(result => {
+        if (result.success && result.isActive) {
+          setLiveMetrics({
+            lastHr: result.lastHr || 0,
+            calories: result.calories || 0,
+          });
+        }
+      });
+
+      return () => removeListener();
+    }
+  }, [workout?.startTime, workout?.source, isFinishing]);
 
   if (!workout) return null;
 
@@ -1344,7 +1380,7 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
           <button
             onClick={(e) => {
               e.stopPropagation();
-              onCancel();
+              setShowCancelConfirm(true);
             }}
             className="p-2 rounded-lg transition-all"
             style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
@@ -1355,10 +1391,61 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
           </button>
         </div>
 
-        {/* Timer-only reminder */}
-        <div className="mt-2 py-2 px-3 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-          <span className="text-xs text-gray-500">Track with your watch for heart rate & calories</span>
-        </div>
+        {/* Cancel confirmation overlay */}
+        {showCancelConfirm ? (
+          <div className="mt-3">
+            <p className="text-sm text-gray-300 text-center mb-3">Cancel this workout? Your progress will be lost.</p>
+            <div className="flex gap-2">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowCancelConfirm(false);
+                }}
+                className="flex-1 py-2.5 rounded-xl font-semibold text-sm text-white transition-all active:scale-[0.98]"
+                style={{ backgroundColor: 'rgba(255,255,255,0.15)' }}
+              >
+                Keep Going
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowCancelConfirm(false);
+                  onCancel();
+                }}
+                className="flex-1 py-2.5 rounded-xl font-semibold text-sm text-white transition-all active:scale-[0.98]"
+                style={{ backgroundColor: '#FF3B30' }}
+              >
+                Cancel Workout
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+        {/* Live metrics from watch or reminder for phone */}
+        {workout.source === 'watch' ? (
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            <div className="py-2 px-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+              <div className="text-lg font-bold text-white">{liveMetrics.lastHr || '--'}</div>
+              <div className="text-[10px] text-gray-500 flex items-center justify-center gap-1">
+                <span style={{ color: '#FF3B30' }}>♥</span> BPM
+              </div>
+            </div>
+            <div className="py-2 px-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+              <div className="text-lg font-bold" style={{ color: '#FF9500' }}>{liveMetrics.calories || '0'}</div>
+              <div className="text-[10px] text-gray-500">CAL</div>
+            </div>
+            <div className="py-2 px-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+              <div className="text-lg font-bold" style={{ color: '#5AC8FA' }}>
+                {liveMetrics.distance > 10 ? (liveMetrics.distance / 1609.34).toFixed(2) : '0.00'}
+              </div>
+              <div className="text-[10px] text-gray-500">MI</div>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-2 py-2 px-3 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+            <span className="text-xs text-gray-500">Track with your watch for heart rate & calories</span>
+          </div>
+        )}
 
         {/* Finish button */}
         <button
@@ -1366,8 +1453,10 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
           className="w-full mt-3 py-2.5 rounded-xl font-semibold text-sm text-black transition-all active:scale-[0.98]"
           style={{ backgroundColor: '#00FF94' }}
         >
-          Finish Timer
+          {workout.source === 'watch' ? 'End Workout' : 'Finish Timer'}
         </button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -1436,23 +1525,47 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
       const fetchMetrics = async () => {
         setIsLoadingMetrics(true);
         try {
-          // Get metrics from the live workout without ending it
-          const liveResult = await getLiveWorkoutMetrics();
           let hasData = false;
 
-          if (liveResult.success && liveResult.isActive) {
-            // Use live workout metrics if we have them
-            if (liveResult.calories > 0) {
-              setCalories(liveResult.calories.toString());
-              hasData = true;
+          // Try watch metrics first if this is a watch workout
+          if (workout.source === 'watch') {
+            try {
+              const watchMetrics = await getWatchWorkoutMetrics();
+              if (watchMetrics.isActive) {
+                if (watchMetrics.calories > 0) {
+                  setCalories(watchMetrics.calories.toString());
+                  hasData = true;
+                }
+                if (watchMetrics.avgHeartRate > 0) {
+                  setAvgHr(watchMetrics.avgHeartRate.toString());
+                  hasData = true;
+                }
+                if (watchMetrics.maxHeartRate > 0) {
+                  setMaxHr(watchMetrics.maxHeartRate.toString());
+                  hasData = true;
+                }
+              }
+            } catch (e) {
+              console.log('[FinishModal] Watch metrics error:', e.message);
             }
-            if (liveResult.avgHr > 0) {
-              setAvgHr(liveResult.avgHr.toString());
-              hasData = true;
-            }
-            if (liveResult.maxHr > 0) {
-              setMaxHr(liveResult.maxHr.toString());
-              hasData = true;
+          }
+
+          // For phone workouts, get from live workout
+          if (!hasData) {
+            const liveResult = await getLiveWorkoutMetrics();
+            if (liveResult.success && liveResult.isActive) {
+              if (liveResult.calories > 0) {
+                setCalories(liveResult.calories.toString());
+                hasData = true;
+              }
+              if (liveResult.avgHr > 0) {
+                setAvgHr(liveResult.avgHr.toString());
+                hasData = true;
+              }
+              if (liveResult.maxHr > 0) {
+                setMaxHr(liveResult.maxHr.toString());
+                hasData = true;
+              }
             }
           }
 
@@ -1499,9 +1612,9 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
     }
   }, [isOpen, workout?.startTime]);
 
-  // Fetch linkable workouts from Apple Health when modal opens
+  // Fetch linkable workouts from Apple Health when modal opens (skip for watch workouts)
   useEffect(() => {
-    if (isOpen && workout?.startTime) {
+    if (isOpen && workout?.startTime && workout?.source !== 'watch') {
       const fetchWorkouts = async () => {
         setIsLoadingWorkouts(true);
         try {
@@ -1676,7 +1789,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
         </div>
 
         {/* Content */}
-        <div className="p-4 overflow-y-auto" style={{ maxHeight: 'calc(85vh - 60px)' }}>
+        <div className="p-4 overflow-y-auto" style={{ maxHeight: 'calc(85vh - 60px)', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}>
           {/* Workout summary */}
           <div
             className="p-4 rounded-2xl mb-4"
@@ -1701,7 +1814,8 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
             </div>
           </div>
 
-          {/* Link Apple Health Workout Section */}
+          {/* Link Apple Health Workout Section (hidden for watch workouts) */}
+          {workout?.source !== 'watch' && (
           <div className="mb-6">
             <div className="flex items-center gap-2 mb-3">
               <span className="text-red-500">❤️</span>
@@ -1790,6 +1904,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
               </div>
             )}
           </div>
+          )}
 
           {/* Optional metrics */}
           <div className="space-y-4">
@@ -1807,22 +1922,6 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
                 rows={2}
               />
             </div>
-
-            {/* Distance field for Running/Cycle */}
-            {isDistanceActivity && (
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">Distance (miles)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={distance}
-                  onChange={(e) => setDistance(e.target.value)}
-                  placeholder="0.0"
-                  className="w-full p-3 rounded-xl text-white placeholder-gray-600"
-                  style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
-                />
-              </div>
-            )}
 
             {/* Metrics row */}
             <div className="grid grid-cols-3 gap-3">
@@ -7622,8 +7721,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 
   const activityTypes = [
     { name: 'Strength Training', icon: '🏋️', subtypes: [], category: 'strength' },
-    { name: 'Running', icon: '🏃', subtypes: ['Easy', 'Tempo', 'Long', 'Sprints', 'Recovery'], category: 'cardio' },
-    { name: 'Cycle', icon: '🚴', subtypes: ['Road', 'Spin', 'Mountain'], category: 'cardio' },
+    { name: 'Running', icon: '🏃', subtypes: ['Outdoor', 'Indoor'], category: 'cardio' },
+    { name: 'Cycle', icon: '🚴', subtypes: ['Outdoor', 'Indoor'], category: 'cardio' },
     { name: 'Sports', icon: '🏀', subtypes: [
       { name: 'Basketball', icon: '🏀' },
       { name: 'Soccer', icon: '⚽' },
@@ -7636,7 +7735,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
     { name: 'Elliptical', icon: '🏃‍♂️', subtypes: [], category: 'cardio' },
     { name: 'Yoga', icon: '🧘', subtypes: ['Vinyasa', 'Power', 'Hot', 'Yin', 'Restorative'], category: 'hybrid' },
     { name: 'Pilates', icon: '🤸', subtypes: ['Mat', 'Reformer', 'Tower', 'Chair'], category: 'hybrid' },
-    { name: 'Walking', icon: '🚶', subtypes: ['Casual', 'Power Walk', 'Incline', 'Treadmill'], category: 'hybrid' },
+    { name: 'Walking', icon: '🚶', subtypes: ['Outdoor', 'Indoor'], category: 'hybrid' },
     { name: 'Cold Plunge', icon: '🧊', subtypes: [], category: 'recovery' },
     { name: 'Sauna', icon: '🔥', subtypes: [], category: 'recovery' },
     { name: 'Other', icon: '🏊', subtypes: [], category: 'other' }
@@ -7695,19 +7794,14 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
     if (type === 'Pilates') {
       return 'recovery'; // Default to recovery, user can change
     }
-    if (type === 'Walking') {
-      // Power Walk, Incline, Treadmill count as cardio; Casual doesn't count
-      if (['Power Walk', 'Incline', 'Treadmill'].includes(sub)) return 'cardio';
-      return null; // Casual walk doesn't count toward goals
-    }
     return null;
   };
 
   const [countToward, setCountToward] = useState(null);
 
-  // Update countToward when subtype changes for Yoga/Pilates/Walking
+  // Update countToward when subtype changes for Yoga/Pilates
   useEffect(() => {
-    if (activityType === 'Yoga' || activityType === 'Pilates' || activityType === 'Walking') {
+    if (activityType === 'Yoga' || activityType === 'Pilates') {
       setCountToward(getDefaultCountToward(activityType, subtype));
     } else {
       setCountToward(null);
@@ -7717,7 +7811,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   const selectedType = activityTypes.find(t => t.name === activityType);
   const showCustomSportInput = activityType === 'Sports' && subtype === 'Other';
   const showCustomActivityInput = activityType === 'Other';
-  const showCountToward = activityType === 'Yoga' || activityType === 'Pilates' || activityType === 'Walking';
+  const showCountToward = activityType === 'Yoga' || activityType === 'Pilates';
   const isFromAppleHealth = !!pendingActivity?.fromAppleHealth;
 
   // Handle linking an Apple Health workout
@@ -8084,10 +8178,15 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
         {/* Initial choice: Log Completed vs Workout Timer */}
         {mode === null ? (
           <div className="flex flex-col gap-4 pt-4">
-            {/* Log Completed option - Primary */}
+            {/* Workout Timer option - Primary */}
             <button
               onClick={() => {
-                setMode('completed');
+                if (hasActiveWorkout) {
+                  // Warn user there's already an active workout
+                  alert('You already have an active timer in progress. Finish it first before starting a new one.');
+                  return;
+                }
+                setMode('start');
                 triggerHaptic(ImpactStyle.Medium);
               }}
               className="p-5 rounded-2xl text-left transition-all duration-150 flex items-center gap-4"
@@ -8116,25 +8215,22 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
               }}
             >
-              <div className="w-14 h-14 rounded-xl flex items-center justify-center text-2xl" style={{ backgroundColor: 'rgba(0,255,148,0.2)' }}>
-                ✓
+              <div className="w-14 h-14 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(0,255,148,0.2)' }}>
+                <svg className="w-7 h-7" fill="#00FF94" viewBox="0 0 24 24">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/>
+                </svg>
               </div>
               <div className="flex-1">
-                <div className="font-semibold text-lg" style={{ color: '#00FF94' }}>Log Completed Activity</div>
-                <div className="text-sm text-gray-400 mt-0.5">Record a workout you already finished</div>
+                <div className="font-semibold text-lg" style={{ color: '#00FF94' }}>Start a Workout</div>
+                <div className="text-sm text-gray-400 mt-0.5">Live heart rate & calorie tracking with Apple Watch</div>
               </div>
               <div className="text-gray-500">→</div>
             </button>
 
-            {/* Workout Timer option - Secondary */}
+            {/* Log Completed option - Secondary */}
             <button
               onClick={() => {
-                if (hasActiveWorkout) {
-                  // Warn user there's already an active workout
-                  alert('You already have an active timer in progress. Finish it first before starting a new one.');
-                  return;
-                }
-                setMode('start');
+                setMode('completed');
                 triggerHaptic(ImpactStyle.Light);
               }}
               className="p-5 rounded-2xl text-left transition-all duration-150 flex items-center gap-4"
@@ -8160,20 +8256,18 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
               }}
             >
-              <div className="w-14 h-14 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
-                <svg className="w-7 h-7" fill="#9CA3AF" viewBox="0 0 24 24">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/>
-                </svg>
+              <div className="w-14 h-14 rounded-xl flex items-center justify-center text-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
+                ✓
               </div>
               <div className="flex-1">
-                <div className="font-semibold text-lg text-gray-300">Workout Timer</div>
-                <div className="text-sm text-gray-500 mt-0.5">Just a timer — track with your watch, link after</div>
+                <div className="font-semibold text-lg text-gray-300">Log Completed Activity</div>
+                <div className="text-sm text-gray-500 mt-0.5">Record a workout you already finished</div>
               </div>
               <div className="text-gray-500">→</div>
             </button>
 
-            {/* Apple Health Workouts Section */}
-            {(linkableWorkouts.length > 0 || isLoadingWorkouts) && (
+            {/* Apple Health Workouts Section — only show when we have actual results */}
+            {linkableWorkouts.length > 0 && (
               <>
                 {/* Divider */}
                 <div className="flex items-center gap-3 my-2">
@@ -8194,12 +8288,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 </div>
 
                 {/* Workouts List */}
-                {isLoadingWorkouts ? (
-                  <div className="flex items-center justify-center py-4">
-                    <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                  </div>
-                ) : (
-                  <div className="space-y-2">
+                <div className="space-y-2">
                     {linkableWorkouts
                       .slice()
                       .sort((a, b) => {
@@ -8307,7 +8396,6 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                       </button>
                     )}
                   </div>
-                )}
               </>
             )}
           </div>
@@ -8909,7 +8997,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               </div>
             )}
 
-            {(activityType === 'Running' || activityType === 'Cycle') && (
+            {mode !== 'start' && (activityType === 'Running' || activityType === 'Cycle' || activityType === 'Walking') && (
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Distance (mi)</label>
                 <input
@@ -16099,7 +16187,20 @@ export default function DaySevenApp() {
     try {
       const saved = localStorage.getItem('activeWorkout');
       if (saved) {
-        setActiveWorkout(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        setActiveWorkout(parsed);
+
+        // If it's a watch workout, verify it's still active
+        if (parsed.source === 'watch') {
+          getWatchWorkoutMetrics().then(metrics => {
+            if (!metrics.isActive) {
+              // Watch workout ended while app was closed — clear it
+              setActiveWorkout(null);
+            }
+          }).catch(() => {
+            // Can't reach watch — keep workout state, it'll re-check when reachable
+          });
+        }
       }
     } catch (e) {
       // Invalid data, ignore
@@ -16115,6 +16216,31 @@ export default function DaySevenApp() {
       localStorage.removeItem('activeWorkout');
     }
   }, [activeWorkout]);
+
+  // Listen for watch workout started/ended events (when user starts/ends on watch directly)
+  useEffect(() => {
+    const removeStartListener = addWatchWorkoutStartedListener((data) => {
+      console.log('[WatchEvent] Workout started on watch:', data.activityType);
+      setActiveWorkout({
+        type: data.activityType,
+        strengthType: data.strengthType || null,
+        startTime: data.startTime || new Date().toISOString(),
+        source: 'watch',
+        icon: '⌚',
+      });
+    });
+
+    const removeEndListener = addWatchWorkoutEndedListener(() => {
+      console.log('[WatchEvent] Workout ended on watch');
+      setActiveWorkout(null);
+      setShowFinishWorkout(false);
+    });
+
+    return () => {
+      removeStartListener();
+      removeEndListener();
+    };
+  }, []);
 
   // Tab order for direction detection
   const tabOrder = ['home', 'history', 'feed', 'profile'];
@@ -18010,14 +18136,35 @@ export default function DaySevenApp() {
         workout={activeWorkout}
         activeTab={activeTab}
         isFinishing={showFinishWorkout}
-        onFinish={() => setShowFinishWorkout(true)}
-        onCancel={async () => {
-          if (window.confirm('Cancel this workout? Your progress will be lost.')) {
-            // Cancel the live HealthKit workout (discards without saving)
-            await cancelLiveWorkout();
-            setActiveWorkout(null);
-            triggerHaptic(ImpactStyle.Medium);
+        onFinish={async () => {
+          // Pause the watch workout when opening the end workout screen
+          if (activeWorkout?.source === 'watch') {
+            try {
+              await pauseWatchWorkout();
+            } catch (e) {
+              console.log('[FinishWorkout] Failed to pause watch:', e.message);
+            }
           }
+          setShowFinishWorkout(true);
+        }}
+        onResumedFromWatch={() => {
+          // Watch was resumed by user on the watch — close the end workout modal on phone
+          setShowFinishWorkout(false);
+        }}
+        onCancel={async () => {
+          // Cancel the workout (watch or phone)
+          try {
+            if (activeWorkout?.source === 'watch') {
+              await cancelWatchWorkout();
+            } else {
+              await cancelLiveWorkout();
+            }
+          } catch (e) {
+            console.log('[CancelWorkout] Error (clearing anyway):', e.message);
+          }
+          setActiveWorkout(null);
+          setShowFinishWorkout(false);
+          triggerHaptic(ImpactStyle.Medium);
         }}
       />
 
@@ -18025,7 +18172,17 @@ export default function DaySevenApp() {
       <FinishWorkoutModal
         isOpen={showFinishWorkout}
         workout={activeWorkout}
-        onClose={() => setShowFinishWorkout(false)}
+        onClose={async () => {
+          // Resume the watch workout when cancelling out of end workout screen
+          if (activeWorkout?.source === 'watch') {
+            try {
+              await resumeWatchWorkout();
+            } catch (e) {
+              console.log('[FinishWorkout] Failed to resume watch:', e.message);
+            }
+          }
+          setShowFinishWorkout(false);
+        }}
         linkedWorkoutUUIDs={[
           ...activities.filter(a => a.linkedHealthKitUUID).map(a => a.linkedHealthKitUUID),
           ...activities.filter(a => a.healthKitUUID).map(a => a.healthKitUUID)
@@ -18033,9 +18190,40 @@ export default function DaySevenApp() {
         onSave={async (finishedWorkout) => {
           // If user linked to an Apple Health workout, don't create a duplicate in HealthKit
           const shouldSkipHealthKitWrite = !!finishedWorkout.linkedHealthKitUUID;
+          const isWatchWorkout = activeWorkout?.source === 'watch';
 
           let liveResult = { success: false };
-          if (!shouldSkipHealthKitWrite) {
+
+          if (isWatchWorkout) {
+            // End the watch workout — returns final metrics from watch
+            try {
+              const watchResult = await endWatchWorkout();
+              liveResult = {
+                success: true,
+                workoutUUID: watchResult.workoutUUID,
+                duration: watchResult.duration,
+                calories: watchResult.calories,
+                avgHr: watchResult.avgHr,
+                maxHr: watchResult.maxHr,
+                distance: watchResult.distance || 0,
+              };
+              // Auto-fill metrics from watch if not manually entered
+              if (!finishedWorkout.calories && watchResult.calories) {
+                finishedWorkout.calories = watchResult.calories;
+              }
+              if (!finishedWorkout.avgHr && watchResult.avgHr) {
+                finishedWorkout.avgHr = watchResult.avgHr;
+              }
+              if (!finishedWorkout.maxHr && watchResult.maxHr) {
+                finishedWorkout.maxHr = watchResult.maxHr;
+              }
+              if (!finishedWorkout.duration && watchResult.duration) {
+                finishedWorkout.duration = watchResult.duration;
+              }
+            } catch (e) {
+              console.log('[FinishWorkout] Watch end error:', e.message);
+            }
+          } else if (!shouldSkipHealthKitWrite) {
             // End the live workout in HealthKit (this saves it automatically)
             liveResult = await endLiveWorkout({
               calories: finishedWorkout.calories,
@@ -18049,7 +18237,7 @@ export default function DaySevenApp() {
           // Mark workout data appropriately
           const workoutData = {
             ...finishedWorkout,
-            healthKitSaved: shouldSkipHealthKitWrite ? true : liveResult.success, // Prevent re-writing
+            healthKitSaved: shouldSkipHealthKitWrite || isWatchWorkout ? true : liveResult.success,
             healthKitUUID: shouldSkipHealthKitWrite ? undefined : liveResult.workoutUUID,
           };
 
@@ -18427,12 +18615,24 @@ export default function DaySevenApp() {
         userData={userData}
         hasActiveWorkout={!!activeWorkout}
         onStartWorkout={async (workoutData) => {
-          // Start a new active workout
-          setActiveWorkout(workoutData);
           triggerHaptic(ImpactStyle.Heavy);
 
-          // Start a live HealthKit workout session
-          // This creates an actual workout in HealthKit and starts collecting metrics
+          // Try to start workout on Apple Watch first (better metrics via HKWorkoutSession)
+          try {
+            const watchReachable = await isWatchReachable();
+            if (watchReachable) {
+              const activityType = workoutData.type;
+              const strengthType = workoutData.strengthType || null;
+              await startWatchWorkout(activityType, strengthType);
+              setActiveWorkout({ ...workoutData, source: 'watch' });
+              return;
+            }
+          } catch (e) {
+            console.log('[StartWorkout] Watch not available, falling back to phone:', e.message);
+          }
+
+          // Fallback: Start a live HealthKit workout session on phone
+          setActiveWorkout({ ...workoutData, source: 'phone' });
           const activityType = getHealthKitActivityType(workoutData);
           await startLiveWorkout(activityType);
         }}

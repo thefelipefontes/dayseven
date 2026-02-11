@@ -7,6 +7,7 @@ import HealthKit
 struct WorkoutResult {
     var workoutUUID: String
     var duration: Int // minutes
+    var durationSeconds: TimeInterval // precise seconds for pace calculation
     var calories: Int
     var avgHr: Int
     var maxHr: Int
@@ -41,6 +42,8 @@ class WorkoutManager: NSObject, ObservableObject {
     @Published var isActive = false
     @Published var isPaused = false
     @Published var elapsedTime: TimeInterval = 0
+    /// Whole-second counter for always-on display — only publishes on second boundaries
+    @Published var elapsedSeconds: Int = 0
     @Published var heartRate: Double = 0
     @Published var activeCalories: Double = 0
     @Published var distance: Double = 0 // meters
@@ -83,13 +86,17 @@ class WorkoutManager: NSObject, ObservableObject {
 
     // MARK: - Start Workout
 
-    func startWorkout(activityType: HKWorkoutActivityType) async throws {
+    func startWorkout(activityType: HKWorkoutActivityType, isIndoor: Bool = false) async throws {
+        // If there's a stale session lingering, clean it up before starting
+        if session != nil && !isActive {
+            cancelWorkout()
+        }
         guard !isActive else { throw WorkoutError.alreadyActive }
         guard HKHealthStore.isHealthDataAvailable() else { throw WorkoutError.healthKitNotAvailable }
 
         let config = HKWorkoutConfiguration()
         config.activityType = activityType
-        config.locationType = WorkoutManager.locationType(for: activityType)
+        config.locationType = isIndoor ? .indoor : WorkoutManager.locationType(for: activityType)
 
         // For swimming, set a default lap length
         if activityType == .swimming {
@@ -150,12 +157,14 @@ class WorkoutManager: NSObject, ObservableObject {
         isActive = false
         isPaused = false
 
-        let totalDuration = Int(endDate.timeIntervalSince(startDate) / 60)
+        let totalSeconds = endDate.timeIntervalSince(startDate)
+        let totalDuration = Int(totalSeconds / 60)
         let distanceMiles = distance / 1609.34
 
         let result = WorkoutResult(
             workoutUUID: workout?.uuid.uuidString ?? UUID().uuidString,
             duration: max(totalDuration, 1),
+            durationSeconds: totalSeconds,
             calories: Int(activeCalories),
             avgHr: heartRateSamples.isEmpty ? 0 : Int(averageHeartRate),
             maxHr: Int(maxHeartRate),
@@ -228,6 +237,12 @@ class WorkoutManager: NSObject, ObservableObject {
                 let activeInterval = totalInterval - mgr.accumulatedPauseTime
                 mgr.elapsedTime = max(0, activeInterval)
 
+                // Update whole-second counter (only fires @Published when value changes)
+                let newSeconds = Int(mgr.elapsedTime)
+                if newSeconds != mgr.elapsedSeconds {
+                    mgr.elapsedSeconds = newSeconds
+                }
+
                 // Update zone seconds from zone start date
                 if let zs = mgr.zoneStartDate {
                     mgr.currentZoneSeconds = max(0, Int(now.timeIntervalSince(zs)))
@@ -249,6 +264,7 @@ class WorkoutManager: NSObject, ObservableObject {
 
     private func resetMetrics() {
         elapsedTime = 0
+        elapsedSeconds = 0
         heartRate = 0
         activeCalories = 0
         distance = 0

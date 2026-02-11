@@ -59,14 +59,14 @@ struct ActivityTypes {
             name: "Running",
             emoji: "\u{1F3C3}",
             sfSymbol: "figure.run",
-            subtypes: ["Easy", "Tempo", "Long", "Sprints", "Recovery"],
+            subtypes: ["Outdoor", "Indoor"],
             category: .cardio
         ),
         ActivityTypeDefinition(
             name: "Cycle",
             emoji: "\u{1F6B4}",
             sfSymbol: "figure.indoor.cycle",
-            subtypes: ["Road", "Spin", "Mountain"],
+            subtypes: ["Outdoor", "Indoor"],
             category: .cardio
         ),
         ActivityTypeDefinition(
@@ -94,9 +94,8 @@ struct ActivityTypes {
             name: "Walking",
             emoji: "\u{1F6B6}",
             sfSymbol: "figure.walk",
-            subtypes: ["Casual", "Power Walk", "Incline", "Treadmill"],
-            category: .cardio,
-            isHybrid: true
+            subtypes: ["Outdoor", "Indoor"],
+            category: .cardio
         ),
 
         // Recovery
@@ -171,9 +170,6 @@ struct ActivityTypes {
             return "recovery"
         case "Pilates":
             return "recovery"
-        case "Walking":
-            if ["Power Walk", "Incline", "Treadmill"].contains(subtype ?? "") { return "cardio" }
-            return nil
         default:
             return nil
         }

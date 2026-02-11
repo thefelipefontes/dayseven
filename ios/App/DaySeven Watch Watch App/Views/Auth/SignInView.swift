@@ -6,16 +6,17 @@ import AuthenticationServices
 struct SignInView: View {
     @EnvironmentObject var appVM: AppViewModel
 
-    @StateObject private var phoneService = PhoneConnectivityService()
+    private var phoneService: PhoneConnectivityService { appVM.phoneService }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
                 // App icon/branding
                 VStack(spacing: 8) {
-                    Text("D7")
-                        .font(.system(size: 36, weight: .black, design: .rounded))
-                        .foregroundColor(.white)
+                    Image("IconTransparent")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 120, height: 120)
 
                     Text("DaySeven")
                         .font(.headline)

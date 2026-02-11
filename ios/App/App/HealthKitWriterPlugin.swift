@@ -15,6 +15,14 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "cancelLiveWorkout", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getLiveWorkoutMetrics", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryHeartRate", returnType: CAPPluginReturnPromise),
+        // Watch workout control methods
+        CAPPluginMethod(name: "startWatchWorkout", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "endWatchWorkout", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pauseWatchWorkout", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "resumeWatchWorkout", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getWatchWorkoutMetrics", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "cancelWatchWorkout", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "isWatchReachable", returnType: CAPPluginReturnPromise),
         // Legacy observer methods (keeping for backward compatibility)
         CAPPluginMethod(name: "startObservingMetrics", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopObservingMetrics", returnType: CAPPluginReturnPromise),
@@ -22,6 +30,41 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
     ]
 
     private let healthStore = HKHealthStore()
+
+    // MARK: - Plugin Lifecycle
+
+    override public func load() {
+        // Listen for watch workout notifications from WatchSessionManager
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleWatchWorkoutStarted(_:)),
+            name: .watchWorkoutStarted,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleWatchWorkoutEnded(_:)),
+            name: .watchWorkoutEnded,
+            object: nil
+        )
+    }
+
+    @objc private func handleWatchWorkoutStarted(_ notification: Notification) {
+        let activityType = notification.userInfo?["activityType"] as? String ?? "Other"
+        let strengthType = notification.userInfo?["strengthType"] as? String
+        var data: [String: Any] = [
+            "activityType": activityType,
+            "startTime": ISO8601DateFormatter().string(from: Date())
+        ]
+        if let strengthType = strengthType {
+            data["strengthType"] = strengthType
+        }
+        notifyListeners("watchWorkoutStarted", data: data)
+    }
+
+    @objc private func handleWatchWorkoutEnded(_ notification: Notification) {
+        notifyListeners("watchWorkoutEnded", data: [:])
+    }
 
     // Live workout session
     private var workoutBuilder: HKWorkoutBuilder?
@@ -788,6 +831,148 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
 
             self.healthStore.execute(query)
         }
+    }
+
+    // MARK: - Watch Workout Control (via WatchConnectivity)
+
+    @objc func isWatchReachable(_ call: CAPPluginCall) {
+        call.resolve(["reachable": WatchSessionManager.shared.isWatchReachable])
+    }
+
+    @objc func startWatchWorkout(_ call: CAPPluginCall) {
+        guard let activityType = call.getString("activityType") else {
+            call.reject("Missing required parameter: activityType")
+            return
+        }
+
+        let strengthType = call.getString("strengthType")
+
+        var message: [String: Any] = [
+            "action": "startWorkout",
+            "activityType": activityType
+        ]
+        if let st = strengthType {
+            message["strengthType"] = st
+        }
+
+        WatchSessionManager.shared.sendToWatch(
+            message: message,
+            replyHandler: { reply in
+                DispatchQueue.main.async {
+                    if let error = reply["error"] as? String {
+                        call.reject(error)
+                    } else {
+                        call.resolve(reply as? [String: Any] ?? ["success": true])
+                    }
+                }
+            },
+            errorHandler: { error in
+                DispatchQueue.main.async {
+                    call.reject(error.localizedDescription)
+                }
+            }
+        )
+    }
+
+    @objc func endWatchWorkout(_ call: CAPPluginCall) {
+        WatchSessionManager.shared.sendToWatch(
+            message: ["action": "endWorkout"],
+            replyHandler: { reply in
+                DispatchQueue.main.async {
+                    if let error = reply["error"] as? String {
+                        call.reject(error)
+                    } else {
+                        call.resolve(reply as? [String: Any] ?? ["success": true])
+                    }
+                }
+            },
+            errorHandler: { error in
+                DispatchQueue.main.async {
+                    call.reject(error.localizedDescription)
+                }
+            }
+        )
+    }
+
+    @objc func pauseWatchWorkout(_ call: CAPPluginCall) {
+        WatchSessionManager.shared.sendToWatch(
+            message: ["action": "pauseWorkout"],
+            replyHandler: { reply in
+                DispatchQueue.main.async {
+                    if let error = reply["error"] as? String {
+                        call.reject(error)
+                    } else {
+                        call.resolve(reply as? [String: Any] ?? ["success": true])
+                    }
+                }
+            },
+            errorHandler: { error in
+                DispatchQueue.main.async {
+                    call.reject(error.localizedDescription)
+                }
+            }
+        )
+    }
+
+    @objc func resumeWatchWorkout(_ call: CAPPluginCall) {
+        WatchSessionManager.shared.sendToWatch(
+            message: ["action": "resumeWorkout"],
+            replyHandler: { reply in
+                DispatchQueue.main.async {
+                    if let error = reply["error"] as? String {
+                        call.reject(error)
+                    } else {
+                        call.resolve(reply as? [String: Any] ?? ["success": true])
+                    }
+                }
+            },
+            errorHandler: { error in
+                DispatchQueue.main.async {
+                    call.reject(error.localizedDescription)
+                }
+            }
+        )
+    }
+
+    @objc func getWatchWorkoutMetrics(_ call: CAPPluginCall) {
+        guard WatchSessionManager.shared.isWatchReachable else {
+            call.resolve(["isActive": false, "reachable": false])
+            return
+        }
+
+        WatchSessionManager.shared.sendToWatch(
+            message: ["action": "getMetrics"],
+            replyHandler: { reply in
+                DispatchQueue.main.async {
+                    call.resolve(reply as? [String: Any] ?? ["isActive": false])
+                }
+            },
+            errorHandler: { error in
+                DispatchQueue.main.async {
+                    call.resolve(["isActive": false, "error": error.localizedDescription])
+                }
+            }
+        )
+    }
+
+    @objc func cancelWatchWorkout(_ call: CAPPluginCall) {
+        WatchSessionManager.shared.sendToWatch(
+            message: ["action": "cancelWorkout"],
+            replyHandler: { reply in
+                DispatchQueue.main.async {
+                    if let error = reply["error"] as? String {
+                        call.reject(error)
+                    } else {
+                        call.resolve(reply as? [String: Any] ?? ["success": true])
+                    }
+                }
+            },
+            errorHandler: { error in
+                DispatchQueue.main.async {
+                    call.reject(error.localizedDescription)
+                }
+            }
+        )
     }
 
     // MARK: - Activity Type Mapping

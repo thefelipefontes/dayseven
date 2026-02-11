@@ -917,3 +917,100 @@ export function addMetricsUpdateListener(callback) {
     handle.then(h => h.remove());
   };
 }
+
+// =============================================
+// WATCH WORKOUT CONTROL (via WatchConnectivity)
+// =============================================
+
+// Check if Apple Watch is reachable
+export async function isWatchReachable() {
+  if (!Capacitor.isNativePlatform()) return false;
+  try {
+    const result = await HealthKitWriter.isWatchReachable();
+    return result.reachable;
+  } catch {
+    return false;
+  }
+}
+
+// Start a workout on the Apple Watch
+export async function startWatchWorkout(activityType, strengthType = null) {
+  if (!Capacitor.isNativePlatform()) {
+    throw new Error('Not available on web');
+  }
+  const params = { activityType };
+  if (strengthType) params.strengthType = strengthType;
+  return await HealthKitWriter.startWatchWorkout(params);
+}
+
+// End the active workout on the Apple Watch — returns final metrics
+export async function endWatchWorkout() {
+  if (!Capacitor.isNativePlatform()) {
+    throw new Error('Not available on web');
+  }
+  return await HealthKitWriter.endWatchWorkout();
+}
+
+// Pause the active workout on the Apple Watch
+export async function pauseWatchWorkout() {
+  if (!Capacitor.isNativePlatform()) {
+    throw new Error('Not available on web');
+  }
+  return await HealthKitWriter.pauseWatchWorkout();
+}
+
+// Resume the active workout on the Apple Watch
+export async function resumeWatchWorkout() {
+  if (!Capacitor.isNativePlatform()) {
+    throw new Error('Not available on web');
+  }
+  return await HealthKitWriter.resumeWatchWorkout();
+}
+
+// Get current metrics from the active workout on the Apple Watch
+export async function getWatchWorkoutMetrics() {
+  if (!Capacitor.isNativePlatform()) {
+    return { isActive: false };
+  }
+  try {
+    return await HealthKitWriter.getWatchWorkoutMetrics();
+  } catch {
+    return { isActive: false };
+  }
+}
+
+// Cancel/discard the active workout on the Apple Watch
+export async function cancelWatchWorkout() {
+  if (!Capacitor.isNativePlatform()) {
+    throw new Error('Not available on web');
+  }
+  return await HealthKitWriter.cancelWatchWorkout();
+}
+
+// Listen for watch workout started (when user starts workout directly on watch)
+// Returns a function to remove the listener
+export function addWatchWorkoutStartedListener(callback) {
+  if (!Capacitor.isNativePlatform()) {
+    return () => {};
+  }
+  const handle = HealthKitWriter.addListener('watchWorkoutStarted', (data) => {
+    callback(data);
+  });
+  return () => {
+    handle.then(h => h.remove());
+  };
+}
+
+// Listen for watch workout ended (when user ends/discards workout on watch)
+// Returns a function to remove the listener
+export function addWatchWorkoutEndedListener(callback) {
+  if (!Capacitor.isNativePlatform()) {
+    return () => {};
+  }
+  const handle = HealthKitWriter.addListener('watchWorkoutEnded', (data) => {
+    callback(data);
+  });
+  return () => {
+    handle.then(h => h.remove());
+  };
+}

@@ -12,6 +12,7 @@ class AppViewModel: ObservableObject {
     let firestoreService = FirestoreService()
     let healthKitService = HealthKitService()
     let workoutManager = WorkoutManager()
+    let phoneService = PhoneConnectivityService()
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -33,6 +34,9 @@ class AppViewModel: ObservableObject {
     @Published var errorMessage: String?
 
     init() {
+        // Give PhoneConnectivityService access to WorkoutManager for remote commands
+        phoneService.workoutManager = workoutManager
+
         // Forward authService changes to trigger view updates
         authService.objectWillChange
             .receive(on: DispatchQueue.main)
@@ -175,6 +179,42 @@ class AppViewModel: ObservableObject {
         } catch {
             print("[SaveActivity] FAILED: \(error.localizedDescription)")
             errorMessage = "Failed to save: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Delete Activity (for discard after auto-save)
+
+    func deleteActivity(withId activityId: ActivityID) async {
+        guard let uid = authService.currentUser?.uid else {
+            print("[DeleteActivity] No user uid — skipping delete")
+            return
+        }
+
+        // Remove from local array
+        var updatedActivities = activities
+        updatedActivities.removeAll { $0.id == activityId }
+        activities = updatedActivities
+
+        // Recalculate progress
+        weeklyProgress = calculateWeeklyProgress(activities: updatedActivities, goals: goals)
+        weeklyStats = calculateWeeklyStats(activities: updatedActivities)
+
+        // Save to Firestore
+        do {
+            try await firestoreService.batchSave(
+                uid: uid,
+                activities: updatedActivities,
+                streaks: streaks,
+                recordUpdates: nil
+            )
+            print("[DeleteActivity] Successfully removed activity and saved \(updatedActivities.count) activities")
+
+            // Notify the iPhone to refresh
+            if WCSession.default.isReachable {
+                WCSession.default.sendMessage(["action": "activitySaved"], replyHandler: { _ in }, errorHandler: { _ in })
+            }
+        } catch {
+            print("[DeleteActivity] FAILED: \(error.localizedDescription)")
         }
     }
 

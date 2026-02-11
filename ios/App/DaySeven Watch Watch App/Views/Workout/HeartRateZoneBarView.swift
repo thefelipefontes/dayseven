@@ -1,6 +1,6 @@
 import SwiftUI
 
-// MARK: - Heart Rate Zone Bar View
+// MARK: - Heart Rate Zone Bar View (Apple Fitness Style)
 
 struct HeartRateZoneBarView: View {
     let currentZone: HeartRateZone
@@ -8,61 +8,60 @@ struct HeartRateZoneBarView: View {
     let maxHR: Double
     let zoneSeconds: Int
 
-    private let barHeight: CGFloat = 8
-    private let triangleSize: CGFloat = 8
+    private let barHeight: CGFloat = 20
+    private let arrowSize: CGFloat = 8
+    private let spacing: CGFloat = 2
 
     var body: some View {
-        VStack(spacing: 3) {
-            // Zone label
-            HStack(spacing: 4) {
-                Image(systemName: "heart.fill")
-                    .font(.system(size: 9))
-                    .foregroundColor(currentZone.color)
-                Text(currentZone.label)
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(currentZone.color)
-            }
+        VStack(spacing: 1) {
+            // Arrow indicator — overlaid on a clear spacer so it tracks the full bar width
+            Color.clear
+                .frame(height: arrowSize * 0.7)
+                .overlay(
+                    GeometryReader { geo in
+                        let pos = HeartRateZone.normalizedPosition(for: heartRate, maxHR: maxHR)
+                        let halfArrow = arrowSize / 2
+                        let xPos = halfArrow + pos * (geo.size.width - arrowSize)
 
-            // Zone bar with triangle indicator
-            GeometryReader { geometry in
-                let totalWidth = geometry.size.width
-                let indicatorX = HeartRateZone.normalizedPosition(
-                    for: heartRate, maxHR: maxHR
-                ) * totalWidth
+                        Triangle()
+                            .fill(Color.white)
+                            .frame(width: arrowSize, height: arrowSize * 0.7)
+                            .position(x: xPos, y: geo.size.height / 2)
+                    }
+                )
+                .animation(.easeOut(duration: 0.3), value: heartRate)
 
-                VStack(spacing: 1) {
-                    // Triangle indicator (pointing down)
-                    Triangle()
-                        .fill(Color.white)
-                        .frame(width: triangleSize, height: triangleSize * 0.6)
-                        .position(x: indicatorX, y: triangleSize * 0.3)
+            // Zone bar segments
+            HStack(spacing: spacing) {
+                ForEach(HeartRateZone.allCases, id: \.rawValue) { zone in
+                    let isActive = zone == currentZone
 
-                    // Colored zone segments
-                    HStack(spacing: 1.5) {
-                        ForEach(HeartRateZone.allCases, id: \.rawValue) { zone in
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(zone.color)
-                                .frame(height: barHeight)
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(zone.color.opacity(isActive ? 1.0 : 0.4))
+                            .frame(height: barHeight)
+
+                        // Show zone label inside the active (expanded) segment
+                        if isActive {
+                            HStack(spacing: 3) {
+                                Image(systemName: "heart.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.white)
+                                Text(zone.label)
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(.white)
+                            }
+                            .minimumScaleFactor(0.5)
+                            .lineLimit(1)
                         }
                     }
+                    // Active zone gets ~2.5x the width of inactive zones
+                    .frame(maxWidth: isActive ? .infinity : nil)
+                    .frame(width: isActive ? nil : 20)
                 }
             }
-            .frame(height: barHeight + triangleSize + 2)
-
-            // Time in zone
-            Text("\(formatZoneTime(zoneSeconds)) in zone")
-                .font(.system(size: 9))
-                .foregroundColor(.gray)
+            .frame(height: barHeight)
         }
-    }
-
-    private func formatZoneTime(_ seconds: Int) -> String {
-        let mins = seconds / 60
-        let secs = seconds % 60
-        if mins > 0 {
-            return "\(mins):\(String(format: "%02d", secs))"
-        }
-        return "0:\(String(format: "%02d", secs))"
     }
 }
 
@@ -71,9 +70,9 @@ struct HeartRateZoneBarView: View {
 struct Triangle: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        path.move(to: CGPoint(x: rect.midX, y: rect.maxY))    // bottom center (pointing down)
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY)) // top left
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY)) // top right
+        path.move(to: CGPoint(x: rect.midX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
         path.closeSubpath()
         return path
     }

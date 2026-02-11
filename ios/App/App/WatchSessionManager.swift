@@ -3,6 +3,13 @@ import WatchConnectivity
 import FirebaseAuth
 import FirebaseFirestore
 
+// MARK: - Notification Names for Watch ↔ Phone
+
+extension Notification.Name {
+    static let watchWorkoutStarted = Notification.Name("watchWorkoutStarted")
+    static let watchWorkoutEnded = Notification.Name("watchWorkoutEnded")
+}
+
 /// Manages WatchConnectivity on the iPhone side.
 /// Listens for auth-token requests from the Apple Watch and responds
 /// with a Firebase custom token so the watch can sign in as the same user.
@@ -16,6 +23,32 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
 
     private override init() {
         super.init()
+    }
+
+    // MARK: - Send Message TO Watch
+
+    /// Sends a message to the paired Apple Watch and returns the reply via completion handler.
+    func sendToWatch(
+        message: [String: Any],
+        replyHandler: @escaping ([String: Any]) -> Void,
+        errorHandler: @escaping (Error) -> Void
+    ) {
+        guard WCSession.default.activationState == .activated else {
+            errorHandler(NSError(domain: "WatchSession", code: -1, userInfo: [NSLocalizedDescriptionKey: "WCSession not activated"]))
+            return
+        }
+
+        guard WCSession.default.isReachable else {
+            errorHandler(NSError(domain: "WatchSession", code: -2, userInfo: [NSLocalizedDescriptionKey: "Apple Watch not reachable"]))
+            return
+        }
+
+        WCSession.default.sendMessage(message, replyHandler: replyHandler, errorHandler: errorHandler)
+    }
+
+    /// Check if the Apple Watch is reachable
+    var isWatchReachable: Bool {
+        return WCSession.default.activationState == .activated && WCSession.default.isReachable
     }
 
     // MARK: - Activate
@@ -54,7 +87,7 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         WCSession.default.activate()
     }
 
-    // MARK: - Handle messages from Watch
+    // MARK: - Handle messages from Watch (with reply)
 
     func session(
         _ session: WCSession,
@@ -73,6 +106,38 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
             handleActivitySaved(replyHandler: replyHandler)
         default:
             replyHandler(["error": "Unknown action: \(action)"])
+        }
+    }
+
+    // MARK: - Handle messages from Watch (fire-and-forget, no reply)
+
+    func session(
+        _ session: WCSession,
+        didReceiveMessage message: [String: Any]
+    ) {
+        guard let action = message["action"] as? String else { return }
+
+        switch action {
+        case "workoutStarted":
+            let activityType = message["activityType"] as? String ?? "Other"
+            let strengthType = message["strengthType"] as? String
+            print("[WatchSession] Watch workout started: \(activityType)")
+            NotificationCenter.default.post(
+                name: .watchWorkoutStarted,
+                object: nil,
+                userInfo: [
+                    "activityType": activityType,
+                    "strengthType": strengthType as Any
+                ]
+            )
+        case "workoutEnded":
+            print("[WatchSession] Watch workout ended")
+            NotificationCenter.default.post(
+                name: .watchWorkoutEnded,
+                object: nil
+            )
+        default:
+            print("[WatchSession] Unknown fire-and-forget action: \(action)")
         }
     }
 

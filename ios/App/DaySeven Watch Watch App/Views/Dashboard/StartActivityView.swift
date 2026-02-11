@@ -100,6 +100,14 @@ struct StartActivityView: View {
 
     // MARK: - Activity Row with Play Button
 
+    /// Whether a workout is currently running — blocks starting another
+    private var isWorkoutActive: Bool {
+        appVM.workoutManager.isActive
+    }
+
+    /// Activities that require Indoor/Outdoor selection before starting
+    private static let locationActivities: Set<String> = ["Running", "Cycle", "Walking"]
+
     private func activityRowWithPlay(
         symbol: String,
         name: String,
@@ -108,9 +116,12 @@ struct StartActivityView: View {
         strengthType: String?,
         hasDetails: Bool
     ) -> some View {
-        HStack {
+        let needsLocationChoice = Self.locationActivities.contains(activityType)
+
+        return HStack {
             // Left side: tap for details (if available) or quick start
             Button {
+                guard !isWorkoutActive else { return }
                 if hasDetails {
                     path.append(WorkoutDestination.detailPicker(activityType: activityType, strengthType: strengthType))
                 } else {
@@ -120,26 +131,35 @@ struct StartActivityView: View {
                 HStack(spacing: 8) {
                     Image(systemName: symbol)
                         .font(.system(size: 20))
-                        .foregroundColor(color)
+                        .foregroundColor(isWorkoutActive ? color.opacity(0.3) : color)
                         .frame(width: 28)
                     Text(name)
                         .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.white)
+                        .foregroundColor(isWorkoutActive ? .gray : .white)
                 }
             }
             .buttonStyle(.plain)
+            .disabled(isWorkoutActive)
 
             Spacer()
 
-            // Right side: play button for instant start — large touch target
+            // Right side: play button
+            // For location activities (Running/Walking/Cycling), go to Indoor/Outdoor picker
+            // For others, instant quick start
             Button {
-                path.append(WorkoutDestination.quickStart(activityType: activityType, strengthType: strengthType))
+                guard !isWorkoutActive else { return }
+                if needsLocationChoice {
+                    path.append(WorkoutDestination.detailPicker(activityType: activityType, strengthType: strengthType))
+                } else {
+                    path.append(WorkoutDestination.quickStart(activityType: activityType, strengthType: strengthType))
+                }
             } label: {
                 Image(systemName: "play.circle.fill")
                     .font(.system(size: 36))
-                    .foregroundColor(.green)
+                    .foregroundColor(isWorkoutActive ? .green.opacity(0.3) : .green)
             }
             .buttonStyle(.plain)
+            .disabled(isWorkoutActive)
         }
         .padding(.vertical, 6)
     }

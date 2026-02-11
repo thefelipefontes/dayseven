@@ -66,23 +66,31 @@ struct WorkoutDetailPickerView: View {
 
     // MARK: - Subtypes
 
+    /// Whether the subtypes are Indoor/Outdoor location choices (mandatory, no "Just Start")
+    private var isLocationChoice: Bool {
+        let subtypes = activityTypeDef?.subtypes ?? []
+        return subtypes == ["Outdoor", "Indoor"]
+    }
+
     private func subtypeSection(_ subtypes: [String]) -> some View {
         Group {
-            // Quick start without subtype
-            Button {
-                path.append(WorkoutDestination.quickStart(activityType: activityType, strengthType: nil))
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 12))
-                        .foregroundColor(.green)
-                    Text("Just Start")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.green)
+            // Quick start without subtype — hidden for Indoor/Outdoor activities
+            if !isLocationChoice {
+                Button {
+                    path.append(WorkoutDestination.quickStart(activityType: activityType, strengthType: nil))
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(.green)
+                        Text("Just Start")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.green)
+                    }
+                    .padding(.vertical, 2)
                 }
-                .padding(.vertical, 2)
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
 
             ForEach(subtypes, id: \.self) { subtype in
                 Button {

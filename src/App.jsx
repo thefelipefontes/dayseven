@@ -1469,7 +1469,7 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
 };
 
 // Finish Workout Modal - Shown when user taps "Finish Timer"
-const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUIDs = [] }) => {
+const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linkedWorkoutUUIDs = [] }) => {
   const [notes, setNotes] = useState('');
   const [calories, setCalories] = useState('');
   const [avgHr, setAvgHr] = useState('');
@@ -1488,6 +1488,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
   const [finishSportEmoji, setFinishSportEmoji] = useState(null);
   const [finishStrengthType, setFinishStrengthType] = useState('');
   const [finishFocusArea, setFinishFocusArea] = useState('');
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 
   const fileInputRef = useRef(null);
   const scrollContentRef = useRef(null);
@@ -1561,6 +1562,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
       setFinishSportEmoji(workout?.sportEmoji || null);
       setFinishStrengthType(workout?.strengthType || '');
       setFinishFocusArea(workout?.focusArea || '');
+      setShowDiscardConfirm(false);
 
       // Get current metrics from the live workout session (don't end it yet)
       const fetchMetrics = async () => {
@@ -1655,6 +1657,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
       setFinishSportEmoji(null);
       setFinishStrengthType('');
       setFinishFocusArea('');
+      setShowDiscardConfirm(false);
     }
   }, [isOpen, workout?.startTime]);
 
@@ -1908,26 +1911,21 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
 
         {/* Content */}
         <div ref={scrollContentRef} className="p-4 overflow-y-auto" style={{ maxHeight: 'calc(85vh - 60px)', overscrollBehavior: 'contain' }}>
-          {/* Workout summary */}
-          <div
-            className="p-4 rounded-2xl mb-4"
-            style={{ backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.2)' }}
-          >
-            <div className="flex items-center gap-4">
-              <div
-                className="w-16 h-16 rounded-xl flex items-center justify-center text-3xl"
-                style={{ backgroundColor: 'rgba(0,255,148,0.15)' }}
-              >
-                {icon}
+          {/* Workout summary — compact inline header */}
+          <div className="flex items-center gap-3 mb-4 pb-4 border-b border-white/10">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
+              style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}
+            >
+              {icon}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-white truncate">
+                {typeName}
+                {subtypeName && <span className="text-gray-400 font-normal"> · {subtypeName}</span>}
               </div>
-              <div>
-                <div className="font-semibold text-lg text-white">
-                  {typeName}
-                  {subtypeName && <span className="text-gray-400 font-normal"> • {subtypeName}</span>}
-                </div>
-                <div className="text-3xl font-bold mt-1" style={{ color: '#00FF94' }}>
-                  {formatDuration(linkedWorkout?.duration || duration)}
-                </div>
+              <div className="text-lg font-bold" style={{ color: '#00FF94' }}>
+                {formatDuration(linkedWorkout?.duration || duration)}
               </div>
             </div>
           </div>
@@ -2315,6 +2313,38 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
                 </div>
               )}
             </div>
+
+            {/* Discard Workout */}
+            {onDiscard && (
+              <div className="mt-6 pt-4 border-t border-white/10">
+                {!showDiscardConfirm ? (
+                  <button
+                    onClick={() => { setShowDiscardConfirm(true); triggerHaptic(ImpactStyle.Light); }}
+                    className="w-full py-3 rounded-xl text-sm font-medium text-red-400 transition-all duration-150"
+                    style={{ backgroundColor: 'rgba(255,69,58,0.1)' }}
+                  >
+                    Discard Workout
+                  </button>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-xs text-gray-400 text-center mb-2">This will cancel the workout without saving. Are you sure?</p>
+                    <button
+                      onClick={() => { onDiscard(); triggerHaptic(ImpactStyle.Heavy); }}
+                      className="w-full py-3 rounded-xl text-sm font-bold text-red-400 transition-all duration-150"
+                      style={{ backgroundColor: 'rgba(255,69,58,0.15)', border: '1px solid rgba(255,69,58,0.3)' }}
+                    >
+                      Yes, Discard Workout
+                    </button>
+                    <button
+                      onClick={() => setShowDiscardConfirm(false)}
+                      className="w-full py-2 text-sm text-gray-400"
+                    >
+                      Never mind
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Bottom spacing for comfortable scrolling */}
             <div className="pb-6" />
@@ -18489,6 +18519,20 @@ export default function DaySevenApp() {
       <FinishWorkoutModal
         isOpen={showFinishWorkout}
         workout={activeWorkout}
+        onDiscard={async () => {
+          try {
+            if (activeWorkout?.source === 'watch') {
+              await cancelWatchWorkout();
+            } else {
+              await cancelLiveWorkout();
+            }
+          } catch (e) {
+            console.log('[DiscardWorkout] Error:', e.message);
+          }
+          setActiveWorkout(null);
+          setShowFinishWorkout(false);
+          triggerHaptic(ImpactStyle.Medium);
+        }}
         onClose={async () => {
           // Resume the watch workout when cancelling out of end workout screen
           if (activeWorkout?.source === 'watch') {

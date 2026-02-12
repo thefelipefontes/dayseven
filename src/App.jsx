@@ -1486,6 +1486,8 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
   const [finishSubtype, setFinishSubtype] = useState('');
   const [finishCountToward, setFinishCountToward] = useState(null);
   const [finishSportEmoji, setFinishSportEmoji] = useState(null);
+  const [finishStrengthType, setFinishStrengthType] = useState('');
+  const [finishFocusArea, setFinishFocusArea] = useState('');
 
   const fileInputRef = useRef(null);
   const scrollContentRef = useRef(null);
@@ -1557,6 +1559,8 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
       setFinishSubtype(workout?.subtype || '');
       setFinishCountToward(workout?.countToward || null);
       setFinishSportEmoji(workout?.sportEmoji || null);
+      setFinishStrengthType(workout?.strengthType || '');
+      setFinishFocusArea(workout?.focusArea || '');
 
       // Get current metrics from the live workout session (don't end it yet)
       const fetchMetrics = async () => {
@@ -1649,6 +1653,8 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
       setFinishSubtype('');
       setFinishCountToward(null);
       setFinishSportEmoji(null);
+      setFinishStrengthType('');
+      setFinishFocusArea('');
     }
   }, [isOpen, workout?.startTime]);
 
@@ -1819,10 +1825,10 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
 
   const icon = finishSportEmoji || workout.customEmoji || workout.sportEmoji || workout.icon || '💪';
   const typeName = workout.type === 'Strength Training'
-    ? (workout.strengthType || 'Strength')
+    ? (finishStrengthType || workout.strengthType || 'Strength')
     : workout.type;
   const subtypeName = workout.type === 'Strength Training'
-    ? workout.focusArea
+    ? (finishFocusArea || workout.focusArea)
     : (finishSubtype || workout.subtype || '');
 
   const handleSave = () => {
@@ -1865,6 +1871,9 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
       countToward: finishCountToward !== undefined ? finishCountToward : workout.countToward,
       // Updated sport emoji if sport was changed
       sportEmoji: finishSportEmoji || workout.sportEmoji,
+      // Updated strength training fields
+      strengthType: finishStrengthType || workout.strengthType,
+      focusArea: finishFocusArea || workout.focusArea,
     });
   };
 
@@ -1922,6 +1931,56 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
               </div>
             </div>
           </div>
+
+          {/* Strength Training Pickers */}
+          {workout?.type === 'Strength Training' && (
+            <>
+              <div className="mb-4">
+                <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Strength Type</label>
+                <div className="flex flex-wrap gap-2">
+                  {['Lifting', 'Bodyweight'].map((st) => {
+                    const isSelected = finishStrengthType === st;
+                    return (
+                      <button
+                        key={st}
+                        onClick={() => { setFinishStrengthType(st); triggerHaptic(ImpactStyle.Light); }}
+                        className="px-3 py-1.5 rounded-full text-xs transition-all duration-200 flex items-center gap-1.5"
+                        style={{
+                          backgroundColor: isSelected ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
+                          border: isSelected ? '1px solid #00FF94' : '1px solid transparent',
+                          color: isSelected ? '#00FF94' : 'white'
+                        }}
+                      >
+                        {st === 'Lifting' ? '🏋️' : '💪'} {st}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="mb-4">
+                <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Focus Area</label>
+                <div className="flex flex-wrap gap-2">
+                  {['Full Body', 'Upper', 'Lower', 'Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Abs'].map((area) => {
+                    const isSelected = finishFocusArea === area;
+                    return (
+                      <button
+                        key={area}
+                        onClick={() => { setFinishFocusArea(area); triggerHaptic(ImpactStyle.Light); }}
+                        className="px-3 py-1.5 rounded-full text-xs transition-all duration-200"
+                        style={{
+                          backgroundColor: isSelected ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
+                          border: isSelected ? '1px solid #00FF94' : '1px solid transparent',
+                          color: isSelected ? '#00FF94' : 'white'
+                        }}
+                      >
+                        {area}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
 
           {/* Subtype Picker — for activities that have subtypes */}
           {workout?.type && subtypeOptions[workout.type] && (
@@ -8506,7 +8565,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 </div>
                 <div className="flex items-start gap-2">
                   <span>📱</span>
-                  <span><span className="text-gray-400 font-medium">Garmin, Whoop & Others:</span> Track on your device, then link the workout here.</span>
+                  <span><span className="text-gray-400 font-medium">Garmin, Whoop & Others:</span> Track natively on your device, then link the workout here afterwards.</span>
                 </div>
               </div>
             </div>

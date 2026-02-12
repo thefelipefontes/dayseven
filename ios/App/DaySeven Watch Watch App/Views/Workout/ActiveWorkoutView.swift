@@ -18,8 +18,6 @@ struct ActiveWorkoutView: View {
     @State private var showSummary = false
     @State private var workoutResult: WorkoutResult?
     @State private var errorMessage: String?
-    @State private var workoutTab = 1
-
     private var wm: WorkoutManager { workoutMgr }
 
     /// Whether the user selected "Indoor" for this workout
@@ -50,9 +48,20 @@ struct ActiveWorkoutView: View {
         activityType.lowercased() == "strength" || activityType.lowercased() == "strength training"
     }
 
+    /// The result to display — either from local endWorkout() or from WorkoutManager
+    /// (when ended externally via WorkoutControlsTab)
+    private var displayResult: WorkoutResult? {
+        workoutResult ?? wm.lastResult
+    }
+
+    /// Whether to show the summary — true if we have a result (from any source)
+    private var shouldShowSummary: Bool {
+        showSummary || wm.lastResult != nil
+    }
+
     var body: some View {
         VStack(spacing: 6) {
-            if showSummary, let result = workoutResult {
+            if shouldShowSummary, let result = displayResult {
                 WorkoutSummaryView(
                     result: result,
                     activityType: activityType,
@@ -88,7 +97,7 @@ struct ActiveWorkoutView: View {
                     .tint(.green)
             }
         }
-        .navigationBarBackButtonHidden(isStarted)
+        .navigationBarBackButtonHidden(isStarted || shouldShowSummary)
         .task {
             await startWorkout()
         }
@@ -97,22 +106,13 @@ struct ActiveWorkoutView: View {
     // MARK: - Active Workout Content
 
     private var activeWorkoutContent: some View {
-        TabView(selection: $workoutTab) {
-            // Page 0: Controls (swipe right to reach)
-            controlsPage
-                .tag(0)
-
-            // Page 1: Live stats (default landing page — swipe left goes to dashboard)
-            Group {
-                if isRecoveryTimer {
-                    recoveryStatsPage
-                } else {
-                    fullStatsPage
-                }
+        Group {
+            if isRecoveryTimer {
+                recoveryStatsPage
+            } else {
+                fullStatsPage
             }
-            .tag(1)
         }
-        .tabViewStyle(.page(indexDisplayMode: .automatic))
     }
 
     // MARK: - Full Stats Page (big numbers, no buttons)
@@ -264,65 +264,6 @@ struct ActiveWorkoutView: View {
         }
     }
 
-    // MARK: - Controls Page (Pause / End)
-
-    private var controlsPage: some View {
-        VStack(spacing: 16) {
-            Spacer()
-
-            if wm.isPaused {
-                Text("Paused")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(.yellow)
-            }
-
-            // Pause / Resume
-            Button {
-                if wm.isPaused { wm.resume() } else { wm.pause() }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: wm.isPaused ? "play.fill" : "pause.fill")
-                        .font(.system(size: 18))
-                    Text(wm.isPaused ? "Resume" : "Pause")
-                        .font(.system(size: 16, weight: .bold))
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(Color.yellow)
-                .foregroundColor(.black)
-                .cornerRadius(14)
-            }
-            .buttonStyle(.plain)
-
-            // End
-            Button {
-                Task { await endWorkout() }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 16, weight: .bold))
-                    Text("End")
-                        .font(.system(size: 16, weight: .bold))
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(Color.red)
-                .foregroundColor(.white)
-                .cornerRadius(14)
-            }
-            .buttonStyle(.plain)
-
-            Spacer()
-
-            if let error = errorMessage {
-                Text(error)
-                    .font(.caption2)
-                    .foregroundColor(.red)
-            }
-        }
-        .padding(.horizontal, 8)
-    }
-
     // MARK: - Distance Icon
 
     private var distanceIcon: String {
@@ -360,9 +301,19 @@ struct ActiveWorkoutView: View {
     // MARK: - Start Workout
 
     private func startWorkout() async {
+        // If already showing summary, don't try to start again
+        if showSummary || workoutResult != nil { return }
+
         // If workout is already active (e.g. navigated away and back), just show it
         if wm.isActive {
             isStarted = true
+            return
+        }
+
+        // If a result was just published (workout ended from controls tab), show summary instead
+        if let result = wm.lastResult {
+            workoutResult = result
+            showSummary = true
             return
         }
 

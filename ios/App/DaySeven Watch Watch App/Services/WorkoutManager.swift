@@ -42,6 +42,8 @@ class WorkoutManager: NSObject, ObservableObject {
     // Published state
     @Published var isActive = false
     @Published var isPaused = false
+    /// Result published when workout ends — consumed by ActiveWorkoutView to show summary
+    @Published var lastResult: WorkoutResult?
     @Published var elapsedTime: TimeInterval = 0
     /// Whole-second counter for always-on display — only publishes on second boundaries
     @Published var elapsedSeconds: Int = 0
@@ -128,7 +130,8 @@ class WorkoutManager: NSObject, ObservableObject {
         let now = Date()
         startDate = now
 
-        // Reset metrics
+        // Clear any previous result and reset metrics
+        lastResult = nil
         resetMetrics()
 
         session.startActivity(with: now)
@@ -155,7 +158,6 @@ class WorkoutManager: NSObject, ObservableObject {
         let workout = try await builder.finishWorkout()
 
         stopTimer()
-        isActive = false
         isPaused = false
 
         let totalSeconds = endDate.timeIntervalSince(startDate)
@@ -172,6 +174,13 @@ class WorkoutManager: NSObject, ObservableObject {
             maxHr: Int(maxHeartRate),
             distance: distanceMiles > 0.01 ? distanceMiles : nil
         )
+
+        // IMPORTANT: Publish result BEFORE setting isActive = false
+        // so observers see lastResult != nil when isActive transitions,
+        // preventing a brief "no workout, no result" state that could
+        // re-trigger startWorkout or show wrong dot count.
+        self.lastResult = result
+        isActive = false
 
         // Clean up
         self.session = nil

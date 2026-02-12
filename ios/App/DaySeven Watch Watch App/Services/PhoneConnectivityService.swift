@@ -9,6 +9,10 @@ import Combine
 /// so the watch can sign in as the same user (even if they use Google Sign-In on the phone).
 /// Also handles remote workout commands from the phone.
 final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDelegate {
+    /// Shared singleton — initialized at app startup so the WCSession delegate
+    /// is ready before any messages arrive (even during background launch).
+    static let shared = PhoneConnectivityService()
+
     @Published var isReachable = false
     @Published var isRequesting = false
     @Published var errorMessage: String?
@@ -28,6 +32,7 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
 
     override init() {
         super.init()
+        print("[PhoneConnect] Initializing singleton — setting WCSession delegate early")
         activateSession()
     }
 
@@ -86,6 +91,20 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
         session.delegate = self
         session.activate()
         wcSession = session
+    }
+
+    /// Re-activate the session if it becomes not-activated (e.g., after wrist-off/on)
+    func ensureSessionActive() {
+        guard let session = wcSession else {
+            activateSession()
+            return
+        }
+        if session.activationState != .activated {
+            print("[PhoneConnect] Session not activated (state=\(session.activationState.rawValue)), reactivating...")
+            session.activate()
+        } else {
+            print("[PhoneConnect] Session already activated, isReachable=\(session.isReachable)")
+        }
     }
 
     // MARK: - Request Auth Token from iPhone
@@ -181,6 +200,7 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
             self.isReachable = reachable
         }
     }
+
 
     // MARK: - Handle Messages FROM Phone (Workout Commands)
 

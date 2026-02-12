@@ -6,6 +6,7 @@ import HealthKit
 
 struct WorkoutResult {
     var workoutUUID: String
+    var startDate: Date
     var duration: Int // minutes
     var durationSeconds: TimeInterval // precise seconds for pace calculation
     var calories: Int
@@ -163,6 +164,7 @@ class WorkoutManager: NSObject, ObservableObject {
 
         let result = WorkoutResult(
             workoutUUID: workout?.uuid.uuidString ?? UUID().uuidString,
+            startDate: startDate,
             duration: max(totalDuration, 1),
             durationSeconds: totalSeconds,
             calories: Int(activeCalories),

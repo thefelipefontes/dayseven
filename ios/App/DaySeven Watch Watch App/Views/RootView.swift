@@ -56,9 +56,44 @@ struct MainTabView: View {
             }
         }
         .onChange(of: scenePhase) { _, phase in
-            // When returning to the app with an active workout, snap to the workout tab
-            if phase == .active && !startPath.isEmpty {
-                selectedTab = 0
+            if phase == .active {
+                // Re-ensure WCSession is active after wrist-raise / app foregrounding
+                appVM.phoneService.ensureSessionActive()
+
+                // If a workout is active but we haven't navigated to it (e.g., started from lock screen),
+                // navigate now that the app is in the foreground
+                if appVM.workoutManager.isActive && startPath.isEmpty {
+                    selectedTab = 0
+                    if let request = appVM.phoneService.remoteWorkoutRequest {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                            if request.subtype != nil || request.focusArea != nil {
+                                startPath.append(WorkoutDestination.customStart(
+                                    activityType: request.activityType,
+                                    strengthType: request.strengthType,
+                                    subtype: request.subtype,
+                                    focusArea: request.focusArea
+                                ))
+                            } else {
+                                startPath.append(WorkoutDestination.quickStart(
+                                    activityType: request.activityType,
+                                    strengthType: request.strengthType
+                                ))
+                            }
+                        }
+                    } else {
+                        // Workout started without a remote request (or request was nil)
+                        // Navigate to a generic quick start
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                            startPath.append(WorkoutDestination.quickStart(
+                                activityType: "Other",
+                                strengthType: nil
+                            ))
+                        }
+                    }
+                } else if !startPath.isEmpty {
+                    // Already navigated to workout, just ensure we're on the right tab
+                    selectedTab = 0
+                }
             }
         }
         .onChange(of: appVM.phoneService.remoteWorkoutRequest) { _, request in

@@ -12,7 +12,7 @@ class AppViewModel: ObservableObject {
     let firestoreService = FirestoreService()
     let healthKitService = HealthKitService()
     let workoutManager = WorkoutManager()
-    let phoneService = PhoneConnectivityService()
+    let phoneService = PhoneConnectivityService.shared
 
     private var cancellables = Set<AnyCancellable>()
 

@@ -3,6 +3,7 @@ import { Health } from '@capgo/capacitor-health';
 
 // Register the local HealthKitWriter plugin for writing workouts
 const HealthKitWriter = registerPlugin('HealthKitWriter');
+export { HealthKitWriter };
 
 // Helper to add timeout to promises
 const withTimeout = (promise, ms, errorMsg) => {

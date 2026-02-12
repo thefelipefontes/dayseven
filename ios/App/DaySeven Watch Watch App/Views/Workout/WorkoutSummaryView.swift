@@ -319,7 +319,7 @@ struct WorkoutSummaryView: View {
         let activity = Activity.create(
             type: activityType,
             subtype: selectedSubtype,
-            date: Date(),
+            date: result.startDate,
             duration: result.duration,
             calories: result.calories > 0 ? result.calories : nil,
             avgHr: result.avgHr > 0 ? result.avgHr : nil,

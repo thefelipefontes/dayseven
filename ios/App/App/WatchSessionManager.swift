@@ -28,27 +28,48 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     // MARK: - Send Message TO Watch
 
     /// Sends a message to the paired Apple Watch and returns the reply via completion handler.
+    /// Single attempt — if it fails, errors out immediately so the phone can fall back to a phone workout.
     func sendToWatch(
         message: [String: Any],
         replyHandler: @escaping ([String: Any]) -> Void,
         errorHandler: @escaping (Error) -> Void
     ) {
-        guard WCSession.default.activationState == .activated else {
+        let session = WCSession.default
+
+        // Re-activate if needed
+        if session.activationState != .activated {
+            print("[WatchSession] Session not activated (state=\(session.activationState.rawValue)), reactivating...")
+            session.delegate = self
+            session.activate()
+        }
+
+        guard session.activationState == .activated else {
             errorHandler(NSError(domain: "WatchSession", code: -1, userInfo: [NSLocalizedDescriptionKey: "WCSession not activated"]))
             return
         }
 
-        guard WCSession.default.isReachable else {
-            errorHandler(NSError(domain: "WatchSession", code: -2, userInfo: [NSLocalizedDescriptionKey: "Apple Watch not reachable"]))
-            return
-        }
+        let action = message["action"] as? String ?? "unknown"
+        print("[WatchSession] Sending message: \(action), isReachable: \(session.isReachable), isPaired: \(session.isPaired), isWatchAppInstalled: \(session.isWatchAppInstalled)")
 
-        WCSession.default.sendMessage(message, replyHandler: replyHandler, errorHandler: errorHandler)
+        session.sendMessage(message, replyHandler: replyHandler) { error in
+            print("[WatchSession] Send failed: \(error.localizedDescription)")
+            errorHandler(error)
+        }
     }
 
     /// Check if the Apple Watch is reachable
     var isWatchReachable: Bool {
         return WCSession.default.activationState == .activated && WCSession.default.isReachable
+    }
+
+    /// Check if Apple Watch is paired
+    var isPaired: Bool {
+        return WCSession.default.isPaired
+    }
+
+    /// Check if the watch app is installed
+    var isWatchAppInstalled: Bool {
+        return WCSession.default.isWatchAppInstalled
     }
 
     // MARK: - Activate
@@ -74,7 +95,7 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         if let error = error {
             print("[WatchSession] Activation failed: \(error.localizedDescription)")
         } else {
-            print("[WatchSession] Activation complete: state=\(activationState.rawValue)")
+            print("[WatchSession] Activation complete: state=\(activationState.rawValue), isPaired=\(session.isPaired), isWatchAppInstalled=\(session.isWatchAppInstalled), isReachable=\(session.isReachable)")
         }
     }
 
@@ -83,8 +104,17 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     }
 
     func sessionDidDeactivate(_ session: WCSession) {
+        print("[WatchSession] Session deactivated, reactivating...")
         // Re-activate for multi-watch support
         WCSession.default.activate()
+    }
+
+    func sessionWatchStateDidChange(_ session: WCSession) {
+        print("[WatchSession] Watch state changed: isPaired=\(session.isPaired), isWatchAppInstalled=\(session.isWatchAppInstalled), isReachable=\(session.isReachable)")
+    }
+
+    func sessionReachabilityDidChange(_ session: WCSession) {
+        print("[WatchSession] Reachability changed: isReachable=\(session.isReachable)")
     }
 
     // MARK: - Handle messages from Watch (with reply)

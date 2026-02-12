@@ -865,21 +865,51 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         WatchSessionManager.shared.sendToWatch(
             message: message,
-            replyHandler: { reply in
+            replyHandler: { [weak self] reply in
                 DispatchQueue.main.async {
                     if let error = reply["error"] as? String {
                         call.reject(error)
                     } else {
                         call.resolve(reply as? [String: Any] ?? ["success": true])
+                        // Also fire startWatchApp to bring the watch app to the foreground
+                        // (sendMessage starts the workout, but doesn't bring the app to the front
+                        // if the watch is on the lock screen / clock face)
+                        self?.attemptWatchAppLaunch(activityType: activityType, subtype: subtype)
                     }
                 }
             },
-            errorHandler: { error in
+            errorHandler: { [weak self] error in
+                // Reject so JS falls back to phone workout (with working timer)
                 DispatchQueue.main.async {
                     call.reject(error.localizedDescription)
                 }
+                // Fire-and-forget: try to wake the watch app in the background
+                // Even if this fails, the phone workout is already running
+                self?.attemptWatchAppLaunch(activityType: activityType, subtype: subtype)
             }
         )
+    }
+
+    /// Fire-and-forget attempt to launch the watch app via HealthKit.
+    /// This does NOT affect the Capacitor call — the phone workout is already the source of truth.
+    /// If the watch wakes up and starts tracking, it will send a workoutStarted message
+    /// and the phone will cancel its own session and switch to watch source.
+    private func attemptWatchAppLaunch(activityType: String, subtype: String?) {
+        let hkType = mapActivityType(activityType)
+        let config = HKWorkoutConfiguration()
+        config.activityType = hkType
+        config.locationType = (subtype?.lowercased() == "indoor") ? .indoor : .outdoor
+
+        print("[HealthKitWriter] attemptWatchAppLaunch: activityType=\(activityType), hkType=\(hkType.rawValue)")
+
+        Task { @MainActor in
+            do {
+                try await self.healthStore.startWatchApp(toHandle: config)
+                print("[HealthKitWriter] startWatchApp succeeded ✓")
+            } catch {
+                print("[HealthKitWriter] startWatchApp failed: \(error.localizedDescription)")
+            }
+        }
     }
 
     @objc func endWatchWorkout(_ call: CAPPluginCall) {

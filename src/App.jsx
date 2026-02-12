@@ -1485,6 +1485,8 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
   const [isLoadingWorkouts, setIsLoadingWorkouts] = useState(false);
 
   const fileInputRef = useRef(null);
+  const scrollContentRef = useRef(null);
+  const overlayRef = useRef(null);
 
   // Check if this is a distance-based activity
   const isDistanceActivity = workout?.type === 'Running' || workout?.type === 'Cycle';
@@ -1723,6 +1725,64 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
     setPhotoPreview(null);
   };
 
+  // Prevent background page scrolling when modal is open.
+  // Must use non-passive touchmove listener — React's onTouchMove is passive
+  // and cannot call preventDefault() on iOS WKWebView.
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleTouchMove = (e) => {
+      const scrollEl = scrollContentRef.current;
+      // Allow scrolling inside the modal's scroll content area
+      if (scrollEl && scrollEl.contains(e.target)) {
+        // But prevent overscroll at top/bottom edges from leaking
+        const { scrollTop, scrollHeight, clientHeight } = scrollEl;
+        const atTop = scrollTop <= 0;
+        const atBottom = scrollTop + clientHeight >= scrollHeight;
+        const touchY = e.touches[0].clientY;
+
+        if (!handleTouchMove._lastY) {
+          handleTouchMove._lastY = touchY;
+          return;
+        }
+
+        const delta = touchY - handleTouchMove._lastY;
+        handleTouchMove._lastY = touchY;
+
+        // Scrolling up at top or scrolling down at bottom — block
+        if ((atTop && delta > 0) || (atBottom && delta < 0)) {
+          e.preventDefault();
+        }
+        return;
+      }
+      // Block all touch movement outside the scroll area
+      e.preventDefault();
+    };
+
+    const handleTouchStart = (e) => {
+      handleTouchMove._lastY = e.touches[0]?.clientY;
+    };
+
+    const handleTouchEnd = () => {
+      handleTouchMove._lastY = null;
+    };
+
+    const overlay = overlayRef.current;
+    if (overlay) {
+      overlay.addEventListener('touchmove', handleTouchMove, { passive: false });
+      overlay.addEventListener('touchstart', handleTouchStart, { passive: true });
+      overlay.addEventListener('touchend', handleTouchEnd, { passive: true });
+    }
+
+    return () => {
+      if (overlay) {
+        overlay.removeEventListener('touchmove', handleTouchMove);
+        overlay.removeEventListener('touchstart', handleTouchStart);
+        overlay.removeEventListener('touchend', handleTouchEnd);
+      }
+    };
+  }, [isOpen]);
+
   if (!isOpen || !workout) return null;
 
   const icon = workout.customEmoji || workout.sportEmoji || workout.icon || '💪';
@@ -1773,6 +1833,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
 
   return (
     <div
+      ref={overlayRef}
       className="fixed inset-0 z-50 flex items-end justify-center"
       style={{ backgroundColor: 'rgba(0,0,0,0.7)' }}
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
@@ -1800,7 +1861,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
         </div>
 
         {/* Content */}
-        <div className="p-4 overflow-y-auto" style={{ maxHeight: 'calc(85vh - 60px)', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
+        <div ref={scrollContentRef} className="p-4 overflow-y-auto" style={{ maxHeight: 'calc(85vh - 60px)', overscrollBehavior: 'contain' }}>
           {/* Workout summary */}
           <div
             className="p-4 rounded-2xl mb-4"
@@ -1839,7 +1900,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
             </div>
 
             {isLoadingWorkouts ? (
-              <div className="p-4 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+              <div className="p-4 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)', minHeight: '56px' }}>
                 <div className="flex items-center justify-center gap-2">
                   <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
                   <span className="text-xs text-gray-400">Looking for workouts...</span>
@@ -2052,6 +2113,8 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
               )}
             </div>
 
+            {/* Bottom spacing for comfortable scrolling */}
+            <div className="pb-6" />
           </div>
         </div>
       </div>
@@ -17167,7 +17230,7 @@ export default function DaySevenApp() {
   const { pullDistance, isRefreshing } = usePullToRefresh(refreshData, {
     threshold: 80,
     resistance: 0.5,
-    enabled: !showAddActivity && !isHomeWorkoutPickerOpen && activeTab === 'home'
+    enabled: !showAddActivity && !isHomeWorkoutPickerOpen && !showFinishWorkout && activeTab === 'home'
   });
 
   // Listen to auth state

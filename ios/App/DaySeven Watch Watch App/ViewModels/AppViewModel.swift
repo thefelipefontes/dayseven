@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import FirebaseAuth
 import WatchConnectivity
+import WidgetKit
 
 // MARK: - App View Model
 
@@ -89,6 +90,9 @@ class AppViewModel: ObservableObject {
             todayCalories = await calories
             todayDistance = await distance
 
+            // Push data to widget
+            pushDataToWidget()
+
             isLoading = false
         } catch {
             errorMessage = error.localizedDescription
@@ -168,6 +172,9 @@ class AppViewModel: ObservableObject {
             )
             print("[SaveActivity] Successfully saved \(updatedActivities.count) activities to Firestore")
 
+            // Push updated data to widget
+            pushDataToWidget()
+
             // Notify the iPhone to refresh its Firestore cache
             if WCSession.default.isReachable {
                 WCSession.default.sendMessage(["action": "activitySaved"], replyHandler: { reply in
@@ -208,6 +215,9 @@ class AppViewModel: ObservableObject {
                 recordUpdates: nil
             )
             print("[DeleteActivity] Successfully removed activity and saved \(updatedActivities.count) activities")
+
+            // Push updated data to widget
+            pushDataToWidget()
 
             // Notify the iPhone to refresh
             if WCSession.default.isReachable {
@@ -291,5 +301,27 @@ class AppViewModel: ObservableObject {
         } catch {
             errorMessage = "HealthKit: \(error.localizedDescription)"
         }
+    }
+
+    // MARK: - Push Data to Widget Complication
+
+    private func pushDataToWidget() {
+        SharedDefaults.writeStreakData(
+            masterStreak: streaks.master,
+            liftsStreak: streaks.lifts,
+            cardioStreak: streaks.cardio,
+            recoveryStreak: streaks.recovery,
+            liftsCompleted: weeklyProgress.lifts.completed,
+            liftsGoal: weeklyProgress.lifts.goal,
+            cardioCompleted: weeklyProgress.cardio.completed,
+            cardioGoal: weeklyProgress.cardio.goal,
+            recoveryCompleted: weeklyProgress.recovery.completed,
+            recoveryGoal: weeklyProgress.recovery.goal,
+            todaySteps: todaySteps,
+            stepsGoal: goals.stepsPerDay,
+            todayCalories: todayCalories
+        )
+        WidgetCenter.shared.reloadAllTimelines()
+        print("[Widget] Pushed streak data and reloaded timelines")
     }
 }

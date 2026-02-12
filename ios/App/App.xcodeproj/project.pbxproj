@@ -8,6 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		120992002F3CC38400DB44E4 /* WatchSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120991FF2F3CC38400DB44E4 /* WatchSessionManager.swift */; };
+		120994CC2F3E747300DB44E4 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 120994CB2F3E747300DB44E4 /* WidgetKit.framework */; };
+		120994CE2F3E747300DB44E4 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 120994CD2F3E747300DB44E4 /* SwiftUI.framework */; };
+		120994DB2F3E747300DB44E4 /* Dayseven Watch WidgetsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 120994C92F3E747300DB44E4 /* Dayseven Watch WidgetsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		122DD7C92F3BD50100F4A120 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 122DD7C82F3BD50100F4A120 /* FirebaseAuth */; };
 		123B68512F3BB07000AA20FB /* DaySeven Watch Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 123B68312F3BB06F00AA20FB /* DaySeven Watch Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		12FB87002F2C163E006FD735 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 12FB86FF2F2C163E006FD735 /* GoogleService-Info.plist */; };
@@ -24,6 +27,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		120994D92F3E747300DB44E4 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 120994C82F3E747300DB44E4;
+			remoteInfo = "Dayseven Watch WidgetsExtension";
+		};
 		123B683E2F3BB07000AA20FB /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
@@ -48,6 +58,17 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+		120994E02F3E747300DB44E4 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				120994DB2F3E747300DB44E4 /* Dayseven Watch WidgetsExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		123B68552F3BB07000AA20FB /* Embed Watch Content */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -63,6 +84,10 @@
 
 /* Begin PBXFileReference section */
 		120991FF2F3CC38400DB44E4 /* WatchSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSessionManager.swift; sourceTree = "<group>"; };
+		120994C92F3E747300DB44E4 /* Dayseven Watch WidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Dayseven Watch WidgetsExtension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		120994CB2F3E747300DB44E4 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		120994CD2F3E747300DB44E4 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		120994E82F3E765D00DB44E4 /* Dayseven Watch WidgetsExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Dayseven Watch WidgetsExtension.entitlements"; sourceTree = "<group>"; };
 		123B68312F3BB06F00AA20FB /* DaySeven Watch Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "DaySeven Watch Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		123B683D2F3BB07000AA20FB /* DaySeven Watch Watch AppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "DaySeven Watch Watch AppTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		123B68472F3BB07000AA20FB /* DaySeven Watch Watch AppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "DaySeven Watch Watch AppUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -82,13 +107,40 @@
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		120994DC2F3E747300DB44E4 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 120994C82F3E747300DB44E4 /* Dayseven Watch WidgetsExtension */;
+		};
+		120994E72F3E75C500DB44E4 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Utilities/SharedDefaults.swift,
+			);
+			target = 120994C82F3E747300DB44E4 /* Dayseven Watch WidgetsExtension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		123B68322F3BB06F00AA20FB /* DaySeven Watch Watch App */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "DaySeven Watch Watch App"; sourceTree = "<group>"; };
+		120994CF2F3E747300DB44E4 /* Dayseven Watch Widgets */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (120994DC2F3E747300DB44E4 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = "Dayseven Watch Widgets"; sourceTree = "<group>"; };
+		123B68322F3BB06F00AA20FB /* DaySeven Watch Watch App */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (120994E72F3E75C500DB44E4 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = "DaySeven Watch Watch App"; sourceTree = "<group>"; };
 		123B68402F3BB07000AA20FB /* DaySeven Watch Watch AppTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "DaySeven Watch Watch AppTests"; sourceTree = "<group>"; };
 		123B684A2F3BB07000AA20FB /* DaySeven Watch Watch AppUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "DaySeven Watch Watch AppUITests"; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		120994C62F3E747300DB44E4 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				120994CE2F3E747300DB44E4 /* SwiftUI.framework in Frameworks */,
+				120994CC2F3E747300DB44E4 /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		123B682E2F3BB06F00AA20FB /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -122,14 +174,26 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		120994CA2F3E747300DB44E4 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				120994CB2F3E747300DB44E4 /* WidgetKit.framework */,
+				120994CD2F3E747300DB44E4 /* SwiftUI.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		504EC2FB1FED79650016851F = {
 			isa = PBXGroup;
 			children = (
+				120994E82F3E765D00DB44E4 /* Dayseven Watch WidgetsExtension.entitlements */,
 				958DCC722DB07C7200EA8C5F /* debug.xcconfig */,
 				504EC3061FED79650016851F /* App */,
 				123B68322F3BB06F00AA20FB /* DaySeven Watch Watch App */,
 				123B68402F3BB07000AA20FB /* DaySeven Watch Watch AppTests */,
 				123B684A2F3BB07000AA20FB /* DaySeven Watch Watch AppUITests */,
+				120994CF2F3E747300DB44E4 /* Dayseven Watch Widgets */,
+				120994CA2F3E747300DB44E4 /* Frameworks */,
 				504EC3051FED79650016851F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -141,6 +205,7 @@
 				123B68312F3BB06F00AA20FB /* DaySeven Watch Watch App.app */,
 				123B683D2F3BB07000AA20FB /* DaySeven Watch Watch AppTests.xctest */,
 				123B68472F3BB07000AA20FB /* DaySeven Watch Watch AppUITests.xctest */,
+				120994C92F3E747300DB44E4 /* Dayseven Watch WidgetsExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -168,6 +233,28 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		120994C82F3E747300DB44E4 /* Dayseven Watch WidgetsExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 120994DD2F3E747300DB44E4 /* Build configuration list for PBXNativeTarget "Dayseven Watch WidgetsExtension" */;
+			buildPhases = (
+				120994C52F3E747300DB44E4 /* Sources */,
+				120994C62F3E747300DB44E4 /* Frameworks */,
+				120994C72F3E747300DB44E4 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				120994CF2F3E747300DB44E4 /* Dayseven Watch Widgets */,
+			);
+			name = "Dayseven Watch WidgetsExtension";
+			packageProductDependencies = (
+			);
+			productName = "Dayseven Watch WidgetsExtension";
+			productReference = 120994C92F3E747300DB44E4 /* Dayseven Watch WidgetsExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		123B68302F3BB06F00AA20FB /* DaySeven Watch Watch App */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 123B68522F3BB07000AA20FB /* Build configuration list for PBXNativeTarget "DaySeven Watch Watch App" */;
@@ -175,10 +262,12 @@
 				123B682D2F3BB06F00AA20FB /* Sources */,
 				123B682E2F3BB06F00AA20FB /* Frameworks */,
 				123B682F2F3BB06F00AA20FB /* Resources */,
+				120994E02F3E747300DB44E4 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				120994DA2F3E747300DB44E4 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				123B68322F3BB06F00AA20FB /* DaySeven Watch Watch App */,
@@ -269,6 +358,9 @@
 				LastSwiftUpdateCheck = 2620;
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
+					120994C82F3E747300DB44E4 = {
+						CreatedOnToolsVersion = 26.2;
+					};
 					123B68302F3BB06F00AA20FB = {
 						CreatedOnToolsVersion = 26.2;
 					};
@@ -308,11 +400,19 @@
 				123B68302F3BB06F00AA20FB /* DaySeven Watch Watch App */,
 				123B683C2F3BB07000AA20FB /* DaySeven Watch Watch AppTests */,
 				123B68462F3BB07000AA20FB /* DaySeven Watch Watch AppUITests */,
+				120994C82F3E747300DB44E4 /* Dayseven Watch WidgetsExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		120994C72F3E747300DB44E4 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		123B682F2F3BB06F00AA20FB /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -351,6 +451,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		120994C52F3E747300DB44E4 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		123B682D2F3BB06F00AA20FB /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -386,6 +493,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		120994DA2F3E747300DB44E4 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 120994C82F3E747300DB44E4 /* Dayseven Watch WidgetsExtension */;
+			targetProxy = 120994D92F3E747300DB44E4 /* PBXContainerItemProxy */;
+		};
 		123B683F2F3BB07000AA20FB /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 123B68302F3BB06F00AA20FB /* DaySeven Watch Watch App */;
@@ -423,6 +535,86 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
+		120994DE2F3E747300DB44E4 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_ENTITLEMENTS = "Dayseven Watch WidgetsExtension.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Dayseven Watch Widgets/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Dayseven Watch Widgets";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = "app.dayseven.fitness.watchkitapp.Dayseven-Watch-Widgets";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Debug;
+		};
+		120994DF2F3E747300DB44E4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_ENTITLEMENTS = "Dayseven Watch WidgetsExtension.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Dayseven Watch Widgets/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Dayseven Watch Widgets";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = "app.dayseven.fitness.watchkitapp.Dayseven-Watch-Widgets";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Release;
+		};
 		123B68532F3BB07000AA20FB /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -803,6 +995,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		120994DD2F3E747300DB44E4 /* Build configuration list for PBXNativeTarget "Dayseven Watch WidgetsExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				120994DE2F3E747300DB44E4 /* Debug */,
+				120994DF2F3E747300DB44E4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		123B68522F3BB07000AA20FB /* Build configuration list for PBXNativeTarget "DaySeven Watch Watch App" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

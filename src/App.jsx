@@ -18623,12 +18623,18 @@ export default function DaySevenApp() {
             if (watchReachable) {
               const activityType = workoutData.type;
               const strengthType = workoutData.strengthType || null;
-              await startWatchWorkout(activityType, strengthType);
+              const subtype = workoutData.subtype || null;
+              const focusArea = workoutData.focusArea || null;
+              console.log('[StartWorkout] Sending to watch:', activityType, subtype, focusArea);
+              await startWatchWorkout(activityType, strengthType, subtype, focusArea);
+              console.log('[StartWorkout] Watch workout started successfully');
               setActiveWorkout({ ...workoutData, source: 'watch' });
               return;
+            } else {
+              console.log('[StartWorkout] Watch not reachable, using phone');
             }
           } catch (e) {
-            console.log('[StartWorkout] Watch not available, falling back to phone:', e.message);
+            console.log('[StartWorkout] Watch start failed, using phone fallback:', e.message);
           }
 
           // Fallback: Start a live HealthKit workout session on phone

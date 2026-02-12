@@ -15,6 +15,8 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
 
     /// Published when a remote workout start is requested from the phone
     @Published var remoteWorkoutRequest: RemoteWorkoutRequest?
+    /// Published when a remote workout failed to start (so phone knows to fall back)
+    @Published var remoteWorkoutError: String?
 
     /// Published when a remote workout end/cancel is completed from the phone
     @Published var remoteWorkoutEnded = false
@@ -34,6 +36,8 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
     struct RemoteWorkoutRequest: Equatable {
         let activityType: String
         let strengthType: String?
+        let subtype: String?
+        let focusArea: String?
         let id: UUID = UUID() // unique so @Published always fires
         static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }
     }
@@ -214,40 +218,54 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
 
     private func handleStartWorkout(message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
         guard let wm = workoutManager else {
+            print("[PhoneConnect] startWorkout failed: WorkoutManager not available")
             replyHandler(["error": "WorkoutManager not available"])
             return
         }
 
         guard let activityTypeString = message["activityType"] as? String else {
+            print("[PhoneConnect] startWorkout failed: Missing activityType")
             replyHandler(["error": "Missing activityType"])
             return
         }
 
         let strengthType = message["strengthType"] as? String
+        let subtype = message["subtype"] as? String
+        let focusArea = message["focusArea"] as? String
+        let isIndoor = subtype?.lowercased() == "indoor"
+
+        print("[PhoneConnect] Starting workout: \(activityTypeString), subtype: \(subtype ?? "none"), focusArea: \(focusArea ?? "none"), isIndoor: \(isIndoor)")
 
         Task { @MainActor in
             // Check if already active
             if wm.isActive {
+                print("[PhoneConnect] startWorkout failed: workout already active")
                 replyHandler(["error": "A workout is already active"])
                 return
             }
 
             let hkType = ActivityTypes.mapToHKActivityType(activityTypeString, subtype: nil)
+            print("[PhoneConnect] Mapped to HK type: \(hkType.rawValue)")
 
             do {
-                try await wm.startWorkout(activityType: hkType)
+                try await wm.startWorkout(activityType: hkType, isIndoor: isIndoor)
+                print("[PhoneConnect] HK workout started successfully")
 
                 // Publish remote workout request so the watch UI navigates
                 self.remoteWorkoutRequest = RemoteWorkoutRequest(
                     activityType: activityTypeString,
-                    strengthType: strengthType
+                    strengthType: strengthType,
+                    subtype: subtype,
+                    focusArea: focusArea
                 )
+                print("[PhoneConnect] Published remoteWorkoutRequest for UI navigation")
 
                 replyHandler([
                     "success": true,
                     "activityType": activityTypeString
                 ])
             } catch {
+                print("[PhoneConnect] startWorkout failed: \(error.localizedDescription)")
                 replyHandler(["error": error.localizedDescription])
             }
         }

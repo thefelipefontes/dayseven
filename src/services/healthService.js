@@ -934,12 +934,14 @@ export async function isWatchReachable() {
 }
 
 // Start a workout on the Apple Watch
-export async function startWatchWorkout(activityType, strengthType = null) {
+export async function startWatchWorkout(activityType, strengthType = null, subtype = null, focusArea = null) {
   if (!Capacitor.isNativePlatform()) {
     throw new Error('Not available on web');
   }
   const params = { activityType };
   if (strengthType) params.strengthType = strengthType;
+  if (subtype) params.subtype = subtype;
+  if (focusArea) params.focusArea = focusArea;
   return await HealthKitWriter.startWatchWorkout(params);
 }
 

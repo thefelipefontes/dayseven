@@ -69,10 +69,20 @@ struct MainTabView: View {
                 // Clear any existing navigation and push to the workout view
                 startPath = NavigationPath()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    startPath.append(WorkoutDestination.quickStart(
-                        activityType: request.activityType,
-                        strengthType: request.strengthType
-                    ))
+                    // Use customStart if we have extra detail (subtype, focusArea) to pass through
+                    if request.subtype != nil || request.focusArea != nil {
+                        startPath.append(WorkoutDestination.customStart(
+                            activityType: request.activityType,
+                            strengthType: request.strengthType,
+                            subtype: request.subtype,
+                            focusArea: request.focusArea
+                        ))
+                    } else {
+                        startPath.append(WorkoutDestination.quickStart(
+                            activityType: request.activityType,
+                            strengthType: request.strengthType
+                        ))
+                    }
                 }
             }
         }

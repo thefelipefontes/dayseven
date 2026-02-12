@@ -111,7 +111,7 @@ private struct PageDotsOverlay: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .position(x: geo.size.width / 2, y: geo.size.height - 4)
+                .position(x: geo.size.width / 2, y: geo.size.height - 6)
             }
         }
     }

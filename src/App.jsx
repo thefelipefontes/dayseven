@@ -1483,10 +1483,36 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
   const [linkedWorkout, setLinkedWorkout] = useState(null);
   const [linkableWorkouts, setLinkableWorkouts] = useState([]);
   const [isLoadingWorkouts, setIsLoadingWorkouts] = useState(false);
+  const [finishSubtype, setFinishSubtype] = useState('');
+  const [finishCountToward, setFinishCountToward] = useState(null);
+  const [finishSportEmoji, setFinishSportEmoji] = useState(null);
 
   const fileInputRef = useRef(null);
   const scrollContentRef = useRef(null);
   const overlayRef = useRef(null);
+
+  // Subtype and countToward options for FinishWorkoutModal
+  const subtypeOptions = {
+    'Running': ['Outdoor', 'Indoor'],
+    'Walking': ['Outdoor', 'Indoor'],
+    'Cycle': ['Outdoor', 'Indoor'],
+    'Yoga': ['Vinyasa', 'Power', 'Hot', 'Yin', 'Restorative'],
+    'Pilates': ['Mat', 'Reformer', 'Tower', 'Chair'],
+    'Stair Climbing': ['StairMaster', 'Stair Stepper', 'Outdoor Stairs'],
+    'Sports': [
+      { name: 'Basketball', icon: '🏀' },
+      { name: 'Soccer', icon: '⚽' },
+      { name: 'Football', icon: '🏈' },
+      { name: 'Tennis', icon: '🎾' },
+      { name: 'Golf', icon: '⛳' },
+      { name: 'Other', icon: '🏆' }
+    ],
+  };
+  const countTowardTypes = ['Walking', 'Yoga', 'Pilates'];
+  const sportEmojiMap = {
+    'Basketball': '🏀', 'Soccer': '⚽', 'Football': '🏈',
+    'Tennis': '🎾', 'Golf': '⛳', 'Other': '🏆'
+  };
 
   // Check if this is a distance-based activity
   const isDistanceActivity = workout?.type === 'Running' || workout?.type === 'Cycle';
@@ -1528,6 +1554,9 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
       setIsPhotoPrivate(false);
       setHealthKitDataFetched(false);
       setLinkedWorkout(null);
+      setFinishSubtype(workout?.subtype || '');
+      setFinishCountToward(workout?.countToward || null);
+      setFinishSportEmoji(workout?.sportEmoji || null);
 
       // Get current metrics from the live workout session (don't end it yet)
       const fetchMetrics = async () => {
@@ -1617,6 +1646,9 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
       setIsLoadingMetrics(false);
       setLinkedWorkout(null);
       setLinkableWorkouts([]);
+      setFinishSubtype('');
+      setFinishCountToward(null);
+      setFinishSportEmoji(null);
     }
   }, [isOpen, workout?.startTime]);
 
@@ -1785,13 +1817,13 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
 
   if (!isOpen || !workout) return null;
 
-  const icon = workout.customEmoji || workout.sportEmoji || workout.icon || '💪';
+  const icon = finishSportEmoji || workout.customEmoji || workout.sportEmoji || workout.icon || '💪';
   const typeName = workout.type === 'Strength Training'
     ? (workout.strengthType || 'Strength')
     : workout.type;
   const subtypeName = workout.type === 'Strength Training'
     ? workout.focusArea
-    : (workout.subtype || '');
+    : (finishSubtype || workout.subtype || '');
 
   const handleSave = () => {
     const endTime = new Date().toISOString();
@@ -1828,6 +1860,11 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
       isPhotoPrivate: activityPhoto ? isPhotoPrivate : undefined,
       // Link to Apple Health workout if selected
       linkedHealthKitUUID: linkedWorkout?.healthKitUUID || undefined,
+      // Updated subtype and countToward from finish modal pickers
+      subtype: finishSubtype || workout.subtype,
+      countToward: finishCountToward !== undefined ? finishCountToward : workout.countToward,
+      // Updated sport emoji if sport was changed
+      sportEmoji: finishSportEmoji || workout.sportEmoji,
     });
   };
 
@@ -1886,6 +1923,113 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
             </div>
           </div>
 
+          {/* Subtype Picker — for activities that have subtypes */}
+          {workout?.type && subtypeOptions[workout.type] && (
+            <div className="mb-4">
+              <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">
+                {workout.type === 'Sports' ? 'Sport' : `${workout.type} Type`}
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {subtypeOptions[workout.type].map((st) => {
+                  const stName = typeof st === 'object' ? st.name : st;
+                  const stIcon = typeof st === 'object' ? st.icon : null;
+                  const isSelected = finishSubtype === stName;
+                  return (
+                    <button
+                      key={stName}
+                      onClick={() => {
+                        setFinishSubtype(stName);
+                        // Update sport emoji when changing sport
+                        if (workout.type === 'Sports' && sportEmojiMap[stName]) {
+                          setFinishSportEmoji(sportEmojiMap[stName]);
+                        }
+                        triggerHaptic(ImpactStyle.Light);
+                      }}
+                      className="px-3 py-1.5 rounded-full text-xs transition-all duration-200 flex items-center gap-1.5"
+                      style={{
+                        backgroundColor: isSelected ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
+                        border: isSelected ? '1px solid #00FF94' : '1px solid transparent',
+                        color: isSelected ? '#00FF94' : 'white'
+                      }}
+                    >
+                      {stIcon && <span>{stIcon}</span>}
+                      {stName}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Count Toward Goal — for Walking, Yoga, Pilates */}
+          {workout?.type && countTowardTypes.includes(workout.type) && (
+            <div className="mb-4">
+              <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Count Toward Goal</label>
+              {workout.type === 'Walking' ? (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setFinishCountToward('cardio'); triggerHaptic(ImpactStyle.Light); }}
+                    className="flex-1 p-2.5 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
+                    style={{
+                      backgroundColor: finishCountToward === 'cardio' ? 'rgba(255,149,0,0.2)' : 'rgba(255,255,255,0.05)',
+                      border: finishCountToward === 'cardio' ? '1px solid #FF9500' : '1px solid transparent',
+                      color: finishCountToward === 'cardio' ? '#FF9500' : 'white'
+                    }}
+                  >
+                    <span>🏃</span> Cardio
+                  </button>
+                  <button
+                    onClick={() => { setFinishCountToward(null); triggerHaptic(ImpactStyle.Light); }}
+                    className="flex-1 p-2.5 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
+                    style={{
+                      backgroundColor: finishCountToward === null ? 'rgba(128,128,128,0.2)' : 'rgba(255,255,255,0.05)',
+                      border: finishCountToward === null ? '1px solid #808080' : '1px solid transparent',
+                      color: finishCountToward === null ? '#B0B0B0' : 'white'
+                    }}
+                  >
+                    <span>➖</span> Don't Count
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setFinishCountToward('lifting'); triggerHaptic(ImpactStyle.Light); }}
+                    className="flex-1 p-2.5 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
+                    style={{
+                      backgroundColor: finishCountToward === 'lifting' ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
+                      border: finishCountToward === 'lifting' ? '1px solid #00FF94' : '1px solid transparent',
+                      color: finishCountToward === 'lifting' ? '#00FF94' : 'white'
+                    }}
+                  >
+                    <span>🏋️</span> Strength
+                  </button>
+                  <button
+                    onClick={() => { setFinishCountToward('cardio'); triggerHaptic(ImpactStyle.Light); }}
+                    className="flex-1 p-2.5 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
+                    style={{
+                      backgroundColor: finishCountToward === 'cardio' ? 'rgba(255,149,0,0.2)' : 'rgba(255,255,255,0.05)',
+                      border: finishCountToward === 'cardio' ? '1px solid #FF9500' : '1px solid transparent',
+                      color: finishCountToward === 'cardio' ? '#FF9500' : 'white'
+                    }}
+                  >
+                    <span>🏃</span> Cardio
+                  </button>
+                  <button
+                    onClick={() => { setFinishCountToward('recovery'); triggerHaptic(ImpactStyle.Light); }}
+                    className="flex-1 p-2.5 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
+                    style={{
+                      backgroundColor: finishCountToward === 'recovery' ? 'rgba(0,209,255,0.2)' : 'rgba(255,255,255,0.05)',
+                      border: finishCountToward === 'recovery' ? '1px solid #00D1FF' : '1px solid transparent',
+                      color: finishCountToward === 'recovery' ? '#00D1FF' : 'white'
+                    }}
+                  >
+                    <span>🧊</span> Recovery
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Link Apple Health Workout Section (hidden for watch workouts) */}
           {workout?.source !== 'watch' && (
           <div className="mb-6">
@@ -1935,7 +2079,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
                         }
                         triggerHaptic(ImpactStyle.Light);
                       }}
-                      className="w-full p-3 rounded-xl text-left"
+                      className="w-full p-2 rounded-xl text-left"
                       style={{
                         backgroundColor: isSelected ? 'rgba(0,255,148,0.15)' : 'rgba(255,255,255,0.05)',
                         border: isSelected ? '1px solid rgba(0,255,148,0.4)' : '1px solid rgba(255,255,255,0.1)'
@@ -1943,8 +2087,8 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, linkedWorkoutUUI
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(255,59,48,0.2)' }}>
-                            <span className="text-lg">{w.icon || '🏃'}</span>
+                          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(255,59,48,0.2)' }}>
+                            <span className="text-sm">{w.icon || '🏃'}</span>
                           </div>
                           <div>
                             <div className="text-sm font-medium text-white">{w.type || 'Workout'}</div>
@@ -6347,6 +6491,11 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
               ) : activity.subtype && (
                 <div className="text-sm text-gray-400">{activity.subtype}</div>
               )}
+              {activity.type === 'Walking' && (
+                <div className="text-xs mt-0.5" style={{ color: activity.countToward === 'cardio' ? '#FF9500' : '#808080' }}>
+                  {activity.countToward === 'cardio' ? '🏃 Counts as Cardio' : '🚶 Casual Walk'}
+                </div>
+              )}
               {(activity.avgHr || activity.maxHr) && (
                 <div className="flex items-center gap-2 text-xs text-gray-400 mt-1">
                   <span className="text-red-400">♥</span>
@@ -7873,14 +8022,17 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
     if (type === 'Pilates') {
       return 'recovery'; // Default to recovery, user can change
     }
+    if (type === 'Walking') {
+      return null; // Default to "Don't Count" — user chooses
+    }
     return null;
   };
 
   const [countToward, setCountToward] = useState(null);
 
-  // Update countToward when subtype changes for Yoga/Pilates
+  // Update countToward when subtype changes for Yoga/Pilates/Walking
   useEffect(() => {
-    if (activityType === 'Yoga' || activityType === 'Pilates') {
+    if (activityType === 'Yoga' || activityType === 'Pilates' || activityType === 'Walking') {
       setCountToward(getDefaultCountToward(activityType, subtype));
     } else {
       setCountToward(null);
@@ -7890,7 +8042,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   const selectedType = activityTypes.find(t => t.name === activityType);
   const showCustomSportInput = activityType === 'Sports' && subtype === 'Other';
   const showCustomActivityInput = activityType === 'Other';
-  const showCountToward = activityType === 'Yoga' || activityType === 'Pilates';
+  const showCountToward = activityType === 'Yoga' || activityType === 'Pilates' || activityType === 'Walking';
   const isFromAppleHealth = !!pendingActivity?.fromAppleHealth;
 
   // Handle linking an Apple Health workout
@@ -8344,6 +8496,20 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               </div>
               <div className="text-gray-500">→</div>
             </button>
+
+            {/* Tips for different device users */}
+            <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <div className="text-xs text-gray-500 space-y-1.5">
+                <div className="flex items-start gap-2">
+                  <span>⌚</span>
+                  <span><span className="text-gray-400 font-medium">Apple Watch:</span> Start here or from your watch — workouts sync automatically.</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span>📱</span>
+                  <span><span className="text-gray-400 font-medium">Garmin, Whoop & Others:</span> Track on your device, then link the workout here.</span>
+                </div>
+              </div>
+            </div>
 
             {/* Apple Health Workouts Section — only show when we have actual results */}
             {linkableWorkouts.length > 0 && (

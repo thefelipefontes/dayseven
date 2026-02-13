@@ -43,7 +43,7 @@ struct DashboardView: View {
                 }
                 .padding(.horizontal, 4)
                 .frame(minHeight: geo.size.height, alignment: .center)
-                .offset(y: -10)
+                .offset(y: -14)
             }
             .scrollBounceBehavior(.basedOnSize)
         }

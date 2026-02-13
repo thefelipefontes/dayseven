@@ -19391,6 +19391,27 @@ export default function DaySevenApp() {
           setActiveWorkout({ ...workoutData, source: 'phone', startTime: new Date().toISOString() });
           const activityType = getHealthKitActivityType(workoutData);
           await startLiveWorkout(activityType);
+
+          // Proactive watch detection: poll every 2s for up to 15s to see if the watch
+          // woke up and started tracking (startWatchApp may have woken it).
+          // This is a safety net in case the watch's workoutStarted notification doesn't arrive.
+          let watchCheckCount = 0;
+          const watchCheckInterval = setInterval(async () => {
+            watchCheckCount++;
+            if (watchCheckCount > 7) {
+              clearInterval(watchCheckInterval);
+              return;
+            }
+            try {
+              const metrics = await getWatchWorkoutMetrics();
+              if (metrics.isActive) {
+                console.log('[StartWorkout] Watch became active — switching source to watch');
+                clearInterval(watchCheckInterval);
+                try { await cancelLiveWorkout(); } catch (e) { /* ignore */ }
+                setActiveWorkout(prev => prev ? { ...prev, source: 'watch' } : prev);
+              }
+            } catch (e) { /* ignore */ }
+          }, 2000);
         }}
         onSaveCustomActivity={(customActivity) => {
           // Add custom activity to user's saved list (if not already saved)

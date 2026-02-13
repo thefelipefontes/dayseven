@@ -53,12 +53,10 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
 
     // MARK: - Send Notifications TO Phone
 
-    /// Notify the phone that a workout was started on the watch
+    /// Notify the phone that a workout was started on the watch.
+    /// Retries up to 5 times (1s apart) because after startWatchApp wakes us,
+    /// the WCSession may not be immediately reachable.
     func notifyPhoneWorkoutStarted(activityType: String, strengthType: String?) {
-        guard let session = wcSession, session.isReachable else {
-            print("[PhoneConnect] Phone not reachable for workout notification")
-            return
-        }
         var message: [String: Any] = [
             "action": "workoutStarted",
             "activityType": activityType
@@ -66,10 +64,25 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
         if let strengthType = strengthType {
             message["strengthType"] = strengthType
         }
-        // Fire-and-forget — no reply needed
-        session.sendMessage(message, replyHandler: nil, errorHandler: { error in
-            print("[PhoneConnect] Failed to notify phone of workout start: \(error.localizedDescription)")
-        })
+
+        Task {
+            for attempt in 1...5 {
+                guard let session = wcSession else {
+                    print("[PhoneConnect] No WCSession for workout notification")
+                    return
+                }
+                if session.isReachable {
+                    session.sendMessage(message, replyHandler: nil, errorHandler: { error in
+                        print("[PhoneConnect] Failed to notify phone of workout start (attempt \(attempt)): \(error.localizedDescription)")
+                    })
+                    print("[PhoneConnect] Sent workoutStarted notification (attempt \(attempt))")
+                    return
+                }
+                print("[PhoneConnect] Phone not reachable (attempt \(attempt)/5), retrying in 1s...")
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+            print("[PhoneConnect] Phone not reachable after 5 attempts — workout started notification not sent")
+        }
     }
 
     /// Notify the phone that a workout was ended/cancelled on the watch

@@ -1015,7 +1015,10 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func getWatchWorkoutMetrics(_ call: CAPPluginCall) {
-        guard WatchSessionManager.shared.isWatchReachable else {
+        // Don't guard on isWatchReachable — sendMessage can wake the watch even
+        // when isReachable is false. If it truly can't reach, the error handler fires.
+        let session = WCSession.default
+        guard session.activationState == .activated else {
             call.resolve(["isActive": false, "reachable": false])
             return
         }

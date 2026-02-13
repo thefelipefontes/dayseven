@@ -207,10 +207,15 @@ struct MainTabView: View {
             if phase == .active {
                 appVM.phoneService.ensureSessionActive()
 
+                // If a workout is active but no ActiveWorkoutView is shown,
+                // push one — but only after a short delay to let the
+                // remoteWorkoutRequest onChange handler fire first (it has priority).
                 if appVM.workoutManager.isActive && startPath.isEmpty {
                     selectedTab = 1
-                    if let request = appVM.phoneService.remoteWorkoutRequest {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        // Re-check: if remoteWorkoutRequest handler already navigated, skip
+                        guard startPath.isEmpty && appVM.workoutManager.isActive else { return }
+                        if let request = appVM.phoneService.remoteWorkoutRequest {
                             if request.subtype != nil || request.focusArea != nil {
                                 startPath.append(WorkoutDestination.customStart(
                                     activityType: request.activityType,
@@ -224,9 +229,7 @@ struct MainTabView: View {
                                     strengthType: request.strengthType
                                 ))
                             }
-                        }
-                    } else {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        } else {
                             startPath.append(WorkoutDestination.quickStart(
                                 activityType: "Other",
                                 strengthType: nil
@@ -241,8 +244,14 @@ struct MainTabView: View {
         .onChange(of: appVM.phoneService.remoteWorkoutRequest) { _, request in
             if let request = request {
                 selectedTab = 1
-                startPath = NavigationPath()
+                // Only navigate if we haven't already pushed an ActiveWorkoutView
+                guard startPath.isEmpty else {
+                    print("[MainTabView] remoteWorkoutRequest: startPath not empty, skipping nav")
+                    return
+                }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    // Re-check in case scenePhase handler navigated during the delay
+                    guard startPath.isEmpty else { return }
                     if request.subtype != nil || request.focusArea != nil {
                         startPath.append(WorkoutDestination.customStart(
                             activityType: request.activityType,

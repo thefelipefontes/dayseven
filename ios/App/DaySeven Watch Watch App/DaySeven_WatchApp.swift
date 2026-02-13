@@ -139,6 +139,7 @@ struct DaySeven_Watch_Watch_AppApp: App {
                 .environmentObject(appVM)
                 .environmentObject(appVM.authService)
                 .environmentObject(appVM.workoutManager)
+                .environmentObject(appVM.celebrationManager)
         }
     }
 }

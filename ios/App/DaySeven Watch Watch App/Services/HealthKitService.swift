@@ -6,6 +6,81 @@ import HealthKit
 class HealthKitService {
     let healthStore = HKHealthStore()
 
+    // Background delivery callbacks
+    var onStepsUpdated: ((Int) -> Void)?
+    var onCaloriesUpdated: ((Int) -> Void)?
+
+    private var stepsObserverQuery: HKObserverQuery?
+    private var caloriesObserverQuery: HKObserverQuery?
+    private var backgroundDeliverySetUp = false
+
+    // MARK: - Background Delivery Setup (for steps/calories goal celebrations)
+
+    func setupBackgroundDelivery() {
+        guard !backgroundDeliverySetUp else { return }
+        backgroundDeliverySetUp = true
+
+        setupStepsObserver()
+        setupCaloriesObserver()
+        enableBackgroundDelivery()
+        print("[HealthKit] Background delivery setup complete")
+    }
+
+    private func setupStepsObserver() {
+        let stepsType = HKQuantityType(.stepCount)
+
+        stepsObserverQuery = HKObserverQuery(sampleType: stepsType, predicate: nil) { [weak self] _, completionHandler, error in
+            guard error == nil else {
+                print("[HealthKit] Steps observer error: \(error!.localizedDescription)")
+                completionHandler()
+                return
+            }
+            Task { [weak self] in
+                let steps = (try? await self?.fetchTodaySteps()) ?? 0
+                self?.onStepsUpdated?(steps)
+            }
+            completionHandler()
+        }
+
+        if let query = stepsObserverQuery {
+            healthStore.execute(query)
+        }
+    }
+
+    private func setupCaloriesObserver() {
+        let caloriesType = HKQuantityType(.activeEnergyBurned)
+
+        caloriesObserverQuery = HKObserverQuery(sampleType: caloriesType, predicate: nil) { [weak self] _, completionHandler, error in
+            guard error == nil else {
+                print("[HealthKit] Calories observer error: \(error!.localizedDescription)")
+                completionHandler()
+                return
+            }
+            Task { [weak self] in
+                let calories = (try? await self?.fetchTodayCalories()) ?? 0
+                self?.onCaloriesUpdated?(calories)
+            }
+            completionHandler()
+        }
+
+        if let query = caloriesObserverQuery {
+            healthStore.execute(query)
+        }
+    }
+
+    private func enableBackgroundDelivery() {
+        let stepsType = HKQuantityType(.stepCount)
+        let caloriesType = HKQuantityType(.activeEnergyBurned)
+
+        healthStore.enableBackgroundDelivery(for: stepsType, frequency: .immediate) { success, error in
+            print("[HealthKit] Background delivery for steps: \(success), error: \(error?.localizedDescription ?? "none")")
+        }
+
+        healthStore.enableBackgroundDelivery(for: caloriesType, frequency: .immediate) { success, error in
+            print("[HealthKit] Background delivery for calories: \(success), error: \(error?.localizedDescription ?? "none")")
+        }
+    }
+
     // MARK: - Request Authorization
 
     func requestAuthorization() async throws {

@@ -14,6 +14,7 @@ class AppViewModel: ObservableObject {
     let healthKitService = HealthKitService()
     let workoutManager = WorkoutManager()
     let phoneService = PhoneConnectivityService.shared
+    let celebrationManager = CelebrationManager()
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -56,6 +57,23 @@ class AppViewModel: ObservableObject {
                 self?.objectWillChange.send()
             }
             .store(in: &cancellables)
+
+        // Wire up background health monitoring for steps/calories celebrations
+        healthKitService.onStepsUpdated = { [weak self] steps in
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                self.todaySteps = steps
+                self.checkDailyGoalCelebrations(isBackground: true)
+            }
+        }
+
+        healthKitService.onCaloriesUpdated = { [weak self] calories in
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                self.todayCalories = calories
+                self.checkDailyGoalCelebrations(isBackground: true)
+            }
+        }
 
         // Observe dataChangedFlag from PhoneConnectivityService
         // When the phone notifies us that data changed (e.g., activity deleted),
@@ -113,6 +131,16 @@ class AppViewModel: ObservableObject {
             // Push data to widget
             pushDataToWidget()
 
+            // Reconcile celebration flags with actual progress
+            // (clears flags for goals no longer met, e.g. after phone-side deletion)
+            reconcileCelebrationFlags()
+
+            // Setup background health monitoring (idempotent — only runs once)
+            healthKitService.setupBackgroundDelivery()
+
+            // Check if daily goals are already met (foreground check)
+            checkDailyGoalCelebrations(isBackground: false)
+
             isLoading = false
         } catch {
             errorMessage = error.localizedDescription
@@ -126,6 +154,9 @@ class AppViewModel: ObservableObject {
         todaySteps = await fetchStepsSafe()
         todayCalories = await fetchCaloriesSafe()
         todayDistance = await fetchDistanceSafe()
+
+        // Check if daily goals were hit
+        checkDailyGoalCelebrations(isBackground: false)
     }
 
     // MARK: - Safe HealthKit fetchers
@@ -181,6 +212,22 @@ class AppViewModel: ObservableObject {
         let category = ActivityTypes.getActivityCategory(activity)
         var recordUpdates: [String: Any]? = nil
         let completed = updateStreaksIfNeeded(oldProgress: oldProgress, newProgress: newProgress, category: category, recordUpdates: &recordUpdates)
+
+        // Trigger watch celebrations for completed goals (foreground — user just logged from watch)
+        // Master streak overrides individual category celebrations
+        if completed.master {
+            celebrationManager.triggerCelebration(.master, streakCount: streaks.master, isBackground: false)
+        } else {
+            if completed.lifts {
+                celebrationManager.triggerCelebration(.strength, streakCount: streaks.lifts, isBackground: false)
+            }
+            if completed.cardio {
+                celebrationManager.triggerCelebration(.cardio, streakCount: streaks.cardio, isBackground: false)
+            }
+            if completed.recovery {
+                celebrationManager.triggerCelebration(.recovery, streakCount: streaks.recovery, isBackground: false)
+            }
+        }
 
         // Build weekCelebrations update if any category was just completed
         var weekCelebrations: [String: Any]? = nil
@@ -252,10 +299,22 @@ class AppViewModel: ObservableObject {
         let wasAllMet = oldProgress.allGoalsMet
 
         if liftsDropped || cardioDropped || recoveryDropped {
-            if liftsDropped { streaks.lifts = max(0, streaks.lifts - 1) }
-            if cardioDropped { streaks.cardio = max(0, streaks.cardio - 1) }
-            if recoveryDropped { streaks.recovery = max(0, streaks.recovery - 1) }
-            if wasAllMet { streaks.master = max(0, streaks.master - 1) }
+            if liftsDropped {
+                streaks.lifts = max(0, streaks.lifts - 1)
+                celebrationManager.clearCelebration(.strength)
+            }
+            if cardioDropped {
+                streaks.cardio = max(0, streaks.cardio - 1)
+                celebrationManager.clearCelebration(.cardio)
+            }
+            if recoveryDropped {
+                streaks.recovery = max(0, streaks.recovery - 1)
+                celebrationManager.clearCelebration(.recovery)
+            }
+            if wasAllMet {
+                streaks.master = max(0, streaks.master - 1)
+                celebrationManager.clearCelebration(.master)
+            }
 
             // Build weekCelebrations clearing the flags for dropped categories
             let weekKey = currentWeekKey()
@@ -370,6 +429,36 @@ class AppViewModel: ObservableObject {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: startOfWeek)
+    }
+
+    // MARK: - Daily Goal Celebration Check
+
+    /// Clear celebration flags for any goals that are no longer met.
+    /// Called after loadUserData to handle phone-side deletions or data changes.
+    private func reconcileCelebrationFlags() {
+        if weeklyProgress.lifts.completed < goals.liftsPerWeek {
+            celebrationManager.clearCelebration(.strength)
+        }
+        if weeklyProgress.cardio.completed < goals.cardioPerWeek {
+            celebrationManager.clearCelebration(.cardio)
+        }
+        if weeklyProgress.recovery.completed < goals.recoveryPerWeek {
+            celebrationManager.clearCelebration(.recovery)
+        }
+        if !weeklyProgress.allGoalsMet {
+            celebrationManager.clearCelebration(.master)
+        }
+    }
+
+    private func checkDailyGoalCelebrations(isBackground: Bool) {
+        guard goals.stepsPerDay > 0, goals.caloriesPerDay > 0 else { return }
+
+        if todaySteps >= goals.stepsPerDay {
+            celebrationManager.triggerCelebration(.steps, isBackground: isBackground)
+        }
+        if todayCalories >= goals.caloriesPerDay {
+            celebrationManager.triggerCelebration(.calories, isBackground: isBackground)
+        }
     }
 
     // MARK: - Request HealthKit Permissions

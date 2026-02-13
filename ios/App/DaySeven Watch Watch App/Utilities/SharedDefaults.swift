@@ -21,6 +21,10 @@ struct SharedDefaults {
     static let todayCaloriesKey = "todayCalories"
     static let lastUpdatedKey = "lastUpdated"
 
+    // Celebration tracking keys (used by CelebrationManager)
+    static let dailyGoalsCelebratedKey = "dailyGoalsCelebrated"
+    static let weekCategoryCelebratedKey = "weekCategoryCelebrated"
+
     static var shared: UserDefaults? {
         UserDefaults(suiteName: suiteName)
     }

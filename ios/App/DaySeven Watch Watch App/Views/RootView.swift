@@ -187,6 +187,13 @@ struct MainTabView: View {
             PageDotsOverlay(totalDots: dotCount, selectedIndex: dotIndex)
                 .allowsHitTesting(false)
         }
+        .overlay {
+            // Celebration overlay (on top of everything)
+            if appVM.celebrationManager.activeCelebration != nil {
+                CelebrationOverlayView(celebration: appVM.celebrationManager.activeCelebration!)
+                    .transition(.opacity)
+            }
+        }
         .ignoresSafeArea(edges: .bottom)
         .task {
             if appVM.activities.isEmpty {
@@ -206,6 +213,9 @@ struct MainTabView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 appVM.phoneService.ensureSessionActive()
+
+                // Refresh health data to catch daily goals hit while backgrounded
+                Task { await appVM.refreshHealthData() }
 
                 // If a workout is active but no ActiveWorkoutView is shown,
                 // push one — but only after a short delay to let the

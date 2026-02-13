@@ -114,7 +114,7 @@ struct ActiveWorkoutView: View {
 
     private var activeWorkoutContent: some View {
         TabView(selection: $workoutMgr.workoutPageIndex) {
-            // Page 0 — Workout Controls (Pause/Resume, End)
+            // Page 0 — Workout Controls (Pause/Resume, End) — swipe left to reach
             WorkoutControlsTab(workoutMgr: workoutMgr)
                 .tag(0)
 
@@ -329,6 +329,7 @@ struct ActiveWorkoutView: View {
 
         // If workout is already active (e.g. started remotely from phone, or navigated away and back)
         if wm.isActive {
+            wm.workoutPageIndex = 1  // Ensure timer page before TabView renders
             isStarted = true
             return
         }
@@ -347,6 +348,7 @@ struct ActiveWorkoutView: View {
             for _ in 0..<20 {
                 try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
                 if wm.isActive {
+                    wm.workoutPageIndex = 1  // Ensure timer page before TabView renders
                     isStarted = true
                     return
                 }
@@ -361,6 +363,7 @@ struct ActiveWorkoutView: View {
         let hkType = ActivityTypes.mapToHKActivityType(activityType, subtype: preSelectedSubtype)
         do {
             try await wm.startWorkout(activityType: hkType, isIndoor: isIndoor)
+            wm.workoutPageIndex = 1  // Ensure timer page before TabView renders
             isStarted = true
             // Notify the phone so it shows the active workout indicator
             appVM.phoneService.notifyPhoneWorkoutStarted(

@@ -93,8 +93,8 @@ struct RootView: View {
 // MARK: - Custom Page Dots
 
 /// Custom dot indicator that shows the correct number of dots for each state.
-/// - No workout: 2 dots (tab 1 = activity selector, tab 2 = dashboard)
-/// - Active workout: 3 dots (tab 0 = controls, tab 1 = timer, tab 2 = dashboard)
+/// - No workout: 2 dots (activity selector → dashboard)
+/// - Active workout: 3 dots (controls → timer → dashboard)
 /// - Summary: 0 dots (hidden)
 private struct PageDotsOverlay: View {
     let totalDots: Int
@@ -123,7 +123,7 @@ struct MainTabView: View {
     @EnvironmentObject var appVM: AppViewModel
     @Environment(\.scenePhase) private var scenePhase
     @State private var startPath = NavigationPath()
-    @State private var selectedTab = 1  // Default to activity selector (center tab)
+    @State private var selectedTab = 0  // Default to activity selector (leftmost tab)
 
     /// Whether a workout is currently running
     private var isWorkoutActive: Bool {
@@ -136,6 +136,9 @@ struct MainTabView: View {
     }
 
     /// How many dots to show
+    /// - No workout: 2 dots (activity selector → dashboard)
+    /// - Active workout: 3 dots (controls → timer → dashboard)
+    /// - Summary: 0 dots (hidden)
     private var dotCount: Int {
         if isShowingSummary { return 0 }
         if appVM.workoutManager.lastResult != nil { return 0 }
@@ -143,43 +146,34 @@ struct MainTabView: View {
         return 2
     }
 
-    /// Map the raw selectedTab (always 0-2) to the correct dot index
+    /// Map the current state to the correct highlighted dot index.
     private var dotIndex: Int {
         if isWorkoutActive {
-            // 3-dot mode: tab 0=controls(dot 0), tab 1=timer(dot 1), tab 2=dashboard(dot 2)
-            return min(selectedTab, 2)
-        } else {
-            // 2-dot mode: tab 1=activity(dot 0), tab 2=dashboard(dot 1)
-            // Tab 0 (controls placeholder) shouldn't be visible, but clamp just in case
-            if selectedTab <= 1 { return 0 }
-            return 1
+            // 3-dot mode: controls(0) → timer(1) → dashboard(2)
+            // When on outer tab 0 (timer/controls), use the nested page index
+            // When on outer tab 1 (dashboard), dot index = 2
+            if selectedTab == 1 { return 2 }
+            return appVM.workoutManager.workoutPageIndex  // 0 = controls, 1 = timer
         }
+        // 2-dot mode: activity(0) → dashboard(1)
+        return min(selectedTab, 1)
     }
 
     var body: some View {
-        // Single persistent TabView — always 3 tabs, never destroyed
+        // 2 static tabs: Activity/Timer (tag 0) → Dashboard (tag 1)
+        // Both edges have natural watchOS bounce.
+        // During active workout, ActiveWorkoutView contains its own nested
+        // page TabView for Controls ← → Timer navigation.
         TabView(selection: $selectedTab) {
-            // Tab 0 — Controls (during workout) / empty placeholder (no workout)
-            Group {
-                if isWorkoutActive {
-                    WorkoutControlsTab(workoutMgr: appVM.workoutManager)
-                } else {
-                    // Empty placeholder — user shouldn't land here outside workout
-                    Color.black
-                }
-            }
-            .tag(0)
-
-            // Tab 1 — Start Activity / Active Workout Timer (the main content)
-            // NavigationStack pushes ActiveWorkoutView on top when workout starts.
+            // Tab 0 — Start Activity / Active Workout Timer
             NavigationStack(path: $startPath) {
                 StartActivityView(path: $startPath)
             }
-            .tag(1)
+            .tag(0)
 
-            // Tab 2 — Dashboard (NO NavigationStack — uses sheet for "Today" detail)
+            // Tab 1 — Dashboard
             DashboardView()
-                .tag(2)
+                .tag(1)
         }
         .tabViewStyle(.page(indexDisplayMode: .never)) // Hide system dots, we draw our own
         .overlay {
@@ -188,10 +182,33 @@ struct MainTabView: View {
                 .allowsHitTesting(false)
         }
         .overlay {
-            // Celebration overlay (on top of everything)
-            if appVM.celebrationManager.activeCelebration != nil {
-                CelebrationOverlayView(celebration: appVM.celebrationManager.activeCelebration!)
+            ZStack {
+                // Workout summary overlay — rendered ABOVE the entire TabView so
+                // horizontal swipe gestures can't reach the pager underneath.
+                if isShowingSummary, let result = appVM.workoutManager.lastResult {
+                    WorkoutSummaryView(
+                        result: result,
+                        activityType: appVM.workoutManager.summaryActivityType,
+                        strengthType: appVM.workoutManager.summaryStrengthType,
+                        initialSubtype: appVM.workoutManager.summarySubtype,
+                        initialFocusArea: appVM.workoutManager.summaryFocusArea,
+                        initialCountToward: appVM.workoutManager.summaryCountToward,
+                        workoutMgr: appVM.workoutManager,
+                        onDone: {
+                            appVM.phoneService.notifyPhoneWorkoutEnded()
+                            appVM.workoutManager.isDismissingSummary = true
+                            startPath = NavigationPath()
+                        }
+                    )
+                    .background(Color.black)
                     .transition(.opacity)
+                }
+
+                // Celebration overlay (on top of everything)
+                if appVM.celebrationManager.activeCelebration != nil {
+                    CelebrationOverlayView(celebration: appVM.celebrationManager.activeCelebration!)
+                        .transition(.opacity)
+                }
             }
         }
         .ignoresSafeArea(edges: .bottom)
@@ -200,14 +217,16 @@ struct MainTabView: View {
                 await appVM.loadUserData()
             }
         }
-        // When workout starts, jump to center tab (timer = tab 1)
+        // When workout starts, jump to timer (tab 0)
         .onChange(of: appVM.workoutManager.isActive) { oldActive, active in
             if active && !oldActive {
-                // Workout just started — go to timer page
-                selectedTab = 1
+                // Workout just started — go to timer page (tab 0)
+                // and ensure nested pager shows timer, not controls
+                selectedTab = 0
+                appVM.workoutManager.workoutPageIndex = 1
             } else if !active && oldActive {
-                // Workout just ended — stay on tab 1 (summary shows there)
-                selectedTab = 1
+                // Workout just ended — stay on tab 0 (summary shows there)
+                selectedTab = 0
             }
         }
         .onChange(of: scenePhase) { _, phase in
@@ -221,7 +240,8 @@ struct MainTabView: View {
                 // push one — but only after a short delay to let the
                 // remoteWorkoutRequest onChange handler fire first (it has priority).
                 if appVM.workoutManager.isActive && startPath.isEmpty {
-                    selectedTab = 1
+                    selectedTab = 0
+                    appVM.workoutManager.workoutPageIndex = 1  // Ensure timer page, not controls
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         // Re-check: if remoteWorkoutRequest handler already navigated, skip
                         guard startPath.isEmpty && appVM.workoutManager.isActive else { return }
@@ -247,13 +267,13 @@ struct MainTabView: View {
                         }
                     }
                 } else if !startPath.isEmpty {
-                    selectedTab = 1
+                    selectedTab = 0
                 }
             }
         }
         .onChange(of: appVM.phoneService.remoteWorkoutRequest) { _, request in
             if let request = request {
-                selectedTab = 1
+                selectedTab = 0
                 // Only navigate if we haven't already pushed an ActiveWorkoutView
                 guard startPath.isEmpty else {
                     print("[MainTabView] remoteWorkoutRequest: startPath not empty, skipping nav")
@@ -283,15 +303,14 @@ struct MainTabView: View {
                 startPath = NavigationPath()
                 appVM.workoutManager.lastResult = nil
                 appVM.phoneService.remoteWorkoutRequest = nil
-                selectedTab = 1
+                selectedTab = 0
                 appVM.phoneService.remoteWorkoutEnded = false
             }
         }
-        // Prevent swiping to tab 0 (controls) when no workout is active
+        // Lock tab during summary so user can't swipe away
         .onChange(of: selectedTab) { _, newTab in
-            if newTab == 0 && !isWorkoutActive {
-                // Snap back — tab 0 is only accessible during workout
-                selectedTab = 1
+            if isShowingSummary && newTab != 0 {
+                selectedTab = 0
             }
         }
         // When user finishes summary and navigates back, clear lastResult
@@ -299,7 +318,8 @@ struct MainTabView: View {
             if newPath.isEmpty && appVM.workoutManager.lastResult != nil && !appVM.workoutManager.isActive {
                 appVM.workoutManager.lastResult = nil
                 appVM.phoneService.remoteWorkoutRequest = nil
-                selectedTab = 1  // Back to activity selector
+                appVM.workoutManager.isDismissingSummary = false
+                selectedTab = 0  // Back to activity selector
             }
         }
     }

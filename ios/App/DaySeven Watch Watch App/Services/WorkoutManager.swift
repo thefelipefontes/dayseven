@@ -53,6 +53,21 @@ class WorkoutManager: NSObject, ObservableObject {
     @Published var averageHeartRate: Double = 0
     @Published var maxHeartRate: Double = 0
 
+    // Nested page index within ActiveWorkoutView (0 = controls, 1 = timer)
+    // Written by ActiveWorkoutView, read by MainTabView for dot indicator
+    @Published var workoutPageIndex: Int = 1
+
+    // Set to true when summary is being dismissed (Done/Discard tapped).
+    // ActiveWorkoutView uses this to show black instead of timer during nav pop.
+    @Published var isDismissingSummary = false
+
+    // Workout metadata — set by ActiveWorkoutView at start, read by summary overlay in RootView
+    @Published var summaryActivityType: String = ""
+    @Published var summaryStrengthType: String? = nil
+    @Published var summarySubtype: String? = nil
+    @Published var summaryFocusArea: String? = nil
+    @Published var summaryCountToward: String? = nil
+
     // Heart rate zone tracking
     @Published var currentZone: HeartRateZone = .recovery
     @Published var currentZoneSeconds: Int = 0
@@ -226,6 +241,14 @@ class WorkoutManager: NSObject, ObservableObject {
         activeStartDate = nil
         zoneStartDate = nil
         lastPauseDate = nil
+        // Clear summary metadata
+        summaryActivityType = ""
+        summaryStrengthType = nil
+        summarySubtype = nil
+        summaryFocusArea = nil
+        summaryCountToward = nil
+        workoutPageIndex = 1
+        isDismissingSummary = false
     }
 
     // MARK: - Timer

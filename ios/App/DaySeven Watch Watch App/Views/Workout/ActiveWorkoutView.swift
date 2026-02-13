@@ -62,23 +62,22 @@ struct ActiveWorkoutView: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            if shouldShowSummary, let result = displayResult {
-                WorkoutSummaryView(
-                    result: result,
-                    activityType: activityType,
-                    strengthType: strengthType,
-                    initialSubtype: preSelectedSubtype,
-                    initialFocusArea: preSelectedFocusArea,
-                    initialCountToward: preSelectedCountToward,
-                    workoutMgr: workoutMgr,
-                    onDone: {
-                        // Clean up and pop back to activity selector
-                        appVM.phoneService.notifyPhoneWorkoutEnded()
-                        navigationPath = NavigationPath()
-                    }
-                )
-            } else if isStarted {
+            if isStarted && wm.isActive {
+                // Workout actively running — show timer/controls
                 activeWorkoutContent
+            } else if isStarted && shouldShowSummary {
+                // Summary overlay covers this view. Show timer underneath
+                // unless we're dismissing (Done/Discard tapped), then show black
+                // so no timer flash when overlay disappears during nav pop.
+                if wm.isDismissingSummary {
+                    Color.black
+                } else {
+                    activeWorkoutContent
+                }
+            } else if isStarted {
+                // Workout ended and summary dismissed — show black while
+                // NavigationStack pops this view off (prevents "Starting..." flash)
+                Color.black
             } else if let error = errorMessage {
                 VStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
@@ -110,15 +109,26 @@ struct ActiveWorkoutView: View {
     }
 
     // MARK: - Active Workout Content
+    // Nested page TabView: swipe left for Controls, default page is Timer.
+    // The outer TabView in MainTabView handles Timer ← → Dashboard swiping.
 
     private var activeWorkoutContent: some View {
-        Group {
-            if isRecoveryTimer {
-                recoveryStatsPage
-            } else {
-                fullStatsPage
+        TabView(selection: $workoutMgr.workoutPageIndex) {
+            // Page 0 — Workout Controls (Pause/Resume, End)
+            WorkoutControlsTab(workoutMgr: workoutMgr)
+                .tag(0)
+
+            // Page 1 — Timer + Metrics (default page)
+            Group {
+                if isRecoveryTimer {
+                    recoveryStatsPage
+                } else {
+                    fullStatsPage
+                }
             }
+            .tag(1)
         }
+        .tabViewStyle(.page(indexDisplayMode: .never))
     }
 
     // MARK: - Full Stats Page (big numbers, no buttons)
@@ -307,6 +317,13 @@ struct ActiveWorkoutView: View {
     // MARK: - Start Workout
 
     private func startWorkout() async {
+        // Store metadata on WorkoutManager so the summary overlay in RootView can read it
+        wm.summaryActivityType = activityType
+        wm.summaryStrengthType = strengthType
+        wm.summarySubtype = preSelectedSubtype
+        wm.summaryFocusArea = preSelectedFocusArea
+        wm.summaryCountToward = preSelectedCountToward
+
         // If already showing summary, don't try to start again
         if showSummary || workoutResult != nil { return }
 

@@ -1017,3 +1017,28 @@ export function addWatchWorkoutEndedListener(callback) {
     handle.then(h => h.remove());
   };
 }
+
+// Notify the watch that phone data changed (e.g., activity deleted)
+// so the watch reloads from Firestore and doesn't operate on stale state
+export async function notifyWatchDataChanged() {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    await HealthKitWriter.notifyWatchDataChanged();
+  } catch (e) {
+    // Non-critical — watch will eventually refresh on its own
+  }
+}
+
+// Listen for watch activity saved (when watch saves an activity to Firestore)
+// Used to trigger celebration checks on the phone when goals are met on watch
+export function addWatchActivitySavedListener(callback) {
+  if (!Capacitor.isNativePlatform()) {
+    return () => {};
+  }
+  const handle = HealthKitWriter.addListener('watchActivitySaved', (data) => {
+    callback(data);
+  });
+  return () => {
+    handle.then(h => h.remove());
+  };
+}

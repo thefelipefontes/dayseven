@@ -56,6 +56,26 @@ class AppViewModel: ObservableObject {
                 self?.objectWillChange.send()
             }
             .store(in: &cancellables)
+
+        // Observe dataChangedFlag from PhoneConnectivityService
+        // When the phone notifies us that data changed (e.g., activity deleted),
+        // reload fresh data from Firestore so we don't operate on stale state
+        phoneService.$dataChangedFlag
+            .dropFirst() // skip initial value
+            .filter { $0 == true }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self = self else { return }
+                print("[AppViewModel] Phone data changed — reloading from Firestore in 1s")
+                self.phoneService.dataChangedFlag = false
+                Task {
+                    // Small delay to ensure Firestore write has propagated
+                    try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                    await self.loadUserData()
+                    print("[AppViewModel] Reload after phone data change complete")
+                }
+            }
+            .store(in: &cancellables)
     }
 
     // MARK: - Load User Data
@@ -160,7 +180,20 @@ class AppViewModel: ObservableObject {
         // Check for streak updates
         let category = ActivityTypes.getActivityCategory(activity)
         var recordUpdates: [String: Any]? = nil
-        updateStreaksIfNeeded(oldProgress: oldProgress, newProgress: newProgress, category: category, recordUpdates: &recordUpdates)
+        let completed = updateStreaksIfNeeded(oldProgress: oldProgress, newProgress: newProgress, category: category, recordUpdates: &recordUpdates)
+
+        // Build weekCelebrations update if any category was just completed
+        var weekCelebrations: [String: Any]? = nil
+        if completed.lifts || completed.cardio || completed.recovery || completed.master {
+            let weekKey = currentWeekKey()
+            weekCelebrations = [
+                "week": weekKey,
+                "lifts": completed.lifts || newProgress.lifts.completed >= goals.liftsPerWeek,
+                "cardio": completed.cardio || newProgress.cardio.completed >= goals.cardioPerWeek,
+                "recovery": completed.recovery || newProgress.recovery.completed >= goals.recoveryPerWeek,
+                "master": completed.master
+            ]
+        }
 
         // Save to Firestore
         do {
@@ -168,7 +201,8 @@ class AppViewModel: ObservableObject {
                 uid: uid,
                 activities: updatedActivities,
                 streaks: streaks,
-                recordUpdates: recordUpdates
+                recordUpdates: recordUpdates,
+                weekCelebrations: weekCelebrations
             )
             print("[SaveActivity] Successfully saved \(updatedActivities.count) activities to Firestore")
 
@@ -197,14 +231,42 @@ class AppViewModel: ObservableObject {
             return
         }
 
+        // Capture old progress before deletion
+        let oldProgress = weeklyProgress
+
         // Remove from local array
         var updatedActivities = activities
         updatedActivities.removeAll { $0.id == activityId }
         activities = updatedActivities
 
         // Recalculate progress
-        weeklyProgress = calculateWeeklyProgress(activities: updatedActivities, goals: goals)
+        let newProgress = calculateWeeklyProgress(activities: updatedActivities, goals: goals)
+        weeklyProgress = newProgress
         weeklyStats = calculateWeeklyStats(activities: updatedActivities)
+
+        // Check if deletion drops any category below goal and decrement streaks
+        var weekCelebrations: [String: Any]? = nil
+        let liftsDropped = oldProgress.lifts.completed >= goals.liftsPerWeek && newProgress.lifts.completed < goals.liftsPerWeek
+        let cardioDropped = oldProgress.cardio.completed >= goals.cardioPerWeek && newProgress.cardio.completed < goals.cardioPerWeek
+        let recoveryDropped = oldProgress.recovery.completed >= goals.recoveryPerWeek && newProgress.recovery.completed < goals.recoveryPerWeek
+        let wasAllMet = oldProgress.allGoalsMet
+
+        if liftsDropped || cardioDropped || recoveryDropped {
+            if liftsDropped { streaks.lifts = max(0, streaks.lifts - 1) }
+            if cardioDropped { streaks.cardio = max(0, streaks.cardio - 1) }
+            if recoveryDropped { streaks.recovery = max(0, streaks.recovery - 1) }
+            if wasAllMet { streaks.master = max(0, streaks.master - 1) }
+
+            // Build weekCelebrations clearing the flags for dropped categories
+            let weekKey = currentWeekKey()
+            weekCelebrations = [
+                "week": weekKey,
+                "lifts": !liftsDropped && newProgress.lifts.completed >= goals.liftsPerWeek,
+                "cardio": !cardioDropped && newProgress.cardio.completed >= goals.cardioPerWeek,
+                "recovery": !recoveryDropped && newProgress.recovery.completed >= goals.recoveryPerWeek,
+                "master": false
+            ]
+        }
 
         // Save to Firestore
         do {
@@ -212,7 +274,8 @@ class AppViewModel: ObservableObject {
                 uid: uid,
                 activities: updatedActivities,
                 streaks: streaks,
-                recordUpdates: nil
+                recordUpdates: nil,
+                weekCelebrations: weekCelebrations
             )
             print("[DeleteActivity] Successfully removed activity and saved \(updatedActivities.count) activities")
 
@@ -230,12 +293,14 @@ class AppViewModel: ObservableObject {
 
     // MARK: - Streak Update Logic (matches App.jsx lines 17555-17703)
 
+    /// Returns which categories/master were just completed (for celebration tracking)
+    @discardableResult
     private func updateStreaksIfNeeded(
         oldProgress: WeeklyProgress,
         newProgress: WeeklyProgress,
         category: String,
         recordUpdates: inout [String: Any]?
-    ) {
+    ) -> (lifts: Bool, cardio: Bool, recovery: Bool, master: Bool) {
         // Check if individual goals were just completed
         let justCompletedLifts = category == "lifting" &&
             oldProgress.lifts.completed < goals.liftsPerWeek &&
@@ -279,9 +344,11 @@ class AppViewModel: ObservableObject {
         // Check master streak (all three goals met)
         let allGoalsMet = newProgress.allGoalsMet
         let wasAllGoalsMet = oldProgress.allGoalsMet
+        var justCompletedWeek = false
 
         if allGoalsMet && !wasAllGoalsMet {
             streaks.master += 1
+            justCompletedWeek = true
             if streaks.master > (personalRecords.longestMasterStreak ?? 0) {
                 personalRecords.longestMasterStreak = streaks.master
                 updates["longestMasterStreak"] = streaks.master
@@ -291,6 +358,18 @@ class AppViewModel: ObservableObject {
         if !updates.isEmpty {
             recordUpdates = updates
         }
+        return (lifts: justCompletedLifts, cardio: justCompletedCardio, recovery: justCompletedRecovery, master: justCompletedWeek)
+    }
+
+    /// Returns the current week key (Sunday start date as "yyyy-MM-dd")
+    private func currentWeekKey() -> String {
+        let calendar = Calendar.current
+        let today = Date()
+        let weekday = calendar.component(.weekday, from: today) // 1 = Sunday
+        let startOfWeek = calendar.date(byAdding: .day, value: -(weekday - 1), to: calendar.startOfDay(for: today))!
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: startOfWeek)
     }
 
     // MARK: - Request HealthKit Permissions

@@ -12,7 +12,7 @@ import html2canvas from 'html2canvas';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
-import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener } from './services/healthService';
+import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged } from './services/healthService';
 import NotificationSettings from './NotificationSettings';
 import { initializePushNotifications, handleNotificationNavigation } from './services/notificationService';
 
@@ -258,6 +258,34 @@ const initialUserData = {
     longestCardioStreak: 0,
     longestRecoveryStreak: 0
   }
+};
+
+// Get current week key (Sunday start date as "YYYY-MM-DD") for celebration tracking
+const getCurrentWeekKey = () => {
+  const today = new Date();
+  const day = today.getDay(); // 0 = Sunday
+  const sunday = new Date(today);
+  sunday.setDate(today.getDate() - day);
+  return sunday.toISOString().split('T')[0];
+};
+
+// Default empty week celebration state
+const emptyWeekCelebrations = { week: '', lifts: false, cardio: false, recovery: false, master: false };
+
+// Check if the phone has already shown the master celebration this week (local-only, not synced to Firestore)
+const getPhoneCelebrationShown = () => {
+  try {
+    const saved = localStorage.getItem('phoneCelebrationShown');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed.week === getCurrentWeekKey()) return parsed;
+    }
+  } catch {}
+  return { week: getCurrentWeekKey(), master: false };
+};
+const markPhoneCelebrationShown = () => {
+  const data = { week: getCurrentWeekKey(), master: true };
+  localStorage.setItem('phoneCelebrationShown', JSON.stringify(data));
 };
 
 // Initial weekly progress - zeroed out
@@ -3392,6 +3420,64 @@ const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1, goals 
     setConfetti(newConfetti);
   }, []);
 
+  // Track timeout IDs so we can cancel them on skip
+  const timeoutsRef = useRef([]);
+
+  const addTimeout = useCallback((fn, delay) => {
+    const id = setTimeout(fn, delay);
+    timeoutsRef.current.push(id);
+    return id;
+  }, []);
+
+  const clearAllTimeouts = useCallback(() => {
+    timeoutsRef.current.forEach(id => clearTimeout(id));
+    timeoutsRef.current = [];
+  }, []);
+
+  // Skip animation and jump to final content state
+  const skipToContent = useCallback(() => {
+    clearAllTimeouts();
+    setPhase('content');
+    setRingStates([
+      { animate: false, converged: true, hasAnimated: true },
+      { animate: false, converged: true, hasAnimated: true },
+      { animate: false, converged: true, hasAnimated: true }
+    ]);
+    setShowCheckmark(true);
+    setShowParticles(false); // Hide particles (they look glitchy when skipped)
+    setShowContent(true);
+    setShowConfetti(true);
+    generateConfetti();
+  }, [clearAllTimeouts, generateConfetti]);
+
+  const handleClose = useCallback(() => {
+    if (phase === 'fadeOut') return; // Prevent double-close
+    clearAllTimeouts();
+    setPhase('fadeOut');
+    setTimeout(onClose, 300);
+  }, [onClose, phase, clearAllTimeouts]);
+
+  const handleShare = useCallback(() => {
+    if (phase === 'fadeOut') return;
+    clearAllTimeouts();
+    setPhase('fadeOut');
+    setTimeout(onShare, 300);
+  }, [onShare, phase, clearAllTimeouts]);
+
+  // Handle tap on the overlay — skip animation or close
+  const handleOverlayTap = useCallback((e) => {
+    // Don't intercept button clicks
+    if (e.target.closest('button')) return;
+
+    if (phase === 'content') {
+      // Already showing content — close
+      handleClose();
+    } else if (phase !== 'hidden' && phase !== 'fadeOut') {
+      // Mid-animation — skip to content
+      skipToContent();
+    }
+  }, [phase, skipToContent, handleClose]);
+
   // Animation sequence
   useEffect(() => {
     if (show && phase === 'hidden') {
@@ -3399,11 +3485,11 @@ const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1, goals 
 
       // Phase 1: Fade in background, then converge rings one at a time
       // Each ring fills (closes) as it moves to the center
-      setTimeout(() => {
+      addTimeout(() => {
         setPhase('converge');
 
         // First: Recovery ring (rightmost) - fills and moves to center as innermost
-        setTimeout(() => {
+        addTimeout(() => {
           setRingStates(prev => [
             prev[0],
             prev[1],
@@ -3411,7 +3497,7 @@ const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1, goals 
           ]);
           triggerHaptic(ImpactStyle.Light);
           // Mark as animated after animation completes
-          setTimeout(() => {
+          addTimeout(() => {
             setRingStates(prev => [
               prev[0],
               prev[1],
@@ -3421,7 +3507,7 @@ const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1, goals 
         }, 100);
 
         // Second: Cardio ring - fills and moves to center as middle ring
-        setTimeout(() => {
+        addTimeout(() => {
           setRingStates(prev => [
             prev[0],
             { animate: true, converged: true, hasAnimated: false },
@@ -3429,7 +3515,7 @@ const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1, goals 
           ]);
           triggerHaptic(ImpactStyle.Light);
           // Mark as animated after animation completes
-          setTimeout(() => {
+          addTimeout(() => {
             setRingStates(prev => [
               prev[0],
               { ...prev[1], hasAnimated: true },
@@ -3439,7 +3525,7 @@ const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1, goals 
         }, 900);
 
         // Third: Strength ring - fills and moves to center as outermost ring
-        setTimeout(() => {
+        addTimeout(() => {
           setRingStates(prev => [
             { animate: true, converged: true, hasAnimated: false },
             prev[1],
@@ -3447,7 +3533,7 @@ const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1, goals 
           ]);
           triggerHaptic(ImpactStyle.Heavy);
           // Mark as animated after animation completes
-          setTimeout(() => {
+          addTimeout(() => {
             setRingStates(prev => [
               { ...prev[0], hasAnimated: true },
               prev[1],
@@ -3457,7 +3543,7 @@ const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1, goals 
         }, 1700);
 
         // Phase 2: Show particle burst and checkmark
-        setTimeout(() => {
+        addTimeout(() => {
           setPhase('burst');
           setShowParticles(true);
           generateParticles();
@@ -3466,7 +3552,7 @@ const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1, goals 
         }, 2500);
 
         // Phase 3: Show content and confetti
-        setTimeout(() => {
+        addTimeout(() => {
           setPhase('content');
           setShowContent(true);
           setShowConfetti(true);
@@ -3475,7 +3561,12 @@ const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1, goals 
 
       }, 300);
     }
-  }, [show, phase, generateParticles, generateConfetti]);
+  }, [show, phase, generateParticles, generateConfetti, addTimeout]);
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => clearAllTimeouts();
+  }, [clearAllTimeouts]);
 
   // Reset state when closed
   useEffect(() => {
@@ -3497,21 +3588,12 @@ const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1, goals 
     }
   }, [show]);
 
-  const handleClose = () => {
-    setPhase('fadeOut');
-    setTimeout(onClose, 300);
-  };
-
-  const handleShare = () => {
-    setPhase('fadeOut');
-    setTimeout(onShare, 300);
-  };
-
   if (!show && phase === 'hidden') return null;
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      onClick={handleOverlayTap}
       style={{
         backgroundColor: 'rgba(0,0,0,0.95)',
         opacity: phase === 'hidden' || phase === 'fadeOut' ? 0 : 1,
@@ -8048,7 +8130,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       { name: 'Golf', icon: '⛳' },
       { name: 'Other', icon: '🏆' }
     ], category: 'cardio' },
-    { name: 'Stair Climbing', icon: '🪜', subtypes: ['StairMaster', 'Stair Stepper', 'Outdoor Stairs'], category: 'cardio' },
+    { name: 'Stair Climbing', icon: '🪜', subtypes: [], category: 'cardio' },
     { name: 'Elliptical', icon: '🏃‍♂️', subtypes: [], category: 'cardio' },
     { name: 'Yoga', icon: '🧘', subtypes: ['Vinyasa', 'Power', 'Hot', 'Yin', 'Restorative'], category: 'hybrid' },
     { name: 'Pilates', icon: '🤸', subtypes: ['Mat', 'Reformer', 'Tower', 'Chair'], category: 'hybrid' },
@@ -10063,6 +10145,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
   const [showWorkoutPicker, setShowWorkoutPicker] = useState(false);
   const [workoutPickerDragY, setWorkoutPickerDragY] = useState(0);
   const [workoutPickerTouchStart, setWorkoutPickerTouchStart] = useState(null);
+  const [streakWarningDismissed, setStreakWarningDismissed] = useState(false);
   const [activityReactions, setActivityReactions] = useState({});
   const [activityComments, setActivityComments] = useState({});
   const [reactionDetailModal, setReactionDetailModal] = useState(null); // { activityId, reactions, selectedEmoji }
@@ -10927,16 +11010,16 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
       {/* Weekly Goals - Hero Section */}
       <div className="mx-4 mb-4">
         {/* Streak at Risk Warning */}
-        {daysLeft <= 2 && (liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0) && (
-          <div 
-            className="p-3 rounded-xl mb-3 flex items-center gap-3"
-            style={{ 
-              backgroundColor: 'rgba(255,69,58,0.15)', 
-              border: '1px solid rgba(255,69,58,0.3)' 
+        {!streakWarningDismissed && daysLeft <= 2 && (liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0) && (
+          <div
+            className="relative p-3 rounded-xl mb-3 flex items-center gap-3"
+            style={{
+              backgroundColor: 'rgba(255,69,58,0.15)',
+              border: '1px solid rgba(255,69,58,0.3)'
             }}
           >
             <span className="text-xl">⚠️</span>
-            <div className="flex-1">
+            <div className="flex-1 pr-6">
               <div className="text-xs font-semibold" style={{ color: '#FF453A' }}>
                 {daysLeft === 0 ? 'Last day to hit your goals!' : `Only ${daysLeft} day${daysLeft === 1 ? '' : 's'} left!`}
               </div>
@@ -10948,6 +11031,15 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                 ].filter(Boolean).join(', ')} remaining to keep your streak
               </div>
             </div>
+            <button
+              onClick={() => setStreakWarningDismissed(true)}
+              className="absolute flex items-center justify-center"
+              style={{ top: 4, right: 4, width: 44, height: 44, color: 'rgba(255,69,58,0.6)' }}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M3 3L11 11M11 3L3 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+              </svg>
+            </button>
           </div>
         )}
         
@@ -16288,6 +16380,17 @@ export default function DaySevenApp() {
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState('record'); // 'record' or 'success'
   const [pendingToast, setPendingToast] = useState(null); // Queue toast to show after celebration
+  // Track which goals have been celebrated this week (prevents duplicate celebrations, allows re-celebration after delete)
+  const [weekCelebrations, setWeekCelebrations] = useState(() => {
+    try {
+      const saved = localStorage.getItem('weekCelebrations');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.week === getCurrentWeekKey()) return parsed;
+      }
+    } catch {}
+    return { ...emptyWeekCelebrations, week: getCurrentWeekKey() };
+  });
   const [historyView, setHistoryView] = useState('calendar');
   const [historyStatsSubView, setHistoryStatsSubView] = useState('overview');
   const [showEditGoals, setShowEditGoals] = useState(false);
@@ -16587,6 +16690,74 @@ export default function DaySevenApp() {
       removeEndListener();
     };
   }, [activeWorkout?.source]);
+
+  // Listen for watch activity saved (watch saved an activity to Firestore while phone app is open)
+  // This triggers a celebration check since goals may have been completed on the watch
+  useEffect(() => {
+    const removeListener = addWatchActivitySavedListener(async () => {
+      if (!user?.uid) return;
+
+      try {
+        // Fetch fresh data directly from Firestore (bypass all caches)
+        const freshActivities = await getUserActivities(user.uid, true);
+        activitiesRef.current = freshActivities;
+        setActivities(freshActivities);
+
+        const freshProfile = await getUserProfile(user.uid, true);
+        const currentWeekKey = getCurrentWeekKey();
+
+        // Sync streaks from Firestore
+        if (freshProfile?.streaks) {
+          setUserData(prev => ({
+            ...prev,
+            streaks: {
+              master: freshProfile.streaks.master ?? prev.streaks.master,
+              lifts: freshProfile.streaks.lifts ?? prev.streaks.lifts,
+              cardio: freshProfile.streaks.cardio ?? prev.streaks.cardio,
+              recovery: freshProfile.streaks.recovery ?? prev.streaks.recovery,
+              stepsGoal: freshProfile.streaks.stepsGoal ?? prev.streaks.stepsGoal
+            }
+          }));
+        }
+
+        // Sync weekCelebrations
+        if (freshProfile?.weekCelebrations?.week === currentWeekKey) {
+          setWeekCelebrations(freshProfile.weekCelebrations);
+          localStorage.setItem('weekCelebrations', JSON.stringify(freshProfile.weekCelebrations));
+        }
+
+        // Recalculate weekly progress for the UI rings
+        const freshProgress = calculateWeeklyProgress(freshActivities);
+        setWeeklyProgress(freshProgress);
+
+        // Check if phone should show a celebration
+        // ALWAYS verify actual activity counts — never trust firestoreSaysMaster alone
+        // because watch may have stale data (e.g., phone deleted an activity the watch doesn't know about)
+        const phoneShown = getPhoneCelebrationShown();
+        if (!phoneShown.master) {
+          const goals = userDataRef.current?.goals || freshProfile?.goals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2 };
+          const allGoalsMet = freshProgress.lifts.completed >= goals.liftsPerWeek &&
+            freshProgress.cardio.completed >= goals.cardioPerWeek &&
+            freshProgress.recovery.completed >= goals.recoveryPerWeek;
+          if (allGoalsMet) {
+            const newWC = { week: currentWeekKey, lifts: true, cardio: true, recovery: true, master: true };
+            setWeekCelebrations(newWC);
+            localStorage.setItem('weekCelebrations', JSON.stringify(newWC));
+            updateUserProfile(user.uid, { weekCelebrations: newWC }).catch(() => {});
+            markPhoneCelebrationShown();
+            setTimeout(() => {
+              triggerHaptic(ImpactStyle.Heavy);
+              setShowWeekStreakCelebration(true);
+            }, 1000);
+          }
+        }
+      } catch (e) {
+        // Non-critical — celebration check failed, continue normally
+      }
+    });
+
+    return () => removeListener();
+  }, [user?.uid]);
 
   // Tab order for direction detection
   const tabOrder = ['home', 'history', 'feed', 'profile'];
@@ -17099,8 +17270,34 @@ export default function DaySevenApp() {
             }));
           }
 
-          // Load user's activities from Firestore
-          const userActivities = await getUserActivities(user.uid);
+          // Re-fetch profile with forceRefresh to bypass native SDK cache
+          // (watch may have updated streaks/weekCelebrations via REST API)
+          const freshProfile = await getUserProfile(user.uid, true);
+
+          // Load streaks and celebration state from fresh Firestore data
+          const profileForStreaks = freshProfile || profile;
+          if (profileForStreaks?.streaks) {
+            setUserData(prev => ({
+              ...prev,
+              streaks: {
+                master: profileForStreaks.streaks.master ?? prev.streaks.master,
+                lifts: profileForStreaks.streaks.lifts ?? prev.streaks.lifts,
+                cardio: profileForStreaks.streaks.cardio ?? prev.streaks.cardio,
+                recovery: profileForStreaks.streaks.recovery ?? prev.streaks.recovery,
+                stepsGoal: profileForStreaks.streaks.stepsGoal ?? prev.streaks.stepsGoal
+              }
+            }));
+          }
+          if (profileForStreaks?.weekCelebrations) {
+            const wc = profileForStreaks.weekCelebrations;
+            if (wc.week === getCurrentWeekKey()) {
+              setWeekCelebrations(wc);
+              localStorage.setItem('weekCelebrations', JSON.stringify(wc));
+            }
+          }
+
+          // Load user's activities from Firestore (force refresh to pick up watch-saved activities)
+          const userActivities = await getUserActivities(user.uid, true);
           if (userActivities.length > 0) {
             setActivities(userActivities);
             // Update ref immediately so syncHealthKit can see loaded activities
@@ -17124,6 +17321,32 @@ export default function DaySevenApp() {
               }
             });
             setCalendarData(calendarMap);
+
+            // Check for pending master celebration (may have been completed on watch)
+            // ALWAYS verify actual activity counts — never trust firestoreSaysMaster alone
+            // because watch may have stale data (e.g., phone deleted an activity the watch doesn't know about)
+            const currentWeekKey = getCurrentWeekKey();
+            const phoneShown = getPhoneCelebrationShown();
+            if (!phoneShown.master) {
+              const loadedProgress = calculateWeeklyProgress(userActivities);
+              const goals = userGoals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2 };
+              const allGoalsMet = loadedProgress.lifts.completed >= goals.liftsPerWeek &&
+                loadedProgress.cardio.completed >= goals.cardioPerWeek &&
+                loadedProgress.recovery.completed >= goals.recoveryPerWeek;
+              if (allGoalsMet) {
+                // Update weekCelebrations (streak tracking) if not already set
+                const newWC = { week: currentWeekKey, lifts: true, cardio: true, recovery: true, master: true };
+                setWeekCelebrations(newWC);
+                localStorage.setItem('weekCelebrations', JSON.stringify(newWC));
+                updateUserProfile(user.uid, { weekCelebrations: newWC }).catch(() => {});
+                // Mark that phone has shown the celebration
+                markPhoneCelebrationShown();
+                setTimeout(() => {
+                  triggerHaptic(ImpactStyle.Heavy);
+                  setShowWeekStreakCelebration(true);
+                }, 1500);
+              }
+            }
           }
 
           // Sync HealthKit AFTER activities are loaded so it can properly
@@ -17462,6 +17685,62 @@ export default function DaySevenApp() {
             const freshActivities = await getUserActivities(user.uid, true);
             activitiesRef.current = freshActivities;
             setActivities(freshActivities);
+
+            // Check for pending celebrations from watch (goals completed on watch but not yet celebrated on phone)
+            try {
+              // Read phone-local celebration flag BEFORE syncing from Firestore
+              const phoneShown = getPhoneCelebrationShown();
+
+              const freshProfile = await getUserProfile(user.uid, true);
+              const currentWeekKey = getCurrentWeekKey();
+
+              // Load streaks from Firestore (watch may have updated them)
+              if (freshProfile?.streaks) {
+                setUserData(prev => ({
+                  ...prev,
+                  streaks: {
+                    master: freshProfile.streaks.master ?? prev.streaks.master,
+                    lifts: freshProfile.streaks.lifts ?? prev.streaks.lifts,
+                    cardio: freshProfile.streaks.cardio ?? prev.streaks.cardio,
+                    recovery: freshProfile.streaks.recovery ?? prev.streaks.recovery,
+                    stepsGoal: freshProfile.streaks.stepsGoal ?? prev.streaks.stepsGoal
+                  }
+                }));
+              }
+
+              // Sync weekCelebrations from Firestore (for streak tracking state)
+              if (freshProfile?.weekCelebrations?.week === currentWeekKey) {
+                setWeekCelebrations(freshProfile.weekCelebrations);
+                localStorage.setItem('weekCelebrations', JSON.stringify(freshProfile.weekCelebrations));
+              }
+
+              // Show master celebration if phone hasn't shown it yet
+              // ALWAYS verify actual activity counts — never trust firestoreSaysMaster alone
+              // because watch may have stale data (e.g., phone deleted an activity the watch doesn't know about)
+              if (!phoneShown.master) {
+                const goals = userDataRef.current?.goals || freshProfile?.goals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2 };
+                const freshProgress = calculateWeeklyProgress(freshActivities);
+                const allGoalsMet = freshProgress.lifts.completed >= goals.liftsPerWeek &&
+                  freshProgress.cardio.completed >= goals.cardioPerWeek &&
+                  freshProgress.recovery.completed >= goals.recoveryPerWeek;
+
+                if (allGoalsMet) {
+                  const newWC = { week: currentWeekKey, lifts: true, cardio: true, recovery: true, master: true };
+                  setWeekCelebrations(newWC);
+                  localStorage.setItem('weekCelebrations', JSON.stringify(newWC));
+                  updateUserProfile(user.uid, { weekCelebrations: newWC }).catch(() => {});
+                  markPhoneCelebrationShown();
+                  setTimeout(() => {
+                    triggerHaptic(ImpactStyle.Heavy);
+                    setShowWeekStreakCelebration(true);
+                  }, 800);
+                }
+              }
+            } catch (e) {
+              // Non-critical — celebration check failed, continue normally
+              // Non-critical — celebration check failed, continue normally
+            }
+
             // Small delay to ensure state is updated before syncHealthKit reads it
             await new Promise(r => setTimeout(r, 100));
             syncHealthKit();
@@ -17596,7 +17875,10 @@ export default function DaySevenApp() {
 
     // Debounce the save to avoid too many writes
     const timeoutId = setTimeout(() => {
-      saveUserActivities(user.uid, activities);
+      saveUserActivities(user.uid, activities).then(() => {
+        // Notify watch to refresh after any activity change
+        notifyWatchDataChanged();
+      });
     }, 1000);
 
     return () => clearTimeout(timeoutId);
@@ -18071,11 +18353,20 @@ export default function DaySevenApp() {
         prevProgress.cardio.completed >= goals.cardioPerWeek &&
         prevProgress.recovery.completed >= goals.recoveryPerWeek;
 
-    const willStreakWeek = willCompleteAllGoals && !wasAllGoalsMet;
+    // Get current week celebration state — only increment streaks if not already celebrated this week for that category
+    const currentWeekKey = getCurrentWeekKey();
+    const wc = weekCelebrations.week === currentWeekKey ? weekCelebrations : { ...emptyWeekCelebrations, week: currentWeekKey };
+    const newWC = { ...wc };
+
+    // Determine which categories are newly completing (transition) AND not already celebrated
+    const shouldCelebrateLifts = justCompletedLifts && !wc.lifts;
+    const shouldCelebrateCardio = justCompletedCardio && !wc.cardio;
+    const shouldCelebrateRecovery = justCompletedRecovery && !wc.recovery;
+    const willStreakWeek = willCompleteAllGoals && !wc.master;
 
     // Update streaks when goals are met - combined into single setUserData call to avoid race conditions
     // If week will be streaked, skip individual celebration (week streak takes priority)
-    if (justCompletedLifts) {
+    if (shouldCelebrateLifts) {
       const newStreak = userData.streaks.lifts + 1;
       const isNewRecord = isStreakRecord('strength', newStreak);
       setUserData(prev => ({
@@ -18085,6 +18376,7 @@ export default function DaySevenApp() {
           ? { ...prev.personalRecords, longestStrengthStreak: newStreak }
           : prev.personalRecords
       }));
+      newWC.lifts = true;
       // Only show individual celebration if NOT about to streak the week
       if (!willStreakWeek) {
         if (isNewRecord) {
@@ -18098,7 +18390,7 @@ export default function DaySevenApp() {
         triggerHaptic(ImpactStyle.Heavy);
         setShowCelebration(true);
       }
-    } else if (justCompletedCardio) {
+    } else if (shouldCelebrateCardio) {
       const newStreak = userData.streaks.cardio + 1;
       const isNewRecord = isStreakRecord('cardio', newStreak);
       setUserData(prev => ({
@@ -18108,6 +18400,7 @@ export default function DaySevenApp() {
           ? { ...prev.personalRecords, longestCardioStreak: newStreak }
           : prev.personalRecords
       }));
+      newWC.cardio = true;
       // Only show individual celebration if NOT about to streak the week
       if (!willStreakWeek) {
         if (isNewRecord) {
@@ -18121,7 +18414,7 @@ export default function DaySevenApp() {
         triggerHaptic(ImpactStyle.Heavy);
         setShowCelebration(true);
       }
-    } else if (justCompletedRecovery) {
+    } else if (shouldCelebrateRecovery) {
       const newStreak = userData.streaks.recovery + 1;
       const isNewRecord = isStreakRecord('recovery', newStreak);
       setUserData(prev => ({
@@ -18131,6 +18424,7 @@ export default function DaySevenApp() {
           ? { ...prev.personalRecords, longestRecoveryStreak: newStreak }
           : prev.personalRecords
       }));
+      newWC.recovery = true;
       // Only show individual celebration if NOT about to streak the week
       if (!willStreakWeek) {
         if (isNewRecord) {
@@ -18156,7 +18450,7 @@ export default function DaySevenApp() {
 
     // Always check and update records (mostMilesWeek, etc.) even when a goal was completed
     // The if/else above handles celebrations, but we still need to update distance/calorie records
-    if (justCompletedLifts || justCompletedCardio || justCompletedRecovery) {
+    if (shouldCelebrateLifts || shouldCelebrateCardio || shouldCelebrateRecovery) {
       const record = checkAndUpdateRecords();
       // If there's a record and week is being streaked, queue the toast for after celebration
       if (record && willStreakWeek) {
@@ -18181,11 +18475,32 @@ export default function DaySevenApp() {
           : prev.personalRecords
       }));
 
+      newWC.master = true;
+      markPhoneCelebrationShown();
+
       // Show the week streak celebration modal immediately (no delay needed since we skipped individual celebration)
       setTimeout(() => {
         triggerHaptic(ImpactStyle.Heavy); // Strong haptic for celebration!
         setShowWeekStreakCelebration(true);
       }, 500);
+    }
+
+    // Persist weekCelebrations state (locally + Firestore)
+    if (shouldCelebrateLifts || shouldCelebrateCardio || shouldCelebrateRecovery || willStreakWeek) {
+      setWeekCelebrations(newWC);
+      localStorage.setItem('weekCelebrations', JSON.stringify(newWC));
+
+      // Persist streaks and celebration state to Firestore (single write for all changes)
+      if (user?.uid) {
+        setTimeout(() => {
+          const latestData = userDataRef.current;
+          updateUserProfile(user.uid, {
+            streaks: latestData.streaks,
+            weekCelebrations: newWC
+          }).catch(() => {});
+          savePersonalRecords(user.uid, latestData.personalRecords).catch(() => {});
+        }, 100);
+      }
     }
   };
 
@@ -18324,9 +18639,74 @@ export default function DaySevenApp() {
       personalRecords: updatedRecords
     }));
 
+    // Check if deleting this activity drops any category below its goal
+    // If so, clear the celebrated flag and decrement the streak (since it was wrongly incremented)
+    const goals = userData.goals;
+    const oldProgress = weeklyProgress; // progress before deletion
+    const currentWeekKey = getCurrentWeekKey();
+    const wc = weekCelebrations.week === currentWeekKey ? { ...weekCelebrations } : { ...emptyWeekCelebrations, week: currentWeekKey };
+    let wcChanged = false;
+    let streakChanges = {};
+
+    // Check each category: was it at/above goal before, and now below?
+    if (wc.lifts && oldProgress.lifts.completed >= goals.liftsPerWeek && newProgress.lifts.completed < goals.liftsPerWeek) {
+      wc.lifts = false;
+      wc.master = false; // master can't be valid if a category is incomplete
+      streakChanges.lifts = userData.streaks.lifts - 1;
+      if (wc.master === false && oldProgress.lifts.completed >= goals.liftsPerWeek && oldProgress.cardio.completed >= goals.cardioPerWeek && oldProgress.recovery.completed >= goals.recoveryPerWeek) {
+        streakChanges.master = userData.streaks.master - 1;
+      }
+      wcChanged = true;
+    }
+    if (wc.cardio && (oldProgress.cardio?.completed || 0) >= goals.cardioPerWeek && (newProgress.cardio?.completed || 0) < goals.cardioPerWeek) {
+      wc.cardio = false;
+      wc.master = false;
+      streakChanges.cardio = userData.streaks.cardio - 1;
+      if (!('master' in streakChanges) && oldProgress.lifts.completed >= goals.liftsPerWeek && (oldProgress.cardio?.completed || 0) >= goals.cardioPerWeek && (oldProgress.recovery?.completed || 0) >= goals.recoveryPerWeek) {
+        streakChanges.master = userData.streaks.master - 1;
+      }
+      wcChanged = true;
+    }
+    if (wc.recovery && (oldProgress.recovery?.completed || 0) >= goals.recoveryPerWeek && (newProgress.recovery?.completed || 0) < goals.recoveryPerWeek) {
+      wc.recovery = false;
+      wc.master = false;
+      streakChanges.recovery = userData.streaks.recovery - 1;
+      if (!('master' in streakChanges) && oldProgress.lifts.completed >= goals.liftsPerWeek && (oldProgress.cardio?.completed || 0) >= goals.cardioPerWeek && (oldProgress.recovery?.completed || 0) >= goals.recoveryPerWeek) {
+        streakChanges.master = userData.streaks.master - 1;
+      }
+      wcChanged = true;
+    }
+
+    if (wcChanged) {
+      setWeekCelebrations(wc);
+      localStorage.setItem('weekCelebrations', JSON.stringify(wc));
+      // Clear phone celebration shown flag so re-completing shows the celebration again
+      localStorage.removeItem('phoneCelebrationShown');
+      // Decrement streaks that were wrongly incremented
+      if (Object.keys(streakChanges).length > 0) {
+        setUserData(prev => ({
+          ...prev,
+          streaks: {
+            ...prev.streaks,
+            ...Object.fromEntries(Object.entries(streakChanges).map(([k, v]) => [k, Math.max(0, v)]))
+          }
+        }));
+      }
+    }
+
     // Persist deletion to Firestore
+    // (watch notification happens automatically via the activities useEffect save)
     if (user?.uid) {
       saveUserActivities(user.uid, updatedActivities).catch(() => {});
+      if (wcChanged) {
+        setTimeout(() => {
+          const latestData = userDataRef.current;
+          updateUserProfile(user.uid, {
+            streaks: latestData.streaks,
+            weekCelebrations: wc
+          }).catch(() => {});
+        }, 100);
+      }
     }
 
   };
@@ -18559,27 +18939,34 @@ export default function DaySevenApp() {
             // End the watch workout — returns final metrics from watch
             try {
               const watchResult = await endWatchWorkout();
-              liveResult = {
-                success: true,
-                workoutUUID: watchResult.workoutUUID,
-                duration: watchResult.duration,
-                calories: watchResult.calories,
-                avgHr: watchResult.avgHr,
-                maxHr: watchResult.maxHr,
-                distance: watchResult.distance || 0,
-              };
-              // Auto-fill metrics from watch if not manually entered
-              if (!finishedWorkout.calories && watchResult.calories) {
-                finishedWorkout.calories = watchResult.calories;
-              }
-              if (!finishedWorkout.avgHr && watchResult.avgHr) {
-                finishedWorkout.avgHr = watchResult.avgHr;
-              }
-              if (!finishedWorkout.maxHr && watchResult.maxHr) {
-                finishedWorkout.maxHr = watchResult.maxHr;
-              }
-              if (!finishedWorkout.duration && watchResult.duration) {
-                finishedWorkout.duration = watchResult.duration;
+              const wasQueued = watchResult?.queued === true;
+              if (wasQueued) {
+                // Command was queued via applicationContext — watch will end when it wakes up
+                console.log('[FinishWorkout] Watch end queued (watch not reachable)');
+                liveResult = { success: true, queued: true };
+              } else {
+                liveResult = {
+                  success: true,
+                  workoutUUID: watchResult.workoutUUID,
+                  duration: watchResult.duration,
+                  calories: watchResult.calories,
+                  avgHr: watchResult.avgHr,
+                  maxHr: watchResult.maxHr,
+                  distance: watchResult.distance || 0,
+                };
+                // Auto-fill metrics from watch if not manually entered
+                if (!finishedWorkout.calories && watchResult.calories) {
+                  finishedWorkout.calories = watchResult.calories;
+                }
+                if (!finishedWorkout.avgHr && watchResult.avgHr) {
+                  finishedWorkout.avgHr = watchResult.avgHr;
+                }
+                if (!finishedWorkout.maxHr && watchResult.maxHr) {
+                  finishedWorkout.maxHr = watchResult.maxHr;
+                }
+                if (!finishedWorkout.duration && watchResult.duration) {
+                  finishedWorkout.duration = watchResult.duration;
+                }
               }
             } catch (e) {
               console.log('[FinishWorkout] Watch end error:', e.message);
@@ -18990,7 +19377,7 @@ export default function DaySevenApp() {
             console.log('[StartWorkout] Sending to watch:', activityType, '(raw type:', workoutData.type, ', subtype:', subtype, ')');
             await startWatchWorkout(activityType, strengthType, subtype, focusArea);
             console.log('[StartWorkout] Watch workout started via sendMessage');
-            setActiveWorkout({ ...workoutData, source: 'watch' });
+            setActiveWorkout({ ...workoutData, source: 'watch', startTime: new Date().toISOString() });
             return;
           } catch (e) {
             console.log('[StartWorkout] sendMessage failed, using phone fallback:', e.message);
@@ -19000,7 +19387,7 @@ export default function DaySevenApp() {
           // startWatchApp is also fired in the background (from Swift errorHandler),
           // so the watch may wake up and start tracking too. If it does, the
           // watchWorkoutStarted listener will cancel the phone session and switch to watch source.
-          setActiveWorkout({ ...workoutData, source: 'phone' });
+          setActiveWorkout({ ...workoutData, source: 'phone', startTime: new Date().toISOString() });
           const activityType = getHealthKitActivityType(workoutData);
           await startLiveWorkout(activityType);
         }}

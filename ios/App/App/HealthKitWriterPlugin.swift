@@ -1,6 +1,7 @@
 import Foundation
 import Capacitor
 import HealthKit
+import WatchConnectivity
 
 @objc(HealthKitWriterPlugin)
 public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
@@ -23,6 +24,8 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getWatchWorkoutMetrics", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancelWatchWorkout", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isWatchReachable", returnType: CAPPluginReturnPromise),
+        // Notify watch to refresh data (e.g., after phone deletes an activity)
+        CAPPluginMethod(name: "notifyWatchDataChanged", returnType: CAPPluginReturnPromise),
         // Legacy observer methods (keeping for backward compatibility)
         CAPPluginMethod(name: "startObservingMetrics", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopObservingMetrics", returnType: CAPPluginReturnPromise),
@@ -47,6 +50,17 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             name: .watchWorkoutEnded,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleWatchActivitySaved),
+            name: .watchActivitySaved,
+            object: nil
+        )
+    }
+
+    @objc private func handleWatchActivitySaved() {
+        print("[HealthKitWriter] Watch activity saved — notifying JS")
+        notifyListeners("watchActivitySaved", data: [:])
     }
 
     @objc private func handleWatchWorkoutStarted(_ notification: Notification) {
@@ -913,8 +927,10 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func endWatchWorkout(_ call: CAPPluginCall) {
+        let message: [String: Any] = ["action": "endWorkout"]
+
         WatchSessionManager.shared.sendToWatch(
-            message: ["action": "endWorkout"],
+            message: message,
             replyHandler: { reply in
                 DispatchQueue.main.async {
                     if let error = reply["error"] as? String {
@@ -925,8 +941,35 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
             },
             errorHandler: { error in
-                DispatchQueue.main.async {
-                    call.reject(error.localizedDescription)
+                // First attempt failed — retry once after 1 second
+                // (watch may have gone to sleep between pause and end)
+                print("[HealthKitWriter] endWatchWorkout first attempt failed, retrying in 1s: \(error.localizedDescription)")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    WatchSessionManager.shared.sendToWatch(
+                        message: message,
+                        replyHandler: { reply in
+                            DispatchQueue.main.async {
+                                if let error = reply["error"] as? String {
+                                    call.reject(error)
+                                } else {
+                                    call.resolve(reply as? [String: Any] ?? ["success": true])
+                                }
+                            }
+                        },
+                        errorHandler: { retryError in
+                            // Both attempts failed — applicationContext fallback was already queued
+                            // by sendToWatch, so the watch will end the workout when it wakes up
+                            print("[HealthKitWriter] endWatchWorkout retry also failed: \(retryError.localizedDescription)")
+                            DispatchQueue.main.async {
+                                // Resolve with a special flag so JS knows the command was queued
+                                call.resolve([
+                                    "success": true,
+                                    "queued": true,
+                                    "message": "Watch not reachable. Workout will end when watch wakes up."
+                                ])
+                            }
+                        }
+                    )
                 }
             }
         )
@@ -994,8 +1037,10 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func cancelWatchWorkout(_ call: CAPPluginCall) {
+        let message: [String: Any] = ["action": "cancelWorkout"]
+
         WatchSessionManager.shared.sendToWatch(
-            message: ["action": "cancelWorkout"],
+            message: message,
             replyHandler: { reply in
                 DispatchQueue.main.async {
                     if let error = reply["error"] as? String {
@@ -1006,11 +1051,62 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
             },
             errorHandler: { error in
-                DispatchQueue.main.async {
-                    call.reject(error.localizedDescription)
+                // Retry once after 1 second (same pattern as endWatchWorkout)
+                print("[HealthKitWriter] cancelWatchWorkout first attempt failed, retrying in 1s")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    WatchSessionManager.shared.sendToWatch(
+                        message: message,
+                        replyHandler: { reply in
+                            DispatchQueue.main.async {
+                                if let error = reply["error"] as? String {
+                                    call.reject(error)
+                                } else {
+                                    call.resolve(reply as? [String: Any] ?? ["success": true])
+                                }
+                            }
+                        },
+                        errorHandler: { retryError in
+                            // applicationContext fallback was already queued by sendToWatch
+                            print("[HealthKitWriter] cancelWatchWorkout retry also failed: \(retryError.localizedDescription)")
+                            DispatchQueue.main.async {
+                                call.resolve([
+                                    "success": true,
+                                    "queued": true,
+                                    "message": "Watch not reachable. Workout will cancel when watch wakes up."
+                                ])
+                            }
+                        }
+                    )
                 }
             }
         )
+    }
+
+    // MARK: - Notify Watch Data Changed
+
+    /// Tells the watch to refresh its data from Firestore.
+    /// Called when the phone deletes/modifies activities so the watch doesn't operate on stale data.
+    @objc func notifyWatchDataChanged(_ call: CAPPluginCall) {
+        print("[HealthKitWriter] notifyWatchDataChanged called from JS")
+        let session = WCSession.default
+
+        guard session.activationState == .activated else {
+            print("[HealthKitWriter] notifyWatchDataChanged: session not activated")
+            call.resolve(["sent": false, "reason": "not_activated"])
+            return
+        }
+
+        // Use transferUserInfo — it's queued and reliably delivered even when
+        // the watch app is in the foreground or background. Unlike sendMessage
+        // (which requires isReachable=true) or applicationContext (which only
+        // delivers on fresh launches), transferUserInfo always gets delivered.
+        let userInfo: [String: Any] = [
+            "action": "dataChanged",
+            "timestamp": Date().timeIntervalSince1970
+        ]
+        session.transferUserInfo(userInfo)
+        print("[HealthKitWriter] notifyWatchDataChanged: queued via transferUserInfo")
+        call.resolve(["sent": true, "method": "transferUserInfo"])
     }
 
     // MARK: - Activity Type Mapping

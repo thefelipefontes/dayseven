@@ -25,6 +25,10 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
     /// Published when a remote workout end/cancel is completed from the phone
     @Published var remoteWorkoutEnded = false
 
+    /// Published when the phone notifies us that data changed (e.g., activity deleted)
+    /// The watch should reload data from Firestore when this fires
+    @Published var dataChangedFlag = false
+
     private var wcSession: WCSession?
 
     /// Reference to the workout manager — set by the app on launch
@@ -190,6 +194,8 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
             DispatchQueue.main.async {
                 self.isReachable = reachable
             }
+            // Check for pending commands sent via applicationContext while we were inactive
+            checkPendingContextCommands(session.receivedApplicationContext)
         }
     }
 
@@ -199,6 +205,96 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
         DispatchQueue.main.async {
             self.isReachable = reachable
         }
+    }
+
+    // MARK: - Handle User Info (reliable delivery from phone)
+
+    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        guard let action = userInfo["action"] as? String else {
+            print("[PhoneConnect] Received userInfo with no action: \(userInfo.keys)")
+            return
+        }
+
+        print("[PhoneConnect] Received userInfo action: \(action)")
+
+        switch action {
+        case "dataChanged":
+            print("[PhoneConnect] Data changed via userInfo — flagging for reload")
+            DispatchQueue.main.async {
+                self.dataChangedFlag = true
+            }
+        default:
+            print("[PhoneConnect] Unknown userInfo action: \(action)")
+        }
+    }
+
+    // MARK: - Handle Application Context (fallback for when sendMessage fails)
+
+    func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+        print("[PhoneConnect] Received applicationContext: \(applicationContext.keys)")
+        checkPendingContextCommands(applicationContext)
+    }
+
+    /// Process pending workout commands that were queued via applicationContext
+    /// (sent by the phone when sendMessage fails because watch screen was off)
+    private func checkPendingContextCommands(_ context: [String: Any]) {
+        guard let action = context["pendingAction"] as? String else { return }
+        let timestamp = context["pendingActionTimestamp"] as? TimeInterval ?? 0
+
+        // Only process commands less than 10 minutes old
+        let age = Date().timeIntervalSince1970 - timestamp
+        guard age < 600 else {
+            print("[PhoneConnect] Ignoring stale pending action '\(action)' (age: \(Int(age))s)")
+            return
+        }
+
+        print("[PhoneConnect] Processing pending context action: \(action) (age: \(Int(age))s)")
+
+        switch action {
+        case "endWorkout":
+            guard let wm = workoutManager else {
+                print("[PhoneConnect] Pending endWorkout: WorkoutManager not available")
+                return
+            }
+            Task { @MainActor in
+                guard wm.isActive else {
+                    print("[PhoneConnect] Pending endWorkout: no active workout")
+                    return
+                }
+                do {
+                    let _ = try await wm.endWorkout()
+                    self.remoteWorkoutEnded = true
+                    print("[PhoneConnect] Pending endWorkout: workout ended successfully via context")
+                } catch {
+                    print("[PhoneConnect] Pending endWorkout failed: \(error.localizedDescription)")
+                }
+            }
+        case "cancelWorkout":
+            guard let wm = workoutManager else { return }
+            Task { @MainActor in
+                wm.cancelWorkout()
+                self.remoteWorkoutEnded = true
+                print("[PhoneConnect] Pending cancelWorkout: workout cancelled via context")
+            }
+        case "dataChanged":
+            print("[PhoneConnect] Pending dataChanged: flagging for reload")
+            DispatchQueue.main.async {
+                self.dataChangedFlag = true
+            }
+        default:
+            print("[PhoneConnect] Unknown pending action: \(action)")
+        }
+
+        // Clear the pending action after processing
+        clearPendingContextCommand()
+    }
+
+    /// Clear the pending action from applicationContext after it's been processed
+    private func clearPendingContextCommand() {
+        // Note: receivedApplicationContext is read-only on the watch side.
+        // The pending action has been processed; it won't re-trigger because
+        // didReceiveApplicationContext only fires on NEW context updates.
+        print("[PhoneConnect] Pending action processed and cleared")
     }
 
 
@@ -229,6 +325,12 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
             handleGetMetrics(replyHandler: replyHandler)
         case "cancelWorkout":
             handleCancelWorkout(replyHandler: replyHandler)
+        case "dataChanged":
+            print("[PhoneConnect] Phone notified data changed — flagging for reload")
+            DispatchQueue.main.async {
+                self.dataChangedFlag = true
+            }
+            replyHandler(["status": "ok"])
         default:
             replyHandler(["error": "Unknown action: \(action)"])
         }

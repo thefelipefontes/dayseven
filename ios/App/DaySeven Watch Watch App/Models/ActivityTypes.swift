@@ -80,7 +80,7 @@ struct ActivityTypes {
             name: "Stair Climbing",
             emoji: "\u{1FA9C}",
             sfSymbol: "figure.stair.stepper",
-            subtypes: ["StairMaster", "Stair Stepper", "Outdoor Stairs"],
+            subtypes: [],
             category: .cardio
         ),
         ActivityTypeDefinition(

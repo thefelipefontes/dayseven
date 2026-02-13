@@ -8,6 +8,7 @@ import FirebaseFirestore
 extension Notification.Name {
     static let watchWorkoutStarted = Notification.Name("watchWorkoutStarted")
     static let watchWorkoutEnded = Notification.Name("watchWorkoutEnded")
+    static let watchActivitySaved = Notification.Name("watchActivitySaved")
 }
 
 /// Manages WatchConnectivity on the iPhone side.
@@ -51,9 +52,33 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         let action = message["action"] as? String ?? "unknown"
         print("[WatchSession] Sending message: \(action), isReachable: \(session.isReachable), isPaired: \(session.isPaired), isWatchAppInstalled: \(session.isWatchAppInstalled)")
 
-        session.sendMessage(message, replyHandler: replyHandler) { error in
+        session.sendMessage(message, replyHandler: replyHandler) { [weak self] error in
             print("[WatchSession] Send failed: \(error.localizedDescription)")
+
+            // For critical workout commands, queue via applicationContext as fallback
+            // so the command is delivered when the watch wakes up
+            if action == "endWorkout" || action == "cancelWorkout" {
+                self?.queueCommandViaContext(action: action)
+            }
+
             errorHandler(error)
+        }
+    }
+
+    /// Queue a workout command via applicationContext so it gets delivered when the watch wakes up.
+    /// This is a fallback for when sendMessage fails (watch screen off / app in background).
+    func queueCommandViaContext(action: String) {
+        let session = WCSession.default
+        guard session.activationState == .activated else { return }
+
+        do {
+            var context = session.applicationContext
+            context["pendingAction"] = action
+            context["pendingActionTimestamp"] = Date().timeIntervalSince1970
+            try session.updateApplicationContext(context)
+            print("[WatchSession] Queued \(action) via applicationContext")
+        } catch {
+            print("[WatchSession] Failed to queue via applicationContext: \(error.localizedDescription)")
         }
     }
 
@@ -194,6 +219,10 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
                 let activityCount = (document?.data()?["activities"] as? [[String: Any]])?.count ?? 0
                 print("[WatchSession] activitySaved: cache refreshed, \(activityCount) activities")
                 replyHandler(["status": "refreshed", "count": activityCount])
+                // Notify JS layer so it can re-check celebrations / refresh UI
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .watchActivitySaved, object: nil)
+                }
             }
         }
     }

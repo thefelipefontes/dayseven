@@ -120,7 +120,7 @@ class FirestoreService {
 
     // MARK: - Batch Save (activity + streaks + records in one write)
 
-    func batchSave(uid: String, activities: [Activity], streaks: UserStreaks, recordUpdates: [String: Any]?) async throws {
+    func batchSave(uid: String, activities: [Activity], streaks: UserStreaks, recordUpdates: [String: Any]?, weekCelebrations: [String: Any]? = nil) async throws {
         var fields: [String: Any] = [
             "activities": encodeActivitiesArray(activities),
             "streaks": [
@@ -147,6 +147,17 @@ class FirestoreService {
             }
             fields["personalRecords"] = ["mapValue": ["fields": prFields]]
             fieldMask.append("personalRecords")
+        }
+
+        if let wc = weekCelebrations {
+            var wcFields: [String: Any] = [:]
+            if let week = wc["week"] as? String { wcFields["week"] = ["stringValue": week] }
+            if let lifts = wc["lifts"] as? Bool { wcFields["lifts"] = ["booleanValue": lifts] }
+            if let cardio = wc["cardio"] as? Bool { wcFields["cardio"] = ["booleanValue": cardio] }
+            if let recovery = wc["recovery"] as? Bool { wcFields["recovery"] = ["booleanValue": recovery] }
+            if let master = wc["master"] as? Bool { wcFields["master"] = ["booleanValue": master] }
+            fields["weekCelebrations"] = ["mapValue": ["fields": wcFields]]
+            fieldMask.append("weekCelebrations")
         }
 
         try await updateDocument("users/\(uid)", fields: fields, fieldMask: fieldMask)

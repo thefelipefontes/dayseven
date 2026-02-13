@@ -143,7 +143,29 @@ export async function getUserProfile(uid, forceRefresh = false) {
 
   try {
     let profile;
-    if (isNative) {
+    if (isNative && forceRefresh) {
+      // Bypass Capacitor Firestore SDK cache by calling REST API directly
+      // This ensures we get fresh data (e.g., weekCelebrations set by watch)
+      try {
+        const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+        const { token } = await FirebaseAuthentication.getIdToken();
+        const restUrl = `https://firestore.googleapis.com/v1/projects/dayseven-f1a89/databases/(default)/documents/users/${uid}`;
+        const response = await fetch(restUrl, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const json = await response.json();
+        const fields = json?.fields;
+        if (fields) {
+          profile = parseFirestoreFields(fields);
+        } else {
+          profile = null;
+        }
+      } catch (restErr) {
+        console.warn('[getUserProfile] REST failed, using Capacitor:', restErr);
+        const { snapshot } = await FirebaseFirestore.getDocument({ reference: path });
+        profile = snapshot?.data || null;
+      }
+    } else if (isNative) {
       const { snapshot } = await FirebaseFirestore.getDocument({ reference: path });
       profile = snapshot?.data || null;
     } else {
@@ -166,6 +188,31 @@ export async function getUserProfile(uid, forceRefresh = false) {
     }
     return null;
   }
+}
+
+// Parse Firestore REST API fields into plain JS objects
+function parseFirestoreFields(fields) {
+  const result = {};
+  for (const [key, val] of Object.entries(fields)) {
+    result[key] = parseFirestoreValue(val);
+  }
+  return result;
+}
+
+function parseFirestoreValue(val) {
+  if (val.stringValue !== undefined) return val.stringValue;
+  if (val.integerValue !== undefined) return parseInt(val.integerValue);
+  if (val.doubleValue !== undefined) return val.doubleValue;
+  if (val.booleanValue !== undefined) return val.booleanValue;
+  if (val.nullValue !== undefined) return null;
+  if (val.timestampValue !== undefined) return val.timestampValue;
+  if (val.arrayValue) {
+    return (val.arrayValue.values || []).map(v => parseFirestoreValue(v));
+  }
+  if (val.mapValue) {
+    return parseFirestoreFields(val.mapValue.fields || {});
+  }
+  return null;
 }
 
 export async function updateUserProfile(uid, data) {

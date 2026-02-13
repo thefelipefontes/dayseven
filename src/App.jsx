@@ -8623,7 +8623,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 </svg>
               </div>
               <div className="flex-1">
-                <div className="font-semibold text-lg" style={{ color: '#00FF94' }}>Start a Workout</div>
+                <div className="font-semibold text-lg" style={{ color: '#00FF94' }}>Start an Activity</div>
                 <div className="text-sm text-gray-400 mt-0.5">Live heart rate & calorie tracking with Apple Watch</div>
               </div>
               <div className="text-gray-500">→</div>

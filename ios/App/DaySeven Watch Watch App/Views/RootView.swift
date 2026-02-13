@@ -103,7 +103,7 @@ private struct PageDotsOverlay: View {
     var body: some View {
         GeometryReader { geo in
             if totalDots > 0 {
-                HStack(spacing: 6) {
+                HStack(spacing: 4) {
                     ForEach(0..<totalDots, id: \.self) { index in
                         Circle()
                             .fill(index == selectedIndex ? Color.white : Color.white.opacity(0.3))

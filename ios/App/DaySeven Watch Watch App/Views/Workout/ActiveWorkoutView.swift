@@ -12,6 +12,7 @@ struct ActiveWorkoutView: View {
     let strengthType: String?
     var preSelectedSubtype: String? = nil
     var preSelectedFocusArea: String? = nil
+    var preSelectedCountToward: String? = nil
     @Binding var navigationPath: NavigationPath
 
     @State private var isStarted = false
@@ -68,8 +69,13 @@ struct ActiveWorkoutView: View {
                     strengthType: strengthType,
                     initialSubtype: preSelectedSubtype,
                     initialFocusArea: preSelectedFocusArea,
+                    initialCountToward: preSelectedCountToward,
                     workoutMgr: workoutMgr,
-                    navigationPath: $navigationPath
+                    onDone: {
+                        // Clean up and pop back to activity selector
+                        appVM.phoneService.notifyPhoneWorkoutEnded()
+                        navigationPath = NavigationPath()
+                    }
                 )
             } else if isStarted {
                 activeWorkoutContent
@@ -304,7 +310,7 @@ struct ActiveWorkoutView: View {
         // If already showing summary, don't try to start again
         if showSummary || workoutResult != nil { return }
 
-        // If workout is already active (e.g. navigated away and back), just show it
+        // If workout is already active (e.g. started remotely from phone, or navigated away and back)
         if wm.isActive {
             isStarted = true
             return
@@ -317,7 +323,25 @@ struct ActiveWorkoutView: View {
             return
         }
 
-        let hkType = ActivityTypes.mapToHKActivityType(activityType, subtype: nil)
+        // If this view was navigated to from a remote workout request, the workout
+        // may still be starting (PhoneConnectivityService is awaiting wm.startWorkout).
+        // Wait briefly for it to become active rather than trying to start a duplicate.
+        if appVM.phoneService.remoteWorkoutRequest != nil {
+            for _ in 0..<20 {
+                try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                if wm.isActive {
+                    isStarted = true
+                    return
+                }
+            }
+            // If still not active after 2s, something went wrong — show error
+            if !wm.isActive {
+                errorMessage = "Could not start workout from phone"
+                return
+            }
+        }
+
+        let hkType = ActivityTypes.mapToHKActivityType(activityType, subtype: preSelectedSubtype)
         do {
             try await wm.startWorkout(activityType: hkType, isIndoor: isIndoor)
             isStarted = true

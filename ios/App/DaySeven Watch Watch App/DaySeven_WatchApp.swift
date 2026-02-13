@@ -42,8 +42,14 @@ class ExtensionDelegate: NSObject, WKExtensionDelegate {
                 WKInterfaceDevice.current().play(.failure)
                 return
             }
+            // Skip if workout was already started by the sendMessage path
             guard !wm.isActive else {
-                print("[ExtDelegate] Workout already active, skipping")
+                print("[ExtDelegate] Workout already active (started via sendMessage), skipping")
+                return
+            }
+            // Also skip if a remote workout request is already pending (sendMessage handler set it)
+            guard phoneService.remoteWorkoutRequest == nil else {
+                print("[ExtDelegate] remoteWorkoutRequest already pending, skipping")
                 return
             }
             do {
@@ -106,7 +112,7 @@ class ExtensionDelegate: NSObject, WKExtensionDelegate {
         case .handball: return "Handball"
         case .cricket: return "Cricket"
         case .mindAndBody: return "Mind and Body"
-        case .preparationAndRecovery: return "Preparation"
+        case .preparationAndRecovery: return "Cold Plunge"
         case .cooldown: return "Cooldown"
         default: return "Other"
         }

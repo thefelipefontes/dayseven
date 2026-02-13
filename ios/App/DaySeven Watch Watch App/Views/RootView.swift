@@ -93,7 +93,7 @@ struct RootView: View {
 // MARK: - Custom Page Dots
 
 /// Custom dot indicator that shows the correct number of dots for each state.
-/// - No workout: 2 dots (tab 0 = activity selector, tab 1 = dashboard)
+/// - No workout: 2 dots (tab 1 = activity selector, tab 2 = dashboard)
 /// - Active workout: 3 dots (tab 0 = controls, tab 1 = timer, tab 2 = dashboard)
 /// - Summary: 0 dots (hidden)
 private struct PageDotsOverlay: View {
@@ -138,6 +138,7 @@ struct MainTabView: View {
     /// How many dots to show
     private var dotCount: Int {
         if isShowingSummary { return 0 }
+        if appVM.workoutManager.lastResult != nil { return 0 }
         if isWorkoutActive { return 3 }
         return 2
     }
@@ -170,16 +171,15 @@ struct MainTabView: View {
             .tag(0)
 
             // Tab 1 — Start Activity / Active Workout Timer (the main content)
+            // NavigationStack pushes ActiveWorkoutView on top when workout starts.
             NavigationStack(path: $startPath) {
                 StartActivityView(path: $startPath)
             }
             .tag(1)
 
-            // Tab 2 — Dashboard
-            NavigationStack {
-                DashboardView()
-            }
-            .tag(2)
+            // Tab 2 — Dashboard (NO NavigationStack — uses sheet for "Today" detail)
+            DashboardView()
+                .tag(2)
         }
         .tabViewStyle(.page(indexDisplayMode: .never)) // Hide system dots, we draw our own
         .overlay {
@@ -263,6 +263,7 @@ struct MainTabView: View {
             if ended {
                 startPath = NavigationPath()
                 appVM.workoutManager.lastResult = nil
+                appVM.phoneService.remoteWorkoutRequest = nil
                 selectedTab = 1
                 appVM.phoneService.remoteWorkoutEnded = false
             }
@@ -278,6 +279,7 @@ struct MainTabView: View {
         .onChange(of: startPath) { _, newPath in
             if newPath.isEmpty && appVM.workoutManager.lastResult != nil && !appVM.workoutManager.isActive {
                 appVM.workoutManager.lastResult = nil
+                appVM.phoneService.remoteWorkoutRequest = nil
                 selectedTab = 1  // Back to activity selector
             }
         }

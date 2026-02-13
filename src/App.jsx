@@ -19368,13 +19368,14 @@ export default function DaySevenApp() {
           // Try to start workout on Apple Watch first (better metrics via HKWorkoutSession)
           // Always attempt sendMessage — it can wake the watch app even if isReachable is false
           try {
-            // Use the same HealthKit activity type mapping for both watch and phone paths
-            // (workoutData.type can be "Sports" for all sports — we need the specific sport name)
-            const activityType = getHealthKitActivityType(workoutData);
+            // Send the original activity type name to the watch (e.g. "Cold Plunge", "Running", "Sports").
+            // The watch has its own ActivityTypes.mapToHKActivityType() that handles the HK mapping.
+            // For Sports, the specific sport is sent as subtype (e.g. "Basketball").
+            const activityType = workoutData.type;
             const strengthType = workoutData.strengthType || null;
             const subtype = workoutData.subtype || null;
             const focusArea = workoutData.focusArea || null;
-            console.log('[StartWorkout] Sending to watch:', activityType, '(raw type:', workoutData.type, ', subtype:', subtype, ')');
+            console.log('[StartWorkout] Sending to watch:', activityType, ', subtype:', subtype);
             await startWatchWorkout(activityType, strengthType, subtype, focusArea);
             console.log('[StartWorkout] Watch workout started via sendMessage');
             setActiveWorkout({ ...workoutData, source: 'watch', startTime: new Date().toISOString() });

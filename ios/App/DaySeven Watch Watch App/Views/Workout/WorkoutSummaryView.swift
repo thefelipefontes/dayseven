@@ -10,16 +10,25 @@ struct WorkoutSummaryView: View {
     let strengthType: String?
     var initialSubtype: String? = nil
     var initialFocusArea: String? = nil
+    var initialCountToward: String? = nil
     @ObservedObject var workoutMgr: WorkoutManager
-    @Binding var navigationPath: NavigationPath
+
+    /// Callback when user taps "Done" or "Discard" — used when shown as overlay
+    var onDone: (() -> Void)? = nil
 
     // Post-workout detail selections
     @State private var selectedSubtype: String? = nil
     @State private var selectedFocusArea: String? = nil
+    @State private var selectedCountToward: String? = nil
 
     @State private var isSaved = false
     @State private var showDiscardAlert = false
     @State private var savedActivityId: ActivityID?
+
+    // Sheet-based pickers (since we're in an overlay, not a NavigationStack)
+    @State private var showSubtypePicker = false
+    @State private var showFocusAreaPicker = false
+    @State private var showCountTowardPicker = false
 
     // Look up the activity type definition for subtypes
     private var activityTypeDef: ActivityTypeDefinition? {
@@ -117,8 +126,9 @@ struct WorkoutSummaryView: View {
 
                 // Done Button — workout is already auto-saved
                 Button {
-                    appVM.phoneService.notifyPhoneWorkoutEnded()
-                    navigationPath = NavigationPath()
+                    if let onDone = onDone {
+                        onDone()
+                    }
                 } label: {
                     Text("Done")
                         .font(.system(size: 14, weight: .bold))
@@ -147,6 +157,7 @@ struct WorkoutSummaryView: View {
         .onAppear {
             if selectedSubtype == nil { selectedSubtype = initialSubtype }
             if selectedFocusArea == nil { selectedFocusArea = initialFocusArea }
+            if selectedCountToward == nil { selectedCountToward = initialCountToward }
             // Auto-save immediately (like Apple Fitness)
             if !isSaved {
                 Task { await autoSaveWorkout() }
@@ -160,13 +171,36 @@ struct WorkoutSummaryView: View {
                         await appVM.deleteActivity(withId: activityId)
                     }
                     workoutMgr.cancelWorkout()
-                    appVM.phoneService.notifyPhoneWorkoutEnded()
-                    navigationPath = NavigationPath()
+                    if let onDone = onDone {
+                        appVM.phoneService.notifyPhoneWorkoutEnded()
+                        onDone()
+                    }
                 }
             }
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("This \(activityNoun.lowercased()) will be permanently deleted.")
+        }
+        // Sheet-based pickers (work in overlay mode without NavigationStack)
+        .sheet(isPresented: $showSubtypePicker) {
+            if let subtypes = activityTypeDef?.subtypes {
+                NavigationStack {
+                    PickerListView(title: subtypePickerTitle, value: selectedSubtype, options: subtypes, selection: $selectedSubtype)
+                }
+            }
+        }
+        .sheet(isPresented: $showFocusAreaPicker) {
+            NavigationStack {
+                PickerListView(title: "Focus Area", value: selectedFocusArea, options: ActivityTypes.strengthFocusAreas, selection: $selectedFocusArea)
+            }
+        }
+        .sheet(isPresented: $showCountTowardPicker) {
+            NavigationStack {
+                PickerListView(title: "Counts Toward", value: selectedCountToward?.capitalized, options: ActivityTypes.hybridCountTowardOptions, selection: Binding(
+                    get: { selectedCountToward?.capitalized },
+                    set: { selectedCountToward = $0?.lowercased() }
+                ))
+            }
         }
     }
 
@@ -254,37 +288,48 @@ struct WorkoutSummaryView: View {
 
     // MARK: - Detail Pickers
 
+    private var isHybridActivity: Bool {
+        activityTypeDef?.isHybrid ?? false
+    }
+
     private var detailPickersSection: some View {
         VStack(spacing: 6) {
-            // Subtype picker (Running → Easy/Tempo/etc, Yoga → Vinyasa/Power/etc)
-            if hasSubtypes, let subtypes = activityTypeDef?.subtypes {
-                tappablePickerButton(
+            // Counts toward picker (Yoga/Pilates hybrid)
+            if isHybridActivity {
+                sheetPickerButton(
+                    title: "Counts Toward",
+                    value: selectedCountToward?.capitalized,
+                    showSheet: $showCountTowardPicker
+                )
+            }
+
+            // Subtype picker (Running → Easy/Tempo/etc)
+            if hasSubtypes {
+                sheetPickerButton(
                     title: subtypePickerTitle,
                     value: selectedSubtype,
-                    options: subtypes,
-                    selection: $selectedSubtype
+                    showSheet: $showSubtypePicker
                 )
             }
 
             // Focus area picker (Strength only)
             if hasStrength {
-                tappablePickerButton(
+                sheetPickerButton(
                     title: "Focus Area",
                     value: selectedFocusArea,
-                    options: ActivityTypes.strengthFocusAreas,
-                    selection: $selectedFocusArea
+                    showSheet: $showFocusAreaPicker
                 )
             }
         }
     }
 
-    private func tappablePickerButton(title: String, value: String?, options: [String], selection: Binding<String?>) -> some View {
-        NavigationLink {
-            PickerListView(title: title, value: value, options: options, selection: selection)
+    /// A picker button that opens a sheet (works in overlay mode without NavigationStack)
+    private func sheetPickerButton(title: String, value: String?, showSheet: Binding<Bool>) -> some View {
+        Button {
+            showSheet.wrappedValue = true
         } label: {
             VStack(spacing: 2) {
                 if let value = value {
-                    // Show the selected value prominently
                     Text(value)
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(.green)
@@ -292,7 +337,6 @@ struct WorkoutSummaryView: View {
                         .font(.system(size: 9))
                         .foregroundColor(.gray)
                 } else {
-                    // No selection — show title as tappable prompt
                     Text(title)
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(.green)
@@ -309,12 +353,10 @@ struct WorkoutSummaryView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Saved Confirmation
-
     // MARK: - Auto-Save Workout (saves immediately like Apple Fitness)
 
     private func autoSaveWorkout() async {
-        let countToward = ActivityTypes.getDefaultCountToward(type: activityType, subtype: selectedSubtype)
+        let countToward = ActivityTypes.getDefaultCountToward(type: activityType, subtype: selectedSubtype, countToward: selectedCountToward)
 
         let activity = Activity.create(
             type: activityType,

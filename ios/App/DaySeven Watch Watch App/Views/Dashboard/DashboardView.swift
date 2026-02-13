@@ -6,40 +6,49 @@ import FirebaseAuth
 struct DashboardView: View {
     @EnvironmentObject var appVM: AppViewModel
 
+    @State private var showDailyDetail = false
+
     var body: some View {
-        ScrollView {
-            VStack(spacing: 10) {
-                if appVM.isLoading {
-                    ProgressView()
-                        .tint(.green)
-                        .padding(.top, 40)
-                } else {
-                    // Master Streak
-                    streakSection
+        GeometryReader { geo in
+            ScrollView {
+                VStack(spacing: 10) {
+                    // Title
+                    Text("DaySeven")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(.gray)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
-                    // Progress Rings
-                    ringsSection
+                    if appVM.isLoading {
+                        ProgressView()
+                            .tint(.green)
+                            .padding(.top, 40)
+                    } else {
+                        // Master Streak
+                        streakSection
 
-                    // Quick Health Stats
-                    healthStatsSection
+                        // Progress Rings
+                        ringsSection
 
-                    // Daily Details Link
-                    todayButton
+                        // Quick Health Stats
+                        healthStatsSection
 
-                    Spacer().frame(height: 8)
+                        // Daily Details Link
+                        todayButton
 
-                    // Account section
-                    accountSection
+                        Spacer().frame(height: 8)
+
+                        // Account section
+                        accountSection
+                    }
                 }
+                .padding(.horizontal, 4)
+                .frame(minHeight: geo.size.height, alignment: .center)
+                .offset(y: -10)
             }
-            .padding(.horizontal, 4)
+            .scrollBounceBehavior(.basedOnSize)
         }
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Text("DaySeven")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(.gray)
-            }
+        .sheet(isPresented: $showDailyDetail) {
+            DailyDetailView()
         }
     }
 
@@ -154,8 +163,8 @@ struct DashboardView: View {
     // MARK: - Today Button
 
     private var todayButton: some View {
-        NavigationLink {
-            DailyDetailView()
+        Button {
+            showDailyDetail = true
         } label: {
             Text("Today")
                 .font(.system(size: 12, weight: .medium))

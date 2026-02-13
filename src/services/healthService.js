@@ -577,8 +577,8 @@ export function getHealthKitActivityType(activity) {
     'Cycle': 'cycle',
     'Yoga': 'yoga',
     'Pilates': 'pilates',
-    'Cold Plunge': 'other',
-    'Sauna': 'other',
+    'Cold Plunge': 'Cold Plunge',
+    'Sauna': 'Sauna',
   };
 
   return typeMap[type] || 'other';

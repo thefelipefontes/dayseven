@@ -103,7 +103,7 @@ struct ActivityTypes {
             name: "Yoga",
             emoji: "\u{1F9D8}",
             sfSymbol: "figure.yoga",
-            subtypes: ["Vinyasa", "Power", "Hot", "Yin", "Restorative"],
+            subtypes: [],
             category: .recovery,
             isHybrid: true
         ),
@@ -111,7 +111,7 @@ struct ActivityTypes {
             name: "Pilates",
             emoji: "\u{1F938}",
             sfSymbol: "figure.pilates",
-            subtypes: ["Mat", "Reformer", "Tower", "Chair"],
+            subtypes: [],
             category: .recovery,
             isHybrid: true
         ),
@@ -163,17 +163,19 @@ struct ActivityTypes {
 
     // MARK: - Default countToward for hybrid activities
 
-    static func getDefaultCountToward(type: String, subtype: String?) -> String? {
+    static func getDefaultCountToward(type: String, subtype: String?, countToward: String? = nil) -> String? {
+        // If an explicit countToward was provided (e.g. from hybrid picker), use it
+        if let ct = countToward, !ct.isEmpty { return ct }
         switch type {
-        case "Yoga":
-            if ["Power", "Hot", "Vinyasa"].contains(subtype ?? "") { return "cardio" }
-            return "recovery"
-        case "Pilates":
+        case "Yoga", "Pilates":
             return "recovery"
         default:
             return nil
         }
     }
+
+    /// The hybrid categories that Yoga/Pilates can count toward
+    static let hybridCountTowardOptions = ["Recovery", "Cardio", "Strength"]
 
     // MARK: - HKWorkoutActivityType Mapping (matches HealthKitWriterPlugin.swift line 795)
 

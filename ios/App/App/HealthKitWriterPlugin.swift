@@ -879,16 +879,15 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         WatchSessionManager.shared.sendToWatch(
             message: message,
-            replyHandler: { [weak self] reply in
+            replyHandler: { reply in
                 DispatchQueue.main.async {
                     if let error = reply["error"] as? String {
                         call.reject(error)
                     } else {
                         call.resolve(reply as? [String: Any] ?? ["success": true])
-                        // Also fire startWatchApp to bring the watch app to the foreground
-                        // (sendMessage starts the workout, but doesn't bring the app to the front
-                        // if the watch is on the lock screen / clock face)
-                        self?.attemptWatchAppLaunch(activityType: activityType, subtype: subtype)
+                        // sendMessage already started the workout on the watch —
+                        // do NOT also call startWatchApp, as that causes a race condition
+                        // where handle(_ workoutConfiguration:) tries to start a second session.
                     }
                 }
             },
@@ -1154,6 +1153,10 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             return .flexibility
         case "mind and body":
             return .mindAndBody
+
+        // Recovery
+        case "cold plunge", "sauna":
+            return .preparationAndRecovery
 
         // Sports
         case "basketball":

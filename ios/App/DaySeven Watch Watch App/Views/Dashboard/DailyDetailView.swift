@@ -14,20 +14,22 @@ struct DailyDetailView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 10) {
-                // Distance (inline, no card)
-                distanceHeader
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 10) {
+                    // Distance (inline, no card)
+                    distanceHeader
 
-                // Health Stats
-                healthStatsSection
+                    // Health Stats
+                    healthStatsSection
 
-                // Today's Workouts
-                workoutsSection
+                    // Today's Workouts
+                    workoutsSection
+                }
+                .padding(.horizontal, 4)
             }
-            .padding(.horizontal, 4)
+            .navigationTitle("Today")
         }
-        .navigationTitle("Today")
     }
 
     // MARK: - Distance Header

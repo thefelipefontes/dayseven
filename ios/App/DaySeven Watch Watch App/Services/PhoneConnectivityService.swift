@@ -263,7 +263,7 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
                 }
                 do {
                     let _ = try await wm.endWorkout()
-                    self.remoteWorkoutEnded = true
+                    // Don't set remoteWorkoutEnded — let ActiveWorkoutView show summary naturally
                     print("[PhoneConnect] Pending endWorkout: workout ended successfully via context")
                 } catch {
                     print("[PhoneConnect] Pending endWorkout failed: \(error.localizedDescription)")
@@ -366,7 +366,7 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
                 return
             }
 
-            let hkType = ActivityTypes.mapToHKActivityType(activityTypeString, subtype: nil)
+            let hkType = ActivityTypes.mapToHKActivityType(activityTypeString, subtype: subtype)
             print("[PhoneConnect] Mapped to HK type: \(hkType.rawValue)")
 
             do {
@@ -402,8 +402,10 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
         Task { @MainActor in
             do {
                 let result = try await wm.endWorkout()
-                // Signal the watch UI to navigate back to the start screen
-                self.remoteWorkoutEnded = true
+                // Do NOT set remoteWorkoutEnded here — the watch ActiveWorkoutView
+                // will detect lastResult and show the summary screen naturally.
+                // Setting remoteWorkoutEnded would clear the nav path and wipe
+                // lastResult, preventing the summary from appearing.
                 replyHandler([
                     "success": true,
                     "workoutUUID": result.workoutUUID,

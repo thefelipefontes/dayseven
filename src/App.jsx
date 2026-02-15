@@ -4231,17 +4231,31 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange }) => {
   const analyzeWeeklyActivities = (activities) => {
     if (!activities || activities.length === 0) return null;
 
-    // Define workout vs recovery types
-    const workoutTypes = ['Strength Training', 'Running', 'Cycle', 'Walking', 'Sports', 'Other'];
-    const recoveryTypes = ['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'];
+    // Determine effective category respecting countToward
+    const getEffectiveCategory = (a) => {
+      if (a.countToward) {
+        if (a.countToward === 'strength') return 'lifting';
+        return a.countToward;
+      }
+      if (a.customActivityCategory) {
+        if (a.customActivityCategory === 'strength') return 'lifting';
+        return a.customActivityCategory;
+      }
+      if (a.type === 'Strength Training') return 'lifting';
+      if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(a.type)) return 'cardio';
+      if (a.type === 'Walking') return 'other';
+      if (['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
+      return 'other';
+    };
 
-    // Count workouts (strength + cardio)
+    // Count workouts (strength + cardio) vs recovery using effective category
     const workoutCounts = {};
     const recoveryCounts = {};
     activities.forEach(a => {
-      if (workoutTypes.includes(a.type)) {
+      const cat = getEffectiveCategory(a);
+      if (cat === 'lifting' || cat === 'cardio') {
         workoutCounts[a.type] = (workoutCounts[a.type] || 0) + 1;
-      } else if (recoveryTypes.includes(a.type)) {
+      } else if (cat === 'recovery') {
         recoveryCounts[a.type] = (recoveryCounts[a.type] || 0) + 1;
       }
     });
@@ -4286,7 +4300,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange }) => {
       totalMinutes,
       totalCalories,
       totalDistance,
-      totalWorkouts: activities.length
+      totalWorkouts: activities.filter(a => { const cat = getEffectiveCategory(a); return cat === 'lifting' || cat === 'cardio'; }).length
     };
   };
 
@@ -5672,19 +5686,23 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
 
   if (!isOpen && !isClosing) return null;
   
-  const lifts = weekData?.activities?.filter(a =>
-    a.type === 'Strength Training' ||
-    (a.type === 'Other' && (a.customActivityCategory === 'strength' || a.countToward === 'strength'))
-  ) || [];
-  const cardioActivities = weekData?.activities?.filter(a =>
-    a.type === 'Running' || a.type === 'Cycle' || a.type === 'Sports' || a.type === 'Stair Climbing' || a.type === 'Elliptical' ||
-    (a.type === 'Walking' && a.countToward === 'cardio') ||
-    (a.type === 'Other' && (a.customActivityCategory === 'cardio' || a.countToward === 'cardio'))
-  ) || [];
-  const recoveryActivities = weekData?.activities?.filter(a =>
-    a.type === 'Cold Plunge' || a.type === 'Sauna' || a.type === 'Yoga' ||
-    (a.type === 'Other' && (a.customActivityCategory === 'recovery' || a.countToward === 'recovery'))
-  ) || [];
+  const getWeekActivityCategory = (a) => {
+    if (a.countToward) {
+      if (a.countToward === 'strength') return 'lifting';
+      return a.countToward;
+    }
+    if (a.customActivityCategory) {
+      if (a.customActivityCategory === 'strength') return 'lifting';
+      return a.customActivityCategory;
+    }
+    if (a.type === 'Strength Training') return 'lifting';
+    if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(a.type)) return 'cardio';
+    if (['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
+    return 'other';
+  };
+  const lifts = weekData?.activities?.filter(a => getWeekActivityCategory(a) === 'lifting') || [];
+  const cardioActivities = weekData?.activities?.filter(a => getWeekActivityCategory(a) === 'cardio') || [];
+  const recoveryActivities = weekData?.activities?.filter(a => getWeekActivityCategory(a) === 'recovery') || [];
   const nonCardioWalks = weekData?.activities?.filter(a =>
     a.type === 'Walking' && !a.countToward
   ) || [];
@@ -6117,21 +6135,26 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
   const monthActivities = monthData?.activities || [];
   const monthDates = monthData?.dates || [];
 
+  // Helper to determine effective category respecting countToward
+  const getMonthActivityCategory = (a) => {
+    if (a.countToward) {
+      if (a.countToward === 'strength') return 'lifting';
+      return a.countToward;
+    }
+    if (a.customActivityCategory) {
+      if (a.customActivityCategory === 'strength') return 'lifting';
+      return a.customActivityCategory;
+    }
+    if (a.type === 'Strength Training') return 'lifting';
+    if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(a.type)) return 'cardio';
+    if (['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
+    return 'other';
+  };
+
   // Session counts
-  const liftsCount = monthActivities.filter(a =>
-    a.type === 'Strength Training' ||
-    (a.type === 'Other' && (a.customActivityCategory === 'strength' || a.countToward === 'strength'))
-  ).length;
-
-  const cardioCount = monthActivities.filter(a =>
-    cardioTypes.includes(a.type) ||
-    (a.type === 'Other' && (a.customActivityCategory === 'cardio' || a.countToward === 'cardio'))
-  ).length;
-
-  const recoveryCount = monthActivities.filter(a =>
-    recoveryTypes.includes(a.type) ||
-    (a.type === 'Other' && (a.customActivityCategory === 'recovery' || a.countToward === 'recovery'))
-  ).length;
+  const liftsCount = monthActivities.filter(a => getMonthActivityCategory(a) === 'lifting').length;
+  const cardioCount = monthActivities.filter(a => getMonthActivityCategory(a) === 'cardio').length;
+  const recoveryCount = monthActivities.filter(a => getMonthActivityCategory(a) === 'recovery').length;
 
   // Calculate totals
   const totalCalories = monthData?.calories || 0;
@@ -6163,20 +6186,9 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
     Object.values(weekMap).forEach(weekDates => {
       const weekActivities = monthActivities.filter(a => weekDates.includes(a.date));
 
-      const weekLifts = weekActivities.filter(a =>
-        a.type === 'Strength Training' ||
-        (a.type === 'Other' && (a.customActivityCategory === 'strength' || a.countToward === 'strength'))
-      ).length;
-
-      const weekCardio = weekActivities.filter(a =>
-        cardioTypes.includes(a.type) ||
-        (a.type === 'Other' && (a.customActivityCategory === 'cardio' || a.countToward === 'cardio'))
-      ).length;
-
-      const weekRecovery = weekActivities.filter(a =>
-        recoveryTypes.includes(a.type) ||
-        (a.type === 'Other' && (a.customActivityCategory === 'recovery' || a.countToward === 'recovery'))
-      ).length;
+      const weekLifts = weekActivities.filter(a => getMonthActivityCategory(a) === 'lifting').length;
+      const weekCardio = weekActivities.filter(a => getMonthActivityCategory(a) === 'cardio').length;
+      const weekRecovery = weekActivities.filter(a => getMonthActivityCategory(a) === 'recovery').length;
 
       const liftMet = weekLifts >= goals.liftsPerWeek;
       const cardioMet = weekCardio >= goals.cardioPerWeek;
@@ -12012,19 +12024,9 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
         const dateStr = selectedPoint.date;
         // Get full activity data from activities array
         const fullDayActivities = activities.filter(a => a.date === dateStr);
-        const lifts = fullDayActivities.filter(a =>
-          a.type === 'Strength Training' ||
-          (a.type === 'Other' && (a.customActivityCategory === 'strength' || a.countToward === 'strength'))
-        );
-        const cardioActivities = fullDayActivities.filter(a =>
-          a.type === 'Running' || a.type === 'Cycle' || a.type === 'Sports' || a.type === 'Stair Climbing' || a.type === 'Elliptical' ||
-          (a.type === 'Walking' && a.countToward === 'cardio') ||
-          (a.type === 'Other' && (a.customActivityCategory === 'cardio' || a.countToward === 'cardio'))
-        );
-        const recoveryActivities = fullDayActivities.filter(a =>
-          a.type === 'Cold Plunge' || a.type === 'Sauna' || a.type === 'Yoga' || a.type === 'Pilates' ||
-          (a.type === 'Other' && (a.customActivityCategory === 'recovery' || a.countToward === 'recovery'))
-        );
+        const lifts = fullDayActivities.filter(a => getActivityCategory(a) === 'lifting');
+        const cardioActivities = fullDayActivities.filter(a => getActivityCategory(a) === 'cardio');
+        const recoveryActivities = fullDayActivities.filter(a => getActivityCategory(a) === 'recovery');
         const nonCardioWalks = fullDayActivities.filter(a =>
           a.type === 'Walking' && !a.countToward
         );
@@ -13155,19 +13157,9 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
       {(showDayModal || dayModalClosing) && calendarData[selectedDate] && (() => {
         // Get full activity data from activities array (has IDs and all stats)
         const fullDayActivities = activities.filter(a => a.date === selectedDate);
-        const lifts = fullDayActivities.filter(a =>
-          a.type === 'Strength Training' ||
-          (a.type === 'Other' && (a.customActivityCategory === 'strength' || a.countToward === 'strength'))
-        );
-        const cardioActivities = fullDayActivities.filter(a =>
-          a.type === 'Running' || a.type === 'Cycle' || a.type === 'Sports' || a.type === 'Stair Climbing' || a.type === 'Elliptical' ||
-          (a.type === 'Walking' && a.countToward === 'cardio') ||
-          (a.type === 'Other' && (a.customActivityCategory === 'cardio' || a.countToward === 'cardio'))
-        );
-        const recoveryActivities = fullDayActivities.filter(a =>
-          a.type === 'Cold Plunge' || a.type === 'Sauna' || a.type === 'Yoga' || a.type === 'Pilates' ||
-          (a.type === 'Other' && (a.customActivityCategory === 'recovery' || a.countToward === 'recovery'))
-        );
+        const lifts = fullDayActivities.filter(a => getActivityCategory(a) === 'lifting');
+        const cardioActivities = fullDayActivities.filter(a => getActivityCategory(a) === 'cardio');
+        const recoveryActivities = fullDayActivities.filter(a => getActivityCategory(a) === 'recovery');
         const nonCardioWalks = fullDayActivities.filter(a =>
           a.type === 'Walking' && !a.countToward
         );
@@ -13331,7 +13323,9 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                           <div className="flex justify-between items-start mb-2">
                             <div className="font-medium text-sm flex items-center gap-1">
                               {activity.type === 'Other' && activity.customEmoji && <span>{activity.customEmoji}</span>}
-                              {activity.type === 'Other' ? (activity.subtype || activity.type) : (activity.strengthType && activity.focusArea ? `${activity.strengthType} • ${activity.focusArea}` : activity.subtype || 'Strength Training')}
+                              {activity.type === 'Strength Training'
+                                ? (activity.subtype ? `${activity.subtype}${activity.focusArea ? ` • ${activity.focusArea}` : ''}` : (activity.focusArea ? `Strength Training • ${activity.focusArea}` : 'Strength Training'))
+                                : (activity.subtype ? `${activity.type} • ${activity.subtype}` : activity.type)}
                             </div>
                             <span className="text-gray-500 text-xs">›</span>
                           </div>
@@ -13377,7 +13371,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                           <div className="flex justify-between items-start mb-2">
                             <div className="font-medium text-sm flex items-center gap-1">
                               {activity.type === 'Other' && activity.customEmoji && <span>{activity.customEmoji}</span>}
-                              {activity.subtype || activity.type}
+                              {activity.type === 'Other' ? (activity.subtype || activity.type) : (activity.subtype ? `${activity.type} • ${activity.subtype}` : activity.type)}
                             </div>
                             <span className="text-gray-500 text-xs">›</span>
                           </div>
@@ -14866,9 +14860,9 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
             return 0;
           });
 
-          const lifts = weekActivities.filter(a => a.type === 'Strength Training');
-          const cardioArr = weekActivities.filter(a => ['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(a.type));
-          const recoveryArr = weekActivities.filter(a => ['Cold Plunge', 'Sauna', 'Yoga'].includes(a.type));
+          const lifts = weekActivities.filter(a => getActivityCategory(a) === 'lifting');
+          const cardioArr = weekActivities.filter(a => getActivityCategory(a) === 'cardio');
+          const recoveryArr = weekActivities.filter(a => getActivityCategory(a) === 'recovery');
           const miles = weekActivities.filter(a => a.type === 'Running' || a.type === 'Cycle' || a.type === 'Walking').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
 
           // Calculate calories: HealthKit active calories + manually logged (not from/linked to HealthKit)
@@ -19578,6 +19572,22 @@ export default function DaySevenApp() {
           const weekRange = getWeekRange();
           const weekActivitiesForShare = activities.filter(a => a.date >= weekRange.startStr && a.date <= weekRange.endStr);
 
+          // Helper to determine effective category respecting countToward
+          const getShareCategory = (a) => {
+            if (a.countToward) {
+              if (a.countToward === 'strength') return 'lifting';
+              return a.countToward;
+            }
+            if (a.customActivityCategory) {
+              if (a.customActivityCategory === 'strength') return 'lifting';
+              return a.customActivityCategory;
+            }
+            if (a.type === 'Strength Training') return 'lifting';
+            if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(a.type)) return 'cardio';
+            if (['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
+            return 'other';
+          };
+
           // Calculate historical streaks at the time of the selected week
           const calculateHistoricalStreaks = () => {
             const goals = userData.goals;
@@ -19602,9 +19612,10 @@ export default function DaySevenApp() {
                 weekMap[weekKey] = { lifts: 0, cardio: 0, recovery: 0 };
               }
 
-              if (a.type === 'Strength Training') weekMap[weekKey].lifts++;
-              else if (cardioTypes.includes(a.type)) weekMap[weekKey].cardio++;
-              else if (recoveryTypes.includes(a.type)) weekMap[weekKey].recovery++;
+              const cat = getShareCategory(a);
+              if (cat === 'lifting') weekMap[weekKey].lifts++;
+              else if (cat === 'cardio') weekMap[weekKey].cardio++;
+              else if (cat === 'recovery') weekMap[weekKey].recovery++;
             });
 
             // Get sorted week keys (newest first)
@@ -19689,8 +19700,6 @@ export default function DaySevenApp() {
           last4Weeks: (() => {
             const weeks = [];
             const goals = userData.goals;
-            const cardioTypes = ['Running', 'Cycle', 'Sports', 'Walking', 'Hiking', 'Swimming', 'Rowing', 'Stair Climbing', 'Elliptical', 'HIIT'];
-            const recoveryTypes = ['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'];
 
             // Use the selected week as reference instead of today
             const selectedWeekStart = new Date(weekRange.startStr + 'T12:00:00');
@@ -19704,9 +19713,9 @@ export default function DaySevenApp() {
               const weekEndStr = `${weekEnd.getFullYear()}-${String(weekEnd.getMonth() + 1).padStart(2, '0')}-${String(weekEnd.getDate()).padStart(2, '0')}`;
 
               const weekActivities = activities.filter(a => a.date >= weekStartStr && a.date <= weekEndStr);
-              const lifts = weekActivities.filter(a => a.type === 'Strength Training').length;
-              const cardio = weekActivities.filter(a => cardioTypes.includes(a.type)).length;
-              const recovery = weekActivities.filter(a => recoveryTypes.includes(a.type)).length;
+              const lifts = weekActivities.filter(a => getShareCategory(a) === 'lifting').length;
+              const cardio = weekActivities.filter(a => getShareCategory(a) === 'cardio').length;
+              const recovery = weekActivities.filter(a => getShareCategory(a) === 'recovery').length;
 
               const won = lifts >= goals.liftsPerWeek && cardio >= goals.cardioPerWeek && recovery >= goals.recoveryPerWeek;
               weeks.push(won);
@@ -19716,8 +19725,6 @@ export default function DaySevenApp() {
           // Total weeks won (up to and including selected week)
           weeksWon: (() => {
             const goals = userData.goals;
-            const cardioTypes = ['Running', 'Cycle', 'Sports', 'Walking', 'Hiking', 'Swimming', 'Rowing', 'Stair Climbing', 'Elliptical', 'HIIT'];
-            const recoveryTypes = ['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'];
             const weekMap = {};
 
             // Only count activities up to the selected week
@@ -19734,9 +19741,10 @@ export default function DaySevenApp() {
                 weekMap[weekKey] = { lifts: 0, cardio: 0, recovery: 0 };
               }
 
-              if (a.type === 'Strength Training') weekMap[weekKey].lifts++;
-              else if (cardioTypes.includes(a.type)) weekMap[weekKey].cardio++;
-              else if (recoveryTypes.includes(a.type)) weekMap[weekKey].recovery++;
+              const cat = getShareCategory(a);
+              if (cat === 'lifting') weekMap[weekKey].lifts++;
+              else if (cat === 'cardio') weekMap[weekKey].cardio++;
+              else if (cat === 'recovery') weekMap[weekKey].recovery++;
             });
 
             // Count weeks where all goals were met
@@ -19747,9 +19755,9 @@ export default function DaySevenApp() {
             ).length;
           })(),
           // Weekly stats - use selected week or current week
-          weeklyLifts: weekActivitiesForShare.filter(a => a.type === 'Strength Training').length,
-          weeklyCardio: weekActivitiesForShare.filter(a => ['Running', 'Cycle', 'Sports', 'Walking', 'Hiking', 'Swimming', 'Rowing', 'Stair Climbing', 'Elliptical', 'HIIT'].includes(a.type)).length,
-          weeklyRecovery: weekActivitiesForShare.filter(a => ['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(a.type)).length,
+          weeklyLifts: weekActivitiesForShare.filter(a => getShareCategory(a) === 'lifting').length,
+          weeklyCardio: weekActivitiesForShare.filter(a => getShareCategory(a) === 'cardio').length,
+          weeklyRecovery: weekActivitiesForShare.filter(a => getShareCategory(a) === 'recovery').length,
           liftsGoal: userData.goals.liftsPerWeek,
           cardioGoal: userData.goals.cardioPerWeek,
           recoveryGoal: userData.goals.recoveryPerWeek,
@@ -19796,9 +19804,9 @@ export default function DaySevenApp() {
             const monthlyActivities = activities.filter(a => a.date >= monthStart && a.date <= monthEnd);
 
             // Calculate monthly session counts
-            const monthlyLifts = monthlyActivities.filter(a => a.type === 'Strength Training').length;
-            const monthlyCardio = monthlyActivities.filter(a => cardioTypes.includes(a.type)).length;
-            const monthlyRecovery = monthlyActivities.filter(a => recoveryTypes.includes(a.type)).length;
+            const monthlyLifts = monthlyActivities.filter(a => getShareCategory(a) === 'lifting').length;
+            const monthlyCardio = monthlyActivities.filter(a => getShareCategory(a) === 'cardio').length;
+            const monthlyRecovery = monthlyActivities.filter(a => getShareCategory(a) === 'recovery').length;
 
             // Calculate days active (unique days with activities)
             const monthlyDaysActive = new Set(monthlyActivities.map(a => a.date)).size;
@@ -19854,9 +19862,9 @@ export default function DaySevenApp() {
 
             weeksInMonth.forEach(week => {
               const weekActivities = activities.filter(a => a.date >= week.startStr && a.date <= week.endStr);
-              const lifts = weekActivities.filter(a => a.type === 'Strength Training').length;
-              const cardio = weekActivities.filter(a => cardioTypes.includes(a.type)).length;
-              const recovery = weekActivities.filter(a => recoveryTypes.includes(a.type)).length;
+              const lifts = weekActivities.filter(a => getShareCategory(a) === 'lifting').length;
+              const cardio = weekActivities.filter(a => getShareCategory(a) === 'cardio').length;
+              const recovery = weekActivities.filter(a => getShareCategory(a) === 'recovery').length;
 
               if (lifts >= goals.liftsPerWeek) liftWeeksHit++;
               if (cardio >= goals.cardioPerWeek) cardioWeeksHit++;

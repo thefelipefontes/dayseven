@@ -556,7 +556,7 @@ const MemoizedActivityCard = React.memo(({
   reactionEmojis,
   activityIcons
 }) => {
-  const { friend, type, duration, calories, distance, date, id, customEmoji, sportEmoji } = activity;
+  const { friend, type, duration, calories, distance, date, time, id, customEmoji, sportEmoji } = activity;
   const [showFullscreenPhoto, setShowFullscreenPhoto] = useState(false);
   const [openCommentId, setOpenCommentId] = useState(null);
   const [replyingTo, setReplyingTo] = useState(null); // { commentId, commenterName }
@@ -607,7 +607,7 @@ const MemoizedActivityCard = React.memo(({
             <p className="text-gray-500 text-xs truncate">@{friend.username}</p>
           </TouchButton>
         </div>
-        <span className="text-gray-500 text-xs flex-shrink-0">{formatTimeAgo(date)}</span>
+        <span className="text-gray-500 text-xs flex-shrink-0">{formatTimeAgo(date, time)}</span>
       </div>
 
       {/* Activity details */}
@@ -950,19 +950,39 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     'Other': '💪'
   };
 
-  const formatTimeAgo = (dateStr) => {
+  const formatTimeAgo = (dateStr, timeStr) => {
     const now = new Date();
-    const date = new Date(dateStr + 'T12:00:00');
-    const diffMs = now - date;
-    const diffMins = Math.floor(diffMs / (1000 * 60));
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    // Compare using midnight boundaries in user's local timezone
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterdayStart = new Date(todayStart);
+    yesterdayStart.setDate(yesterdayStart.getDate() - 1);
 
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    // Parse activity date as local date
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const activityDate = new Date(year, month - 1, day);
+
+    if (activityDate >= todayStart) {
+      // Show relative time for today's activities using activity time
+      let activityDateTime = todayStart;
+      if (timeStr) {
+        const match = timeStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+        if (match) {
+          let hours = parseInt(match[1]);
+          const mins = parseInt(match[2]);
+          const period = match[3].toUpperCase();
+          if (period === 'AM' && hours === 12) hours = 0;
+          else if (period === 'PM' && hours !== 12) hours += 12;
+          activityDateTime = new Date(year, month - 1, day, hours, mins);
+        }
+      }
+      const diffMs = now - activityDateTime;
+      const diffMins = Math.floor(diffMs / (1000 * 60));
+      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+      if (diffMins < 60) return `${Math.max(1, diffMins)}m ago`;
+      return `${diffHours}h ago`;
+    }
+    if (activityDate >= yesterdayStart) return 'Yesterday';
+    return activityDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
   const formatDuration = (minutes) => {
@@ -1199,10 +1219,22 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       const allActivities = await Promise.all(activityPromises);
       const flatActivities = allActivities.flat();
 
-      // Sort by date (most recent first)
+      // Sort by activity date (most recent first), not when it was logged
+      const parseActivityTime = (timeStr) => {
+        if (!timeStr) return '12:00';
+        // Convert "7:30 AM" / "2:15 PM" format to 24h "HH:MM"
+        const match = timeStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+        if (!match) return timeStr; // already in HH:MM format
+        let hours = parseInt(match[1]);
+        const mins = match[2];
+        const period = match[3].toUpperCase();
+        if (period === 'AM' && hours === 12) hours = 0;
+        else if (period === 'PM' && hours !== 12) hours += 12;
+        return `${String(hours).padStart(2, '0')}:${mins}`;
+      };
       flatActivities.sort((a, b) => {
-        const dateA = new Date(a.date + 'T' + (a.time || '12:00'));
-        const dateB = new Date(b.date + 'T' + (b.time || '12:00'));
+        const dateA = new Date(a.date + 'T' + parseActivityTime(a.time));
+        const dateB = new Date(b.date + 'T' + parseActivityTime(b.time));
         return dateB - dateA;
       });
 

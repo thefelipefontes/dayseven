@@ -136,7 +136,9 @@ struct CornerComplicationView: View {
     }
 
     private func formatSteps(_ steps: Int) -> String {
-        if steps >= 1000 {
+        if steps >= 10000 {
+            return "\(steps / 1000)k"
+        } else if steps >= 1000 {
             return String(format: "%.1fk", Double(steps) / 1000.0)
         }
         return "\(steps)"

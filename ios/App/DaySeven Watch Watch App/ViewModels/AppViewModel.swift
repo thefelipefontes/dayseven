@@ -64,6 +64,7 @@ class AppViewModel: ObservableObject {
                 guard let self = self else { return }
                 self.todaySteps = steps
                 self.checkDailyGoalCelebrations(isBackground: true)
+                self.pushDataToWidget()
             }
         }
 
@@ -72,6 +73,7 @@ class AppViewModel: ObservableObject {
                 guard let self = self else { return }
                 self.todayCalories = calories
                 self.checkDailyGoalCelebrations(isBackground: true)
+                self.pushDataToWidget()
             }
         }
 

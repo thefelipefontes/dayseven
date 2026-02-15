@@ -19,6 +19,7 @@ struct ActiveWorkoutView: View {
     @State private var showSummary = false
     @State private var workoutResult: WorkoutResult?
     @State private var errorMessage: String?
+    @State private var glowBreathing = false
     private var wm: WorkoutManager { workoutMgr }
 
     /// Whether the user selected "Indoor" for this workout
@@ -256,28 +257,60 @@ struct ActiveWorkoutView: View {
 
     // MARK: - Recovery Stats Page (Sauna / Cold Plunge — big timer + HR)
 
+    /// Glow color based on activity: red for sauna, blue for cold plunge
+    private var recoveryGlowColor: Color {
+        activityType.lowercased() == "sauna"
+            ? Color(red: 1.0, green: 0.2, blue: 0.1)   // warm red-orange
+            : Color(red: 0.55, green: 0.85, blue: 1.0)   // glacier blue
+    }
+
     private var recoveryStatsPage: some View {
-        VStack(spacing: 12) {
-            Spacer()
+        ZStack {
+            // Radial glow from edges inward
+            // Soft inner glow
+            RadialGradient(
+                gradient: Gradient(colors: [
+                    .clear,
+                    .clear,
+                    recoveryGlowColor.opacity(0.03),
+                    recoveryGlowColor.opacity(0.1),
+                    recoveryGlowColor.opacity(0.2)
+                ]),
+                center: .center,
+                startRadius: 30,
+                endRadius: 110
+            )
+            .opacity(isLuminanceReduced ? 0.15 : (glowBreathing ? 0.4 : 0.7))
 
-            // Big elapsed time — white, slightly smaller for recovery
-            Text(isLuminanceReduced ? formatElapsedTime(wm.elapsedSeconds) : formatElapsedTimePrecise(wm.elapsedTime))
-                .font(.system(size: 38, weight: .bold, design: .monospaced))
-                .foregroundColor(.white)
-                .minimumScaleFactor(0.5)
+            .animation(
+                isLuminanceReduced ? nil : .easeInOut(duration: 2.5).repeatForever(autoreverses: true),
+                value: glowBreathing
+            )
+            .ignoresSafeArea()
 
-            // Large heart rate
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("\(Int(wm.heartRate))")
-                    .font(.system(size: 40, weight: .bold, design: .rounded))
+            VStack(spacing: 12) {
+                Spacer()
+
+                // Big elapsed time — white, slightly smaller for recovery
+                Text(isLuminanceReduced ? formatElapsedTime(wm.elapsedSeconds) : formatElapsedTimePrecise(wm.elapsedTime))
+                    .font(.system(size: 38, weight: .bold, design: .monospaced))
                     .foregroundColor(.white)
-                Image(systemName: "heart.fill")
-                    .foregroundColor(.red)
-                    .font(.system(size: 18))
-            }
+                    .minimumScaleFactor(0.5)
 
-            Spacer()
+                // Large heart rate
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("\(Int(wm.heartRate))")
+                        .font(.system(size: 40, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                    Image(systemName: "heart.fill")
+                        .foregroundColor(.red)
+                        .font(.system(size: 18))
+                }
+
+                Spacer()
+            }
         }
+        .onAppear { glowBreathing = true }
     }
 
     // MARK: - Distance Icon

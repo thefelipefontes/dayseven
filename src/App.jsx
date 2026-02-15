@@ -12768,58 +12768,39 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
           </div>
         </div>
         
-        {/* Sub Streaks - 2x2 Grid */}
-        <div className="grid grid-cols-2 gap-2">
+        {/* Sub Streaks - 3 columns */}
+        <div className="grid grid-cols-3 gap-2">
           {/* Strength Streak */}
-          <div className="px-3 py-2.5 rounded-xl bg-zinc-800/60 relative overflow-hidden">
+          <div className="px-2.5 py-2 rounded-xl bg-zinc-800/60 relative overflow-hidden">
             <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ backgroundColor: '#00FF94' }}></div>
-            <div className="flex items-center gap-2">
-              <span className="text-base">🏋️</span>
-              <span className="text-xl font-bold" style={{ color: '#00FF94' }}>{streaks.lifts} Weeks</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm">🏋️</span>
+              <span className="text-lg font-bold leading-tight" style={{ color: '#00FF94' }}>{streaks.lifts}</span>
             </div>
-            <div className="flex items-center justify-between mt-0.5">
-              <span className="text-xs text-gray-400">Strength</span>
-              <span className="text-[10px] text-gray-500">{goals.liftsPerWeek}+ per week</span>
-            </div>
+            <span className="text-[11px] text-gray-400">Strength</span>
+            <span className="text-[10px] text-gray-500 block">{goals.liftsPerWeek}+/week</span>
           </div>
 
           {/* Cardio Streak */}
-          <div className="px-3 py-2.5 rounded-xl bg-zinc-800/60 relative overflow-hidden">
+          <div className="px-2.5 py-2 rounded-xl bg-zinc-800/60 relative overflow-hidden">
             <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ backgroundColor: '#FF9500' }}></div>
-            <div className="flex items-center gap-2">
-              <span className="text-base">🏃</span>
-              <span className="text-xl font-bold" style={{ color: '#FF9500' }}>{streaks.cardio} Weeks</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm">🏃</span>
+              <span className="text-lg font-bold leading-tight" style={{ color: '#FF9500' }}>{streaks.cardio}</span>
             </div>
-            <div className="flex items-center justify-between mt-0.5">
-              <span className="text-xs text-gray-400">Cardio</span>
-              <span className="text-[10px] text-gray-500">{goals.cardioPerWeek}+ per week</span>
-            </div>
+            <span className="text-[11px] text-gray-400">Cardio</span>
+            <span className="text-[10px] text-gray-500 block">{goals.cardioPerWeek}+/week</span>
           </div>
 
           {/* Recovery Streak */}
-          <div className="px-3 py-2.5 rounded-xl bg-zinc-800/60 relative overflow-hidden">
+          <div className="px-2.5 py-2 rounded-xl bg-zinc-800/60 relative overflow-hidden">
             <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ backgroundColor: '#00D1FF' }}></div>
-            <div className="flex items-center gap-2">
-              <span className="text-base">🧊</span>
-              <span className="text-xl font-bold" style={{ color: '#00D1FF' }}>{streaks.recovery} Weeks</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm">🧊</span>
+              <span className="text-lg font-bold leading-tight" style={{ color: '#00D1FF' }}>{streaks.recovery}</span>
             </div>
-            <div className="flex items-center justify-between mt-0.5">
-              <span className="text-xs text-gray-400">Recovery</span>
-              <span className="text-[10px] text-gray-500">{goals.recoveryPerWeek}+ per week</span>
-            </div>
-          </div>
-
-          {/* Steps Streak */}
-          <div className="px-3 py-2.5 rounded-xl bg-zinc-800/60 relative overflow-hidden">
-            <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ backgroundColor: '#BF5AF2' }}></div>
-            <div className="flex items-center gap-2">
-              <span className="text-base">👟</span>
-              <span className="text-xl font-bold" style={{ color: '#BF5AF2' }}>{streaks.stepsGoal} Weeks</span>
-            </div>
-            <div className="flex items-center justify-between mt-0.5">
-              <span className="text-xs text-gray-400">Steps</span>
-              <span className="text-[10px] text-gray-500">{(goals.stepsPerDay/1000).toFixed(0)}k+ daily avg</span>
-            </div>
+            <span className="text-[11px] text-gray-400">Recovery</span>
+            <span className="text-[10px] text-gray-500 block">{goals.recoveryPerWeek}+/week</span>
           </div>
         </div>
       </div>

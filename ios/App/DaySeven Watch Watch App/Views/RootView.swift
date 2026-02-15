@@ -236,6 +236,9 @@ struct MainTabView: View {
                 // Refresh health data to catch daily goals hit while backgrounded
                 Task { await appVM.refreshHealthData() }
 
+                // Flush any offline-queued activities
+                Task { await appVM.flushOfflineQueue() }
+
                 // If a workout is active but no ActiveWorkoutView is shown,
                 // push one — but only after a short delay to let the
                 // remoteWorkoutRequest onChange handler fire first (it has priority).

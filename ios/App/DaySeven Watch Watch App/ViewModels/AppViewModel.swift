@@ -75,6 +75,21 @@ class AppViewModel: ObservableObject {
             }
         }
 
+        // Observe phone reachability — when the phone reconnects, flush any
+        // offline-queued activities (connectivity likely restored)
+        phoneService.$isReachable
+            .dropFirst()
+            .filter { $0 == true }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self = self else { return }
+                print("[AppViewModel] Phone became reachable — flushing offline queue")
+                Task {
+                    await self.flushOfflineQueue()
+                }
+            }
+            .store(in: &cancellables)
+
         // Observe dataChangedFlag from PhoneConnectivityService
         // When the phone notifies us that data changed (e.g., activity deleted),
         // reload fresh data from Firestore so we don't operate on stale state
@@ -141,6 +156,14 @@ class AppViewModel: ObservableObject {
             // Check if daily goals are already met (foreground check)
             checkDailyGoalCelebrations(isBackground: false)
 
+            // Flush any offline-queued activities now that we have fresh data
+            if OfflineQueueManager.shared.hasPendingActivities {
+                Task {
+                    try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s delay
+                    await flushOfflineQueue()
+                }
+            }
+
             isLoading = false
         } catch {
             errorMessage = error.localizedDescription
@@ -182,6 +205,9 @@ class AppViewModel: ObservableObject {
             return
         }
         print("[SaveActivity] Saving for uid: \(uid), type: \(activity.type)")
+
+        // Flush any previously queued offline activities first
+        await flushOfflineQueue()
 
         // Fetch fresh data from Firestore to avoid overwriting activities added from phone
         do {
@@ -265,8 +291,70 @@ class AppViewModel: ObservableObject {
                 })
             }
         } catch {
-            print("[SaveActivity] FAILED: \(error.localizedDescription)")
-            errorMessage = "Failed to save: \(error.localizedDescription)"
+            print("[SaveActivity] FAILED — queueing for retry: \(error.localizedDescription)")
+            OfflineQueueManager.shared.enqueue(activity)
+            // Still push to widget so local state is reflected immediately
+            pushDataToWidget()
+        }
+    }
+
+    // MARK: - Offline Queue Flush
+
+    /// Retries saving any activities that were queued due to network failures.
+    /// Fetches fresh data from Firestore, merges pending activities, and saves.
+    func flushOfflineQueue() async {
+        let queue = OfflineQueueManager.shared
+        guard queue.hasPendingActivities, !queue.isFlushing else { return }
+        guard let uid = authService.currentUser?.uid else { return }
+
+        queue.isFlushing = true
+        defer { queue.isFlushing = false }
+
+        let pending = queue.pendingActivities
+        print("[OfflineFlush] Flushing \(pending.count) pending activities")
+
+        do {
+            // Fetch fresh state from Firestore
+            let freshData = try await firestoreService.getUserData(uid: uid)
+            var mergedActivities = freshData.activities
+
+            // Merge: insert pending activities that aren't already in Firestore
+            var addedCount = 0
+            for activity in pending {
+                if !mergedActivities.contains(where: { $0.id == activity.id }) {
+                    mergedActivities.insert(activity, at: 0)
+                    addedCount += 1
+                }
+            }
+
+            guard addedCount > 0 else {
+                queue.clearAll()
+                print("[OfflineFlush] All pending already synced — cleared queue")
+                return
+            }
+
+            // Save only the activities array (streaks reconcile via phone notification)
+            try await firestoreService.saveActivities(uid: uid, activities: mergedActivities)
+
+            queue.clearAll()
+
+            // Update local state
+            activities = mergedActivities
+            goals = freshData.goals
+            streaks = freshData.streaks
+            personalRecords = freshData.personalRecords
+            weeklyProgress = calculateWeeklyProgress(activities: mergedActivities, goals: freshData.goals)
+            weeklyStats = calculateWeeklyStats(activities: mergedActivities)
+            pushDataToWidget()
+
+            // Notify the phone to refresh and reconcile streaks
+            if WCSession.default.isReachable {
+                WCSession.default.sendMessage(["action": "activitySaved"], replyHandler: { _ in }, errorHandler: { _ in })
+            }
+
+            print("[OfflineFlush] Successfully flushed \(addedCount) activities")
+        } catch {
+            print("[OfflineFlush] Failed — will retry later: \(error.localizedDescription)")
         }
     }
 

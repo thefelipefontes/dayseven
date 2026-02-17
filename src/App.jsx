@@ -17504,8 +17504,8 @@ export default function DaySevenApp() {
 
             const hasHealthData = (result.todaySteps > 0 || result.todayCalories > 0);
             setHealthKitData(prev => ({
-              todaySteps: result.todaySteps || prev.todaySteps,
-              todayCalories: result.todayCalories || prev.todayCalories,
+              todaySteps: result.todaySteps ?? prev.todaySteps ?? 0,
+              todayCalories: result.todayCalories ?? prev.todayCalories ?? 0,
               pendingWorkouts: newWorkouts,
               lastSynced: new Date().toISOString(),
               isConnected: prev.isConnected || hasHealthData
@@ -17656,8 +17656,8 @@ export default function DaySevenApp() {
         const hasHealthData = (steps > 0 || calories > 0);
         setHealthKitData(prev => ({
           ...prev,
-          todaySteps: steps || prev.todaySteps,
-          todayCalories: calories || prev.todayCalories,
+          todaySteps: steps ?? prev.todaySteps ?? 0,
+          todayCalories: calories ?? prev.todayCalories ?? 0,
           isConnected: prev.isConnected || hasHealthData
         }));
       } catch (e) {

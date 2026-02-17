@@ -16526,8 +16526,11 @@ export default function DaySevenApp() {
       const caloriesChanged = Math.abs((healthKitData.todayCalories || 0) - (lastSync.calories || 0)) > 50;
       const timeElapsed = now - lastSync.timestamp > minSyncInterval;
 
-      const shouldSync = (firstSync || stepsChanged || caloriesChanged || timeElapsed) &&
-                         (healthKitData.todaySteps > 0 || healthKitData.todayCalories > 0);
+      // Always sync on first sync (to clear stale data from previous day)
+      // For subsequent syncs, only sync if there's actual data to avoid unnecessary writes
+      const shouldSync = firstSync ||
+                         ((stepsChanged || caloriesChanged || timeElapsed) &&
+                         (healthKitData.todaySteps > 0 || healthKitData.todayCalories > 0));
 
       if (shouldSync) {
         // Get today's date in YYYY-MM-DD format

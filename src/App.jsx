@@ -11497,6 +11497,24 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
     return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   }, []);
 
+  // Helper to determine effective category of an activity
+  const getActivityCategory = (activity) => {
+    // If countToward is set (for Yoga/Pilates or custom activities), use that
+    if (activity.countToward) {
+      if (activity.countToward === 'strength') return 'lifting';
+      return activity.countToward;
+    }
+    // Check customActivityCategory for "Other" activities
+    if (activity.customActivityCategory) {
+      if (activity.customActivityCategory === 'strength') return 'lifting';
+      return activity.customActivityCategory;
+    }
+    if (activity.type === 'Strength Training') return 'lifting';
+    if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(activity.type)) return 'cardio';
+    if (['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
+    return 'other';
+  };
+
   // Create a lookup map from healthHistory for quick date access
   // Override today's data with live healthKitData
   const healthDataByDate = useMemo(() => {
@@ -11722,8 +11740,8 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
     return data;
   };
 
-  const trendData = generateTrendData();
-  const maxValue = Math.max(...trendData.map(d => d.value), 1);
+  const trendData = useMemo(() => generateTrendData(), [activities, metric, timeRange, healthDataByDate, todayStr]);
+  const maxValue = trendData.length > 0 ? trendData.reduce((max, d) => Math.max(max, d.value), 1) : 1;
   const total = trendData.reduce((sum, d) => sum + d.value, 0);
 
   // Calculate average based on the number of bars shown (matches chart grouping)
@@ -11739,7 +11757,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
     miles: { label: 'Miles', icon: '📍', unit: 'mi', color: '#00FF94' }
   };
 
-  const config = metricConfig[metric];
+  const config = metricConfig[metric] || metricConfig['calories'];
 
   return (
     <div className="mx-4">
@@ -11866,6 +11884,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
             const ranPct = isMiles && maxValue > 0 ? ((point.milesRan || 0) / maxValue) * 100 : 0;
             const bikedPct = isMiles && maxValue > 0 ? ((point.milesBiked || 0) / maxValue) * 100 : 0;
             const walkedPct = isMiles && maxValue > 0 ? ((point.milesWalked || 0) / maxValue) * 100 : 0;
+            const totalPct = ranPct + bikedPct + walkedPct;
 
             return (
               <button
@@ -11888,14 +11907,14 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
                   >
                     {(point.milesRan || 0) > 0 && (
                       <div className="w-full rounded-t-sm" style={{
-                        flex: `0 0 ${ranPct / (ranPct + bikedPct + walkedPct) * 100}%`,
+                        flex: `0 0 ${totalPct > 0 ? ranPct / totalPct * 100 : 0}%`,
                         backgroundColor: milesColors.ran,
                         minHeight: '1px'
                       }} />
                     )}
                     {(point.milesBiked || 0) > 0 && (
                       <div className="w-full" style={{
-                        flex: `0 0 ${bikedPct / (ranPct + bikedPct + walkedPct) * 100}%`,
+                        flex: `0 0 ${totalPct > 0 ? bikedPct / totalPct * 100 : 0}%`,
                         backgroundColor: milesColors.biked,
                         minHeight: '1px',
                         ...((point.milesRan || 0) === 0 ? { borderRadius: '2px 2px 0 0' } : {})
@@ -11903,7 +11922,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
                     )}
                     {(point.milesWalked || 0) > 0 && (
                       <div className="w-full" style={{
-                        flex: `0 0 ${walkedPct / (ranPct + bikedPct + walkedPct) * 100}%`,
+                        flex: `0 0 ${totalPct > 0 ? walkedPct / totalPct * 100 : 0}%`,
                         backgroundColor: milesColors.walked,
                         minHeight: '1px',
                         ...((point.milesRan || 0) === 0 && (point.milesBiked || 0) === 0 ? { borderRadius: '2px 2px 0 0' } : {})
@@ -12195,6 +12214,24 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
     return map;
   }, [healthHistory, healthKitData.todaySteps, healthKitData.todayCalories, todayStr]);
 
+  // Helper to determine effective category of an activity
+  const getActivityCategory = (activity) => {
+    // If countToward is set (for Yoga/Pilates or custom activities), use that
+    if (activity.countToward) {
+      if (activity.countToward === 'strength') return 'lifting';
+      return activity.countToward;
+    }
+    // Check customActivityCategory for "Other" activities
+    if (activity.customActivityCategory) {
+      if (activity.customActivityCategory === 'strength') return 'lifting';
+      return activity.customActivityCategory;
+    }
+    if (activity.type === 'Strength Training') return 'lifting';
+    if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(activity.type)) return 'cardio';
+    if (['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
+    return 'other';
+  };
+
   // Update view when initialView prop changes
   useEffect(() => {
     setView(initialView);
@@ -12437,25 +12474,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
   };
 
   const weeks = generateMonthWeeks();
-  
-  // Helper to determine effective category of an activity
-  const getActivityCategory = (activity) => {
-    // If countToward is set (for Yoga/Pilates or custom activities), use that
-    if (activity.countToward) {
-      if (activity.countToward === 'strength') return 'lifting';
-      return activity.countToward;
-    }
-    // Check customActivityCategory for "Other" activities
-    if (activity.customActivityCategory) {
-      if (activity.customActivityCategory === 'strength') return 'lifting';
-      return activity.customActivityCategory;
-    }
-    if (activity.type === 'Strength Training') return 'lifting';
-    if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(activity.type)) return 'cardio';
-    if (['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
-    return 'other';
-  };
-  
+
   // Calculate weekly stats for comparison (last week and average)
   const calculateWeeklyStats = () => {
     // Calculate last week's stats

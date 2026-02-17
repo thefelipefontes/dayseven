@@ -107,12 +107,12 @@ class CelebrationManager: ObservableObject {
         guard let defaults = defaults else { return }
 
         if type.isDaily {
-            if var daily = defaults.dictionary(forKey: SharedDefaults.dailyGoalsCelebratedKey) as? [String: Any] {
+            if var daily = defaults.dictionary(forKey: SharedDefaults.dailyGoalsCelebratedKey) {
                 daily[type.rawValue] = false
                 defaults.set(daily, forKey: SharedDefaults.dailyGoalsCelebratedKey)
             }
         } else {
-            if var weekly = defaults.dictionary(forKey: SharedDefaults.weekCategoryCelebratedKey) as? [String: Any] {
+            if var weekly = defaults.dictionary(forKey: SharedDefaults.weekCategoryCelebratedKey) {
                 weekly[type.rawValue] = false
                 defaults.set(weekly, forKey: SharedDefaults.weekCategoryCelebratedKey)
             }
@@ -152,13 +152,13 @@ class CelebrationManager: ObservableObject {
         guard let defaults = defaults else { return false }
 
         if type.isDaily {
-            guard let daily = defaults.dictionary(forKey: SharedDefaults.dailyGoalsCelebratedKey) as? [String: Any] else { return false }
+            guard let daily = defaults.dictionary(forKey: SharedDefaults.dailyGoalsCelebratedKey) else { return false }
             // Reset if date changed
             let todayStr = todayDateString()
             if daily["date"] as? String != todayStr { return false }
             return daily[type.rawValue] as? Bool ?? false
         } else {
-            guard let weekly = defaults.dictionary(forKey: SharedDefaults.weekCategoryCelebratedKey) as? [String: Any] else { return false }
+            guard let weekly = defaults.dictionary(forKey: SharedDefaults.weekCategoryCelebratedKey) else { return false }
             let weekStr = currentWeekKey()
             if weekly["week"] as? String != weekStr { return false }
             return weekly[type.rawValue] as? Bool ?? false
@@ -169,7 +169,7 @@ class CelebrationManager: ObservableObject {
         guard let defaults = defaults else { return }
 
         if type.isDaily {
-            var daily = defaults.dictionary(forKey: SharedDefaults.dailyGoalsCelebratedKey) as? [String: Any] ?? [:]
+            var daily = defaults.dictionary(forKey: SharedDefaults.dailyGoalsCelebratedKey) ?? [:]
             let todayStr = todayDateString()
             // Reset if new day
             if daily["date"] as? String != todayStr {
@@ -178,7 +178,7 @@ class CelebrationManager: ObservableObject {
             daily[type.rawValue] = true
             defaults.set(daily, forKey: SharedDefaults.dailyGoalsCelebratedKey)
         } else {
-            var weekly = defaults.dictionary(forKey: SharedDefaults.weekCategoryCelebratedKey) as? [String: Any] ?? [:]
+            var weekly = defaults.dictionary(forKey: SharedDefaults.weekCategoryCelebratedKey) ?? [:]
             let weekStr = currentWeekKey()
             // Reset if new week
             if weekly["week"] as? String != weekStr {

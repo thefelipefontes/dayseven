@@ -884,7 +884,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                     if let error = reply["error"] as? String {
                         call.reject(error)
                     } else {
-                        call.resolve(reply as? [String: Any] ?? ["success": true])
+                        call.resolve(reply)
                         // sendMessage already started the workout on the watch —
                         // do NOT also call startWatchApp, as that causes a race condition
                         // where handle(_ workoutConfiguration:) tries to start a second session.
@@ -935,7 +935,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                     if let error = reply["error"] as? String {
                         call.reject(error)
                     } else {
-                        call.resolve(reply as? [String: Any] ?? ["success": true])
+                        call.resolve(reply)
                     }
                 }
             },
@@ -951,7 +951,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                                 if let error = reply["error"] as? String {
                                     call.reject(error)
                                 } else {
-                                    call.resolve(reply as? [String: Any] ?? ["success": true])
+                                    call.resolve(reply)
                                 }
                             }
                         },
@@ -982,7 +982,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                     if let error = reply["error"] as? String {
                         call.reject(error)
                     } else {
-                        call.resolve(reply as? [String: Any] ?? ["success": true])
+                        call.resolve(reply)
                     }
                 }
             },
@@ -1002,7 +1002,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                     if let error = reply["error"] as? String {
                         call.reject(error)
                     } else {
-                        call.resolve(reply as? [String: Any] ?? ["success": true])
+                        call.resolve(reply)
                     }
                 }
             },
@@ -1027,7 +1027,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             message: ["action": "getMetrics"],
             replyHandler: { reply in
                 DispatchQueue.main.async {
-                    call.resolve(reply as? [String: Any] ?? ["isActive": false])
+                    call.resolve(reply)
                 }
             },
             errorHandler: { error in
@@ -1048,7 +1048,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                     if let error = reply["error"] as? String {
                         call.reject(error)
                     } else {
-                        call.resolve(reply as? [String: Any] ?? ["success": true])
+                        call.resolve(reply)
                     }
                 }
             },
@@ -1063,7 +1063,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                                 if let error = reply["error"] as? String {
                                     call.reject(error)
                                 } else {
-                                    call.resolve(reply as? [String: Any] ?? ["success": true])
+                                    call.resolve(reply)
                                 }
                             }
                         },

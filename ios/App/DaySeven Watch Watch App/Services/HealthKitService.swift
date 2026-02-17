@@ -37,7 +37,9 @@ class HealthKitService {
             }
             Task { [weak self] in
                 let steps = (try? await self?.fetchTodaySteps()) ?? 0
-                self?.onStepsUpdated?(steps)
+                await MainActor.run {
+                    self?.onStepsUpdated?(steps)
+                }
             }
             completionHandler()
         }
@@ -58,7 +60,9 @@ class HealthKitService {
             }
             Task { [weak self] in
                 let calories = (try? await self?.fetchTodayCalories()) ?? 0
-                self?.onCaloriesUpdated?(calories)
+                await MainActor.run {
+                    self?.onCaloriesUpdated?(calories)
+                }
             }
             completionHandler()
         }

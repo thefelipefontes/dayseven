@@ -11483,6 +11483,51 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
   const [timeRange, setTimeRange] = useState('1M');
   const [selectedBar, setSelectedBar] = useState(null); // For detail view on click
   const [hoveredBar, setHoveredBar] = useState(null); // For hover highlighting
+  const chartRef = useRef(null); // Ref for touch drag scrubbing
+  const isDragging = useRef(false); // Track drag vs tap
+
+  // Touch drag scrubbing helpers
+  const getBarIndexFromTouch = (touchX) => {
+    if (!chartRef.current) return null;
+    const rect = chartRef.current.getBoundingClientRect();
+    const relativeX = touchX - rect.left;
+    const barCount = chartRef.current.children.length;
+    if (barCount === 0) return null;
+    const index = Math.floor((relativeX / rect.width) * barCount);
+    return Math.max(0, Math.min(barCount - 1, index));
+  };
+
+  const lastDragIndex = useRef(null);
+
+  const handleChartTouchStart = (e) => {
+    isDragging.current = false;
+    lastDragIndex.current = null;
+    const touch = e.touches[0];
+    const index = getBarIndexFromTouch(touch.clientX);
+    if (index !== null) {
+      lastDragIndex.current = index;
+      setSelectedBar(index);
+      setHoveredBar(index);
+    }
+  };
+
+  const handleChartTouchMove = (e) => {
+    e.preventDefault(); // Prevent page scroll while scrubbing
+    isDragging.current = true;
+    const touch = e.touches[0];
+    const index = getBarIndexFromTouch(touch.clientX);
+    if (index !== null && index !== lastDragIndex.current) {
+      lastDragIndex.current = index;
+      setSelectedBar(index);
+      setHoveredBar(index);
+      triggerHaptic(ImpactStyle.Light);
+    }
+  };
+
+  const handleChartTouchEnd = () => {
+    setHoveredBar(null);
+    lastDragIndex.current = null;
+  };
 
   // Stacked bar colors for miles breakdown
   const milesColors = { ran: '#FF5757', biked: '#00D1FF', walked: '#00FF94' };
@@ -11867,9 +11912,13 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
         
         {/* Chart Area */}
         <div
+          ref={chartRef}
           className="h-40 flex items-end gap-0.5 mb-2"
-          style={{ minHeight: '160px' }}
+          style={{ minHeight: '160px', touchAction: 'none' }}
           onMouseLeave={() => setHoveredBar(null)}
+          onTouchStart={handleChartTouchStart}
+          onTouchMove={handleChartTouchMove}
+          onTouchEnd={handleChartTouchEnd}
         >
           {trendData.length > 0 ? trendData.map((point, i) => {
             const heightPercent = maxValue > 0 ? (point.value / maxValue) * 100 : 0;
@@ -11887,7 +11936,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
                 key={i}
                 className="flex-1 flex flex-col justify-end h-full cursor-pointer bg-transparent border-none p-0"
                 onMouseEnter={() => setHoveredBar(i)}
-                onClick={() => setSelectedBar(selectedBar === i ? null : i)}
+                onClick={() => { if (!isDragging.current) setSelectedBar(selectedBar === i ? null : i); }}
                 type="button"
               >
                 {isMiles ? (

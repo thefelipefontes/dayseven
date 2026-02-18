@@ -5,6 +5,9 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 
+// Convert a Date to YYYY-MM-DD string in local timezone (avoids UTC date shifting)
+const toLocalDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 // Helper function for haptic feedback
 const triggerHaptic = async (style = ImpactStyle.Medium) => {
   try {
@@ -34,19 +37,19 @@ const getActivityCategory = (activity) => {
 // Helper to calculate leaderboard stats from activities and health data
 const calculateLeaderboardStats = (activities, healthHistory, personalRecords) => {
   const now = new Date();
-  const today = now.toISOString().split('T')[0];
+  const today = toLocalDateStr(now);
 
   // Calculate date boundaries
   const weekStart = new Date(now);
   weekStart.setDate(now.getDate() - now.getDay()); // Start of week (Sunday)
   weekStart.setHours(0, 0, 0, 0);
-  const weekStartStr = weekStart.toISOString().split('T')[0];
+  const weekStartStr = toLocalDateStr(weekStart);
 
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const monthStartStr = monthStart.toISOString().split('T')[0];
+  const monthStartStr = toLocalDateStr(monthStart);
 
   const yearStart = new Date(now.getFullYear(), 0, 1);
-  const yearStartStr = yearStart.toISOString().split('T')[0];
+  const yearStartStr = toLocalDateStr(yearStart);
 
   // Filter activities by time period
   const weekActivities = activities.filter(a => a.date >= weekStartStr);

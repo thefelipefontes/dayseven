@@ -153,14 +153,11 @@ const SectionIcon = ({ type, size = 22, color = '#04d1ff' }) => {
   return icons[type] || null;
 };
 
+// Convert a Date to YYYY-MM-DD string in local timezone (avoids UTC date shifting)
+const toLocalDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 // Get today's date in YYYY-MM-DD format (local timezone)
-const getTodayDate = () => {
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = String(today.getMonth() + 1).padStart(2, '0');
-  const day = String(today.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
+const getTodayDate = () => toLocalDateStr(new Date());
 
 // Get current year
 const getCurrentYear = () => new Date().getFullYear();
@@ -266,7 +263,7 @@ const getCurrentWeekKey = () => {
   const day = today.getDay(); // 0 = Sunday
   const sunday = new Date(today);
   sunday.setDate(today.getDate() - day);
-  return sunday.toISOString().split('T')[0];
+  return toLocalDateStr(sunday);
 };
 
 // Default empty week celebration state
@@ -864,7 +861,6 @@ const HeatMapCalendar = ({ data, onSelectDate, selectedDate, onSelectWeek }) => 
     const endDate = new Date(today);
     endDate.setDate(endDate.getDate() + (6 - today.getDay())); // End of current week
     
-    const toLocalDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const todayStr = toLocalDateStr(today);
 
     let currentDate = new Date(startDate);
@@ -11675,7 +11671,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
           label: `${startLabel} - ${endLabel}`,
           shortLabel: weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
           value,
-          date: weekStart.toISOString().split('T')[0]
+          date: toLocalDateStr(weekStart)
         };
         if (metric === 'miles') {
           weekPoint.milesRan = weekRan;
@@ -11726,7 +11722,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
           label: monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
           shortLabel: monthDate.toLocaleDateString('en-US', { month: 'short' }),
           value,
-          date: monthDate.toISOString().split('T')[0]
+          date: toLocalDateStr(monthDate)
         };
         if (metric === 'miles') {
           monthPoint.milesRan = monthRan;
@@ -16410,13 +16406,13 @@ export default function DaySevenApp() {
       if (saved) {
         const parsed = JSON.parse(saved);
         // Check if it's from today
-        const today = new Date().toISOString().split('T')[0];
+        const today = getTodayDate();
         if (parsed.date === today) {
           return parsed;
         }
       }
     } catch {}
-    return { date: new Date().toISOString().split('T')[0], steps: false, calories: false };
+    return { date: getTodayDate(), steps: false, calories: false };
   });
 
   // Track dismissed workout UUIDs (to not show them again)
@@ -18714,7 +18710,7 @@ export default function DaySevenApp() {
 
     const stepsGoal = userData.goals.stepsPerDay || 10000;
     const caloriesGoal = userData.goals.caloriesPerDay || 500;
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayDate();
 
     // Reset if it's a new day
     if (dailyGoalsCelebrated.date !== today) {

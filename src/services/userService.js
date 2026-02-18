@@ -6,6 +6,9 @@ import { FirebaseFirestore } from '@capacitor-firebase/firestore';
 import { FirebaseStorage } from '@capacitor-firebase/storage';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 
+// Convert a Date to YYYY-MM-DD string in local timezone (avoids UTC date shifting)
+const toLocalDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 // Check if running in native app
 const isNative = Capacitor.isNativePlatform();
 
@@ -932,7 +935,7 @@ export async function getDailyHealthHistory(uid, days = 30) {
         // Calculate the cutoff date
         const cutoffDate = new Date(today);
         cutoffDate.setDate(cutoffDate.getDate() - days);
-        const cutoffStr = cutoffDate.toISOString().split('T')[0];
+        const cutoffStr = toLocalDateStr(cutoffDate);
 
         for (const snap of snapshots) {
           if (snap.data && snap.data.date >= cutoffStr) {
@@ -949,7 +952,7 @@ export async function getDailyHealthHistory(uid, days = 30) {
       for (let i = 0; i < days; i++) {
         const date = new Date(today);
         date.setDate(date.getDate() - i);
-        const dateStr = date.toISOString().split('T')[0];
+        const dateStr = toLocalDateStr(date);
         promises.push(getDailyHealthData(uid, dateStr));
       }
 

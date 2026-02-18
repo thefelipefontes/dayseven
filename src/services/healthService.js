@@ -119,15 +119,59 @@ const appleWorkoutNameMap = {
   'other': 'Other Workout',
 };
 
+// Map HKWorkoutActivityType raw values to our camelCase keys
+// Used as fallback when the plugin's WorkoutType enum doesn't cover a type and returns "other"
+// Raw values from Apple's HKWorkoutActivityType enum
+const hkRawTypeMap = {
+  1: 'americanFootball',
+  4: 'badminton',
+  5: 'baseball',
+  6: 'basketball',
+  8: 'boxing',
+  11: 'crossTraining',
+  13: 'cycling',
+  14: 'dance',
+  16: 'elliptical',
+  20: 'functionalStrengthTraining',
+  21: 'golf',
+  24: 'hiking',
+  28: 'martialArts',
+  29: 'mindAndBody',
+  35: 'rowing',
+  37: 'running',
+  41: 'soccer',
+  44: 'stairClimbing',
+  46: 'swimming',
+  48: 'tennis',
+  50: 'traditionalStrengthTraining',
+  52: 'walking',
+  57: 'yoga',
+  59: 'coreTraining',
+  62: 'flexibility',
+  63: 'highIntensityIntervalTraining',
+  66: 'pilates',
+  80: 'cooldown',
+};
+
 // Convert HealthKit workout to our activity format
 function convertWorkoutToActivity(workout) {
-  const workoutType = workout.workoutActivityType || workout.workoutType || 'HKWorkoutActivityTypeOther';
+  let workoutType = workout.workoutActivityType || workout.workoutType || 'HKWorkoutActivityTypeOther';
+
+  // If the plugin returned "other" but we have the raw HK type number,
+  // try to recover the actual workout type (plugin has limited enum coverage)
+  if (workoutType === 'other' && workout.workoutActivityTypeRaw !== undefined) {
+    const recovered = hkRawTypeMap[workout.workoutActivityTypeRaw];
+    if (recovered) {
+      workoutType = recovered;
+    }
+  }
+
   const mapped = workoutTypeMap[workoutType] || { type: 'Other', subtype: 'Workout', icon: '💪' };
   const appleWorkoutName = appleWorkoutNameMap[workoutType] || 'Workout';
 
-  // Parse date
+  // Parse date (use local time, not UTC, to avoid date shifting for evening workouts)
   const startDate = new Date(workout.startDate);
-  const dateStr = startDate.toISOString().split('T')[0]; // YYYY-MM-DD
+  const dateStr = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`;
   const timeStr = startDate.toLocaleTimeString('en-US', {
     hour: 'numeric',
     minute: '2-digit',

@@ -1,0 +1,12 @@
+diff --git a/node_modules/@capgo/capacitor-health/ios/Sources/HealthPlugin/Health.swift b/node_modules/@capgo/capacitor-health/ios/Sources/HealthPlugin/Health.swift
+index 093d1c8..625ddfe 100644
+--- a/node_modules/@capgo/capacitor-health/ios/Sources/HealthPlugin/Health.swift
++++ b/node_modules/@capgo/capacitor-health/ios/Sources/HealthPlugin/Health.swift
+@@ -890,6 +890,7 @@ final class Health {
+             let results = workouts.map { workout -> [String: Any] in
+                 var payload: [String: Any] = [
+                     "workoutType": WorkoutType.fromHKWorkoutActivityType(workout.workoutActivityType).rawValue,
++                    "workoutActivityTypeRaw": Int(workout.workoutActivityType.rawValue),
+                     "duration": Int(workout.duration),
+                     "startDate": self.isoFormatter.string(from: workout.startDate),
+                     "endDate": self.isoFormatter.string(from: workout.endDate)

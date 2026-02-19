@@ -11498,23 +11498,54 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
   };
 
   const lastDragIndex = useRef(null);
+  const touchStartPos = useRef({ x: 0, y: 0 });
+  const gestureDecided = useRef(false); // true once we know if it's a scrub or scroll
+  const isScrubbing = useRef(false); // true if horizontal scrub gesture
+
+  const prevSelectedBar = useRef(null); // Store selected bar before touch starts
+  const touchHandledTap = useRef(false); // Prevent onClick from double-firing after touch tap
 
   const handleChartTouchStart = (e) => {
     isDragging.current = false;
     lastDragIndex.current = null;
+    gestureDecided.current = false;
+    isScrubbing.current = false;
+    prevSelectedBar.current = selectedBar; // Remember what was selected before
     const touch = e.touches[0];
+    touchStartPos.current = { x: touch.clientX, y: touch.clientY };
+    // Don't highlight yet — wait for gesture to be decided
     const index = getBarIndexFromTouch(touch.clientX);
     if (index !== null) {
       lastDragIndex.current = index;
-      setSelectedBar(index);
-      setHoveredBar(index);
     }
   };
 
   const handleChartTouchMove = (e) => {
-    e.preventDefault(); // Prevent page scroll while scrubbing
-    isDragging.current = true;
     const touch = e.touches[0];
+
+    // Decide gesture direction once after a small movement threshold
+    if (!gestureDecided.current) {
+      const dx = Math.abs(touch.clientX - touchStartPos.current.x);
+      const dy = Math.abs(touch.clientY - touchStartPos.current.y);
+      if (dx < 5 && dy < 5) return; // Wait for more movement
+      gestureDecided.current = true;
+      isScrubbing.current = dx > dy; // Horizontal = scrub, Vertical = scroll
+      if (!isScrubbing.current) {
+        // It's a vertical scroll — don't touch any state, let scroll happen
+        return;
+      }
+      // It's a horizontal scrub — now highlight the initial bar
+      if (lastDragIndex.current !== null) {
+        setSelectedBar(lastDragIndex.current);
+        setHoveredBar(lastDragIndex.current);
+      }
+    }
+
+    // If vertical scroll gesture, do nothing (allow native scroll)
+    if (!isScrubbing.current) return;
+
+    e.preventDefault(); // Only prevent scroll when horizontally scrubbing
+    isDragging.current = true;
     const index = getBarIndexFromTouch(touch.clientX);
     if (index !== null && index !== lastDragIndex.current) {
       lastDragIndex.current = index;
@@ -11525,8 +11556,19 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
   };
 
   const handleChartTouchEnd = () => {
+    // If gesture was never decided (very short tap) or was a scrub, handle normally
+    if (!gestureDecided.current) {
+      // It was a tap — select the bar
+      if (lastDragIndex.current !== null) {
+        const tappedIndex = lastDragIndex.current;
+        setSelectedBar(prevSelectedBar.current === tappedIndex ? null : tappedIndex);
+        touchHandledTap.current = true; // Prevent onClick from double-firing
+      }
+    }
     setHoveredBar(null);
     lastDragIndex.current = null;
+    gestureDecided.current = false;
+    isScrubbing.current = false;
   };
 
   // Stacked bar colors for miles breakdown
@@ -11914,7 +11956,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
         <div
           ref={chartRef}
           className="h-40 flex items-end gap-0.5 mb-2"
-          style={{ minHeight: '160px', touchAction: 'none' }}
+          style={{ minHeight: '160px', touchAction: 'pan-y' }}
           onMouseLeave={() => setHoveredBar(null)}
           onTouchStart={handleChartTouchStart}
           onTouchMove={handleChartTouchMove}
@@ -11922,7 +11964,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
         >
           {trendData.length > 0 ? trendData.map((point, i) => {
             const heightPercent = maxValue > 0 ? (point.value / maxValue) * 100 : 0;
-            const isHighlighted = selectedBar === i || hoveredBar === i;
+            const isHighlighted = hoveredBar !== null ? hoveredBar === i : selectedBar === i;
 
             // Stacked bar segments for miles
             const isMiles = metric === 'miles';
@@ -11936,7 +11978,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
                 key={i}
                 className="flex-1 flex flex-col justify-end h-full cursor-pointer bg-transparent border-none p-0"
                 onMouseEnter={() => setHoveredBar(i)}
-                onClick={() => { if (!isDragging.current) setSelectedBar(selectedBar === i ? null : i); }}
+                onClick={() => { if (!isDragging.current && !touchHandledTap.current) setSelectedBar(selectedBar === i ? null : i); touchHandledTap.current = false; }}
                 type="button"
               >
                 {isMiles ? (
@@ -12004,7 +12046,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
               const showLabel = trendData.length <= 7 ||
                 (trendData.length <= 14 && i % 2 === 0) ||
                 (trendData.length > 14 && (i === 0 || i === trendData.length - 1 || i % Math.ceil(trendData.length / 5) === 0));
-              const isHighlighted = selectedBar === i || hoveredBar === i;
+              const isHighlighted = hoveredBar !== null ? hoveredBar === i : selectedBar === i;
 
               return (
                 <div key={i} className="flex-1 text-center">
@@ -12520,6 +12562,28 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
 
   const weeks = generateMonthWeeks();
 
+  // Pre-compute which weeks have all goals met
+  const weekGoalsMet = (() => {
+    const goals = userData.goals;
+    const todayStr = getTodayDate();
+    const result = {};
+    weeks.forEach(week => {
+      const startStr = week.days[0].date;
+      const endStr = week.days[6].date;
+      // Only check weeks that have fully passed or are the current week
+      if (startStr > todayStr) {
+        result[week.id] = false;
+        return;
+      }
+      const weekActivities = activities.filter(a => a.date >= startStr && a.date <= endStr);
+      const lifts = weekActivities.filter(a => getActivityCategory(a) === 'lifting').length;
+      const cardio = weekActivities.filter(a => getActivityCategory(a) === 'cardio').length;
+      const recovery = weekActivities.filter(a => getActivityCategory(a) === 'recovery').length;
+      result[week.id] = lifts >= goals.liftsPerWeek && cardio >= goals.cardioPerWeek && recovery >= goals.recoveryPerWeek;
+    });
+    return result;
+  })();
+
   // Calculate weekly stats for comparison (last week and average)
   const calculateWeeklyStats = () => {
     // Calculate last week's stats
@@ -12979,37 +13043,50 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
           <div className="space-y-0.5">
             {weeks.map((week) => (
               <div key={week.id} className="flex gap-0.5">
-                {/* Week stats button */}
-                <button
-                  onClick={() => {
-                    setSelectedWeek(week);
-                    setShowWeekStats(true);
-                  }}
-                  className="w-8 h-8 rounded-md flex items-center justify-center text-[10px] transition-all duration-150"
-                  style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
-                  onTouchStart={(e) => {
-                    e.currentTarget.style.transform = 'scale(0.85)';
-                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-                  }}
-                  onTouchEnd={(e) => {
-                    e.currentTarget.style.transform = 'scale(1)';
-                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-                  }}
-                  onMouseDown={(e) => {
-                    e.currentTarget.style.transform = 'scale(0.85)';
-                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-                  }}
-                  onMouseUp={(e) => {
-                    e.currentTarget.style.transform = 'scale(1)';
-                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'scale(1)';
-                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-                  }}
-                >
-                  <SectionIcon type="chart" size={12} />
-                </button>
+                {/* Week stats button - shows checkmark if all goals met */}
+                {(() => {
+                  const goalsHit = weekGoalsMet[week.id];
+                  const bgDefault = goalsHit ? 'rgba(0,255,148,0.15)' : 'rgba(255,255,255,0.05)';
+                  const bgPressed = goalsHit ? 'rgba(0,255,148,0.25)' : 'rgba(255,255,255,0.1)';
+                  return (
+                    <button
+                      onClick={() => {
+                        setSelectedWeek(week);
+                        setShowWeekStats(true);
+                      }}
+                      className="w-8 h-8 rounded-md flex items-center justify-center text-[10px] transition-all duration-150"
+                      style={{ backgroundColor: bgDefault }}
+                      onTouchStart={(e) => {
+                        e.currentTarget.style.transform = 'scale(0.85)';
+                        e.currentTarget.style.backgroundColor = bgPressed;
+                      }}
+                      onTouchEnd={(e) => {
+                        e.currentTarget.style.transform = 'scale(1)';
+                        e.currentTarget.style.backgroundColor = bgDefault;
+                      }}
+                      onMouseDown={(e) => {
+                        e.currentTarget.style.transform = 'scale(0.85)';
+                        e.currentTarget.style.backgroundColor = bgPressed;
+                      }}
+                      onMouseUp={(e) => {
+                        e.currentTarget.style.transform = 'scale(1)';
+                        e.currentTarget.style.backgroundColor = bgDefault;
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'scale(1)';
+                        e.currentTarget.style.backgroundColor = bgDefault;
+                      }}
+                    >
+                      {goalsHit ? (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00FF94" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      ) : (
+                        <SectionIcon type="chart" size={12} />
+                      )}
+                    </button>
+                  );
+                })()}
                 {/* Day cells (includes overflow days from adjacent months) */}
                 {week.days.map((day) => {
                   const dayActivities = calendarData[day.date] || [];
@@ -16805,8 +16882,12 @@ export default function DaySevenApp() {
   const tabOrder = ['home', 'history', 'feed', 'profile'];
 
   // Custom tab switcher with direction tracking
+  // Tapping the already-active tab scrolls to top (Instagram-style)
   const switchTab = useCallback((newTab) => {
-    if (newTab === activeTab) return;
+    if (newTab === activeTab) {
+      scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
     const currentIndex = tabOrder.indexOf(activeTab);
     const newIndex = tabOrder.indexOf(newTab);
     setTabDirection(newIndex > currentIndex ? 1 : -1);
@@ -16911,6 +16992,7 @@ export default function DaySevenApp() {
   const progressPhotosRef = useRef(null);
   const friendsTabRef = useRef(null);
   const profileTabRef = useRef(null);
+  const scrollContainerRef = useRef(null);
 
   // Triple-tap logo refs
   const logoTapCountRef = useRef(0);
@@ -18875,6 +18957,7 @@ export default function DaySevenApp() {
   // Custom refresh indicator component
   return (
     <div
+      ref={scrollContainerRef}
       className="min-h-screen text-white overflow-y-auto"
       style={{
         backgroundColor: '#0A0A0A',

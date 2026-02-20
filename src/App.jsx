@@ -10160,7 +10160,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
   const [showWorkoutPicker, setShowWorkoutPicker] = useState(false);
   const [workoutPickerDragY, setWorkoutPickerDragY] = useState(0);
   const [workoutPickerTouchStart, setWorkoutPickerTouchStart] = useState(null);
-  const [streakWarningDismissed, setStreakWarningDismissed] = useState(false);
+  const [dismissedWarningKey, setDismissedWarningKey] = useState(() => sessionStorage.getItem('dismissedStreakWarning'));
   const [activityReactions, setActivityReactions] = useState({});
   const [activityComments, setActivityComments] = useState({});
   const [reactionDetailModal, setReactionDetailModal] = useState(null); // { activityId, reactions, selectedEmoji }
@@ -10301,6 +10301,10 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
   const liftsRemaining = Math.max(0, weekProgress.lifts.goal - weekProgress.lifts.completed);
   const cardioRemaining = Math.max(0, (weekProgress.cardio?.goal || 0) - (weekProgress.cardio?.completed || 0));
   const recoveryRemaining = Math.max(0, (weekProgress.recovery?.goal || 0) - (weekProgress.recovery?.completed || 0));
+
+  // Persist warning dismissal for the day — reappears next day if still needed
+  const warningKey = new Date().toDateString();
+  const streakWarningDismissed = dismissedWarningKey === warningKey;
 
   // Calculate overall weekly progress (cap each category at its goal - extra doesn't count toward Week Progress)
   const totalGoals = weekProgress.lifts.goal + (weekProgress.cardio?.goal || 0) + (weekProgress.recovery?.goal || 0);
@@ -11056,7 +11060,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
               </div>
             </div>
             <button
-              onClick={() => setStreakWarningDismissed(true)}
+              onClick={() => { sessionStorage.setItem('dismissedStreakWarning', warningKey); setDismissedWarningKey(warningKey); }}
               className="absolute flex items-center justify-center"
               style={{ top: 4, right: 4, width: 44, height: 44, color: 'rgba(255,69,58,0.6)' }}
             >

@@ -179,8 +179,9 @@ struct DailyDetailView: View {
 
     private func activityDisplayName(_ activity: Activity) -> String {
         var name = activity.strengthType ?? activity.type
-        if let focusArea = activity.focusArea {
-            name += " - \(focusArea)"
+        let areas = activity.effectiveFocusAreas
+        if !areas.isEmpty {
+            name += " - \(areas.joined(separator: ", "))"
         } else if let subtype = activity.subtype {
             name += " - \(subtype)"
         }

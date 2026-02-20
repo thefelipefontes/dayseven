@@ -46,7 +46,7 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
         let activityType: String
         let strengthType: String?
         let subtype: String?
-        let focusArea: String?
+        let focusAreas: [String]?
         let id: UUID = UUID() // unique so @Published always fires
         static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }
     }
@@ -366,10 +366,10 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
 
         let strengthType = message["strengthType"] as? String
         let subtype = message["subtype"] as? String
-        let focusArea = message["focusArea"] as? String
+        let focusAreas = message["focusAreas"] as? [String] ?? (message["focusArea"] as? String).map { [$0] }
         let isIndoor = subtype?.lowercased() == "indoor"
 
-        print("[PhoneConnect] Starting workout: \(activityTypeString), subtype: \(subtype ?? "none"), focusArea: \(focusArea ?? "none"), isIndoor: \(isIndoor)")
+        print("[PhoneConnect] Starting workout: \(activityTypeString), subtype: \(subtype ?? "none"), focusAreas: \(focusAreas?.joined(separator: ", ") ?? "none"), isIndoor: \(isIndoor)")
 
         Task { @MainActor in
             // Check if already active
@@ -391,7 +391,7 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
                     activityType: activityTypeString,
                     strengthType: strengthType,
                     subtype: subtype,
-                    focusArea: focusArea
+                    focusAreas: focusAreas
                 )
                 print("[PhoneConnect] Published remoteWorkoutRequest for UI navigation")
 

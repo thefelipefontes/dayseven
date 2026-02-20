@@ -9,7 +9,7 @@ struct WorkoutSummaryView: View {
     let activityType: String
     let strengthType: String?
     var initialSubtype: String? = nil
-    var initialFocusArea: String? = nil
+    var initialFocusAreas: [String]? = nil
     var initialCountToward: String? = nil
     @ObservedObject var workoutMgr: WorkoutManager
 
@@ -18,7 +18,7 @@ struct WorkoutSummaryView: View {
 
     // Post-workout detail selections
     @State private var selectedSubtype: String? = nil
-    @State private var selectedFocusArea: String? = nil
+    @State private var selectedFocusAreas: [String] = []
     @State private var selectedCountToward: String? = nil
 
     @State private var isSaved = false
@@ -74,7 +74,7 @@ struct WorkoutSummaryView: View {
         var parts: [String] = []
         if let st = strengthType { parts.append(st) }
         else { parts.append(activityType) }
-        if let fa = selectedFocusArea { parts.append(fa) }
+        if !selectedFocusAreas.isEmpty { parts.append(selectedFocusAreas.joined(separator: ", ")) }
         if let sub = selectedSubtype { parts.append(sub) }
         return parts.joined(separator: " - ")
     }
@@ -156,7 +156,7 @@ struct WorkoutSummaryView: View {
         .navigationBarBackButtonHidden(true)
         .onAppear {
             if selectedSubtype == nil { selectedSubtype = initialSubtype }
-            if selectedFocusArea == nil { selectedFocusArea = initialFocusArea }
+            if selectedFocusAreas.isEmpty { selectedFocusAreas = initialFocusAreas ?? [] }
             if selectedCountToward == nil { selectedCountToward = initialCountToward }
             // Auto-save immediately (like Apple Fitness)
             if !isSaved {
@@ -191,7 +191,7 @@ struct WorkoutSummaryView: View {
         }
         .sheet(isPresented: $showFocusAreaPicker) {
             NavigationStack {
-                PickerListView(title: "Focus Area", value: selectedFocusArea, options: ActivityTypes.strengthFocusAreas, selection: $selectedFocusArea)
+                MultiPickerListView(title: "Focus Areas", options: ActivityTypes.strengthFocusAreas, selection: $selectedFocusAreas)
             }
         }
         .sheet(isPresented: $showCountTowardPicker) {
@@ -315,8 +315,8 @@ struct WorkoutSummaryView: View {
             // Focus area picker (Strength only)
             if hasStrength {
                 sheetPickerButton(
-                    title: "Focus Area",
-                    value: selectedFocusArea,
+                    title: "Focus Areas",
+                    value: selectedFocusAreas.isEmpty ? nil : selectedFocusAreas.joined(separator: ", "),
                     showSheet: $showFocusAreaPicker
                 )
             }
@@ -368,7 +368,7 @@ struct WorkoutSummaryView: View {
             maxHr: result.maxHr > 0 ? result.maxHr : nil,
             distance: result.distance,
             strengthType: strengthType,
-            focusArea: selectedFocusArea,
+            focusAreas: selectedFocusAreas.isEmpty ? nil : selectedFocusAreas,
             notes: nil,
             healthKitUUID: result.workoutUUID,
             countToward: countToward
@@ -419,6 +419,52 @@ private struct PickerListView: View {
                                 .font(.system(size: 12))
                         }
                     }
+                }
+            }
+        }
+        .navigationTitle(title)
+    }
+}
+
+// MARK: - Multi Picker List View (toggle multiple selections)
+
+private struct MultiPickerListView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let title: String
+    let options: [String]
+    @Binding var selection: [String]
+
+    var body: some View {
+        List {
+            ForEach(options, id: \.self) { option in
+                Button {
+                    if selection.contains(option) {
+                        selection.removeAll { $0 == option }
+                    } else {
+                        selection.append(option)
+                    }
+                } label: {
+                    HStack {
+                        Text(option)
+                        Spacer()
+                        if selection.contains(option) {
+                            Image(systemName: "checkmark")
+                                .foregroundColor(.green)
+                                .font(.system(size: 12))
+                        }
+                    }
+                }
+            }
+
+            if !selection.isEmpty {
+                Button {
+                    dismiss()
+                } label: {
+                    Text("Done")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.green)
+                        .frame(maxWidth: .infinity)
                 }
             }
         }

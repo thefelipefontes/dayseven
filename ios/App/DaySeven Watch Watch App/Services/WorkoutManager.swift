@@ -65,7 +65,7 @@ class WorkoutManager: NSObject, ObservableObject {
     @Published var summaryActivityType: String = ""
     @Published var summaryStrengthType: String? = nil
     @Published var summarySubtype: String? = nil
-    @Published var summaryFocusArea: String? = nil
+    @Published var summaryFocusAreas: [String]? = nil
     @Published var summaryCountToward: String? = nil
 
     // Heart rate zone tracking
@@ -245,7 +245,7 @@ class WorkoutManager: NSObject, ObservableObject {
         summaryActivityType = ""
         summaryStrengthType = nil
         summarySubtype = nil
-        summaryFocusArea = nil
+        summaryFocusAreas = nil
         summaryCountToward = nil
         workoutPageIndex = 1
         isDismissingSummary = false

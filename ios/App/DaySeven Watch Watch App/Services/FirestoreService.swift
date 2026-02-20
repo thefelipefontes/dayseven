@@ -293,6 +293,7 @@ class FirestoreService {
             sourceDevice: stringFromFirestore(fields["sourceDevice"]),
             strengthType: stringFromFirestore(fields["strengthType"]),
             focusArea: stringFromFirestore(fields["focusArea"]),
+            focusAreas: stringArrayFromFirestore(fields["focusAreas"]),
             notes: stringFromFirestore(fields["notes"]),
             healthKitUUID: stringFromFirestore(fields["healthKitUUID"]),
             linkedHealthKitUUID: stringFromFirestore(fields["linkedHealthKitUUID"]),
@@ -335,6 +336,10 @@ class FirestoreService {
         if let v = activity.sourceDevice { fields["sourceDevice"] = ["stringValue": v] }
         if let v = activity.strengthType { fields["strengthType"] = ["stringValue": v] }
         if let v = activity.focusArea { fields["focusArea"] = ["stringValue": v] }
+        if let areas = activity.focusAreas, !areas.isEmpty {
+            let values = areas.map { ["stringValue": $0] as [String: Any] }
+            fields["focusAreas"] = ["arrayValue": ["values": values]]
+        }
         if let v = activity.notes { fields["notes"] = ["stringValue": v] }
         if let v = activity.healthKitUUID { fields["healthKitUUID"] = ["stringValue": v] }
         if let v = activity.linkedHealthKitUUID { fields["linkedHealthKitUUID"] = ["stringValue": v] }
@@ -395,6 +400,13 @@ class FirestoreService {
     private func boolFromFirestore(_ value: Any?) -> Bool? {
         guard let dict = value as? [String: Any] else { return nil }
         return dict["booleanValue"] as? Bool
+    }
+
+    private func stringArrayFromFirestore(_ value: Any?) -> [String]? {
+        guard let dict = value as? [String: Any],
+              let arrayValue = dict["arrayValue"] as? [String: Any],
+              let values = arrayValue["values"] as? [[String: Any]] else { return nil }
+        return values.compactMap { $0["stringValue"] as? String }
     }
 }
 

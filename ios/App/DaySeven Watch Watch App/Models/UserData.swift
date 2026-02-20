@@ -112,6 +112,7 @@ struct Activity: Codable, Identifiable {
     var sourceDevice: String?
     var strengthType: String?
     var focusArea: String?
+    var focusAreas: [String]?
     var notes: String?
     var healthKitUUID: String?
     var linkedHealthKitUUID: String?
@@ -126,9 +127,14 @@ struct Activity: Codable, Identifiable {
     var photoURL: String?
     var isPhotoPrivate: Bool?
 
+    /// Returns focusAreas array, falling back to wrapping single focusArea in an array
+    var effectiveFocusAreas: [String] {
+        focusAreas ?? (focusArea.map { [$0] } ?? [])
+    }
+
     enum CodingKeys: String, CodingKey {
         case id, type, subtype, date, time, duration, calories, avgHr, maxHr
-        case distance, source, sourceDevice, strengthType, focusArea, notes
+        case distance, source, sourceDevice, strengthType, focusArea, focusAreas, notes
         case healthKitUUID, linkedHealthKitUUID, countToward, customActivityCategory
         case customEmoji, sportEmoji, fromAppleHealth, healthKitSaved, smartSaved
         case appleWorkoutName, photoURL, isPhotoPrivate
@@ -144,7 +150,7 @@ struct Activity: Codable, Identifiable {
         maxHr: Int? = nil,
         distance: Double? = nil,
         strengthType: String? = nil,
-        focusArea: String? = nil,
+        focusAreas: [String]? = nil,
         notes: String? = nil,
         healthKitUUID: String? = nil,
         countToward: String? = nil
@@ -171,7 +177,8 @@ struct Activity: Codable, Identifiable {
             source: "apple-watch",
             sourceDevice: "Apple Watch",
             strengthType: strengthType,
-            focusArea: focusArea,
+            focusArea: focusAreas?.first,
+            focusAreas: focusAreas,
             notes: notes,
             healthKitUUID: healthKitUUID,
             countToward: countToward

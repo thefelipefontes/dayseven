@@ -5,7 +5,7 @@ import SwiftUI
 enum WorkoutDestination: Hashable {
     case quickStart(activityType: String, strengthType: String?, countToward: String? = nil)
     case detailPicker(activityType: String, strengthType: String?)
-    case customStart(activityType: String, strengthType: String?, subtype: String?, focusArea: String?, countToward: String? = nil)
+    case customStart(activityType: String, strengthType: String?, subtype: String?, focusAreas: [String]?, countToward: String? = nil)
     case hybridPicker(activityType: String)
 }
 
@@ -101,13 +101,13 @@ struct StartActivityView: View {
                     strengthType: strengthType,
                     path: $path
                 )
-            case .customStart(let activityType, let strengthType, let subtype, let focusArea, let countToward):
+            case .customStart(let activityType, let strengthType, let subtype, let focusAreas, let countToward):
                 ActiveWorkoutView(
                     workoutMgr: appVM.workoutManager,
                     activityType: activityType,
                     strengthType: strengthType,
                     preSelectedSubtype: subtype,
-                    preSelectedFocusArea: focusArea,
+                    preSelectedFocusAreas: focusAreas,
                     preSelectedCountToward: countToward,
                     navigationPath: $path
                 )

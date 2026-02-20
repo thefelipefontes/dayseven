@@ -58,7 +58,7 @@ class ExtensionDelegate: NSObject, WKExtensionDelegate {
                     activityType: activityType,
                     strengthType: nil,
                     subtype: isIndoor ? "Indoor" : "Outdoor",
-                    focusArea: nil
+                    focusAreas: nil
                 )
                 print("[ExtDelegate] Workout started + remoteWorkoutRequest published")
                 // Notify the phone so it can switch from phone to watch source

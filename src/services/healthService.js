@@ -979,14 +979,16 @@ export async function isWatchReachable() {
 }
 
 // Start a workout on the Apple Watch
-export async function startWatchWorkout(activityType, strengthType = null, subtype = null, focusArea = null) {
+export async function startWatchWorkout(activityType, strengthType = null, subtype = null, focusAreas = null) {
   if (!Capacitor.isNativePlatform()) {
     throw new Error('Not available on web');
   }
   const params = { activityType };
   if (strengthType) params.strengthType = strengthType;
   if (subtype) params.subtype = subtype;
-  if (focusArea) params.focusArea = focusArea;
+  if (focusAreas) params.focusAreas = focusAreas;
+  // Also send first element as focusArea for backward compat
+  if (focusAreas && focusAreas.length > 0) params.focusArea = focusAreas[0];
   return await HealthKitWriter.startWatchWorkout(params);
 }
 

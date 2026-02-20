@@ -7,6 +7,8 @@ struct WorkoutDetailPickerView: View {
     let strengthType: String?
     @Binding var path: NavigationPath
 
+    @State private var selectedFocusAreas: Set<String> = []
+
     private var activityTypeDef: ActivityTypeDefinition? {
         ActivityTypes.all.first { $0.name == activityType }
     }
@@ -44,22 +46,55 @@ struct WorkoutDetailPickerView: View {
             }
             .buttonStyle(.plain)
 
-            // Focus areas
+            // Focus areas (multi-select with checkmarks)
             ForEach(ActivityTypes.strengthFocusAreas, id: \.self) { area in
                 Button {
+                    if selectedFocusAreas.contains(area) {
+                        selectedFocusAreas.remove(area)
+                    } else {
+                        selectedFocusAreas.insert(area)
+                    }
+                } label: {
+                    HStack {
+                        Text(area)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(selectedFocusAreas.contains(area) ? .green : .white)
+                        Spacer()
+                        if selectedFocusAreas.contains(area) {
+                            Image(systemName: "checkmark")
+                                .foregroundColor(.green)
+                                .font(.system(size: 12))
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                .buttonStyle(.plain)
+            }
+
+            // Start button (appears when ≥1 focus area is selected)
+            if !selectedFocusAreas.isEmpty {
+                Button {
+                    let orderedAreas = ActivityTypes.strengthFocusAreas.filter { selectedFocusAreas.contains($0) }
                     path.append(WorkoutDestination.customStart(
                         activityType: activityType,
                         strengthType: strengthType,
                         subtype: nil,
-                        focusArea: area
+                        focusAreas: orderedAreas
                     ))
                 } label: {
-                    Text(area)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.white)
-                        .padding(.vertical, 2)
+                    HStack(spacing: 8) {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(.green)
+                        Text("Start Workout")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.green)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
                 }
                 .buttonStyle(.plain)
+                .listRowBackground(Color.green.opacity(0.15))
             }
         }
     }
@@ -98,7 +133,7 @@ struct WorkoutDetailPickerView: View {
                         activityType: activityType,
                         strengthType: nil,
                         subtype: subtype,
-                        focusArea: nil
+                        focusAreas: nil
                     ))
                 } label: {
                     Text(subtype)

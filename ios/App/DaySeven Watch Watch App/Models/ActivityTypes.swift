@@ -39,7 +39,7 @@ struct ActivityTypeDefinition: Identifiable {
 
 struct ActivityTypes {
     static let strengthFocusAreas = [
-        "Full Body", "Upper", "Lower", "Chest", "Back", "Legs", "Shoulders", "Arms", "Abs"
+        "Full Body", "Upper", "Lower", "Chest", "Back", "Legs", "Shoulders", "Biceps", "Triceps", "Abs"
     ]
 
     static let all: [ActivityTypeDefinition] = [

@@ -191,7 +191,7 @@ struct MainTabView: View {
                         activityType: appVM.workoutManager.summaryActivityType,
                         strengthType: appVM.workoutManager.summaryStrengthType,
                         initialSubtype: appVM.workoutManager.summarySubtype,
-                        initialFocusArea: appVM.workoutManager.summaryFocusArea,
+                        initialFocusAreas: appVM.workoutManager.summaryFocusAreas,
                         initialCountToward: appVM.workoutManager.summaryCountToward,
                         workoutMgr: appVM.workoutManager,
                         onDone: {
@@ -249,12 +249,12 @@ struct MainTabView: View {
                         // Re-check: if remoteWorkoutRequest handler already navigated, skip
                         guard startPath.isEmpty && appVM.workoutManager.isActive else { return }
                         if let request = appVM.phoneService.remoteWorkoutRequest {
-                            if request.subtype != nil || request.focusArea != nil {
+                            if request.subtype != nil || request.focusAreas != nil {
                                 startPath.append(WorkoutDestination.customStart(
                                     activityType: request.activityType,
                                     strengthType: request.strengthType,
                                     subtype: request.subtype,
-                                    focusArea: request.focusArea
+                                    focusAreas: request.focusAreas
                                 ))
                             } else {
                                 startPath.append(WorkoutDestination.quickStart(
@@ -285,12 +285,12 @@ struct MainTabView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     // Re-check in case scenePhase handler navigated during the delay
                     guard startPath.isEmpty else { return }
-                    if request.subtype != nil || request.focusArea != nil {
+                    if request.subtype != nil || request.focusAreas != nil {
                         startPath.append(WorkoutDestination.customStart(
                             activityType: request.activityType,
                             strengthType: request.strengthType,
                             subtype: request.subtype,
-                            focusArea: request.focusArea
+                            focusAreas: request.focusAreas
                         ))
                     } else {
                         startPath.append(WorkoutDestination.quickStart(

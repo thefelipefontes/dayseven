@@ -1299,7 +1299,7 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
     ? (workout.strengthType || 'Strength')
     : workout.type;
   const subtypeName = workout.type === 'Strength Training'
-    ? workout.focusArea
+    ? (workout.focusAreas || (workout.focusArea ? [workout.focusArea] : [])).join(', ')
     : (workout.subtype || '');
 
   // Position based on active tab:
@@ -1511,7 +1511,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
   const [finishCountToward, setFinishCountToward] = useState(null);
   const [finishSportEmoji, setFinishSportEmoji] = useState(null);
   const [finishStrengthType, setFinishStrengthType] = useState('');
-  const [finishFocusArea, setFinishFocusArea] = useState('');
+  const [finishFocusAreas, setFinishFocusAreas] = useState([]);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 
   const fileInputRef = useRef(null);
@@ -1585,7 +1585,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
       setFinishCountToward(workout?.countToward || null);
       setFinishSportEmoji(workout?.sportEmoji || null);
       setFinishStrengthType(workout?.strengthType || '');
-      setFinishFocusArea(workout?.focusArea || '');
+      setFinishFocusAreas(workout?.focusAreas || (workout?.focusArea ? [workout.focusArea] : []));
       setShowDiscardConfirm(false);
 
       // Get current metrics from the live workout session (don't end it yet)
@@ -1854,8 +1854,9 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
   const typeName = workout.type === 'Strength Training'
     ? (finishStrengthType || workout.strengthType || 'Strength')
     : workout.type;
+  const effectiveFocusAreas = finishFocusAreas.length > 0 ? finishFocusAreas : (workout.focusAreas || (workout.focusArea ? [workout.focusArea] : []));
   const subtypeName = workout.type === 'Strength Training'
-    ? (finishFocusArea || workout.focusArea)
+    ? effectiveFocusAreas.join(', ')
     : (finishSubtype || workout.subtype || '');
 
   const handleSave = () => {
@@ -1900,7 +1901,8 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
       sportEmoji: finishSportEmoji || workout.sportEmoji,
       // Updated strength training fields
       strengthType: finishStrengthType || workout.strengthType,
-      focusArea: finishFocusArea || workout.focusArea,
+      focusAreas: effectiveFocusAreas.length > 0 ? effectiveFocusAreas : undefined,
+      focusArea: effectiveFocusAreas[0] || undefined,
     });
   };
 
@@ -1980,14 +1982,14 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                 </div>
               </div>
               <div className="mb-4">
-                <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Focus Area</label>
+                <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Focus Areas</label>
                 <div className="flex flex-wrap gap-2">
-                  {['Full Body', 'Upper', 'Lower', 'Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Abs'].map((area) => {
-                    const isSelected = finishFocusArea === area;
+                  {['Full Body', 'Upper', 'Lower', 'Chest', 'Back', 'Legs', 'Shoulders', 'Biceps', 'Triceps', 'Abs'].map((area) => {
+                    const isSelected = finishFocusAreas.includes(area);
                     return (
                       <button
                         key={area}
-                        onClick={() => { setFinishFocusArea(area); triggerHaptic(ImpactStyle.Light); }}
+                        onClick={() => { setFinishFocusAreas(prev => prev.includes(area) ? prev.filter(a => a !== area) : [...prev, area]); triggerHaptic(ImpactStyle.Light); }}
                         className="px-3 py-1.5 rounded-full text-xs transition-all duration-200"
                         style={{
                           backgroundColor: isSelected ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
@@ -6230,8 +6232,11 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
 
   // Most frequent activity types
   const strengthFocusCounts = {};
-  monthActivities.filter(a => a.type === 'Strength Training' && a.focusArea).forEach(a => {
-    strengthFocusCounts[a.focusArea] = (strengthFocusCounts[a.focusArea] || 0) + 1;
+  monthActivities.filter(a => a.type === 'Strength Training').forEach(a => {
+    const areas = a.focusAreas || (a.focusArea ? [a.focusArea] : []);
+    areas.forEach(area => {
+      strengthFocusCounts[area] = (strengthFocusCounts[area] || 0) + 1;
+    });
   });
   const mostFrequentStrength = Object.entries(strengthFocusCounts).sort((a, b) => b[1] - a[1])[0];
 
@@ -6665,8 +6670,8 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
             </div>
             <div className="flex-1">
               <div className="text-xl font-bold">{activity.type}</div>
-              {activity.strengthType && activity.focusArea ? (
-                <div className="text-sm text-gray-400">{activity.strengthType} • {activity.focusArea}</div>
+              {activity.strengthType && (activity.focusAreas?.length || activity.focusArea) ? (
+                <div className="text-sm text-gray-400">{activity.strengthType} • {(activity.focusAreas || [activity.focusArea]).join(', ')}</div>
               ) : activity.subtype && (
                 <div className="text-sm text-gray-400">{activity.subtype}</div>
               )}
@@ -7862,7 +7867,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   const [isChangingActivityType, setIsChangingActivityType] = useState(false); // Track if user clicked "Change" on activity type
   const [subtype, setSubtype] = useState('');
   const [strengthType, setStrengthType] = useState(''); // Lifting, Bodyweight
-  const [focusArea, setFocusArea] = useState(''); // Full Body, Upper, Lower, etc.
+  const [focusAreas, setFocusAreas] = useState([]); // Multi-select: Full Body, Upper, Lower, etc.
   const [customSport, setCustomSport] = useState('');
   const [customSportEmoji, setCustomSportEmoji] = useState('⚽');
   const [showSportEmojiPicker, setShowSportEmojiPicker] = useState(false);
@@ -7916,7 +7921,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       setActivityType(pendingActivity?.type || null);
       setSubtype(pendingActivity?.subtype || '');
       setStrengthType(pendingActivity?.strengthType || '');
-      setFocusArea(pendingActivity?.focusArea || '');
+      setFocusAreas(pendingActivity?.focusAreas || (pendingActivity?.focusArea ? [pendingActivity.focusArea] : []));
       setCustomSport('');
       setCustomSportEmoji('⚽');
       setShowSportEmojiPicker(false);
@@ -8190,7 +8195,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
     { name: 'Bodyweight', icon: '💪', hasFocusArea: true }
   ];
 
-  const focusAreas = ['Full Body', 'Upper', 'Lower', 'Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Abs'];
+  const focusAreaOptions = ['Full Body', 'Upper', 'Lower', 'Chest', 'Back', 'Legs', 'Shoulders', 'Biceps', 'Triceps', 'Abs'];
 
   // Determine default "count toward" based on activity and subtype
   const getDefaultCountToward = (type, sub) => {
@@ -8458,7 +8463,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             let finalSubtype = subtype;
             let finalType = activityType;
             if (activityType === 'Strength Training') {
-              finalSubtype = focusArea ? `${strengthType} - ${focusArea}` : strengthType;
+              finalSubtype = focusAreas.length > 0 ? `${strengthType} - ${focusAreas.join(', ')}` : strengthType;
             } else if (showCustomSportInput) {
               finalSubtype = customSport;
             } else if (showCustomActivityInput && customActivityName) {
@@ -8492,7 +8497,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 type: finalType,
                 subtype: finalSubtype,
                 strengthType: activityType === 'Strength Training' ? strengthType : undefined,
-                focusArea: activityType === 'Strength Training' ? focusArea : undefined,
+                focusAreas: activityType === 'Strength Training' && focusAreas.length > 0 ? focusAreas : undefined,
+                focusArea: activityType === 'Strength Training' && focusAreas.length > 0 ? focusAreas[0] : undefined,
                 sportEmoji,
                 customEmoji: showCustomActivityInput ? customActivityEmoji : undefined,
                 countToward: showCustomActivityInput ? customActivityCategory : (countToward || undefined),
@@ -8511,7 +8517,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               type: finalType,
               subtype: finalSubtype,
               strengthType: activityType === 'Strength Training' ? strengthType : undefined,
-              focusArea: activityType === 'Strength Training' ? focusArea : undefined,
+              focusAreas: activityType === 'Strength Training' && focusAreas.length > 0 ? focusAreas : undefined,
+              focusArea: activityType === 'Strength Training' && focusAreas.length > 0 ? focusAreas[0] : undefined,
               date,
               notes,
               distance: distance ? parseFloat(distance) : undefined,
@@ -8535,8 +8542,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             handleClose();
           }}
           className="font-bold transition-all duration-150 px-2 py-1 rounded-lg"
-          style={{ color: !activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && (!customActivityName || !customActivityCategory)) || (activityType === 'Strength Training' && (!strengthType || !focusArea)) ? 'rgba(0,255,148,0.3)' : '#00FF94' }}
-          disabled={!activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && (!customActivityName || !customActivityCategory)) || (activityType === 'Strength Training' && (!strengthType || !focusArea))}
+          style={{ color: !activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && (!customActivityName || !customActivityCategory)) || (activityType === 'Strength Training' && (!strengthType || focusAreas.length === 0)) ? 'rgba(0,255,148,0.3)' : '#00FF94' }}
+          disabled={!activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && (!customActivityName || !customActivityCategory)) || (activityType === 'Strength Training' && (!strengthType || focusAreas.length === 0))}
           onTouchStart={(e) => {
             if (!e.currentTarget.disabled) {
               e.currentTarget.style.transform = 'scale(0.9)';
@@ -8996,7 +9003,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                   setSubtype('');
                 }
                 setStrengthType('');
-                setFocusArea('');
+                setFocusAreas([]);
                 setCustomSport('');
                 setCustomActivityName('');
                 setCustomActivityEmoji('🏊');
@@ -9037,7 +9044,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 setActivityType(null);
                 setSubtype('');
                 setStrengthType('');
-                setFocusArea('');
+                setFocusAreas([]);
                 setCustomSport('');
                 setCustomActivityName('');
                 setCustomActivityEmoji('🏊');
@@ -9092,7 +9099,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                         key={st.name}
                         onClick={() => {
                           setStrengthType(st.name);
-                          setFocusArea(''); // Reset focus area when changing type
+                          setFocusAreas([]); // Reset focus area when changing type
                         }}
                         className="px-4 py-2 rounded-full text-sm transition-all duration-200 flex items-center gap-2"
                         style={{
@@ -9108,20 +9115,20 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                   </div>
                 </div>
 
-                {/* Focus Area Selection (for Lifting and Bodyweight) */}
+                {/* Focus Area Selection (for Lifting and Bodyweight) — multi-select */}
                 {strengthType && strengthTypes.find(s => s.name === strengthType)?.hasFocusArea && (
                   <div>
-                    <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Focus Area</label>
+                    <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Focus Areas</label>
                     <div className="flex flex-wrap gap-2">
-                      {focusAreas.map((area) => (
+                      {focusAreaOptions.map((area) => (
                         <button
                           key={area}
-                          onClick={() => setFocusArea(area)}
+                          onClick={() => setFocusAreas(prev => prev.includes(area) ? prev.filter(a => a !== area) : [...prev, area])}
                           className="px-4 py-2 rounded-full text-sm transition-all duration-200"
                           style={{
-                            backgroundColor: focusArea === area ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
-                            border: focusArea === area ? '1px solid #00FF94' : '1px solid transparent',
-                            color: focusArea === area ? '#00FF94' : 'white'
+                            backgroundColor: focusAreas.includes(area) ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
+                            border: focusAreas.includes(area) ? '1px solid #00FF94' : '1px solid transparent',
+                            color: focusAreas.includes(area) ? '#00FF94' : 'white'
                           }}
                         >
                           {area}
@@ -10250,11 +10257,20 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     // Non-cardio walks (Walking activities that don't count toward goals)
     const nonCardioWalks = weekActivities.filter(a => a.type === 'Walking' && !a.countToward);
 
+    // Muscle group breakdown — count each focus area individually
+    const muscleGroups = {};
+    lifts.forEach(a => {
+      const areas = a.focusAreas || (a.focusArea ? [a.focusArea] : []);
+      areas.forEach(area => {
+        muscleGroups[area] = (muscleGroups[area] || 0) + 1;
+      });
+    });
+
     const totalMiles = running.reduce((sum, r) => sum + (parseFloat(r.distance) || 0), 0);
     const totalCalories = weekActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
 
     return {
-      lifts: { completed: lifts.length, goal: goals.liftsPerWeek, sessions: lifts.map(l => l.subtype || l.type), breakdown: { lifting: lifting.length, bodyweight: bodyweight.length }, otherActivities: otherStrength },
+      lifts: { completed: lifts.length, goal: goals.liftsPerWeek, sessions: lifts.map(l => l.subtype || l.type), breakdown: { lifting: lifting.length, bodyweight: bodyweight.length }, muscleGroups, otherActivities: otherStrength },
       cardio: { completed: cardio.length, goal: goals.cardioPerWeek, miles: totalMiles, sessions: cardio.map(c => c.type), breakdown: { running: running.length, cycling: cycling.length, sports: sports.length, other: otherCardio.length }, otherActivities: otherCardio },
       recovery: { completed: recovery.length, goal: goals.recoveryPerWeek, sessions: recovery.map(r => r.type), breakdown: { coldPlunge: coldPlunge.length, sauna: sauna.length, yoga: yoga.length, pilates: pilates.length }, otherActivities: otherRecovery },
       // Non-cardio walks (don't count toward goals but should be displayed)
@@ -11128,17 +11144,24 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
           {/* Strength Breakdown - Expandable */}
           {showStrengthBreakdown && (
             <div className="mt-4 pt-4 border-t border-white/10">
-              <div className="text-xs text-gray-400 mb-2">Strength Breakdown</div>
-              <div className="grid grid-cols-2 gap-2 text-center">
-                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="text-lg font-bold">{weekProgress.lifts?.breakdown?.lifting || 0}</div>
-                  <div className="text-[10px] text-gray-400">🏋️ Lifting</div>
-                </div>
-                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="text-lg font-bold">{weekProgress.lifts?.breakdown?.bodyweight || 0}</div>
-                  <div className="text-[10px] text-gray-400">💪 Bodyweight</div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-xs text-gray-400">Muscle groups trained</div>
+                <div className="text-[10px] text-gray-500">
+                  🏋️ {weekProgress.lifts?.breakdown?.lifting || 0} Lifting · 💪 {weekProgress.lifts?.breakdown?.bodyweight || 0} Bodyweight
                 </div>
               </div>
+              {Object.keys(weekProgress.lifts?.muscleGroups || {}).length > 0 ? (
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  {Object.entries(weekProgress.lifts.muscleGroups).sort((a, b) => b[1] - a[1]).map(([area, count]) => (
+                    <div key={area} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                      <div className="text-lg font-bold">{count}</div>
+                      <div className="text-[10px] text-gray-400">{area}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-gray-500 text-center py-2">No focus areas logged yet</div>
+              )}
             </div>
           )}
           
@@ -12827,7 +12850,19 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
       });
       return breakdown;
     };
-    
+
+    // Muscle group breakdown for strength — count each focus area individually
+    const calcMuscleGroupBreakdown = (acts) => {
+      const breakdown = {};
+      acts.forEach(a => {
+        const areas = a.focusAreas || (a.focusArea ? [a.focusArea] : []);
+        areas.forEach(area => {
+          breakdown[area] = (breakdown[area] || 0) + 1;
+        });
+      });
+      return breakdown;
+    };
+
     // Distance breakdowns
     const milesRan = filteredActivities.filter(a => a.type === 'Running').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
     const milesBiked = filteredActivities.filter(a => a.type === 'Cycle').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
@@ -12837,11 +12872,12 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
     return {
       workouts: lifts.length + cardioActs.length,
       recovery: recoveryActs.length,
+      liftingCount: lifts.length,
       miles: totalMiles,
       milesRan,
       milesBiked,
       milesWalked,
-      lifting: calcBreakdown(lifts),
+      lifting: calcMuscleGroupBreakdown(lifts),
       cardio: calcBreakdown(cardioActs),
       recoveryBreakdown: calcBreakdown(recoveryActs)
     };
@@ -13446,7 +13482,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                             <div className="font-medium text-sm flex items-center gap-1">
                               {activity.type === 'Other' && activity.customEmoji && <span>{activity.customEmoji}</span>}
                               {activity.type === 'Strength Training'
-                                ? (activity.subtype ? `${activity.subtype}${activity.focusArea ? ` • ${activity.focusArea}` : ''}` : (activity.focusArea ? `Strength Training • ${activity.focusArea}` : 'Strength Training'))
+                                ? (() => { const areas = activity.focusAreas || (activity.focusArea ? [activity.focusArea] : []); return activity.subtype ? `${activity.subtype}${areas.length > 0 ? ` • ${areas.join(', ')}` : ''}` : (areas.length > 0 ? `Strength Training • ${areas.join(', ')}` : 'Strength Training'); })()
                                 : (activity.subtype ? `${activity.type} • ${activity.subtype}` : activity.type)}
                             </div>
                             <span className="text-gray-500 text-xs">›</span>
@@ -13700,7 +13736,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
               {/* Main Stats Row - Strength / Cardio / Recovery */}
               <div className="grid grid-cols-3 gap-2.5 mb-3">
                 <div className="p-3.5 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(0, 255, 148, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
-                  <div className="text-3xl font-black" style={{ color: '#00FF94' }}>{Object.values(totalsData.lifting || {}).reduce((a, b) => a + b, 0)}</div>
+                  <div className="text-3xl font-black" style={{ color: '#00FF94' }}>{totalsData.liftingCount || 0}</div>
                   <div className="text-xs text-gray-400 flex items-center gap-1 mt-1">
                     <span>🏋️</span>
                     <span>Strength</span>
@@ -13791,7 +13827,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
 
               {/* Strength Breakdown */}
               <div className="mb-6">
-                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">🏋️ Strength Breakdown</div>
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">🏋️ Muscle groups trained</div>
                 <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                   {Object.keys(totalsData.lifting || {}).length > 0 ? (
                     <div className="space-y-2">
@@ -19499,9 +19535,9 @@ export default function DaySevenApp() {
             const activityType = workoutData.type;
             const strengthType = workoutData.strengthType || null;
             const subtype = workoutData.subtype || null;
-            const focusArea = workoutData.focusArea || null;
+            const focusAreas = workoutData.focusAreas || (workoutData.focusArea ? [workoutData.focusArea] : null);
             console.log('[StartWorkout] Sending to watch:', activityType, ', subtype:', subtype);
-            await startWatchWorkout(activityType, strengthType, subtype, focusArea);
+            await startWatchWorkout(activityType, strengthType, subtype, focusAreas);
             console.log('[StartWorkout] Watch workout started via sendMessage');
             setActiveWorkout({ ...workoutData, source: 'watch', startTime: new Date().toISOString() });
             return;
@@ -20016,8 +20052,11 @@ export default function DaySevenApp() {
 
             // Find most frequent strength focus area (Full Body, Upper, Lower, etc.)
             const strengthFocusCounts = {};
-            monthlyActivities.filter(a => a.type === 'Strength Training' && a.focusArea).forEach(a => {
-              strengthFocusCounts[a.focusArea] = (strengthFocusCounts[a.focusArea] || 0) + 1;
+            monthlyActivities.filter(a => a.type === 'Strength Training').forEach(a => {
+              const areas = a.focusAreas || (a.focusArea ? [a.focusArea] : []);
+              areas.forEach(area => {
+                strengthFocusCounts[area] = (strengthFocusCounts[area] || 0) + 1;
+              });
             });
             const mostFrequentStrength = Object.entries(strengthFocusCounts).sort((a, b) => b[1] - a[1])[0];
 

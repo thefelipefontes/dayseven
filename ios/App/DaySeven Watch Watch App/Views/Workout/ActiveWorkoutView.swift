@@ -11,7 +11,7 @@ struct ActiveWorkoutView: View {
     let activityType: String
     let strengthType: String?
     var preSelectedSubtype: String? = nil
-    var preSelectedFocusArea: String? = nil
+    var preSelectedFocusAreas: [String]? = nil
     var preSelectedCountToward: String? = nil
     @Binding var navigationPath: NavigationPath
 
@@ -354,7 +354,7 @@ struct ActiveWorkoutView: View {
         wm.summaryActivityType = activityType
         wm.summaryStrengthType = strengthType
         wm.summarySubtype = preSelectedSubtype
-        wm.summaryFocusArea = preSelectedFocusArea
+        wm.summaryFocusAreas = preSelectedFocusAreas
         wm.summaryCountToward = preSelectedCountToward
 
         // If already showing summary, don't try to start again

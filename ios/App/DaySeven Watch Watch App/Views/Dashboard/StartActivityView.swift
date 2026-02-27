@@ -142,6 +142,7 @@ struct StartActivityView: View {
 
         return HStack {
             // Left side: tap for details (if available) or quick start
+            // Spacer is inside the label so the entire row area is tappable
             Button {
                 guard !isWorkoutActive else { return }
                 if hasDetails {
@@ -158,12 +159,12 @@ struct StartActivityView: View {
                     Text(name)
                         .font(.system(size: 16, weight: .medium))
                         .foregroundColor(isWorkoutActive ? .gray : .white)
+                    Spacer()
                 }
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .disabled(isWorkoutActive)
-
-            Spacer()
 
             // Right side: play button
             // For location activities (Running/Walking/Cycling), go to Indoor/Outdoor picker
@@ -206,12 +207,12 @@ struct StartActivityView: View {
                     Text(name)
                         .font(.system(size: 16, weight: .medium))
                         .foregroundColor(isWorkoutActive ? .gray : .white)
+                    Spacer()
                 }
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .disabled(isWorkoutActive)
-
-            Spacer()
 
             Button {
                 guard !isWorkoutActive else { return }

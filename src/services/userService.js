@@ -314,16 +314,30 @@ export async function getUserActivities(uid, forceRefresh = false) {
         console.log('[getUserActivities] REST response status:', response.status);
         const json = await response.json();
         // Parse Firestore REST format
+        const parseFirestoreValue = (val) => {
+          if (val.stringValue !== undefined) return val.stringValue;
+          if (val.integerValue !== undefined) return parseInt(val.integerValue);
+          if (val.doubleValue !== undefined) return val.doubleValue;
+          if (val.booleanValue !== undefined) return val.booleanValue;
+          if (val.nullValue !== undefined) return null;
+          if (val.arrayValue) return (val.arrayValue.values || []).map(parseFirestoreValue);
+          if (val.mapValue) {
+            const obj = {};
+            for (const [k, v] of Object.entries(val.mapValue.fields || {})) {
+              obj[k] = parseFirestoreValue(v);
+            }
+            return obj;
+          }
+          return undefined;
+        };
         const activitiesField = json?.fields?.activities;
         if (activitiesField?.arrayValue?.values) {
           activities = activitiesField.arrayValue.values.map(v => {
             const fields = v.mapValue?.fields || {};
             const parsed = {};
             for (const [key, val] of Object.entries(fields)) {
-              if (val.stringValue !== undefined) parsed[key] = val.stringValue;
-              else if (val.integerValue !== undefined) parsed[key] = parseInt(val.integerValue);
-              else if (val.doubleValue !== undefined) parsed[key] = val.doubleValue;
-              else if (val.booleanValue !== undefined) parsed[key] = val.booleanValue;
+              const parsedVal = parseFirestoreValue(val);
+              if (parsedVal !== undefined) parsed[key] = parsedVal;
             }
             return parsed;
           });
@@ -361,16 +375,36 @@ export async function getUserActivities(uid, forceRefresh = false) {
 }
 
 export async function checkUsernameAvailable(username) {
-  const path = `usernames/${username.toLowerCase()}`;
+  const lowerUsername = username.toLowerCase();
+  const path = `usernames/${lowerUsername}`;
 
   try {
     if (isNative) {
+      // Check /usernames collection first
       const { snapshot } = await FirebaseFirestore.getDocument({ reference: path });
-      return !snapshot?.data;
+      if (snapshot?.data) return false; // Already reserved
+
+      // Also check /users collection for legacy users who don't have a /usernames doc
+      const { snapshots } = await FirebaseFirestore.getCollection({
+        reference: 'users',
+        compositeFilter: {
+          type: 'and',
+          queryConstraints: [
+            { type: 'where', fieldPath: 'username', opStr: '==', value: lowerUsername }
+          ]
+        }
+      });
+      return !snapshots?.length;
     } else {
-      const usernameRef = doc(db, 'usernames', username.toLowerCase());
+      // Check /usernames collection first
+      const usernameRef = doc(db, 'usernames', lowerUsername);
       const usernameDoc = await getDoc(usernameRef);
-      return !usernameDoc.exists();
+      if (usernameDoc.exists()) return false; // Already reserved
+
+      // Also check /users collection for legacy users
+      const usersQuery = query(collection(db, 'users'), where('username', '==', lowerUsername));
+      const usersSnapshot = await getDocs(usersQuery);
+      return usersSnapshot.empty;
     }
   } catch (error) {
     return true; // Assume available on error

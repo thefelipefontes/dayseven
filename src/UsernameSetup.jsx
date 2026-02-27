@@ -1,11 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from './firebase';
-import { updateUserProfile, checkUsernameAvailable } from './services/userService';
-import { Capacitor } from '@capacitor/core';
-import { FirebaseFirestore } from '@capacitor-firebase/firestore';
-
-const isNative = Capacitor.isNativePlatform();
+import { saveUsername, checkUsernameAvailable } from './services/userService';
 
 const UsernameSetup = ({ user, onComplete }) => {
   const [username, setUsername] = useState('');
@@ -36,19 +30,8 @@ const UsernameSetup = ({ user, onComplete }) => {
     const checkUsername = async () => {
       setIsChecking(true);
       try {
-        if (isNative) {
-          // Use native Firestore to check username
-          const { snapshot } = await FirebaseFirestore.getDocument({
-            reference: `usernames/${username.toLowerCase()}`
-          });
-          setIsTaken(!!snapshot?.data);
-        } else {
-          // Use web Firestore
-          const usersRef = collection(db, 'users');
-          const q = query(usersRef, where('username', '==', username));
-          const querySnapshot = await getDocs(q);
-          setIsTaken(!querySnapshot.empty);
-        }
+        const available = await checkUsernameAvailable(username);
+        setIsTaken(!available);
       } catch (error) {
         // On error, assume username is available to let user proceed
         setIsTaken(false);
@@ -65,7 +48,14 @@ const UsernameSetup = ({ user, onComplete }) => {
 
     setIsSaving(true);
     try {
-      await updateUserProfile(user.uid, { username: username.toLowerCase() });
+      // Re-check availability right before saving to prevent race conditions
+      const stillAvailable = await checkUsernameAvailable(username);
+      if (!stillAvailable) {
+        setIsTaken(true);
+        setIsSaving(false);
+        return;
+      }
+      await saveUsername(user.uid, username);
       onComplete(username);
     } catch (error) {
       // Still proceed on error - will sync later

@@ -911,7 +911,14 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         let hkType = mapActivityType(activityType)
         let config = HKWorkoutConfiguration()
         config.activityType = hkType
-        config.locationType = (subtype?.lowercased() == "indoor") ? .indoor : .outdoor
+        // Only set indoor/outdoor for activities that have location-based subtypes
+        if subtype?.lowercased() == "indoor" {
+            config.locationType = .indoor
+        } else if subtype?.lowercased() == "outdoor" {
+            config.locationType = .outdoor
+        } else {
+            config.locationType = .unknown
+        }
 
         print("[HealthKitWriter] attemptWatchAppLaunch: activityType=\(activityType), hkType=\(hkType.rawValue)")
 

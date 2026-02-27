@@ -242,12 +242,17 @@ struct MainTabView: View {
                 // If a workout is active but no ActiveWorkoutView is shown,
                 // push one — but only after a short delay to let the
                 // remoteWorkoutRequest onChange handler fire first (it has priority).
-                if appVM.workoutManager.isActive && startPath.isEmpty {
+                if appVM.workoutManager.isActive && startPath.isEmpty
+                    && !appVM.workoutManager.isDismissingSummary
+                    && appVM.workoutManager.lastResult == nil {
                     selectedTab = 0
                     appVM.workoutManager.workoutPageIndex = 1  // Ensure timer page, not controls
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         // Re-check: if remoteWorkoutRequest handler already navigated, skip
                         guard startPath.isEmpty && appVM.workoutManager.isActive else { return }
+                        guard !appVM.workoutManager.isDismissingSummary else { return }
+                        guard appVM.workoutManager.lastResult == nil else { return }
+
                         if let request = appVM.phoneService.remoteWorkoutRequest {
                             if request.subtype != nil || request.focusAreas != nil {
                                 startPath.append(WorkoutDestination.customStart(
@@ -263,10 +268,24 @@ struct MainTabView: View {
                                 ))
                             }
                         } else {
-                            startPath.append(WorkoutDestination.quickStart(
-                                activityType: "Other",
-                                strengthType: nil
-                            ))
+                            // Use stored workout metadata to preserve type/details
+                            let wm = appVM.workoutManager
+                            let type = wm.summaryActivityType.isEmpty ? "Other" : wm.summaryActivityType
+                            if wm.summaryFocusAreas != nil || wm.summarySubtype != nil {
+                                startPath.append(WorkoutDestination.customStart(
+                                    activityType: type,
+                                    strengthType: wm.summaryStrengthType,
+                                    subtype: wm.summarySubtype,
+                                    focusAreas: wm.summaryFocusAreas,
+                                    countToward: wm.summaryCountToward
+                                ))
+                            } else {
+                                startPath.append(WorkoutDestination.quickStart(
+                                    activityType: type,
+                                    strengthType: wm.summaryStrengthType,
+                                    countToward: wm.summaryCountToward
+                                ))
+                            }
                         }
                     }
                 } else if !startPath.isEmpty {

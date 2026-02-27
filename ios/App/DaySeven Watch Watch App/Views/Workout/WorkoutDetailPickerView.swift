@@ -30,21 +30,36 @@ struct WorkoutDetailPickerView: View {
 
     private var strengthFocusSection: some View {
         Group {
-            // Quick start without focus area
+            // Top button: "Just Start" when no focus areas selected, "Start Workout" when areas are selected
             Button {
-                path.append(WorkoutDestination.quickStart(activityType: activityType, strengthType: strengthType))
+                if selectedFocusAreas.isEmpty {
+                    path.append(WorkoutDestination.quickStart(activityType: activityType, strengthType: strengthType))
+                } else {
+                    let orderedAreas = ActivityTypes.strengthFocusAreas.filter { selectedFocusAreas.contains($0) }
+                    path.append(WorkoutDestination.customStart(
+                        activityType: activityType,
+                        strengthType: strengthType,
+                        subtype: nil,
+                        focusAreas: orderedAreas
+                    ))
+                }
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "play.fill")
                         .font(.system(size: 12))
-                        .foregroundColor(.green)
-                    Text("Just Start")
+                        .foregroundColor(selectedFocusAreas.isEmpty ? .green : .black)
+                    Text(selectedFocusAreas.isEmpty ? "Just Start" : "Start Workout")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.green)
+                        .foregroundColor(selectedFocusAreas.isEmpty ? .green : .black)
                 }
-                .padding(.vertical, 2)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, selectedFocusAreas.isEmpty ? 2 : 10)
+                .background(selectedFocusAreas.isEmpty ? Color.clear : Color.green)
+                .cornerRadius(selectedFocusAreas.isEmpty ? 0 : 12)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .listRowBackground(Color.clear)
 
             // Focus areas (multi-select with checkmarks)
             ForEach(ActivityTypes.strengthFocusAreas, id: \.self) { area in
@@ -67,34 +82,9 @@ struct WorkoutDetailPickerView: View {
                         }
                     }
                     .padding(.vertical, 2)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-            }
-
-            // Start button (appears when ≥1 focus area is selected)
-            if !selectedFocusAreas.isEmpty {
-                Button {
-                    let orderedAreas = ActivityTypes.strengthFocusAreas.filter { selectedFocusAreas.contains($0) }
-                    path.append(WorkoutDestination.customStart(
-                        activityType: activityType,
-                        strengthType: strengthType,
-                        subtype: nil,
-                        focusAreas: orderedAreas
-                    ))
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 12))
-                            .foregroundColor(.green)
-                        Text("Start Workout")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.green)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
-                }
-                .buttonStyle(.plain)
-                .listRowBackground(Color.green.opacity(0.15))
             }
         }
     }
@@ -136,10 +126,14 @@ struct WorkoutDetailPickerView: View {
                         focusAreas: nil
                     ))
                 } label: {
-                    Text(subtype)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.white)
-                        .padding(.vertical, 2)
+                    HStack {
+                        Text(subtype)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.white)
+                        Spacer()
+                    }
+                    .padding(.vertical, 2)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }

@@ -16,6 +16,10 @@ import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, saveWorkoutToHe
 import NotificationSettings from './NotificationSettings';
 import { initializePushNotifications, handleNotificationNavigation } from './services/notificationService';
 
+// Flag to suppress foreground refresh while photo picker is open
+// (prevents re-render glitch when returning from iOS photo picker)
+let photoPickerActive = false;
+
 // Helper function for haptic feedback that works on iOS
 const triggerHaptic = async (style = ImpactStyle.Medium) => {
   try {
@@ -1713,26 +1717,43 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
   }, [isOpen, workout?.startTime, linkedWorkoutUUIDs]);
 
   // Handle photo from library using Capacitor Camera
+  const [isLoadingPhoto, setIsLoadingPhoto] = useState(false);
+
   const handleChooseFromLibrary = async () => {
     if (Capacitor.isNativePlatform()) {
       try {
+        setIsLoadingPhoto(true);
+        photoPickerActive = true;
         const image = await Camera.getPhoto({
-          quality: 90,
+          quality: 80,
           allowEditing: false,
-          resultType: CameraResultType.DataUrl,
+          resultType: CameraResultType.Uri,
           source: CameraSource.Photos
         });
+        photoPickerActive = false;
 
-        if (image.dataUrl) {
-          const response = await fetch(image.dataUrl);
+        if (image.path) {
+          const webPath = Capacitor.convertFileSrc(image.path);
+          setPhotoPreview(webPath);
+
+          const response = await fetch(webPath);
           const blob = await response.blob();
-          const file = new File([blob], 'photo.jpg', { type: 'image/jpeg' });
+          if (blob.size < 100) {
+            setPhotoPreview(null);
+            setIsLoadingPhoto(false);
+            alert('Could not load this photo. If it\'s stored in iCloud, make sure it\'s downloaded to your device first.');
+            return;
+          }
+          const file = new File([blob], 'photo.jpg', { type: blob.type || 'image/jpeg' });
           setActivityPhoto(file);
-          setPhotoPreview(image.dataUrl);
         }
       } catch (error) {
         if (error.message !== 'User cancelled photos app') {
+          alert('Could not load photo. Please try again or choose a different photo.');
         }
+      } finally {
+        photoPickerActive = false;
+        setIsLoadingPhoto(false);
       }
     } else {
       fileInputRef.current?.click();
@@ -1743,23 +1764,38 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
   const handleTakePhoto = async () => {
     if (Capacitor.isNativePlatform()) {
       try {
+        setIsLoadingPhoto(true);
+        photoPickerActive = true;
         const image = await Camera.getPhoto({
-          quality: 90,
+          quality: 80,
           allowEditing: false,
-          resultType: CameraResultType.DataUrl,
+          resultType: CameraResultType.Uri,
           source: CameraSource.Camera
         });
+        photoPickerActive = false;
 
-        if (image.dataUrl) {
-          const response = await fetch(image.dataUrl);
+        if (image.path) {
+          const webPath = Capacitor.convertFileSrc(image.path);
+          setPhotoPreview(webPath);
+
+          const response = await fetch(webPath);
           const blob = await response.blob();
-          const file = new File([blob], 'photo.jpg', { type: 'image/jpeg' });
+          if (blob.size < 100) {
+            setPhotoPreview(null);
+            setIsLoadingPhoto(false);
+            alert('Could not load this photo. Please try again.');
+            return;
+          }
+          const file = new File([blob], 'photo.jpg', { type: blob.type || 'image/jpeg' });
           setActivityPhoto(file);
-          setPhotoPreview(image.dataUrl);
         }
       } catch (error) {
         if (error.message !== 'User cancelled photos app') {
+          alert('Could not load photo. Please try again.');
         }
+      } finally {
+        photoPickerActive = false;
+        setIsLoadingPhoto(false);
       }
     }
   };
@@ -2277,7 +2313,11 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                 className="hidden"
               />
 
-              {photoPreview ? (
+              {isLoadingPhoto ? (
+                <div className="w-full h-48 rounded-xl bg-white/5 flex items-center justify-center">
+                  <div className="w-8 h-8 border-2 border-gray-500 border-t-[#00FF94] rounded-full animate-spin" />
+                </div>
+              ) : photoPreview ? (
                 <div className="space-y-3">
                   {/* Photo Preview */}
                   <div className="relative rounded-xl overflow-hidden">
@@ -5416,7 +5456,7 @@ const DeleteAccountModal = ({ isOpen, onClose, user, userProfile, onDeleteComple
     try {
       const { deleteUserAccount } = await import('./services/userService');
 
-      // For email/password users, re-authenticate first
+      // For email/password users, re-authenticate with password first
       if (isEmailPasswordUser && password) {
         if (Capacitor.isNativePlatform()) {
           const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
@@ -5433,12 +5473,45 @@ const DeleteAccountModal = ({ isOpen, onClose, user, userProfile, onDeleteComple
       // Delete user data from Firestore
       await deleteUserAccount(user.uid, userProfile?.username);
 
-      // Delete Firebase Auth account
-      if (Capacitor.isNativePlatform()) {
-        const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
-        await FirebaseAuthentication.deleteUser();
-      } else {
-        await auth.currentUser.delete();
+      // Delete Firebase Auth account — retry with re-auth if session is stale
+      const deleteAuthAccount = async () => {
+        if (Capacitor.isNativePlatform()) {
+          const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+          await FirebaseAuthentication.deleteUser();
+        } else {
+          await auth.currentUser.delete();
+        }
+      };
+
+      try {
+        await deleteAuthAccount();
+      } catch (authErr) {
+        const code = authErr.code || authErr.message || '';
+        if (code.includes('requires-recent-login')) {
+          // Re-authenticate with the user's provider, then retry
+          if (Capacitor.isNativePlatform()) {
+            const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+            const isAppleUser = user?.providerData?.some(p => p.providerId === 'apple.com');
+            if (isAppleUser) {
+              await FirebaseAuthentication.signInWithApple();
+            } else {
+              await FirebaseAuthentication.signInWithGoogle();
+            }
+          } else {
+            const { GoogleAuthProvider, signInWithPopup, OAuthProvider } = await import('firebase/auth');
+            const isAppleUser = user?.providerData?.some(p => p.providerId === 'apple.com');
+            if (isAppleUser) {
+              const provider = new OAuthProvider('apple.com');
+              await signInWithPopup(auth, provider);
+            } else {
+              const provider = new GoogleAuthProvider();
+              await signInWithPopup(auth, provider);
+            }
+          }
+          await deleteAuthAccount();
+        } else {
+          throw authErr;
+        }
       }
 
       triggerHaptic(ImpactStyle.Heavy);
@@ -5447,8 +5520,6 @@ const DeleteAccountModal = ({ isOpen, onClose, user, userProfile, onDeleteComple
       const errorCode = err.code || err.message || '';
       if (errorCode.includes('wrong-password') || errorCode.includes('invalid-credential') || errorCode.includes('INVALID_LOGIN_CREDENTIALS')) {
         setError('Incorrect password. Please try again.');
-      } else if (errorCode.includes('requires-recent-login')) {
-        setError('Please sign out, sign back in, and try again.');
       } else {
         setError('Failed to delete account. Please try again.');
       }
@@ -8260,26 +8331,45 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   };
 
   // Photo handling with Capacitor Camera
+  const [isLoadingPhoto, setIsLoadingPhoto] = useState(false);
+
   const handleChooseFromLibrary = async () => {
     if (Capacitor.isNativePlatform()) {
       try {
+        setIsLoadingPhoto(true);
+        photoPickerActive = true;
         const image = await Camera.getPhoto({
-          quality: 90,
+          quality: 80,
           allowEditing: false,
-          resultType: CameraResultType.DataUrl,
+          resultType: CameraResultType.Uri,
           source: CameraSource.Photos
         });
+        photoPickerActive = false;
 
-        if (image.dataUrl) {
-          const response = await fetch(image.dataUrl);
+        if (image.path) {
+          // Use Capacitor's file URI for fast preview (no base64 encoding)
+          const webPath = Capacitor.convertFileSrc(image.path);
+          setPhotoPreview(webPath);
+
+          // Create File blob in background for upload
+          const response = await fetch(webPath);
           const blob = await response.blob();
-          const file = new File([blob], 'photo.jpg', { type: 'image/jpeg' });
+          if (blob.size < 100) {
+            setPhotoPreview(null);
+            setIsLoadingPhoto(false);
+            alert('Could not load this photo. If it\'s stored in iCloud, make sure it\'s downloaded to your device first.');
+            return;
+          }
+          const file = new File([blob], 'photo.jpg', { type: blob.type || 'image/jpeg' });
           setActivityPhoto(file);
-          setPhotoPreview(image.dataUrl);
         }
       } catch (error) {
         if (error.message !== 'User cancelled photos app') {
+          alert('Could not load photo. Please try again or choose a different photo.');
         }
+      } finally {
+        photoPickerActive = false;
+        setIsLoadingPhoto(false);
       }
     } else {
       photoInputRef.current?.click();
@@ -8289,23 +8379,37 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   const handleTakePhoto = async () => {
     if (Capacitor.isNativePlatform()) {
       try {
+        setIsLoadingPhoto(true);
+        photoPickerActive = true;
         const image = await Camera.getPhoto({
-          quality: 90,
+          quality: 80,
           allowEditing: false,
-          resultType: CameraResultType.DataUrl,
+          resultType: CameraResultType.Uri,
           source: CameraSource.Camera
         });
+        photoPickerActive = false;
 
-        if (image.dataUrl) {
-          const response = await fetch(image.dataUrl);
+        if (image.path) {
+          const webPath = Capacitor.convertFileSrc(image.path);
+          setPhotoPreview(webPath);
+
+          const response = await fetch(webPath);
           const blob = await response.blob();
-          const file = new File([blob], 'photo.jpg', { type: 'image/jpeg' });
+          if (blob.size < 100) {
+            setPhotoPreview(null);
+            setIsLoadingPhoto(false);
+            alert('Could not load this photo. Please try again.');
+            return;
+          }
+          const file = new File([blob], 'photo.jpg', { type: blob.type || 'image/jpeg' });
           setActivityPhoto(file);
-          setPhotoPreview(image.dataUrl);
         }
       } catch (error) {
         if (error.message !== 'User cancelled photos app') {
+          alert('Could not load photo. Please try again.');
         }
+      } finally {
+        setIsLoadingPhoto(false);
       }
     } else {
       cameraInputRef.current?.click();
@@ -9916,7 +10020,11 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 className="hidden"
               />
 
-              {photoPreview ? (
+              {isLoadingPhoto ? (
+                <div className="w-full h-48 rounded-xl bg-white/5 flex items-center justify-center">
+                  <div className="w-8 h-8 border-2 border-gray-500 border-t-[#00FF94] rounded-full animate-spin" />
+                </div>
+              ) : photoPreview ? (
                 <div className="space-y-3">
                   {/* Photo Preview */}
                   <div className="relative rounded-xl overflow-hidden">
@@ -17841,6 +17949,8 @@ export default function DaySevenApp() {
     // Also refresh when app comes back to foreground (full sync including workouts)
     const handleVisibilityChange = async () => {
       if (document.visibilityState === 'visible') {
+        // Skip refresh when returning from photo picker to prevent re-render glitch
+        if (photoPickerActive) return;
         refreshHealthKitData();
         // Re-sync workouts when returning to foreground
         if (user?.uid) {
@@ -18181,7 +18291,10 @@ export default function DaySevenApp() {
       try {
         photoURL = await uploadActivityPhoto(user.uid, activityId, activity.photoFile);
       } catch (error) {
-        // Continue saving the activity without the photo
+        // Continue saving the activity without the photo, but notify user
+        setToastMessage('Photo could not be uploaded. Activity saved without photo.');
+        setToastType('success');
+        setShowToast(true);
       }
     }
 
@@ -19693,7 +19806,7 @@ export default function DaySevenApp() {
         userProfile={userProfile}
         onDeleteComplete={() => {
           setShowDeleteAccount(false);
-          // User will be automatically signed out when auth account is deleted
+          handleSignOut();
         }}
       />
 

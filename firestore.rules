@@ -39,10 +39,13 @@ service cloud.firestore {
       }
     }
 
-    // Usernames collection
+    // Usernames collection — only one user can claim a username
     match /usernames/{username} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      // Only allow creating if the username doesn't already exist
+      allow create: if request.auth != null && !exists(/databases/$(database)/documents/usernames/$(username));
+      // Only the owner can update or delete their username reservation
+      allow update, delete: if request.auth != null && request.auth.uid == resource.data.uid;
     }
 
     // Friend requests collection

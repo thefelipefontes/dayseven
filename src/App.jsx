@@ -12559,13 +12559,17 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
   const [statsSubView, setStatsSubView] = useState(initialStatsSubView); // 'overview' or 'records'
 
   // Free users: limit activity history to last 30 days
-  const visibleActivities = useMemo(() => {
-    if (isPro) return activities;
+  const historyCutoffDate = useMemo(() => {
+    if (isPro) return null;
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 30);
-    const cutoffStr = cutoff.toISOString().split('T')[0];
-    return activities.filter(a => a.date >= cutoffStr);
-  }, [activities, isPro]);
+    return cutoff.toISOString().split('T')[0];
+  }, [isPro]);
+
+  const visibleActivities = useMemo(() => {
+    if (isPro || !historyCutoffDate) return activities;
+    return activities.filter(a => a.date >= historyCutoffDate);
+  }, [activities, isPro, historyCutoffDate]);
   const [calendarView, setCalendarView] = useState('heatmap');
   const [selectedDate, setSelectedDate] = useState(getTodayDate());
   const [selectedDayActivity, setSelectedDayActivity] = useState(null); // For activity detail modal
@@ -13105,7 +13109,10 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
     
     let filteredActivities;
     
-    if (totalsView === 'this-month') {
+    if (totalsView === 'last-30-days') {
+      // Last 30 days — just use visibleActivities directly (already filtered for free users)
+      filteredActivities = visibleActivities;
+    } else if (totalsView === 'this-month') {
       // This month
       filteredActivities = visibleActivities.filter(a => a.date && a.date.startsWith(thisMonthStr));
     } else if (totalsView === 'last-month') {
@@ -13345,6 +13352,15 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
             </button>
             <button
               onClick={() => {
+                // Check if entire displayed month is before cutoff
+                if (historyCutoffDate) {
+                  const monthEnd = new Date(displayedYear, displayedMonth + 1, 0);
+                  const monthEndStr = monthEnd.toISOString().split('T')[0];
+                  if (monthEndStr < historyCutoffDate) {
+                    onPresentPaywall?.();
+                    return;
+                  }
+                }
                 setSelectedMonth({ month: displayedMonth, year: displayedYear });
                 setShowMonthStats(true);
               }}
@@ -13384,16 +13400,22 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                 {/* Week stats button - shows checkmark if all goals met */}
                 {(() => {
                   const goalsHit = weekGoalsMet[week.id];
+                  const weekEndDate = week.days[6]?.date || week.days[week.days.length - 1]?.date;
+                  const isWeekLocked = !!(historyCutoffDate && weekEndDate < historyCutoffDate);
                   const bgDefault = goalsHit ? 'rgba(0,255,148,0.15)' : 'rgba(255,255,255,0.05)';
                   const bgPressed = goalsHit ? 'rgba(0,255,148,0.25)' : 'rgba(255,255,255,0.1)';
                   return (
                     <button
                       onClick={() => {
+                        if (isWeekLocked) {
+                          onPresentPaywall?.();
+                          return;
+                        }
                         setSelectedWeek(week);
                         setShowWeekStats(true);
                       }}
                       className="w-8 h-8 rounded-md flex items-center justify-center text-[10px] transition-all duration-150"
-                      style={{ backgroundColor: bgDefault }}
+                      style={{ backgroundColor: bgDefault, opacity: isWeekLocked ? 0.4 : 1 }}
                       onTouchStart={(e) => {
                         e.currentTarget.style.transform = 'scale(0.85)';
                         e.currentTarget.style.backgroundColor = bgPressed;
@@ -13431,12 +13453,18 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                   const todayStr = getTodayDate();
                   const isToday = day.date === todayStr;
                   const isFuture = day.date > todayStr; // Simple string comparison works for YYYY-MM-DD format
+                  const isLocked = !!(historyCutoffDate && day.date < historyCutoffDate);
 
                   return (
                     <button
                       key={day.date}
                       onClick={() => {
                         setSelectedDate(day.date);
+                        // Free users: block viewing day details beyond 30 days
+                        if (historyCutoffDate && day.date < historyCutoffDate) {
+                          onPresentPaywall?.();
+                          return;
+                        }
                         if (dayActivities.length > 0) {
                           openDayModal();
                         } else if (!isFuture) {
@@ -13448,7 +13476,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                         backgroundColor: selectedDate === day.date ? 'rgba(0,255,148,0.2)' :
                                          dayActivities.length > 0 ? 'rgba(255,255,255,0.05)' : 'transparent',
                         border: isToday ? '2px solid #00FF94' : 'none',
-                        opacity: day.isOverflow ? 0.35 : (isFuture ? 0.3 : 1)
+                        opacity: day.isOverflow ? 0.35 : (isFuture ? 0.3 : (isLocked ? 0.4 : 1))
                       }}
                       onTouchStart={(e) => {
                         if (!isFuture) e.currentTarget.style.transform = 'scale(0.92)';
@@ -14013,21 +14041,41 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
 
             {/* Time Period Dropdown - right aligned, only show for overview */}
             {statsSubView === 'overview' && (
-              <select
-                value={totalsView}
-                onChange={(e) => setTotalsView(e.target.value)}
-                className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-xs flex-shrink-0"
-              >
-                <option value="this-month" className="bg-black">This Month</option>
-                <option value="last-month" className="bg-black">Last Month</option>
-                <option value={String(getCurrentYear())} className="bg-black">{getCurrentYear()}</option>
-                <option value="all-time" className="bg-black">All-Time</option>
-                <optgroup label="Past Months" className="bg-black">
-                  {monthOptions.slice(2).map(opt => (
-                    <option key={opt.value} value={opt.value} className="bg-black">{opt.label}</option>
-                  ))}
-                </optgroup>
-              </select>
+              isPro ? (
+                <select
+                  value={totalsView}
+                  onChange={(e) => setTotalsView(e.target.value)}
+                  className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-xs flex-shrink-0"
+                >
+                  <option value="this-month" className="bg-black">This Month</option>
+                  <option value="last-month" className="bg-black">Last Month</option>
+                  <option value={String(getCurrentYear())} className="bg-black">{getCurrentYear()}</option>
+                  <option value="all-time" className="bg-black">All-Time</option>
+                  <optgroup label="Past Months" className="bg-black">
+                    {monthOptions.slice(2).map(opt => (
+                      <option key={opt.value} value={opt.value} className="bg-black">{opt.label}</option>
+                    ))}
+                  </optgroup>
+                </select>
+              ) : (
+                <select
+                  value={totalsView}
+                  onChange={(e) => {
+                    if (e.target.value === 'pro-locked') {
+                      onPresentPaywall?.();
+                      e.target.value = totalsView;
+                      return;
+                    }
+                    setTotalsView(e.target.value);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-xs flex-shrink-0"
+                >
+                  <option value="last-30-days" className="bg-black">Last 30 Days</option>
+                  <option value="this-month" className="bg-black">This Month</option>
+                  <option value="pro-locked" className="bg-black">🔒 {getCurrentYear()}</option>
+                  <option value="pro-locked" className="bg-black">🔒 All-Time</option>
+                </select>
+              )
             )}
           </div>
 
@@ -17892,6 +17940,31 @@ export default function DaySevenApp() {
             });
             setCalendarData(calendarMap);
 
+            // Recalculate streaks from actual activity history to fix any discrepancies
+            const loadedGoals = userGoals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2 };
+            const recalculated = recalculateStreaksFromHistory(userActivities, loadedGoals);
+            if (recalculated) {
+              const storedStreaks = profileForStreaks?.streaks || {};
+              // Only update if there's a mismatch
+              if (recalculated.master !== (storedStreaks.master || 0) ||
+                  recalculated.lifts !== (storedStreaks.lifts || 0) ||
+                  recalculated.cardio !== (storedStreaks.cardio || 0) ||
+                  recalculated.recovery !== (storedStreaks.recovery || 0)) {
+                console.log('[App] Streak mismatch detected, recalculating:', { stored: storedStreaks, recalculated });
+                setUserData(prev => ({
+                  ...prev,
+                  streaks: {
+                    ...prev.streaks,
+                    ...recalculated
+                  }
+                }));
+                // Persist corrected streaks
+                updateUserProfile(user.uid, {
+                  streaks: { ...storedStreaks, ...recalculated }
+                }).catch(() => {});
+              }
+            }
+
             // Check for pending master celebration (may have been completed on watch)
             // ALWAYS verify actual activity counts — never trust firestoreSaysMaster alone
             // because watch may have stale data (e.g., phone deleted an activity the watch doesn't know about)
@@ -18558,6 +18631,86 @@ export default function DaySevenApp() {
       calories: { burned: totalCalories, goal: userData.goals.caloriesPerDay },
       steps: { today: 0, goal: userData.goals.stepsPerDay }
     };
+  };
+
+  // Recalculate streaks from actual activity history
+  // Walks backwards week by week from the current week and counts consecutive completed weeks
+  const recalculateStreaksFromHistory = (allActivities, goals) => {
+    if (!goals || !allActivities || allActivities.length === 0) return null;
+
+    const today = new Date();
+    const currentWeekStart = new Date(today);
+    currentWeekStart.setDate(today.getDate() - today.getDay()); // Sunday
+    currentWeekStart.setHours(0, 0, 0, 0);
+
+    // Get shielded weeks
+    const shieldedWeeks = userDataRef.current?.streakShield?.shieldedWeeks || [];
+
+    // Walk backwards week by week, starting from LAST completed week
+    // (current week is still in progress, so start from the week before)
+    let streaks = { master: 0, lifts: 0, cardio: 0, recovery: 0 };
+    let liftsAlive = true, cardioAlive = true, recoveryAlive = true;
+
+    // Check up to 52 weeks back
+    for (let weekOffset = 1; weekOffset <= 52; weekOffset++) {
+      const weekStart = new Date(currentWeekStart);
+      weekStart.setDate(weekStart.getDate() - (weekOffset * 7));
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+      weekEnd.setHours(23, 59, 59, 999);
+
+      const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
+      const weekEndStr = `${weekEnd.getFullYear()}-${String(weekEnd.getMonth() + 1).padStart(2, '0')}-${String(weekEnd.getDate()).padStart(2, '0')}`;
+
+      // Check if this week was shielded
+      const isShielded = shieldedWeeks.includes(weekStartStr);
+
+      // Get activities for this week
+      const weekActivities = allActivities.filter(a => a.date >= weekStartStr && a.date <= weekEndStr);
+      const liftsCount = weekActivities.filter(a => getActivityCategory(a) === 'lifting').length;
+      const cardioCount = weekActivities.filter(a => getActivityCategory(a) === 'cardio').length;
+      const recoveryCount = weekActivities.filter(a => getActivityCategory(a) === 'recovery').length;
+
+      const liftsGoalMet = isShielded || liftsCount >= goals.liftsPerWeek;
+      const cardioGoalMet = isShielded || cardioCount >= goals.cardioPerWeek;
+      const recoveryGoalMet = isShielded || recoveryCount >= goals.recoveryPerWeek;
+
+      if (liftsAlive && liftsGoalMet) streaks.lifts++;
+      else liftsAlive = false;
+
+      if (cardioAlive && cardioGoalMet) streaks.cardio++;
+      else cardioAlive = false;
+
+      if (recoveryAlive && recoveryGoalMet) streaks.recovery++;
+      else recoveryAlive = false;
+
+      // Master streak: all three must be met
+      if (liftsAlive && cardioAlive && recoveryAlive) streaks.master++;
+
+      // If all streaks are broken, stop
+      if (!liftsAlive && !cardioAlive && !recoveryAlive) break;
+    }
+
+    // Now check if current week's goals are also met (adds to streak)
+    const currentWeekEnd = new Date(currentWeekStart);
+    currentWeekEnd.setDate(currentWeekEnd.getDate() + 6);
+    const cwStartStr = `${currentWeekStart.getFullYear()}-${String(currentWeekStart.getMonth() + 1).padStart(2, '0')}-${String(currentWeekStart.getDate()).padStart(2, '0')}`;
+    const cwEndStr = `${currentWeekEnd.getFullYear()}-${String(currentWeekEnd.getMonth() + 1).padStart(2, '0')}-${String(currentWeekEnd.getDate()).padStart(2, '0')}`;
+    const currentWeekShielded = shieldedWeeks.includes(cwStartStr);
+    const cwActivities = allActivities.filter(a => a.date >= cwStartStr && a.date <= cwEndStr);
+    const cwLifts = cwActivities.filter(a => getActivityCategory(a) === 'lifting').length;
+    const cwCardio = cwActivities.filter(a => getActivityCategory(a) === 'cardio').length;
+    const cwRecovery = cwActivities.filter(a => getActivityCategory(a) === 'recovery').length;
+
+    if (liftsAlive && (currentWeekShielded || cwLifts >= goals.liftsPerWeek)) streaks.lifts++;
+    if (cardioAlive && (currentWeekShielded || cwCardio >= goals.cardioPerWeek)) streaks.cardio++;
+    if (recoveryAlive && (currentWeekShielded || cwRecovery >= goals.recoveryPerWeek)) streaks.recovery++;
+    if (liftsAlive && cardioAlive && recoveryAlive &&
+        (currentWeekShielded || (cwLifts >= goals.liftsPerWeek && cwCardio >= goals.cardioPerWeek && cwRecovery >= goals.recoveryPerWeek))) {
+      streaks.master++;
+    }
+
+    return streaks;
   };
 
   const handleAddActivity = (pendingOrDate = null) => {
@@ -19257,31 +19410,32 @@ export default function DaySevenApp() {
       localStorage.setItem('weekCelebrations', JSON.stringify(wc));
       // Clear phone celebration shown flag so re-completing shows the celebration again
       localStorage.removeItem('phoneCelebrationShown');
-      // Decrement streaks that were wrongly incremented
-      if (Object.keys(streakChanges).length > 0) {
-        setUserData(prev => ({
-          ...prev,
-          streaks: {
-            ...prev.streaks,
-            ...Object.fromEntries(Object.entries(streakChanges).map(([k, v]) => [k, Math.max(0, v)]))
-          }
-        }));
-      }
+    }
+
+    // Full streak recalculation from history (handles all edge cases including past week deletions)
+    const recalculated = recalculateStreaksFromHistory(updatedActivities, goals);
+    if (recalculated) {
+      setUserData(prev => ({
+        ...prev,
+        streaks: {
+          ...prev.streaks,
+          ...recalculated
+        }
+      }));
     }
 
     // Persist deletion to Firestore
     // (watch notification happens automatically via the activities useEffect save)
     if (user?.uid) {
       saveUserActivities(user.uid, updatedActivities).catch(() => {});
-      if (wcChanged) {
-        setTimeout(() => {
-          const latestData = userDataRef.current;
-          updateUserProfile(user.uid, {
-            streaks: latestData.streaks,
-            weekCelebrations: wc
-          }).catch(() => {});
-        }, 100);
-      }
+      // Always persist recalculated streaks after delete
+      setTimeout(() => {
+        const latestData = userDataRef.current;
+        updateUserProfile(user.uid, {
+          streaks: latestData.streaks,
+          ...(wcChanged ? { weekCelebrations: wc } : {})
+        }).catch(() => {});
+      }, 100);
     }
 
   };

@@ -11187,7 +11187,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         )}
 
         {/* Streak Shield Button */}
-        {daysLeft <= 5 /* TEMP: change back to 2 */ && (liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0) && userData.streaks.master > 0 && (() => {
+        {daysLeft <= 2 && (liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0) && userData.streaks.master > 0 && (() => {
           const currentWeek = getCurrentWeekKey();
           const isShielded = userData.streakShield?.lastUsedWeek === currentWeek;
 

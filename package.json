@@ -28,6 +28,8 @@
     "@capacitor/status-bar": "^8.0.0",
     "@capawesome/capacitor-badge": "^8.0.0",
     "@capgo/capacitor-health": "^8.2.11",
+    "@revenuecat/purchases-capacitor": "^12.2.1",
+    "@revenuecat/purchases-capacitor-ui": "^12.2.1",
     "@sentry/react": "^10.36.0",
     "firebase": "^12.8.0",
     "html2canvas": "^1.4.1",

@@ -21,7 +21,9 @@ const triggerHaptic = async (style = ImpactStyle.Medium) => {
   }
 };
 
-const Friends = ({ user, userProfile, onClose }) => {
+const FREE_FRIEND_LIMIT = 3;
+
+const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall }) => {
   const [activeTab, setActiveTab] = useState('friends');
   const [friends, setFriends] = useState([]);
   const [requests, setRequests] = useState([]);
@@ -93,6 +95,12 @@ const Friends = ({ user, userProfile, onClose }) => {
   }, [searchQuery, user.uid]);
 
   const handleSendRequest = async (toUid) => {
+    // Check friend limit for free users
+    if (!isPro && friends.length >= FREE_FRIEND_LIMIT) {
+      triggerHaptic(ImpactStyle.Heavy);
+      onPresentPaywall?.();
+      return;
+    }
     triggerHaptic(ImpactStyle.Medium);
     setSendingTo(toUid);
     try {
@@ -364,6 +372,29 @@ const Friends = ({ user, userProfile, onClose }) => {
               {/* Friends Tab */}
               {activeTab === 'friends' && (
                 <div>
+                  {/* Friend limit banner for free users */}
+                  {!isPro && friends.length > 0 && (
+                    <button
+                      onClick={friends.length >= FREE_FRIEND_LIMIT ? onPresentPaywall : undefined}
+                      className="mx-4 mb-3 p-2.5 rounded-xl flex items-center gap-2"
+                      style={{
+                        backgroundColor: friends.length >= FREE_FRIEND_LIMIT ? 'rgba(255,149,0,0.08)' : 'rgba(255,255,255,0.03)',
+                        border: friends.length >= FREE_FRIEND_LIMIT ? '1px solid rgba(255,149,0,0.15)' : '1px solid transparent'
+                      }}
+                    >
+                      <span className="text-xs text-gray-400 flex-1 text-left">
+                        {friends.length}/{FREE_FRIEND_LIMIT} friends
+                        {friends.length >= FREE_FRIEND_LIMIT && (
+                          <span style={{ color: '#FF9500' }}> · Upgrade to Pro for unlimited</span>
+                        )}
+                      </span>
+                      {friends.length >= FREE_FRIEND_LIMIT && (
+                        <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                        </svg>
+                      )}
+                    </button>
+                  )}
                   {friends.length === 0 ? (
                     <div className="text-center py-12">
                       <p className="text-gray-400 mb-2">No friends yet</p>

@@ -15,6 +15,7 @@ import { Capacitor } from '@capacitor/core';
 import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged } from './services/healthService';
 import NotificationSettings from './NotificationSettings';
 import { initializePushNotifications, handleNotificationNavigation } from './services/notificationService';
+import { initializeRevenueCat, checkProStatus, addCustomerInfoListener, logoutRevenueCat, presentPaywall, presentCustomerCenter, restorePurchases } from './services/subscriptionService';
 
 // Flag to suppress foreground refresh while photo picker is open
 // (prevents re-render glitch when returning from iOS photo picker)
@@ -239,6 +240,11 @@ const initialUserData = {
     cardio: 0,
     recovery: 0,
     stepsGoal: 0
+  },
+  streakShield: {
+    lastUsedWeek: null,    // Week key when shield was last used (e.g., "2026-03-02")
+    shieldedWeeks: []      // Array of week keys where shield was activated
+    // Shield cooldown: 1 use per 6 weeks, starting from user's first full week after sign-up
   },
   customActivities: [], // User-saved custom activity types
   personalRecords: {
@@ -10262,7 +10268,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
 
 // Home Tab - Simplified
 
-const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange }) => {
+const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
   const [showWorkoutPicker, setShowWorkoutPicker] = useState(false);
@@ -10273,6 +10279,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
   const [activityComments, setActivityComments] = useState({});
   const [reactionDetailModal, setReactionDetailModal] = useState(null); // { activityId, reactions, selectedEmoji }
   const [commentDetailModal, setCommentDetailModal] = useState(null); // { activityId, comments }
+  const [showShieldInfo, setShowShieldInfo] = useState(false);
 
   // Lock body scroll when workout picker modal is open
   useEffect(() => {
@@ -11178,7 +11185,157 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
             </button>
           </div>
         )}
-        
+
+        {/* Streak Shield Button */}
+        {daysLeft <= 5 /* TEMP: change back to 2 */ && (liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0) && userData.streaks.master > 0 && (() => {
+          const currentWeek = getCurrentWeekKey();
+          const isShielded = userData.streakShield?.lastUsedWeek === currentWeek;
+
+          // Calculate 6-week cooldown from last use
+          const SHIELD_COOLDOWN_WEEKS = 6;
+          const lastUsedWeek = userData.streakShield?.lastUsedWeek;
+          let weeksUntilAvailable = 0;
+          let onCooldown = false;
+
+          if (lastUsedWeek && lastUsedWeek !== currentWeek) {
+            const lastUsedDate = new Date(lastUsedWeek + 'T12:00:00');
+            const currentWeekDate = new Date(currentWeek + 'T12:00:00');
+            const weeksSinceUsed = Math.floor((currentWeekDate - lastUsedDate) / (7 * 24 * 60 * 60 * 1000));
+            if (weeksSinceUsed < SHIELD_COOLDOWN_WEEKS) {
+              onCooldown = true;
+              weeksUntilAvailable = SHIELD_COOLDOWN_WEEKS - weeksSinceUsed;
+            }
+          }
+
+          const shieldAvailable = isPro && !isShielded && !onCooldown;
+
+          if (isShielded) {
+            return (
+              <div className="p-3 rounded-xl mb-3 flex items-center gap-3" style={{ backgroundColor: 'rgba(0,255,148,0.08)', border: '1px solid rgba(0,255,148,0.2)' }}>
+                <span className="text-lg">🛡️</span>
+                <div className="flex-1">
+                  <div className="text-xs font-semibold" style={{ color: '#00FF94' }}>Streak Shield Active</div>
+                  <div className="text-[10px] text-gray-400 mt-0.5">Your streaks are protected this week</div>
+                </div>
+                <button onClick={(e) => { e.stopPropagation(); setShowShieldInfo(true); }} className="w-6 h-6 flex items-center justify-center rounded-full" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
+                  <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+                  </svg>
+                </button>
+              </div>
+            );
+          }
+
+          return (
+            <button
+              onClick={async () => {
+                if (!isPro) {
+                  onPresentPaywall?.();
+                  return;
+                }
+                if (onCooldown) return;
+                if (shieldAvailable) {
+                  triggerHaptic(ImpactStyle.Heavy);
+                  onUseStreakShield?.(currentWeek);
+                }
+              }}
+              className="w-full p-3 rounded-xl mb-3 flex items-center gap-3 transition-all duration-150"
+              style={{
+                backgroundColor: !isPro ? 'rgba(255,255,255,0.03)' : onCooldown ? 'rgba(255,255,255,0.03)' : 'rgba(0,209,255,0.08)',
+                border: !isPro ? '1px solid rgba(255,255,255,0.06)' : onCooldown ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,209,255,0.2)',
+                opacity: onCooldown ? 0.6 : 1
+              }}
+              onTouchStart={(e) => { if (!onCooldown) e.currentTarget.style.opacity = '0.7'; }}
+              onTouchEnd={(e) => { e.currentTarget.style.opacity = onCooldown ? '0.6' : '1'; }}
+            >
+              <span className="text-lg">🛡️</span>
+              <div className="flex-1 text-left">
+                <div className="text-xs font-semibold" style={{ color: !isPro ? '#9ca3af' : onCooldown ? '#9ca3af' : '#00D1FF' }}>
+                  {!isPro ? 'Streak Shield' : onCooldown ? 'Streak Shield on Cooldown' : 'Use Streak Shield'}
+                  {!isPro && <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(255,149,0,0.15)', color: '#FF9500' }}>PRO</span>}
+                </div>
+                <div className="text-[10px] text-gray-400 mt-0.5">
+                  {!isPro ? 'Protect your streaks when life gets busy' : onCooldown ? `Available again in ${weeksUntilAvailable} week${weeksUntilAvailable === 1 ? '' : 's'}` : 'Protect your streaks for this week (1 per 6 weeks)'}
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); setShowShieldInfo(true); }} className="w-6 h-6 flex items-center justify-center rounded-full" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
+                  <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+                  </svg>
+                </button>
+              </div>
+            </button>
+          );
+        })()}
+
+        {/* Streak Shield Info Modal */}
+        {showShieldInfo && (
+          <div className="fixed inset-0 z-[9999] flex items-end justify-center" onClick={() => setShowShieldInfo(false)}>
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+            <div
+              className="relative w-full max-w-lg rounded-t-2xl p-6 pb-10"
+              style={{ backgroundColor: '#1a1a1a' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Drag handle */}
+              <div className="flex justify-center mb-5">
+                <div className="w-10 h-1 rounded-full bg-gray-600" />
+              </div>
+
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
+                  <span className="text-xl">🛡️</span>
+                </div>
+                <div>
+                  <h3 className="text-white font-semibold text-base">Streak Shield</h3>
+                  <p className="text-gray-400 text-xs">Pro Feature</p>
+                </div>
+              </div>
+
+              <div className="space-y-3 mb-5">
+                <div className="flex gap-3">
+                  <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
+                    <svg className="w-3 h-3" fill="none" stroke="#00FF94" viewBox="0 0 24 24" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
+                  </div>
+                  <div>
+                    <p className="text-white text-sm font-medium">Protects your streaks</p>
+                    <p className="text-gray-400 text-xs mt-0.5">If you can't complete your weekly goals, activate the shield to keep all your streaks from resetting.</p>
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
+                    <svg className="w-3 h-3" fill="none" stroke="#00D1FF" viewBox="0 0 24 24" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+                  </div>
+                  <div>
+                    <p className="text-white text-sm font-medium">Available once every 6 weeks</p>
+                    <p className="text-gray-400 text-xs mt-0.5">After using a shield, there's a 6-week cooldown before you can use another one. Use it wisely!</p>
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
+                    <svg className="w-3 h-3" fill="none" stroke="#FF9500" viewBox="0 0 24 24" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" /></svg>
+                  </div>
+                  <div>
+                    <p className="text-white text-sm font-medium">Appears when you need it</p>
+                    <p className="text-gray-400 text-xs mt-0.5">The shield shows up in the last 2 days of the week when your goals are incomplete and you have an active streak.</p>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowShieldInfo(false)}
+                className="w-full py-3 rounded-xl text-sm font-semibold text-white"
+                style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Weekly Goals - tour highlight wraps header + card */}
         <div ref={weeklyGoalsRef}>
           <div className="mb-3">
@@ -11613,7 +11770,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
 };
 
 // Trends View Component
-const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], healthKitData = {} }) => {
+const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], healthKitData = {}, isPro, onPresentPaywall }) => {
   const [metric, setMetric] = useState('calories');
   const [timeRange, setTimeRange] = useState('1M');
   const [selectedBar, setSelectedBar] = useState(null); // For detail view on click
@@ -12024,21 +12181,28 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
             })()
           }}
         />
-        {['1W', '1M', '3M', '6M', '1Y'].map((range) => (
-          <button
-            key={range}
-            onClick={() => {
-              setTimeRange(range);
-              setSelectedBar(null);
-            }}
-            className="flex-1 py-1.5 rounded-md text-[10px] font-medium transition-colors duration-200 relative z-10"
-            style={{
-              color: timeRange === range ? 'white' : 'rgba(255,255,255,0.5)'
-            }}
-          >
-            {range}
-          </button>
-        ))}
+        {['1W', '1M', '3M', '6M', '1Y'].map((range) => {
+          const isLocked = !isPro && !['1W', '1M'].includes(range);
+          return (
+            <button
+              key={range}
+              onClick={() => {
+                if (isLocked) {
+                  onPresentPaywall?.();
+                  return;
+                }
+                setTimeRange(range);
+                setSelectedBar(null);
+              }}
+              className="flex-1 py-1.5 rounded-md text-[10px] font-medium transition-colors duration-200 relative z-10"
+              style={{
+                color: timeRange === range ? 'white' : isLocked ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.5)'
+              }}
+            >
+              {range} {isLocked ? '🔒' : ''}
+            </button>
+          );
+        })}
       </div>
 
       {/* Chart */}
@@ -12390,9 +12554,18 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
 };
 
 // History Tab
-const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory = [], healthKitData = {}, userData, onAddActivity, onDeleteActivity, onEditActivity, initialView = 'calendar', initialStatsSubView = 'overview', activeStreaksRef, calendarRef, statsRef, progressPhotosRef, user, userProfile }) => {
+const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory = [], healthKitData = {}, userData, onAddActivity, onDeleteActivity, onEditActivity, initialView = 'calendar', initialStatsSubView = 'overview', activeStreaksRef, calendarRef, statsRef, progressPhotosRef, user, userProfile, isPro, onPresentPaywall }) => {
   const [view, setView] = useState(initialView);
   const [statsSubView, setStatsSubView] = useState(initialStatsSubView); // 'overview' or 'records'
+
+  // Free users: limit activity history to last 30 days
+  const visibleActivities = useMemo(() => {
+    if (isPro) return activities;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    const cutoffStr = cutoff.toISOString().split('T')[0];
+    return activities.filter(a => a.date >= cutoffStr);
+  }, [activities, isPro]);
   const [calendarView, setCalendarView] = useState('heatmap');
   const [selectedDate, setSelectedDate] = useState(getTodayDate());
   const [selectedDayActivity, setSelectedDayActivity] = useState(null); // For activity detail modal
@@ -12730,7 +12903,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
     lastWeekEnd.setDate(lastWeekStart.getDate() + 6); // End of last week (Saturday)
     lastWeekEnd.setHours(23, 59, 59, 999);
     
-    const lastWeekActivities = activities.filter(a => {
+    const lastWeekActivities = visibleActivities.filter(a => {
       const actDate = parseLocalDate(a.date);
       return actDate >= lastWeekStart && actDate <= lastWeekEnd;
     });
@@ -12934,19 +13107,19 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
     
     if (totalsView === 'this-month') {
       // This month
-      filteredActivities = activities.filter(a => a.date && a.date.startsWith(thisMonthStr));
+      filteredActivities = visibleActivities.filter(a => a.date && a.date.startsWith(thisMonthStr));
     } else if (totalsView === 'last-month') {
       // Last month
-      filteredActivities = activities.filter(a => a.date && a.date.startsWith(lastMonthStr));
+      filteredActivities = visibleActivities.filter(a => a.date && a.date.startsWith(lastMonthStr));
     } else if (totalsView.match(/^\d{4}-\d{2}$/)) {
       // Specific month (e.g., "2026-01")
-      filteredActivities = activities.filter(a => a.date && a.date.startsWith(totalsView));
+      filteredActivities = visibleActivities.filter(a => a.date && a.date.startsWith(totalsView));
     } else if (totalsView === currentYearStr) {
       // Current year
-      filteredActivities = activities.filter(a => a.date && a.date.startsWith(currentYearStr));
+      filteredActivities = visibleActivities.filter(a => a.date && a.date.startsWith(currentYearStr));
     } else {
       // All-time
-      filteredActivities = activities;
+      filteredActivities = visibleActivities;
     }
     
     const lifts = filteredActivities.filter(a => getActivityCategory(a) === 'lifting');
@@ -13126,6 +13299,23 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
             Compare
           </button>
         </div>
+
+        {/* Free user upgrade banner */}
+        {!isPro && (
+          <button
+            onClick={onPresentPaywall}
+            className="mx-4 mb-4 p-3 rounded-xl flex items-center gap-2 transition-all duration-150"
+            style={{ backgroundColor: 'rgba(255,149,0,0.08)', border: '1px solid rgba(255,149,0,0.15)' }}
+            onTouchStart={(e) => e.currentTarget.style.opacity = '0.7'}
+            onTouchEnd={(e) => e.currentTarget.style.opacity = '1'}
+          >
+            <span className="text-sm">⚡</span>
+            <span className="text-xs text-gray-300 flex-1 text-left">Viewing last 30 days. <span style={{ color: '#FF9500' }}>Upgrade to Pro</span> for full history.</span>
+            <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+            </svg>
+          </button>
+        )}
 
         {/* Calendar View */}
         {view === 'calendar' && (
@@ -13426,7 +13616,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
       {/* Day Stats Modal - Full screen like week review */}
       {(showDayModal || dayModalClosing) && calendarData[selectedDate] && (() => {
         // Get full activity data from activities array (has IDs and all stats)
-        const fullDayActivities = activities.filter(a => a.date === selectedDate);
+        const fullDayActivities = visibleActivities.filter(a => a.date === selectedDate);
         const lifts = fullDayActivities.filter(a => getActivityCategory(a) === 'lifting');
         const cardioActivities = fullDayActivities.filter(a => getActivityCategory(a) === 'cardio');
         const recoveryActivities = fullDayActivities.filter(a => getActivityCategory(a) === 'recovery');
@@ -14239,7 +14429,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
 
           {/* Trends Sub-View */}
           {statsSubView === 'trends' && (
-            <TrendsView activities={activities} calendarData={calendarData} healthHistory={healthHistory} healthKitData={healthKitData} />
+            <TrendsView activities={visibleActivities} calendarData={calendarData} healthHistory={healthHistory} healthKitData={healthKitData} isPro={isPro} onPresentPaywall={onPresentPaywall} />
           )}
         </div>
       )}
@@ -15241,7 +15431,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
 };
 
 // Profile Tab Component
-const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onUpdateMaxHeartRate, onChangePassword, onResetPassword, onDeleteAccount, onNotificationSettings }) => {
+const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onUpdateMaxHeartRate, onChangePassword, onResetPassword, onDeleteAccount, onNotificationSettings, isPro, onPresentPaywall, onPresentCustomerCenter, onRestorePurchases }) => {
   const [isEmailPasswordUser, setIsEmailPasswordUser] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
@@ -16083,6 +16273,80 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
           </div>
         )}
 
+        {/* Subscription Section - Only on native */}
+        {Capacitor.isNativePlatform() && (
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold text-gray-400 mb-3">SUBSCRIPTION</h3>
+            <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+              {/* Status indicator */}
+              <div className="flex items-center justify-between py-2 mb-1">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: isPro ? 'rgba(0,255,148,0.1)' : 'rgba(255,149,0,0.1)' }}>
+                    <svg className="w-4 h-4" fill="none" stroke={isPro ? '#00FF94' : '#FF9500'} viewBox="0 0 24 24" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <span className="text-sm text-white block">DaySeven Pro</span>
+                    <p className="text-[11px]" style={{ color: isPro ? '#00FF94' : '#9ca3af' }}>
+                      {isPro ? 'Active' : 'Free plan'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action button: Upgrade or Manage */}
+              <button
+                onClick={isPro ? onPresentCustomerCenter : onPresentPaywall}
+                className="w-full flex items-center justify-between py-2 border-t border-zinc-700/50 mt-1 pt-3 transition-all duration-150"
+                onTouchStart={(e) => e.currentTarget.style.opacity = '0.7'}
+                onTouchEnd={(e) => e.currentTarget.style.opacity = '1'}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: isPro ? 'rgba(0,209,255,0.1)' : 'rgba(255,149,0,0.1)' }}>
+                    {isPro ? (
+                      <svg className="w-4 h-4" fill="none" stroke="#00D1FF" viewBox="0 0 24 24" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M10.343 3.94c.09-.542.56-.94 1.11-.94h1.093c.55 0 1.02.398 1.11.94l.149.894c.07.424.384.764.78.93.398.164.855.142 1.205-.108l.737-.527a1.125 1.125 0 0 1 1.45.12l.773.774c.39.389.44 1.002.12 1.45l-.527.737c-.25.35-.272.806-.107 1.204.165.397.505.71.93.78l.893.15c.543.09.94.56.94 1.109v1.094c0 .55-.397 1.02-.94 1.11l-.893.149c-.425.07-.765.383-.93.78-.165.398-.143.854.107 1.204l.527.738c.32.447.269 1.06-.12 1.45l-.774.773a1.125 1.125 0 0 1-1.449.12l-.738-.527c-.35-.25-.806-.272-1.203-.107-.397.165-.71.505-.781.929l-.149.894c-.09.542-.56.94-1.11.94h-1.094c-.55 0-1.019-.398-1.11-.94l-.148-.894c-.071-.424-.384-.764-.781-.93-.398-.164-.854-.142-1.204.108l-.738.527c-.447.32-1.06.269-1.45-.12l-.773-.774a1.125 1.125 0 0 1-.12-1.45l.527-.737c.25-.35.273-.806.108-1.204-.165-.397-.505-.71-.93-.78l-.894-.15c-.542-.09-.94-.56-.94-1.109v-1.094c0-.55.398-1.02.94-1.11l.894-.149c.424-.07.765-.383.93-.78.165-.398.143-.854-.107-1.204l-.527-.738a1.125 1.125 0 0 1 .12-1.45l.773-.773a1.125 1.125 0 0 1 1.45-.12l.737.527c.35.25.807.272 1.204.107.397-.165.71-.505.78-.929l.15-.894Z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" stroke="#FF9500" viewBox="0 0 24 24" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25v10.5A2.25 2.25 0 0 0 4.5 19.5Z" />
+                      </svg>
+                    )}
+                  </div>
+                  <span className="text-sm text-white">{isPro ? 'Manage Subscription' : 'Upgrade to Pro'}</span>
+                </div>
+                <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                </svg>
+              </button>
+
+              {/* Restore Purchases - only for non-pro users */}
+              {!isPro && (
+                <button
+                  onClick={onRestorePurchases}
+                  className="w-full flex items-center justify-between py-2 border-t border-zinc-700/50 mt-1 pt-3 transition-all duration-150"
+                  onTouchStart={(e) => e.currentTarget.style.opacity = '0.7'}
+                  onTouchEnd={(e) => e.currentTarget.style.opacity = '1'}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                      <svg className="w-4 h-4" fill="none" stroke="#9ca3af" viewBox="0 0 24 24" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
+                      </svg>
+                    </div>
+                    <span className="text-sm text-gray-400">Restore Purchases</span>
+                  </div>
+                  <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Health Section */}
         <div className="mb-6">
           <h3 className="text-sm font-semibold text-gray-400 mb-3">HEALTH</h3>
@@ -16663,6 +16927,7 @@ export default function DaySevenApp() {
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [feedActiveView, setFeedActiveView] = useState('feed'); // 'feed' or 'leaderboard'
   const [isHomeWorkoutPickerOpen, setIsHomeWorkoutPickerOpen] = useState(false); // Track if HomeTab's workout picker is open
+  const [isPro, setIsPro] = useState(false); // RevenueCat "dayseven Pro" entitlement
 
   // HealthKit data state
   const [healthKitData, setHealthKitData] = useState({
@@ -17242,9 +17507,16 @@ export default function DaySevenApp() {
     setCalendarData(initialCalendarData);
     setFriends([]);
     setPendingFriendRequests(0);
+    setIsPro(false);
 
     // Then attempt actual sign out in background (don't block UI)
     (async () => {
+      // Reset RevenueCat
+      try {
+        await logoutRevenueCat();
+      } catch (e) {
+        // Ignore RevenueCat logout errors
+      }
       // Try native plugin sign out (ignore errors)
       if (Capacitor.isNativePlatform()) {
         try {
@@ -17542,6 +17814,22 @@ export default function DaySevenApp() {
             }));
           }
 
+          // Initialize RevenueCat with Firebase UID
+          if (Capacitor.isNativePlatform()) {
+            try {
+              const rcInitialized = await initializeRevenueCat(user.uid);
+              if (rcInitialized) {
+                const proStatus = await checkProStatus();
+                setIsPro(proStatus);
+                addCustomerInfoListener(({ isPro: newIsPro }) => {
+                  setIsPro(newIsPro);
+                });
+              }
+            } catch (rcError) {
+              console.error('[App] RevenueCat init error:', rcError);
+            }
+          }
+
           // Re-fetch profile with forceRefresh to bypass native SDK cache
           // (watch may have updated streaks/weekCelebrations via REST API)
           const freshProfile = await getUserProfile(user.uid, true);
@@ -17557,6 +17845,16 @@ export default function DaySevenApp() {
                 cardio: profileForStreaks.streaks.cardio ?? prev.streaks.cardio,
                 recovery: profileForStreaks.streaks.recovery ?? prev.streaks.recovery,
                 stepsGoal: profileForStreaks.streaks.stepsGoal ?? prev.streaks.stepsGoal
+              }
+            }));
+          }
+          // Load streak shield data
+          if (profileForStreaks?.streakShield) {
+            setUserData(prev => ({
+              ...prev,
+              streakShield: {
+                lastUsedWeek: profileForStreaks.streakShield.lastUsedWeek ?? null,
+                shieldedWeeks: profileForStreaks.streakShield.shieldedWeeks ?? []
               }
             }));
           }
@@ -19402,6 +19700,24 @@ export default function DaySevenApp() {
                   healthKitData={healthKitData}
                   onDismissWorkout={handleDismissWorkout}
                   onWorkoutPickerChange={setIsHomeWorkoutPickerOpen}
+                  isPro={isPro}
+                  onPresentPaywall={async () => {
+                    const result = await presentPaywall();
+                    if (result) {
+                      const proStatus = await checkProStatus();
+                      setIsPro(proStatus);
+                    }
+                  }}
+                  onUseStreakShield={(weekKey) => {
+                    const newShield = {
+                      lastUsedWeek: weekKey,
+                      shieldedWeeks: [...(userData.streakShield?.shieldedWeeks || []), weekKey]
+                    };
+                    setUserData(prev => ({ ...prev, streakShield: newShield }));
+                    if (user?.uid) {
+                      updateUserProfile(user.uid, { streakShield: newShield }).catch(() => {});
+                    }
+                  }}
                 />
               )}
               {activeTab === 'history' && (
@@ -19440,6 +19756,14 @@ export default function DaySevenApp() {
                   progressPhotosRef={progressPhotosRef}
                   user={user}
                   userProfile={userProfile}
+                  isPro={isPro}
+                  onPresentPaywall={async () => {
+                    const result = await presentPaywall();
+                    if (result) {
+                      const proStatus = await checkProStatus();
+                      setIsPro(proStatus);
+                    }
+                  }}
                 />
               )}
               {activeTab === 'feed' && (
@@ -19472,6 +19796,19 @@ export default function DaySevenApp() {
                   onResetPassword={handleResetPassword}
                   onDeleteAccount={() => setShowDeleteAccount(true)}
                   onNotificationSettings={() => setShowNotificationSettings(true)}
+                  isPro={isPro}
+                  onPresentPaywall={async () => {
+                    const result = await presentPaywall();
+                    if (result) {
+                      const proStatus = await checkProStatus();
+                      setIsPro(proStatus);
+                    }
+                  }}
+                  onPresentCustomerCenter={presentCustomerCenter}
+                  onRestorePurchases={async () => {
+                    const { isPro: restoredPro } = await restorePurchases();
+                    setIsPro(restoredPro);
+                  }}
                 />
               )}
             </>
@@ -20323,6 +20660,14 @@ export default function DaySevenApp() {
               setFriends(friendsList);
               const requests = await getFriendRequests(user.uid);
               setPendingFriendRequests(requests.length);
+            }
+          }}
+          isPro={isPro}
+          onPresentPaywall={async () => {
+            const result = await presentPaywall();
+            if (result) {
+              const proStatus = await checkProStatus();
+              setIsPro(proStatus);
             }
           }}
         />

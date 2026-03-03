@@ -12,7 +12,7 @@ import { Capacitor } from '@capacitor/core';
 
 const isNative = Capacitor.isNativePlatform();
 
-const REVENUECAT_API_KEY = 'test_ICCRWtHdKFcVnXplDpHkfIMtJBi';
+const REVENUECAT_API_KEY = 'appl_UATysAceRzTnMyGAvenoKKlXXov';
 const ENTITLEMENT_ID = 'dayseven Pro';
 
 // Lazy-loaded SDK references (avoids import errors on web)

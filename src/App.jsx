@@ -19856,8 +19856,8 @@ export default function DaySevenApp() {
                   onWorkoutPickerChange={setIsHomeWorkoutPickerOpen}
                   isPro={isPro}
                   onPresentPaywall={async () => {
-                    const result = await presentPaywall();
-                    if (result) {
+                    const { purchased } = await presentPaywall();
+                    if (purchased) {
                       const proStatus = await checkProStatus();
                       setIsPro(proStatus);
                     }
@@ -19912,8 +19912,8 @@ export default function DaySevenApp() {
                   userProfile={userProfile}
                   isPro={isPro}
                   onPresentPaywall={async () => {
-                    const result = await presentPaywall();
-                    if (result) {
+                    const { purchased } = await presentPaywall();
+                    if (purchased) {
                       const proStatus = await checkProStatus();
                       setIsPro(proStatus);
                     }
@@ -19952,8 +19952,8 @@ export default function DaySevenApp() {
                   onNotificationSettings={() => setShowNotificationSettings(true)}
                   isPro={isPro}
                   onPresentPaywall={async () => {
-                    const result = await presentPaywall();
-                    if (result) {
+                    const { purchased } = await presentPaywall();
+                    if (purchased) {
                       const proStatus = await checkProStatus();
                       setIsPro(proStatus);
                     }
@@ -20818,8 +20818,8 @@ export default function DaySevenApp() {
           }}
           isPro={isPro}
           onPresentPaywall={async () => {
-            const result = await presentPaywall();
-            if (result) {
+            const { purchased } = await presentPaywall();
+            if (purchased) {
               const proStatus = await checkProStatus();
               setIsPro(proStatus);
             }

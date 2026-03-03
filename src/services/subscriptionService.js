@@ -142,10 +142,10 @@ export const addCustomerInfoListener = async (callback) => {
  * Present the RevenueCat paywall UI.
  * Always shows the paywall regardless of current entitlement status.
  *
- * @returns {Promise<string|null>} PAYWALL_RESULT value or null on error
+ * @returns {Promise<{purchased: boolean, result: string|null}>}
  */
 export const presentPaywall = async () => {
-  if (!isNative || !RevenueCatUI) return null;
+  if (!isNative || !RevenueCatUI) return { purchased: false, result: null };
 
   try {
     const { result } = await RevenueCatUI.presentPaywall();
@@ -154,20 +154,20 @@ export const presentPaywall = async () => {
       case PAYWALL_RESULT.PURCHASED:
       case PAYWALL_RESULT.RESTORED:
         console.log('[SubscriptionService] Paywall result: purchase/restore successful');
-        return result;
+        return { purchased: true, result };
       case PAYWALL_RESULT.CANCELLED:
         console.log('[SubscriptionService] Paywall dismissed by user');
-        return result;
+        return { purchased: false, result };
       case PAYWALL_RESULT.NOT_PRESENTED:
       case PAYWALL_RESULT.ERROR:
         console.log('[SubscriptionService] Paywall not presented or error:', result);
-        return result;
+        return { purchased: false, result };
       default:
-        return result;
+        return { purchased: false, result };
     }
   } catch (error) {
     console.error('[SubscriptionService] presentPaywall error:', error);
-    return null;
+    return { purchased: false, result: null };
   }
 };
 

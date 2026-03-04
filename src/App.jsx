@@ -2026,7 +2026,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
               <div className="mb-4">
                 <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Strength Type</label>
                 <div className="flex flex-wrap gap-2">
-                  {['Weight Lifting', 'Bodyweight'].map((st) => {
+                  {['Weightlifting', 'Bodyweight'].map((st) => {
                     const isSelected = finishStrengthType === st;
                     return (
                       <button
@@ -2039,7 +2039,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                           color: isSelected ? '#00FF94' : 'white'
                         }}
                       >
-                        {st === 'Weight Lifting' ? '🏋️' : '💪'} {st}
+                        {st === 'Weightlifting' ? '🏋️' : '💪'} {st}
                       </button>
                     );
                   })}
@@ -8425,7 +8425,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   const [isFromNotification, setIsFromNotification] = useState(false); // Track if opened from notification
   const [isChangingActivityType, setIsChangingActivityType] = useState(false); // Track if user clicked "Change" on activity type
   const [subtype, setSubtype] = useState('');
-  const [strengthType, setStrengthType] = useState(''); // Weight Lifting, Bodyweight
+  const [strengthType, setStrengthType] = useState(''); // Weightlifting, Bodyweight
   const [focusAreas, setFocusAreas] = useState([]); // Multi-select: Full Body, Upper, Lower, etc.
   const [customSport, setCustomSport] = useState('');
   const [customSportEmoji, setCustomSportEmoji] = useState('⚽');
@@ -8750,7 +8750,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 
   // Strength training configuration
   const strengthTypes = [
-    { name: 'Weight Lifting', icon: '🏋️', hasFocusArea: true },
+    { name: 'Weightlifting', icon: '🏋️', hasFocusArea: true },
     { name: 'Bodyweight', icon: '💪', hasFocusArea: true }
   ];
 
@@ -10837,7 +10837,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     const otherCardio = weekActivities.filter(a => a.type === 'Other' && (a.customActivityCategory === 'cardio' || a.countToward === 'cardio'));
 
     // Strength breakdown - check strengthType field or if subtype starts with the type name
-    const lifting = lifts.filter(a => a.strengthType === 'Weight Lifting' || a.strengthType === 'Lifting' || a.subtype?.startsWith('Lifting') || (!a.subtype && !a.strengthType));
+    const lifting = lifts.filter(a => a.strengthType === 'Weightlifting' || a.strengthType === 'Lifting' || a.subtype?.startsWith('Lifting') || (!a.subtype && !a.strengthType));
     const bodyweight = lifts.filter(a => a.strengthType === 'Bodyweight' || a.subtype?.startsWith('Bodyweight'));
 
     // Recovery breakdown
@@ -11897,7 +11897,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
               <div className="flex items-center justify-between mb-2">
                 <div className="text-xs text-gray-400">Muscle groups trained</div>
                 <div className="text-[10px] text-gray-500">
-                  🏋️ {weekProgress.lifts?.breakdown?.lifting || 0} Weight Lifting · 💪 {weekProgress.lifts?.breakdown?.bodyweight || 0} Bodyweight
+                  🏋️ {weekProgress.lifts?.breakdown?.lifting || 0} Weightlifting · 💪 {weekProgress.lifts?.breakdown?.bodyweight || 0} Bodyweight
                 </div>
               </div>
               {Object.keys(weekProgress.lifts?.muscleGroups || {}).length > 0 ? (

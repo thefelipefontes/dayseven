@@ -9812,6 +9812,11 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     </button>
                   )}
                 </div>
+                {countToward === 'warmup' && (
+                  <p className="text-[11px] text-gray-500 mt-2">
+                    Warm-up activities won't count toward weekly goals, streaks, or personal records.
+                  </p>
+                )}
               </div>
             )}
 
@@ -9989,6 +9994,11 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     <span className="text-sm">🔥</span>
                     <span className="text-xs font-medium" style={{ color: customActivityCategory === 'warmup' ? '#FFD60A' : 'rgba(255,255,255,0.6)' }}>Warm Up</span>
                   </button>
+                  {customActivityCategory === 'warmup' && (
+                    <p className="text-[11px] text-gray-500 mt-2">
+                      Warm-up activities won't count toward weekly goals, streaks, or personal records.
+                    </p>
+                  )}
                 </div>
 
                 <label className="flex items-center gap-3 cursor-pointer mt-4">
@@ -18173,13 +18183,16 @@ export default function DaySevenApp() {
 
     // Calculate single-activity records
     activitiesList.forEach(activity => {
+      const isWarmup = activity.countToward === 'warmup' || activity.customActivityCategory === 'warmup';
+      if (isWarmup) return; // Warm-up activities don't count toward any records
+
       const yogaPilatesAsRecovery = ['Yoga', 'Pilates'].includes(activity.type) &&
         (!activity.countToward || activity.countToward === 'recovery');
       const isRecovery = recoveryTypes.includes(activity.type) || yogaPilatesAsRecovery;
       const isStrength = activity.type === 'Strength Training' || activity.countToward === 'strength';
       const isCardio = ['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(activity.type) || activity.countToward === 'cardio';
 
-      // Highest calories (all activities)
+      // Highest calories (all activities except warmup)
       if (activity.calories && activity.calories > (newRecords.highestCalories.value || 0)) {
         newRecords.highestCalories = { value: activity.calories, activityType: activity.type };
       }
@@ -19451,6 +19464,10 @@ export default function DaySevenApp() {
       const updatedRecords = {};
       const recordsBroken = []; // Collect all broken records
 
+      // Warm-up activities don't count toward any records or stats
+      const isWarmup = activity.countToward === 'warmup' || activity.customActivityCategory === 'warmup';
+      if (isWarmup) return null;
+
       // Recovery activities don't count as "workouts" for records
       const recoveryTypes = ['Cold Plunge', 'Sauna'];
       const yogaPilatesAsRecovery = ['Yoga', 'Pilates'].includes(activity.type) && (!activity.countToward || activity.countToward === 'recovery');
@@ -19466,8 +19483,8 @@ export default function DaySevenApp() {
         if (typeof record === 'object') return record.value || 0;
         return record;
       };
-      
-      // Single activity: Highest calories (counts all activities including recovery)
+
+      // Single activity: Highest calories (counts all activities except warmup)
       if (activity.calories && activity.calories > getRecordValue('highestCalories')) {
         updatedRecords.highestCalories = { value: activity.calories, activityType: activity.type };
         recordsBroken.push(`${activity.calories} cals (${activity.type}) 🔥`);
@@ -19874,13 +19891,16 @@ export default function DaySevenApp() {
       const recoveryTypes = ['Cold Plunge', 'Sauna'];
 
       updatedActivities.forEach(activity => {
+        const isWarmup = activity.countToward === 'warmup' || activity.customActivityCategory === 'warmup';
+        if (isWarmup) return; // Warm-up activities don't count toward any records
+
         const yogaPilatesAsRecovery = ['Yoga', 'Pilates'].includes(activity.type) &&
           (!activity.countToward || activity.countToward === 'recovery');
         const isRecovery = recoveryTypes.includes(activity.type) || yogaPilatesAsRecovery;
         const isStrength = activity.type === 'Strength Training' || activity.countToward === 'strength';
         const isCardio = ['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(activity.type) || activity.countToward === 'cardio';
 
-        // Highest calories (all activities)
+        // Highest calories (all activities except warmup)
         if (activity.calories && activity.calories > (newRecords.highestCalories.value || 0)) {
           newRecords.highestCalories = { value: activity.calories, activityType: activity.type };
         }

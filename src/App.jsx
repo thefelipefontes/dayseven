@@ -7707,7 +7707,7 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
   };
 
   return (
-    <div className="fixed inset-0 bg-black text-white flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 bg-black text-white flex flex-col overflow-hidden" style={{ overscrollBehavior: 'none', touchAction: 'pan-y' }}>
       {/* Header with progress bar and back/cancel */}
       <div className="flex-shrink-0 px-6 pt-12 pb-2">
         <div className="flex items-center justify-between mb-5">
@@ -7757,6 +7757,7 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
         className="flex-1 px-6 py-4 pb-32 overflow-y-auto"
         style={{
           WebkitOverflowScrolling: 'touch',
+          overscrollBehavior: 'contain',
           animation: `${direction === 'forward' ? 'slideInRight' : 'slideInLeft'} 0.3s ease-out`
         }}
       >
@@ -16795,7 +16796,7 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
                     </svg>
                   </div>
                   <div>
-                    <span className="text-sm text-white block">DaySeven Pro</span>
+                    <span className="text-sm text-white block">{isPro ? 'DaySeven Pro' : 'DaySeven'}</span>
                     <p className="text-[11px]" style={{ color: isPro ? '#00FF94' : '#9ca3af' }}>
                       {isPro ? 'Active' : 'Free plan'}
                     </p>
@@ -17491,6 +17492,7 @@ export default function DaySevenApp() {
 
   // Smart Save state
   const [showSmartSaveExplainModal, setShowSmartSaveExplainModal] = useState(false);
+  const justOnboardedRef = useRef(false); // Suppress Smart Save modal on first sync after onboarding
   // Refs to access user/profile/activities in syncHealthKit callback without adding as dependencies
   const userProfileRef = useRef(userProfile);
   useEffect(() => { userProfileRef.current = userProfile; }, [userProfile]);
@@ -18615,7 +18617,9 @@ export default function DaySevenApp() {
             setHealthKitData(prev => ({
               todaySteps: result.todaySteps ?? prev.todaySteps ?? 0,
               todayCalories: result.todayCalories ?? prev.todayCalories ?? 0,
-              pendingWorkouts: newWorkouts,
+              // Suppress pending workout notifications on first sync after onboarding
+              // to avoid bombarding new users with historical HealthKit workouts
+              pendingWorkouts: justOnboardedRef.current ? [] : newWorkouts,
               lastSynced: new Date().toISOString(),
               isConnected: prev.isConnected || hasHealthData
             }));
@@ -18661,89 +18665,143 @@ export default function DaySevenApp() {
                !dismissedSet.has(w.healthKitUUID)
         );
 
-        // --- Smart Save: auto-save qualifying walks ---
-        const profile = userProfileRef.current;
-        const maxHR = profile?.maxHeartRate;
-        const smartSaveEnabled = profile?.privacySettings?.smartSaveWalks !== false;
-        const smartSaveExplained = profile?.smartSaveExplained;
-
-        const workoutsForNotification = [];
-        const walksToSmartSave = [];
-
-        for (const workout of newWorkouts) {
-          if (shouldSmartSaveWalk(workout, maxHR, smartSaveEnabled)) {
-            walksToSmartSave.push(workout);
-          } else {
-            workoutsForNotification.push(workout);
-          }
-        }
-
-        // Auto-save qualifying walks inline (no separate function to avoid hoisting issues)
-        if (walksToSmartSave.length > 0) {
-          const smartSavedActivities = walksToSmartSave.map((walk, i) => ({
-            ...walk,
+        // --- Post-onboarding: auto-import ALL workouts silently ---
+        if (justOnboardedRef.current && newWorkouts.length > 0) {
+          const autoImportedActivities = newWorkouts.map((workout, i) => ({
+            ...workout,
             id: Date.now() + i,
-            time: walk.time || new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
-            smartSaved: true,
+            time: workout.time || new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+            autoImported: true,
             source: 'healthkit',
           }));
 
-          // Fetch fresh activities from Firestore before merging to avoid overwriting watch workouts
           const uid = userRef.current?.uid;
           if (uid) {
             try {
               const freshActivities = await getUserActivities(uid, true);
-              const merged = [...smartSavedActivities, ...freshActivities];
+              const merged = [...autoImportedActivities, ...freshActivities];
               activitiesRef.current = merged;
               setActivities(merged);
               saveUserActivities(uid, merged).catch(() => {});
             } catch (e) {
-              // Fallback to local state if fetch fails
               setActivities(prev => {
-                const updated = [...smartSavedActivities, ...prev];
+                const updated = [...autoImportedActivities, ...prev];
                 saveUserActivities(uid, updated).catch(() => {});
                 return updated;
               });
             }
           } else {
-            setActivities(prev => [...smartSavedActivities, ...prev]);
+            setActivities(prev => [...autoImportedActivities, ...prev]);
           }
 
           setCalendarData(prev => {
             const updated = { ...prev };
-            for (const walk of walksToSmartSave) {
-              const dateKey = walk.date;
+            for (const workout of newWorkouts) {
+              const dateKey = workout.date;
               if (!updated[dateKey]) updated[dateKey] = [];
               updated[dateKey] = [...updated[dateKey], {
-                type: walk.type,
-                subtype: walk.subtype,
-                duration: walk.duration,
-                distance: walk.distance,
-                calories: walk.calories,
-                avgHr: walk.avgHr,
-                maxHr: walk.maxHr
+                type: workout.type,
+                subtype: workout.subtype,
+                duration: workout.duration,
+                distance: workout.distance,
+                calories: workout.calories,
+                avgHr: workout.avgHr,
+                maxHr: workout.maxHr
               }];
             }
             return updated;
           });
 
+          const hasHealthData = (result.todaySteps > 0 || result.todayCalories > 0);
+          setHealthKitData(prev => ({
+            todaySteps: result.todaySteps || 0,
+            todayCalories: result.todayCalories || 0,
+            pendingWorkouts: [], // No notifications on first sync
+            lastSynced: new Date().toISOString(),
+            isConnected: prev.isConnected || hasHealthData
+          }));
 
+          justOnboardedRef.current = false;
+        } else {
+          // --- Normal flow: Smart Save walks, notify for others ---
+          const profile = userProfileRef.current;
+          const maxHR = profile?.maxHeartRate;
+          const smartSaveEnabled = profile?.privacySettings?.smartSaveWalks !== false;
+          const smartSaveExplained = profile?.smartSaveExplained;
 
+          const workoutsForNotification = [];
+          const walksToSmartSave = [];
 
-          // Show explanation modal on first smart-save
-          if (!smartSaveExplained) {
-            setShowSmartSaveExplainModal(true);
+          for (const workout of newWorkouts) {
+            if (shouldSmartSaveWalk(workout, maxHR, smartSaveEnabled)) {
+              walksToSmartSave.push(workout);
+            } else {
+              workoutsForNotification.push(workout);
+            }
           }
-        }
 
-        const hasHealthData = (result.todaySteps > 0 || result.todayCalories > 0);
-        setHealthKitData(prev => ({
-          todaySteps: result.todaySteps || 0,
-          todayCalories: result.todayCalories || 0,
-          pendingWorkouts: workoutsForNotification,
-          lastSynced: new Date().toISOString(),
-          isConnected: prev.isConnected || hasHealthData
-        }));
+          // Auto-save qualifying walks inline
+          if (walksToSmartSave.length > 0) {
+            const smartSavedActivities = walksToSmartSave.map((walk, i) => ({
+              ...walk,
+              id: Date.now() + i,
+              time: walk.time || new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+              smartSaved: true,
+              source: 'healthkit',
+            }));
+
+            const uid = userRef.current?.uid;
+            if (uid) {
+              try {
+                const freshActivities = await getUserActivities(uid, true);
+                const merged = [...smartSavedActivities, ...freshActivities];
+                activitiesRef.current = merged;
+                setActivities(merged);
+                saveUserActivities(uid, merged).catch(() => {});
+              } catch (e) {
+                setActivities(prev => {
+                  const updated = [...smartSavedActivities, ...prev];
+                  saveUserActivities(uid, updated).catch(() => {});
+                  return updated;
+                });
+              }
+            } else {
+              setActivities(prev => [...smartSavedActivities, ...prev]);
+            }
+
+            setCalendarData(prev => {
+              const updated = { ...prev };
+              for (const walk of walksToSmartSave) {
+                const dateKey = walk.date;
+                if (!updated[dateKey]) updated[dateKey] = [];
+                updated[dateKey] = [...updated[dateKey], {
+                  type: walk.type,
+                  subtype: walk.subtype,
+                  duration: walk.duration,
+                  distance: walk.distance,
+                  calories: walk.calories,
+                  avgHr: walk.avgHr,
+                  maxHr: walk.maxHr
+                }];
+              }
+              return updated;
+            });
+
+            // Show explanation modal on first smart-save
+            if (!smartSaveExplained) {
+              setShowSmartSaveExplainModal(true);
+            }
+          }
+
+          const hasHealthData = (result.todaySteps > 0 || result.todayCalories > 0);
+          setHealthKitData(prev => ({
+            todaySteps: result.todaySteps || 0,
+            todayCalories: result.todayCalories || 0,
+            pendingWorkouts: workoutsForNotification,
+            lastSynced: new Date().toISOString(),
+            isConnected: prev.isConnected || hasHealthData
+          }));
+        }
       }
     } catch (error) {
     }
@@ -18869,7 +18927,7 @@ export default function DaySevenApp() {
   const { pullDistance, isRefreshing } = usePullToRefresh(refreshData, {
     threshold: 80,
     resistance: 0.5,
-    enabled: !showAddActivity && !isHomeWorkoutPickerOpen && !showFinishWorkout && activeTab === 'home'
+    enabled: isOnboarded === true && !showAddActivity && !isHomeWorkoutPickerOpen && !showFinishWorkout && activeTab === 'home'
   });
 
   // Listen to auth state
@@ -20020,9 +20078,9 @@ export default function DaySevenApp() {
           steps: { ...prev.steps, goal: goals.stepsPerDay },
           calories: { ...prev.calories, goal: goals.caloriesPerDay }
         }));
-        setIsOnboarded(true);
-
-        // Present paywall after onboarding for new users
+        // Present paywall BEFORE setting isOnboarded to true
+        // This keeps the onboarding black screen behind the native paywall
+        // so users can't interact with the main app through the paywall overlay
         if (Capacitor.isNativePlatform()) {
           try {
             const { purchased } = await presentPaywall();
@@ -20035,7 +20093,9 @@ export default function DaySevenApp() {
           }
         }
 
-        // Tour will auto-start via useEffect when isOnboarded becomes true
+        // NOW show the main app (after paywall is dismissed)
+        justOnboardedRef.current = true; // Suppress Smart Save modal on first HealthKit sync
+        setIsOnboarded(true);
         setActiveTab('home');
       }}
     />;

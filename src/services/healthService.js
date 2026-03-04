@@ -81,7 +81,7 @@ const workoutTypeMap = {
   'coreTraining': { type: 'Strength Training', subtype: 'Core', strengthType: 'Bodyweight', icon: '💪' },
   'flexibility': { type: 'Yoga', icon: '🧘' },
   'cooldown': { type: 'Other', subtype: 'Cooldown', icon: '🧊' },
-  'other': { type: 'Other', subtype: 'Workout', icon: '💪' },
+  'other': { type: 'Other', subtype: 'Workout (Uncategorized)', icon: '💪' },
 };
 
 // Map HealthKit workout type to human-readable Apple name
@@ -166,7 +166,7 @@ function convertWorkoutToActivity(workout) {
     }
   }
 
-  const mapped = workoutTypeMap[workoutType] || { type: 'Other', subtype: 'Workout', icon: '💪' };
+  const mapped = workoutTypeMap[workoutType] || { type: 'Other', subtype: 'Workout (Uncategorized)', icon: '💪' };
   const appleWorkoutName = appleWorkoutNameMap[workoutType] || 'Workout';
 
   // Parse date (use local time, not UTC, to avoid date shifting for evening workouts)

@@ -1502,6 +1502,25 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
   );
 };
 
+// Shared utility: Determine default "count toward" category based on activity type and subtype
+const getDefaultCountToward = (type, sub) => {
+  if (type === 'Strength Training') return 'lifting';
+  if (type === 'Running') return 'cardio';
+  if (type === 'Cycle') return 'cardio';
+  if (type === 'Sports') return 'cardio';
+  if (type === 'Stair Climbing') return 'cardio';
+  if (type === 'Elliptical') return 'cardio';
+  if (type === 'Yoga') {
+    if (['Power', 'Hot', 'Vinyasa'].includes(sub)) return 'cardio';
+    return 'recovery';
+  }
+  if (type === 'Pilates') return 'recovery';
+  if (type === 'Cold Plunge') return 'recovery';
+  if (type === 'Sauna') return 'recovery';
+  if (type === 'Walking') return null;
+  return null;
+};
+
 // Finish Workout Modal - Shown when user taps "Finish Timer"
 const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linkedWorkoutUUIDs = [] }) => {
   const [notes, setNotes] = useState('');
@@ -1545,7 +1564,8 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
       { name: 'Other', icon: '🏆' }
     ],
   };
-  const countTowardTypes = ['Walking', 'Yoga', 'Pilates'];
+  // All standard activity types show Count Toward selector (not "Other")
+  const showFinishCountToward = workout?.type && workout.type !== 'Other';
   const sportEmojiMap = {
     'Basketball': '🏀', 'Soccer': '⚽', 'Football': '🏈',
     'Tennis': '🎾', 'Golf': '⛳', 'Other': '🏆'
@@ -1592,7 +1612,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
       setHealthKitDataFetched(false);
       setLinkedWorkout(null);
       setFinishSubtype(workout?.subtype || '');
-      setFinishCountToward(workout?.countToward || null);
+      setFinishCountToward(workout?.countToward ?? getDefaultCountToward(workout?.type, workout?.subtype));
       setFinishSportEmoji(workout?.sportEmoji || null);
       setFinishStrengthType(workout?.strengthType || '');
       setFinishFocusAreas(workout?.focusAreas || (workout?.focusArea ? [workout.focusArea] : []));
@@ -2086,98 +2106,71 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
             </div>
           )}
 
-          {/* Count Toward Goal — for Walking, Yoga, Pilates */}
-          {workout?.type && countTowardTypes.includes(workout.type) && (
+          {/* Count Toward — for all standard activity types */}
+          {showFinishCountToward && (
             <div className="mb-4">
-              <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Count Toward Goal</label>
-              {workout.type === 'Walking' ? (
-                <>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => { setFinishCountToward('cardio'); triggerHaptic(ImpactStyle.Light); }}
-                      className="flex-1 p-2.5 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
-                      style={{
-                        backgroundColor: finishCountToward === 'cardio' ? 'rgba(255,149,0,0.2)' : 'rgba(255,255,255,0.05)',
-                        border: finishCountToward === 'cardio' ? '1px solid #FF9500' : '1px solid transparent',
-                        color: finishCountToward === 'cardio' ? '#FF9500' : 'white'
-                      }}
-                    >
-                      <span>🏃</span> Cardio
-                    </button>
-                    <button
-                      onClick={() => { setFinishCountToward(null); triggerHaptic(ImpactStyle.Light); }}
-                      className="flex-1 p-2.5 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
-                      style={{
-                        backgroundColor: finishCountToward === null ? 'rgba(128,128,128,0.2)' : 'rgba(255,255,255,0.05)',
-                        border: finishCountToward === null ? '1px solid #808080' : '1px solid transparent',
-                        color: finishCountToward === null ? '#B0B0B0' : 'white'
-                      }}
-                    >
-                      <span>➖</span> Don't Count
-                    </button>
-                  </div>
+              <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Count Toward</label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setFinishCountToward('lifting'); triggerHaptic(ImpactStyle.Light); }}
+                  className="flex-1 p-2.5 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
+                  style={{
+                    backgroundColor: finishCountToward === 'lifting' ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
+                    border: finishCountToward === 'lifting' ? '1px solid #00FF94' : '1px solid transparent',
+                    color: finishCountToward === 'lifting' ? '#00FF94' : 'white'
+                  }}
+                >
+                  <span>🏋️</span> Strength
+                </button>
+                <button
+                  onClick={() => { setFinishCountToward('cardio'); triggerHaptic(ImpactStyle.Light); }}
+                  className="flex-1 p-2.5 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
+                  style={{
+                    backgroundColor: finishCountToward === 'cardio' ? 'rgba(255,149,0,0.2)' : 'rgba(255,255,255,0.05)',
+                    border: finishCountToward === 'cardio' ? '1px solid #FF9500' : '1px solid transparent',
+                    color: finishCountToward === 'cardio' ? '#FF9500' : 'white'
+                  }}
+                >
+                  <span>🏃</span> Cardio
+                </button>
+                <button
+                  onClick={() => { setFinishCountToward('recovery'); triggerHaptic(ImpactStyle.Light); }}
+                  className="flex-1 p-2.5 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
+                  style={{
+                    backgroundColor: finishCountToward === 'recovery' ? 'rgba(0,209,255,0.2)' : 'rgba(255,255,255,0.05)',
+                    border: finishCountToward === 'recovery' ? '1px solid #00D1FF' : '1px solid transparent',
+                    color: finishCountToward === 'recovery' ? '#00D1FF' : 'white'
+                  }}
+                >
+                  <span>🧊</span> Recovery
+                </button>
+              </div>
+              <div className="flex gap-2 mt-2">
+                <button
+                  onClick={() => { setFinishCountToward('warmup'); triggerHaptic(ImpactStyle.Light); }}
+                  className="flex-1 py-1.5 px-3 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
+                  style={{
+                    backgroundColor: finishCountToward === 'warmup' ? 'rgba(255,214,10,0.2)' : 'rgba(255,255,255,0.05)',
+                    border: finishCountToward === 'warmup' ? '1px solid #FFD60A' : '1px solid transparent',
+                    color: finishCountToward === 'warmup' ? '#FFD60A' : 'white'
+                  }}
+                >
+                  <span>🔥</span> Warm Up
+                </button>
+                {workout?.type === 'Walking' && (
                   <button
-                    onClick={() => { setFinishCountToward('warmup'); triggerHaptic(ImpactStyle.Light); }}
-                    className="w-full mt-2 py-1.5 px-3 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
+                    onClick={() => { setFinishCountToward(null); triggerHaptic(ImpactStyle.Light); }}
+                    className="flex-1 py-1.5 px-3 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
                     style={{
-                      backgroundColor: finishCountToward === 'warmup' ? 'rgba(255,214,10,0.2)' : 'rgba(255,255,255,0.05)',
-                      border: finishCountToward === 'warmup' ? '1px solid #FFD60A' : '1px solid transparent',
-                      color: finishCountToward === 'warmup' ? '#FFD60A' : 'white'
+                      backgroundColor: finishCountToward === null ? 'rgba(128,128,128,0.2)' : 'rgba(255,255,255,0.05)',
+                      border: finishCountToward === null ? '1px solid #808080' : '1px solid transparent',
+                      color: finishCountToward === null ? '#B0B0B0' : 'white'
                     }}
                   >
-                    <span>🔥</span> Warm Up
+                    <span>➖</span> Don't Count
                   </button>
-                </>
-              ) : (
-                <>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => { setFinishCountToward('lifting'); triggerHaptic(ImpactStyle.Light); }}
-                      className="flex-1 p-2.5 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
-                      style={{
-                        backgroundColor: finishCountToward === 'lifting' ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
-                        border: finishCountToward === 'lifting' ? '1px solid #00FF94' : '1px solid transparent',
-                        color: finishCountToward === 'lifting' ? '#00FF94' : 'white'
-                      }}
-                    >
-                      <span>🏋️</span> Strength
-                    </button>
-                    <button
-                      onClick={() => { setFinishCountToward('cardio'); triggerHaptic(ImpactStyle.Light); }}
-                      className="flex-1 p-2.5 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
-                      style={{
-                        backgroundColor: finishCountToward === 'cardio' ? 'rgba(255,149,0,0.2)' : 'rgba(255,255,255,0.05)',
-                        border: finishCountToward === 'cardio' ? '1px solid #FF9500' : '1px solid transparent',
-                        color: finishCountToward === 'cardio' ? '#FF9500' : 'white'
-                      }}
-                    >
-                      <span>🏃</span> Cardio
-                    </button>
-                    <button
-                      onClick={() => { setFinishCountToward('recovery'); triggerHaptic(ImpactStyle.Light); }}
-                      className="flex-1 p-2.5 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
-                      style={{
-                        backgroundColor: finishCountToward === 'recovery' ? 'rgba(0,209,255,0.2)' : 'rgba(255,255,255,0.05)',
-                        border: finishCountToward === 'recovery' ? '1px solid #00D1FF' : '1px solid transparent',
-                        color: finishCountToward === 'recovery' ? '#00D1FF' : 'white'
-                      }}
-                    >
-                      <span>🧊</span> Recovery
-                    </button>
-                  </div>
-                  <button
-                    onClick={() => { setFinishCountToward('warmup'); triggerHaptic(ImpactStyle.Light); }}
-                    className="w-full mt-2 py-1.5 px-3 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
-                    style={{
-                      backgroundColor: finishCountToward === 'warmup' ? 'rgba(255,214,10,0.2)' : 'rgba(255,255,255,0.05)',
-                      border: finishCountToward === 'warmup' ? '1px solid #FFD60A' : '1px solid transparent',
-                      color: finishCountToward === 'warmup' ? '#FFD60A' : 'white'
-                    }}
-                  >
-                    <span>🔥</span> Warm Up
-                  </button>
-                </>
-              )}
+                )}
+              </div>
             </div>
           )}
 
@@ -8761,26 +8754,13 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 
   const focusAreaOptions = ['Full Body', 'Upper', 'Lower', 'Chest', 'Back', 'Legs', 'Shoulders', 'Biceps', 'Triceps', 'Abs'];
 
-  // Determine default "count toward" based on activity and subtype
-  const getDefaultCountToward = (type, sub) => {
-    if (type === 'Yoga') {
-      if (['Power', 'Hot', 'Vinyasa'].includes(sub)) return 'cardio';
-      return 'recovery'; // Yin, Restorative
-    }
-    if (type === 'Pilates') {
-      return 'recovery'; // Default to recovery, user can change
-    }
-    if (type === 'Walking') {
-      return null; // Default to "Don't Count" — user chooses
-    }
-    return null;
-  };
+  // Uses shared getDefaultCountToward() defined above
 
   const [countToward, setCountToward] = useState(null);
 
-  // Update countToward when subtype changes for Yoga/Pilates/Walking
+  // Update countToward when activity type or subtype changes
   useEffect(() => {
-    if (activityType === 'Yoga' || activityType === 'Pilates' || activityType === 'Walking') {
+    if (activityType && activityType !== 'Other') {
       setCountToward(getDefaultCountToward(activityType, subtype));
     } else {
       setCountToward(null);
@@ -8790,7 +8770,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   const selectedType = activityTypes.find(t => t.name === activityType);
   const showCustomSportInput = activityType === 'Sports' && subtype === 'Other';
   const showCustomActivityInput = activityType === 'Other';
-  const showCountToward = activityType === 'Yoga' || activityType === 'Pilates' || activityType === 'Walking';
+  const showCountToward = activityType && activityType !== 'Other';
   const isFromAppleHealth = !!pendingActivity?.fromAppleHealth;
 
   // Handle linking an Apple Health workout
@@ -9766,105 +9746,72 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               </div>
             )}
 
-            {/* Count Toward selector for Yoga/Pilates/Walking */}
+            {/* Count Toward selector for all standard activities */}
             {showCountToward && (
               <div>
-                <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Count Toward Goal</label>
-                {activityType === 'Walking' ? (
-                  /* Walking-specific options: Cardio, Don't Count, or Warm Up */
-                  <>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setCountToward('cardio')}
-                        className="flex-1 p-3 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
-                        style={{
-                          backgroundColor: countToward === 'cardio' ? 'rgba(255,149,0,0.2)' : 'rgba(255,255,255,0.05)',
-                          border: countToward === 'cardio' ? '1px solid #FF9500' : '1px solid transparent',
-                          color: countToward === 'cardio' ? '#FF9500' : 'white'
-                        }}
-                      >
-                        <span>🏃</span> Cardio
-                      </button>
-                      <button
-                        onClick={() => setCountToward(null)}
-                        className="flex-1 p-3 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
-                        style={{
-                          backgroundColor: countToward === null ? 'rgba(128,128,128,0.2)' : 'rgba(255,255,255,0.05)',
-                          border: countToward === null ? '1px solid #808080' : '1px solid transparent',
-                          color: countToward === null ? '#B0B0B0' : 'white'
-                        }}
-                      >
-                        <span>➖</span> Don't Count
-                      </button>
-                    </div>
+                <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Count Toward</label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setCountToward('lifting')}
+                    className="flex-1 p-3 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
+                    style={{
+                      backgroundColor: countToward === 'lifting' ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
+                      border: countToward === 'lifting' ? '1px solid #00FF94' : '1px solid transparent',
+                      color: countToward === 'lifting' ? '#00FF94' : 'white'
+                    }}
+                  >
+                    <span>🏋️</span> Strength
+                  </button>
+                  <button
+                    onClick={() => setCountToward('cardio')}
+                    className="flex-1 p-3 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
+                    style={{
+                      backgroundColor: countToward === 'cardio' ? 'rgba(255,149,0,0.2)' : 'rgba(255,255,255,0.05)',
+                      border: countToward === 'cardio' ? '1px solid #FF9500' : '1px solid transparent',
+                      color: countToward === 'cardio' ? '#FF9500' : 'white'
+                    }}
+                  >
+                    <span>🏃</span> Cardio
+                  </button>
+                  <button
+                    onClick={() => setCountToward('recovery')}
+                    className="flex-1 p-3 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
+                    style={{
+                      backgroundColor: countToward === 'recovery' ? 'rgba(0,209,255,0.2)' : 'rgba(255,255,255,0.05)',
+                      border: countToward === 'recovery' ? '1px solid #00D1FF' : '1px solid transparent',
+                      color: countToward === 'recovery' ? '#00D1FF' : 'white'
+                    }}
+                  >
+                    <span>🧊</span> Recovery
+                  </button>
+                </div>
+                {/* Second row: Warm Up + Don't Count (Walking only) */}
+                <div className="flex gap-2 mt-2">
+                  <button
+                    onClick={() => setCountToward('warmup')}
+                    className="flex-1 py-2 px-3 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
+                    style={{
+                      backgroundColor: countToward === 'warmup' ? 'rgba(255,214,10,0.2)' : 'rgba(255,255,255,0.05)',
+                      border: countToward === 'warmup' ? '1px solid #FFD60A' : '1px solid transparent',
+                      color: countToward === 'warmup' ? '#FFD60A' : 'white'
+                    }}
+                  >
+                    <span>🔥</span> Warm Up
+                  </button>
+                  {activityType === 'Walking' && (
                     <button
-                      onClick={() => setCountToward('warmup')}
-                      className="w-full mt-2 py-2 px-3 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
+                      onClick={() => setCountToward(null)}
+                      className="flex-1 py-2 px-3 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
                       style={{
-                        backgroundColor: countToward === 'warmup' ? 'rgba(255,214,10,0.2)' : 'rgba(255,255,255,0.05)',
-                        border: countToward === 'warmup' ? '1px solid #FFD60A' : '1px solid transparent',
-                        color: countToward === 'warmup' ? '#FFD60A' : 'white'
+                        backgroundColor: countToward === null ? 'rgba(128,128,128,0.2)' : 'rgba(255,255,255,0.05)',
+                        border: countToward === null ? '1px solid #808080' : '1px solid transparent',
+                        color: countToward === null ? '#B0B0B0' : 'white'
                       }}
                     >
-                      <span>🔥</span> Warm Up
+                      <span>➖</span> Don't Count
                     </button>
-                  </>
-                ) : (
-                  /* Yoga/Pilates options: Strength, Cardio, Recovery */
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setCountToward('lifting')}
-                      className="flex-1 p-3 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
-                      style={{
-                        backgroundColor: countToward === 'lifting' ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
-                        border: countToward === 'lifting' ? '1px solid #00FF94' : '1px solid transparent',
-                        color: countToward === 'lifting' ? '#00FF94' : 'white'
-                      }}
-                    >
-                      <span>🏋️</span> Strength
-                    </button>
-                    <button
-                      onClick={() => setCountToward('cardio')}
-                      className="flex-1 p-3 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
-                      style={{
-                        backgroundColor: countToward === 'cardio' ? 'rgba(255,149,0,0.2)' : 'rgba(255,255,255,0.05)',
-                        border: countToward === 'cardio' ? '1px solid #FF9500' : '1px solid transparent',
-                        color: countToward === 'cardio' ? '#FF9500' : 'white'
-                      }}
-                    >
-                      <span>🏃</span> Cardio
-                    </button>
-                    <button
-                      onClick={() => setCountToward('recovery')}
-                      className="flex-1 p-3 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
-                      style={{
-                        backgroundColor: countToward === 'recovery' ? 'rgba(0,209,255,0.2)' : 'rgba(255,255,255,0.05)',
-                        border: countToward === 'recovery' ? '1px solid #00D1FF' : '1px solid transparent',
-                        color: countToward === 'recovery' ? '#00D1FF' : 'white'
-                      }}
-                    >
-                      <span>🧊</span> Recovery
-                    </button>
-                  </div>
-                )}
-                {/* Warm Up option - full width below category buttons */}
-                <button
-                  onClick={() => setCountToward('warmup')}
-                  className="w-full mt-2 py-2 px-3 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
-                  style={{
-                    backgroundColor: countToward === 'warmup' ? 'rgba(255,214,10,0.2)' : 'rgba(255,255,255,0.05)',
-                    border: countToward === 'warmup' ? '1px solid #FFD60A' : '1px solid transparent',
-                    color: countToward === 'warmup' ? '#FFD60A' : 'white'
-                  }}
-                >
-                  <span>🔥</span> Warm Up
-                </button>
-                <p className="text-[11px] text-gray-500 mt-2">
-                  {activityType === 'Walking'
-                    ? '💡 Power walks and incline walking can count as cardio. Casual walks are great for daily movement but don\'t count toward weekly goals.'
-                    : `💡 ${activityType} can count toward different goals depending on intensity. Power and hot styles often count as cardio or lifting, while restorative sessions count as recovery.`
-                  }
-                </p>
+                  )}
+                </div>
               </div>
             )}
 

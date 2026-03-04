@@ -8171,7 +8171,7 @@ const SwipeableActivityItem = ({ children, onDelete, activity, onTap, onEdit }) 
       if (wasTap && !globalIsPulling.current) {
         // This was a tap, not a swipe, and we're not pulling to refresh - trigger click on target
         const target = e.target;
-        if (target) {
+        if (target && typeof target.click === 'function') {
           setTimeout(() => target.click(), 10);
         }
         touchState.current = { startX: null, startY: null, startSwipeX: 0, hasMoved: false, startTime: 0 };

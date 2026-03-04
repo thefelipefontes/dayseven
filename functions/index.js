@@ -112,6 +112,28 @@ async function getUserDisplayName(userId) {
 }
 
 /**
+ * Helper: Get effective activity category for goal tracking.
+ *
+ * NOTE ON NAMING: The strength/lifting category has inconsistent naming across the codebase.
+ * - The UI button label says "Strength" and the activity type is "Strength Training"
+ * - But the stored countToward value is 'lifting' (matching the goal key 'liftsPerWeek')
+ * - Both 'lifting' and 'strength' are accepted here for backwards compatibility
+ * - The canonical internal value is 'lifting' — always use 'lifting' when writing new code
+ */
+function getActivityCategoryForGoals(activity) {
+  const ct = activity.countToward || '';
+  if (ct === 'lifting' || ct === 'strength') return 'lifting';
+  if (ct === 'cardio') return 'cardio';
+  if (ct === 'recovery') return 'recovery';
+  if (ct === 'warmup') return 'warmup';
+  const cc = activity.customActivityCategory || '';
+  if (cc === 'lifting' || cc === 'strength') return 'lifting';
+  if (cc === 'cardio') return 'cardio';
+  if (cc === 'recovery') return 'recovery';
+  return null;
+}
+
+/**
  * Helper: Check if current time is within quiet hours (timezone-aware)
  */
 function isQuietHours(preferences) {
@@ -161,7 +183,7 @@ function getDefaultPreferences() {
     friendRequests: true,
     reactions: true,
     comments: true,
-    friendActivity: true,
+    friendActivity: false,
     streakReminders: true,
     goalReminders: true,
     dailyReminders: false,
@@ -421,6 +443,55 @@ exports.onCommentCreated = onDocumentCreated(
   }
 );
 
+/**
+ * Notify comment author when someone replies to their comment
+ * Respects the 'comments' preference (replies share the comments toggle)
+ */
+exports.onReplyCreated = onDocumentCreated(
+  'users/{ownerId}/activityComments/{activityId}/comments/{commentId}/replies/{replyId}',
+  async (event) => {
+    const reply = event.data.data();
+    const { ownerId, activityId, commentId } = event.params;
+    const replierId = reply.replierUid;
+    const text = reply.text || '';
+
+    if (!replierId) return;
+
+    // Get the parent comment to find who to notify
+    const commentDoc = await db
+      .collection('users').doc(ownerId)
+      .collection('activityComments').doc(activityId)
+      .collection('comments').doc(commentId)
+      .get();
+
+    if (!commentDoc.exists) return;
+    const comment = commentDoc.data();
+    const commenterId = comment.commenterUid;
+
+    // Don't notify yourself
+    if (!commenterId || commenterId === replierId) return;
+
+    const prefs = await getUserPreferences(commenterId);
+    if (!prefs.comments) return;
+
+    const replierName = reply.replierName || await getUserDisplayName(replierId);
+    const truncatedText = text.length > 50 ? text.substring(0, 47) + '...' : text;
+
+    await sendNotificationToUser(
+      commenterId,
+      'New Reply',
+      `${replierName} replied: "${truncatedText}"`,
+      {
+        type: NotificationType.REPLY,
+        fromUserId: replierId,
+        activityOwnerId: ownerId,
+        activityId,
+        commentId,
+      }
+    );
+  }
+);
+
 // ==========================================
 // SCHEDULED REMINDERS
 // ==========================================
@@ -595,7 +666,7 @@ exports.sendGoalReminder = onSchedule(
 
       thisWeekActivities.forEach(activity => {
         const category = activity.countToward || '';
-        if (category === 'strength') {
+        if (category === 'lifting' || category === 'strength') {
           strength++;
         } else if (category === 'cardio') {
           cardio++;
@@ -688,7 +759,7 @@ exports.sendWeeklySummary = onSchedule(
       thisWeekActivities.forEach(activity => {
         totalCalories += activity.calories || 0;
         const category = activity.countToward || '';
-        if (category === 'strength') {
+        if (category === 'lifting' || category === 'strength') {
           strength++;
         } else if (category === 'cardio') {
           cardio++;
@@ -958,6 +1029,151 @@ exports.onStreakMilestone = onDocumentUpdated(
         type: NotificationType.STREAK_MILESTONE,
         milestone: hitMilestone.toString(),
         streak: newStreak.toString(),
+      }
+    );
+  }
+);
+
+// ==========================================
+// FRIEND ACTIVITY NOTIFICATIONS
+// ==========================================
+
+/**
+ * Notify friends when a user logs a new activity.
+ * Only sends if the friend has friendActivity preference enabled (off by default).
+ * Skips warmup activities.
+ */
+exports.onFriendActivityLogged = onDocumentUpdated(
+  'users/{userId}',
+  async (event) => {
+    const before = event.data.before.data();
+    const after = event.data.after.data();
+    const userId = event.params.userId;
+
+    const beforeActivities = before.activities || [];
+    const afterActivities = after.activities || [];
+
+    // Quick check: only proceed if activities were added
+    if (afterActivities.length <= beforeActivities.length) return;
+
+    // Find new activities (IDs in after but not in before)
+    const beforeIds = new Set(beforeActivities.map(a => String(a.id)));
+    const newActivities = afterActivities.filter(a => !beforeIds.has(String(a.id)));
+    if (newActivities.length === 0) return;
+
+    // Pick the first notifiable new activity (skip warmups)
+    const notifiableActivity = newActivities.find(a =>
+      a.countToward !== 'warmup' && a.customActivityCategory !== 'warmup'
+    );
+    if (!notifiableActivity) return;
+
+    // Get user's display name
+    const displayName = after.displayName || after.username || 'A friend';
+    const activityType = notifiableActivity.type || 'a workout';
+
+    // Get friends list
+    const friendsSnap = await db.collection('users').doc(userId).collection('friends').get();
+    if (friendsSnap.empty) return;
+
+    // Notify each friend (respecting their preferences)
+    const promises = friendsSnap.docs.map(async (friendDoc) => {
+      const friendUid = friendDoc.data().friendUid;
+      if (!friendUid) return;
+
+      const prefs = await getUserPreferences(friendUid);
+      if (!prefs.friendActivity) return;
+
+      await sendNotificationToUser(
+        friendUid,
+        `${displayName} just worked out! 💪`,
+        `${displayName} completed ${activityType}`,
+        {
+          type: NotificationType.FRIEND_WORKOUT,
+          fromUserId: userId,
+          fromUserName: displayName,
+          activityType: notifiableActivity.type || '',
+        }
+      );
+    });
+
+    await Promise.allSettled(promises);
+  }
+);
+
+// ==========================================
+// GOAL ACHIEVEMENT NOTIFICATIONS
+// ==========================================
+
+/**
+ * Notify user when ALL three weekly goals (strength, cardio, recovery) are complete.
+ * Only fires once per week (compares before/after state to avoid re-notifying).
+ */
+exports.onGoalAchieved = onDocumentUpdated(
+  'users/{userId}',
+  async (event) => {
+    const before = event.data.before.data();
+    const after = event.data.after.data();
+    const userId = event.params.userId;
+
+    const beforeActivities = before.activities || [];
+    const afterActivities = after.activities || [];
+
+    // Only proceed if activities were added
+    if (afterActivities.length <= beforeActivities.length) return;
+
+    // Get current week start (Sunday)
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - dayOfWeek);
+    weekStart.setHours(0, 0, 0, 0);
+    const weekStartStr = weekStart.toISOString().split('T')[0];
+
+    const goals = after.goals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2 };
+
+    // Count this week's activities by category (after state)
+    const afterWeek = afterActivities.filter(a => a.date >= weekStartStr);
+    let aLifts = 0, aCardio = 0, aRecovery = 0;
+    afterWeek.forEach(a => {
+      const cat = getActivityCategoryForGoals(a);
+      if (cat === 'lifting') aLifts++;
+      else if (cat === 'cardio') aCardio++;
+      else if (cat === 'recovery') aRecovery++;
+    });
+
+    // Check if all goals are met now
+    const allMetNow = aLifts >= goals.liftsPerWeek &&
+                      aCardio >= goals.cardioPerWeek &&
+                      aRecovery >= goals.recoveryPerWeek;
+    if (!allMetNow) return;
+
+    // Count before-state to see if goals were already met
+    const beforeWeek = beforeActivities.filter(a => a.date >= weekStartStr);
+    let bLifts = 0, bCardio = 0, bRecovery = 0;
+    beforeWeek.forEach(a => {
+      const cat = getActivityCategoryForGoals(a);
+      if (cat === 'lifting') bLifts++;
+      else if (cat === 'cardio') bCardio++;
+      else if (cat === 'recovery') bRecovery++;
+    });
+
+    const allMetBefore = bLifts >= goals.liftsPerWeek &&
+                         bCardio >= goals.cardioPerWeek &&
+                         bRecovery >= goals.recoveryPerWeek;
+    if (allMetBefore) return; // Already achieved, don't re-notify
+
+    const prefs = await getUserPreferences(userId);
+    if (!prefs.goalAchievements) return;
+
+    await sendNotificationToUser(
+      userId,
+      'All Weekly Goals Complete! 🏆',
+      'You\'ve hit all your strength, cardio, and recovery goals this week!',
+      {
+        type: NotificationType.GOAL_ACHIEVED,
+        lifts: aLifts.toString(),
+        cardio: aCardio.toString(),
+        recovery: aRecovery.toString(),
       }
     );
   }

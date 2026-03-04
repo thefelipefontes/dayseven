@@ -34,6 +34,7 @@ const NotificationSettings = ({ userId, onClose }) => {
     newActivityDetected: true,
     // Achievements & Summaries
     streakMilestones: true,
+    goalAchievements: true,
     weeklySummary: true,
     monthlySummary: true,
     // Quiet hours
@@ -65,7 +66,7 @@ const NotificationSettings = ({ userId, onClose }) => {
           if (prefs) {
             setPreferences(prev => ({ ...prev, ...prefs }));
             // Check if all toggleable preferences are off
-            const toggleKeys = ['friendRequests', 'reactions', 'comments', 'friendActivity', 'streakReminders', 'goalReminders', 'dailyReminders', 'newActivityDetected', 'streakMilestones', 'weeklySummary', 'monthlySummary'];
+            const toggleKeys = ['friendRequests', 'reactions', 'comments', 'friendActivity', 'streakReminders', 'goalReminders', 'dailyReminders', 'newActivityDetected', 'streakMilestones', 'goalAchievements', 'weeklySummary', 'monthlySummary'];
             const anyEnabled = toggleKeys.some(key => prefs[key]);
             setAllEnabled(anyEnabled);
           }
@@ -101,7 +102,7 @@ const NotificationSettings = ({ userId, onClose }) => {
     setPreferences(newPrefs);
 
     // Update master toggle state
-    const toggleKeys = ['friendRequests', 'reactions', 'comments', 'friendActivity', 'streakReminders', 'goalReminders', 'dailyReminders', 'newActivityDetected', 'streakMilestones', 'weeklySummary', 'monthlySummary'];
+    const toggleKeys = ['friendRequests', 'reactions', 'comments', 'friendActivity', 'streakReminders', 'goalReminders', 'dailyReminders', 'newActivityDetected', 'streakMilestones', 'goalAchievements', 'weeklySummary', 'monthlySummary'];
     const anyEnabled = toggleKeys.some(k => k === key ? newValue : newPrefs[k]);
     setAllEnabled(anyEnabled);
 
@@ -123,7 +124,7 @@ const NotificationSettings = ({ userId, onClose }) => {
     const newEnabled = !allEnabled;
     setAllEnabled(newEnabled);
 
-    const toggleKeys = ['friendRequests', 'reactions', 'comments', 'friendActivity', 'streakReminders', 'goalReminders', 'dailyReminders', 'newActivityDetected', 'streakMilestones', 'weeklySummary', 'monthlySummary'];
+    const toggleKeys = ['friendRequests', 'reactions', 'comments', 'friendActivity', 'streakReminders', 'goalReminders', 'dailyReminders', 'newActivityDetected', 'streakMilestones', 'goalAchievements', 'weeklySummary', 'monthlySummary'];
     const newPrefs = { ...preferences };
     toggleKeys.forEach(key => { newPrefs[key] = newEnabled; });
     setPreferences(newPrefs);
@@ -401,6 +402,12 @@ const NotificationSettings = ({ userId, onClose }) => {
               description="Celebrate 5, 10, 25, 52, 78, and 104-week streaks"
               enabled={preferences.streakMilestones}
               onToggle={() => handleToggle('streakMilestones')}
+            />
+            <SettingRow
+              label="Goal Achievements"
+              description="When all weekly goals are complete"
+              enabled={preferences.goalAchievements}
+              onToggle={() => handleToggle('goalAchievements')}
             />
             <SettingRow
               label="Weekly Summary"

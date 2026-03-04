@@ -268,7 +268,7 @@ export const getDefaultPreferences = () => ({
   friendRequests: true,
   reactions: true,
   comments: true,
-  friendActivity: true,
+  friendActivity: false,
 
   // Reminders
   streakReminders: true,

@@ -1502,7 +1502,9 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
   );
 };
 
-// Shared utility: Determine default "count toward" category based on activity type and subtype
+// Shared utility: Determine default "count toward" category based on activity type and subtype.
+// NOTE: Strength category is stored as 'lifting' (not 'strength') to match the goal key 'liftsPerWeek'.
+// The UI displays "Strength" but the internal value is 'lifting'. Keep this consistent in new code.
 const getDefaultCountToward = (type, sub) => {
   if (type === 'Strength Training') return 'lifting';
   if (type === 'Running') return 'cardio';

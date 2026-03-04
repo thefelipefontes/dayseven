@@ -18558,7 +18558,8 @@ export default function DaySevenApp() {
                   incrementBadge();
 
                   // Track unread feed notifications locally (for red dot on Friends tab)
-                  const notifType = notification?.data?.type;
+                  // notificationReceived wraps data at notification.notification.data or notification.data
+                  const notifType = notification?.notification?.data?.type || notification?.data?.type;
                   const socialTypes = ['reaction', 'comment', 'reply', 'friend_request', 'friend_accepted', 'friend_workout'];
                   if (socialTypes.includes(notifType) && activeTabRef.current !== 'feed') {
                     setUnreadFeedCount(prev => prev + 1);
@@ -18907,6 +18908,11 @@ export default function DaySevenApp() {
 
               const freshProfile = await getUserProfile(user.uid, true);
               const currentWeekKey = getCurrentWeekKey();
+
+              // Refresh unread feed count (for red dot on Friends tab)
+              if (freshProfile?.unreadFeedCount > 0) {
+                setUnreadFeedCount(freshProfile.unreadFeedCount);
+              }
 
               // Load streaks from Firestore (watch may have updated them)
               if (freshProfile?.streaks) {

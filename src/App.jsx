@@ -16,6 +16,7 @@ import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, saveWorkoutToHe
 import NotificationSettings from './NotificationSettings';
 import { initializePushNotifications, handleNotificationNavigation, removeFCMToken, clearBadge, clearAllNotifications, incrementBadge, shouldShowNotification, getNotificationPreferences } from './services/notificationService';
 import { initializeRevenueCat, checkProStatus, addCustomerInfoListener, logoutRevenueCat, presentPaywall, presentCustomerCenter, restorePurchases } from './services/subscriptionService';
+import ActivityIcon, { ICON_PICKER_CATEGORIES, CATEGORY_COLORS as ICON_CATEGORY_COLORS } from './components/ActivityIcon';
 
 // Flag to suppress foreground refresh while photo picker is open
 // (prevents re-render glitch when returning from iOS photo picker)
@@ -825,32 +826,7 @@ const ProgressBar = ({ progress, color = '#00FF94', height = 4 }) => (
   </div>
 );
 
-const ActivityIcon = ({ type, size = 20, sportEmoji, customEmoji }) => {
-  const icons = {
-    'Strength Training': '🏋️',
-    'Running': '🏃',
-    'Walking': '🚶',
-    'Cold Plunge': '🧊',
-    'Sauna': '🔥',
-    'Yoga': '🧘',
-    'Pilates': '🤸',
-    'Cycle': '🚴',
-    'Sports': '🏀',
-    'Stair Climbing': '🪜',
-    'Elliptical': '🏃‍♂️',
-    'Other': '🏊'
-  };
-
-  // Use custom emoji for Sports or Other if provided
-  let icon = icons[type] || '🏊';
-  if (type === 'Sports' && sportEmoji) {
-    icon = sportEmoji;
-  } else if (type === 'Other' && customEmoji) {
-    icon = customEmoji;
-  }
-
-  return <span style={{ fontSize: size }}>{icon}</span>;
-};
+// ActivityIcon is imported from ./components/ActivityIcon
 
 // Heat Map Calendar Component
 const HeatMapCalendar = ({ data, onSelectDate, selectedDate, onSelectWeek }) => {
@@ -1303,8 +1279,8 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Get display info
-  const icon = workout.customEmoji || workout.sportEmoji || workout.icon || '💪';
+  // Get display info — check for new customIcon first, fall back to old customEmoji
+  const customEmoji = workout.customIcon ? null : (workout.customEmoji || workout.sportEmoji || null);
   const typeName = workout.type === 'Strength Training'
     ? (workout.strengthType || 'Strength')
     : workout.type;
@@ -1346,7 +1322,7 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
         />
 
         {/* Activity icon */}
-        <span className="text-base">{icon}</span>
+        <span className="text-base flex items-center">{customEmoji || <ActivityIcon type={workout.type} strengthType={workout.strengthType} customIcon={workout.customIcon} size={16} />}</span>
 
         {/* Timer - frozen when finishing */}
         <span className="font-mono font-semibold text-sm" style={{ color: isFinishing ? '#FFB400' : '#00FF94' }}>
@@ -1402,7 +1378,7 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
             className="w-11 h-11 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
             style={{ backgroundColor: 'rgba(0,255,148,0.15)' }}
           >
-            {icon}
+            {customEmoji || <ActivityIcon type={workout.type} strengthType={workout.strengthType} customIcon={workout.customIcon} size={22} />}
           </div>
 
           {/* Workout info */}
@@ -1505,8 +1481,14 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
 // Shared utility: Determine default "count toward" category based on activity type and subtype.
 // NOTE: Strength category is stored as 'lifting' (not 'strength') to match the goal key 'liftsPerWeek'.
 // The UI displays "Strength" but the internal value is 'lifting'. Keep this consistent in new code.
+// Returns the default countToward for a given activity type.
+// NOTE: 'lifting' is the canonical internal value for strength activities (see functions/index.js).
+// Flattened strength types (Weightlifting, Bodyweight, Circuit) also map to 'lifting'.
 const getDefaultCountToward = (type, sub) => {
   if (type === 'Strength Training') return 'lifting';
+  if (type === 'Weightlifting') return 'lifting';
+  if (type === 'Bodyweight') return 'lifting';
+  if (type === 'Circuit') return 'lifting';
   if (type === 'Running') return 'cardio';
   if (type === 'Cycle') return 'cardio';
   if (type === 'Sports') return 'cardio';
@@ -1914,7 +1896,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
 
   if (!isOpen || !workout) return null;
 
-  const icon = finishSportEmoji || workout.customEmoji || workout.sportEmoji || workout.icon || '💪';
+  const finishCustomEmoji = finishSportEmoji || workout.customEmoji || workout.sportEmoji || null;
   const typeName = workout.type === 'Strength Training'
     ? (finishStrengthType || workout.strengthType || 'Strength')
     : workout.type;
@@ -2007,7 +1989,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
               className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
               style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}
             >
-              {icon}
+              {finishCustomEmoji || <ActivityIcon type={workout.type} strengthType={finishStrengthType || workout.strengthType} size={22} />}
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold text-white truncate">
@@ -2039,7 +2021,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                           color: isSelected ? '#00FF94' : 'white'
                         }}
                       >
-                        {st === 'Weightlifting' ? '🏋️' : st === 'Circuit' ? '🔄' : '💪'} {st}
+                        <ActivityIcon type="Strength Training" strengthType={st} size={16} /> {st}
                       </button>
                     );
                   })}
@@ -4370,20 +4352,8 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange }) => {
   };
 
   // Get activity emoji
-  const getActivityEmoji = (type) => {
-    const emojis = {
-      'Strength Training': '🏋️',
-      'Running': '🏃',
-      'Cycle': '🚴',
-      'Walking': '🚶',
-      'Sports': '🏀',
-      'Cold Plunge': '🧊',
-      'Sauna': '🔥',
-      'Yoga': '🧘',
-      'Pilates': '🤸',
-      'Other': '🏊'
-    };
-    return emojis[type] || '🏊';
+  const getActivityEmoji = (type, size = 18) => {
+    return <ActivityIcon type={type} size={size} />;
   };
 
   // Card type configurations
@@ -4973,21 +4943,21 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange }) => {
                   {/* Best Burn */}
                   <div className={`${isPostFormat ? 'p-1' : 'p-1.5'} rounded-xl text-center`} style={{ backgroundColor: 'rgba(255,149,0,0.08)' }}>
                     <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500 uppercase`}>Best Burn</div>
-                    <div className={isPostFormat ? 'text-xs' : 'text-sm'}>{getActivityEmoji(stats?.monthlyHighestCalorieSession?.type)}</div>
+                    <div className={isPostFormat ? 'text-xs' : 'text-sm'}>{getActivityEmoji(stats?.monthlyHighestCalorieSession?.type, 14)}</div>
                     <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} font-black`} style={{ color: '#FF9500' }}>{(stats?.monthlyHighestCalorieSession?.calories || 0).toLocaleString()}</div>
                     <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500`}>cal</div>
                   </div>
                   {/* Longest Session */}
                   <div className={`${isPostFormat ? 'p-1' : 'p-1.5'} rounded-xl text-center`} style={{ backgroundColor: 'rgba(147,112,219,0.08)' }}>
                     <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500 uppercase`}>Longest</div>
-                    <div className={isPostFormat ? 'text-xs' : 'text-sm'}>{getActivityEmoji(stats?.monthlyLongestSession?.type)}</div>
+                    <div className={isPostFormat ? 'text-xs' : 'text-sm'}>{getActivityEmoji(stats?.monthlyLongestSession?.type, 14)}</div>
                     <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} font-black`} style={{ color: '#9370DB' }}>{stats?.monthlyLongestSession?.duration || 0}</div>
                     <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500`}>min</div>
                   </div>
                   {/* Furthest Distance */}
                   <div className={`${isPostFormat ? 'p-1' : 'p-1.5'} rounded-xl text-center`} style={{ backgroundColor: 'rgba(50,205,50,0.08)' }}>
                     <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500 uppercase`}>Furthest</div>
-                    <div className={isPostFormat ? 'text-xs' : 'text-sm'}>{getActivityEmoji(stats?.monthlyFurthestDistance?.type)}</div>
+                    <div className={isPostFormat ? 'text-xs' : 'text-sm'}>{getActivityEmoji(stats?.monthlyFurthestDistance?.type, 14)}</div>
                     <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} font-black`} style={{ color: '#32CD32' }}>{(stats?.monthlyFurthestDistance?.distance || 0).toFixed(1)}</div>
                     <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500`}>mi</div>
                   </div>
@@ -6068,7 +6038,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div className="font-medium text-sm flex items-center gap-1">
-                        {activity.type === 'Other' && activity.customEmoji && <span>{activity.customEmoji}</span>}
+                        {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} />}
                         {activity.subtype || activity.type}
                       </div>
                       <div className="text-xs text-gray-500">{activity.date}</div>
@@ -6116,7 +6086,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div className="font-medium text-sm flex items-center gap-1">
-                        {activity.type === 'Other' && activity.customEmoji && <span>{activity.customEmoji}</span>}
+                        {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} />}
                         {activity.subtype || activity.type}
                       </div>
                       <div className="text-xs text-gray-500">{activity.date}</div>
@@ -6164,7 +6134,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div className="font-medium text-sm flex items-center gap-1">
-                        {activity.type === 'Other' && activity.customEmoji && <span>{activity.customEmoji}</span>}
+                        {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} />}
                         {activity.type === 'Other' ? (activity.subtype || activity.type) : activity.type}
                       </div>
                       <div className="text-xs text-gray-500">{activity.date}</div>
@@ -6794,7 +6764,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
               className="w-14 h-14 rounded-2xl flex items-center justify-center"
               style={{ backgroundColor: `${color}20` }}
             >
-              <ActivityIcon type={activity.type} size={28} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} />
+              <ActivityIcon type={activity.type} size={28} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} />
             </div>
             <div className="flex-1">
               <div className="text-xl font-bold">{activity.type}</div>
@@ -8433,13 +8403,11 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   const [saveCustomSport, setSaveCustomSport] = useState(false);
   // Custom "Other" activity state
   const [customActivityName, setCustomActivityName] = useState('');
-  const [customActivityEmoji, setCustomActivityEmoji] = useState('🏊');
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [customActivityEmoji, setCustomActivityEmoji] = useState(''); // Kept for backwards compat with old data
+  const [customActivityIcon, setCustomActivityIcon] = useState('CirclePlus'); // New: Lucide icon name for "Other" activities
+  const [showIconPicker, setShowIconPicker] = useState(false);
   const [saveCustomActivity, setSaveCustomActivity] = useState(false);
   const [customActivityCategory, setCustomActivityCategory] = useState(''); // 'strength', 'cardio', or 'recovery'
-
-  // Common activity emojis for picker
-  const activityEmojis = ['💪', '🏃', '🚴', '🏊', '⛷️', '🧗', '🥊', '🎾', '⚽', '🏀', '🏈', '⚾', '🎯', '🏋️', '🤸', '🧘', '🥋', '🏇', '🚣', '🛹', '⛸️', '🎿', '🏌️', '🤾', '🏸', '🥏', '🎳', '🧊', '🔥', '⭐', '🌟', '✨', '💫', '🎉', '🏆', '🥇', '❤️', '💚', '💙', '🧠', '🦵', '💨', '⚡'];
 
   // Sports-specific emojis for picker
   const sportsEmojis = ['⚽', '🏀', '🏈', '⚾', '🥎', '🎾', '🏐', '🏉', '🥏', '🎱', '🪀', '🏓', '🏸', '🏒', '🏑', '🥍', '🏏', '🪃', '🥅', '⛳', '🪁', '🏹', '🎣', '🤿', '🥊', '🥋', '🎽', '🛹', '🛼', '🛷', '⛸️', '🥌', '🎿', '⛷️', '🏂', '🪂', '🏋️', '🤼', '🤸', '⛹️', '🤺', '🏇', '🧘', '🏄', '🚣', '🧗', '🚵', '🚴', '🤾', '🤽', '🏊', '🏌️'];
@@ -8477,7 +8445,10 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       // If there's a pending activity (from HealthKit or editing), go directly to completed flow
       // Otherwise show initial choice screen
       setMode(pendingActivity ? 'completed' : null);
-      setActivityType(pendingActivity?.type || null);
+      // When editing a 'Strength Training' activity, use the strengthType as the flattened activityType
+      const editType = pendingActivity?.type === 'Strength Training' && pendingActivity?.strengthType
+        ? pendingActivity.strengthType : (pendingActivity?.type || null);
+      setActivityType(editType);
       setSubtype(pendingActivity?.subtype || '');
       setStrengthType(pendingActivity?.strengthType || '');
       setFocusAreas(pendingActivity?.focusAreas || (pendingActivity?.focusArea ? [pendingActivity.focusArea] : []));
@@ -8487,8 +8458,9 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       setSaveCustomSport(false);
       // For "Other" activities, load the saved custom name and emoji
       setCustomActivityName(pendingActivity?.type === 'Other' ? (pendingActivity?.subtype || '') : '');
-      setCustomActivityEmoji(pendingActivity?.type === 'Other' ? (pendingActivity?.customEmoji || '🏊') : '🏊');
-      setShowEmojiPicker(false);
+      setCustomActivityEmoji(pendingActivity?.type === 'Other' ? (pendingActivity?.customEmoji || '') : '');
+      setCustomActivityIcon(pendingActivity?.type === 'Other' ? (pendingActivity?.customIcon || 'CirclePlus') : 'CirclePlus');
+      setShowIconPicker(false);
       setSaveCustomActivity(false);
       setCustomActivityCategory(pendingActivity?.type === 'Other' ? (pendingActivity?.customActivityCategory || '') : '');
       setDate(defaultDate || pendingActivity?.date || getTodayDate());
@@ -8690,11 +8662,17 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
     setDate(newDate);
   };
 
+  // Strength types are flattened into the main list (not nested under "Strength Training").
+  // When saved, they store type: 'Strength Training' + strengthType for backwards compat.
+  const STRENGTH_TYPES = ['Weightlifting', 'Bodyweight', 'Circuit'];
+
   const activityTypes = [
-    { name: 'Strength Training', icon: '🏋️', subtypes: [], category: 'strength' },
-    { name: 'Running', icon: '🏃', subtypes: ['Outdoor', 'Indoor'], category: 'cardio' },
-    { name: 'Cycle', icon: '🚴', subtypes: ['Outdoor', 'Indoor'], category: 'cardio' },
-    { name: 'Sports', icon: '🏀', subtypes: [
+    { name: 'Weightlifting', subtypes: [], category: 'strength', hasFocusArea: true },
+    { name: 'Bodyweight', subtypes: [], category: 'strength', hasFocusArea: true },
+    { name: 'Circuit', subtypes: [], category: 'strength', hasFocusArea: true },
+    { name: 'Running', subtypes: ['Outdoor', 'Indoor'], category: 'cardio' },
+    { name: 'Cycle', subtypes: ['Outdoor', 'Indoor'], category: 'cardio' },
+    { name: 'Sports', subtypes: [
       { name: 'Basketball', icon: '🏀' },
       { name: 'Soccer', icon: '⚽' },
       { name: 'Football', icon: '🏈' },
@@ -8702,14 +8680,14 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       { name: 'Golf', icon: '⛳' },
       { name: 'Other', icon: '🏆' }
     ], category: 'cardio' },
-    { name: 'Stair Climbing', icon: '🪜', subtypes: [], category: 'cardio' },
-    { name: 'Elliptical', icon: '🏃‍♂️', subtypes: [], category: 'cardio' },
-    { name: 'Yoga', icon: '🧘', subtypes: ['Vinyasa', 'Power', 'Hot', 'Yin', 'Restorative'], category: 'hybrid' },
-    { name: 'Pilates', icon: '🤸', subtypes: ['Mat', 'Reformer', 'Tower', 'Chair'], category: 'hybrid' },
-    { name: 'Walking', icon: '🚶', subtypes: ['Outdoor', 'Indoor'], category: 'hybrid' },
-    { name: 'Cold Plunge', icon: '🧊', subtypes: [], category: 'recovery' },
-    { name: 'Sauna', icon: '🔥', subtypes: [], category: 'recovery' },
-    { name: 'Other', icon: '🏊', subtypes: [], category: 'other' }
+    { name: 'Stair Climbing', subtypes: [], category: 'cardio' },
+    { name: 'Elliptical', subtypes: [], category: 'cardio' },
+    { name: 'Yoga', subtypes: ['Vinyasa', 'Power', 'Hot', 'Yin', 'Restorative'], category: 'hybrid' },
+    { name: 'Pilates', subtypes: ['Mat', 'Reformer', 'Tower', 'Chair'], category: 'hybrid' },
+    { name: 'Walking', subtypes: ['Outdoor', 'Indoor'], category: 'hybrid' },
+    { name: 'Cold Plunge', subtypes: [], category: 'recovery' },
+    { name: 'Sauna', subtypes: [], category: 'recovery' },
+    { name: 'Other', subtypes: [], category: 'other' }
   ];
 
   // SVG icons for activity categories
@@ -8748,12 +8726,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
     { id: 'recovery', label: 'Recovery' }
   ];
 
-  // Strength training configuration
-  const strengthTypes = [
-    { name: 'Weightlifting', icon: '🏋️', hasFocusArea: true },
-    { name: 'Bodyweight', icon: '💪', hasFocusArea: true },
-    { name: 'Circuit', icon: '🔄', hasFocusArea: true }
-  ];
+  // strengthTypes array removed — now flattened into activityTypes above.
 
   const focusAreaOptions = ['Full Body', 'Upper', 'Lower', 'Chest', 'Back', 'Legs', 'Shoulders', 'Biceps', 'Triceps', 'Abs'];
 
@@ -9039,11 +9012,16 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
           <h2 className="font-bold">{pendingActivity?.id ? 'Edit Activity' : mode === 'start' ? 'Start Workout' : 'Log Activity'}</h2>
           <button
           onClick={() => {
-            // Build subtype for strength training
+            // Determine if this is a flattened strength type
+            const isStrengthType = STRENGTH_TYPES.includes(activityType);
+
+            // Build subtype and final type
             let finalSubtype = subtype;
             let finalType = activityType;
-            if (activityType === 'Strength Training') {
-              finalSubtype = focusAreas.length > 0 ? `${strengthType} - ${focusAreas.join(', ')}` : strengthType;
+            if (isStrengthType) {
+              // Flattened strength: save as 'Strength Training' with strengthType for backwards compat
+              finalType = 'Strength Training';
+              finalSubtype = focusAreas.length > 0 ? `${activityType} - ${focusAreas.join(', ')}` : activityType;
             } else if (showCustomSportInput) {
               finalSubtype = customSport;
             } else if (showCustomActivityInput && customActivityName) {
@@ -9053,7 +9031,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 
             // Save custom activity to user profile if requested
             if (showCustomActivityInput && saveCustomActivity && customActivityName && onSaveCustomActivity) {
-              onSaveCustomActivity({ name: customActivityName, emoji: customActivityEmoji, category: customActivityCategory });
+              onSaveCustomActivity({ name: customActivityName, icon: customActivityIcon, category: customActivityCategory });
             }
 
             // Get the sport emoji (either custom or from predefined sport)
@@ -9067,23 +9045,19 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               }
             }
 
-            // Get the icon for this activity type
-            const selectedTypeData = activityTypes.find(t => t.name === finalType);
-            const icon = showCustomActivityInput ? customActivityEmoji : (sportEmoji || selectedTypeData?.icon || '💪');
-
             // START WORKOUT MODE: Create active workout instead of saving
             if (mode === 'start' && onStartWorkout) {
               onStartWorkout({
                 type: finalType,
                 subtype: finalSubtype,
-                strengthType: activityType === 'Strength Training' ? strengthType : undefined,
-                focusAreas: activityType === 'Strength Training' && focusAreas.length > 0 ? focusAreas : undefined,
-                focusArea: activityType === 'Strength Training' && focusAreas.length > 0 ? focusAreas[0] : undefined,
+                strengthType: isStrengthType ? activityType : undefined,
+                focusAreas: isStrengthType && focusAreas.length > 0 ? focusAreas : undefined,
+                focusArea: isStrengthType && focusAreas.length > 0 ? focusAreas[0] : undefined,
                 sportEmoji,
                 customEmoji: showCustomActivityInput ? customActivityEmoji : undefined,
+                customIcon: showCustomActivityInput ? customActivityIcon : undefined,
                 countToward: showCustomActivityInput ? customActivityCategory : (countToward || undefined),
                 customActivityCategory: showCustomActivityInput ? customActivityCategory : undefined,
-                icon,
                 startTime: new Date().toISOString()
               });
               handleClose();
@@ -9096,9 +9070,9 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               time: activityTime || pendingActivity?.time, // Use linked workout time, or preserve time if editing
               type: finalType,
               subtype: finalSubtype,
-              strengthType: activityType === 'Strength Training' ? strengthType : undefined,
-              focusAreas: activityType === 'Strength Training' && focusAreas.length > 0 ? focusAreas : undefined,
-              focusArea: activityType === 'Strength Training' && focusAreas.length > 0 ? focusAreas[0] : undefined,
+              strengthType: isStrengthType ? activityType : undefined,
+              focusAreas: isStrengthType && focusAreas.length > 0 ? focusAreas : undefined,
+              focusArea: isStrengthType && focusAreas.length > 0 ? focusAreas[0] : undefined,
               date,
               notes,
               distance: distance ? parseFloat(distance) : undefined,
@@ -9108,7 +9082,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               maxHr: maxHr ? parseInt(maxHr) : undefined,
               saveCustomSport,
               sportEmoji,
-              customEmoji: showCustomActivityInput ? customActivityEmoji : undefined, // Store emoji for "Other" activities
+              customEmoji: showCustomActivityInput ? customActivityEmoji : undefined, // Store emoji for old "Other" activities
+              customIcon: showCustomActivityInput ? customActivityIcon : undefined, // Store icon name for new "Other" activities
               fromAppleHealth: isFromAppleHealth,
               linkedHealthKitUUID: linkedWorkout?.healthKitUUID || undefined, // Link to Apple Health workout
               sourceDevice: linkedWorkout?.sourceDevice || pendingActivity?.sourceDevice || undefined, // Device that recorded the workout
@@ -9122,8 +9097,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             handleClose();
           }}
           className="font-bold transition-all duration-150 px-2 py-1 rounded-lg"
-          style={{ color: !activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && (!customActivityName || !customActivityCategory)) || (activityType === 'Strength Training' && (!strengthType || focusAreas.length === 0)) ? 'rgba(0,255,148,0.3)' : '#00FF94' }}
-          disabled={!activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && (!customActivityName || !customActivityCategory)) || (activityType === 'Strength Training' && (!strengthType || focusAreas.length === 0))}
+          style={{ color: !activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && (!customActivityName || !customActivityCategory)) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0) ? 'rgba(0,255,148,0.3)' : '#00FF94' }}
+          disabled={!activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && (!customActivityName || !customActivityCategory)) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0)}
           onTouchStart={(e) => {
             if (!e.currentTarget.disabled) {
               e.currentTarget.style.transform = 'scale(0.9)';
@@ -9427,8 +9402,10 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             ) : isChangingActivityType && pendingActivity?.type && (
               <button
                 onClick={() => {
-                  // Go back to the original workout type
-                  setActivityType(pendingActivity.type);
+                  // Go back to the original workout type (map Strength Training to flattened type)
+                  const origType = pendingActivity.type === 'Strength Training' && pendingActivity.strengthType
+                    ? pendingActivity.strengthType : pendingActivity.type;
+                  setActivityType(origType);
                   setSubtype(pendingActivity.subtype || '');
                   setIsChangingActivityType(false);
                   triggerHaptic(ImpactStyle.Light);
@@ -9456,6 +9433,11 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                       key={type.name}
                       onClick={() => {
                         setActivityType(type.name);
+                        // Reset focus areas when changing activity type
+                        if (STRENGTH_TYPES.includes(type.name)) {
+                          setStrengthType(type.name);
+                          setFocusAreas([]);
+                        }
                         // Set default duration based on activity type
                         if (type.name === 'Sauna') {
                           setDurationHours(0);
@@ -9492,7 +9474,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                         e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
                       }}
                     >
-                      <span className="text-base">{type.icon}</span>
+                      <ActivityIcon type={type.name} size={18} />
                       <span className="text-sm font-medium whitespace-nowrap">{type.name}</span>
                     </button>
                   ))}
@@ -9507,16 +9489,23 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             </div>
             {/* User's saved custom activities */}
             {customActivities.map((customItem) => {
-              // Support both old string format and new object format { name, emoji }
+              // Support old string format, object with emoji, and new object with icon
               const activityName = typeof customItem === 'string' ? customItem : customItem.name;
-              const activityEmoji = typeof customItem === 'string' ? '⭐' : (customItem.emoji || '⭐');
+              const activityIconName = typeof customItem === 'object' ? customItem.icon : undefined;
+              const activityEmoji = typeof customItem === 'string' ? '' : (customItem.emoji || '');
               return (
                 <button
                   key={`custom-${activityName}`}
                   onClick={() => {
                     setActivityType('Other');
                     setCustomActivityName(activityName);
-                    setCustomActivityEmoji(activityEmoji);
+                    if (activityIconName) {
+                      setCustomActivityIcon(activityIconName);
+                      setCustomActivityEmoji('');
+                    } else {
+                      setCustomActivityEmoji(activityEmoji);
+                      setCustomActivityIcon(activityEmoji ? '' : 'CirclePlus');
+                    }
                     setIsChangingActivityType(false);
                   }}
                   className="flex items-center gap-2 px-3 py-2 rounded-full transition-all duration-150 active:scale-95"
@@ -9538,7 +9527,13 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
                   }}
                 >
-                  <span className="text-base">{activityEmoji}</span>
+                  {activityIconName ? (
+                    <ActivityIcon type="Other" customIcon={activityIconName} size={18} />
+                  ) : activityEmoji ? (
+                    <span className="text-base">{activityEmoji}</span>
+                  ) : (
+                    <ActivityIcon type="Other" size={18} />
+                  )}
                   <span className="text-sm font-medium whitespace-nowrap">{activityName}</span>
                 </button>
               );
@@ -9566,7 +9561,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
               }}
             >
-              <span className="text-base">➕</span>
+              <ActivityIcon type="Other" size={18} />
               <span className="text-sm font-medium">Custom</span>
             </button>
           </div>
@@ -9586,8 +9581,9 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 setFocusAreas([]);
                 setCustomSport('');
                 setCustomActivityName('');
-                setCustomActivityEmoji('🏊');
-                setShowEmojiPicker(false);
+                setCustomActivityEmoji('');
+                setCustomActivityIcon('CirclePlus');
+                setShowIconPicker(false);
                 setCountToward(null);
               }}
               className="flex items-center gap-2 text-gray-400 text-sm transition-all duration-150 px-2 py-1 rounded-lg"
@@ -9627,8 +9623,9 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 setFocusAreas([]);
                 setCustomSport('');
                 setCustomActivityName('');
-                setCustomActivityEmoji('🏊');
-                setShowEmojiPicker(false);
+                setCustomActivityEmoji('');
+                setCustomActivityIcon('CirclePlus');
+                setShowIconPicker(false);
                 setCountToward(null);
               }}
               className="flex items-center gap-3 p-3 rounded-xl w-full transition-all duration-150"
@@ -9655,73 +9652,44 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
               }}
             >
-              <span className="text-2xl">{
-                activityType === 'Other' ? customActivityEmoji :
+              <span className="text-2xl flex items-center">{
+                activityType === 'Other' && customActivityIcon ? <ActivityIcon type="Other" customIcon={customActivityIcon} size={24} /> :
+                activityType === 'Other' ? (customActivityEmoji || <ActivityIcon type="Other" size={24} />) :
                 activityType === 'Sports' && subtype ? (
                   subtype === 'Other' ? customSportEmoji :
-                  (selectedType?.subtypes?.find(st => typeof st === 'object' && st.name === subtype)?.icon || selectedType?.icon)
+                  (selectedType?.subtypes?.find(st => typeof st === 'object' && st.name === subtype)?.icon || <ActivityIcon type={activityType} size={24} />)
                 ) :
-                selectedType?.icon || '🏊'
+                <ActivityIcon type={activityType} size={24} />
               }</span>
               <span className="font-semibold">{activityType === 'Other' && customActivityName ? customActivityName : activityType}</span>
               <span className="ml-auto text-gray-500 text-sm">Change</span>
             </button>
 
-            {/* Strength Training Selection */}
-            {activityType === 'Strength Training' && (
-              <>
-                {/* Training Type Selection */}
-                <div>
-                  <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Training Type</label>
-                  <div className="flex flex-wrap gap-2">
-                    {strengthTypes.map((st) => (
-                      <button
-                        key={st.name}
-                        onClick={() => {
-                          setStrengthType(st.name);
-                          setFocusAreas([]); // Reset focus area when changing type
-                        }}
-                        className="px-4 py-2 rounded-full text-sm transition-all duration-200 flex items-center gap-2"
-                        style={{
-                          backgroundColor: strengthType === st.name ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
-                          border: strengthType === st.name ? '1px solid #00FF94' : '1px solid transparent',
-                          color: strengthType === st.name ? '#00FF94' : 'white'
-                        }}
-                      >
-                        <span>{st.icon}</span>
-                        {st.name}
-                      </button>
-                    ))}
-                  </div>
+            {/* Focus Area Selection — shown for all flattened strength types */}
+            {STRENGTH_TYPES.includes(activityType) && (
+              <div>
+                <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Focus Areas</label>
+                <div className="flex flex-wrap gap-2">
+                  {focusAreaOptions.map((area) => (
+                    <button
+                      key={area}
+                      onClick={() => setFocusAreas(prev => prev.includes(area) ? prev.filter(a => a !== area) : [...prev, area])}
+                      className="px-4 py-2 rounded-full text-sm transition-all duration-200"
+                      style={{
+                        backgroundColor: focusAreas.includes(area) ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
+                        border: focusAreas.includes(area) ? '1px solid #00FF94' : '1px solid transparent',
+                        color: focusAreas.includes(area) ? '#00FF94' : 'white'
+                      }}
+                    >
+                      {area}
+                    </button>
+                  ))}
                 </div>
-
-                {/* Focus Area Selection (for Lifting and Bodyweight) — multi-select */}
-                {strengthType && strengthTypes.find(s => s.name === strengthType)?.hasFocusArea && (
-                  <div>
-                    <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Focus Areas</label>
-                    <div className="flex flex-wrap gap-2">
-                      {focusAreaOptions.map((area) => (
-                        <button
-                          key={area}
-                          onClick={() => setFocusAreas(prev => prev.includes(area) ? prev.filter(a => a !== area) : [...prev, area])}
-                          className="px-4 py-2 rounded-full text-sm transition-all duration-200"
-                          style={{
-                            backgroundColor: focusAreas.includes(area) ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
-                            border: focusAreas.includes(area) ? '1px solid #00FF94' : '1px solid transparent',
-                            color: focusAreas.includes(area) ? '#00FF94' : 'white'
-                          }}
-                        >
-                          {area}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </>
+              </div>
             )}
 
             {/* Regular subtypes for non-strength activities */}
-            {activityType !== 'Strength Training' && selectedType?.subtypes.length > 0 && (
+            {!STRENGTH_TYPES.includes(activityType) && selectedType?.subtypes.length > 0 && (
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Type</label>
                 <div className="flex flex-wrap gap-2">
@@ -9896,18 +9864,18 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               <div className="p-4 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                 <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Activity Name</label>
                 <div className="flex gap-2 mb-3">
-                  {/* Emoji Picker Button */}
+                  {/* Icon Picker Button */}
                   <button
                     type="button"
-                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                    onClick={() => setShowIconPicker(!showIconPicker)}
                     onTouchStart={() => triggerHaptic(ImpactStyle.Light)}
-                    className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl transition-all"
+                    className="w-12 h-12 rounded-xl flex items-center justify-center transition-all"
                     style={{
-                      backgroundColor: showEmojiPicker ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
-                      border: showEmojiPicker ? '1px solid #00FF94' : '1px solid rgba(255,255,255,0.1)'
+                      backgroundColor: showIconPicker ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
+                      border: showIconPicker ? '1px solid #00FF94' : '1px solid rgba(255,255,255,0.1)'
                     }}
                   >
-                    {customActivityEmoji}
+                    <ActivityIcon type="Other" customIcon={customActivityIcon} size={22} />
                   </button>
                   <input
                     type="text"
@@ -9918,29 +9886,35 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                   />
                 </div>
 
-                {/* Emoji Picker Grid */}
-                {showEmojiPicker && (
-                  <div className="mb-3 p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                    <div className="flex flex-wrap gap-2">
-                      {activityEmojis.map((emoji) => (
-                        <button
-                          key={emoji}
-                          type="button"
-                          onClick={() => {
-                            setCustomActivityEmoji(emoji);
-                            setShowEmojiPicker(false);
-                            triggerHaptic(ImpactStyle.Light);
-                          }}
-                          className="w-10 h-10 rounded-lg flex items-center justify-center text-xl transition-all hover:bg-white/10"
-                          style={{
-                            backgroundColor: customActivityEmoji === emoji ? 'rgba(0,255,148,0.2)' : 'transparent',
-                            border: customActivityEmoji === emoji ? '1px solid #00FF94' : '1px solid transparent'
-                          }}
-                        >
-                          {emoji}
-                        </button>
-                      ))}
-                    </div>
+                {/* Icon Picker Grid — categorized */}
+                {showIconPicker && (
+                  <div className="mb-3 p-3 rounded-xl space-y-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                    {ICON_PICKER_CATEGORIES.map((category) => (
+                      <div key={category.label}>
+                        <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5">{category.label}</div>
+                        <div className="flex flex-wrap gap-2">
+                          {category.icons.map(({ name, Icon }) => (
+                            <button
+                              key={name}
+                              type="button"
+                              onClick={() => {
+                                setCustomActivityIcon(name);
+                                setCustomActivityEmoji(''); // Clear old emoji
+                                setShowIconPicker(false);
+                                triggerHaptic(ImpactStyle.Light);
+                              }}
+                              className="w-10 h-10 rounded-lg flex items-center justify-center transition-all hover:bg-white/10"
+                              style={{
+                                backgroundColor: customActivityIcon === name ? 'rgba(0,255,148,0.2)' : 'transparent',
+                                border: customActivityIcon === name ? '1px solid #00FF94' : '1px solid transparent'
+                              }}
+                            >
+                              <Icon size={20} color={customActivityIcon === name ? '#00FF94' : '#9CA3AF'} strokeWidth={2} />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
 
@@ -11898,8 +11872,8 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
             <div className="mt-4 pt-4 border-t border-white/10">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-xs text-gray-400">Muscle groups trained</div>
-                <div className="text-[10px] text-gray-500">
-                  🏋️ {weekProgress.lifts?.breakdown?.lifting || 0} Weightlifting · 💪 {weekProgress.lifts?.breakdown?.bodyweight || 0} Bodyweight{weekProgress.lifts?.breakdown?.circuit ? ` · 🔄 ${weekProgress.lifts.breakdown.circuit} Circuit` : ''}
+                <div className="text-[10px] text-gray-500 flex items-center gap-1">
+                  <ActivityIcon type="Strength Training" strengthType="Weightlifting" size={10} /> {weekProgress.lifts?.breakdown?.lifting || 0} Weightlifting · <ActivityIcon type="Strength Training" strengthType="Bodyweight" size={10} /> {weekProgress.lifts?.breakdown?.bodyweight || 0} Bodyweight{weekProgress.lifts?.breakdown?.circuit ? <> · <ActivityIcon type="Strength Training" strengthType="Circuit" size={10} /> {weekProgress.lifts.breakdown.circuit} Circuit</> : ''}
                 </div>
               </div>
               {Object.keys(weekProgress.lifts?.muscleGroups || {}).length > 0 ? (
@@ -11924,21 +11898,21 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
               <div className={`grid gap-2 text-center`} style={{ gridTemplateColumns: `repeat(${3 + (weekProgress.cardio?.otherActivities?.length || 0)}, minmax(0, 1fr))` }}>
                 <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                   <div className="text-lg font-bold">{weekProgress.cardio?.breakdown?.running || 0}</div>
-                  <div className="text-[10px] text-gray-400">🏃 Running</div>
+                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Running" size={10} /> Running</div>
                 </div>
                 <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                   <div className="text-lg font-bold">{weekProgress.cardio?.breakdown?.cycling || 0}</div>
-                  <div className="text-[10px] text-gray-400">🚴 Cycling</div>
+                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Cycle" size={10} /> Cycling</div>
                 </div>
                 <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                   <div className="text-lg font-bold">{weekProgress.cardio?.breakdown?.sports || 0}</div>
-                  <div className="text-[10px] text-gray-400">🏀 Sports</div>
+                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Sports" size={10} /> Sports</div>
                 </div>
                 {/* Show each "Other" cardio activity */}
                 {weekProgress.cardio?.otherActivities?.map((activity, i) => (
                   <div key={activity.id || i} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                     <div className="text-lg font-bold">1</div>
-                    <div className="text-[10px] text-gray-400">{activity.customEmoji || '⭐'} {activity.subtype || 'Other'}</div>
+                    <div className="text-[10px] text-gray-400 flex items-center gap-1"><ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={10} /> {activity.subtype || 'Other'}</div>
                   </div>
                 ))}
               </div>
@@ -11952,25 +11926,25 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
               <div className="grid grid-cols-2 gap-2 text-center">
                 <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                   <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.coldPlunge || 0}</div>
-                  <div className="text-[10px] text-gray-400">🧊 Cold Plunge</div>
+                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Cold Plunge" size={10} /> Cold Plunge</div>
                 </div>
                 <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                   <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.sauna || 0}</div>
-                  <div className="text-[10px] text-gray-400">🔥 Sauna</div>
+                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Sauna" size={10} /> Sauna</div>
                 </div>
                 <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                   <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.yoga || 0}</div>
-                  <div className="text-[10px] text-gray-400">🧘 Yoga</div>
+                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Yoga" size={10} /> Yoga</div>
                 </div>
                 <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                   <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.pilates || 0}</div>
-                  <div className="text-[10px] text-gray-400">🤸 Pilates</div>
+                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Pilates" size={10} /> Pilates</div>
                 </div>
                 {/* Show each "Other" recovery activity */}
                 {weekProgress.recovery?.otherActivities?.map((activity, i) => (
                   <div key={activity.id || i} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                     <div className="text-lg font-bold">1</div>
-                    <div className="text-[10px] text-gray-400">{activity.customEmoji || '⭐'} {activity.subtype || 'Other'}</div>
+                    <div className="text-[10px] text-gray-400 flex items-center gap-1"><ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={10} /> {activity.subtype || 'Other'}</div>
                   </div>
                 ))}
               </div>
@@ -12047,7 +12021,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                   className="w-full p-3 flex items-center gap-3 text-left cursor-pointer active:opacity-70 transition-opacity"
                   style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
                 >
-                  <ActivityIcon type={latestActivities[0].type} size={20} sportEmoji={latestActivities[0].sportEmoji} customEmoji={latestActivities[0].customEmoji} />
+                  <ActivityIcon type={latestActivities[0].type} size={20} sportEmoji={latestActivities[0].sportEmoji} customEmoji={latestActivities[0].customEmoji} customIcon={latestActivities[0].customIcon} />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-semibold truncate">{latestActivities[0].type}{latestActivities[0].subtype ? ` • ${latestActivities[0].subtype}` : ''}</div>
                     <div className="text-xs text-gray-400 flex items-center gap-2">
@@ -12097,7 +12071,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                       className="w-full p-3 flex items-center gap-3 text-left cursor-pointer active:opacity-70 transition-opacity"
                       style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
                     >
-                      <ActivityIcon type={activity.type} size={20} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} />
+                      <ActivityIcon type={activity.type} size={20} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-semibold truncate">{activity.type}{activity.subtype ? ` • ${activity.subtype}` : ''}</span>
@@ -12990,17 +12964,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
                     {fullDayActivities.map((activity, idx) => (
                       <div key={idx} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                         <div className="flex items-center gap-2">
-                          <span className="text-sm">{
-                            activity.type === 'Running' ? '🏃' :
-                            activity.type === 'Cycle' ? '🚴' :
-                            activity.type === 'Strength Training' ? '🏋️' :
-                            activity.type === 'Yoga' ? '🧘' :
-                            activity.type === 'Pilates' ? '🤸' :
-                            activity.type === 'Cold Plunge' ? '🧊' :
-                            activity.type === 'Sauna' ? '🔥' :
-                            activity.type === 'Sports' ? '⚽' :
-                            activity.type === 'Walking' ? '🚶' : '💪'
-                          }</span>
+                          <ActivityIcon type={activity.type} size={14} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} />
                           <span className="text-sm text-white font-medium">
                             {activity.subtype || activity.type}
                           </span>
@@ -14293,7 +14257,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                         >
                           <div className="flex justify-between items-start mb-2">
                             <div className="font-medium text-sm flex items-center gap-1">
-                              {activity.type === 'Other' && activity.customEmoji && <span>{activity.customEmoji}</span>}
+                              {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} />}
                               {activity.type === 'Strength Training'
                                 ? (() => { const areas = activity.focusAreas || (activity.focusArea ? [activity.focusArea] : []); return activity.subtype ? `${activity.subtype}${areas.length > 0 ? ` • ${areas.join(', ')}` : ''}` : (areas.length > 0 ? `Strength Training • ${areas.join(', ')}` : 'Strength Training'); })()
                                 : (activity.subtype ? `${activity.type} • ${activity.subtype}` : activity.type)}
@@ -14341,7 +14305,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                         >
                           <div className="flex justify-between items-start mb-2">
                             <div className="font-medium text-sm flex items-center gap-1">
-                              {activity.type === 'Other' && activity.customEmoji && <span>{activity.customEmoji}</span>}
+                              {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} />}
                               {activity.type === 'Other' ? (activity.subtype || activity.type) : (activity.subtype ? `${activity.type} • ${activity.subtype}` : activity.type)}
                             </div>
                             <span className="text-gray-500 text-xs">›</span>
@@ -14387,7 +14351,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                         >
                           <div className="flex justify-between items-start mb-2">
                             <div className="font-medium text-sm flex items-center gap-1">
-                              {activity.type === 'Other' && activity.customEmoji && <span>{activity.customEmoji}</span>}
+                              {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} />}
                               {activity.type === 'Other' ? (activity.subtype || activity.type) : (activity.subtype ? `${activity.type} • ${activity.subtype}` : activity.type)}
                             </div>
                             <span className="text-gray-500 text-xs">›</span>
@@ -14704,7 +14668,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                     {Object.entries(totalsData.recoveryBreakdown).map(([type, count]) => (
                       <div key={type} className="p-3 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                         <div className="flex items-center gap-3">
-                          <span className="text-xl">{type === 'Cold Plunge' ? '🧊' : type === 'Sauna' ? '🔥' : type === 'Pilates' ? '🤸' : '🧘'}</span>
+                          <ActivityIcon type={type} size={20} />
                           <span>{type}</span>
                         </div>
                         <span className="font-bold">{count}</span>
@@ -15001,27 +14965,8 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
           return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         };
 
-        const getActivityIcon = (activity) => {
-          const icons = {
-            'Strength Training': '💪',
-            'Running': '🏃',
-            'Cycle': '🚴',
-            'Sports': '🏀',
-            'Cold Plunge': '🧊',
-            'Sauna': '🔥',
-            'Yoga': '🧘',
-            'Pilates': '🤸',
-            'Other': '⭐'
-          };
-          // Use custom emoji for "Other" activities
-          if (activity.type === 'Other' && activity.customEmoji) {
-            return activity.customEmoji;
-          }
-          // Use sport emoji for Sports activities
-          if (activity.type === 'Sports' && activity.sportEmoji) {
-            return activity.sportEmoji;
-          }
-          return icons[activity.type] || '💪';
+        const getActivityIcon = (activity, size = 12) => {
+          return <ActivityIcon type={activity.type} size={size} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} />;
         };
 
         // Get selected activities sorted by date for comparison

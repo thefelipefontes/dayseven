@@ -4,6 +4,7 @@ import { addReaction, getReactions, removeReaction, addComment, getComments, del
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
+import ActivityIcon from './components/ActivityIcon';
 
 // Convert a Date to YYYY-MM-DD string in local timezone (avoids UTC date shifting)
 const toLocalDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -557,9 +558,8 @@ const MemoizedActivityCard = React.memo(({
   formatDuration,
   formatCommentTime,
   reactionEmojis,
-  activityIcons
 }) => {
-  const { friend, type, duration, calories, distance, date, time, id, customEmoji, sportEmoji } = activity;
+  const { friend, type, duration, calories, distance, date, time, id, customEmoji, customIcon, sportEmoji } = activity;
   const [showFullscreenPhoto, setShowFullscreenPhoto] = useState(false);
   const [openCommentId, setOpenCommentId] = useState(null);
   const [replyingTo, setReplyingTo] = useState(null); // { commentId, commenterName }
@@ -581,12 +581,11 @@ const MemoizedActivityCard = React.memo(({
     }
   }, [replyingTo]);
 
-  let icon = activityIcons[type] || '💪';
-  if (type === 'Other' && customEmoji) {
-    icon = customEmoji;
-  } else if (type === 'Sports' && sportEmoji) {
-    icon = sportEmoji;
-  }
+  // For "Other" activities, prefer customIcon (new format) over customEmoji (old format)
+  const useEmoji = (type === 'Other' && customIcon) ? null // Will use ActivityIcon with customIcon
+    : (type === 'Other' && customEmoji) ? customEmoji
+    : (type === 'Sports' && sportEmoji) ? sportEmoji
+    : null;
 
   // Count reactions by type
   const reactionCounts = {};
@@ -616,7 +615,7 @@ const MemoizedActivityCard = React.memo(({
       {/* Activity details */}
       <div className="flex items-center gap-3">
         <div className="w-12 h-12 rounded-xl bg-zinc-800 flex items-center justify-center">
-          <span className="text-2xl">{icon}</span>
+          {useEmoji ? <span className="text-2xl">{useEmoji}</span> : <ActivityIcon type={type} size={24} customIcon={customIcon} />}
         </div>
         <div className="flex-1">
           <p className="text-white font-medium">{type}{activity.subtype ? ` • ${activity.subtype}` : ''}</p>
@@ -940,18 +939,6 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   }, [activeView, onActiveViewChange]);
 
   const reactionEmojis = ['💪', '🔥', '👏', '❤️'];
-
-  const activityIcons = {
-    'Strength Training': '🏋️',
-    'Running': '🏃',
-    'Cold Plunge': '🧊',
-    'Sauna': '🔥',
-    'Yoga': '🧘',
-    'Pilates': '🤸',
-    'Cycle': '🚴',
-    'Sports': '🏀',
-    'Other': '💪'
-  };
 
   const formatTimeAgo = (dateStr, timeStr) => {
     const now = new Date();
@@ -3193,7 +3180,6 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               formatDuration={formatDuration}
               formatCommentTime={formatCommentTime}
               reactionEmojis={reactionEmojis}
-              activityIcons={activityIcons}
             />
           );
         })}

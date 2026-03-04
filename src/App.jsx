@@ -2026,7 +2026,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
               <div className="mb-4">
                 <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Strength Type</label>
                 <div className="flex flex-wrap gap-2">
-                  {['Weightlifting', 'Bodyweight', 'Circuit Training'].map((st) => {
+                  {['Weightlifting', 'Bodyweight', 'Circuit'].map((st) => {
                     const isSelected = finishStrengthType === st;
                     return (
                       <button
@@ -2039,7 +2039,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                           color: isSelected ? '#00FF94' : 'white'
                         }}
                       >
-                        {st === 'Weightlifting' ? '🏋️' : st === 'Circuit Training' ? '🔄' : '💪'} {st}
+                        {st === 'Weightlifting' ? '🏋️' : st === 'Circuit' ? '🔄' : '💪'} {st}
                       </button>
                     );
                   })}
@@ -8752,7 +8752,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   const strengthTypes = [
     { name: 'Weightlifting', icon: '🏋️', hasFocusArea: true },
     { name: 'Bodyweight', icon: '💪', hasFocusArea: true },
-    { name: 'Circuit Training', icon: '🔄', hasFocusArea: true }
+    { name: 'Circuit', icon: '🔄', hasFocusArea: true }
   ];
 
   const focusAreaOptions = ['Full Body', 'Upper', 'Lower', 'Chest', 'Back', 'Legs', 'Shoulders', 'Biceps', 'Triceps', 'Abs'];
@@ -10840,7 +10840,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     // Strength breakdown - check strengthType field or if subtype starts with the type name
     const lifting = lifts.filter(a => a.strengthType === 'Weightlifting' || a.strengthType === 'Lifting' || a.subtype?.startsWith('Lifting') || (!a.subtype && !a.strengthType));
     const bodyweight = lifts.filter(a => a.strengthType === 'Bodyweight' || a.subtype?.startsWith('Bodyweight'));
-    const circuit = lifts.filter(a => a.strengthType === 'Circuit Training');
+    const circuit = lifts.filter(a => a.strengthType === 'Circuit');
 
     // Recovery breakdown
     const coldPlunge = weekActivities.filter(a => a.type === 'Cold Plunge');

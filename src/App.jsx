@@ -14,7 +14,7 @@ import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
 import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged } from './services/healthService';
 import NotificationSettings from './NotificationSettings';
-import { initializePushNotifications, handleNotificationNavigation } from './services/notificationService';
+import { initializePushNotifications, handleNotificationNavigation, removeFCMToken, clearBadge, clearAllNotifications, incrementBadge, shouldShowNotification, getNotificationPreferences } from './services/notificationService';
 import { initializeRevenueCat, checkProStatus, addCustomerInfoListener, logoutRevenueCat, presentPaywall, presentCustomerCenter, restorePurchases } from './services/subscriptionService';
 
 // Flag to suppress foreground refresh while photo picker is open
@@ -17493,6 +17493,10 @@ export default function DaySevenApp() {
   // Smart Save state
   const [showSmartSaveExplainModal, setShowSmartSaveExplainModal] = useState(false);
   const justOnboardedRef = useRef(false); // Suppress Smart Save modal on first sync after onboarding
+
+  // Notification cleanup refs
+  const notificationCleanupRef = useRef(null); // Stores cleanup function from initializePushNotifications
+  const fcmTokenRef = useRef(null); // Stores current FCM token for removal on logout
   // Refs to access user/profile/activities in syncHealthKit callback without adding as dependencies
   const userProfileRef = useRef(userProfile);
   useEffect(() => { userProfileRef.current = userProfile; }, [userProfile]);
@@ -18008,6 +18012,10 @@ export default function DaySevenApp() {
 
   // Handle sign out
   const handleSignOut = async () => {
+    // Capture user ID and token before clearing state (needed for cleanup)
+    const currentUserId = user?.uid;
+    const currentToken = fcmTokenRef.current;
+
     // Immediately clear user state to show login screen
     setUser(null);
     setUserProfile(null);
@@ -18021,6 +18029,22 @@ export default function DaySevenApp() {
 
     // Then attempt actual sign out in background (don't block UI)
     (async () => {
+      // Clean up push notification listeners and remove FCM token
+      try {
+        if (notificationCleanupRef.current) {
+          notificationCleanupRef.current();
+          notificationCleanupRef.current = null;
+        }
+        if (currentUserId && currentToken) {
+          await removeFCMToken(currentUserId, currentToken);
+          fcmTokenRef.current = null;
+        }
+        await clearBadge();
+        await clearAllNotifications();
+      } catch (e) {
+        console.error('[App] Notification cleanup error:', e);
+      }
+
       // Reset RevenueCat
       try {
         await logoutRevenueCat();
@@ -18514,19 +18538,40 @@ export default function DaySevenApp() {
           // Initialize push notifications on native platforms
           if (Capacitor.isNativePlatform()) {
             try {
-              await initializePushNotifications(
+              // Clear badge on app open
+              clearBadge();
+
+              const { cleanup, token } = await initializePushNotifications(
                 user.uid,
-                (notification) => {
-                  // Handle foreground notification - could show in-app toast
+                async (notification) => {
+                  // Handle foreground notification — check preferences and show in-app toast
+                  const prefs = userProfileRef.current?.notificationPreferences;
+                  if (prefs && !shouldShowNotification(notification, prefs)) return;
+
+                  const title = notification?.notification?.title || notification?.title;
+                  const body = notification?.notification?.body || notification?.body;
+                  if (title || body) {
+                    setToastMessage(body || title);
+                    setToastType('success');
+                    setShowToast(true);
+                  }
+                  // Increment badge for foreground notifications
+                  incrementBadge();
                 },
                 (notification, actionId) => {
                   // Handle notification tap - navigate to appropriate screen
+                  clearBadge();
+                  clearAllNotifications();
                   handleNotificationNavigation(notification, (tab) => {
                     setActiveTab(tab);
                   });
                 }
               );
+              // Store cleanup and token for logout
+              notificationCleanupRef.current = cleanup;
+              fcmTokenRef.current = token;
             } catch (notifError) {
+              console.error('[App] Push notification init error:', notifError);
             }
           }
         } catch (error) {

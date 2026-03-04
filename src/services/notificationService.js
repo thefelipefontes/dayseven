@@ -6,6 +6,7 @@
  * - Permission requests
  * - Notification listeners
  * - Token storage in Firestore
+ * - Badge count management
  */
 
 import { FirebaseMessaging } from '@capacitor-firebase/messaging';
@@ -15,6 +16,20 @@ import { doc, setDoc, updateDoc, arrayUnion, arrayRemove, getDoc, serverTimestam
 import { db } from '../firebase';
 
 const isNative = Capacitor.isNativePlatform();
+
+// Lazy-loaded badge plugin (avoids import errors on web)
+let Badge = null;
+const loadBadgePlugin = async () => {
+  if (!isNative || Badge) return Badge;
+  try {
+    const module = await import('@capawesome/capacitor-badge');
+    Badge = module.Badge;
+    return Badge;
+  } catch {
+    console.warn('[Notifications] Badge plugin not available');
+    return null;
+  }
+};
 
 // Notification types for your app
 export const NotificationType = {
@@ -61,6 +76,7 @@ export const requestNotificationPermission = async () => {
     const result = await FirebaseMessaging.requestPermissions();
     return { granted: result.receive === 'granted' };
   } catch (error) {
+    console.error('[Notifications] Permission request failed:', error);
     return { granted: false };
   }
 };
@@ -78,6 +94,7 @@ export const checkNotificationPermission = async () => {
     const result = await FirebaseMessaging.checkPermissions();
     return { granted: result.receive === 'granted' };
   } catch (error) {
+    console.error('[Notifications] Permission check failed:', error);
     return { granted: false };
   }
 };
@@ -95,6 +112,7 @@ export const getFCMToken = async () => {
     const result = await FirebaseMessaging.getToken();
     return result.token;
   } catch (error) {
+    console.error('[Notifications] Failed to get FCM token:', error);
     return null;
   }
 };
@@ -110,7 +128,7 @@ export const saveFCMToken = async (userId, token) => {
 
   try {
     if (isNative) {
-      // First, read existing tokens to merge
+      // First, read existing tokens to merge safely
       let existingTokens = [];
       try {
         const { snapshot } = await FirebaseFirestore.getDocument({
@@ -118,7 +136,7 @@ export const saveFCMToken = async (userId, token) => {
         });
         existingTokens = snapshot?.data?.tokens || [];
       } catch {
-        // Document may not exist yet
+        // Document may not exist yet — start with empty array (expected for new users)
       }
 
       // Add token if not already present
@@ -157,12 +175,12 @@ export const saveFCMToken = async (userId, token) => {
       }, { merge: true });
     }
   } catch (error) {
-    console.error('Failed to save FCM token:', error);
+    console.error('[Notifications] Failed to save FCM token:', error);
   }
 };
 
 /**
- * Remove FCM token from Firestore (on logout or token refresh)
+ * Remove FCM token from Firestore (on logout)
  * @param {string} userId - The user's Firebase UID
  * @param {string} token - The FCM token to remove
  */
@@ -170,14 +188,39 @@ export const removeFCMToken = async (userId, token) => {
   if (!userId || !token) return;
 
   try {
-    const userTokensRef = doc(db, 'userTokens', userId);
-    await updateDoc(userTokensRef, {
-      tokens: arrayRemove(token),
-      [`devices.${token}`]: null,
-      updatedAt: serverTimestamp(),
-    });
+    if (isNative) {
+      // Read existing tokens, remove the current one, and write back
+      let existingTokens = [];
+      try {
+        const { snapshot } = await FirebaseFirestore.getDocument({
+          reference: `userTokens/${userId}`,
+        });
+        existingTokens = snapshot?.data?.tokens || [];
+      } catch {
+        // Document may not exist
+      }
+
+      const filtered = existingTokens.filter(t => t !== token);
+
+      await FirebaseFirestore.setDocument({
+        reference: `userTokens/${userId}`,
+        data: {
+          tokens: filtered,
+          [`devices.${token}`]: null,
+          updatedAt: new Date().toISOString(),
+        },
+        merge: true,
+      });
+    } else {
+      const userTokensRef = doc(db, 'userTokens', userId);
+      await updateDoc(userTokensRef, {
+        tokens: arrayRemove(token),
+        [`devices.${token}`]: null,
+        updatedAt: serverTimestamp(),
+      });
+    }
   } catch (error) {
-    // token removal failed
+    console.error('[Notifications] Failed to remove FCM token:', error);
   }
 };
 
@@ -198,6 +241,7 @@ export const getNotificationPreferences = async (userId) => {
     }
     return getDefaultPreferences();
   } catch (error) {
+    console.error('[Notifications] Failed to get preferences:', error);
     return getDefaultPreferences();
   }
 };
@@ -247,36 +291,103 @@ export const getDefaultPreferences = () => ({
 });
 
 /**
+ * Check if current time is within quiet hours
+ * @param {Object} preferences - Notification preferences
+ * @returns {boolean}
+ */
+export const isQuietHours = (preferences) => {
+  if (!preferences?.quietHoursEnabled) return false;
+
+  const now = new Date();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+  const [startH, startM] = (preferences.quietHoursStart || '22:00').split(':').map(Number);
+  const [endH, endM] = (preferences.quietHoursEnd || '07:00').split(':').map(Number);
+  const startMinutes = startH * 60 + startM;
+  const endMinutes = endH * 60 + endM;
+
+  if (startMinutes <= endMinutes) {
+    // Same day range (e.g., 08:00 - 17:00)
+    return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+  } else {
+    // Overnight range (e.g., 22:00 - 07:00)
+    return currentMinutes >= startMinutes || currentMinutes < endMinutes;
+  }
+};
+
+/**
+ * Check if a notification should be shown based on user preferences
+ * @param {Object} notification - The notification data
+ * @param {Object} preferences - User's notification preferences
+ * @returns {boolean}
+ */
+export const shouldShowNotification = (notification, preferences) => {
+  if (!preferences) return true;
+
+  // Check quiet hours first
+  if (isQuietHours(preferences)) return false;
+
+  const type = notification?.data?.type;
+  if (!type) return true;
+
+  // Map notification types to preference keys
+  const prefMap = {
+    [NotificationType.FRIEND_REQUEST]: 'friendRequests',
+    [NotificationType.FRIEND_ACCEPTED]: 'friendRequests',
+    [NotificationType.REACTION]: 'reactions',
+    [NotificationType.COMMENT]: 'comments',
+    [NotificationType.REPLY]: 'comments',
+    [NotificationType.FRIEND_WORKOUT]: 'friendActivity',
+    [NotificationType.NEW_ACTIVITY_DETECTED]: 'newActivityDetected',
+    [NotificationType.STREAK_REMINDER]: 'streakReminders',
+    [NotificationType.GOAL_REMINDER]: 'goalReminders',
+    [NotificationType.DAILY_REMINDER]: 'dailyReminders',
+    [NotificationType.STREAK_MILESTONE]: 'streakMilestones',
+    [NotificationType.GOAL_ACHIEVED]: 'goalAchievements',
+    [NotificationType.WEEKLY_SUMMARY]: 'weeklySummary',
+    [NotificationType.MONTHLY_SUMMARY]: 'monthlySummary',
+  };
+
+  const prefKey = prefMap[type];
+  if (prefKey && preferences[prefKey] === false) return false;
+
+  return true;
+};
+
+/**
  * Initialize push notifications for the app
  * Sets up listeners and requests permissions if needed
  * @param {string} userId - The user's Firebase UID
- * @param {Function} onNotificationReceived - Callback when notification is received
+ * @param {Function} onNotificationReceived - Callback when notification is received in foreground
  * @param {Function} onNotificationTapped - Callback when notification is tapped
- * @returns {Promise<{cleanup: Function}>}
+ * @returns {Promise<{cleanup: Function, token: string|null}>}
  */
 export const initializePushNotifications = async (userId, onNotificationReceived, onNotificationTapped) => {
   if (!isNotificationSupported()) {
-    return { cleanup: () => {} };
+    return { cleanup: () => {}, token: null };
   }
 
   const listeners = [];
+  let currentToken = null;
 
   try {
     // Request permissions
     const { granted } = await requestNotificationPermission();
 
     if (!granted) {
-      return { cleanup: () => {} };
+      console.warn('[Notifications] Permission not granted');
+      return { cleanup: () => {}, token: null };
     }
 
     // Get and save FCM token
-    const token = await getFCMToken();
-    if (token && userId) {
-      await saveFCMToken(userId, token);
+    currentToken = await getFCMToken();
+    if (currentToken && userId) {
+      await saveFCMToken(userId, currentToken);
     }
 
     // Listen for token refresh
     const tokenListener = await FirebaseMessaging.addListener('tokenReceived', async (event) => {
+      currentToken = event.token;
       if (userId) {
         await saveFCMToken(userId, event.token);
       }
@@ -293,14 +404,17 @@ export const initializePushNotifications = async (userId, onNotificationReceived
 
     // Listen for notification taps (when user taps notification)
     const tapListener = await FirebaseMessaging.addListener('notificationActionPerformed', (event) => {
+      // Clear badge on notification tap
+      clearBadge();
       if (onNotificationTapped) {
         onNotificationTapped(event.notification, event.actionId);
       }
     });
     listeners.push(tapListener);
 
-    // Return cleanup function
+    // Return cleanup function and token
     return {
+      token: currentToken,
       cleanup: () => {
         listeners.forEach(listener => {
           if (listener && listener.remove) {
@@ -310,7 +424,8 @@ export const initializePushNotifications = async (userId, onNotificationReceived
       }
     };
   } catch (error) {
-    return { cleanup: () => {} };
+    console.error('[Notifications] Initialization failed:', error);
+    return { cleanup: () => {}, token: null };
   }
 };
 
@@ -379,31 +494,68 @@ export const handleNotificationNavigation = (notification, navigate, options = {
 };
 
 /**
- * Get badge count for the app
+ * Set app badge count
+ * @param {number} count - Badge count to set
+ */
+export const setBadge = async (count) => {
+  if (!isNotificationSupported()) return;
+
+  try {
+    const badge = await loadBadgePlugin();
+    if (badge) {
+      await badge.set({ count });
+    }
+  } catch (error) {
+    console.error('[Notifications] Failed to set badge:', error);
+  }
+};
+
+/**
+ * Get current app badge count
  * @returns {Promise<number>}
  */
 export const getBadgeCount = async () => {
   if (!isNotificationSupported()) return 0;
 
   try {
-    // Note: You'll need to track this in your app state or Firestore
-    // FCM doesn't provide a direct way to get badge count
+    const badge = await loadBadgePlugin();
+    if (badge) {
+      const result = await badge.get();
+      return result.count || 0;
+    }
     return 0;
   } catch (error) {
+    console.error('[Notifications] Failed to get badge count:', error);
     return 0;
   }
 };
 
 /**
- * Clear all notifications
+ * Increment app badge count by 1
+ */
+export const incrementBadge = async () => {
+  const current = await getBadgeCount();
+  await setBadge(current + 1);
+};
+
+/**
+ * Clear app badge count (set to 0)
+ */
+export const clearBadge = async () => {
+  await setBadge(0);
+};
+
+/**
+ * Clear all delivered notifications
  */
 export const clearAllNotifications = async () => {
   if (!isNotificationSupported()) return;
 
   try {
     await FirebaseMessaging.removeAllDeliveredNotifications();
+    await clearBadge();
   } catch (error) {
-    // clear failed
+    console.error('[Notifications] Failed to clear notifications:', error);
   }
 };
 
@@ -417,7 +569,7 @@ export const subscribeToTopic = async (topic) => {
   try {
     await FirebaseMessaging.subscribeToTopic({ topic });
   } catch (error) {
-    // subscribe failed
+    console.error('[Notifications] Failed to subscribe to topic:', error);
   }
 };
 
@@ -431,6 +583,6 @@ export const unsubscribeFromTopic = async (topic) => {
   try {
     await FirebaseMessaging.unsubscribeFromTopic({ topic });
   } catch (error) {
-    // unsubscribe failed
+    console.error('[Notifications] Failed to unsubscribe from topic:', error);
   }
 };

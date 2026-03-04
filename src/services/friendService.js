@@ -893,3 +893,90 @@ export async function deleteReply(ownerUid, activityId, commentId, replyId) {
     throw error;
   }
 }
+
+// Clean up all social data (reactions, comments, replies) for a deleted activity
+export async function cleanupActivitySocialData(ownerUid, activityId) {
+  const activityIdStr = String(activityId);
+
+  try {
+    // 1. Delete all reactions
+    if (isNative) {
+      try {
+        const { snapshots } = await FirebaseFirestore.getCollection({
+          reference: `users/${ownerUid}/activityReactions/${activityIdStr}/reactions`
+        });
+        for (const snap of (snapshots || [])) {
+          await FirebaseFirestore.deleteDocument({
+            reference: `users/${ownerUid}/activityReactions/${activityIdStr}/reactions/${snap.id}`
+          });
+        }
+      } catch (e) {
+        // Collection may not exist — that's fine
+      }
+    } else {
+      try {
+        const reactionsRef = collection(db, 'users', ownerUid, 'activityReactions', activityIdStr, 'reactions');
+        const reactionsSnap = await getDocs(reactionsRef);
+        for (const d of reactionsSnap.docs) {
+          await deleteDoc(d.ref);
+        }
+      } catch (e) {
+        // Collection may not exist
+      }
+    }
+
+    // 2. Delete all comments and their replies
+    if (isNative) {
+      try {
+        const { snapshots } = await FirebaseFirestore.getCollection({
+          reference: `users/${ownerUid}/activityComments/${activityIdStr}/comments`
+        });
+        for (const snap of (snapshots || [])) {
+          // Delete replies first
+          try {
+            const { snapshots: replies } = await FirebaseFirestore.getCollection({
+              reference: `users/${ownerUid}/activityComments/${activityIdStr}/comments/${snap.id}/replies`
+            });
+            for (const reply of (replies || [])) {
+              await FirebaseFirestore.deleteDocument({
+                reference: `users/${ownerUid}/activityComments/${activityIdStr}/comments/${snap.id}/replies/${reply.id}`
+              });
+            }
+          } catch (e) {
+            // No replies — fine
+          }
+          // Then delete the comment
+          await FirebaseFirestore.deleteDocument({
+            reference: `users/${ownerUid}/activityComments/${activityIdStr}/comments/${snap.id}`
+          });
+        }
+      } catch (e) {
+        // Collection may not exist
+      }
+    } else {
+      try {
+        const commentsRef = collection(db, 'users', ownerUid, 'activityComments', activityIdStr, 'comments');
+        const commentsSnap = await getDocs(commentsRef);
+        for (const commentDoc of commentsSnap.docs) {
+          // Delete replies first
+          try {
+            const repliesRef = collection(commentDoc.ref, 'replies');
+            const repliesSnap = await getDocs(repliesRef);
+            for (const replyDoc of repliesSnap.docs) {
+              await deleteDoc(replyDoc.ref);
+            }
+          } catch (e) {
+            // No replies — fine
+          }
+          // Then delete the comment
+          await deleteDoc(commentDoc.ref);
+        }
+      } catch (e) {
+        // Collection may not exist
+      }
+    }
+  } catch (error) {
+    console.warn('[Social Cleanup] Failed to clean up activity social data:', error);
+    // Don't throw — cleanup failure shouldn't block the deletion
+  }
+}

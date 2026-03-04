@@ -1,5 +1,5 @@
 import { doc, getDoc, getDocFromServer, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, writeBatch } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseFirestore } from '@capacitor-firebase/firestore';
@@ -757,6 +757,29 @@ export async function uploadActivityPhoto(uid, activityId, file) {
   }
 
   return downloadURL;
+}
+
+export async function deleteActivityPhoto(photoURL) {
+  if (!photoURL) return;
+
+  try {
+    if (isNative) {
+      // Extract storage path from the Firebase Storage download URL
+      // URLs contain the path encoded as: /o/path%2Fto%2Ffile?...
+      const match = photoURL.match(/\/o\/(.+?)\?/);
+      if (match) {
+        const storagePath = decodeURIComponent(match[1]);
+        await FirebaseStorage.deleteFile({ path: storagePath });
+      }
+    } else {
+      // Web SDK ref() accepts full download URLs
+      const photoRef = ref(storage, photoURL);
+      await deleteObject(photoRef);
+    }
+  } catch (error) {
+    console.warn('[Storage] Failed to delete activity photo:', error);
+    // Don't throw — photo cleanup failure shouldn't block deletion
+  }
 }
 
 export async function deleteUserAccount(uid, username) {

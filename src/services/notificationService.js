@@ -18,16 +18,17 @@ import { db } from '../firebase';
 const isNative = Capacitor.isNativePlatform();
 
 // Lazy-loaded badge plugin (avoids import errors on web)
+// NOTE: We don't return the Badge object from an async function because
+// Capacitor plugin proxies have a .then() method that causes Promise
+// assimilation errors ("Badge.then() is not implemented on ios").
 let Badge = null;
-const loadBadgePlugin = async () => {
-  if (!isNative || Badge) return Badge;
+const ensureBadgeLoaded = async () => {
+  if (!isNative || Badge) return;
   try {
     const module = await import('@capawesome/capacitor-badge');
     Badge = module.Badge;
-    return Badge;
   } catch {
     console.warn('[Notifications] Badge plugin not available');
-    return null;
   }
 };
 
@@ -501,9 +502,9 @@ export const setBadge = async (count) => {
   if (!isNotificationSupported()) return;
 
   try {
-    const badge = await loadBadgePlugin();
-    if (badge) {
-      await badge.set({ count });
+    await ensureBadgeLoaded();
+    if (Badge) {
+      Badge.set({ count });
     }
   } catch (error) {
     console.error('[Notifications] Failed to set badge:', error);
@@ -518,9 +519,9 @@ export const getBadgeCount = async () => {
   if (!isNotificationSupported()) return 0;
 
   try {
-    const badge = await loadBadgePlugin();
-    if (badge) {
-      const result = await badge.get();
+    await ensureBadgeLoaded();
+    if (Badge) {
+      const result = await Badge.get();
       return result.count || 0;
     }
     return 0;
@@ -534,15 +535,30 @@ export const getBadgeCount = async () => {
  * Increment app badge count by 1
  */
 export const incrementBadge = async () => {
-  const current = await getBadgeCount();
-  await setBadge(current + 1);
+  if (!isNotificationSupported()) return;
+  try {
+    await ensureBadgeLoaded();
+    if (Badge) {
+      Badge.increase();
+    }
+  } catch (error) {
+    console.error('[Notifications] Failed to increment badge:', error);
+  }
 };
 
 /**
  * Clear app badge count (set to 0)
  */
 export const clearBadge = async () => {
-  await setBadge(0);
+  if (!isNotificationSupported()) return;
+  try {
+    await ensureBadgeLoaded();
+    if (Badge) {
+      Badge.clear();
+    }
+  } catch (error) {
+    console.error('[Notifications] Failed to clear badge:', error);
+  }
 };
 
 /**

@@ -269,25 +269,29 @@ async function sendNotificationToUser(userId, title, body, data = {}, options = 
 
 /**
  * Send notification when someone sends a friend request
+ * Path: friendRequests/{requestId}
+ * Fields: fromUid, toUid, status
  */
 exports.onFriendRequestCreated = onDocumentCreated(
   'friendRequests/{requestId}',
   async (event) => {
     const request = event.data.data();
-    const { toUserId, fromUserId } = request;
+    const { toUid, fromUid } = request;
 
-    const prefs = await getUserPreferences(toUserId);
+    if (!toUid || !fromUid) return;
+
+    const prefs = await getUserPreferences(toUid);
     if (!prefs.friendRequests) return;
 
-    const fromName = await getUserDisplayName(fromUserId);
+    const fromName = await getUserDisplayName(fromUid);
 
     await sendNotificationToUser(
-      toUserId,
+      toUid,
       'New Friend Request',
       `${fromName} wants to be your friend`,
       {
         type: NotificationType.FRIEND_REQUEST,
-        fromUserId,
+        fromUserId: fromUid,
         requestId: event.params.requestId,
       }
     );
@@ -296,29 +300,33 @@ exports.onFriendRequestCreated = onDocumentCreated(
 
 /**
  * Send notification when a friend request is accepted
+ * Triggers when friendRequests/{id} status changes to 'accepted'
  */
-exports.onFriendshipCreated = onDocumentCreated(
-  'friendships/{friendshipId}',
+exports.onFriendRequestAccepted = onDocumentUpdated(
+  'friendRequests/{requestId}',
   async (event) => {
-    const friendship = event.data.data();
-    const { user1, user2, initiatedBy } = friendship;
+    const before = event.data.before.data();
+    const after = event.data.after.data();
 
-    // Notify the person who sent the original request
-    const notifyUserId = initiatedBy === user1 ? user1 : user2;
-    const acceptedByUserId = initiatedBy === user1 ? user2 : user1;
+    // Only trigger when status changes to 'accepted'
+    if (before.status === 'accepted' || after.status !== 'accepted') return;
 
-    const prefs = await getUserPreferences(notifyUserId);
+    const { fromUid, toUid } = after;
+    if (!fromUid || !toUid) return;
+
+    // Notify the person who sent the request that it was accepted
+    const prefs = await getUserPreferences(fromUid);
     if (!prefs.friendRequests) return;
 
-    const acceptedByName = await getUserDisplayName(acceptedByUserId);
+    const acceptedByName = await getUserDisplayName(toUid);
 
     await sendNotificationToUser(
-      notifyUserId,
+      fromUid,
       'Friend Request Accepted',
       `${acceptedByName} accepted your friend request`,
       {
         type: NotificationType.FRIEND_ACCEPTED,
-        friendUserId: acceptedByUserId,
+        friendUserId: toUid,
       }
     );
   }
@@ -326,30 +334,36 @@ exports.onFriendshipCreated = onDocumentCreated(
 
 /**
  * Send notification when someone reacts to an activity
+ * Path: users/{ownerId}/activityReactions/{activityId}/reactions/{reactorId}
+ * Fields: reactorUid, reactorName, reactorPhoto, reactionType
  */
 exports.onReactionCreated = onDocumentCreated(
-  'reactions/{reactionId}',
+  'users/{ownerId}/activityReactions/{activityId}/reactions/{reactionId}',
   async (event) => {
     const reaction = event.data.data();
-    const { activityOwnerId, userId: reactorId, emoji } = reaction;
+    const ownerId = event.params.ownerId;
+    const reactorId = reaction.reactorUid;
+    const emoji = reaction.reactionType || '👍';
+
+    if (!reactorId) return;
 
     // Don't notify yourself
-    if (activityOwnerId === reactorId) return;
+    if (ownerId === reactorId) return;
 
-    const prefs = await getUserPreferences(activityOwnerId);
+    const prefs = await getUserPreferences(ownerId);
     if (!prefs.reactions) return;
 
-    const reactorName = await getUserDisplayName(reactorId);
+    const reactorName = reaction.reactorName || await getUserDisplayName(reactorId);
 
     await sendNotificationToUser(
-      activityOwnerId,
+      ownerId,
       'New Reaction',
       `${reactorName} reacted ${emoji} to your activity`,
       {
         type: NotificationType.REACTION,
         fromUserId: reactorId,
         emoji,
-        activityId: reaction.activityId,
+        activityId: event.params.activityId,
       }
     );
   }
@@ -357,82 +371,39 @@ exports.onReactionCreated = onDocumentCreated(
 
 /**
  * Send notification when someone comments on an activity
+ * Path: users/{ownerId}/activityComments/{activityId}/comments/{commentId}
+ * Fields: commenterUid, commenterName, commenterPhoto, text
  */
 exports.onCommentCreated = onDocumentCreated(
-  'comments/{commentId}',
+  'users/{ownerId}/activityComments/{activityId}/comments/{commentId}',
   async (event) => {
     const comment = event.data.data();
-    const { activityOwnerId, userId: commenterId, text } = comment;
+    const ownerId = event.params.ownerId;
+    const commenterId = comment.commenterUid;
+    const text = comment.text || '';
+
+    if (!commenterId) return;
 
     // Don't notify yourself
-    if (activityOwnerId === commenterId) return;
+    if (ownerId === commenterId) return;
 
-    const prefs = await getUserPreferences(activityOwnerId);
+    const prefs = await getUserPreferences(ownerId);
     if (!prefs.comments) return;
 
-    const commenterName = await getUserDisplayName(commenterId);
+    const commenterName = comment.commenterName || await getUserDisplayName(commenterId);
     const truncatedText = text.length > 50 ? text.substring(0, 47) + '...' : text;
 
     await sendNotificationToUser(
-      activityOwnerId,
+      ownerId,
       'New Comment',
       `${commenterName}: "${truncatedText}"`,
       {
         type: NotificationType.COMMENT,
         fromUserId: commenterId,
-        activityId: comment.activityId,
+        activityId: event.params.activityId,
         commentId: event.params.commentId,
       }
     );
-  }
-);
-
-// ==========================================
-// ACTIVITY NOTIFICATIONS
-// ==========================================
-
-/**
- * Send notification to friends when someone logs a workout
- * This is optional and can be enabled per-user
- */
-exports.onActivityCreated = onDocumentCreated(
-  'activities/{activityId}',
-  async (event) => {
-    const activity = event.data.data();
-    const { userId, type, duration } = activity;
-
-    // Get user's friends
-    const friendsSnapshot = await db.collection('friendships')
-      .where('users', 'array-contains', userId)
-      .get();
-
-    if (friendsSnapshot.empty) return;
-
-    const userName = await getUserDisplayName(userId);
-    const durationMin = Math.round(duration / 60);
-
-    // Notify each friend who has friendActivity notifications enabled
-    const notificationPromises = friendsSnapshot.docs.map(async (doc) => {
-      const friendship = doc.data();
-      const friendId = friendship.users.find(id => id !== userId);
-
-      const prefs = await getUserPreferences(friendId);
-      if (!prefs.friendActivity) return;
-
-      return sendNotificationToUser(
-        friendId,
-        'Friend Activity',
-        `${userName} completed a ${durationMin}min ${type}`,
-        {
-          type: NotificationType.FRIEND_WORKOUT,
-          fromUserId: userId,
-          activityId: event.params.activityId,
-          activityType: type,
-        }
-      );
-    });
-
-    await Promise.all(notificationPromises.filter(Boolean));
   }
 );
 
@@ -443,6 +414,7 @@ exports.onActivityCreated = onDocumentCreated(
 /**
  * Streak reminder - runs every day at 8 PM
  * Only reminds users who haven't logged activity in 48+ hours
+ * Activities are stored as arrays in users/{uid} documents
  */
 exports.sendStreakReminders = onSchedule(
   {
@@ -466,13 +438,11 @@ exports.sendStreakReminders = onSchedule(
       const userData = userDoc.data();
 
       // Check if they've logged any activity in the last 48 hours
-      const recentActivities = await db.collection('activities')
-        .where('userId', '==', userId)
-        .where('date', '>=', twoDaysAgoStr)
-        .limit(1)
-        .get();
+      // Activities are stored as an array in the user document
+      const activities = userData.activities || [];
+      const hasRecentActivity = activities.some(a => a.date >= twoDaysAgoStr);
 
-      if (!recentActivities.empty) continue; // Has recent activity, skip
+      if (hasRecentActivity) continue; // Has recent activity, skip
 
       const prefs = await getUserPreferences(userId);
       if (!prefs.streakReminders) continue;
@@ -524,6 +494,7 @@ function getUserLocalTime(timezone) {
 /**
  * Daily scheduled reminder - runs every hour to match users' preferred time
  * Uses each user's stored timezone for accurate local time matching
+ * Activities are stored as arrays in users/{uid} documents
  */
 exports.sendDailyReminders = onSchedule(
   {
@@ -549,13 +520,11 @@ exports.sendDailyReminders = onSchedule(
       if (reminderTime !== userLocalTime) continue;
 
       // Check if they already logged today (in their timezone)
-      const activitiesSnapshot = await db.collection('activities')
-        .where('userId', '==', userId)
-        .where('date', '==', userToday)
-        .limit(1)
-        .get();
+      // Activities are stored as an array in the user document
+      const activities = userData.activities || [];
+      const hasActivityToday = activities.some(a => a.date === userToday);
 
-      if (!activitiesSnapshot.empty) continue; // Already logged today
+      if (hasActivityToday) continue; // Already logged today
 
       await sendNotificationToUser(
         userId,
@@ -572,6 +541,8 @@ exports.sendDailyReminders = onSchedule(
 /**
  * End of week goal reminder - runs Thursday at 6 PM
  * Reminds users what they need to hit their weekly goals
+ * Activities are stored as arrays in users/{uid} documents
+ * Uses the 'countToward' field for category (strength/cardio/recovery)
  */
 exports.sendGoalReminder = onSchedule(
   {
@@ -579,9 +550,6 @@ exports.sendGoalReminder = onSchedule(
     timeZone: 'America/New_York',
   },
   async () => {
-
-    const cardioTypes = ['Running', 'Cycle', 'Sports', 'Walking', 'Hiking', 'Swimming', 'Rowing', 'Stair Climbing', 'Elliptical', 'HIIT'];
-    const recoveryTypes = ['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'];
 
     // Get start of current week (Sunday)
     const now = new Date();
@@ -603,23 +571,21 @@ exports.sendGoalReminder = onSchedule(
       // Get user's goals
       const goals = userData.goals || { liftsPerWeek: 3, cardioPerWeek: 2, recoveryPerWeek: 2 };
 
-      // Count activities this week by category
-      const activitiesSnapshot = await db.collection('activities')
-        .where('userId', '==', userId)
-        .where('date', '>=', weekStartStr)
-        .get();
+      // Count activities this week by category from user's activities array
+      const activities = userData.activities || [];
+      const thisWeekActivities = activities.filter(a => a.date >= weekStartStr);
 
       let strength = 0;
       let cardio = 0;
       let recovery = 0;
 
-      activitiesSnapshot.docs.forEach(doc => {
-        const activity = doc.data();
-        if (activity.type === 'Strength Training') {
+      thisWeekActivities.forEach(activity => {
+        const category = activity.countToward || '';
+        if (category === 'strength') {
           strength++;
-        } else if (cardioTypes.includes(activity.type)) {
+        } else if (category === 'cardio') {
           cardio++;
-        } else if (recoveryTypes.includes(activity.type)) {
+        } else if (category === 'recovery') {
           recovery++;
         }
       });
@@ -672,6 +638,7 @@ exports.sendGoalReminder = onSchedule(
 /**
  * Weekly summary - runs every Sunday at 10 AM
  * Shows "You crushed your week!" if all category goals were met
+ * Activities are stored as arrays in users/{uid} documents
  */
 exports.sendWeeklySummary = onSchedule(
   {
@@ -679,9 +646,6 @@ exports.sendWeeklySummary = onSchedule(
     timeZone: 'America/New_York',
   },
   async () => {
-
-    const cardioTypes = ['Running', 'Cycle', 'Sports', 'Walking', 'Hiking', 'Swimming', 'Rowing', 'Stair Climbing', 'Elliptical', 'HIIT'];
-    const recoveryTypes = ['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'];
 
     const usersSnapshot = await db.collection('users').get();
     const oneWeekAgo = new Date();
@@ -698,32 +662,29 @@ exports.sendWeeklySummary = onSchedule(
       // Get user's goals
       const goals = userData.goals || { liftsPerWeek: 3, cardioPerWeek: 2, recoveryPerWeek: 2 };
 
-      // Count activities this week by category
-      const activitiesSnapshot = await db.collection('activities')
-        .where('userId', '==', userId)
-        .where('date', '>=', weekAgoStr)
-        .get();
+      // Count activities this week by category from user's activities array
+      const activities = userData.activities || [];
+      const thisWeekActivities = activities.filter(a => a.date >= weekAgoStr);
 
       let strength = 0;
       let cardio = 0;
       let recovery = 0;
       let totalCalories = 0;
 
-      activitiesSnapshot.docs.forEach(doc => {
-        const activity = doc.data();
+      thisWeekActivities.forEach(activity => {
         totalCalories += activity.calories || 0;
-
-        if (activity.type === 'Strength Training') {
+        const category = activity.countToward || '';
+        if (category === 'strength') {
           strength++;
-        } else if (cardioTypes.includes(activity.type)) {
+        } else if (category === 'cardio') {
           cardio++;
-        } else if (recoveryTypes.includes(activity.type)) {
+        } else if (category === 'recovery') {
           recovery++;
         }
       });
 
       const workouts = strength + cardio; // Combined strength and cardio
-      const totalCount = activitiesSnapshot.size;
+      const totalCount = thisWeekActivities.length;
 
       // Check if all goals were met
       const allGoalsMet = strength >= goals.liftsPerWeek &&
@@ -782,6 +743,7 @@ exports.sendWeeklySummary = onSchedule(
 /**
  * Monthly summary - runs on the 1st of each month at 10 AM
  * Includes social sharing prompt and month-over-month comparison
+ * Activities are stored as arrays in users/{uid} documents
  */
 exports.sendMonthlySummary = onSchedule(
   {
@@ -814,32 +776,18 @@ exports.sendMonthlySummary = onSchedule(
       const prefs = await getUserPreferences(userId);
       if (!prefs.monthlySummary) continue;
 
-      // Get last month's activities
-      const lastMonthActivities = await db.collection('activities')
-        .where('userId', '==', userId)
-        .where('date', '>=', lastMonthStartStr)
-        .where('date', '<=', lastMonthEndStr)
-        .get();
+      // Filter activities from user's activities array by date range
+      const activities = userData.activities || [];
+      const lastMonthActivitiesList = activities.filter(a => a.date >= lastMonthStartStr && a.date <= lastMonthEndStr);
+      const prevMonthActivitiesList = activities.filter(a => a.date >= prevMonthStartStr && a.date <= prevMonthEndStr);
 
-      // Get previous month's activities for comparison
-      const prevMonthActivities = await db.collection('activities')
-        .where('userId', '==', userId)
-        .where('date', '>=', prevMonthStartStr)
-        .where('date', '<=', prevMonthEndStr)
-        .get();
-
-      const lastMonthCount = lastMonthActivities.size;
-      const prevMonthCount = prevMonthActivities.size;
+      const lastMonthCount = lastMonthActivitiesList.length;
+      const prevMonthCount = prevMonthActivitiesList.length;
 
       // Calculate total duration
       let lastMonthMinutes = 0;
-      lastMonthActivities.docs.forEach(doc => {
-        lastMonthMinutes += Math.round((doc.data().duration || 0) / 60);
-      });
-
-      let prevMonthMinutes = 0;
-      prevMonthActivities.docs.forEach(doc => {
-        prevMonthMinutes += Math.round((doc.data().duration || 0) / 60);
+      lastMonthActivitiesList.forEach(activity => {
+        lastMonthMinutes += Math.round((activity.duration || 0) / 60);
       });
 
       const currentStreak = userData.streak || 0;

@@ -18,7 +18,7 @@ const NotificationSettings = ({ userId, onClose }) => {
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState(null); // null, 'saved', 'error'
   const [permissionGranted, setPermissionGranted] = useState(null); // null = checking, true/false = known
-  const [allEnabled, setAllEnabled] = useState(true);
+  const [allEnabled, setAllEnabled] = useState(false);
   const [preferences, setPreferences] = useState({
     // Social
     friendRequests: true,
@@ -65,10 +65,10 @@ const NotificationSettings = ({ userId, onClose }) => {
         .then(prefs => {
           if (prefs) {
             setPreferences(prev => ({ ...prev, ...prefs }));
-            // Check if all toggleable preferences are off
+            // Check if ALL toggleable preferences are on
             const toggleKeys = ['friendRequests', 'reactions', 'comments', 'friendActivity', 'streakReminders', 'goalReminders', 'dailyReminders', 'newActivityDetected', 'streakMilestones', 'goalAchievements', 'weeklySummary', 'monthlySummary'];
-            const anyEnabled = toggleKeys.some(key => prefs[key]);
-            setAllEnabled(anyEnabled);
+            const allOn = toggleKeys.every(key => prefs[key]);
+            setAllEnabled(allOn);
           }
         })
         .catch(() => {});
@@ -101,10 +101,10 @@ const NotificationSettings = ({ userId, onClose }) => {
     const newPrefs = { ...preferences, [key]: newValue };
     setPreferences(newPrefs);
 
-    // Update master toggle state
+    // Update master toggle state — only ON if ALL are enabled
     const toggleKeys = ['friendRequests', 'reactions', 'comments', 'friendActivity', 'streakReminders', 'goalReminders', 'dailyReminders', 'newActivityDetected', 'streakMilestones', 'goalAchievements', 'weeklySummary', 'monthlySummary'];
-    const anyEnabled = toggleKeys.some(k => k === key ? newValue : newPrefs[k]);
-    setAllEnabled(anyEnabled);
+    const allOn = toggleKeys.every(k => newPrefs[k]);
+    setAllEnabled(allOn);
 
     // Auto-save with timeout
     setSaving(true);

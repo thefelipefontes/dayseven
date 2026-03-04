@@ -1,5 +1,5 @@
 import React from 'react';
-import { BicepsFlexed } from 'lucide-react';
+import { Dumbbell, BicepsFlexed } from 'lucide-react';
 import {
   IconBarbell,
   IconRefresh,
@@ -62,7 +62,7 @@ import {
 
 // ─── Custom SVG Icons (no Tabler equivalent) ───
 
-/** Elliptical machine — figure with circular stride motion */
+/** Elliptical machine — person on elliptical with handles (matches SF Symbol figure.elliptical) */
 const EllipticalIcon = ({ size = 24, color = 'currentColor', className = '', strokeWidth = 2 }) => (
   <svg
     width={size}
@@ -76,16 +76,21 @@ const EllipticalIcon = ({ size = 24, color = 'currentColor', className = '', str
     className={className}
   >
     {/* Head */}
-    <circle cx="12" cy="4" r="2" />
-    {/* Body */}
-    <path d="M12 6v5" />
-    {/* Arms on handles */}
-    <path d="M8 8l4 3 4-3" />
-    {/* Elliptical stride oval */}
-    <ellipse cx="12" cy="17" rx="5" ry="3" />
-    {/* Legs */}
-    <path d="M10 11l-3 6" />
-    <path d="M14 11l3 6" />
+    <circle cx="11" cy="4" r="2" />
+    {/* Body — slight lean forward */}
+    <path d="M11 6l1 5" />
+    {/* Left arm — gripping front handle */}
+    <path d="M11 8l-3 0v-3" />
+    {/* Right arm — gripping rear handle */}
+    <path d="M12 9l4-1v-3" />
+    {/* Front leg — extended forward on pedal */}
+    <path d="M12 11l-4 6" />
+    {/* Rear leg — extended back on pedal */}
+    <path d="M12 11l4 4" />
+    {/* Machine base */}
+    <path d="M6 20l4-3" />
+    <path d="M18 20l-2-5" />
+    <path d="M5 20h14" />
   </svg>
 );
 
@@ -105,10 +110,10 @@ const CATEGORY_COLORS = {
 // 'Strength Training' is kept as a fallback for old saved activities.
 const ICON_MAP = {
   // Strength (flattened — these appear directly in the activity selector)
-  'Weightlifting':       { Icon: IconBarbell, category: 'strength' },
+  'Weightlifting':       { Icon: Dumbbell, category: 'strength' },
   'Bodyweight':          { Icon: BicepsFlexed, category: 'strength' },  // Keep Lucide
   'Circuit':             { Icon: IconRefresh, category: 'strength' },
-  'Strength Training':   { Icon: IconBarbell, category: 'strength' }, // Fallback for old data
+  'Strength Training':   { Icon: Dumbbell, category: 'strength' }, // Fallback for old data
   // Cardio
   'Running':             { Icon: IconRun, category: 'cardio' },
   'Cycle':               { Icon: IconBike, category: 'cardio' },
@@ -128,7 +133,7 @@ const ICON_MAP = {
 
 // Strength training subtype icons (kept for backwards compat with old data that has strengthType field)
 const STRENGTH_TYPE_ICONS = {
-  'Weightlifting': IconBarbell,
+  'Weightlifting': Dumbbell,
   'Bodyweight':    BicepsFlexed,
   'Circuit':       IconRefresh,
 };
@@ -139,8 +144,9 @@ const ICON_PICKER_CATEGORIES = [
   {
     label: 'Fitness',
     icons: [
-      { name: 'IconBarbell', Icon: IconBarbell },
+      { name: 'Dumbbell', Icon: Dumbbell },
       { name: 'BicepsFlexed', Icon: BicepsFlexed },
+      { name: 'IconBarbell', Icon: IconBarbell },
       { name: 'IconWeight', Icon: IconWeight },
       { name: 'IconStretching2', Icon: IconStretching2 },
       { name: 'IconRefresh', Icon: IconRefresh },

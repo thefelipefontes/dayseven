@@ -1143,7 +1143,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             return .socialDance
 
         // Strength
-        case "strength training", "lifting", "bodyweight":
+        case "strength training", "weightlifting", "lifting", "bodyweight", "circuit":
             return .traditionalStrengthTraining
         case "functional strength", "functional":
             return .functionalStrengthTraining

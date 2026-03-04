@@ -15,7 +15,7 @@ struct StartActivityView: View {
     @EnvironmentObject var appVM: AppViewModel
     @Binding var path: NavigationPath
 
-    private let strengthDef = ActivityTypes.all.first { $0.name == "Strength Training" }
+    private let strengthTypes = ActivityTypes.forCategory(.strength)
     private let cardioTypes = ActivityTypes.forCategory(.cardio)
     private let hybridTypes = ActivityTypes.all.filter { $0.isHybrid }
     private let recoveryTypes = ActivityTypes.all.filter { $0.category == .recovery && !$0.isHybrid }
@@ -24,17 +24,15 @@ struct StartActivityView: View {
         List {
             // MARK: Strength
             Section {
-                if let strengthTypes = strengthDef?.strengthTypes {
-                    ForEach(strengthTypes, id: \.self) { type in
-                        activityRowWithPlay(
-                            symbol: type == "Lifting" ? "dumbbell.fill" : "figure.strengthtraining.functional",
-                            name: type,
-                            color: AppColors.strength,
-                            activityType: "Strength Training",
-                            strengthType: type,
-                            hasDetails: true
-                        )
-                    }
+                ForEach(strengthTypes) { activityType in
+                    activityRowWithPlay(
+                        symbol: activityType.sfSymbol,
+                        name: activityType.displayName,
+                        color: AppColors.strength,
+                        activityType: "Strength Training",
+                        strengthType: activityType.name,
+                        hasDetails: true
+                    )
                 }
             } header: {
                 sectionHeader("Strength", symbol: "dumbbell.fill", color: AppColors.strength)
@@ -45,7 +43,7 @@ struct StartActivityView: View {
                 ForEach(cardioTypes) { activityType in
                     activityRowWithPlay(
                         symbol: activityType.sfSymbol,
-                        name: activityType.name,
+                        name: activityType.displayName,
                         color: AppColors.cardio,
                         activityType: activityType.name,
                         strengthType: nil,
@@ -61,7 +59,7 @@ struct StartActivityView: View {
                 ForEach(hybridTypes) { activityType in
                     hybridActivityRow(
                         symbol: activityType.sfSymbol,
-                        name: activityType.name,
+                        name: activityType.displayName,
                         activityType: activityType.name
                     )
                 }
@@ -74,7 +72,7 @@ struct StartActivityView: View {
                 ForEach(recoveryTypes) { activityType in
                     activityRowWithPlay(
                         symbol: activityType.sfSymbol,
-                        name: activityType.name,
+                        name: activityType.displayName,
                         color: AppColors.recovery,
                         activityType: activityType.name,
                         strengthType: nil,

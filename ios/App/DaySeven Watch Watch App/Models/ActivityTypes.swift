@@ -13,7 +13,8 @@ enum ActivityCategoryType: String {
 
 struct ActivityTypeDefinition: Identifiable {
     let id = UUID()
-    let name: String
+    let name: String          // Data key — stored in Firestore (e.g. "Weightlifting")
+    let displayName: String   // Short label for UI (e.g. "Weights")
     let emoji: String
     let sfSymbol: String
     let subtypes: [String]
@@ -22,9 +23,10 @@ struct ActivityTypeDefinition: Identifiable {
     let focusAreas: [String]?
     let isHybrid: Bool
 
-    init(name: String, emoji: String, sfSymbol: String, subtypes: [String] = [], category: ActivityCategoryType,
+    init(name: String, displayName: String? = nil, emoji: String, sfSymbol: String, subtypes: [String] = [], category: ActivityCategoryType,
          strengthTypes: [String]? = nil, focusAreas: [String]? = nil, isHybrid: Bool = false) {
         self.name = name
+        self.displayName = displayName ?? name
         self.emoji = emoji
         self.sfSymbol = sfSymbol
         self.subtypes = subtypes
@@ -43,14 +45,30 @@ struct ActivityTypes {
     ]
 
     static let all: [ActivityTypeDefinition] = [
-        // Strength
+        // Strength (flattened — matches web app)
         ActivityTypeDefinition(
-            name: "Strength Training",
+            name: "Weightlifting",
+            displayName: "Weights",
             emoji: "\u{1F3CB}\u{FE0F}",
             sfSymbol: "dumbbell.fill",
             subtypes: [],
             category: .strength,
-            strengthTypes: ["Lifting", "Bodyweight"],
+            focusAreas: strengthFocusAreas
+        ),
+        ActivityTypeDefinition(
+            name: "Bodyweight",
+            emoji: "\u{1F4AA}",
+            sfSymbol: "figure.strengthtraining.functional",
+            subtypes: [],
+            category: .strength,
+            focusAreas: strengthFocusAreas
+        ),
+        ActivityTypeDefinition(
+            name: "Circuit",
+            emoji: "\u{1F504}",
+            sfSymbol: "arrow.triangle.2.circlepath",
+            subtypes: [],
+            category: .strength,
             focusAreas: strengthFocusAreas
         ),
 
@@ -150,7 +168,7 @@ struct ActivityTypes {
         }
         // Priority 3: Type-based defaults
         switch activity.type {
-        case "Strength Training":
+        case "Strength Training", "Weightlifting", "Bodyweight", "Circuit":
             return "lifting"
         case "Running", "Cycle", "Sports", "Stair Climbing", "Elliptical":
             return "cardio"
@@ -167,6 +185,8 @@ struct ActivityTypes {
         // If an explicit countToward was provided (e.g. from hybrid picker), use it
         if let ct = countToward, !ct.isEmpty { return ct }
         switch type {
+        case "Weightlifting", "Bodyweight", "Circuit":
+            return "lifting"
         case "Yoga", "Pilates":
             return "recovery"
         default:
@@ -198,7 +218,7 @@ struct ActivityTypes {
             return .stairClimbing
 
         // Strength
-        case "strength training", "lifting", "bodyweight":
+        case "strength training", "weightlifting", "lifting", "bodyweight", "circuit":
             return .traditionalStrengthTraining
         case "hiit":
             return .highIntensityIntervalTraining

@@ -3001,6 +3001,7 @@ const Toast = ({ show, message, onDismiss, onTap, type = 'record' }) => {
   const touchStartRef = useRef({ y: null, time: 0 });
   const swipeYRef = useRef(0);
   const toastRef = useRef(null);
+  const dismissBtnRef = useRef(null);
 
   // Keep swipeY ref in sync
   useEffect(() => {
@@ -3050,6 +3051,9 @@ const Toast = ({ show, message, onDismiss, onTap, type = 'record' }) => {
       const touchDuration = Date.now() - touchStartRef.current.time;
       const wasTap = currentSwipeY < 15 && touchDuration < 300;
 
+      // Check if touch was on the dismiss (X) button — don't trigger onTap
+      const tappedDismiss = dismissBtnRef.current && dismissBtnRef.current.contains(e.target);
+
       if (currentSwipeY > 40) {
         // Swipe threshold reached - dismiss with slide down animation
         triggerHaptic(ImpactStyle.Light);
@@ -3059,8 +3063,8 @@ const Toast = ({ show, message, onDismiss, onTap, type = 'record' }) => {
           setSwipeY(0);
           onDismiss && onDismiss();
         }, 300);
-      } else if (wasTap) {
-        // This was a tap - trigger onTap
+      } else if (wasTap && !tappedDismiss) {
+        // This was a tap on the toast body - trigger onTap
         setIsLeaving(true);
         setTimeout(() => {
           setIsVisible(false);
@@ -3117,6 +3121,7 @@ const Toast = ({ show, message, onDismiss, onTap, type = 'record' }) => {
           {type === 'record' && <div className="text-xs text-gray-400 mt-1">Tap to view Hall of Fame →</div>}
         </div>
         <button
+          ref={dismissBtnRef}
           onClick={(e) => {
             e.stopPropagation();
             triggerHaptic(ImpactStyle.Light);
@@ -10724,7 +10729,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
 
 // Home Tab - Simplified
 
-const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield }) => {
+const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, autoImportedCount = 0, onDismissAutoImported }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
   const [showWorkoutPicker, setShowWorkoutPicker] = useState(false);
@@ -10829,6 +10834,9 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     // Non-cardio walks (Walking activities that don't count toward goals)
     const nonCardioWalks = weekActivities.filter(a => a.type === 'Walking' && !a.countToward);
 
+    // Uncategorized activities (don't count toward any goal)
+    const uncategorized = weekActivities.filter(a => getCategory(a) === 'other' && a.type !== 'Walking');
+
     // Muscle group breakdown — count each focus area individually
     const muscleGroups = {};
     lifts.forEach(a => {
@@ -10847,6 +10855,8 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
       recovery: { completed: recovery.length, goal: goals.recoveryPerWeek, sessions: recovery.map(r => r.type), breakdown: { coldPlunge: coldPlunge.length, sauna: sauna.length, yoga: yoga.length, pilates: pilates.length }, otherActivities: otherRecovery },
       // Non-cardio walks (don't count toward goals but should be displayed)
       walks: { count: nonCardioWalks.length, activities: nonCardioWalks },
+      // Uncategorized activities (need details to count toward goals)
+      uncategorized: { count: uncategorized.length, activities: uncategorized },
       // Use HealthKit calories if connected (even if 0), otherwise fall back to activity sum
       // This prevents double-counting when user logs a workout that's already tracked by HealthKit
       calories: {
@@ -11369,6 +11379,88 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
           </div>
         </div>
       </div>
+
+      {/* Auto-Imported Summary Banner - Shows after onboarding auto-import */}
+      {autoImportedCount > 0 && (
+        <div className="mx-4 mb-4">
+          <div
+            className="w-full p-3 rounded-xl flex items-center gap-3"
+            style={{ backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.3)' }}
+          >
+            <span className="text-lg">✅</span>
+            <div className="flex-1">
+              <div className="text-xs font-semibold" style={{ color: '#00FF94' }}>
+                {autoImportedCount} {autoImportedCount === 1 ? 'activity' : 'activities'} imported from Apple Health
+              </div>
+              <div className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
+                Your recent workouts have been auto-saved
+              </div>
+            </div>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDismissAutoImported?.();
+              }}
+              className="p-1 rounded-full"
+              style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="2" strokeLinecap="round">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Uncategorized Workouts Banner */}
+      {weekProgress.uncategorized?.count > 0 && (
+        <div className="mx-4 mb-4">
+          <button
+            onClick={() => {
+              const firstUncategorized = weekProgress.uncategorized.activities[0];
+              if (firstUncategorized) {
+                onEditActivity(firstUncategorized);
+              }
+            }}
+            className="w-full p-3 rounded-xl flex items-center gap-3 transition-all duration-150"
+            style={{ backgroundColor: 'rgba(255,200,0,0.1)', border: '1px solid rgba(255,200,0,0.3)' }}
+            onTouchStart={(e) => {
+              e.currentTarget.style.transform = 'scale(0.98)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,200,0,0.15)';
+            }}
+            onTouchEnd={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,200,0,0.1)';
+            }}
+            onMouseDown={(e) => {
+              e.currentTarget.style.transform = 'scale(0.98)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,200,0,0.15)';
+            }}
+            onMouseUp={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,200,0,0.1)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,200,0,0.1)';
+            }}
+          >
+            <span className="text-lg">⚠️</span>
+            <div className="flex-1 text-left">
+              <div className="text-xs font-semibold" style={{ color: '#FFC800' }}>
+                {weekProgress.uncategorized.count} uncategorized {weekProgress.uncategorized.count === 1 ? 'workout' : 'workouts'}
+              </div>
+              <div className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
+                Needs details to count towards goals
+              </div>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,200,0,0.6)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </button>
+        </div>
+      )}
 
       {/* Pending Workout Banner - Only shows when there's a detected workout not hidden */}
       {(() => {
@@ -17415,6 +17507,9 @@ export default function DaySevenApp() {
     isConnected: false // True if HealthKit has ever returned data > 0
   });
 
+  // Count of workouts auto-imported from Apple Health during onboarding (for summary banner)
+  const [autoImportedCount, setAutoImportedCount] = useState(0);
+
   // Track daily goals celebrated (resets each day)
   const [dailyGoalsCelebrated, setDailyGoalsCelebrated] = useState(() => {
     try {
@@ -18742,6 +18837,9 @@ export default function DaySevenApp() {
             lastSynced: new Date().toISOString(),
             isConnected: prev.isConnected || hasHealthData
           }));
+
+          // Show summary banner on homescreen
+          setAutoImportedCount(newWorkouts.length);
 
           justOnboardedRef.current = false;
         } else {
@@ -20454,6 +20552,8 @@ export default function DaySevenApp() {
                       updateUserProfile(user.uid, { streakShield: newShield }).catch(() => {});
                     }
                   }}
+                  autoImportedCount={autoImportedCount}
+                  onDismissAutoImported={() => setAutoImportedCount(0)}
                 />
               )}
               {activeTab === 'history' && (

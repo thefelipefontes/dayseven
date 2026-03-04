@@ -2026,7 +2026,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
               <div className="mb-4">
                 <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Strength Type</label>
                 <div className="flex flex-wrap gap-2">
-                  {['Weightlifting', 'Bodyweight'].map((st) => {
+                  {['Weightlifting', 'Bodyweight', 'Circuit Training'].map((st) => {
                     const isSelected = finishStrengthType === st;
                     return (
                       <button
@@ -2039,7 +2039,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                           color: isSelected ? '#00FF94' : 'white'
                         }}
                       >
-                        {st === 'Weightlifting' ? '🏋️' : '💪'} {st}
+                        {st === 'Weightlifting' ? '🏋️' : st === 'Circuit Training' ? '🔄' : '💪'} {st}
                       </button>
                     );
                   })}
@@ -8751,7 +8751,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   // Strength training configuration
   const strengthTypes = [
     { name: 'Weightlifting', icon: '🏋️', hasFocusArea: true },
-    { name: 'Bodyweight', icon: '💪', hasFocusArea: true }
+    { name: 'Bodyweight', icon: '💪', hasFocusArea: true },
+    { name: 'Circuit Training', icon: '🔄', hasFocusArea: true }
   ];
 
   const focusAreaOptions = ['Full Body', 'Upper', 'Lower', 'Chest', 'Back', 'Legs', 'Shoulders', 'Biceps', 'Triceps', 'Abs'];
@@ -10839,6 +10840,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     // Strength breakdown - check strengthType field or if subtype starts with the type name
     const lifting = lifts.filter(a => a.strengthType === 'Weightlifting' || a.strengthType === 'Lifting' || a.subtype?.startsWith('Lifting') || (!a.subtype && !a.strengthType));
     const bodyweight = lifts.filter(a => a.strengthType === 'Bodyweight' || a.subtype?.startsWith('Bodyweight'));
+    const circuit = lifts.filter(a => a.strengthType === 'Circuit Training');
 
     // Recovery breakdown
     const coldPlunge = weekActivities.filter(a => a.type === 'Cold Plunge');
@@ -10866,7 +10868,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     const totalCalories = weekActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
 
     return {
-      lifts: { completed: lifts.length, goal: goals.liftsPerWeek, sessions: lifts.map(l => l.subtype || l.type), breakdown: { lifting: lifting.length, bodyweight: bodyweight.length }, muscleGroups, otherActivities: otherStrength },
+      lifts: { completed: lifts.length, goal: goals.liftsPerWeek, sessions: lifts.map(l => l.subtype || l.type), breakdown: { lifting: lifting.length, bodyweight: bodyweight.length, circuit: circuit.length }, muscleGroups, otherActivities: otherStrength },
       cardio: { completed: cardio.length, goal: goals.cardioPerWeek, miles: totalMiles, sessions: cardio.map(c => c.type), breakdown: { running: running.length, cycling: cycling.length, sports: sports.length, other: otherCardio.length }, otherActivities: otherCardio },
       recovery: { completed: recovery.length, goal: goals.recoveryPerWeek, sessions: recovery.map(r => r.type), breakdown: { coldPlunge: coldPlunge.length, sauna: sauna.length, yoga: yoga.length, pilates: pilates.length }, otherActivities: otherRecovery },
       // Non-cardio walks (don't count toward goals but should be displayed)
@@ -11897,7 +11899,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
               <div className="flex items-center justify-between mb-2">
                 <div className="text-xs text-gray-400">Muscle groups trained</div>
                 <div className="text-[10px] text-gray-500">
-                  🏋️ {weekProgress.lifts?.breakdown?.lifting || 0} Weightlifting · 💪 {weekProgress.lifts?.breakdown?.bodyweight || 0} Bodyweight
+                  🏋️ {weekProgress.lifts?.breakdown?.lifting || 0} Weightlifting · 💪 {weekProgress.lifts?.breakdown?.bodyweight || 0} Bodyweight{weekProgress.lifts?.breakdown?.circuit ? ` · 🔄 ${weekProgress.lifts.breakdown.circuit} Circuit` : ''}
                 </div>
               </div>
               {Object.keys(weekProgress.lifts?.muscleGroups || {}).length > 0 ? (

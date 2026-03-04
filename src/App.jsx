@@ -5426,7 +5426,26 @@ const DeleteAccountModal = ({ isOpen, onClose, user, userProfile, onDeleteComple
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
 
-  const isEmailPasswordUser = user?.providerData?.some(p => p.providerId === 'password');
+  // Detect provider reliably — on Capacitor, the web SDK's user.providerData may be empty,
+  // so we use the Capacitor plugin's getCurrentUser() which has the correct providerData
+  const [isEmailPasswordUser, setIsEmailPasswordUser] = useState(false);
+
+  useEffect(() => {
+    const detectProvider = async () => {
+      if (Capacitor.isNativePlatform()) {
+        try {
+          const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+          const { user: nativeUser } = await FirebaseAuthentication.getCurrentUser();
+          setIsEmailPasswordUser(!!nativeUser?.providerData?.some(p => p.providerId === 'password'));
+        } catch {
+          setIsEmailPasswordUser(!!user?.providerData?.some(p => p.providerId === 'password'));
+        }
+      } else {
+        setIsEmailPasswordUser(!!user?.providerData?.some(p => p.providerId === 'password'));
+      }
+    };
+    if (isOpen && user) detectProvider();
+  }, [isOpen, user]);
 
   useEffect(() => {
     if (isOpen) {
@@ -5468,7 +5487,7 @@ const DeleteAccountModal = ({ isOpen, onClose, user, userProfile, onDeleteComple
           const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
           await FirebaseAuthentication.signInWithEmailAndPassword({
             email: user.email,
-            password: password
+            password: password,
           });
         } else {
           const credential = EmailAuthProvider.credential(user.email, password);
@@ -5479,7 +5498,7 @@ const DeleteAccountModal = ({ isOpen, onClose, user, userProfile, onDeleteComple
       // Delete user data from Firestore
       await deleteUserAccount(user.uid, userProfile?.username);
 
-      // Delete Firebase Auth account — retry with re-auth if session is stale
+      // Delete Firebase Auth account — try directly first, re-auth only if needed
       const deleteAuthAccount = async () => {
         if (Capacitor.isNativePlatform()) {
           const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
@@ -5494,22 +5513,32 @@ const DeleteAccountModal = ({ isOpen, onClose, user, userProfile, onDeleteComple
       } catch (authErr) {
         const code = authErr.code || authErr.message || '';
         if (code.includes('requires-recent-login')) {
-          // Re-authenticate with the user's provider, then retry
+          // Re-authenticate with the correct provider, then retry
+          const isAppleUser = user?.providerData?.some(p => p.providerId === 'apple.com');
+          const isGoogleUser = user?.providerData?.some(p => p.providerId === 'google.com');
+
           if (Capacitor.isNativePlatform()) {
             const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
-            const isAppleUser = user?.providerData?.some(p => p.providerId === 'apple.com');
-            if (isAppleUser) {
+            if (isEmailPasswordUser && password) {
+              await FirebaseAuthentication.signInWithEmailAndPassword({
+                email: user.email,
+                password: password,
+              });
+            } else if (isAppleUser) {
               await FirebaseAuthentication.signInWithApple();
-            } else {
+            } else if (isGoogleUser) {
               await FirebaseAuthentication.signInWithGoogle();
             }
           } else {
-            const { GoogleAuthProvider, signInWithPopup, OAuthProvider } = await import('firebase/auth');
-            const isAppleUser = user?.providerData?.some(p => p.providerId === 'apple.com');
-            if (isAppleUser) {
+            if (isEmailPasswordUser && password) {
+              const credential = EmailAuthProvider.credential(user.email, password);
+              await reauthenticateWithCredential(auth.currentUser, credential);
+            } else if (isAppleUser) {
+              const { OAuthProvider, signInWithPopup } = await import('firebase/auth');
               const provider = new OAuthProvider('apple.com');
               await signInWithPopup(auth, provider);
-            } else {
+            } else if (isGoogleUser) {
+              const { GoogleAuthProvider, signInWithPopup } = await import('firebase/auth');
               const provider = new GoogleAuthProvider();
               await signInWithPopup(auth, provider);
             }
@@ -5527,6 +5556,7 @@ const DeleteAccountModal = ({ isOpen, onClose, user, userProfile, onDeleteComple
       if (errorCode.includes('wrong-password') || errorCode.includes('invalid-credential') || errorCode.includes('INVALID_LOGIN_CREDENTIALS')) {
         setError('Incorrect password. Please try again.');
       } else {
+        console.error('[DeleteAccount] Error:', err);
         setError('Failed to delete account. Please try again.');
       }
     } finally {
@@ -7146,8 +7176,61 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
   );
 };
 
-// Onboarding Survey
+// Onboarding Survey — Multi-step flow
 const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, currentPrivacy = null }) => {
+  const isEditing = currentGoals !== null;
+  const startStep = isEditing ? 5 : 1;
+  const endStep = isEditing ? 6 : 7;
+  const totalSteps = endStep - startStep + 1;
+
+  const [currentStep, setCurrentStep] = useState(startStep);
+  const [direction, setDirection] = useState('forward');
+
+  // New onboarding fields
+  const [fitnessGoal, setFitnessGoal] = useState(null);
+  const [fitnessLevel, setFitnessLevel] = useState(null);
+  const [favoriteRecovery, setFavoriteRecovery] = useState([]);
+  const [wearable, setWearable] = useState(null);
+
+  // Track whether user has manually changed goals (so we don't overwrite)
+  const goalsManuallySet = useRef(false);
+
+  // Smart defaults — explicit tables for full control per goal × level
+  const smartDefaults = {
+    beginner: {
+      'shredded':     { liftsPerWeek: 3, cardioPerWeek: 2, recoveryPerWeek: 2, stepsPerDay: 8000,  caloriesPerDay: 400 },
+      'faster':       { liftsPerWeek: 2, cardioPerWeek: 3, recoveryPerWeek: 2, stepsPerDay: 8000,  caloriesPerDay: 400 },
+      'stronger':     { liftsPerWeek: 3, cardioPerWeek: 1, recoveryPerWeek: 2, stepsPerDay: 8000,  caloriesPerDay: 400 },
+      'lose-weight':  { liftsPerWeek: 3, cardioPerWeek: 1, recoveryPerWeek: 2, stepsPerDay: 8000,  caloriesPerDay: 400 },
+      'build-muscle': { liftsPerWeek: 3, cardioPerWeek: 1, recoveryPerWeek: 2, stepsPerDay: 8000,  caloriesPerDay: 400 },
+    },
+    intermediate: {
+      'shredded':     { liftsPerWeek: 4, cardioPerWeek: 2, recoveryPerWeek: 2, stepsPerDay: 12000, caloriesPerDay: 750 },
+      'faster':       { liftsPerWeek: 2, cardioPerWeek: 4, recoveryPerWeek: 2, stepsPerDay: 12000, caloriesPerDay: 600 },
+      'stronger':     { liftsPerWeek: 4, cardioPerWeek: 1, recoveryPerWeek: 2, stepsPerDay: 8000,  caloriesPerDay: 600 },
+      'lose-weight':  { liftsPerWeek: 3, cardioPerWeek: 2, recoveryPerWeek: 2, stepsPerDay: 12000, caloriesPerDay: 600 },
+      'build-muscle': { liftsPerWeek: 4, cardioPerWeek: 1, recoveryPerWeek: 2, stepsPerDay: 8000,  caloriesPerDay: 750 },
+    },
+    advanced: {
+      'shredded':     { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 3, stepsPerDay: 12000, caloriesPerDay: 1000 },
+      'faster':       { liftsPerWeek: 2, cardioPerWeek: 4, recoveryPerWeek: 3, stepsPerDay: 12000, caloriesPerDay: 850 },
+      'stronger':     { liftsPerWeek: 4, cardioPerWeek: 2, recoveryPerWeek: 3, stepsPerDay: 12000, caloriesPerDay: 850 },
+      'lose-weight':  { liftsPerWeek: 4, cardioPerWeek: 2, recoveryPerWeek: 3, stepsPerDay: 12000, caloriesPerDay: 850 },
+      'build-muscle': { liftsPerWeek: 4, cardioPerWeek: 2, recoveryPerWeek: 2, stepsPerDay: 12000, caloriesPerDay: 1000 },
+    },
+  };
+  const getSmartDefaults = (goal, level) => {
+    return { ...(smartDefaults[level]?.[goal] || smartDefaults.intermediate.shredded) };
+  };
+
+  // Update goal defaults when fitness goal or level changes (only if user hasn't manually tweaked)
+  useEffect(() => {
+    if (fitnessGoal && fitnessLevel && !goalsManuallySet.current && !isEditing) {
+      setGoals(getSmartDefaults(fitnessGoal, fitnessLevel));
+    }
+  }, [fitnessGoal, fitnessLevel]);
+
+  // Goals (existing)
   const [goals, setGoals] = useState({
     liftsPerWeek: currentGoals?.liftsPerWeek ?? 3,
     cardioPerWeek: currentGoals?.cardioPerWeek ?? 2,
@@ -7156,125 +7239,426 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
     caloriesPerDay: currentGoals?.caloriesPerDay ?? 500
   });
 
+  // Privacy (existing)
   const [privacy, setPrivacy] = useState({
     showInActivityFeed: currentPrivacy?.showInActivityFeed ?? true,
     showOnLeaderboard: currentPrivacy?.showOnLeaderboard ?? true
   });
 
-  const isEditing = currentGoals !== null;
+  const canGoBack = currentStep > startStep;
+  const goNext = () => { setDirection('forward'); setCurrentStep(s => s + 1); };
+  const goBack = () => { setDirection('back'); setCurrentStep(s => s - 1); };
 
-  const questions = [
-    { title: "Strength training sessions per week", key: 'liftsPerWeek', options: [2, 3, 4, 5, 6], subtitle: "Weightlifting, calisthenics, or any resistance training. Recommended: 2+ per week." },
-    { title: "Cardio sessions per week", key: 'cardioPerWeek', options: [1, 2, 3, 4, 5], subtitle: "Running, cycling, sports, etc. Recommended: 1+ per week." },
-    { title: "Recovery sessions per week", key: 'recoveryPerWeek', options: [1, 2, 3, 4], subtitle: "Cold plunge, sauna, yoga, pilates, etc. Recommended: 1+ per week." },
-    { title: "Daily step goal", key: 'stepsPerDay', options: [6000, 8000, 10000, 12000, 15000], isSteps: true, subtitle: "Recommended: 10k+ per day for fat loss and general heart health." },
-    { title: "Daily active calories goal", key: 'caloriesPerDay', options: [300, 400, 500, 600, 750, 1000, 1250, 1500, 1750, 2000], isCalories: true, isScrollable: true, subtitle: "Calories burned from exercise only (not resting metabolism). Recommended: 400-600 per day." }
+  // Check if current step can proceed
+  const canContinue = (() => {
+    switch (currentStep) {
+      case 1: return fitnessGoal !== null;
+      case 2: return fitnessLevel !== null;
+      case 3: return favoriteRecovery.length > 0;
+      case 4: return wearable !== null;
+      case 5: return true; // goals have defaults
+      case 6: return true; // goals have defaults
+      case 7: return true; // privacy has defaults
+      default: return true;
+    }
+  })();
+
+  // Handle final submit
+  const handleComplete = () => {
+    onComplete(goals, isEditing ? undefined : privacy, isEditing ? undefined : { fitnessGoal, fitnessLevel, favoriteRecovery, wearable });
+  };
+
+  const isLastStep = currentStep === endStep;
+  const progressIndex = currentStep - startStep;
+
+  // Reusable press animation props
+  const pressProps = {
+    onTouchStart: (e) => { e.currentTarget.style.transform = 'scale(0.95)'; },
+    onTouchEnd: (e) => { e.currentTarget.style.transform = 'scale(1)'; },
+    onMouseDown: (e) => { e.currentTarget.style.transform = 'scale(0.95)'; },
+    onMouseUp: (e) => { e.currentTarget.style.transform = 'scale(1)'; },
+    onMouseLeave: (e) => { e.currentTarget.style.transform = 'scale(1)'; },
+  };
+
+  // Fitness goal options
+  const fitnessGoalOptions = [
+    { value: 'shredded', emoji: '\uD83D\uDD25', label: 'Getting Shredded' },
+    { value: 'faster', emoji: '\u26A1', label: 'Getting Faster' },
+    { value: 'stronger', emoji: '\uD83D\uDCAA', label: 'Getting Stronger' },
+    { value: 'lose-weight', emoji: '\uD83C\uDFAF', label: 'Losing Weight' },
+    { value: 'build-muscle', emoji: '\uD83C\uDFCB\uFE0F', label: 'Building Muscle' },
   ];
 
-  return (
-    <div className="fixed inset-0 bg-black text-white flex flex-col overflow-hidden">
-      <div className="flex-shrink-0 p-6 pt-12">
-        {isEditing && onCancel && (
-          <button
-            onClick={onCancel}
-            className="text-gray-400 text-sm mb-4 flex items-center gap-1 transition-all duration-150 px-2 py-1 rounded-lg -ml-2"
-            onTouchStart={(e) => {
-              e.currentTarget.style.transform = 'scale(0.92)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-            }}
-            onTouchEnd={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'transparent';
-            }}
-            onMouseDown={(e) => {
-              e.currentTarget.style.transform = 'scale(0.92)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-            }}
-            onMouseUp={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'transparent';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'transparent';
-            }}
-          >
-            ← Back
-          </button>
-        )}
-        <img src="/wordmark.png" alt="Day Seven" className="h-8 mb-2" />
-        <p className="text-sm mb-4" style={{ color: '#00FF94' }}>Win the week.</p>
-        <h2 className="text-xl font-bold mb-2">{isEditing ? 'Edit Your Goals' : 'Set Your Goals'}</h2>
-        <p className="text-gray-500 text-sm">Set your standards. Earn your streaks.</p>
-      </div>
+  // Fitness level options
+  const fitnessLevelOptions = [
+    { value: 'beginner', emoji: '\uD83C\uDF31', label: 'Just Starting Out', desc: 'New to fitness or getting back after a long break' },
+    { value: 'intermediate', emoji: '\uD83D\uDD04', label: 'Getting Consistent', desc: 'Been training for a while, building habits' },
+    { value: 'advanced', emoji: '\uD83D\uDE80', label: 'Experienced', desc: 'Training regularly for 5+ years' },
+  ];
 
+  // Favorite recovery options
+  const recoveryOptions = [
+    { value: 'cold-plunge', emoji: '\uD83E\uDDCA', label: 'Cold Plunge' },
+    { value: 'sauna', emoji: '\uD83D\uDD25', label: 'Sauna' },
+    { value: 'yoga-pilates', emoji: '\uD83E\uDDD8', label: 'Yoga / Pilates' },
+    { value: 'meditation', emoji: '\uD83E\uDDE0', label: 'Meditation' },
+    { value: 'massage', emoji: '\uD83D\uDC86', label: 'Massage / Bodywork' },
+    { value: 'stretching', emoji: '\uD83E\uDD38', label: 'Stretching / Mobility' },
+  ];
+
+  // Wearable icon helper
+  const getWearableIcon = (value, selected) => {
+    const c = selected ? '#00FF94' : '#999';
+    switch(value) {
+      case 'apple-watch':
+        return (
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+            <rect x="7" y="1" width="10" height="3" rx="1" fill={c} opacity="0.4"/>
+            <rect x="7" y="20" width="10" height="3" rx="1" fill={c} opacity="0.4"/>
+            <rect x="5" y="3.5" width="14" height="17" rx="4" stroke={c} strokeWidth="1.5"/>
+            <circle cx="12" cy="12" r="3.5" stroke={c} strokeWidth="1.2"/>
+            <line x1="12" y1="12" x2="12" y2="9.5" stroke={c} strokeWidth="1.2" strokeLinecap="round"/>
+            <line x1="12" y1="12" x2="14" y2="12" stroke={c} strokeWidth="1.2" strokeLinecap="round"/>
+          </svg>
+        );
+      case 'garmin':
+        return (
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="9" stroke={c} strokeWidth="1.5"/>
+            <path d="M12 5L12 12L17 12" stroke={c} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M12 3v1.5M12 19.5v1.5M3 12h1.5M19.5 12h1.5" stroke={c} strokeWidth="1.2" strokeLinecap="round"/>
+          </svg>
+        );
+      case 'fitbit':
+        return (
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+            <ellipse cx="12" cy="6.5" rx="2" ry="2.2" fill={c}/>
+            <ellipse cx="12" cy="12" rx="2.5" ry="2.8" fill={c}/>
+            <ellipse cx="12" cy="17.5" rx="2" ry="2.2" fill={c}/>
+            <ellipse cx="17" cy="9.5" rx="1.3" ry="1.5" fill={c} opacity="0.5"/>
+            <ellipse cx="17" cy="14.5" rx="1.3" ry="1.5" fill={c} opacity="0.5"/>
+            <ellipse cx="7" cy="9.5" rx="1.3" ry="1.5" fill={c} opacity="0.5"/>
+            <ellipse cx="7" cy="14.5" rx="1.3" ry="1.5" fill={c} opacity="0.5"/>
+          </svg>
+        );
+      case 'whoop':
+        return (
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+            <rect x="2" y="8" width="20" height="8" rx="4" stroke={c} strokeWidth="1.5"/>
+            <rect x="8" y="10" width="8" height="4" rx="2" fill={c} opacity="0.3"/>
+            <circle cx="12" cy="12" r="1.5" fill={c}/>
+          </svg>
+        );
+      case 'samsung':
+        return (
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="9" stroke={c} strokeWidth="1.5"/>
+            <circle cx="12" cy="12" r="6.5" stroke={c} strokeWidth="0.8" opacity="0.4"/>
+            <path d="M12 5.5a6.5 6.5 0 0 1 4.5 11.2" stroke={c} strokeWidth="1.5" strokeLinecap="round"/>
+          </svg>
+        );
+      case 'other':
+        return (
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+            <rect x="6" y="2" width="12" height="20" rx="3" stroke={c} strokeWidth="1.5"/>
+            <line x1="9" y1="19" x2="15" y2="19" stroke={c} strokeWidth="1.2" strokeLinecap="round"/>
+          </svg>
+        );
+      case 'none':
+        return (
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+            <line x1="6" y1="6" x2="18" y2="18" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round"/>
+            <line x1="18" y1="6" x2="6" y2="18" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round"/>
+          </svg>
+        );
+      default:
+        return null;
+    }
+  };
+
+  // Wearable options
+  const wearableOptions = [
+    { value: 'apple-watch', label: 'Apple Watch' },
+    { value: 'garmin', label: 'Garmin' },
+    { value: 'fitbit', label: 'Fitbit' },
+    { value: 'whoop', label: 'WHOOP' },
+    { value: 'samsung', label: 'Samsung Galaxy' },
+    { value: 'other', label: 'Other' },
+    { value: 'none', label: 'No Wearable' },
+  ];
+
+  // Goal selector row component
+  const GoalSelector = ({ label, subtitle, color, goalKey, options, isSteps, isCalories, isScrollable }) => (
+    <div className="mb-5">
+      <div className="flex items-center gap-2 mb-1">
+        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
+        <label className="text-sm font-semibold">{label}</label>
+      </div>
+      {subtitle && <p className="text-xs text-gray-500 mb-2 ml-4">{subtitle}</p>}
       <div
-        className="flex-1 px-6 py-4 space-y-6 pb-32 overflow-y-auto"
-        style={{ WebkitOverflowScrolling: 'touch' }}
+        className={`flex gap-2 ${isScrollable ? 'overflow-x-auto pb-2 -mx-6 px-6' : ''}`}
+        style={isScrollable ? { WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none', touchAction: 'pan-x' } : {}}
       >
-        {questions.map((q) => (
-          <div key={q.key}>
-            <label className="text-sm font-semibold mb-1 block">{q.title}</label>
-            {q.subtitle && <p className="text-xs text-gray-500 mb-2">{q.subtitle}</p>}
-            <div
-              className={`flex gap-2 ${!q.subtitle ? 'mt-3' : ''} ${q.isScrollable ? 'overflow-x-auto pb-2 -mx-6 px-6' : ''}`}
-              style={q.isScrollable ? { WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none' } : {}}
+        {options.map((option) => {
+          const isActive = goals[goalKey] === option;
+          const Tag = isScrollable ? 'div' : 'button';
+          return (
+            <Tag
+              key={option}
+              onClick={() => { goalsManuallySet.current = true; setGoals({ ...goals, [goalKey]: option }); }}
+              className={`py-3 rounded-xl text-center border-2 select-none ${isScrollable ? 'flex-shrink-0 px-4 min-w-[70px] cursor-pointer' : 'flex-1 transition-all duration-200'}`}
+              style={{
+                backgroundColor: isActive ? `${color}25` : 'rgba(255,255,255,0.05)',
+                borderColor: isActive ? color : 'transparent',
+                ...(isScrollable ? {} : { transform: 'scale(1)' })
+              }}
+              {...(isScrollable ? {} : pressProps)}
             >
-              {q.options.map((option) => (
+              <span className="font-bold" style={{ color: isActive ? color : 'white' }}>
+                {isSteps ? `${option/1000}k` : `${option}`}
+              </span>
+            </Tag>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  // Render step content
+  const renderStep = () => {
+    switch (currentStep) {
+      // Step 1: Fitness Goal
+      case 1:
+        return (
+          <div className="space-y-3">
+            <h2 className="text-2xl font-bold mb-1">What's your main fitness goal?</h2>
+            <p className="text-gray-500 text-sm mb-6">This helps us personalize your experience.</p>
+            {fitnessGoalOptions.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setFitnessGoal(opt.value)}
+                className="w-full p-4 rounded-2xl text-left transition-all duration-200 border-2 flex items-center gap-4"
+                style={{
+                  backgroundColor: fitnessGoal === opt.value ? 'rgba(0,255,148,0.1)' : 'rgba(255,255,255,0.04)',
+                  borderColor: fitnessGoal === opt.value ? '#00FF94' : 'rgba(255,255,255,0.08)',
+                  transform: 'scale(1)'
+                }}
+                {...pressProps}
+              >
+                <span className="text-2xl">{opt.emoji}</span>
+                <span className="font-semibold text-[15px]" style={{ color: fitnessGoal === opt.value ? '#00FF94' : 'white' }}>
+                  {opt.label}
+                </span>
+              </button>
+            ))}
+          </div>
+        );
+
+      // Step 2: Fitness Level
+      case 2:
+        return (
+          <div className="space-y-3">
+            <h2 className="text-2xl font-bold mb-1">Where are you in your journey?</h2>
+            <p className="text-gray-500 text-sm mb-6">This helps us suggest the right goals for you.</p>
+            {fitnessLevelOptions.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setFitnessLevel(opt.value)}
+                className="w-full p-5 rounded-2xl text-left transition-all duration-200 border-2 flex items-center gap-4"
+                style={{
+                  backgroundColor: fitnessLevel === opt.value ? 'rgba(0,255,148,0.1)' : 'rgba(255,255,255,0.04)',
+                  borderColor: fitnessLevel === opt.value ? '#00FF94' : 'rgba(255,255,255,0.08)',
+                  transform: 'scale(1)'
+                }}
+                {...pressProps}
+              >
+                <span className="text-2xl">{opt.emoji}</span>
+                <div>
+                  <span className="font-semibold text-[15px] block" style={{ color: fitnessLevel === opt.value ? '#00FF94' : 'white' }}>
+                    {opt.label}
+                  </span>
+                  <span className="text-xs text-gray-500 mt-0.5 block">{opt.desc}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        );
+
+      // Step 3: Favorite Recovery (multi-select)
+      case 3:
+        return (
+          <div className="space-y-3">
+            <h2 className="text-2xl font-bold mb-1">What's your favorite type of recovery?</h2>
+            <p className="text-gray-500 text-sm mb-6">Select all that apply — we all recover differently.</p>
+            {recoveryOptions.map((opt) => {
+              const isSelected = favoriteRecovery.includes(opt.value);
+              return (
                 <button
-                  key={option}
-                  onClick={() => setGoals({ ...goals, [q.key]: option })}
-                  className={`py-3 rounded-xl text-center transition-all duration-200 border-2 ${q.isScrollable ? 'flex-shrink-0 px-4 min-w-[70px]' : 'flex-1'}`}
+                  key={opt.value}
+                  onClick={() => setFavoriteRecovery(prev =>
+                    prev.includes(opt.value)
+                      ? prev.filter(v => v !== opt.value)
+                      : [...prev, opt.value]
+                  )}
+                  className="w-full p-4 rounded-2xl text-left transition-all duration-200 border-2 flex items-center gap-4"
                   style={{
-                    backgroundColor: goals[q.key] === option ? 'rgba(0,255,148,0.15)' : 'rgba(255,255,255,0.05)',
-                    borderColor: goals[q.key] === option ? '#00FF94' : 'transparent',
+                    backgroundColor: isSelected ? 'rgba(0,255,148,0.1)' : 'rgba(255,255,255,0.04)',
+                    borderColor: isSelected ? '#00FF94' : 'rgba(255,255,255,0.08)',
                     transform: 'scale(1)'
                   }}
-                  onTouchStart={(e) => {
-                    e.currentTarget.style.transform = 'scale(0.92)';
-                  }}
-                  onTouchEnd={(e) => {
-                    e.currentTarget.style.transform = 'scale(1)';
-                  }}
-                  onMouseDown={(e) => {
-                    e.currentTarget.style.transform = 'scale(0.92)';
-                  }}
-                  onMouseUp={(e) => {
-                    e.currentTarget.style.transform = 'scale(1)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'scale(1)';
-                  }}
+                  {...pressProps}
                 >
-                  <span className="font-bold" style={{ color: goals[q.key] === option ? '#00FF94' : 'white' }}>
-                    {q.isSteps ? `${option/1000}k` : q.isCalories ? `${option}` : option}
+                  <span className="text-2xl">{opt.emoji}</span>
+                  <span className="font-semibold text-[15px]" style={{ color: isSelected ? '#00FF94' : 'white' }}>
+                    {opt.label}
                   </span>
                 </button>
-              ))}
+              );
+            })}
+          </div>
+        );
+
+      // Step 4: Wearable Device
+      case 4:
+        return (
+          <div>
+            <h2 className="text-2xl font-bold mb-1">Do you use a wearable to track workouts?</h2>
+            <p className="text-gray-500 text-sm mb-6">We'll optimize your experience accordingly.</p>
+            <div className="grid grid-cols-2 gap-3">
+              {wearableOptions.map((opt) => {
+                const isSelected = wearable === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() => setWearable(opt.value)}
+                    className={`p-4 rounded-2xl text-center transition-all duration-200 border-2 flex flex-col items-center gap-2 ${opt.value === 'none' ? 'col-span-2' : ''}`}
+                    style={{
+                      backgroundColor: isSelected ? 'rgba(0,255,148,0.1)' : 'rgba(255,255,255,0.04)',
+                      borderColor: isSelected ? '#00FF94' : 'rgba(255,255,255,0.08)',
+                      transform: 'scale(1)'
+                    }}
+                    {...pressProps}
+                  >
+                    {getWearableIcon(opt.value, isSelected)}
+                    <span className="font-semibold text-sm" style={{ color: isSelected ? '#00FF94' : 'white' }}>
+                      {opt.label}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
-        ))}
+        );
 
-        {/* Privacy Section - only show during initial onboarding */}
-        {!isEditing && (
-          <div className="mt-8 pt-6 border-t border-zinc-800">
-            <h3 className="text-sm font-semibold text-gray-400 mb-4">PRIVACY SETTINGS</h3>
-            <p className="text-xs text-gray-500 mb-4">Choose how you appear to friends. You can change these anytime in Settings.</p>
+      // Step 5: Weekly Goals
+      case 5:
+        return (
+          <div>
+            <h2 className="text-2xl font-bold mb-1">{isEditing ? 'Edit Weekly Goals' : 'Set your weekly goals'}</h2>
+            <p className="text-gray-500 text-sm mb-2">How many sessions per week for each category?</p>
+            {!isEditing && fitnessGoal && !goalsManuallySet.current && (
+              <p className="text-xs mb-4 flex items-center gap-1.5" style={{ color: '#00FF94' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                Suggested based on your goal — adjust anytime
+              </p>
+            )}
+            {(isEditing || !fitnessGoal || goalsManuallySet.current) && <div className="mb-4" />}
+            <GoalSelector
+              label="Strength"
+              subtitle="Weightlifting, calisthenics, resistance training"
+              color="#00FF94"
+              goalKey="liftsPerWeek"
+              options={[2, 3, 4, 5, 6]}
+            />
+            <GoalSelector
+              label="Cardio"
+              subtitle="Running, cycling, sports, swimming"
+              color="#FF9500"
+              goalKey="cardioPerWeek"
+              options={[1, 2, 3, 4, 5]}
+            />
+            <GoalSelector
+              label="Recovery"
+              subtitle="Cold plunge, sauna, yoga, pilates"
+              color="#00D1FF"
+              goalKey="recoveryPerWeek"
+              options={[1, 2, 3, 4]}
+            />
+          </div>
+        );
+
+      // Step 6: Daily Goals
+      case 6:
+        return (
+          <div>
+            <h2 className="text-2xl font-bold mb-1">{isEditing ? 'Edit Daily Goals' : 'Set your daily goals'}</h2>
+            <p className="text-gray-500 text-sm mb-2">Your daily movement targets.</p>
+            {!isEditing && fitnessGoal && !goalsManuallySet.current && (
+              <p className="text-xs mb-4 flex items-center gap-1.5" style={{ color: '#00FF94' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                Suggested based on your goal — adjust anytime
+              </p>
+            )}
+            {(isEditing || !fitnessGoal || goalsManuallySet.current) && <div className="mb-4" />}
+            <GoalSelector
+              label="Daily Steps"
+              subtitle="Recommended: 10k+ for general health"
+              color="#00FF94"
+              goalKey="stepsPerDay"
+              options={[6000, 8000, 10000, 12000, 15000]}
+              isSteps
+            />
+            <div className="mb-5">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#FF9500' }} />
+                <label className="text-sm font-semibold">Active Calories</label>
+              </div>
+              <p className="text-xs text-gray-500 mb-2 ml-4">Calories burned from exercise only. Recommended: 400-600/day.</p>
+              <div
+                className="flex gap-2 overflow-x-auto pb-2 -mx-6 px-6"
+                style={{ WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none', touchAction: 'pan-x' }}
+              >
+                {[300, 400, 500, 600, 750, 1000, 1250, 1500, 1750, 2000].map((option) => (
+                  <div
+                    key={option}
+                    onClick={() => { goalsManuallySet.current = true; setGoals({ ...goals, caloriesPerDay: option }); }}
+                    className="py-3 rounded-xl text-center border-2 flex-shrink-0 px-4 min-w-[70px] cursor-pointer select-none"
+                    style={{
+                      backgroundColor: goals.caloriesPerDay === option ? 'rgba(255,149,0,0.2)' : 'rgba(255,255,255,0.05)',
+                      borderColor: goals.caloriesPerDay === option ? '#FF9500' : 'transparent',
+                    }}
+                  >
+                    <span className="font-bold" style={{ color: goals.caloriesPerDay === option ? '#FF9500' : 'white' }}>
+                      {option}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+
+      // Step 7: Privacy
+      case 7:
+        return (
+          <div>
+            <h2 className="text-2xl font-bold mb-1">One last thing</h2>
+            <p className="text-gray-500 text-sm mb-8">Choose how you appear to friends. You can change these anytime in Settings.</p>
 
             {/* Activity Feed Toggle */}
-            <div className="flex items-center justify-between py-3">
+            <div className="flex items-center justify-between py-4 border-b border-zinc-800/50">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
+                <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
                   <span className="text-lg">📲</span>
                 </div>
                 <div>
-                  <span className="text-sm text-white font-medium">Show in Activity Feed</span>
-                  <p className="text-[11px] text-gray-500">Friends can see your workouts</p>
+                  <span className="text-[15px] text-white font-medium">Show in Activity Feed</span>
+                  <p className="text-xs text-gray-500 mt-0.5">Friends can see your workouts</p>
                 </div>
               </div>
               <button
                 onClick={() => setPrivacy({ ...privacy, showInActivityFeed: !privacy.showInActivityFeed })}
-                className="w-12 h-7 rounded-full transition-all duration-200 relative"
+                className="w-12 h-7 rounded-full transition-all duration-200 relative flex-shrink-0"
                 style={{
                   backgroundColor: privacy.showInActivityFeed ? '#00FF94' : 'rgba(255,255,255,0.2)'
                 }}
@@ -7289,19 +7673,19 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
             </div>
 
             {/* Leaderboard Toggle */}
-            <div className="flex items-center justify-between py-3 mt-2">
+            <div className="flex items-center justify-between py-4">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
+                <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
                   <span className="text-lg">🏅</span>
                 </div>
                 <div>
-                  <span className="text-sm text-white font-medium">Appear on Leaderboards</span>
-                  <p className="text-[11px] text-gray-500">Compete with friends</p>
+                  <span className="text-[15px] text-white font-medium">Appear on Leaderboards</span>
+                  <p className="text-xs text-gray-500 mt-0.5">Compete with friends</p>
                 </div>
               </div>
               <button
                 onClick={() => setPrivacy({ ...privacy, showOnLeaderboard: !privacy.showOnLeaderboard })}
-                className="w-12 h-7 rounded-full transition-all duration-200 relative"
+                className="w-12 h-7 rounded-full transition-all duration-200 relative flex-shrink-0"
                 style={{
                   backgroundColor: privacy.showOnLeaderboard ? '#00FF94' : 'rgba(255,255,255,0.2)'
                 }}
@@ -7315,36 +7699,112 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
               </button>
             </div>
           </div>
-        )}
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black text-white flex flex-col overflow-hidden">
+      {/* Header with progress bar and back/cancel */}
+      <div className="flex-shrink-0 px-6 pt-12 pb-2">
+        <div className="flex items-center justify-between mb-5">
+          {/* Back or Cancel button */}
+          {canGoBack ? (
+            <button
+              onClick={goBack}
+              className="text-gray-400 flex items-center gap-1 transition-all duration-150 px-2 py-1 rounded-lg -ml-2"
+              {...pressProps}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+              <span className="text-sm">Back</span>
+            </button>
+          ) : isEditing && onCancel ? (
+            <button
+              onClick={onCancel}
+              className="text-gray-400 text-sm transition-all duration-150 px-2 py-1 rounded-lg -ml-2"
+              {...pressProps}
+            >
+              Cancel
+            </button>
+          ) : (
+            <div />
+          )}
+          <div />
+        </div>
+
+        {/* Progress bar */}
+        <div className="flex gap-1.5 mb-2">
+          {Array.from({ length: totalSteps }).map((_, i) => (
+            <div
+              key={i}
+              className="h-1 flex-1 rounded-full transition-all duration-300"
+              style={{
+                backgroundColor: i <= progressIndex ? '#00FF94' : 'rgba(255,255,255,0.1)'
+              }}
+            />
+          ))}
+        </div>
       </div>
 
+      {/* Step content with slide animation */}
+      <div
+        key={currentStep}
+        className="flex-1 px-6 py-4 pb-32 overflow-y-auto"
+        style={{
+          WebkitOverflowScrolling: 'touch',
+          animation: `${direction === 'forward' ? 'slideInRight' : 'slideInLeft'} 0.3s ease-out`
+        }}
+      >
+        {renderStep()}
+      </div>
+
+      {/* Bottom button */}
       <div className="fixed bottom-0 left-0 right-0 p-6 pb-12" style={{ background: 'linear-gradient(to top, #000 80%, transparent)' }}>
         <button
-          onClick={() => onComplete(goals, isEditing ? undefined : privacy)}
-          className="w-full py-4 rounded-xl font-bold text-black text-lg transition-all duration-150"
-          style={{ backgroundColor: '#00FF94' }}
+          onClick={isLastStep ? handleComplete : goNext}
+          disabled={!canContinue}
+          className="w-full py-4 rounded-xl font-bold text-lg transition-all duration-150"
+          style={{
+            backgroundColor: canContinue ? '#00FF94' : 'rgba(255,255,255,0.1)',
+            color: canContinue ? 'black' : 'rgba(255,255,255,0.3)',
+          }}
           onTouchStart={(e) => {
-            e.currentTarget.style.transform = 'scale(0.97)';
-            e.currentTarget.style.backgroundColor = '#00CC77';
+            if (canContinue) {
+              e.currentTarget.style.transform = 'scale(0.97)';
+              e.currentTarget.style.backgroundColor = '#00CC77';
+            }
           }}
           onTouchEnd={(e) => {
-            e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.backgroundColor = '#00FF94';
+            if (canContinue) {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = '#00FF94';
+            }
           }}
           onMouseDown={(e) => {
-            e.currentTarget.style.transform = 'scale(0.97)';
-            e.currentTarget.style.backgroundColor = '#00CC77';
+            if (canContinue) {
+              e.currentTarget.style.transform = 'scale(0.97)';
+              e.currentTarget.style.backgroundColor = '#00CC77';
+            }
           }}
           onMouseUp={(e) => {
-            e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.backgroundColor = '#00FF94';
+            if (canContinue) {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = '#00FF94';
+            }
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.backgroundColor = '#00FF94';
+            if (canContinue) {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.backgroundColor = '#00FF94';
+            }
           }}
         >
-          {isEditing ? 'Save Goals' : 'Start Day Seven'}
+          {isLastStep ? (isEditing ? 'Save Goals' : 'Get Started') : 'Continue'}
         </button>
       </div>
     </div>
@@ -18469,16 +18929,16 @@ export default function DaySevenApp() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Check if tour should be shown for returning users who haven't seen it yet
+  // Check if tour should be shown for new/returning users who haven't seen it yet
   const tourShownRef = useRef(false);
   useEffect(() => {
     if (!isLoading && isOnboarded && userProfile && userProfile.hasCompletedTour !== true && !tourShownRef.current) {
       tourShownRef.current = true;
-      // Small delay to ensure UI is ready
+      // Delay to ensure home tab UI is fully rendered (especially after paywall dismissal)
       const timer = setTimeout(() => {
         setActiveTab('home');
         setShowTour(true);
-      }, 500);
+      }, 1000);
       return () => clearTimeout(timer);
     }
   }, [isLoading, isOnboarded, userProfile?.hasCompletedTour]);
@@ -19511,9 +19971,9 @@ export default function DaySevenApp() {
 
   if (isOnboarded === false) {
     return <OnboardingSurvey
-      currentGoals={userData.goals}
+      currentGoals={null}
       onCancel={null}
-      onComplete={async (goals, privacySettings) => {
+      onComplete={async (goals, privacySettings, extraData) => {
         const goalsToSave = {
           liftsPerWeek: goals.liftsPerWeek,
           cardioPerWeek: goals.cardioPerWeek,
@@ -19529,6 +19989,18 @@ export default function DaySevenApp() {
         if (privacySettings) {
           await updateUserProfile(user.uid, { privacySettings });
           setUserProfile(prev => ({ ...prev, privacySettings }));
+        }
+
+        // Save new onboarding fields to Firestore
+        if (extraData) {
+          const extraFields = {};
+          if (extraData.fitnessGoal) extraFields.fitnessGoal = extraData.fitnessGoal;
+          if (extraData.fitnessLevel) extraFields.fitnessLevel = extraData.fitnessLevel;
+          if (extraData.favoriteRecovery) extraFields.favoriteRecovery = extraData.favoriteRecovery;
+          if (extraData.wearable) extraFields.wearable = extraData.wearable;
+          if (Object.keys(extraFields).length > 0) {
+            await updateUserProfile(user.uid, extraFields);
+          }
         }
 
         // Mark onboarding as complete
@@ -19550,11 +20022,21 @@ export default function DaySevenApp() {
         }));
         setIsOnboarded(true);
 
-        // Start tour for new users after a short delay to let the UI render
-        setTimeout(() => {
-          setActiveTab('home');
-          setShowTour(true);
-        }, 500);
+        // Present paywall after onboarding for new users
+        if (Capacitor.isNativePlatform()) {
+          try {
+            const { purchased } = await presentPaywall();
+            if (purchased) {
+              const proStatus = await checkProStatus();
+              setIsPro(proStatus);
+            }
+          } catch (e) {
+            console.error('[App] Post-onboarding paywall error:', e);
+          }
+        }
+
+        // Tour will auto-start via useEffect when isOnboarded becomes true
+        setActiveTab('home');
       }}
     />;
   }

@@ -61,8 +61,7 @@ export const initializeRevenueCat = async (userId) => {
     const loaded = await loadSDK();
     if (!loaded) return false;
 
-    // Debug logging in development — remove or reduce for production
-    await Purchases.setLogLevel({ level: LOG_LEVEL.DEBUG });
+    await Purchases.setLogLevel({ level: LOG_LEVEL.INFO });
 
     if (Capacitor.getPlatform() === 'ios') {
       await Purchases.configure({
@@ -148,6 +147,12 @@ export const presentPaywall = async () => {
   if (!isNative || !RevenueCatUI) return { purchased: false, result: null };
 
   try {
+    // Check if offerings are available before presenting (avoids Error 23)
+    const offerings = await Purchases.getOfferings();
+    if (!offerings?.current) {
+      return { purchased: false, result: null };
+    }
+
     const { result } = await RevenueCatUI.presentPaywall();
 
     switch (result) {

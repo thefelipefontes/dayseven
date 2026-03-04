@@ -194,6 +194,20 @@ async function sendNotificationToUser(userId, title, body, data = {}, options = 
       return { success: false, reason: 'quiet_hours' };
     }
 
+    // Increment unread badge count in Firestore for accurate app icon badge
+    const userRef = db.collection('users').doc(userId);
+    await userRef.set({ unreadBadgeCount: FieldValue.increment(1) }, { merge: true });
+
+    // If this is a social notification, also increment unreadFeedCount (for in-app red dot)
+    const socialTypes = ['reaction', 'comment', 'reply', 'friend_request', 'friend_accepted', 'friend_workout'];
+    if (socialTypes.includes(data.type)) {
+      await userRef.set({ unreadFeedCount: FieldValue.increment(1) }, { merge: true });
+    }
+
+    // Read the updated badge count for APNS payload
+    const updatedUser = await userRef.get();
+    const badgeCount = updatedUser.data()?.unreadBadgeCount || 1;
+
     // Build the message
     const message = {
       notification: {
@@ -211,7 +225,7 @@ async function sendNotificationToUser(userId, title, body, data = {}, options = 
               title,
               body,
             },
-            badge: data.badge ? parseInt(data.badge) : 1,
+            badge: badgeCount,
             sound: 'default',
             'mutable-content': 1,
           },

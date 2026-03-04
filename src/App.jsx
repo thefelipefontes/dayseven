@@ -17432,6 +17432,7 @@ export default function DaySevenApp() {
   const [historyStatsSubView, setHistoryStatsSubView] = useState('overview');
   const [showEditGoals, setShowEditGoals] = useState(false);
   const [pendingFriendRequests, setPendingFriendRequests] = useState(0);
+  const [unreadFeedCount, setUnreadFeedCount] = useState(0);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [feedActiveView, setFeedActiveView] = useState('feed'); // 'feed' or 'leaderboard'
@@ -17647,23 +17648,9 @@ export default function DaySevenApp() {
     };
   }, [user?.uid]);
 
-  // Update app icon badge when pending requests change
-  useEffect(() => {
-    const updateBadge = async () => {
-      if (Capacitor.isNativePlatform()) {
-        try {
-          const { Badge } = await import('@capawesome/capacitor-badge');
-          if (pendingFriendRequests > 0) {
-            await Badge.set({ count: pendingFriendRequests });
-          } else {
-            await Badge.clear();
-          }
-        } catch (e) {
-        }
-      }
-    };
-    updateBadge();
-  }, [pendingFriendRequests]);
+  // Badge count is now managed by Cloud Functions (accurate APNS badge)
+  // and cleared on app open via clearBadge() + Firestore reset.
+  // No need for a local useEffect to sync badge with pendingFriendRequests.
 
   // Load active workout from localStorage on mount
   useEffect(() => {
@@ -17815,12 +17802,21 @@ export default function DaySevenApp() {
       scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
+
+    // Clear unread feed notifications when opening feed tab
+    if (newTab === 'feed' && unreadFeedCount > 0) {
+      setUnreadFeedCount(0);
+      if (user?.uid) {
+        updateUserProfile(user.uid, { unreadFeedCount: 0 });
+      }
+    }
+
     const currentIndex = tabOrder.indexOf(activeTab);
     const newIndex = tabOrder.indexOf(newTab);
     setTabDirection(newIndex > currentIndex ? 1 : -1);
     setPrevTab(activeTab);
     setActiveTab(newTab);
-  }, [activeTab]);
+  }, [activeTab, unreadFeedCount, user?.uid]);
 
   // Edge swipe gesture for tab navigation (iOS-style) - uses native event listeners
   const activeTabRef = useRef(activeTab);
@@ -18025,6 +18021,7 @@ export default function DaySevenApp() {
     setCalendarData(initialCalendarData);
     setFriends([]);
     setPendingFriendRequests(0);
+    setUnreadFeedCount(0);
     setIsPro(false);
 
     // Then attempt actual sign out in background (don't block UI)
@@ -18332,6 +18329,7 @@ export default function DaySevenApp() {
       // Set user and profile together to avoid intermediate render states
       setUser(user);
       setUserProfile(profile);
+      setUnreadFeedCount(profile?.unreadFeedCount || 0);
       setIsOnboarded(hasCompletedOnboarding);
       setActiveTab('home'); // Always go to home screen after login
       setAuthLoading(false);
@@ -18538,8 +18536,9 @@ export default function DaySevenApp() {
           // Initialize push notifications on native platforms
           if (Capacitor.isNativePlatform()) {
             try {
-              // Clear badge on app open
+              // Clear badge on app open and reset Firestore counter
               clearBadge();
+              updateUserProfile(user.uid, { unreadBadgeCount: 0 });
 
               const { cleanup, token } = await initializePushNotifications(
                 user.uid,
@@ -18557,6 +18556,13 @@ export default function DaySevenApp() {
                   }
                   // Increment badge for foreground notifications
                   incrementBadge();
+
+                  // Track unread feed notifications locally (for red dot on Friends tab)
+                  const notifType = notification?.data?.type;
+                  const socialTypes = ['reaction', 'comment', 'reply', 'friend_request', 'friend_accepted', 'friend_workout'];
+                  if (socialTypes.includes(notifType) && activeTabRef.current !== 'feed') {
+                    setUnreadFeedCount(prev => prev + 1);
+                  }
                 },
                 (notification, actionId) => {
                   // Handle notification tap - navigate to appropriate screen
@@ -20665,7 +20671,7 @@ export default function DaySevenApp() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" />
             </svg>
             <span className={`text-xs ${activeTab === 'feed' ? 'text-white' : 'text-gray-500'}`}>Friends</span>
-            {pendingFriendRequests > 0 && (
+            {(pendingFriendRequests > 0 || unreadFeedCount > 0) && (
               <span
                 className="absolute top-1 right-1/4 w-2 h-2 rounded-full"
                 style={{ backgroundColor: '#FF453A' }}

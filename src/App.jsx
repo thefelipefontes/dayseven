@@ -8393,7 +8393,7 @@ const SwipeableActivityItem = ({ children, onDelete, activity, onTap, onEdit }) 
 };
 
 // Add Activity Modal
-const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, defaultDate = null, userData = null, onSaveCustomActivity = null, onStartWorkout = null, hasActiveWorkout = false, otherPendingWorkoutsCount = 0, onSeeOtherWorkouts = null, onBackToWorkoutPicker = null, dismissedWorkoutUUIDs = [], linkedWorkoutUUIDs = [], pendingWorkouts = [] }) => {
+const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, defaultDate = null, userData = null, onSaveCustomActivity = null, onSaveHKPreference = null, onStartWorkout = null, hasActiveWorkout = false, otherPendingWorkoutsCount = 0, onSeeOtherWorkouts = null, onBackToWorkoutPicker = null, dismissedWorkoutUUIDs = [], linkedWorkoutUUIDs = [], pendingWorkouts = [] }) => {
   // Mode: null = initial choice, 'start' = start new workout, 'completed' = log completed (existing flow)
   const [mode, setMode] = useState(null);
   const [activityType, setActivityType] = useState(null);
@@ -8412,6 +8412,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   const [customActivityIcon, setCustomActivityIcon] = useState('CirclePlus'); // New: Lucide icon name for "Other" activities
   const [showIconPicker, setShowIconPicker] = useState(false);
   const [saveCustomActivity, setSaveCustomActivity] = useState(false);
+  const [saveHKIcon, setSaveHKIcon] = useState(false);
+  const [saveHKCategory, setSaveHKCategory] = useState(false);
   const [customActivityCategory, setCustomActivityCategory] = useState(''); // 'strength', 'cardio', or 'recovery'
 
   // Sports-specific emojis for picker
@@ -8461,13 +8463,29 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       setCustomSportEmoji('⚽');
       setShowSportEmojiPicker(false);
       setSaveCustomSport(false);
-      // For "Other" activities, load the saved custom name and emoji
-      setCustomActivityName(pendingActivity?.type === 'Other' ? (pendingActivity?.subtype || '') : '');
+      // For "Other" activities OR uncategorized Apple Health types, load custom fields
+      const isUncatType = pendingActivity?.type && !['Strength Training', 'Weightlifting', 'Bodyweight', 'Circuit',
+        'Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Walking',
+        'Yoga', 'Pilates', 'Cold Plunge', 'Sauna', 'Other'].includes(pendingActivity.type);
+      const loadCustomFields = pendingActivity?.type === 'Other' || isUncatType;
+      setCustomActivityName(loadCustomFields
+        ? (isUncatType ? (pendingActivity?.appleWorkoutName || pendingActivity?.type || '') : (pendingActivity?.subtype || ''))
+        : '');
       setCustomActivityEmoji(pendingActivity?.type === 'Other' ? (pendingActivity?.customEmoji || '') : '');
-      setCustomActivityIcon(pendingActivity?.type === 'Other' ? (pendingActivity?.customIcon || 'CirclePlus') : 'CirclePlus');
+      const defaultIcon = isUncatType ? 'IconHeartbeat' : 'CirclePlus';
+      setCustomActivityIcon(loadCustomFields ? (pendingActivity?.customIcon || defaultIcon) : 'CirclePlus');
       setShowIconPicker(false);
       setSaveCustomActivity(false);
-      setCustomActivityCategory(pendingActivity?.type === 'Other' ? (pendingActivity?.customActivityCategory || '') : '');
+      setSaveHKIcon(false);
+      setSaveHKCategory(false);
+      setCustomActivityCategory(loadCustomFields ? (pendingActivity?.customActivityCategory || pendingActivity?.countToward || '') : '');
+      // Apply saved HealthKit type preferences for uncategorized types
+      if (isUncatType && userData?.healthKitTypePreferences) {
+        const prefKey = pendingActivity?.appleWorkoutName || pendingActivity?.type;
+        const pref = userData.healthKitTypePreferences[prefKey];
+        if (pref?.icon) setCustomActivityIcon(pref.icon);
+        if (pref?.category) setCustomActivityCategory(pref.category);
+      }
       setDate(defaultDate || pendingActivity?.date || getTodayDate());
       setShowDatePicker(false);
       setNotes(pendingActivity?.notes || '');
@@ -8742,7 +8760,13 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   // Update countToward when activity type or subtype changes
   useEffect(() => {
     if (activityType && activityType !== 'Other') {
-      setCountToward(getDefaultCountToward(activityType, subtype));
+      const defaultCT = getDefaultCountToward(activityType, subtype);
+      if (defaultCT) {
+        setCountToward(defaultCT);
+      } else {
+        // For uncategorized HK types, don't override — customActivityCategory handles it
+        setCountToward(null);
+      }
     } else {
       setCountToward(null);
     }
@@ -8750,8 +8774,13 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 
   const selectedType = activityTypes.find(t => t.name === activityType);
   const showCustomSportInput = activityType === 'Sports' && subtype === 'Other';
-  const showCustomActivityInput = activityType === 'Other';
-  const showCountToward = activityType && activityType !== 'Other';
+  // Standard types that have built-in category mapping and icon
+  const STANDARD_ACTIVITY_TYPES = ['Strength Training', 'Weightlifting', 'Bodyweight', 'Circuit',
+    'Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Walking',
+    'Yoga', 'Pilates', 'Cold Plunge', 'Sauna', 'Other'];
+  const isUncategorizedHKType = activityType && !STANDARD_ACTIVITY_TYPES.includes(activityType);
+  const showCustomActivityInput = activityType === 'Other' || isUncategorizedHKType;
+  const showCountToward = activityType && activityType !== 'Other' && !isUncategorizedHKType;
   const isFromAppleHealth = !!pendingActivity?.fromAppleHealth;
 
   // Handle linking an Apple Health workout
@@ -9030,13 +9059,30 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             } else if (showCustomSportInput) {
               finalSubtype = customSport;
             } else if (showCustomActivityInput && customActivityName) {
-              // For "Other" activity, store the custom name as subtype
-              finalSubtype = customActivityName;
+              if (isUncategorizedHKType) {
+                // For uncategorized Apple Health types (Tai Chi, Dance, etc.), keep type as-is
+                // Don't set subtype to the name — it's already the type
+                finalSubtype = subtype || '';
+              } else {
+                // For manual "Other" activity, store the custom name as subtype
+                finalSubtype = customActivityName;
+              }
             }
 
             // Save custom activity to user profile if requested
-            if (showCustomActivityInput && saveCustomActivity && customActivityName && onSaveCustomActivity) {
+            if (showCustomActivityInput && !isUncategorizedHKType && saveCustomActivity && customActivityName && onSaveCustomActivity) {
               onSaveCustomActivity({ name: customActivityName, icon: customActivityIcon, category: customActivityCategory });
+            }
+
+            // Save HealthKit type preferences if requested (for uncategorized Apple Health types)
+            if (isUncategorizedHKType && (saveHKIcon || saveHKCategory) && onSaveHKPreference) {
+              const hkPrefKey = pendingActivity?.appleWorkoutName || activityType;
+              const hkPref = {};
+              if (saveHKIcon && customActivityIcon !== 'CirclePlus' && customActivityIcon !== 'IconHeartbeat') hkPref.icon = customActivityIcon;
+              if (saveHKCategory && customActivityCategory) hkPref.category = customActivityCategory;
+              if (Object.keys(hkPref).length > 0) {
+                onSaveHKPreference(hkPrefKey, hkPref);
+              }
             }
 
             // Get the sport emoji (either custom or from predefined sport)
@@ -9102,8 +9148,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             handleClose();
           }}
           className="font-bold transition-all duration-150 px-2 py-1 rounded-lg"
-          style={{ color: !activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && (!customActivityName || !customActivityCategory)) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0) ? 'rgba(0,255,148,0.3)' : '#00FF94' }}
-          disabled={!activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && (!customActivityName || !customActivityCategory)) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0)}
+          style={{ color: !activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0) ? 'rgba(0,255,148,0.3)' : '#00FF94' }}
+          disabled={!activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0)}
           onTouchStart={(e) => {
             if (!e.currentTarget.disabled) {
               e.currentTarget.style.transform = 'scale(0.9)';
@@ -9864,10 +9910,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               </div>
             )}
 
-            {/* Custom "Other" Activity Input */}
+            {/* Custom "Other" Activity Input OR Uncategorized Apple Health Type */}
             {showCustomActivityInput && (
               <div className="p-4 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Activity Name</label>
+                <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">
+                  {isUncategorizedHKType ? 'Choose an Icon' : 'Activity Name'}
+                </label>
                 <div className="flex gap-2 mb-3">
                   {/* Icon Picker Button */}
                   <button
@@ -9880,15 +9928,31 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                       border: showIconPicker ? '1px solid #00FF94' : '1px solid rgba(255,255,255,0.1)'
                     }}
                   >
-                    <ActivityIcon type="Other" customIcon={customActivityIcon} size={22} />
+                    <ActivityIcon
+                      type={isUncategorizedHKType ? activityType : 'Other'}
+                      customIcon={customActivityIcon}
+                      size={22}
+                      color={isUncategorizedHKType && customActivityCategory ? (
+                        customActivityCategory === 'strength' ? '#00FF94' :
+                        customActivityCategory === 'cardio' ? '#FF9500' :
+                        customActivityCategory === 'recovery' ? '#00D1FF' :
+                        customActivityCategory === 'warmup' ? '#FFD60A' : undefined
+                      ) : undefined}
+                    />
                   </button>
-                  <input
-                    type="text"
-                    value={customActivityName}
-                    onChange={(e) => setCustomActivityName(e.target.value)}
-                    className="flex-1 p-3 rounded-xl bg-white/5 border border-white/10 text-white"
-                    placeholder="Enter activity name..."
-                  />
+                  {isUncategorizedHKType ? (
+                    <div className="flex-1 p-3 rounded-xl bg-white/5 border border-white/10 text-white flex items-center">
+                      {customActivityName}
+                    </div>
+                  ) : (
+                    <input
+                      type="text"
+                      value={customActivityName}
+                      onChange={(e) => setCustomActivityName(e.target.value)}
+                      className="flex-1 p-3 rounded-xl bg-white/5 border border-white/10 text-white"
+                      placeholder="Enter activity name..."
+                    />
+                  )}
                 </div>
 
                 {/* Icon Picker Grid — categorized */}
@@ -9983,19 +10047,59 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                   )}
                 </div>
 
-                <label className="flex items-center gap-3 cursor-pointer mt-4">
-                  <div
-                    className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all"
-                    style={{
-                      borderColor: saveCustomActivity ? '#00FF94' : 'rgba(255,255,255,0.3)',
-                      backgroundColor: saveCustomActivity ? 'rgba(0,255,148,0.2)' : 'transparent'
-                    }}
-                    onClick={() => { setSaveCustomActivity(!saveCustomActivity); triggerHaptic(ImpactStyle.Light); }}
-                  >
-                    {saveCustomActivity && <span style={{ color: '#00FF94' }}>✓</span>}
-                  </div>
-                  <span className="text-sm text-gray-400">Save as option for future</span>
-                </label>
+                {isUncategorizedHKType ? (
+                  <>
+                    <label className="flex items-center gap-3 cursor-pointer mt-4">
+                      <div
+                        className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all"
+                        style={{
+                          borderColor: saveHKIcon ? '#00FF94' : 'rgba(255,255,255,0.3)',
+                          backgroundColor: saveHKIcon ? 'rgba(0,255,148,0.2)' : 'transparent'
+                        }}
+                        onClick={() => { setSaveHKIcon(!saveHKIcon); triggerHaptic(ImpactStyle.Light); }}
+                      >
+                        {saveHKIcon && <span style={{ color: '#00FF94' }}>✓</span>}
+                      </div>
+                      <span className="text-sm text-gray-400">Remember icon for future {customActivityName} workouts</span>
+                    </label>
+                    {customActivityCategory && (
+                      <label className="flex items-center gap-3 cursor-pointer mt-3">
+                        <div
+                          className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all"
+                          style={{
+                            borderColor: saveHKCategory ? '#00FF94' : 'rgba(255,255,255,0.3)',
+                            backgroundColor: saveHKCategory ? 'rgba(0,255,148,0.2)' : 'transparent'
+                          }}
+                          onClick={() => { setSaveHKCategory(!saveHKCategory); triggerHaptic(ImpactStyle.Light); }}
+                        >
+                          {saveHKCategory && <span style={{ color: '#00FF94' }}>✓</span>}
+                        </div>
+                        <span className="text-sm text-gray-400">
+                          Always count {customActivityName} toward {
+                            customActivityCategory === 'strength' ? 'Strength' :
+                            customActivityCategory === 'cardio' ? 'Cardio' :
+                            customActivityCategory === 'recovery' ? 'Recovery' :
+                            customActivityCategory === 'warmup' ? 'Warm Up' : customActivityCategory
+                          }
+                        </span>
+                      </label>
+                    )}
+                  </>
+                ) : (
+                  <label className="flex items-center gap-3 cursor-pointer mt-4">
+                    <div
+                      className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all"
+                      style={{
+                        borderColor: saveCustomActivity ? '#00FF94' : 'rgba(255,255,255,0.3)',
+                        backgroundColor: saveCustomActivity ? 'rgba(0,255,148,0.2)' : 'transparent'
+                      }}
+                      onClick={() => { setSaveCustomActivity(!saveCustomActivity); triggerHaptic(ImpactStyle.Light); }}
+                    >
+                      {saveCustomActivity && <span style={{ color: '#00FF94' }}>✓</span>}
+                    </div>
+                    <span className="text-sm text-gray-400">Save as option for future</span>
+                  </label>
+                )}
               </div>
             )}
 
@@ -10673,7 +10777,9 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
           }}
         >
           <div className="flex items-center gap-3">
-            <span className="text-2xl">{workout.icon || '💪'}</span>
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+              <ActivityIcon type={workout.type} customIcon={workout.customIcon} customEmoji={workout.customEmoji} sportEmoji={workout.sportEmoji} strengthType={workout.strengthType} size={22} />
+            </div>
             <div className="flex-1">
               <div className="text-white font-medium">
                 {workout.appleWorkoutName || workout.subtype || workout.type}
@@ -11416,10 +11522,29 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
 
         // Types that auto-categorize into strength/cardio/recovery goals
         const KNOWN_CATEGORY_TYPES = ['Strength Training', 'Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Yoga', 'Pilates', 'Cold Plunge', 'Sauna'];
-        const isKnownCategory = (w) => KNOWN_CATEGORY_TYPES.includes(w.type);
+        const isKnownCategory = (w) => {
+          if (KNOWN_CATEGORY_TYPES.includes(w.type)) return true;
+          // Check if user has saved a category preference for this Apple Health type
+          const pref = userData?.healthKitTypePreferences?.[(w.appleWorkoutName || w.type)];
+          return pref?.category ? true : false;
+        };
 
-        const categorizedPending = visiblePendingSync.filter(isKnownCategory);
-        const uncategorizedPending = visiblePendingSync.filter(w => !isKnownCategory(w));
+        // Enrich pending workouts with saved preferences (icon + category)
+        const enrichedPending = visiblePendingSync.map(w => {
+          const pref = userData?.healthKitTypePreferences?.[(w.appleWorkoutName || w.type)];
+          if (pref) {
+            return {
+              ...w,
+              customIcon: pref.icon || w.customIcon,
+              customActivityCategory: pref.category || w.customActivityCategory,
+              countToward: pref.category || w.countToward,
+            };
+          }
+          return w;
+        });
+
+        const categorizedPending = enrichedPending.filter(isKnownCategory);
+        const uncategorizedPending = enrichedPending.filter(w => !isKnownCategory(w));
 
         const renderPendingBanner = (workouts, isUncategorized) => {
           if (workouts.length === 0) return null;
@@ -19166,6 +19291,23 @@ export default function DaySevenApp() {
     }
   }, [userData?.customActivities, user]);
 
+  // Auto-save HealthKit type preferences to Firestore when they change
+  const hasLoadedHKPreferences = useRef(false);
+  useEffect(() => {
+    if (!user || !userData?.healthKitTypePreferences) return;
+    // Skip the initial load
+    if (!hasLoadedHKPreferences.current) {
+      hasLoadedHKPreferences.current = true;
+      return;
+    }
+    if (Object.keys(userData.healthKitTypePreferences).length > 0) {
+      const timeoutId = setTimeout(() => {
+        updateUserProfile(user.uid, { healthKitTypePreferences: userData.healthKitTypePreferences });
+      }, 500);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [userData?.healthKitTypePreferences, user]);
+
   // Helper to determine effective category of an activity
   const getActivityCategory = (activity) => {
     // If countToward is set (for Yoga/Pilates or custom activities), use that
@@ -20850,6 +20992,19 @@ export default function DaySevenApp() {
               customActivities: [...(prev.customActivities || []), customActivity]
             }));
           }
+        }}
+        onSaveHKPreference={(appleWorkoutName, pref) => {
+          // Save HealthKit type preference (icon and/or category) for future auto-detection
+          setUserData(prev => ({
+            ...prev,
+            healthKitTypePreferences: {
+              ...(prev.healthKitTypePreferences || {}),
+              [appleWorkoutName]: {
+                ...(prev.healthKitTypePreferences?.[appleWorkoutName] || {}),
+                ...pref
+              }
+            }
+          }));
         }}
         otherPendingWorkoutsCount={
           (typeof pendingActivity?.id === 'string' && pendingActivity.id.startsWith('hk_'))

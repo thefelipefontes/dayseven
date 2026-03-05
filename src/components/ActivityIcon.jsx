@@ -104,6 +104,7 @@ const CATEGORY_COLORS = {
   recovery: '#00D1FF',
   hybrid: '#C4B5FD',
   other: '#9CA3AF',
+  uncategorized: '#FFC800',
 };
 
 // ─── Activity type → icon + category mapping ───
@@ -292,6 +293,7 @@ const LEGACY_ICON_NAMES = {
   'Star': IconStar,
   'Timer': IconClock,
   'CirclePlus': IconCirclePlus,
+  'IconHeartbeat': IconHeartbeat,
 };
 Object.entries(LEGACY_ICON_NAMES).forEach(([name, Icon]) => {
   if (!ICON_NAME_MAP[name]) ICON_NAME_MAP[name] = Icon;
@@ -310,13 +312,17 @@ Object.entries(LEGACY_ICON_NAMES).forEach(([name, Icon]) => {
  * @param {string} [sportEmoji] - Sport emoji override (for "Sports" activities)
  */
 export default function ActivityIcon({ type, strengthType, size = 18, color, className = '', customEmoji, customIcon, sportEmoji }) {
-  // Custom icon name (new "Other" activities) — render as icon component
-  if (type === 'Other' && customIcon && ICON_NAME_MAP[customIcon]) {
+  // Custom icon for "Other" activities OR uncategorized Apple Health types (e.g., Tai Chi, Dance)
+  // For types without a built-in ICON_MAP entry, use customIcon if provided
+  const hasBuiltInIcon = ICON_MAP[type];
+  if (customIcon && ICON_NAME_MAP[customIcon] && (type === 'Other' || !hasBuiltInIcon)) {
     const CustomIconComponent = ICON_NAME_MAP[customIcon];
+    // Uncategorized Apple Health types default to yellow; manual "Other" stays grey
+    const defaultColor = (type === 'Other') ? CATEGORY_COLORS.other : CATEGORY_COLORS.uncategorized;
     return (
       <CustomIconComponent
         size={size}
-        color={color || CATEGORY_COLORS.other}
+        color={color || defaultColor}
         className={className}
         strokeWidth={2}
       />
@@ -344,11 +350,11 @@ export default function ActivityIcon({ type, strengthType, size = 18, color, cla
 
   const mapping = ICON_MAP[type];
   if (!mapping) {
-    // Fallback for unknown types
+    // Fallback for unknown/uncategorized types — heartbeat pulse icon in yellow
     return (
-      <IconCirclePlus
+      <IconHeartbeat
         size={size}
-        color={color || CATEGORY_COLORS.other}
+        color={color || CATEGORY_COLORS.uncategorized}
         className={className}
         strokeWidth={2}
       />

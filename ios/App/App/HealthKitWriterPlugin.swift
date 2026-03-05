@@ -2,6 +2,7 @@ import Foundation
 import Capacitor
 import HealthKit
 import WatchConnectivity
+import UserNotifications
 
 @objc(HealthKitWriterPlugin)
 public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
@@ -58,6 +59,9 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             name: .watchActivitySaved,
             object: nil
         )
+
+        // Start background workout detection for local push notifications
+        setupWorkoutBackgroundDelivery()
     }
 
     @objc private func handleWatchActivitySaved() {
@@ -92,6 +96,11 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var caloriesQuery: HKObserverQuery?
     private var observerStartDate: Date?
 
+    // Background workout detection
+    private var workoutObserverQuery: HKObserverQuery?
+    private static let lastWorkoutCheckKey = "dayseven_lastWorkoutNotificationCheck"
+    private static let workoutNotificationId = "dayseven-workout-detected"
+
     // Accumulated metrics during observation
     private var accumulatedCalories: Double = 0
     private var heartRateSamples: [Double] = []  // For calculating avg/max
@@ -113,6 +122,178 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     deinit {
         stopObserverQueries()
+        if let query = workoutObserverQuery {
+            healthStore.stop(query)
+            workoutObserverQuery = nil
+        }
+    }
+
+    // MARK: - Background Workout Detection
+
+    private func setupWorkoutBackgroundDelivery() {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            print("[HealthKitWriter] HealthKit not available, skipping background workout setup")
+            return
+        }
+
+        let workoutType = HKWorkoutType.workoutType()
+
+        // Create observer query — fires whenever any workout is saved to HealthKit
+        workoutObserverQuery = HKObserverQuery(
+            sampleType: workoutType,
+            predicate: nil
+        ) { [weak self] _, completionHandler, error in
+            guard let self = self else {
+                completionHandler()
+                return
+            }
+
+            if let error = error {
+                print("[HealthKitWriter] Workout observer error: \(error.localizedDescription)")
+                completionHandler()
+                return
+            }
+
+            print("[HealthKitWriter] Workout observer fired")
+            self.checkForNewWorkouts {
+                completionHandler()
+            }
+        }
+
+        if let query = workoutObserverQuery {
+            healthStore.execute(query)
+            print("[HealthKitWriter] Workout observer query started")
+        }
+
+        // Enable background delivery so iOS wakes the app when workouts are saved
+        healthStore.enableBackgroundDelivery(
+            for: workoutType,
+            frequency: .immediate
+        ) { success, error in
+            if let error = error {
+                print("[HealthKitWriter] Failed to enable background delivery: \(error.localizedDescription)")
+            } else {
+                print("[HealthKitWriter] Background delivery for workouts enabled: \(success)")
+            }
+        }
+    }
+
+    private func checkForNewWorkouts(completion: @escaping () -> Void) {
+        // Check app state on main thread — only notify if app is NOT in the foreground
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else {
+                completion()
+                return
+            }
+
+            let state = UIApplication.shared.applicationState
+            guard state != .active else {
+                print("[HealthKitWriter] App is active, skipping notification (in-app banner handles this)")
+                completion()
+                return
+            }
+
+            self.queryAndNotifyNewWorkouts(completion: completion)
+        }
+    }
+
+    private func queryAndNotifyNewWorkouts(completion: @escaping () -> Void) {
+        let workoutType = HKWorkoutType.workoutType()
+        let defaults = UserDefaults.standard
+
+        // Start date: last check time, or 7 days ago as fallback
+        let lastCheck: Date
+        if let stored = defaults.object(forKey: Self.lastWorkoutCheckKey) as? Date {
+            lastCheck = stored
+        } else {
+            lastCheck = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+        }
+
+        let predicate = HKQuery.predicateForSamples(
+            withStart: lastCheck,
+            end: nil,
+            options: .strictStartDate
+        )
+        let sortDescriptor = NSSortDescriptor(
+            key: HKSampleSortIdentifierEndDate,
+            ascending: false
+        )
+
+        let query = HKSampleQuery(
+            sampleType: workoutType,
+            predicate: predicate,
+            limit: 20,
+            sortDescriptors: [sortDescriptor]
+        ) { [weak self] _, samples, error in
+            guard let self = self else {
+                completion()
+                return
+            }
+
+            if let error = error {
+                print("[HealthKitWriter] Workout query error: \(error.localizedDescription)")
+                completion()
+                return
+            }
+
+            guard let workouts = samples as? [HKWorkout], !workouts.isEmpty else {
+                print("[HealthKitWriter] No new workouts found")
+                completion()
+                return
+            }
+
+            // Filter out workouts created by DaySeven (matches JS-side source filter)
+            let externalWorkouts = workouts.filter { workout in
+                let sourceName = workout.sourceRevision.source.name.lowercased()
+                let bundleId = workout.sourceRevision.source.bundleIdentifier.lowercased()
+                return !sourceName.contains("dayseven") && !bundleId.contains("dayseven")
+            }
+
+            guard !externalWorkouts.isEmpty else {
+                print("[HealthKitWriter] All new workouts are from DaySeven, skipping notification")
+                defaults.set(Date(), forKey: Self.lastWorkoutCheckKey)
+                completion()
+                return
+            }
+
+            print("[HealthKitWriter] Found \(externalWorkouts.count) new external workout(s)")
+
+            // Update timestamp so we don't re-notify about these
+            defaults.set(Date(), forKey: Self.lastWorkoutCheckKey)
+
+            // Schedule local push notification
+            self.scheduleWorkoutNotification(count: externalWorkouts.count)
+            completion()
+        }
+
+        healthStore.execute(query)
+    }
+
+    private func scheduleWorkoutNotification(count: Int) {
+        let content = UNMutableNotificationContent()
+        content.title = "New Workout Detected"
+        if count == 1 {
+            content.body = "A new workout was saved to Apple Health. Open DaySeven to import it."
+        } else {
+            content.body = "\(count) new workouts were saved to Apple Health. Open DaySeven to import them."
+        }
+        content.sound = .default
+
+        // Fixed identifier: new notifications replace previous ones (no stacking)
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        let request = UNNotificationRequest(
+            identifier: Self.workoutNotificationId,
+            content: content,
+            trigger: trigger
+        )
+
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("[HealthKitWriter] Failed to schedule notification: \(error.localizedDescription)")
+            } else {
+                print("[HealthKitWriter] Workout notification scheduled (count: \(count))")
+            }
+        }
     }
 
     // MARK: - Authorization

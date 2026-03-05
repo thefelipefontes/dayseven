@@ -10834,8 +10834,6 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     // Non-cardio walks (Walking activities that don't count toward goals)
     const nonCardioWalks = weekActivities.filter(a => a.type === 'Walking' && !a.countToward);
 
-    // Uncategorized activities (don't count toward any goal)
-    const uncategorized = weekActivities.filter(a => getCategory(a) === 'other' && a.type !== 'Walking');
 
     // Muscle group breakdown — count each focus area individually
     const muscleGroups = {};
@@ -10855,8 +10853,6 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
       recovery: { completed: recovery.length, goal: goals.recoveryPerWeek, sessions: recovery.map(r => r.type), breakdown: { coldPlunge: coldPlunge.length, sauna: sauna.length, yoga: yoga.length, pilates: pilates.length }, otherActivities: otherRecovery },
       // Non-cardio walks (don't count toward goals but should be displayed)
       walks: { count: nonCardioWalks.length, activities: nonCardioWalks },
-      // Uncategorized activities (need details to count toward goals)
-      uncategorized: { count: uncategorized.length, activities: uncategorized },
       // Use HealthKit calories if connected (even if 0), otherwise fall back to activity sum
       // This prevents double-counting when user logs a workout that's already tracked by HealthKit
       calories: {
@@ -11413,151 +11409,128 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         </div>
       )}
 
-      {/* Uncategorized Workouts Banner */}
-      {weekProgress.uncategorized?.count > 0 && (
-        <div className="mx-4 mb-4">
-          <button
-            onClick={() => {
-              const firstUncategorized = weekProgress.uncategorized.activities[0];
-              if (firstUncategorized) {
-                onEditActivity(firstUncategorized);
-              }
-            }}
-            className="w-full p-3 rounded-xl flex items-center gap-3 transition-all duration-150"
-            style={{ backgroundColor: 'rgba(255,200,0,0.1)', border: '1px solid rgba(255,200,0,0.3)' }}
-            onTouchStart={(e) => {
-              e.currentTarget.style.transform = 'scale(0.98)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,200,0,0.15)';
-            }}
-            onTouchEnd={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,200,0,0.1)';
-            }}
-            onMouseDown={(e) => {
-              e.currentTarget.style.transform = 'scale(0.98)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,200,0,0.15)';
-            }}
-            onMouseUp={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,200,0,0.1)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'rgba(255,200,0,0.1)';
-            }}
-          >
-            <span className="text-lg">⚠️</span>
-            <div className="flex-1 text-left">
-              <div className="text-xs font-semibold" style={{ color: '#FFC800' }}>
-                {weekProgress.uncategorized.count} uncategorized {weekProgress.uncategorized.count === 1 ? 'workout' : 'workouts'}
-              </div>
-              <div className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
-                Needs details to count towards goals
-              </div>
-            </div>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,200,0,0.6)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
-          </button>
-        </div>
-      )}
-
-      {/* Pending Workout Banner - Only shows when there's a detected workout not hidden */}
+      {/* Pending Workout Banners - Green for known types, Yellow for uncategorized */}
       {(() => {
         const visiblePendingSync = pendingSync.filter(w => !hiddenNotificationUUIDs.includes(w.healthKitUUID));
-        return visiblePendingSync.length > 0 && showWorkoutNotification && (
-        <div className="mx-4 mb-4">
-          <button
-            onClick={() => {
-              if (visiblePendingSync.length === 1) {
-                // Single workout - go directly to add activity
-                onAddActivity(visiblePendingSync[0]);
-              } else {
-                // Multiple workouts - show picker
-                setShowWorkoutPicker(true);
-              }
-            }}
-            className="w-full p-3 rounded-xl flex items-center gap-3 transition-all duration-150"
-            style={{ backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.3)' }}
-            onTouchStart={(e) => {
-              e.currentTarget.style.transform = 'scale(0.98)';
-              e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.15)';
-            }}
-            onTouchEnd={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
-            }}
-            onMouseDown={(e) => {
-              e.currentTarget.style.transform = 'scale(0.98)';
-              e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.15)';
-            }}
-            onMouseUp={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
-            }}
-          >
-            <span className="text-lg">📱</span>
-            <div className="flex-1 text-left">
-              <div className="text-xs font-semibold" style={{ color: '#00FF94' }}>
-                {visiblePendingSync.length === 1
-                  ? 'New workout detected'
-                  : `${visiblePendingSync.length} new workouts detected`}
-              </div>
-              <div className="text-[10px] text-gray-400">
-                {visiblePendingSync.length === 1
-                  ? `${visiblePendingSync[0].appleWorkoutName || visiblePendingSync[0].type} • ${visiblePendingSync[0].time} • ${visiblePendingSync[0].duration} min`
-                  : 'Tap to view and add'}
-              </div>
+        if (visiblePendingSync.length === 0 || !showWorkoutNotification) return null;
+
+        // Types that auto-categorize into strength/cardio/recovery goals
+        const KNOWN_CATEGORY_TYPES = ['Strength Training', 'Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Yoga', 'Pilates', 'Cold Plunge', 'Sauna'];
+        const isKnownCategory = (w) => KNOWN_CATEGORY_TYPES.includes(w.type);
+
+        const categorizedPending = visiblePendingSync.filter(isKnownCategory);
+        const uncategorizedPending = visiblePendingSync.filter(w => !isKnownCategory(w));
+
+        const renderPendingBanner = (workouts, isUncategorized) => {
+          if (workouts.length === 0) return null;
+          const rgb = isUncategorized ? '255,200,0' : '0,255,148';
+          const hex = isUncategorized ? '#FFC800' : '#00FF94';
+          const emoji = isUncategorized ? '⚠️' : '📱';
+          const title = workouts.length === 1
+            ? (isUncategorized ? `${workouts[0].appleWorkoutName || workouts[0].type} workout detected` : 'New workout detected')
+            : (isUncategorized
+              ? `${workouts.length} uncategorized workouts detected`
+              : `${workouts.length} new workouts detected`);
+          const subtitle = workouts.length === 1
+            ? (isUncategorized
+              ? `${workouts[0].time} • ${workouts[0].duration} min • Needs details to count towards goals`
+              : `${workouts[0].appleWorkoutName || workouts[0].subtype || workouts[0].type} • ${workouts[0].time} • ${workouts[0].duration} min`)
+            : (isUncategorized ? 'Needs details to count towards goals' : 'Tap to view and add');
+
+          return (
+            <div className="mx-4 mb-4" key={isUncategorized ? 'uncategorized' : 'categorized'}>
+              <button
+                onClick={() => {
+                  if (workouts.length === 1) {
+                    onAddActivity(workouts[0]);
+                  } else {
+                    setShowWorkoutPicker(true);
+                  }
+                }}
+                className="w-full p-3 rounded-xl flex items-center gap-3 transition-all duration-150"
+                style={{ backgroundColor: `rgba(${rgb},0.1)`, border: `1px solid rgba(${rgb},0.3)` }}
+                onTouchStart={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.98)';
+                  e.currentTarget.style.backgroundColor = `rgba(${rgb},0.15)`;
+                }}
+                onTouchEnd={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = `rgba(${rgb},0.1)`;
+                }}
+                onMouseDown={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.98)';
+                  e.currentTarget.style.backgroundColor = `rgba(${rgb},0.15)`;
+                }}
+                onMouseUp={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = `rgba(${rgb},0.1)`;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = `rgba(${rgb},0.1)`;
+                }}
+              >
+                <span className="text-lg">{emoji}</span>
+                <div className="flex-1 text-left">
+                  <div className="text-xs font-semibold" style={{ color: hex }}>
+                    {title}
+                  </div>
+                  <div className="text-[10px] text-gray-400">
+                    {subtitle}
+                  </div>
+                </div>
+                {workouts.length > 1 && (
+                  <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ backgroundColor: hex, color: '#000' }}>
+                    {workouts.length}
+                  </span>
+                )}
+                <span className="px-3 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: `rgba(${rgb},0.2)`, color: hex }}>
+                  {workouts.length === 1 ? 'Add' : 'View'}
+                </span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const uuidsToHide = workouts.map(w => w.healthKitUUID).filter(Boolean);
+                    setHiddenNotificationUUIDs(prev => [...new Set([...prev, ...uuidsToHide])]);
+                  }}
+                  className="w-6 h-6 rounded-full flex items-center justify-center transition-all duration-150"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+                  onTouchStart={(e) => {
+                    e.stopPropagation();
+                    e.currentTarget.style.transform = 'scale(0.85)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.2)';
+                  }}
+                  onTouchEnd={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                  }}
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    e.currentTarget.style.transform = 'scale(0.85)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.2)';
+                  }}
+                  onMouseUp={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                  }}
+                >
+                  <span className="text-gray-400 text-xs">✕</span>
+                </button>
+              </button>
             </div>
-            {visiblePendingSync.length > 1 && (
-              <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ backgroundColor: '#00FF94', color: '#000' }}>
-                {visiblePendingSync.length}
-              </span>
-            )}
-            <span className="px-3 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: 'rgba(0,255,148,0.2)', color: '#00FF94' }}>
-              {visiblePendingSync.length === 1 ? 'Add' : 'View'}
-            </span>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                // Hide notification for these specific workout UUIDs (but still available to link)
-                const uuidsToHide = visiblePendingSync.map(w => w.healthKitUUID).filter(Boolean);
-                setHiddenNotificationUUIDs(prev => [...new Set([...prev, ...uuidsToHide])]);
-              }}
-              className="w-6 h-6 rounded-full flex items-center justify-center transition-all duration-150"
-              style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
-              onTouchStart={(e) => {
-                e.stopPropagation();
-                e.currentTarget.style.transform = 'scale(0.85)';
-                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.2)';
-              }}
-              onTouchEnd={(e) => {
-                e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-              }}
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                e.currentTarget.style.transform = 'scale(0.85)';
-                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.2)';
-              }}
-              onMouseUp={(e) => {
-                e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-              }}
-            >
-              <span className="text-gray-400 text-xs">✕</span>
-            </button>
-          </button>
-        </div>
-      );
+          );
+        };
+
+        return (
+          <>
+            {renderPendingBanner(categorizedPending, false)}
+            {renderPendingBanner(uncategorizedPending, true)}
+          </>
+        );
       })()}
 
       {/* Workout Picker Modal - Shows when multiple workouts detected */}

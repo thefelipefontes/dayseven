@@ -54,7 +54,7 @@ const workoutTypeMap = {
   // Lowercase versions from @capgo/capacitor-health plugin
   'running': { type: 'Running', icon: '🏃' },
   'cycling': { type: 'Cycle', icon: '🚴' },
-  'swimming': { type: 'Other', subtype: 'Swimming', icon: '🏊' },
+  'swimming': { type: 'Swimming', icon: '🏊' },
   'yoga': { type: 'Yoga', icon: '🧘' },
   'pilates': { type: 'Pilates', icon: '🤸' },
   'traditionalStrengthTraining': { type: 'Strength Training', subtype: 'Weightlifting', strengthType: 'Weightlifting', icon: '🏋️' },
@@ -63,9 +63,9 @@ const workoutTypeMap = {
   'highIntensityIntervalTraining': { type: 'Strength Training', subtype: 'Circuit', strengthType: 'Circuit', icon: '🔥' },
   'crossTraining': { type: 'Strength Training', subtype: 'Circuit', strengthType: 'Circuit', icon: '💪' },
   'walking': { type: 'Walking', icon: '🚶' },
-  'hiking': { type: 'Other', subtype: 'Hiking', icon: '🥾' },
+  'hiking': { type: 'Hiking', icon: '🥾' },
   'elliptical': { type: 'Elliptical', icon: '🏃' },
-  'rowing': { type: 'Other', subtype: 'Rowing', icon: '🚣' },
+  'rowing': { type: 'Rowing', icon: '🚣' },
   'stairClimbing': { type: 'Stair Climbing', icon: '🪜' },
   'tennis': { type: 'Sports', subtype: 'Tennis', sportEmoji: '🎾', icon: '🎾' },
   'basketball': { type: 'Sports', subtype: 'Basketball', sportEmoji: '🏀', icon: '🏀' },
@@ -76,11 +76,11 @@ const workoutTypeMap = {
   'badminton': { type: 'Sports', subtype: 'Badminton', sportEmoji: '🏸', icon: '🏸' },
   'boxing': { type: 'Sports', subtype: 'Boxing', sportEmoji: '🥊', icon: '🥊' },
   'martialArts': { type: 'Sports', subtype: 'Martial Arts', sportEmoji: '🥋', icon: '🥋' },
-  'dance': { type: 'Other', subtype: 'Dance', icon: '💃' },
+  'dance': { type: 'Dance', icon: '💃' },
   'mindAndBody': { type: 'Yoga', icon: '🧘' },
   'coreTraining': { type: 'Strength Training', subtype: 'Core', strengthType: 'Circuit', icon: '💪' },
   'flexibility': { type: 'Yoga', icon: '🧘' },
-  'cooldown': { type: 'Other', subtype: 'Cooldown', icon: '🧊' },
+  'cooldown': { type: 'Cooldown', icon: '🧊' },
   'other': { type: 'Other', subtype: 'Workout (Uncategorized)', icon: '💪' },
 };
 
@@ -130,7 +130,7 @@ const hkRawTypeMap = {
   8: 'boxing',
   11: 'crossTraining',
   13: 'cycling',
-  14: 'dance',
+  14: 'dance',           // deprecated in iOS 14.5
   16: 'elliptical',
   20: 'functionalStrengthTraining',
   21: 'golf',
@@ -149,25 +149,66 @@ const hkRawTypeMap = {
   59: 'coreTraining',
   62: 'flexibility',
   63: 'highIntensityIntervalTraining',
+  65: 'martialArts',     // kickboxing → martial arts
   66: 'pilates',
+  77: 'dance',           // cardioDance (replaced dance in iOS 14.5)
+  78: 'dance',           // socialDance (replaced dance in iOS 14.5)
+  79: 'other',           // pickleball
   80: 'cooldown',
 };
 
+// Batch-resolve unknown workout types via native Swift bridge
+// Returns a map: { "77": { key: "dance", name: "Dance" }, ... }
+async function resolveUnknownTypes(workouts) {
+  const unknownRawValues = workouts
+    .filter(w => {
+      const wType = w.workoutActivityType || w.workoutType || '';
+      return wType === 'other' && w.workoutActivityTypeRaw !== undefined;
+    })
+    .map(w => w.workoutActivityTypeRaw);
+
+  if (unknownRawValues.length === 0) return {};
+
+  const unique = [...new Set(unknownRawValues)];
+  try {
+    const result = await HealthKitWriter.resolveWorkoutTypes({ rawValues: unique });
+    return result.types || {};
+  } catch (e) {
+    console.warn('[HealthKit] Native resolveWorkoutTypes failed, falling back to JS map:', e);
+    return {};
+  }
+}
+
 // Convert HealthKit workout to our activity format
-function convertWorkoutToActivity(workout) {
+// resolvedTypes: optional map from native bridge for unknown HK types
+function convertWorkoutToActivity(workout, resolvedTypes = {}) {
   let workoutType = workout.workoutActivityType || workout.workoutType || 'HKWorkoutActivityTypeOther';
 
   // If the plugin returned "other" but we have the raw HK type number,
-  // try to recover the actual workout type (plugin has limited enum coverage)
+  // try to recover the actual workout type
   if (workoutType === 'other' && workout.workoutActivityTypeRaw !== undefined) {
-    const recovered = hkRawTypeMap[workout.workoutActivityTypeRaw];
-    if (recovered) {
-      workoutType = recovered;
+    // 1. Try native-resolved type first (always up to date with iOS SDK)
+    const nativeResolved = resolvedTypes[String(workout.workoutActivityTypeRaw)];
+    if (nativeResolved && nativeResolved.key !== 'other') {
+      workoutType = nativeResolved.key;
+    }
+    // 2. Fall back to hardcoded JS map
+    if (workoutType === 'other') {
+      const recovered = hkRawTypeMap[workout.workoutActivityTypeRaw];
+      if (recovered) {
+        workoutType = recovered;
+      }
     }
   }
 
-  const mapped = workoutTypeMap[workoutType] || { type: 'Other', subtype: 'Workout (Uncategorized)', icon: '💪' };
-  const appleWorkoutName = appleWorkoutNameMap[workoutType] || 'Workout';
+  // Use native-resolved info for types not in our JS maps
+  const nativeInfo = resolvedTypes[String(workout.workoutActivityTypeRaw)];
+
+  // Map to our activity format — fall back to native name as the type for unknown activities
+  const mapped = workoutTypeMap[workoutType]
+    || (nativeInfo?.name ? { type: nativeInfo.name, icon: '💪' } : null)
+    || { type: 'Other', subtype: 'Workout (Uncategorized)', icon: '💪' };
+  const appleWorkoutName = appleWorkoutNameMap[workoutType] || nativeInfo?.name || 'Workout';
 
   // Parse date (use local time, not UTC, to avoid date shifting for evening workouts)
   const startDate = new Date(workout.startDate);
@@ -314,10 +355,13 @@ export async function fetchHealthKitWorkouts(days = 7) {
       return !sourceName.includes('dayseven');
     });
 
+    // Resolve unknown workout types via native bridge (single batch call)
+    const resolvedTypes = await resolveUnknownTypes(filteredWorkouts);
+
     // Convert workouts and fetch heart rate for each
     const activities = await Promise.all(
       filteredWorkouts.map(async (workout) => {
-        const activity = convertWorkoutToActivity(workout);
+        const activity = convertWorkoutToActivity(workout, resolvedTypes);
 
         // If no heart rate data from the workout object, query it separately
         // Use timeout to prevent blocking if HR permission dialog is pending
@@ -382,10 +426,13 @@ export async function fetchLinkableWorkouts(date, linkedWorkoutIds = []) {
         return !sourceName.includes('dayseven');
       });
 
+    // Resolve unknown workout types via native bridge (single batch call)
+    const resolvedTypes = await resolveUnknownTypes(filteredWorkouts);
+
     // Convert workouts and fetch heart rate for each
     const activities = await Promise.all(
       filteredWorkouts.map(async (workout) => {
-        const activity = convertWorkoutToActivity(workout);
+        const activity = convertWorkoutToActivity(workout, resolvedTypes);
 
         // If no heart rate data from the workout object, query it separately
         // Use timeout to prevent blocking if HR permission dialog is pending
@@ -600,7 +647,7 @@ export function getHealthKitActivityType(activity) {
     return sportMap[subtype] || 'other';
   }
 
-  // "Other" activities - use subtype
+  // "Other" activities - use subtype (legacy data with type === 'Other')
   if (type === 'Other') {
     const otherMap = {
       'Swimming': 'swimming',
@@ -623,6 +670,11 @@ export function getHealthKitActivityType(activity) {
     'Pilates': 'pilates',
     'Cold Plunge': 'Cold Plunge',
     'Sauna': 'Sauna',
+    'Swimming': 'swimming',
+    'Hiking': 'hiking',
+    'Rowing': 'rowing',
+    'Dance': 'dance',
+    'Cooldown': 'cooldown',
   };
 
   return typeMap[type] || 'other';

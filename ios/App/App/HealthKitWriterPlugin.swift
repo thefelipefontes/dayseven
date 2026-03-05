@@ -29,7 +29,9 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         // Legacy observer methods (keeping for backward compatibility)
         CAPPluginMethod(name: "startObservingMetrics", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopObservingMetrics", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "getLatestMetrics", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "getLatestMetrics", returnType: CAPPluginReturnPromise),
+        // Resolve raw HKWorkoutActivityType numbers to human-readable names
+        CAPPluginMethod(name: "resolveWorkoutTypes", returnType: CAPPluginReturnPromise)
     ]
 
     private let healthStore = HKHealthStore()
@@ -1116,6 +1118,139 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         session.transferUserInfo(userInfo)
         print("[HealthKitWriter] notifyWatchDataChanged: queued via transferUserInfo")
         call.resolve(["sent": true, "method": "transferUserInfo"])
+    }
+
+    // MARK: - Resolve Raw HKWorkoutActivityType Values
+
+    /// Resolves raw HKWorkoutActivityType integers to camelCase keys + human-readable names.
+    /// Uses the native Swift SDK so it's always up to date — no JS-side mapping needed.
+    @objc func resolveWorkoutTypes(_ call: CAPPluginCall) {
+        guard let rawValues = call.getArray("rawValues", Int.self) else {
+            call.reject("Missing rawValues array")
+            return
+        }
+
+        var results: [String: [String: String]] = [:]
+        for raw in rawValues {
+            guard let activityType = HKWorkoutActivityType(rawValue: UInt(raw)) else {
+                results[String(raw)] = ["key": "other", "name": "Workout"]
+                continue
+            }
+            let (key, name) = workoutTypeInfo(activityType)
+            results[String(raw)] = ["key": key, "name": name]
+        }
+
+        call.resolve(["types": results])
+    }
+
+    /// Maps an HKWorkoutActivityType to a (camelCase key, human-readable name) pair.
+    private func workoutTypeInfo(_ type: HKWorkoutActivityType) -> (String, String) {
+        switch type {
+        // Cardio
+        case .running:                          return ("running", "Running")
+        case .cycling:                          return ("cycling", "Cycling")
+        case .swimming:                         return ("swimming", "Swimming")
+        case .walking:                          return ("walking", "Walking")
+        case .hiking:                           return ("hiking", "Hiking")
+        case .elliptical:                       return ("elliptical", "Elliptical")
+        case .rowing:                           return ("rowing", "Rowing")
+        case .stairClimbing:                    return ("stairClimbing", "Stair Climbing")
+        case .jumpRope:                         return ("jumpRope", "Jump Rope")
+        case .stairs:                           return ("stairs", "Stairs")
+        case .stepTraining:                     return ("stepTraining", "Step Training")
+        case .handCycling:                      return ("handCycling", "Hand Cycling")
+
+        // Strength
+        case .traditionalStrengthTraining:      return ("traditionalStrengthTraining", "Strength Training")
+        case .functionalStrengthTraining:       return ("functionalStrengthTraining", "Functional Training")
+        case .highIntensityIntervalTraining:    return ("highIntensityIntervalTraining", "HIIT")
+        case .crossTraining:                    return ("crossTraining", "Cross Training")
+        case .coreTraining:                     return ("coreTraining", "Core Training")
+
+        // Mind & Body
+        case .yoga:                             return ("yoga", "Yoga")
+        case .pilates:                          return ("pilates", "Pilates")
+        case .flexibility:                      return ("flexibility", "Flexibility")
+        case .mindAndBody:                      return ("mindAndBody", "Mind & Body")
+        case .taiChi:                           return ("taiChi", "Tai Chi")
+        case .barre:                            return ("barre", "Barre")
+
+        // Dance
+        case .dance:                            return ("dance", "Dance")
+        case .cardioDance:                      return ("dance", "Dance")
+        case .socialDance:                      return ("dance", "Dance")
+
+        // Sports
+        case .basketball:                       return ("basketball", "Basketball")
+        case .soccer:                           return ("soccer", "Soccer")
+        case .americanFootball:                 return ("americanFootball", "Football")
+        case .tennis:                           return ("tennis", "Tennis")
+        case .golf:                             return ("golf", "Golf")
+        case .baseball:                         return ("baseball", "Baseball")
+        case .badminton:                        return ("badminton", "Badminton")
+        case .volleyball:                       return ("volleyball", "Volleyball")
+        case .hockey:                           return ("hockey", "Hockey")
+        case .lacrosse:                         return ("lacrosse", "Lacrosse")
+        case .rugby:                            return ("rugby", "Rugby")
+        case .softball:                         return ("softball", "Softball")
+        case .squash:                           return ("squash", "Squash")
+        case .tableTennis:                      return ("tableTennis", "Table Tennis")
+        case .racquetball:                      return ("racquetball", "Racquetball")
+        case .handball:                         return ("handball", "Handball")
+        case .cricket:                          return ("cricket", "Cricket")
+        case .boxing:                           return ("boxing", "Boxing")
+        case .martialArts:                      return ("martialArts", "Martial Arts")
+        case .kickboxing:                       return ("kickboxing", "Kickboxing")
+        case .wrestling:                        return ("wrestling", "Wrestling")
+        case .fencing:                          return ("fencing", "Fencing")
+        case .archery:                          return ("archery", "Archery")
+        case .discSports:                       return ("discSports", "Disc Sports")
+        case .pickleball:                       return ("pickleball", "Pickleball")
+
+        // Water Sports
+        case .surfingSports:                    return ("surfing", "Surfing")
+        case .waterFitness:                     return ("waterFitness", "Water Fitness")
+        case .waterPolo:                        return ("waterPolo", "Water Polo")
+        case .waterSports:                      return ("waterSports", "Water Sports")
+        case .sailing:                          return ("sailing", "Sailing")
+        case .paddleSports:                     return ("paddleSports", "Paddle Sports")
+        case .fishing:                          return ("fishing", "Fishing")
+
+        // Winter Sports
+        case .snowSports:                       return ("snowSports", "Snow Sports")
+        case .crossCountrySkiing:               return ("crossCountrySkiing", "Cross Country Skiing")
+        case .downhillSkiing:                   return ("downhillSkiing", "Downhill Skiing")
+        case .snowboarding:                     return ("snowboarding", "Snowboarding")
+        case .skatingSports:                    return ("skating", "Skating")
+
+        // Other
+        case .cooldown:                         return ("cooldown", "Cooldown")
+        case .preparationAndRecovery:           return ("preparationAndRecovery", "Recovery")
+        case .fitnessGaming:                    return ("fitnessGaming", "Fitness Gaming")
+        case .play:                             return ("play", "Play")
+        case .equestrianSports:                 return ("equestrianSports", "Equestrian")
+        case .hunting:                          return ("hunting", "Hunting")
+        case .gymnastics:                       return ("gymnastics", "Gymnastics")
+        case .trackAndField:                    return ("trackAndField", "Track & Field")
+        case .australianFootball:               return ("australianFootball", "Australian Football")
+        case .bowling:                          return ("bowling", "Bowling")
+        case .climbing:                         return ("climbing", "Climbing")
+        case .curling:                          return ("curling", "Curling")
+        case .mixedCardio:                      return ("mixedCardio", "Mixed Cardio")
+        case .wheelchairWalkPace:               return ("wheelchairWalk", "Wheelchair Walk")
+        case .wheelchairRunPace:                return ("wheelchairRun", "Wheelchair Run")
+        case .swimBikeRun:                      return ("swimBikeRun", "Triathlon")
+        case .transition:                       return ("transition", "Transition")
+        case .underwaterDiving:                 return ("underwaterDiving", "Underwater Diving")
+
+        // Deprecated types (still in SDK)
+        case .mixedMetabolicCardioTraining:     return ("mixedCardio", "Mixed Cardio")
+        case .danceInspiredTraining:            return ("dance", "Dance")
+        case .other:                            return ("other", "Workout")
+
+        // Catch-all for any future types Apple adds
+        @unknown default:                       return ("other", "Workout")
+        }
     }
 
     // MARK: - Activity Type Mapping

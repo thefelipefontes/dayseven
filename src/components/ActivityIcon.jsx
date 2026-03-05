@@ -58,6 +58,8 @@ import {
   IconStar,
   IconClock,
   IconJumpRope,
+  // Uncategorized activity types (from Apple Health)
+  IconMusic,
 } from '@tabler/icons-react';
 
 // ─── Custom SVG Icons (no Tabler equivalent) ───
@@ -127,6 +129,12 @@ const ICON_MAP = {
   // Recovery
   'Cold Plunge':         { Icon: IconSnowflake, category: 'recovery' },
   'Sauna':               { Icon: IconFlame, category: 'recovery' },
+  // Uncategorized (from Apple Health — user needs to assign a goal category)
+  'Swimming':            { Icon: IconSwimming, category: 'other' },
+  'Hiking':              { Icon: IconMountain, category: 'other' },
+  'Dance':               { Icon: IconMusic, category: 'other' },
+  'Rowing':              { Icon: IconKayak, category: 'other' },
+  'Cooldown':            { Icon: IconSnowflake, category: 'other' },
   // Other
   'Other':               { Icon: IconCirclePlus, category: 'other' },
 };

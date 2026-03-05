@@ -3165,6 +3165,36 @@ const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!", type
       confettiColors: ['#00FF94', '#00D1FF', '#FF9500', '#BF5AF2', '#FFD700', '#FF453A'],
       subtext: 'Keep pushing!'
     },
+    'strength': {
+      primary: '#00FF94',
+      bgGradient: 'radial-gradient(circle at center, rgba(0,255,148,0.45) 0%, rgba(0,255,148,0.15) 50%, transparent 80%)',
+      bgOverlay: 'rgba(0,0,0,0.55)',
+      ringColor1: 'rgba(0,255,148,0.5)',
+      ringColor2: 'rgba(0,255,148,0.3)',
+      emoji: '💪',
+      confettiColors: ['#00FF94', '#00D1FF', '#FF9500', '#BF5AF2', '#FFD700', '#FF453A'],
+      subtext: 'Keep pushing!'
+    },
+    'cardio': {
+      primary: '#FF9500',
+      bgGradient: 'radial-gradient(circle at center, rgba(255,149,0,0.45) 0%, rgba(255,149,0,0.15) 50%, transparent 80%)',
+      bgOverlay: 'rgba(0,0,0,0.55)',
+      ringColor1: 'rgba(255,149,0,0.5)',
+      ringColor2: 'rgba(255,149,0,0.3)',
+      emoji: '❤️‍🔥',
+      confettiColors: ['#FF9500', '#FFD700', '#FF6B00', '#FFAB00', '#FFC107', '#FF453A'],
+      subtext: 'Crushing it!'
+    },
+    'recovery': {
+      primary: '#00D1FF',
+      bgGradient: 'radial-gradient(circle at center, rgba(0,209,255,0.45) 0%, rgba(0,209,255,0.15) 50%, transparent 80%)',
+      bgOverlay: 'rgba(0,0,0,0.55)',
+      ringColor1: 'rgba(0,209,255,0.5)',
+      ringColor2: 'rgba(0,209,255,0.3)',
+      emoji: '🧊',
+      confettiColors: ['#00D1FF', '#00FF94', '#87CEEB', '#4FC3F7', '#29B6F6', '#03A9F4'],
+      subtext: 'Stay consistent!'
+    },
     'daily-steps': {
       primary: '#00D1FF',
       bgGradient: 'radial-gradient(circle at center, rgba(0,209,255,0.2) 0%, transparent 70%)',
@@ -3220,6 +3250,10 @@ const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!", type
         transition: 'opacity 0.5s ease-out, transform 0.5s ease-out'
       }}
     >
+      {/* Dark overlay for better text contrast on category celebrations */}
+      {config.bgOverlay && (
+        <div className="absolute inset-0" style={{ backgroundColor: config.bgOverlay }} />
+      )}
       {/* Background pulse */}
       <div
         className="absolute inset-0 animate-pulse-bg"
@@ -19489,12 +19523,19 @@ export default function DaySevenApp() {
     const cwCardio = cwActivities.filter(a => getActivityCategory(a) === 'cardio').length;
     const cwRecovery = cwActivities.filter(a => getActivityCategory(a) === 'recovery').length;
 
-    if (liftsAlive && (currentWeekShielded || cwLifts >= goals.liftsPerWeek)) streaks.lifts++;
-    if (cardioAlive && (currentWeekShielded || cwCardio >= goals.cardioPerWeek)) streaks.cardio++;
-    if (recoveryAlive && (currentWeekShielded || cwRecovery >= goals.recoveryPerWeek)) streaks.recovery++;
-    if (liftsAlive && cardioAlive && recoveryAlive &&
-        (currentWeekShielded || (cwLifts >= goals.liftsPerWeek && cwCardio >= goals.cardioPerWeek && cwRecovery >= goals.recoveryPerWeek))) {
-      streaks.master++;
+    // Current week counts independently — if goal is met, it's at least a 1-week streak
+    if (currentWeekShielded || cwLifts >= goals.liftsPerWeek) {
+      streaks.lifts = liftsAlive ? streaks.lifts + 1 : 1;
+    }
+    if (currentWeekShielded || cwCardio >= goals.cardioPerWeek) {
+      streaks.cardio = cardioAlive ? streaks.cardio + 1 : 1;
+    }
+    if (currentWeekShielded || cwRecovery >= goals.recoveryPerWeek) {
+      streaks.recovery = recoveryAlive ? streaks.recovery + 1 : 1;
+    }
+    const allCurrentMet = currentWeekShielded || (cwLifts >= goals.liftsPerWeek && cwCardio >= goals.cardioPerWeek && cwRecovery >= goals.recoveryPerWeek);
+    if (allCurrentMet) {
+      streaks.master = (liftsAlive && cardioAlive && recoveryAlive) ? streaks.master + 1 : 1;
     }
 
     return streaks;
@@ -19636,7 +19677,8 @@ export default function DaySevenApp() {
 
     // Trigger celebration for completing a goal
     const goals = userData.goals;
-    const prevProgress = weeklyProgress;
+    // Calculate prev progress directly from activities state (not weeklyProgress which can be stale)
+    const prevProgress = calculateWeeklyProgress(activities);
     // Use ref to get latest records (avoids stale closure issues)
     const records = userDataRef.current.personalRecords;
     
@@ -19905,7 +19947,7 @@ export default function DaySevenApp() {
         } else {
           setCelebrationMessage('Strength goal complete! 💪');
         }
-        setCelebrationType('weekly');
+        setCelebrationType('strength');
         triggerHaptic(ImpactStyle.Heavy);
         setShowCelebration(true);
       }
@@ -19929,7 +19971,7 @@ export default function DaySevenApp() {
         } else {
           setCelebrationMessage('Cardio goal complete! ❤️‍🔥');
         }
-        setCelebrationType('weekly');
+        setCelebrationType('cardio');
         triggerHaptic(ImpactStyle.Heavy);
         setShowCelebration(true);
       }
@@ -19953,7 +19995,7 @@ export default function DaySevenApp() {
         } else {
           setCelebrationMessage('Recovery goal complete! 🧊');
         }
-        setCelebrationType('weekly');
+        setCelebrationType('recovery');
         triggerHaptic(ImpactStyle.Heavy);
         setShowCelebration(true);
       }
@@ -20019,6 +20061,28 @@ export default function DaySevenApp() {
           }).catch(() => {});
           savePersonalRecords(user.uid, latestData.personalRecords).catch(() => {});
         }, 100);
+      }
+    }
+
+    // Safety net: recalculate streaks from actual activity history to ensure correctness
+    // (handles edge cases like delete-then-re-add where state might be stale)
+    const recalculated = recalculateStreaksFromHistory(updatedActivities, goals);
+    if (recalculated) {
+      setUserData(prev => ({
+        ...prev,
+        streaks: {
+          ...prev.streaks,
+          ...recalculated
+        }
+      }));
+      // Persist recalculated streaks
+      if (user?.uid) {
+        setTimeout(() => {
+          const latestData = userDataRef.current;
+          updateUserProfile(user.uid, {
+            streaks: latestData.streaks
+          }).catch(() => {});
+        }, 200);
       }
     }
   };

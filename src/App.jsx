@@ -1322,7 +1322,7 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
         />
 
         {/* Activity icon */}
-        <span className="text-base flex items-center">{customEmoji || <ActivityIcon type={workout.type} strengthType={workout.strengthType} customIcon={workout.customIcon} size={16} />}</span>
+        <span className="text-base flex items-center">{customEmoji || <ActivityIcon type={workout.type} subtype={workout.subtype} strengthType={workout.strengthType} customIcon={workout.customIcon} sportEmoji={workout.sportEmoji} size={16} />}</span>
 
         {/* Timer - frozen when finishing */}
         <span className="font-mono font-semibold text-sm" style={{ color: isFinishing ? '#FFB400' : '#00FF94' }}>
@@ -1378,7 +1378,7 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
             className="w-11 h-11 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
             style={{ backgroundColor: 'rgba(0,255,148,0.15)' }}
           >
-            {customEmoji || <ActivityIcon type={workout.type} strengthType={workout.strengthType} customIcon={workout.customIcon} size={22} />}
+            {customEmoji || <ActivityIcon type={workout.type} subtype={workout.subtype} strengthType={workout.strengthType} customIcon={workout.customIcon} sportEmoji={workout.sportEmoji} size={22} />}
           </div>
 
           {/* Workout info */}
@@ -1494,6 +1494,14 @@ const getDefaultCountToward = (type, sub) => {
   if (type === 'Sports') return 'cardio';
   if (type === 'Stair Climbing') return 'cardio';
   if (type === 'Elliptical') return 'cardio';
+  // Team / competitive sports
+  if (['Basketball', 'Soccer', 'Football', 'Tennis', 'Golf', 'Badminton', 'Boxing', 'Martial Arts',
+    'Baseball', 'Volleyball', 'Hockey', 'Lacrosse', 'Rugby', 'Softball', 'Squash', 'Table Tennis',
+    'Racquetball', 'Handball', 'Pickleball', 'Cricket', 'Australian Football', 'Wrestling',
+    'Fencing', 'Curling', 'Bowling'].includes(type)) return 'cardio';
+  // Individual cardio sports
+  if (['Track & Field', 'Jump Rope', 'Downhill Skiing', 'Cross Country Skiing', 'Snowboarding',
+    'Skating', 'Surfing', 'Water Polo', 'Paddle Sports'].includes(type)) return 'cardio';
   if (type === 'Yoga') {
     if (['Power', 'Hot', 'Vinyasa'].includes(sub)) return 'cardio';
     return 'recovery';
@@ -1989,7 +1997,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
               className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
               style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}
             >
-              {finishCustomEmoji || <ActivityIcon type={workout.type} strengthType={finishStrengthType || workout.strengthType} size={22} />}
+              {finishCustomEmoji || <ActivityIcon type={workout.type} subtype={workout.subtype} strengthType={finishStrengthType || workout.strengthType} sportEmoji={workout.sportEmoji} size={22} />}
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold text-white truncate">
@@ -2081,7 +2089,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                         color: isSelected ? '#00FF94' : 'white'
                       }}
                     >
-                      {stIcon && <span>{stIcon}</span>}
+                      {workout.type === 'Sports' ? <ActivityIcon type="Sports" subtype={stName} size={14} /> : stIcon ? <span>{stIcon}</span> : null}
                       {stName}
                     </button>
                   );
@@ -2104,7 +2112,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                     color: finishCountToward === 'lifting' ? '#00FF94' : 'white'
                   }}
                 >
-                  <span>🏋️</span> Strength
+                  <span>💪</span> Strength
                 </button>
                 <button
                   onClick={() => { setFinishCountToward('cardio'); triggerHaptic(ImpactStyle.Light); }}
@@ -2115,7 +2123,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                     color: finishCountToward === 'cardio' ? '#FF9500' : 'white'
                   }}
                 >
-                  <span>🏃</span> Cardio
+                  <span>❤️‍🔥</span> Cardio
                 </button>
                 <button
                   onClick={() => { setFinishCountToward('recovery'); triggerHaptic(ImpactStyle.Light); }}
@@ -2215,8 +2223,8 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(255,59,48,0.2)' }}>
-                            <span className="text-sm">{w.icon || '🏃'}</span>
+                          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                            <ActivityIcon type={w.type} subtype={w.subtype} size={18} />
                           </div>
                           <div>
                             <div className="text-sm font-medium text-white">{w.type || 'Workout'}</div>
@@ -4474,7 +4482,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange }) => {
                     <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{records.mostRunsWeek || 0}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}>🏋️ Most Lifts/Week</span>
+                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}>💪 Most Lifts/Week</span>
                     <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{records.mostLiftsWeek || 0}</span>
                   </div>
                   <div className="flex justify-between items-center">
@@ -4604,7 +4612,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange }) => {
                         <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`} style={{ lineHeight: 1 }}>{weeklyLifts}/{liftsGoal}</span>
                       </div>
                     </div>
-                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><span style={{ fontSize: '0.9em' }}>🏋️</span><span>Strength</span></div>
+                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><span style={{ fontSize: '0.9em' }}>💪</span><span>Strength</span></div>
                   </div>
                   <div className="flex flex-col items-center text-center">
                     <div className="relative">
@@ -4617,7 +4625,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange }) => {
                         <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`} style={{ lineHeight: 1 }}>{weeklyCardio}/{cardioGoal}</span>
                       </div>
                     </div>
-                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><span style={{ fontSize: '0.9em' }}>🏃</span><span>Cardio</span></div>
+                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><span style={{ fontSize: '0.9em' }}>❤️‍🔥</span><span>Cardio</span></div>
                   </div>
                   <div className="flex flex-col items-center text-center">
                     <div className="relative">
@@ -4645,11 +4653,11 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange }) => {
                   <div className="w-full" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around' }}>
                     <div style={{ textAlign: 'center' }}>
                       <div className={`${isPostFormat ? 'text-[15px]' : 'text-base'} font-bold`} style={{ color: '#00FF94', lineHeight: '1.2' }}>{stats?.strengthStreak || 0}</div>
-                      <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-500 mt-0.5`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><span style={{ fontSize: '0.9em' }}>🏋️</span><span>weeks</span></div>
+                      <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-500 mt-0.5`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><span style={{ fontSize: '0.9em' }}>💪</span><span>weeks</span></div>
                     </div>
                     <div style={{ textAlign: 'center' }}>
                       <div className={`${isPostFormat ? 'text-[15px]' : 'text-base'} font-bold`} style={{ color: '#FF9500', lineHeight: '1.2' }}>{stats?.cardioStreak || 0}</div>
-                      <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-500 mt-0.5`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><span style={{ fontSize: '0.9em' }}>🏃</span><span>weeks</span></div>
+                      <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-500 mt-0.5`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><span style={{ fontSize: '0.9em' }}>❤️‍🔥</span><span>weeks</span></div>
                     </div>
                     <div style={{ textAlign: 'center' }}>
                       <div className={`${isPostFormat ? 'text-[15px]' : 'text-base'} font-bold`} style={{ color: '#00D1FF', lineHeight: '1.2' }}>{stats?.recoveryStreak || 0}</div>
@@ -4822,11 +4830,11 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange }) => {
                 <div className="flex justify-around">
                   <div className="text-center">
                     <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#00FF94' }}>{stats?.strengthStreak || 0}</div>
-                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>🏋️ weeks</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>💪 weeks</div>
                   </div>
                   <div className="text-center">
                     <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#FF9500' }}>{stats?.cardioStreak || 0}</div>
-                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>🏃 weeks</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>❤️‍🔥 weeks</div>
                   </div>
                   <div className="text-center">
                     <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#00D1FF' }}>{stats?.recoveryStreak || 0}</div>
@@ -4844,11 +4852,11 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange }) => {
                 <div className="flex justify-around">
                   <div className="text-center">
                     <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#00FF94' }}>{stats?.longestStrengthStreak || 0}</div>
-                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>🏋️ weeks</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>💪 weeks</div>
                   </div>
                   <div className="text-center">
                     <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#FF9500' }}>{stats?.longestCardioStreak || 0}</div>
-                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>🏃 weeks</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>❤️‍🔥 weeks</div>
                   </div>
                   <div className="text-center">
                     <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#00D1FF' }}>{stats?.longestRecoveryStreak || 0}</div>
@@ -4915,7 +4923,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange }) => {
                     </div>
                     <div className="text-center">
                       <div className={`${isPostFormat ? 'text-lg' : 'text-xl'} font-black`} style={{ color: '#FF9500' }}>{stats?.monthlyCardio || 0}</div>
-                      <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>🏃 cardio</div>
+                      <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>❤️‍🔥 cardio</div>
                     </div>
                     <div className="text-center">
                       <div className={`${isPostFormat ? 'text-lg' : 'text-xl'} font-black`} style={{ color: '#00D1FF' }}>{stats?.monthlyRecovery || 0}</div>
@@ -5893,11 +5901,11 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
         <div className="grid grid-cols-3 gap-2 mb-4">
           <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
             <div className="text-2xl font-black" style={{ color: '#00FF94' }}>{weekData?.lifts || 0}</div>
-            <div className="text-[10px] text-gray-400">🏋️ Strength</div>
+            <div className="text-[10px] text-gray-400">💪 Strength</div>
           </div>
           <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
             <div className="text-2xl font-black" style={{ color: '#FF9500' }}>{weekData?.cardio || 0}</div>
-            <div className="text-[10px] text-gray-400">🏃 Cardio</div>
+            <div className="text-[10px] text-gray-400">❤️‍🔥 Cardio</div>
           </div>
           <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
             <div className="text-2xl font-black" style={{ color: '#00D1FF' }}>{weekData?.recovery || 0}</div>
@@ -5956,7 +5964,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
               border: liftsGoalMet ? '1px solid rgba(0,255,148,0.2)' : 'none'
             }}>
               <div>
-                <span className="text-xs">🏋️ Strength</span>
+                <span className="text-xs">💪 Strength</span>
                 <div className="text-[10px] text-gray-500">{goals.liftsPerWeek}+ per week</div>
               </div>
               <span className="text-xs font-bold" style={{ color: liftsGoalMet ? '#00FF94' : '#FF453A' }}>
@@ -5968,7 +5976,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
               border: cardioGoalMet ? '1px solid rgba(255,149,0,0.2)' : 'none'
             }}>
               <div>
-                <span className="text-xs">🏃 Cardio</span>
+                <span className="text-xs">❤️‍🔥 Cardio</span>
                 <div className="text-[10px] text-gray-500">{goals.cardioPerWeek}+ per week</div>
               </div>
               <span className="text-xs font-bold" style={{ color: cardioGoalMet ? '#FF9500' : '#FF453A' }}>
@@ -6017,7 +6025,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
           <div className="mb-4">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-gray-300">🏋️ Strength ({lifts.length})</span>
+                <span className="text-xs font-medium text-gray-300">💪 Strength ({lifts.length})</span>
               </div>
               {weekData?.liftBreakdown && (
                 <div className="flex gap-1">
@@ -6065,7 +6073,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
           <div className="mb-4">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-gray-300">🏃 Cardio ({cardioActivities.length})</span>
+                <span className="text-xs font-medium text-gray-300">❤️‍🔥 Cardio ({cardioActivities.length})</span>
               </div>
               {weekData?.cardioBreakdown && (
                 <div className="flex gap-1">
@@ -6413,11 +6421,11 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
           <div className="grid grid-cols-3 gap-2 mb-4">
             <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
               <div className="text-2xl font-black" style={{ color: '#00FF94' }}>{liftsCount}</div>
-              <div className="text-[10px] text-gray-400">🏋️ Strength</div>
+              <div className="text-[10px] text-gray-400">💪 Strength</div>
             </div>
             <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
               <div className="text-2xl font-black" style={{ color: '#FF9500' }}>{cardioCount}</div>
-              <div className="text-[10px] text-gray-400">🏃 Cardio</div>
+              <div className="text-[10px] text-gray-400">❤️‍🔥 Cardio</div>
             </div>
             <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
               <div className="text-2xl font-black" style={{ color: '#00D1FF' }}>{recoveryCount}</div>
@@ -6438,7 +6446,7 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
               </div>
               <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                 <div className="text-lg font-black">{totalMiles.toFixed(1)} mi</div>
-                <div className="text-[10px] text-gray-400">🏃 Distance</div>
+                <div className="text-[10px] text-gray-400">❤️‍🔥 Distance</div>
               </div>
               <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                 <div className="text-lg font-black">{(totalSteps / 1000).toFixed(0)}k</div>
@@ -6537,7 +6545,7 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
                 border: weeksData.lift === weeksData.total && weeksData.total > 0 ? '1px solid rgba(0,255,148,0.2)' : 'none'
               }}>
                 <div>
-                  <span className="text-xs">🏋️ Strength</span>
+                  <span className="text-xs">💪 Strength</span>
                   <div className="text-[10px] text-gray-500">{goals.liftsPerWeek}+ per week</div>
                 </div>
                 <span className="text-sm font-bold" style={{ color: '#00FF94' }}>
@@ -6549,7 +6557,7 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
                 border: weeksData.cardio === weeksData.total && weeksData.total > 0 ? '1px solid rgba(255,149,0,0.2)' : 'none'
               }}>
                 <div>
-                  <span className="text-xs">🏃 Cardio</span>
+                  <span className="text-xs">❤️‍🔥 Cardio</span>
                   <div className="text-[10px] text-gray-500">{goals.cardioPerWeek}+ per week</div>
                 </div>
                 <span className="text-sm font-bold" style={{ color: '#FF9500' }}>
@@ -6769,7 +6777,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
               className="w-14 h-14 rounded-2xl flex items-center justify-center"
               style={{ backgroundColor: `${color}20` }}
             >
-              <ActivityIcon type={activity.type} size={28} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} />
+              <ActivityIcon type={activity.type} subtype={activity.subtype} size={28} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} />
             </div>
             <div className="flex-1">
               <div className="text-xl font-bold">{activity.type}</div>
@@ -6780,7 +6788,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
               )}
               {activity.type === 'Walking' && (
                 <div className="text-xs mt-0.5" style={{ color: activity.countToward === 'cardio' ? '#FF9500' : activity.countToward === 'warmup' ? '#FFD60A' : '#808080' }}>
-                  {activity.countToward === 'cardio' ? '🏃 Counts as Cardio' : activity.countToward === 'warmup' ? '🔥 Warm Up' : '🚶 Casual Walk'}
+                  {activity.countToward === 'cardio' ? '❤️‍🔥 Counts as Cardio' : activity.countToward === 'warmup' ? '🔥 Warm Up' : '🚶 Casual Walk'}
                 </div>
               )}
               {(activity.avgHr || activity.maxHr) && (
@@ -8777,7 +8785,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   // Standard types that have built-in category mapping and icon
   const STANDARD_ACTIVITY_TYPES = ['Strength Training', 'Weightlifting', 'Bodyweight', 'Circuit',
     'Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Walking',
-    'Yoga', 'Pilates', 'Cold Plunge', 'Sauna', 'Other'];
+    'Yoga', 'Pilates', 'Cold Plunge', 'Sauna', 'Other',
+    'Track & Field', 'Jump Rope', 'Downhill Skiing', 'Cross Country Skiing', 'Snowboarding', 'Skating', 'Surfing', 'Water Polo', 'Paddle Sports',
+    'Basketball', 'Soccer', 'Football', 'Tennis', 'Golf', 'Badminton', 'Boxing', 'Martial Arts',
+    'Baseball', 'Volleyball', 'Hockey', 'Lacrosse', 'Rugby', 'Softball', 'Squash', 'Table Tennis',
+    'Racquetball', 'Handball', 'Pickleball', 'Cricket', 'Australian Football', 'Wrestling',
+    'Fencing', 'Curling', 'Bowling'];
   const isUncategorizedHKType = activityType && !STANDARD_ACTIVITY_TYPES.includes(activityType);
   const showCustomActivityInput = activityType === 'Other' || isUncategorizedHKType;
   const showCountToward = activityType && activityType !== 'Other' && !isUncategorizedHKType;
@@ -9056,6 +9069,10 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               // Flattened strength: save as 'Strength Training' with strengthType for backwards compat
               finalType = 'Strength Training';
               finalSubtype = focusAreas.length > 0 ? `${activityType} - ${focusAreas.join(', ')}` : activityType;
+            } else if (activityType === 'Sports' && subtype && subtype !== 'Other') {
+              // Named sport: save as its own type (e.g., 'Basketball' instead of 'Sports')
+              finalType = subtype;
+              finalSubtype = '';
             } else if (showCustomSportInput) {
               finalSubtype = customSport;
             } else if (showCustomActivityInput && customActivityName) {
@@ -9400,7 +9417,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                               e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
                             }}
                           >
-                            <span className="text-2xl">{workout.icon || '💪'}</span>
+                            <ActivityIcon type={workout.type} subtype={workout.subtype} size={24} />
                             <div className="flex-1 min-w-0">
                               <div className="text-white font-medium truncate">
                                 {workout.appleWorkoutName || workout.subtype || workout.type}
@@ -9703,16 +9720,23 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
               }}
             >
-              <span className="text-2xl flex items-center">{
-                activityType === 'Other' && customActivityIcon ? <ActivityIcon type="Other" customIcon={customActivityIcon} size={24} /> :
-                activityType === 'Other' ? (customActivityEmoji || <ActivityIcon type="Other" size={24} />) :
-                activityType === 'Sports' && subtype ? (
-                  subtype === 'Other' ? customSportEmoji :
-                  (selectedType?.subtypes?.find(st => typeof st === 'object' && st.name === subtype)?.icon || <ActivityIcon type={activityType} size={24} />)
-                ) :
-                <ActivityIcon type={activityType} size={24} />
+              <span className="text-2xl flex items-center">{(() => {
+                // Determine live color based on selected category
+                const HEADER_COLORS = { strength: '#00FF94', cardio: '#FF9500', recovery: '#00D1FF', lifting: '#00FF94' };
+                const selectedCategory = (isUncategorizedHKType || activityType === 'Other') ? customActivityCategory : countToward;
+                const liveColor = selectedCategory ? HEADER_COLORS[selectedCategory] : undefined;
+                if (activityType === 'Other' && customActivityIcon) return <ActivityIcon type="Other" customIcon={customActivityIcon} size={24} color={liveColor} />;
+                if (activityType === 'Other') return customActivityEmoji || <ActivityIcon type="Other" size={24} color={liveColor} />;
+                if (activityType === 'Sports' && subtype) {
+                  if (subtype === 'Other') return customSportEmoji;
+                  return <ActivityIcon type="Sports" subtype={subtype} size={24} color={liveColor} />;
+                }
+                return <ActivityIcon type={activityType} size={24} color={liveColor} />;
+              })()}</span>
+              <span className="font-semibold">{
+                activityType === 'Sports' && subtype && subtype !== 'Other' ? subtype :
+                activityType === 'Other' && customActivityName ? customActivityName : activityType
               }</span>
-              <span className="font-semibold">{activityType === 'Other' && customActivityName ? customActivityName : activityType}</span>
               <span className="ml-auto text-gray-500 text-sm">Change</span>
             </button>
 
@@ -9759,7 +9783,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                           color: subtype === stName ? '#00FF94' : 'white'
                         }}
                       >
-                        {stIcon && <span>{stIcon}</span>}
+                        {activityType === 'Sports' ? <ActivityIcon type="Sports" subtype={stName} size={14} /> : stIcon ? <span>{stIcon}</span> : null}
                         {stName}
                       </button>
                     );
@@ -9782,7 +9806,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                       color: countToward === 'lifting' ? '#00FF94' : 'white'
                     }}
                   >
-                    <span>🏋️</span> Strength
+                    <span>💪</span> Strength
                   </button>
                   <button
                     onClick={() => setCountToward('cardio')}
@@ -9793,7 +9817,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                       color: countToward === 'cardio' ? '#FF9500' : 'white'
                     }}
                   >
-                    <span>🏃</span> Cardio
+                    <span>❤️‍🔥</span> Cardio
                   </button>
                   <button
                     onClick={() => setCountToward('recovery')}
@@ -9932,7 +9956,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                       type={isUncategorizedHKType ? activityType : 'Other'}
                       customIcon={customActivityIcon}
                       size={22}
-                      color={isUncategorizedHKType && customActivityCategory ? (
+                      color={customActivityCategory ? (
                         customActivityCategory === 'strength' ? '#00FF94' :
                         customActivityCategory === 'cardio' ? '#FF9500' :
                         customActivityCategory === 'recovery' ? '#00D1FF' :
@@ -10000,7 +10024,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                         border: customActivityCategory === 'strength' ? '1px solid #00FF94' : '1px solid transparent'
                       }}
                     >
-                      <span className="text-lg">🏋️</span>
+                      <span className="text-lg">💪</span>
                       <div className="text-xs mt-1" style={{ color: customActivityCategory === 'strength' ? '#00FF94' : 'rgba(255,255,255,0.6)' }}>Strength</div>
                     </button>
                     <button
@@ -10012,7 +10036,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                         border: customActivityCategory === 'cardio' ? '1px solid #FF9500' : '1px solid transparent'
                       }}
                     >
-                      <span className="text-lg">🏃</span>
+                      <span className="text-lg">❤️‍🔥</span>
                       <div className="text-xs mt-1" style={{ color: customActivityCategory === 'cardio' ? '#FF9500' : 'rgba(255,255,255,0.6)' }}>Cardio</div>
                     </button>
                     <button
@@ -10382,7 +10406,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                              <span className="text-xl">{linkedWorkout.icon || '💪'}</span>
+                              <ActivityIcon type={linkedWorkout.type} subtype={linkedWorkout.subtype} size={20} />
                               <div>
                                 <div className="text-white text-sm font-medium">
                                   {linkedWorkout.appleWorkoutName || linkedWorkout.subtype || linkedWorkout.type}
@@ -10440,7 +10464,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                             >
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-3">
-                                  <span className="text-xl">{workout.icon || '💪'}</span>
+                                  <ActivityIcon type={workout.type} subtype={workout.subtype} size={20} />
                                   <div>
                                     <div className="text-white text-sm font-medium">
                                       {workout.appleWorkoutName || workout.subtype || workout.type}
@@ -10483,7 +10507,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                           >
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-3">
-                                <span className="text-xl">{linkedWorkout.icon || '💪'}</span>
+                                <ActivityIcon type={linkedWorkout.type} subtype={linkedWorkout.subtype} size={20} />
                                 <div>
                                   <div className="text-white text-sm font-medium">
                                     {linkedWorkout.appleWorkoutName || linkedWorkout.subtype || linkedWorkout.type}
@@ -10778,7 +10802,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
         >
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              <ActivityIcon type={workout.type} customIcon={workout.customIcon} customEmoji={workout.customEmoji} sportEmoji={workout.sportEmoji} strengthType={workout.strengthType} size={22} />
+              <ActivityIcon type={workout.type} subtype={workout.subtype} customIcon={workout.customIcon} customEmoji={workout.customEmoji} sportEmoji={workout.sportEmoji} strengthType={workout.strengthType} size={22} />
             </div>
             <div className="flex-1">
               <div className="text-white font-medium">
@@ -11521,7 +11545,12 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         if (visiblePendingSync.length === 0 || !showWorkoutNotification) return null;
 
         // Types that auto-categorize into strength/cardio/recovery goals
-        const KNOWN_CATEGORY_TYPES = ['Strength Training', 'Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Yoga', 'Pilates', 'Cold Plunge', 'Sauna'];
+        const KNOWN_CATEGORY_TYPES = ['Strength Training', 'Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Yoga', 'Pilates', 'Cold Plunge', 'Sauna',
+          'Track & Field', 'Jump Rope', 'Downhill Skiing', 'Cross Country Skiing', 'Snowboarding', 'Skating', 'Surfing', 'Water Polo', 'Paddle Sports',
+          'Basketball', 'Soccer', 'Football', 'Tennis', 'Golf', 'Badminton', 'Boxing', 'Martial Arts',
+          'Baseball', 'Volleyball', 'Hockey', 'Lacrosse', 'Rugby', 'Softball', 'Squash', 'Table Tennis',
+          'Racquetball', 'Handball', 'Pickleball', 'Cricket', 'Australian Football', 'Wrestling',
+          'Fencing', 'Curling', 'Bowling'];
         const isKnownCategory = (w) => {
           if (KNOWN_CATEGORY_TYPES.includes(w.type)) return true;
           // Check if user has saved a category preference for this Apple Health type
@@ -12012,7 +12041,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                   <span className="text-xl font-black"><AnimatedCounter value={weekProgress.lifts.completed} />/{weekProgress.lifts.goal}</span>
                 </div>
               </div>
-              <div className="text-sm font-medium mt-2">🏋️ Strength</div>
+              <div className="text-sm font-medium mt-2">💪 Strength</div>
               <div className="text-[10px] text-gray-500">{showStrengthBreakdown ? '▲' : '▼'}</div>
             </button>
             
@@ -12032,7 +12061,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                   <span className="text-xl font-black"><AnimatedCounter value={weekProgress.cardio?.completed || 0} />/{weekProgress.cardio?.goal || 0}</span>
                 </div>
               </div>
-              <div className="text-sm font-medium mt-2">🏃 Cardio</div>
+              <div className="text-sm font-medium mt-2">❤️‍🔥 Cardio</div>
               <div className="text-[10px] text-gray-500">{showCardioBreakdown ? '▲' : '▼'}</div>
             </button>
             
@@ -12211,7 +12240,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                   className="w-full p-3 flex items-center gap-3 text-left cursor-pointer active:opacity-70 transition-opacity"
                   style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
                 >
-                  <ActivityIcon type={latestActivities[0].type} size={20} sportEmoji={latestActivities[0].sportEmoji} customEmoji={latestActivities[0].customEmoji} customIcon={latestActivities[0].customIcon} />
+                  <ActivityIcon type={latestActivities[0].type} subtype={latestActivities[0].subtype} size={20} sportEmoji={latestActivities[0].sportEmoji} customEmoji={latestActivities[0].customEmoji} customIcon={latestActivities[0].customIcon} />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-semibold truncate">{latestActivities[0].type}{latestActivities[0].subtype ? ` • ${latestActivities[0].subtype}` : ''}</div>
                     <div className="text-xs text-gray-400 flex items-center gap-2">
@@ -12232,7 +12261,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
               </SwipeableActivityItem>
             ) : (
               <div className="p-6 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                <div className="text-4xl mb-3">🏋️</div>
+                <div className="text-4xl mb-3">💪</div>
                 <p className="text-white font-medium text-sm">Your first workout is waiting!</p>
                 <p className="text-gray-500 text-xs mt-1">Tap the + button to log an activity</p>
               </div>
@@ -12261,7 +12290,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                       className="w-full p-3 flex items-center gap-3 text-left cursor-pointer active:opacity-70 transition-opacity"
                       style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
                     >
-                      <ActivityIcon type={activity.type} size={20} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} />
+                      <ActivityIcon type={activity.type} subtype={activity.subtype} size={20} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-semibold truncate">{activity.type}{activity.subtype ? ` • ${activity.subtype}` : ''}</span>
@@ -13115,11 +13144,11 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
                 <div className="grid grid-cols-3 gap-2">
                   <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
                     <div className="text-lg font-black" style={{ color: '#00FF94' }}>{lifts.length}</div>
-                    <div className="text-[9px] text-gray-400">🏋️ Strength</div>
+                    <div className="text-[9px] text-gray-400">💪 Strength</div>
                   </div>
                   <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
                     <div className="text-lg font-black" style={{ color: '#FF9500' }}>{cardioActivities.length}</div>
-                    <div className="text-[9px] text-gray-400">🏃 Cardio</div>
+                    <div className="text-[9px] text-gray-400">❤️‍🔥 Cardio</div>
                   </div>
                   <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
                     <div className="text-lg font-black" style={{ color: '#00D1FF' }}>{recoveryActivities.length}</div>
@@ -13154,7 +13183,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
                     {fullDayActivities.map((activity, idx) => (
                       <div key={idx} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                         <div className="flex items-center gap-2">
-                          <ActivityIcon type={activity.type} size={14} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} />
+                          <ActivityIcon type={activity.type} subtype={activity.subtype} size={14} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} />
                           <span className="text-sm text-white font-medium">
                             {activity.subtype || activity.type}
                           </span>
@@ -13867,7 +13896,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
           <div className="px-2.5 py-2 rounded-xl bg-zinc-800/60 relative overflow-hidden">
             <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ backgroundColor: '#00FF94' }}></div>
             <div className="flex items-center gap-1.5">
-              <span className="text-sm">🏋️</span>
+              <span className="text-sm">💪</span>
               <span className="text-lg font-bold leading-tight" style={{ color: '#00FF94' }}>{streaks.lifts}</span>
             </div>
             <span className="text-[11px] text-gray-400">Strength</span>
@@ -13878,7 +13907,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
           <div className="px-2.5 py-2 rounded-xl bg-zinc-800/60 relative overflow-hidden">
             <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ backgroundColor: '#FF9500' }}></div>
             <div className="flex items-center gap-1.5">
-              <span className="text-sm">🏃</span>
+              <span className="text-sm">❤️‍🔥</span>
               <span className="text-lg font-bold leading-tight" style={{ color: '#FF9500' }}>{streaks.cardio}</span>
             </div>
             <span className="text-[11px] text-gray-400">Cardio</span>
@@ -14190,7 +14219,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
               <div className="grid grid-cols-5 gap-2 text-center">
                 <div>
                   <div className="text-lg font-black text-white">{currentWeekStats.lifts}</div>
-                  <div className="text-[10px] text-gray-400 whitespace-nowrap">🏋️ Strength</div>
+                  <div className="text-[10px] text-gray-400 whitespace-nowrap">💪 Strength</div>
                   {(() => {
                     const compare = compareWeek === 'average' ? weeklyStats['average']?.lifts || 0 : weeklyStats['week-2']?.lifts || 0;
                     if (currentWeekStats.lifts > compare) return <div className="text-[10px] mt-1" style={{ color: '#00FF94' }}>↑</div>;
@@ -14200,7 +14229,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                 </div>
                 <div>
                   <div className="text-lg font-black text-white">{currentWeekStats.cardio}</div>
-                  <div className="text-[10px] text-gray-400 whitespace-nowrap">🏃 Cardio</div>
+                  <div className="text-[10px] text-gray-400 whitespace-nowrap">❤️‍🔥 Cardio</div>
                   {(() => {
                     const compare = compareWeek === 'average' ? weeklyStats['average']?.cardio || 0 : weeklyStats['week-2']?.cardio || 0;
                     if (currentWeekStats.cardio > compare) return <div className="text-[10px] mt-1" style={{ color: '#00FF94' }}>↑</div>;
@@ -14249,12 +14278,12 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
               <div className="grid grid-cols-5 gap-2 text-center">
                 <div>
                   <div className="text-lg font-black">{compareWeek === 'average' ? weeklyStats['average']?.lifts || 0 : weeklyStats['week-2']?.lifts || 0}</div>
-                  <div className="text-[10px] text-gray-400 whitespace-nowrap">🏋️ Strength</div>
+                  <div className="text-[10px] text-gray-400 whitespace-nowrap">💪 Strength</div>
                   <div className="text-[10px] mt-1 opacity-0">-</div>
                 </div>
                 <div>
                   <div className="text-lg font-black">{compareWeek === 'average' ? weeklyStats['average']?.cardio || 0 : weeklyStats['week-2']?.cardio || 0}</div>
-                  <div className="text-[10px] text-gray-400 whitespace-nowrap">🏃 Cardio</div>
+                  <div className="text-[10px] text-gray-400 whitespace-nowrap">❤️‍🔥 Cardio</div>
                   <div className="text-[10px] mt-1 opacity-0">-</div>
                 </div>
                 <div>
@@ -14379,11 +14408,11 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
               <div className="grid grid-cols-3 gap-2 mb-4">
                 <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
                   <div className="text-2xl font-black" style={{ color: '#00FF94' }}>{lifts.length}</div>
-                  <div className="text-[10px] text-gray-400">🏋️ Strength</div>
+                  <div className="text-[10px] text-gray-400">💪 Strength</div>
                 </div>
                 <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
                   <div className="text-2xl font-black" style={{ color: '#FF9500' }}>{cardioActivities.length}</div>
-                  <div className="text-[10px] text-gray-400">🏃 Cardio</div>
+                  <div className="text-[10px] text-gray-400">❤️‍🔥 Cardio</div>
                 </div>
                 <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
                   <div className="text-2xl font-black" style={{ color: '#00D1FF' }}>{recoveryActivities.length}</div>
@@ -14431,7 +14460,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
               {lifts.length > 0 && (
                 <div className="mb-4">
                   <div className="flex items-center gap-2 mb-2">
-                    <span className="text-xs font-medium text-gray-300">🏋️ Strength</span>
+                    <span className="text-xs font-medium text-gray-300">💪 Strength</span>
                   </div>
                   <div className="space-y-2">
                     {lifts.map((activity, i) => (
@@ -14479,7 +14508,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
               {cardioActivities.length > 0 && (
                 <div className="mb-4">
                   <div className="flex items-center gap-2 mb-2">
-                    <span className="text-xs font-medium text-gray-300">🏃 Cardio</span>
+                    <span className="text-xs font-medium text-gray-300">❤️‍🔥 Cardio</span>
                   </div>
                   <div className="space-y-2">
                     {cardioActivities.map((activity, i) => (
@@ -14725,14 +14754,14 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                 <div className="p-3.5 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(0, 255, 148, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
                   <div className="text-3xl font-black" style={{ color: '#00FF94' }}>{totalsData.liftingCount || 0}</div>
                   <div className="text-xs text-gray-400 flex items-center gap-1 mt-1">
-                    <span>🏋️</span>
+                    <span>💪</span>
                     <span>Strength</span>
                   </div>
                 </div>
                 <div className="p-3.5 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(255, 149, 0, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
                   <div className="text-3xl font-black" style={{ color: '#FF9500' }}>{Object.values(totalsData.cardio || {}).reduce((a, b) => a + b, 0)}</div>
                   <div className="text-xs text-gray-400 flex items-center gap-1 mt-1">
-                    <span>🏃</span>
+                    <span>❤️‍🔥</span>
                     <span>Cardio</span>
                   </div>
                 </div>
@@ -14814,7 +14843,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
 
               {/* Strength Breakdown */}
               <div className="mb-6">
-                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">🏋️ Muscle groups trained</div>
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">💪 Muscle groups trained</div>
                 <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                   {Object.keys(totalsData.lifting || {}).length > 0 ? (
                     <div className="space-y-2">
@@ -14833,7 +14862,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
 
               {/* Cardio Breakdown */}
               <div className="mb-6">
-                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">🏃 Cardio Breakdown</div>
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">❤️‍🔥 Cardio Breakdown</div>
                 <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                   {Object.keys(totalsData.cardio || {}).length > 0 ? (
                     <div className="space-y-2">
@@ -14906,13 +14935,13 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                   {/* Other Streaks */}
                   <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <div className="text-[10px] text-gray-600 mb-1">🏋️ Strength</div>
+                      <div className="text-[10px] text-gray-600 mb-1">💪 Strength</div>
                       <div className="text-lg font-bold text-white">
                         {records.longestStrengthStreak ? `${records.longestStrengthStreak}w` : '—'}
                       </div>
                     </div>
                     <div>
-                      <div className="text-[10px] text-gray-600 mb-1">🏃 Cardio</div>
+                      <div className="text-[10px] text-gray-600 mb-1">❤️‍🔥 Cardio</div>
                       <div className="text-lg font-bold text-white">
                         {records.longestCardioStreak ? `${records.longestCardioStreak}w` : '—'}
                       </div>
@@ -14952,7 +14981,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                   {/* Longest Strength */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <span className="text-sm">🏋️</span>
+                      <span className="text-sm">💪</span>
                       <div className="text-xs text-gray-500">Longest Strength Session</div>
                     </div>
                     <div className="text-base font-bold text-white">
@@ -14970,7 +14999,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                   {/* Longest Cardio */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <span className="text-sm">🏃</span>
+                      <span className="text-sm">❤️‍🔥</span>
                       <div className="text-xs text-gray-500">Longest Cardio Session</div>
                     </div>
                     <div className="text-right">
@@ -14993,7 +15022,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                   {/* Furthest Run */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <span className="text-sm">🏃</span>
+                      <span className="text-sm">❤️‍🔥</span>
                       <div className="text-xs text-gray-500">Furthest Run</div>
                     </div>
                     <div className="text-base font-bold text-white">
@@ -15156,7 +15185,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
         };
 
         const getActivityIcon = (activity, size = 12) => {
-          return <ActivityIcon type={activity.type} size={size} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} />;
+          return <ActivityIcon type={activity.type} subtype={activity.subtype} size={size} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} />;
         };
 
         // Get selected activities sorted by date for comparison
@@ -15271,7 +15300,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
               {[
                 { key: 'all', label: 'All Photos' },
                 { key: 'strength', label: '💪 Strength' },
-                { key: 'cardio', label: '🏃 Cardio' },
+                { key: 'cardio', label: '❤️‍🔥 Cardio' },
                 { key: 'recovery', label: '🧘 Recovery' }
               ].map(filter => (
                 <button
@@ -15683,7 +15712,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
 
                           {/* Cardio */}
                           <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
-                            <p className="text-xl">🏃</p>
+                            <p className="text-xl">❤️‍🔥</p>
                             <p className="text-2xl font-bold" style={{ color: '#00D1FF' }}>{cardioSessions}</p>
                             <p className="text-xs text-gray-400 mt-1">cardio sessions</p>
                           </div>
@@ -15827,7 +15856,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                             const statItems = [
                               { emoji: '🔥', value: totalCalories.toLocaleString(), label: 'calories burned', color: '#FF9500', bg: 'rgba(255,149,0,0.15)' },
                               { emoji: '💪', value: strengthSessions.toString(), label: 'strength sessions', color: '#00FF94', bg: 'rgba(0,255,148,0.15)' },
-                              { emoji: '🏃', value: cardioSessions.toString(), label: 'cardio sessions', color: '#00D1FF', bg: 'rgba(0,209,255,0.15)' },
+                              { emoji: '❤️‍🔥', value: cardioSessions.toString(), label: 'cardio sessions', color: '#00D1FF', bg: 'rgba(0,209,255,0.15)' },
                               { emoji: '🧘', value: recoverySessions.toString(), label: 'recovery sessions', color: '#BF5AF2', bg: 'rgba(191,90,242,0.15)' }
                             ];
 
@@ -16180,8 +16209,8 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
   };
 
   const goalLabels = {
-    liftsPerWeek: { label: 'Strength', icon: '🏋️', suffix: '/week' },
-    cardioPerWeek: { label: 'Cardio', icon: '🏃', suffix: '/week' },
+    liftsPerWeek: { label: 'Strength', icon: '💪', suffix: '/week' },
+    cardioPerWeek: { label: 'Cardio', icon: '❤️‍🔥', suffix: '/week' },
     recoveryPerWeek: { label: 'Recovery', icon: '🧊', suffix: '/week' },
     stepsPerDay: { label: 'Steps', icon: '👟', suffix: '/day', format: (v) => `${(v/1000).toFixed(0)}k` }
   };
@@ -19660,7 +19689,7 @@ export default function DaySevenApp() {
           const hours = Math.floor(activity.duration / 60);
           const mins = activity.duration % 60;
           const durationStr = hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
-          recordsBroken.push(`${durationStr} strength 🏋️`);
+          recordsBroken.push(`${durationStr} strength 💪`);
         }
 
         // Longest cardio session
@@ -19669,13 +19698,13 @@ export default function DaySevenApp() {
           const hours = Math.floor(activity.duration / 60);
           const mins = activity.duration % 60;
           const durationStr = hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
-          recordsBroken.push(`${durationStr} cardio (${activity.type}) 🏃`);
+          recordsBroken.push(`${durationStr} cardio (${activity.type}) ❤️‍🔥`);
         }
 
         // Longest distance
         if (activity.distance && activity.distance > getRecordValue('longestDistance')) {
           updatedRecords.longestDistance = { value: activity.distance, activityType: activity.type };
-          recordsBroken.push(`${activity.distance} mi (${activity.type}) 🏃`);
+          recordsBroken.push(`${activity.distance} mi (${activity.type}) ❤️‍🔥`);
         }
         
         // Fastest pace (for runs with distance and duration)
@@ -19874,7 +19903,7 @@ export default function DaySevenApp() {
         } else if (checkStreakMilestone(newStreak)) {
           setCelebrationMessage(`${newStreak} Week Strength Streak! 💪`);
         } else {
-          setCelebrationMessage('Strength goal complete! 🏋️');
+          setCelebrationMessage('Strength goal complete! 💪');
         }
         setCelebrationType('weekly');
         triggerHaptic(ImpactStyle.Heavy);
@@ -19898,7 +19927,7 @@ export default function DaySevenApp() {
         } else if (checkStreakMilestone(newStreak)) {
           setCelebrationMessage(`${newStreak} Week Cardio Streak! 🔥`);
         } else {
-          setCelebrationMessage('Cardio goal complete! 🏃');
+          setCelebrationMessage('Cardio goal complete! ❤️‍🔥');
         }
         setCelebrationType('weekly');
         triggerHaptic(ImpactStyle.Heavy);

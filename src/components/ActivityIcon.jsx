@@ -6,6 +6,7 @@ import {
   IconRun,
   IconBike,
   IconBallFootball,
+  IconBallAmericanFootball,
   IconStairsUp,
   IconYoga,
   IconStretching,
@@ -120,7 +121,33 @@ const ICON_MAP = {
   // Cardio
   'Running':             { Icon: IconRun, category: 'cardio' },
   'Cycle':               { Icon: IconBike, category: 'cardio' },
-  'Sports':              { Icon: IconBallFootball, category: 'cardio' },
+  'Sports':              { Icon: IconBallFootball, category: 'cardio' },  // Fallback for old data / custom "Other" sports
+  // Team / competitive sports (auto-categorized as cardio)
+  'Basketball':          { Icon: IconPlayBasketball, category: 'cardio' },
+  'Soccer':              { Icon: IconBallFootball, category: 'cardio' },
+  'Football':            { Icon: IconBallAmericanFootball, category: 'cardio' },
+  'Tennis':              { Icon: IconBallTennis, category: 'cardio' },
+  'Golf':                { Icon: IconGolf, category: 'cardio' },
+  'Badminton':           { Icon: IconBallTennis, category: 'cardio' },
+  'Boxing':              { Icon: IconKarate, category: 'cardio' },
+  'Martial Arts':        { Icon: IconKarate, category: 'cardio' },
+  'Baseball':            { Icon: IconBallBaseball, category: 'cardio' },
+  'Volleyball':          { Icon: IconBallVolleyball, category: 'cardio' },
+  'Hockey':              { Icon: IconBallFootball, category: 'cardio' },
+  'Lacrosse':            { Icon: IconBallFootball, category: 'cardio' },
+  'Rugby':               { Icon: IconBallAmericanFootball, category: 'cardio' },
+  'Softball':            { Icon: IconBallBaseball, category: 'cardio' },
+  'Squash':              { Icon: IconBallTennis, category: 'cardio' },
+  'Table Tennis':        { Icon: IconPingPong, category: 'cardio' },
+  'Racquetball':         { Icon: IconBallTennis, category: 'cardio' },
+  'Handball':            { Icon: IconBallVolleyball, category: 'cardio' },
+  'Pickleball':          { Icon: IconPingPong, category: 'cardio' },
+  'Cricket':             { Icon: IconCricket, category: 'cardio' },
+  'Australian Football': { Icon: IconBallAmericanFootball, category: 'cardio' },
+  'Wrestling':           { Icon: IconKarate, category: 'cardio' },
+  'Fencing':             { Icon: IconFence, category: 'cardio' },
+  'Curling':             { Icon: IconTarget, category: 'cardio' },
+  'Bowling':             { Icon: IconTarget, category: 'cardio' },
   'Stair Climbing':      { Icon: IconStairsUp, category: 'cardio' },
   'Elliptical':          { Icon: EllipticalIcon, category: 'cardio' },  // Keep custom
   // Hybrid
@@ -136,8 +163,70 @@ const ICON_MAP = {
   'Dance':               { Icon: IconMusic, category: 'other' },
   'Rowing':              { Icon: IconKayak, category: 'other' },
   'Cooldown':            { Icon: IconSnowflake, category: 'other' },
+  // Combat / martial arts
+  'Kickboxing':          { Icon: IconKarate, category: 'other' },
+  // Mind & body
+  'Tai Chi':             { Icon: IconYoga, category: 'other' },
+  'Barre':               { Icon: IconStretching2, category: 'other' },
+  'Gymnastics':          { Icon: IconStretching2, category: 'other' },
+  // Auto-categorized cardio (from Apple Health — specific icon, counts as cardio)
+  'Track & Field':       { Icon: IconRun, category: 'cardio' },
+  'Jump Rope':           { Icon: IconJumpRope, category: 'cardio' },
+  'Downhill Skiing':     { Icon: IconSkiJumping, category: 'cardio' },
+  'Cross Country Skiing': { Icon: IconSkiJumping, category: 'cardio' },
+  'Snowboarding':        { Icon: IconSnowboarding, category: 'cardio' },
+  'Skating':             { Icon: IconSnowflake, category: 'cardio' },
+  'Surfing':             { Icon: IconPool, category: 'cardio' },
+  'Water Polo':          { Icon: IconWaterpolo, category: 'cardio' },
+  'Paddle Sports':       { Icon: IconKayak, category: 'cardio' },
+  // Outdoor / adventure
+  'Climbing':            { Icon: IconMountain, category: 'other' },
+  'Archery':             { Icon: IconArcheryArrow, category: 'other' },
+  'Equestrian':          { Icon: IconTrophy, category: 'other' },
+  'Hunting':             { Icon: IconTarget, category: 'other' },
+  // Winter sports
+  'Snow Sports':         { Icon: IconSnowflake, category: 'other' },
+  // Water sports
+  'Sailing':             { Icon: IconSailboat, category: 'other' },
+  'Fishing':             { Icon: IconFish, category: 'other' },
+  'Water Fitness':       { Icon: IconSwimming, category: 'other' },
+  'Water Sports':        { Icon: IconPool, category: 'other' },
+  // Cardio / general
+  'Step Training':       { Icon: IconStairsUp, category: 'other' },
+  'Mixed Cardio':        { Icon: IconHeartbeat, category: 'other' },
+  'Triathlon':           { Icon: IconSwimming, category: 'other' },
+  'Fitness Gaming':      { Icon: IconBolt, category: 'other' },
+  'Play':                { Icon: IconBolt, category: 'other' },
   // Other
   'Other':               { Icon: IconCirclePlus, category: 'other' },
+};
+
+// Sport subtype → Tabler icon mapping (for type='Sports' activities)
+const SPORT_SUBTYPE_ICON_MAP = {
+  'Basketball':          IconPlayBasketball,
+  'Soccer':              IconBallFootball,
+  'Football':            IconBallAmericanFootball,
+  'Tennis':              IconBallTennis,
+  'Golf':                IconGolf,
+  'Badminton':           IconBallTennis,
+  'Boxing':              IconKarate,
+  'Martial Arts':        IconKarate,
+  'Volleyball':          IconBallVolleyball,
+  'Hockey':              IconBallFootball,
+  'Lacrosse':            IconBallFootball,
+  'Rugby':               IconBallAmericanFootball,
+  'Softball':            IconBallBaseball,
+  'Squash':              IconBallTennis,
+  'Table Tennis':        IconPingPong,
+  'Racquetball':         IconBallTennis,
+  'Handball':            IconBallVolleyball,
+  'Pickleball':          IconPingPong,
+  'Cricket':             IconCricket,
+  'Australian Football': IconBallAmericanFootball,
+  'Wrestling':           IconKarate,
+  'Fencing':             IconFence,
+  'Curling':             IconTarget,
+  'Bowling':             IconTarget,
 };
 
 // Strength training subtype icons (kept for backwards compat with old data that has strengthType field)
@@ -309,9 +398,10 @@ Object.entries(LEGACY_ICON_NAMES).forEach(([name, Icon]) => {
  * @param {string} [className] - Additional CSS classes
  * @param {string} [customEmoji] - Custom emoji override (for old "Other" activities)
  * @param {string} [customIcon] - Custom icon name (for new "Other" activities, e.g., 'IconBarbell')
- * @param {string} [sportEmoji] - Sport emoji override (for "Sports" activities)
+ * @param {string} [subtype] - Activity subtype (e.g., 'Basketball' for Sports)
+ * @param {string} [sportEmoji] - Sport emoji fallback (for unmapped "Sports" subtypes)
  */
-export default function ActivityIcon({ type, strengthType, size = 18, color, className = '', customEmoji, customIcon, sportEmoji }) {
+export default function ActivityIcon({ type, strengthType, subtype, size = 18, color, className = '', customEmoji, customIcon, sportEmoji }) {
   // Custom icon for "Other" activities OR uncategorized Apple Health types (e.g., Tai Chi, Dance)
   // For types without a built-in ICON_MAP entry, use customIcon if provided
   const hasBuiltInIcon = ICON_MAP[type];
@@ -329,7 +419,13 @@ export default function ActivityIcon({ type, strengthType, size = 18, color, cla
     );
   }
 
-  // Custom emoji (old "Other" activities) or sport emoji — render as emoji span
+  // Sports with Tabler icon mapping — render icon instead of emoji
+  if (type === 'Sports' && subtype && SPORT_SUBTYPE_ICON_MAP[subtype]) {
+    const SportIcon = SPORT_SUBTYPE_ICON_MAP[subtype];
+    return <SportIcon size={size} color={color || CATEGORY_COLORS.cardio} className={className} strokeWidth={2} />;
+  }
+
+  // Custom emoji (old "Other" activities) or unmapped sport emoji — render as emoji span
   if ((type === 'Other' && customEmoji) || (type === 'Sports' && sportEmoji)) {
     const emoji = customEmoji || sportEmoji;
     return <span className={className} style={{ fontSize: size }}>{emoji}</span>;

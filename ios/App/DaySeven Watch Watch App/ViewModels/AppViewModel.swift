@@ -300,6 +300,40 @@ class AppViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Update Activity (re-save with changed details)
+
+    func updateActivity(withId activityId: ActivityID, updates: (inout Activity) -> Void) async {
+        guard let uid = authService.currentUser?.uid else {
+            print("[UpdateActivity] No user uid — skipping update")
+            return
+        }
+
+        guard let index = activities.firstIndex(where: { $0.id == activityId }) else {
+            print("[UpdateActivity] Activity not found: \(activityId)")
+            return
+        }
+
+        // Apply updates to the activity
+        var updatedActivity = activities[index]
+        updates(&updatedActivity)
+        activities[index] = updatedActivity
+
+        // Save to Firestore
+        do {
+            try await firestoreService.saveActivities(uid: uid, activities: activities)
+            print("[UpdateActivity] Successfully updated activity \(activityId)")
+
+            pushDataToWidget()
+
+            // Notify the iPhone to refresh
+            if WCSession.default.isReachable {
+                WCSession.default.sendMessage(["action": "activitySaved"], replyHandler: { _ in }, errorHandler: { _ in })
+            }
+        } catch {
+            print("[UpdateActivity] FAILED: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: - Offline Queue Flush
 
     /// Retries saving any activities that were queued due to network failures.

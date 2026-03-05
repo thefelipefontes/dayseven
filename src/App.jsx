@@ -6852,7 +6852,44 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
             )}
           </div>
 
-          {/* Reactions & Comments Section - show if user is logged in */}
+          {/* Notes */}
+          {activity.notes && (
+            <div className="p-4 rounded-xl mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+              <div className="text-xs text-gray-500 mb-2">Notes</div>
+              <div className="text-sm">{activity.notes}</div>
+            </div>
+          )}
+
+          {/* Activity Photo */}
+          {activity.photoURL && (
+            <div className="mb-4 rounded-xl overflow-hidden">
+              <button
+                onClick={() => setShowFullscreenPhoto(true)}
+                className="w-full relative group"
+              >
+                <img
+                  src={activity.photoURL}
+                  alt="Activity"
+                  className="w-full h-auto max-h-64 object-cover"
+                />
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                  <svg className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                  </svg>
+                </div>
+              </button>
+              {activity.isPhotoPrivate && (
+                <div className="flex items-center gap-1 p-2 bg-black/50 text-xs text-gray-400">
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                  <span>Only visible to you</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Reactions & Comments Section - show if user is logged in (below photo, Instagram-style) */}
           {user && (
             <div className="mb-4 pt-3 border-t border-white/10">
               {/* Reactions Row */}
@@ -6976,43 +7013,6 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
                       </button>
                     </div>
                   </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Notes */}
-          {activity.notes && (
-            <div className="p-4 rounded-xl mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              <div className="text-xs text-gray-500 mb-2">Notes</div>
-              <div className="text-sm">{activity.notes}</div>
-            </div>
-          )}
-
-          {/* Activity Photo */}
-          {activity.photoURL && (
-            <div className="mb-4 rounded-xl overflow-hidden">
-              <button
-                onClick={() => setShowFullscreenPhoto(true)}
-                className="w-full relative group"
-              >
-                <img
-                  src={activity.photoURL}
-                  alt="Activity"
-                  className="w-full h-auto max-h-64 object-cover"
-                />
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                  <svg className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
-                  </svg>
-                </div>
-              </button>
-              {activity.isPhotoPrivate && (
-                <div className="flex items-center gap-1 p-2 bg-black/50 text-xs text-gray-400">
-                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                  </svg>
-                  <span>Only visible to you</span>
                 </div>
               )}
             </div>

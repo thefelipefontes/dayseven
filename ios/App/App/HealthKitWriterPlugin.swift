@@ -1045,6 +1045,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         let strengthType = call.getString("strengthType")
         let subtype = call.getString("subtype")
         let focusArea = call.getString("focusArea")
+        let focusAreas = call.getArray("focusAreas") as? [String]
 
         var message: [String: Any] = [
             "action": "startWorkout",
@@ -1056,7 +1057,10 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         if let sub = subtype {
             message["subtype"] = sub
         }
-        if let fa = focusArea {
+        if let areas = focusAreas, !areas.isEmpty {
+            message["focusAreas"] = areas
+            message["focusArea"] = areas[0]
+        } else if let fa = focusArea {
             message["focusArea"] = fa
         }
 

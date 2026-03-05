@@ -124,10 +124,13 @@ struct WorkoutSummaryView: View {
                 // Detail pickers
                 detailPickersSection
 
-                // Done Button — workout is already auto-saved
+                // Done Button — re-saves if user changed any details after auto-save
                 Button {
-                    if let onDone = onDone {
-                        onDone()
+                    Task {
+                        await resaveIfNeeded()
+                        if let onDone = onDone {
+                            onDone()
+                        }
                     }
                 } label: {
                     Text("Done")
@@ -377,6 +380,32 @@ struct WorkoutSummaryView: View {
         savedActivityId = activity.id
         await appVM.saveActivity(activity)
         isSaved = true
+    }
+
+    // MARK: - Re-save if user changed details after auto-save
+
+    private func resaveIfNeeded() async {
+        guard let activityId = savedActivityId else { return }
+
+        // Check if any details differ from what was auto-saved
+        let currentFocusAreas = selectedFocusAreas.isEmpty ? nil : selectedFocusAreas
+        let currentSubtype = selectedSubtype
+        let currentCountToward = ActivityTypes.getDefaultCountToward(type: activityType, subtype: selectedSubtype, countToward: selectedCountToward)
+
+        let initialFocusAreasResolved = (initialFocusAreas?.isEmpty ?? true) ? nil : initialFocusAreas
+        let needsUpdate = currentFocusAreas != initialFocusAreasResolved
+            || currentSubtype != initialSubtype
+            || currentCountToward != initialCountToward
+
+        guard needsUpdate else { return }
+
+        await appVM.updateActivity(withId: activityId) { activity in
+            activity.subtype = currentSubtype
+            activity.focusAreas = currentFocusAreas
+            activity.focusArea = currentFocusAreas?.first
+            activity.countToward = currentCountToward
+        }
+        print("[WorkoutSummary] Re-saved activity with updated details")
     }
 }
 

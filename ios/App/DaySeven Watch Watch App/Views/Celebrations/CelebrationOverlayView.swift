@@ -18,10 +18,10 @@ struct CelebrationOverlayView: View {
             // Strong radial glow background
             RadialGradient(
                 gradient: Gradient(colors: [
-                    celebration.type.color.opacity(0.55),
-                    celebration.type.color.opacity(0.35),
-                    celebration.type.color.opacity(0.15),
-                    Color.black.opacity(0.85)
+                    celebration.type.color.opacity(0.75),
+                    celebration.type.color.opacity(0.50),
+                    celebration.type.color.opacity(0.25),
+                    Color.black.opacity(0.90)
                 ]),
                 center: .center,
                 startRadius: 5,

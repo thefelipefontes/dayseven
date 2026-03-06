@@ -17728,6 +17728,9 @@ export default function DaySevenApp() {
   useEffect(() => { userRef.current = user; }, [user]);
   const activitiesRef = useRef([]);
   // activitiesRef is synced after activities state is declared (see below)
+  const lastFirestoreActivityCount = useRef(0); // Track last known Firestore activity count to prevent overwriting
+  const activitiesFromFirestore = useRef(false); // Skip debounced save when activities came from Firestore or were saved directly
+  const lastFirestoreSyncTime = useRef(0); // Timestamp of last Firestore sync/save — prevents stale saves for 10 seconds
 
   // Auto-detect max heart rate from HealthKit + workout history when not set
   // NOTE: This useEffect is declared before activities state — uses activitiesRef to avoid TDZ
@@ -17956,7 +17959,10 @@ export default function DaySevenApp() {
       try {
         // Fetch fresh data directly from Firestore (bypass all caches)
         const freshActivities = await getUserActivities(user.uid, true);
+        lastFirestoreActivityCount.current = freshActivities.length;
         activitiesRef.current = freshActivities;
+        activitiesFromFirestore.current = true; // Skip debounced save — data is already in Firestore
+        lastFirestoreSyncTime.current = Date.now(); // Timestamp-based protection window
         setActivities(freshActivities);
 
         const freshProfile = await getUserProfile(user.uid, true);
@@ -18550,7 +18556,16 @@ export default function DaySevenApp() {
       }
 
       // Check onboarding status
-      const hasCompletedOnboarding = profile?.hasCompletedOnboarding === true;
+      // If profile has user data (activities, username, streaks, etc.), user has clearly onboarded
+      // even if hasCompletedOnboarding flag is missing (can happen if Firestore data was partially wiped)
+      const hasActivities = Array.isArray(profile?.activities) && profile.activities.length > 0;
+      const hasExistingUserData = hasActivities || profile?.username || profile?.streaks || profile?.personalRecords || profile?.maxHeartRate;
+      const hasCompletedOnboarding = profile?.hasCompletedOnboarding === true || !!hasExistingUserData;
+
+      // If we inferred onboarding from existing data but the flag is missing, repair it
+      if (hasExistingUserData && profile?.hasCompletedOnboarding !== true) {
+        setOnboardingComplete(user.uid).catch(() => {});
+      }
 
       // Set user and profile together to avoid intermediate render states
       setUser(user);
@@ -18570,6 +18585,16 @@ export default function DaySevenApp() {
               ...prev,
               goals: userGoals
             }));
+            // Re-persist goals to Firestore to ensure they stay synced
+            saveUserGoals(user.uid, userGoals).catch(() => {});
+          } else {
+            // Goals missing from Firestore but user may have them in local state
+            // (e.g., set during onboarding but Firestore was wiped)
+            // Re-persist local goals to repair Firestore
+            const localGoals = userDataRef.current?.goals;
+            if (localGoals && localGoals.liftsPerWeek) {
+              saveUserGoals(user.uid, localGoals).catch(() => {});
+            }
           }
 
           // Initialize RevenueCat with Firebase UID
@@ -18626,7 +18651,10 @@ export default function DaySevenApp() {
 
           // Load user's activities from Firestore (force refresh to pick up watch-saved activities)
           const userActivities = await getUserActivities(user.uid, true);
+          lastFirestoreActivityCount.current = userActivities.length;
           if (userActivities.length > 0) {
+            activitiesFromFirestore.current = true; // Skip debounced save — data is already in Firestore
+        lastFirestoreSyncTime.current = Date.now(); // Timestamp-based protection window
             setActivities(userActivities);
             // Update ref immediately so syncHealthKit can see loaded activities
             activitiesRef.current = userActivities;
@@ -18829,7 +18857,10 @@ export default function DaySevenApp() {
     try {
       // Reload activities — force refresh to pick up watch workouts
       const userActivities = await getUserActivities(user.uid, true);
+      lastFirestoreActivityCount.current = userActivities.length;
       if (userActivities.length > 0) {
+        activitiesFromFirestore.current = true; // Skip debounced save — data is already in Firestore
+        lastFirestoreSyncTime.current = Date.now(); // Timestamp-based protection window
         setActivities(userActivities);
         // Rebuild calendar data
         const calendarMap = {};
@@ -18958,7 +18989,10 @@ export default function DaySevenApp() {
             try {
               const freshActivities = await getUserActivities(uid, true);
               const merged = [...autoImportedActivities, ...freshActivities];
+              lastFirestoreActivityCount.current = merged.length;
               activitiesRef.current = merged;
+              activitiesFromFirestore.current = true; // Prevent debounced save — saving directly
+              lastFirestoreSyncTime.current = Date.now();
               setActivities(merged);
               saveUserActivities(uid, merged).catch(() => {});
             } catch (e) {
@@ -19036,7 +19070,10 @@ export default function DaySevenApp() {
               try {
                 const freshActivities = await getUserActivities(uid, true);
                 const merged = [...smartSavedActivities, ...freshActivities];
+                lastFirestoreActivityCount.current = merged.length;
                 activitiesRef.current = merged;
+                activitiesFromFirestore.current = true; // Prevent debounced save — saving directly
+                lastFirestoreSyncTime.current = Date.now();
                 setActivities(merged);
                 saveUserActivities(uid, merged).catch(() => {});
               } catch (e) {
@@ -19121,14 +19158,24 @@ export default function DaySevenApp() {
       if (document.visibilityState === 'visible') {
         // Skip refresh when returning from photo picker to prevent re-render glitch
         if (photoPickerActive) return;
+        // Clear badge and delivered notifications when app returns to foreground
+        clearBadge();
+        clearAllNotifications();
         refreshHealthKitData();
         // Re-sync workouts when returning to foreground
         if (user?.uid) {
           try {
             // Fetch fresh activities (force refresh to pick up watch workouts)
             const freshActivities = await getUserActivities(user.uid, true);
+            lastFirestoreActivityCount.current = freshActivities.length;
             activitiesRef.current = freshActivities;
+            activitiesFromFirestore.current = true; // Skip debounced save — data is already in Firestore
+            lastFirestoreSyncTime.current = Date.now(); // Timestamp-based protection window
             setActivities(freshActivities);
+
+            // Recalculate weekly progress so dashboard rings update with fresh data
+            const freshProgress = calculateWeeklyProgress(freshActivities);
+            setWeeklyProgress(freshProgress);
 
             // Check for pending celebrations from watch (goals completed on watch but not yet celebrated on phone)
             try {
@@ -19193,6 +19240,25 @@ export default function DaySevenApp() {
             // Small delay to ensure state is updated before syncHealthKit reads it
             await new Promise(r => setTimeout(r, 100));
             syncHealthKit();
+
+            // Healing check: the Firestore SDK's offline persistence queue may flush
+            // stale writes from BEFORE the import-only fix was deployed. These writes
+            // happen at the native level (below JS) and can overwrite watch-saved data.
+            // After a delay (giving the SDK time to flush), re-read Firestore and
+            // re-stamp the correct data if it was overwritten.
+            const capturedCount = freshActivities.length;
+            const capturedUid = user.uid;
+            setTimeout(async () => {
+              try {
+                const verifyActivities = await getUserActivities(capturedUid, true);
+                if (verifyActivities.length < capturedCount) {
+                  console.warn(`[VisibilityHeal] Stale SDK flush detected: server has ${verifyActivities.length} but should have ${capturedCount} — re-saving`);
+                  await saveUserActivities(capturedUid, freshActivities);
+                }
+              } catch (e) {
+                // Non-critical — healing check failed
+              }
+            }, 5000);
           } catch (e) {
             syncHealthKit();
           }
@@ -19322,13 +19388,65 @@ export default function DaySevenApp() {
       return;
     }
 
-    // Debounce the save to avoid too many writes
-    const timeoutId = setTimeout(() => {
-      saveUserActivities(user.uid, activities).then(() => {
-        // Notify watch to refresh after any activity change
-        notifyWatchDataChanged();
-      });
-    }, 1000);
+    // Skip save if activities were just loaded from Firestore or saved directly
+    // (handleActivitySaved and handleDeleteActivity now save directly and set this flag)
+    if (activitiesFromFirestore.current) {
+      activitiesFromFirestore.current = false;
+      return;
+    }
+
+    // Skip save if we recently synced/saved (10-second protection window)
+    // This catches race conditions where the flag was already consumed but data is still fresh
+    const timeSinceSync = Date.now() - lastFirestoreSyncTime.current;
+    if (timeSinceSync < 10000) {
+      return;
+    }
+
+    // Guard: never overwrite Firestore with fewer activities than we last loaded/saved.
+    if (activities.length < lastFirestoreActivityCount.current) {
+      return;
+    }
+
+    // Debounced IMPORT-ONLY path — NEVER writes to Firestore.
+    // All saves are handled directly by handleActivitySaved, handleDeleteActivity,
+    // auto-import, and smart-save. This path only catches cases where the phone's
+    // React state is behind Firestore (e.g., watch saved while phone was backgrounded).
+    // Writing from here caused a critical bug: when the phone was backgrounded, JS was
+    // suspended and protection flags were never set, so the debounced save would write
+    // stale React state (e.g., 15 activities) overwriting watch saves (e.g., 18 activities).
+    const timeoutId = setTimeout(async () => {
+      // Re-check guards inside the timeout (state may have changed during the delay)
+      if (activitiesFromFirestore.current) {
+        activitiesFromFirestore.current = false;
+        return;
+      }
+      const timeSinceSyncInner = Date.now() - lastFirestoreSyncTime.current;
+      if (timeSinceSyncInner < 10000) {
+        return;
+      }
+      // Don't run while app is in background — JS state may be stale
+      if (document.visibilityState === 'hidden') {
+        return;
+      }
+      // Check if Firestore has newer data and import it
+      try {
+        const currentActivities = await getUserActivities(user.uid, true);
+        if (currentActivities.length > activities.length) {
+          // Firestore has more activities (watch added some), adopt Firestore's data
+          console.log('[DebouncedImport] Importing', currentActivities.length, 'activities from Firestore (local had', activities.length, ')');
+          lastFirestoreActivityCount.current = currentActivities.length;
+          activitiesRef.current = currentActivities;
+          activitiesFromFirestore.current = true;
+          lastFirestoreSyncTime.current = Date.now();
+          setActivities(currentActivities);
+          return;
+        }
+        // Counts match or local has more — update tracking ref
+        lastFirestoreActivityCount.current = currentActivities.length;
+      } catch (e) {
+        // Fetch failed — skip silently
+      }
+    }, 2000);
 
     return () => clearTimeout(timeoutId);
   }, [activities, user]);
@@ -19649,6 +19767,19 @@ export default function DaySevenApp() {
     }
     
     setActivities(updatedActivities);
+
+    // Save directly to Firestore — don't rely on debounced save to avoid race conditions with watch
+    activitiesFromFirestore.current = true; // Prevent debounced save from re-saving
+    lastFirestoreSyncTime.current = Date.now(); // 5-second protection window
+    lastFirestoreActivityCount.current = updatedActivities.length;
+    activitiesRef.current = updatedActivities;
+    if (user?.uid) {
+      saveUserActivities(user.uid, updatedActivities).then(() => {
+        notifyWatchDataChanged();
+      }).catch(err => {
+        console.error('[handleActivitySaved] Direct save failed:', err);
+      });
+    }
 
     // If this was a HealthKit workout or linked to one, remove it from pending list
     const workoutUUIDToRemove = activityData.healthKitUUID || activityData.linkedHealthKitUUID;
@@ -20107,6 +20238,13 @@ export default function DaySevenApp() {
     const updatedActivities = activities.filter(a => a.id !== activityId);
     setActivities(updatedActivities);
 
+    // Prevent debounced save from interfering with the direct save below
+    // (debounced save would see fewer activities and could undo the delete or overwrite watch data)
+    activitiesFromFirestore.current = true;
+    lastFirestoreSyncTime.current = Date.now();
+    lastFirestoreActivityCount.current = updatedActivities.length;
+    activitiesRef.current = updatedActivities;
+
     // Update calendar data
     const dateKey = activityToDelete.date;
     if (calendarData[dateKey]) {
@@ -20282,10 +20420,11 @@ export default function DaySevenApp() {
       }));
     }
 
-    // Persist deletion to Firestore
-    // (watch notification happens automatically via the activities useEffect save)
+    // Persist deletion to Firestore (direct save — no longer relies on debounced useEffect)
     if (user?.uid) {
-      saveUserActivities(user.uid, updatedActivities).catch(() => {});
+      saveUserActivities(user.uid, updatedActivities, { allowDecrease: true }).then(() => {
+        notifyWatchDataChanged();
+      }).catch(() => {});
       // Always persist recalculated streaks after delete
       setTimeout(() => {
         const latestData = userDataRef.current;

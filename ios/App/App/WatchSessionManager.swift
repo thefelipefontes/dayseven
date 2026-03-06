@@ -196,6 +196,42 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         }
     }
 
+    // MARK: - Handle transferUserInfo from Watch (background delivery)
+
+    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        guard let action = userInfo["action"] as? String else {
+            print("[WatchSession] Received userInfo with no action: \(userInfo.keys)")
+            return
+        }
+
+        print("[WatchSession] Received transferUserInfo: action=\(action)")
+
+        switch action {
+        case "activitySaved":
+            // Same flow as the real-time message path: refresh Firestore cache and notify JS
+            guard let uid = Auth.auth().currentUser?.uid else {
+                print("[WatchSession] transferUserInfo activitySaved: no user signed in")
+                return
+            }
+
+            let docRef = Firestore.firestore().document("users/\(uid)")
+            docRef.getDocument(source: .server) { document, error in
+                if let error = error {
+                    print("[WatchSession] transferUserInfo: cache refresh failed: \(error.localizedDescription)")
+                } else {
+                    let activityCount = (document?.data()?["activities"] as? [[String: Any]])?.count ?? 0
+                    print("[WatchSession] transferUserInfo: cache refreshed, \(activityCount) activities")
+                }
+                // Notify JS layer regardless — it will fetch fresh data via REST
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .watchActivitySaved, object: nil)
+                }
+            }
+        default:
+            print("[WatchSession] Unknown transferUserInfo action: \(action)")
+        }
+    }
+
     // MARK: - Handle activity saved from watch
 
     /// When the watch saves an activity, force-refresh the Firestore cache

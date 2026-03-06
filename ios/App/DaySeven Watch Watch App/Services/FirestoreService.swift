@@ -9,6 +9,15 @@ class FirestoreService {
         "https://firestore.googleapis.com/v1/projects/\(projectId)/databases/(default)/documents"
     }
 
+    /// Ephemeral URLSession — never caches responses. Prevents stale Firestore reads
+    /// where Self.session could return cached activity counts after a save,
+    /// causing loadUserData() to overwrite correct local state with old data.
+    private static let session: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 15
+        return URLSession(configuration: config)
+    }()
+
     // MARK: - Fetch User Data
 
     func getUserData(uid: String) async throws -> (goals: UserGoals, streaks: UserStreaks, activities: [Activity], personalRecords: PersonalRecords) {
@@ -83,7 +92,7 @@ class FirestoreService {
     func saveActivities(uid: String, activities: [Activity]) async throws {
         try await updateDocument("users/\(uid)", fields: [
             "activities": encodeActivitiesArray(activities)
-        ])
+        ], fieldMask: ["activities"])
     }
 
     // MARK: - Update Streaks
@@ -101,7 +110,7 @@ class FirestoreService {
                     ]
                 ]
             ]
-        ])
+        ], fieldMask: ["streaks"])
     }
 
     // MARK: - Update Personal Records
@@ -180,7 +189,7 @@ class FirestoreService {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 15
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await Self.session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw FirestoreError.networkError
@@ -201,11 +210,12 @@ class FirestoreService {
     private func updateDocument(_ path: String, fields: [String: Any], fieldMask: [String]? = nil) async throws {
         let token = try await getAuthToken()
 
+        // ALWAYS use field masks to prevent full document replacement.
+        // If no explicit mask is provided, derive it from the fields dictionary keys.
+        let mask = fieldMask ?? Array(fields.keys)
         var urlString = "\(baseURL)/\(path)"
-        if let mask = fieldMask {
-            let maskParams = mask.map { "updateMask.fieldPaths=\($0)" }.joined(separator: "&")
-            urlString += "?\(maskParams)"
-        }
+        let maskParams = mask.map { "updateMask.fieldPaths=\($0)" }.joined(separator: "&")
+        urlString += "?\(maskParams)"
 
         let url = URL(string: urlString)!
 
@@ -218,7 +228,7 @@ class FirestoreService {
         let body: [String: Any] = ["fields": fields]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (responseData, response) = try await URLSession.shared.data(for: request)
+        let (responseData, response) = try await Self.session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
@@ -256,7 +266,7 @@ class FirestoreService {
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await Self.session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {

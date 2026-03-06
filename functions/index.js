@@ -5,7 +5,7 @@
  * to users via Firebase Cloud Messaging (FCM).
  */
 
-const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
+const { onDocumentCreated, onDocumentUpdated, onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onCall, HttpsError, onRequest } = require("firebase-functions/v2/https");
 const { initializeApp } = require("firebase-admin/app");
@@ -1106,64 +1106,59 @@ exports.onFriendActivityLogged = onDocumentUpdated(
 
 /**
  * Notify user when ALL three weekly goals (strength, cardio, recovery) are complete.
- * Only fires once per week (compares before/after state to avoid re-notifying).
+ *
+ * Detection strategy: watch for weekCelebrations.master going from false → true.
+ * Both the phone and watch set this flag when all goals are met:
+ *   - Phone: sets weekCelebrations via updateUserProfile (separate write, activities unchanged)
+ *   - Watch: sets weekCelebrations + activities together in one batchSave
+ *
+ * We only want to notify for WATCH completions (user already sees the in-app celebration
+ * on the phone). We distinguish them by checking if activities also changed in the same
+ * write — the watch's batchSave updates both, while the phone's celebration write only
+ * touches weekCelebrations.
  */
 exports.onGoalAchieved = onDocumentUpdated(
   'users/{userId}',
   async (event) => {
+    const userId = event.params.userId;
     const before = event.data.before.data();
     const after = event.data.after.data();
-    const userId = event.params.userId;
 
+    // Check if weekCelebrations.master went from false/unset → true
+    const beforeMaster = (before.weekCelebrations || {}).master === true;
+    const afterMaster = (after.weekCelebrations || {}).master === true;
+
+    if (!afterMaster || beforeMaster) {
+      // Either goals not completed in this write, or already completed before
+      return;
+    }
+
+    // master just went false → true. Determine if this came from the watch or phone.
+    // Watch batchSave writes activities + weekCelebrations together, so activities
+    // will differ in the same write. Phone celebration writes weekCelebrations alone
+    // (activities are saved separately via debounced save).
     const beforeActivities = before.activities || [];
     const afterActivities = after.activities || [];
+    const activitiesChanged = beforeActivities.length !== afterActivities.length;
 
-    // Only proceed if activities were added
-    if (afterActivities.length <= beforeActivities.length) return;
+    if (!activitiesChanged) {
+      // Double-check with ID comparison in case lengths happen to match
+      const beforeIds = new Set(beforeActivities.map(a => String(a.id || '')));
+      const hasNewIds = afterActivities.some(a => !beforeIds.has(String(a.id || '')));
+      if (!hasNewIds) {
+        console.log(`[onGoalAchieved] ${userId}: Phone celebrated (activities unchanged), skipping notification`);
+        return;
+      }
+    }
 
-    // Get current week start (Sunday)
-    const now = new Date();
-    const dayOfWeek = now.getDay();
-    const weekStart = new Date(now);
-    weekStart.setDate(now.getDate() - dayOfWeek);
-    weekStart.setHours(0, 0, 0, 0);
-    const weekStartStr = weekStart.toISOString().split('T')[0];
-
-    const goals = after.goals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2 };
-
-    // Count this week's activities by category (after state)
-    const afterWeek = afterActivities.filter(a => a.date >= weekStartStr);
-    let aLifts = 0, aCardio = 0, aRecovery = 0;
-    afterWeek.forEach(a => {
-      const cat = getActivityCategoryForGoals(a);
-      if (cat === 'lifting') aLifts++;
-      else if (cat === 'cardio') aCardio++;
-      else if (cat === 'recovery') aRecovery++;
-    });
-
-    // Check if all goals are met now
-    const allMetNow = aLifts >= goals.liftsPerWeek &&
-                      aCardio >= goals.cardioPerWeek &&
-                      aRecovery >= goals.recoveryPerWeek;
-    if (!allMetNow) return;
-
-    // Count before-state to see if goals were already met
-    const beforeWeek = beforeActivities.filter(a => a.date >= weekStartStr);
-    let bLifts = 0, bCardio = 0, bRecovery = 0;
-    beforeWeek.forEach(a => {
-      const cat = getActivityCategoryForGoals(a);
-      if (cat === 'lifting') bLifts++;
-      else if (cat === 'cardio') bCardio++;
-      else if (cat === 'recovery') bRecovery++;
-    });
-
-    const allMetBefore = bLifts >= goals.liftsPerWeek &&
-                         bCardio >= goals.cardioPerWeek &&
-                         bRecovery >= goals.recoveryPerWeek;
-    if (allMetBefore) return; // Already achieved, don't re-notify
+    // Watch completed all goals — send push notification
+    console.log(`[onGoalAchieved] ${userId}: Watch completed all goals, sending notification`);
 
     const prefs = await getUserPreferences(userId);
-    if (!prefs.goalAchievements) return;
+    if (!prefs.goalAchievements) {
+      console.log(`[onGoalAchieved] ${userId}: goalAchievements preference disabled`);
+      return;
+    }
 
     await sendNotificationToUser(
       userId,
@@ -1171,10 +1166,63 @@ exports.onGoalAchieved = onDocumentUpdated(
       'You\'ve hit all your strength, cardio, and recovery goals this week!',
       {
         type: NotificationType.GOAL_ACHIEVED,
-        lifts: aLifts.toString(),
-        cardio: aCardio.toString(),
-        recovery: aRecovery.toString(),
       }
     );
+  }
+);
+
+// ==========================================
+// FIELD PROTECTION: Prevent goals/profile wipe
+// ==========================================
+
+/**
+ * Monitors writes to user documents and automatically restores critical fields
+ * (goals, hasCompletedOnboarding, username) if they get wiped.
+ * Also logs what changed for debugging.
+ */
+exports.protectUserFields = onDocumentWritten(
+  { document: "users/{userId}" },
+  async (event) => {
+    const userId = event.params.userId;
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+
+    // Skip if document was deleted
+    if (!after) return;
+
+    // Check if critical fields were wiped
+    const goalsWiped = before?.goals && !after.goals;
+    const usernameWiped = before?.username && !after.username;
+    const onboardingWiped = before?.hasCompletedOnboarding === true && after.hasCompletedOnboarding !== true;
+
+    if (goalsWiped || usernameWiped || onboardingWiped) {
+      const beforeKeys = before ? Object.keys(before).sort() : [];
+      const afterKeys = after ? Object.keys(after).sort() : [];
+      const removedKeys = beforeKeys.filter(k => !afterKeys.includes(k) || after[k] === undefined);
+
+      console.error(`[FIELD_WIPE_DETECTED] userId=${userId}`, {
+        goalsWiped,
+        usernameWiped,
+        onboardingWiped,
+        beforeKeys,
+        afterKeys,
+        removedKeys,
+      });
+
+      // Restore wiped fields
+      const restore = {};
+      if (goalsWiped && before.goals) restore.goals = before.goals;
+      if (usernameWiped && before.username) restore.username = before.username;
+      if (onboardingWiped) restore.hasCompletedOnboarding = true;
+
+      if (Object.keys(restore).length > 0) {
+        try {
+          await db.collection("users").doc(userId).set(restore, { merge: true });
+          console.log(`[FIELD_WIPE_RESTORED] userId=${userId} restored:`, Object.keys(restore));
+        } catch (err) {
+          console.error(`[FIELD_WIPE_RESTORE_FAILED] userId=${userId}:`, err);
+        }
+      }
+    }
   }
 );

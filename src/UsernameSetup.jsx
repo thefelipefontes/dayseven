@@ -30,7 +30,7 @@ const UsernameSetup = ({ user, onComplete }) => {
     const checkUsername = async () => {
       setIsChecking(true);
       try {
-        const available = await checkUsernameAvailable(username);
+        const available = await checkUsernameAvailable(username, user?.uid);
         setIsTaken(!available);
       } catch (error) {
         // On error, assume username is available to let user proceed
@@ -49,7 +49,7 @@ const UsernameSetup = ({ user, onComplete }) => {
     setIsSaving(true);
     try {
       // Re-check availability right before saving to prevent race conditions
-      const stillAvailable = await checkUsernameAvailable(username);
+      const stillAvailable = await checkUsernameAvailable(username, user?.uid);
       if (!stillAvailable) {
         setIsTaken(true);
         setIsSaving(false);

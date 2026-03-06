@@ -78,6 +78,38 @@ const withRetry = async (fn, maxRetries = 2, delayMs = 500) => {
   throw lastError;
 };
 
+// Firebase project ID for REST API calls
+const FIREBASE_PROJECT_ID = 'dayseven-f1a89';
+
+// Convert a JS value to Firestore REST API format
+// Used for REST-based writes to bypass Firestore SDK's offline persistence queue
+const jsToFirestoreValue = (value) => {
+  if (value === null || value === undefined) return { nullValue: null };
+  if (typeof value === 'string') return { stringValue: value };
+  if (typeof value === 'boolean') return { booleanValue: value };
+  if (typeof value === 'number') {
+    return Number.isInteger(value)
+      ? { integerValue: String(value) }
+      : { doubleValue: value };
+  }
+  if (Array.isArray(value)) {
+    return value.length > 0
+      ? { arrayValue: { values: value.map(jsToFirestoreValue) } }
+      : { arrayValue: {} };
+  }
+  if (typeof value === 'object') {
+    const fields = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (v !== undefined) fields[k] = jsToFirestoreValue(v);
+    }
+    return { mapValue: { fields } };
+  }
+  return { stringValue: String(value) };
+};
+
+// Track last known server activity count to guard against stale writes
+let lastKnownServerActivityCount = 0;
+
 export async function createUserProfile(user) {
   const path = `users/${user.uid}`;
 
@@ -87,24 +119,26 @@ export async function createUserProfile(user) {
       const { snapshot } = await FirebaseFirestore.getDocument({ reference: path });
 
       if (!snapshot?.data) {
+        // Use merge: true so we never wipe existing data (e.g. goals, hasCompletedOnboarding)
+        // Only include safe profile metadata — onboarding fields are set by the onboarding flow itself
         await FirebaseFirestore.setDocument({
           reference: path,
           data: {
             uid: user.uid,
             email: user.email,
-            displayName: user.displayName,
-            photoURL: user.photoURL,
+            displayName: user.displayName || null,
+            photoURL: user.photoURL || null,
             authProvider: user.authProvider || null,
-            createdAt: new Date().toISOString(),
-            hasCompletedOnboarding: false,
-            goals: null
-          }
+            createdAt: new Date().toISOString()
+          },
+          merge: true
         });
       } else if (user.authProvider && !snapshot.data.authProvider) {
         // Update authProvider if it wasn't set before (for existing users)
-        await FirebaseFirestore.updateDocument({
+        await FirebaseFirestore.setDocument({
           reference: path,
-          data: { authProvider: user.authProvider }
+          data: { authProvider: user.authProvider },
+          merge: true
         });
       }
     } else {
@@ -113,19 +147,19 @@ export async function createUserProfile(user) {
       const userDoc = await withTimeout(getDoc(userRef));
 
       if (!userDoc.exists()) {
+        // Use merge: true so we never wipe existing data (e.g. goals, hasCompletedOnboarding)
+        // Only include safe profile metadata — onboarding fields are set by the onboarding flow itself
         await withTimeout(setDoc(userRef, {
           uid: user.uid,
           email: user.email,
-          displayName: user.displayName,
-          photoURL: user.photoURL,
+          displayName: user.displayName || null,
+          photoURL: user.photoURL || null,
           authProvider: user.authProvider || null,
-          createdAt: new Date().toISOString(),
-          hasCompletedOnboarding: false,
-          goals: null
-        }));
+          createdAt: new Date().toISOString()
+        }, { merge: true }));
       } else if (user.authProvider && !userDoc.data().authProvider) {
         // Update authProvider if it wasn't set before (for existing users)
-        await withTimeout(updateDoc(userRef, { authProvider: user.authProvider }));
+        await withTimeout(setDoc(userRef, { authProvider: user.authProvider }, { merge: true }));
       }
     }
   } catch (error) {
@@ -154,7 +188,8 @@ export async function getUserProfile(uid, forceRefresh = false) {
         const { token } = await FirebaseAuthentication.getIdToken();
         const restUrl = `https://firestore.googleapis.com/v1/projects/dayseven-f1a89/databases/(default)/documents/users/${uid}`;
         const response = await fetch(restUrl, {
-          headers: { 'Authorization': `Bearer ${token}` }
+          headers: { 'Authorization': `Bearer ${token}` },
+          cache: 'no-store'
         });
         const json = await response.json();
         const fields = json?.fields;
@@ -229,62 +264,85 @@ export async function updateUserProfile(uid, data) {
   }
 
   try {
+    // Use setDocument with merge instead of updateDocument to prevent
+    // Firestore SDK offline cache issues from wiping unrelated fields
     if (isNative) {
-      await FirebaseFirestore.updateDocument({
+      await FirebaseFirestore.setDocument({
         reference: path,
-        data: data
+        data: data,
+        merge: true
       });
     } else {
       const userRef = doc(db, 'users', uid);
-      await withTimeout(updateDoc(userRef, data));
+      await withTimeout(setDoc(userRef, data, { merge: true }));
     }
   } catch (error) {
-    // If doc doesn't exist, try to create it
-    if (error.message?.includes('No document') || error.message?.includes('not-found') || error.code === 'not-found') {
-      if (isNative) {
-        await FirebaseFirestore.setDocument({
-          reference: path,
-          data: data,
-          merge: true
-        });
-      } else {
-        const userRef = doc(db, 'users', uid);
-        await withTimeout(setDoc(userRef, data, { merge: true }));
-      }
-    } else {
-      // Revert cache on error
-      cache.userProfiles.delete(uid);
-      throw error;
-    }
+    // Revert cache on error
+    cache.userProfiles.delete(uid);
+    throw error;
   }
 }
 
-export async function saveUserActivities(uid, activities) {
+export async function saveUserActivities(uid, activities, { allowDecrease = false } = {}) {
   const cleanedActivities = activities.map(activity => {
     return Object.fromEntries(
       Object.entries(activity).filter(([_, value]) => value !== undefined)
     );
   });
 
+  // Guard against stale writes: never overwrite Firestore with fewer activities
+  // unless explicitly allowed (e.g., user deleted an activity on the phone).
+  // This catches race conditions from SDK offline queue replays, stale closures, etc.
+  if (!allowDecrease && cleanedActivities.length < lastKnownServerActivityCount) {
+    console.warn(`[saveUserActivities] BLOCKED stale write: tried to save ${cleanedActivities.length} but server has ${lastKnownServerActivityCount}`);
+    return;
+  }
+
   // Update cache immediately (optimistic update)
   cache.userActivities.set(uid, cleanedActivities);
   cache.timestamps.set(`activities_${uid}`, Date.now());
-
-  const path = `users/${uid}`;
+  lastKnownServerActivityCount = cleanedActivities.length;
 
   try {
     await withRetry(async () => {
       if (isNative) {
-        await FirebaseFirestore.updateDocument({
-          reference: path,
-          data: { activities: cleanedActivities }
+        // Use REST API for writes to bypass Firestore SDK's offline persistence queue.
+        // The native SDK queues writes when the app is backgrounded and replays them
+        // when the app is foregrounded. If the phone's JS was suspended with stale
+        // React state, those queued writes overwrite watch-saved data with stale data.
+        // REST writes go directly to the server with no local queue.
+        const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+        const { token } = await FirebaseAuthentication.getIdToken();
+        const restUrl = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/users/${uid}?updateMask.fieldPaths=activities`;
+
+        const body = {
+          fields: {
+            activities: jsToFirestoreValue(cleanedActivities)
+          }
+        };
+
+        const response = await fetch(restUrl, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(body),
+          cache: 'no-store'
         });
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`REST save failed: ${response.status} ${text}`);
+        }
+        console.log('[saveUserActivities] REST save successful:', cleanedActivities.length, 'activities');
       } else {
         const userRef = doc(db, 'users', uid);
-        await withTimeout(updateDoc(userRef, { activities: cleanedActivities }));
+        await withTimeout(setDoc(userRef, { activities: cleanedActivities }, { merge: true }));
       }
     });
   } catch (error) {
+    console.error('[saveUserActivities] Save failed:', error.message);
     // Cache is already updated, so user sees changes immediately
     // Error will be logged but won't block the UI
     // On next refresh, data will sync
@@ -309,7 +367,8 @@ export async function getUserActivities(uid, forceRefresh = false) {
         const restUrl = `https://firestore.googleapis.com/v1/projects/dayseven-f1a89/databases/(default)/documents/users/${uid}?mask.fieldPaths=activities`;
         console.log('[getUserActivities] REST fetch starting...');
         const response = await fetch(restUrl, {
-          headers: { 'Authorization': `Bearer ${token}` }
+          headers: { 'Authorization': `Bearer ${token}` },
+          cache: 'no-store'
         });
         console.log('[getUserActivities] REST response status:', response.status);
         const json = await response.json();
@@ -360,9 +419,10 @@ export async function getUserActivities(uid, forceRefresh = false) {
       activities = userDoc.exists() ? (userDoc.data().activities || []) : [];
     }
 
-    // Cache the result
+    // Cache the result and update server count tracker
     cache.userActivities.set(uid, activities);
     cache.timestamps.set(`activities_${uid}`, Date.now());
+    lastKnownServerActivityCount = Math.max(lastKnownServerActivityCount, activities.length);
 
     return activities;
   } catch (error) {
@@ -374,7 +434,7 @@ export async function getUserActivities(uid, forceRefresh = false) {
   }
 }
 
-export async function checkUsernameAvailable(username) {
+export async function checkUsernameAvailable(username, currentUid = null) {
   const lowerUsername = username.toLowerCase();
   const path = `usernames/${lowerUsername}`;
 
@@ -382,7 +442,11 @@ export async function checkUsernameAvailable(username) {
     if (isNative) {
       // Check /usernames collection first
       const { snapshot } = await FirebaseFirestore.getDocument({ reference: path });
-      if (snapshot?.data) return false; // Already reserved
+      if (snapshot?.data) {
+        // Allow if it belongs to the current user (reclaiming their own username)
+        if (currentUid && snapshot.data.uid === currentUid) return true;
+        return false; // Reserved by someone else
+      }
 
       // Also check /users collection for legacy users who don't have a /usernames doc
       const { snapshots } = await FirebaseFirestore.getCollection({
@@ -394,17 +458,30 @@ export async function checkUsernameAvailable(username) {
           ]
         }
       });
-      return !snapshots?.length;
+      if (snapshots?.length) {
+        // Allow if the only match is the current user
+        if (currentUid && snapshots.length === 1 && snapshots[0]?.id === currentUid) return true;
+        return false;
+      }
+      return true;
     } else {
       // Check /usernames collection first
       const usernameRef = doc(db, 'usernames', lowerUsername);
       const usernameDoc = await getDoc(usernameRef);
-      if (usernameDoc.exists()) return false; // Already reserved
+      if (usernameDoc.exists()) {
+        // Allow if it belongs to the current user
+        if (currentUid && usernameDoc.data().uid === currentUid) return true;
+        return false; // Reserved by someone else
+      }
 
       // Also check /users collection for legacy users
       const usersQuery = query(collection(db, 'users'), where('username', '==', lowerUsername));
       const usersSnapshot = await getDocs(usersQuery);
-      return usersSnapshot.empty;
+      if (!usersSnapshot.empty) {
+        if (currentUid && usersSnapshot.size === 1 && usersSnapshot.docs[0].id === currentUid) return true;
+        return false;
+      }
+      return true;
     }
   } catch (error) {
     return true; // Assume available on error
@@ -418,9 +495,10 @@ export async function saveUsername(uid, username) {
 
   try {
     if (isNative) {
-      await FirebaseFirestore.updateDocument({
+      await FirebaseFirestore.setDocument({
         reference: userPath,
-        data: { username: lowerUsername }
+        data: { username: lowerUsername },
+        merge: true
       });
       await FirebaseFirestore.setDocument({
         reference: usernamePath,
@@ -428,7 +506,7 @@ export async function saveUsername(uid, username) {
       });
     } else {
       const userRef = doc(db, 'users', uid);
-      await updateDoc(userRef, { username: lowerUsername });
+      await setDoc(userRef, { username: lowerUsername }, { merge: true });
       const usernameRef = doc(db, 'usernames', lowerUsername);
       await setDoc(usernameRef, { uid });
     }
@@ -447,13 +525,14 @@ export async function saveCustomActivities(uid, customActivities) {
   try {
     await withRetry(async () => {
       if (isNative) {
-        await FirebaseFirestore.updateDocument({
+        await FirebaseFirestore.setDocument({
           reference: path,
-          data: { customActivities }
+          data: { customActivities },
+          merge: true
         });
       } else {
         const userRef = doc(db, 'users', uid);
-        await withTimeout(updateDoc(userRef, { customActivities }));
+        await withTimeout(setDoc(userRef, { customActivities }, { merge: true }));
       }
     });
   } catch (error) {
@@ -504,13 +583,14 @@ export async function saveUserGoals(uid, goals) {
   try {
     await withRetry(async () => {
       if (isNative) {
-        await FirebaseFirestore.updateDocument({
+        await FirebaseFirestore.setDocument({
           reference: path,
-          data: { goals }
+          data: { goals },
+          merge: true
         });
       } else {
         const userRef = doc(db, 'users', uid);
-        await withTimeout(updateDoc(userRef, { goals }));
+        await withTimeout(setDoc(userRef, { goals }, { merge: true }));
       }
     });
   } catch (error) {
@@ -558,13 +638,14 @@ export async function setOnboardingComplete(uid) {
 
   try {
     if (isNative) {
-      await FirebaseFirestore.updateDocument({
+      await FirebaseFirestore.setDocument({
         reference: path,
-        data: { hasCompletedOnboarding: true }
+        data: { hasCompletedOnboarding: true },
+        merge: true
       });
     } else {
       const userRef = doc(db, 'users', uid);
-      await updateDoc(userRef, { hasCompletedOnboarding: true });
+      await setDoc(userRef, { hasCompletedOnboarding: true }, { merge: true });
     }
   } catch (error) {
     throw error;
@@ -576,13 +657,14 @@ export async function setTourComplete(uid) {
 
   try {
     if (isNative) {
-      await FirebaseFirestore.updateDocument({
+      await FirebaseFirestore.setDocument({
         reference: path,
-        data: { hasCompletedTour: true }
+        data: { hasCompletedTour: true },
+        merge: true
       });
     } else {
       const userRef = doc(db, 'users', uid);
-      await updateDoc(userRef, { hasCompletedTour: true });
+      await setDoc(userRef, { hasCompletedTour: true }, { merge: true });
     }
   } catch (error) {
     throw error;
@@ -595,13 +677,14 @@ export async function savePersonalRecords(uid, personalRecords) {
   try {
     await withRetry(async () => {
       if (isNative) {
-        await FirebaseFirestore.updateDocument({
+        await FirebaseFirestore.setDocument({
           reference: path,
-          data: { personalRecords }
+          data: { personalRecords },
+          merge: true
         });
       } else {
         const userRef = doc(db, 'users', uid);
-        await withTimeout(updateDoc(userRef, { personalRecords }));
+        await withTimeout(setDoc(userRef, { personalRecords }, { merge: true }));
       }
     });
   } catch (error) {

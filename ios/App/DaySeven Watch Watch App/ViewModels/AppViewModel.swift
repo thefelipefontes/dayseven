@@ -35,6 +35,19 @@ class AppViewModel: ObservableObject {
     @Published var isLoading = true
     @Published var errorMessage: String?
 
+    /// Guard: prevents loadUserData() from overwriting local state while a save/delete is in progress.
+    /// Without this, a phone-triggered reload can race with a watch save and reset progress.
+    private var isSaving = false
+
+    /// Timestamp of the last successful save/delete/update. Used to skip redundant
+    /// dataChanged-triggered reloads within a cooldown window — after a save the watch
+    /// already has the correct local state, so an immediate reload is unnecessary.
+    private var lastSaveTime: Date = .distantPast
+
+    /// Tracks the last known activity count from the watch's perspective (saves + loads).
+    /// Used for logging to help debug sync issues.
+    private var lastKnownActivityCount: Int = 0
+
     init() {
         // Give PhoneConnectivityService access to WorkoutManager for remote commands
         phoneService.workoutManager = workoutManager
@@ -101,8 +114,17 @@ class AppViewModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self = self else { return }
-                print("[AppViewModel] Phone data changed — reloading from Firestore in 1s")
                 self.phoneService.dataChangedFlag = false
+
+                // Skip reload if a save just completed — the watch already has correct
+                // local state and the phone is just echoing back our own change.
+                let timeSinceSave = Date().timeIntervalSince(self.lastSaveTime)
+                if timeSinceSave < 5.0 {
+                    print("[AppViewModel] Phone data changed — skipping reload (save completed \(String(format: "%.1f", timeSinceSave))s ago)")
+                    return
+                }
+
+                print("[AppViewModel] Phone data changed — reloading from Firestore in 1s")
                 Task {
                     // Small delay to ensure Firestore write has propagated
                     try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
@@ -116,6 +138,14 @@ class AppViewModel: ObservableObject {
     // MARK: - Load User Data
 
     func loadUserData() async {
+        // Don't overwrite local state while a save/delete/update is in progress.
+        // The save already has the correct local state; a reload during batchSave
+        // would fetch stale Firestore data and reset progress.
+        if isSaving {
+            print("[LoadUserData] Skipping — save in progress")
+            return
+        }
+
         guard let uid = authService.currentUser?.uid else {
             isLoading = false
             return
@@ -131,14 +161,18 @@ class AppViewModel: ObservableObject {
             async let distance = fetchDistanceSafe()
 
             let userData = try await firestoreData
+
             activities = userData.activities
             goals = userData.goals
             streaks = userData.streaks
             personalRecords = userData.personalRecords
+            lastKnownActivityCount = activities.count
 
             // Calculate progress
             weeklyProgress = calculateWeeklyProgress(activities: activities, goals: goals)
             weeklyStats = calculateWeeklyStats(activities: activities)
+
+            print("[LoadUserData] Loaded \(activities.count) activities — lifts: \(weeklyProgress.lifts.completed)/\(goals.liftsPerWeek), cardio: \(weeklyProgress.cardio.completed)/\(goals.cardioPerWeek), recovery: \(weeklyProgress.recovery.completed)/\(goals.recoveryPerWeek)")
 
             // Health data
             todaySteps = await steps
@@ -201,6 +235,9 @@ class AppViewModel: ObservableObject {
     // MARK: - Save Activity (after workout ends)
 
     func saveActivity(_ activity: Activity) async {
+        isSaving = true
+        defer { isSaving = false }
+
         guard let uid = authService.currentUser?.uid else {
             print("[SaveActivity] No user uid — skipping save")
             errorMessage = "Not signed in"
@@ -281,17 +318,16 @@ class AppViewModel: ObservableObject {
             )
             print("[SaveActivity] Successfully saved \(updatedActivities.count) activities to Firestore")
 
+            // Mark save time so we skip redundant dataChanged reloads
+            // (the phone will echo back a dataChanged after processing our save)
+            lastSaveTime = Date()
+            lastKnownActivityCount = updatedActivities.count
+
             // Push updated data to widget
             pushDataToWidget()
 
             // Notify the iPhone to refresh its Firestore cache
-            if WCSession.default.isReachable {
-                WCSession.default.sendMessage(["action": "activitySaved"], replyHandler: { reply in
-                    print("[SaveActivity] iPhone cache refresh: \(reply)")
-                }, errorHandler: { error in
-                    print("[SaveActivity] iPhone notify failed: \(error.localizedDescription)")
-                })
-            }
+            notifyPhoneDataChanged()
         } catch {
             print("[SaveActivity] FAILED — queueing for retry: \(error.localizedDescription)")
             OfflineQueueManager.shared.enqueue(activity)
@@ -303,6 +339,9 @@ class AppViewModel: ObservableObject {
     // MARK: - Update Activity (re-save with changed details)
 
     func updateActivity(withId activityId: ActivityID, updates: (inout Activity) -> Void) async {
+        isSaving = true
+        defer { isSaving = false }
+
         guard let uid = authService.currentUser?.uid else {
             print("[UpdateActivity] No user uid — skipping update")
             return
@@ -318,17 +357,22 @@ class AppViewModel: ObservableObject {
         updates(&updatedActivity)
         activities[index] = updatedActivity
 
-        // Save to Firestore
+        // Save to Firestore using batchSave (always uses field masks to prevent wiping other fields)
         do {
-            try await firestoreService.saveActivities(uid: uid, activities: activities)
+            try await firestoreService.batchSave(
+                uid: uid,
+                activities: activities,
+                streaks: streaks,
+                recordUpdates: nil
+            )
             print("[UpdateActivity] Successfully updated activity \(activityId)")
 
+            lastSaveTime = Date()
+            lastKnownActivityCount = activities.count
             pushDataToWidget()
 
             // Notify the iPhone to refresh
-            if WCSession.default.isReachable {
-                WCSession.default.sendMessage(["action": "activitySaved"], replyHandler: { _ in }, errorHandler: { _ in })
-            }
+            notifyPhoneDataChanged()
         } catch {
             print("[UpdateActivity] FAILED: \(error.localizedDescription)")
         }
@@ -339,6 +383,9 @@ class AppViewModel: ObservableObject {
     /// Retries saving any activities that were queued due to network failures.
     /// Fetches fresh data from Firestore, merges pending activities, and saves.
     func flushOfflineQueue() async {
+        isSaving = true
+        defer { isSaving = false }
+
         let queue = OfflineQueueManager.shared
         guard queue.hasPendingActivities, !queue.isFlushing else { return }
         guard let uid = authService.currentUser?.uid else { return }
@@ -369,8 +416,13 @@ class AppViewModel: ObservableObject {
                 return
             }
 
-            // Save only the activities array (streaks reconcile via phone notification)
-            try await firestoreService.saveActivities(uid: uid, activities: mergedActivities)
+            // Save using batchSave (always uses field masks to prevent wiping other fields)
+            try await firestoreService.batchSave(
+                uid: uid,
+                activities: mergedActivities,
+                streaks: freshData.streaks,
+                recordUpdates: nil
+            )
 
             queue.clearAll()
 
@@ -383,10 +435,11 @@ class AppViewModel: ObservableObject {
             weeklyStats = calculateWeeklyStats(activities: mergedActivities)
             pushDataToWidget()
 
+            lastSaveTime = Date()
+            lastKnownActivityCount = mergedActivities.count
+
             // Notify the phone to refresh and reconcile streaks
-            if WCSession.default.isReachable {
-                WCSession.default.sendMessage(["action": "activitySaved"], replyHandler: { _ in }, errorHandler: { _ in })
-            }
+            notifyPhoneDataChanged()
 
             print("[OfflineFlush] Successfully flushed \(addedCount) activities")
         } catch {
@@ -397,6 +450,9 @@ class AppViewModel: ObservableObject {
     // MARK: - Delete Activity (for discard after auto-save)
 
     func deleteActivity(withId activityId: ActivityID) async {
+        isSaving = true
+        defer { isSaving = false }
+
         guard let uid = authService.currentUser?.uid else {
             print("[DeleteActivity] No user uid — skipping delete")
             return
@@ -462,15 +518,34 @@ class AppViewModel: ObservableObject {
             )
             print("[DeleteActivity] Successfully removed activity and saved \(updatedActivities.count) activities")
 
+            lastSaveTime = Date()
+            lastKnownActivityCount = updatedActivities.count
+
             // Push updated data to widget
             pushDataToWidget()
 
             // Notify the iPhone to refresh
-            if WCSession.default.isReachable {
-                WCSession.default.sendMessage(["action": "activitySaved"], replyHandler: { _ in }, errorHandler: { _ in })
-            }
+            notifyPhoneDataChanged()
         } catch {
             print("[DeleteActivity] FAILED: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Notify Phone (with background fallback)
+
+    /// Notifies the iPhone that data changed. Uses sendMessage for real-time when reachable,
+    /// falls back to transferUserInfo for background/unreachable delivery.
+    private func notifyPhoneDataChanged() {
+        if WCSession.default.isReachable {
+            WCSession.default.sendMessage(["action": "activitySaved"], replyHandler: { reply in
+                print("[NotifyPhone] iPhone refreshed: \(reply)")
+            }, errorHandler: { error in
+                print("[NotifyPhone] sendMessage failed: \(error.localizedDescription) — using transferUserInfo")
+                WCSession.default.transferUserInfo(["action": "activitySaved", "timestamp": Date().timeIntervalSince1970])
+            })
+        } else {
+            WCSession.default.transferUserInfo(["action": "activitySaved", "timestamp": Date().timeIntervalSince1970])
+            print("[NotifyPhone] Phone not reachable — queued transferUserInfo")
         }
     }
 

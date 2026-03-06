@@ -141,9 +141,11 @@ export const addCustomerInfoListener = async (callback) => {
  * Present the RevenueCat paywall UI.
  * Always shows the paywall regardless of current entitlement status.
  *
+ * @param {Object} [options] - Optional configuration
+ * @param {string} [options.offeringIdentifier] - RevenueCat offering ID to display (e.g. "Welcome Offer")
  * @returns {Promise<{purchased: boolean, result: string|null}>}
  */
-export const presentPaywall = async () => {
+export const presentPaywall = async (options = {}) => {
   if (!isNative || !RevenueCatUI) return { purchased: false, result: null };
 
   try {
@@ -153,7 +155,15 @@ export const presentPaywall = async () => {
       return { purchased: false, result: null };
     }
 
-    const { result } = await RevenueCatUI.presentPaywall();
+    const paywallOptions = {};
+    if (options.offeringIdentifier) {
+      const offering = offerings?.all?.[options.offeringIdentifier];
+      if (offering) {
+        paywallOptions.offering = offering;
+      }
+    }
+
+    const { result } = await RevenueCatUI.presentPaywall(paywallOptions);
 
     switch (result) {
       case PAYWALL_RESULT.PURCHASED:

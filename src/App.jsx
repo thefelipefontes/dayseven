@@ -11897,7 +11897,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         )}
 
         {/* Streak Shield Button */}
-        {daysLeft <= 2 && (liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0) && userData.streaks.master > 0 && (() => {
+        {daysLeft <= 2 && (liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0) && (userData.streaks.master > 0 || userData.streaks.lifts > 0 || userData.streaks.cardio > 0 || userData.streaks.recovery > 0) && (() => {
           const currentWeek = getCurrentWeekKey();
           const isShielded = userData.streakShield?.lastUsedWeek === currentWeek;
 
@@ -13997,13 +13997,19 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
             Stats
           </button>
           <button
-            onClick={() => setView('progress')}
+            onClick={() => {
+              if (!isPro) {
+                onPresentPaywall?.();
+                return;
+              }
+              setView('progress');
+            }}
             className="flex-1 py-2 rounded-lg text-sm font-medium transition-colors duration-200 relative z-10"
             style={{
               color: view === 'progress' ? 'white' : 'rgba(255,255,255,0.5)'
             }}
           >
-            Compare
+            Compare {!isPro && '🔒'}
           </button>
         </div>
 
@@ -20563,12 +20569,12 @@ export default function DaySevenApp() {
           steps: { ...prev.steps, goal: goals.stepsPerDay },
           calories: { ...prev.calories, goal: goals.caloriesPerDay }
         }));
-        // Present paywall BEFORE setting isOnboarded to true
+        // Present welcome offer paywall BEFORE setting isOnboarded to true
         // This keeps the onboarding black screen behind the native paywall
         // so users can't interact with the main app through the paywall overlay
         if (Capacitor.isNativePlatform()) {
           try {
-            const { purchased } = await presentPaywall();
+            const { purchased } = await presentPaywall({ offeringIdentifier: 'Welcome Offer' });
             if (purchased) {
               const proStatus = await checkProStatus();
               setIsPro(proStatus);

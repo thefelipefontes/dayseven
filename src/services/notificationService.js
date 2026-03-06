@@ -462,7 +462,7 @@ export const handleNotificationNavigation = (notification, navigate, options = {
 
     case NotificationType.STREAK_MILESTONE:
     case NotificationType.GOAL_ACHIEVED:
-      navigate('profile');
+      navigate('home');
       break;
 
     case NotificationType.WEEKLY_SUMMARY:

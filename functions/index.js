@@ -547,7 +547,7 @@ exports.sendStreakReminders = onSchedule(
 
 /**
  * Helper: Get the current time in a user's timezone as "HH:00" (rounded to the hour)
- * Returns { time: "HH:00", dateStr: "YYYY-MM-DD" } in the user's local timezone
+ * Returns { time: "HH:00", dateStr: "YYYY-MM-DD", dayOfWeek: 0-6 } in the user's local timezone
  */
 function getUserLocalTime(timezone) {
   const tz = timezone || 'America/New_York';
@@ -566,13 +566,19 @@ function getUserLocalTime(timezone) {
     const dateFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: tz }); // en-CA gives YYYY-MM-DD
     const dateStr = dateFormatter.format(now);
 
-    return { time: `${hour}:00`, dateStr };
+    // Get the local day of week (0 = Sunday, 6 = Saturday)
+    const weekdayFormatter = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' });
+    const weekdayStr = weekdayFormatter.format(now);
+    const dayMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    const dayOfWeek = dayMap[weekdayStr] ?? now.getDay();
+
+    return { time: `${hour}:00`, dateStr, dayOfWeek };
   } catch {
     // Fallback if timezone is invalid
     const now = new Date();
     const h = now.getUTCHours().toString().padStart(2, '0');
     const d = now.toISOString().split('T')[0];
-    return { time: `${h}:00`, dateStr: d };
+    return { time: `${h}:00`, dateStr: d, dayOfWeek: now.getDay() };
   }
 }
 
@@ -624,25 +630,17 @@ exports.sendDailyReminders = onSchedule(
 );
 
 /**
- * End of week goal reminder - runs Thursday at 6 PM
+ * End of week goal reminder - runs every hour, sends at 8 AM Thursday in each user's timezone
  * Reminds users what they need to hit their weekly goals
  * Activities are stored as arrays in users/{uid} documents
  * Uses the 'countToward' field for category (strength/cardio/recovery)
  */
 exports.sendGoalReminder = onSchedule(
   {
-    schedule: '0 18 * * 4', // 6 PM every Thursday
-    timeZone: 'America/New_York',
+    schedule: '0 * * * *', // Every hour on the hour
+    timeZone: 'UTC',
   },
   async () => {
-
-    // Get start of current week (Sunday)
-    const now = new Date();
-    const dayOfWeek = now.getDay();
-    const weekStart = new Date(now);
-    weekStart.setDate(now.getDate() - dayOfWeek);
-    weekStart.setHours(0, 0, 0, 0);
-    const weekStartStr = weekStart.toISOString().split('T')[0];
 
     const usersSnapshot = await db.collection('users').get();
 
@@ -652,6 +650,17 @@ exports.sendGoalReminder = onSchedule(
 
       const prefs = await getUserPreferences(userId);
       if (!prefs.goalReminders) continue;
+
+      // Check if it's 8 AM Thursday in the user's timezone
+      const { time: userLocalTime, dateStr: userToday, dayOfWeek } = getUserLocalTime(prefs.timezone);
+      if (dayOfWeek !== 4 || userLocalTime !== '08:00') continue;
+
+      // Get start of current week (Sunday) in the user's local timezone
+      // userToday is Thursday (day 4), so Sunday is 4 days back
+      const todayParts = userToday.split('-').map(Number);
+      const localToday = new Date(todayParts[0], todayParts[1] - 1, todayParts[2]);
+      localToday.setDate(localToday.getDate() - dayOfWeek);
+      const weekStartStr = localToday.toISOString().split('T')[0];
 
       // Get user's goals
       const goals = userData.goals || { liftsPerWeek: 3, cardioPerWeek: 2, recoveryPerWeek: 2 };
@@ -680,13 +689,16 @@ exports.sendGoalReminder = onSchedule(
       const cardioRemaining = Math.max(0, goals.cardioPerWeek - cardio);
       const recoveryRemaining = Math.max(0, goals.recoveryPerWeek - recovery);
 
+      const daysLeft = 7 - dayOfWeek; // Days until end of week (Saturday)
+      const totalGoals = goals.liftsPerWeek + goals.cardioPerWeek + goals.recoveryPerWeek;
+      const totalDone = Math.min(strength, goals.liftsPerWeek) + Math.min(cardio, goals.cardioPerWeek) + Math.min(recovery, goals.recoveryPerWeek);
+
       // Check if all goals are met
       if (strengthRemaining === 0 && cardioRemaining === 0 && recoveryRemaining === 0) {
-        // Already hit all goals!
         await sendNotificationToUser(
           userId,
           'Goals Complete! 🎯',
-          'You\'ve hit all your weekly goals with days to spare. Amazing!',
+          `You've hit all ${totalGoals} workouts this week with ${daysLeft} days to spare. Amazing!`,
           {
             type: NotificationType.GOAL_REMINDER,
             allGoalsMet: 'true',
@@ -695,19 +707,32 @@ exports.sendGoalReminder = onSchedule(
         continue;
       }
 
-      // Build the remaining message
+      // Build completed summary (what they've done so far)
+      const completed = [];
+      if (strength > 0) completed.push(`${strength}/${goals.liftsPerWeek} strength`);
+      if (cardio > 0) completed.push(`${cardio}/${goals.cardioPerWeek} cardio`);
+      if (recovery > 0) completed.push(`${recovery}/${goals.recoveryPerWeek} recovery`);
+
+      // Build remaining summary (only categories still needed)
       const remaining = [];
       if (strengthRemaining > 0) remaining.push(`${strengthRemaining} strength`);
       if (cardioRemaining > 0) remaining.push(`${cardioRemaining} cardio`);
       if (recoveryRemaining > 0) remaining.push(`${recoveryRemaining} recovery`);
-
-      const daysLeft = 7 - dayOfWeek; // Days until end of week (Saturday)
       const remainingStr = remaining.join(', ');
+
+      // Personalize the message based on progress
+      let body;
+      if (totalDone === 0) {
+        body = `You still need ${remainingStr} to hit your goals. ${daysLeft} days left — time to get moving! 💪`;
+      } else {
+        const completedStr = completed.join(', ');
+        body = `You've done ${completedStr} so far. Still need ${remainingStr} — ${daysLeft} days left! 💪`;
+      }
 
       await sendNotificationToUser(
         userId,
-        `${daysLeft} Days Left This Week`,
-        `You need ${remainingStr} to hit your goals. You've got this! 💪`,
+        `${totalDone}/${totalGoals} Workouts Done — ${daysLeft} Days Left`,
+        body,
         {
           type: NotificationType.GOAL_REMINDER,
           strengthRemaining: strengthRemaining.toString(),
@@ -1108,14 +1133,10 @@ exports.onFriendActivityLogged = onDocumentUpdated(
  * Notify user when ALL three weekly goals (strength, cardio, recovery) are complete.
  *
  * Detection strategy: watch for weekCelebrations.master going from false → true.
- * Both the phone and watch set this flag when all goals are met:
- *   - Phone: sets weekCelebrations via updateUserProfile (separate write, activities unchanged)
- *   - Watch: sets weekCelebrations + activities together in one batchSave
- *
- * We only want to notify for WATCH completions (user already sees the in-app celebration
- * on the phone). We distinguish them by checking if activities also changed in the same
- * write — the watch's batchSave updates both, while the phone's celebration write only
- * touches weekCelebrations.
+ * Both the phone and watch set this flag when all goals are met.
+ * Sends notification regardless of source (watch or phone) — the
+ * lastGoalAchievedNotifWeek dedup ensures only one notification per week.
+ * If the user is on the phone, the foreground handler shows a toast.
  */
 exports.onGoalAchieved = onDocumentUpdated(
   'users/{userId}',
@@ -1128,37 +1149,48 @@ exports.onGoalAchieved = onDocumentUpdated(
     const beforeMaster = (before.weekCelebrations || {}).master === true;
     const afterMaster = (after.weekCelebrations || {}).master === true;
 
+    // When master goes true → false (user deleted an activity), clear the dedup
+    // field so the next completion can send a fresh notification.
+    if (beforeMaster && !afterMaster) {
+      const userRef = db.collection('users').doc(userId);
+      await userRef.set({ lastGoalAchievedNotifAt: null }, { merge: true });
+      console.log(`[onGoalAchieved] ${userId}: Goals un-completed, cleared dedup`);
+      return;
+    }
+
     if (!afterMaster || beforeMaster) {
       // Either goals not completed in this write, or already completed before
       return;
     }
 
-    // master just went false → true. Determine if this came from the watch or phone.
-    // Watch batchSave writes activities + weekCelebrations together, so activities
-    // will differ in the same write. Phone celebration writes weekCelebrations alone
-    // (activities are saved separately via debounced save).
-    const beforeActivities = before.activities || [];
-    const afterActivities = after.activities || [];
-    const activitiesChanged = beforeActivities.length !== afterActivities.length;
-
-    if (!activitiesChanged) {
-      // Double-check with ID comparison in case lengths happen to match
-      const beforeIds = new Set(beforeActivities.map(a => String(a.id || '')));
-      const hasNewIds = afterActivities.some(a => !beforeIds.has(String(a.id || '')));
-      if (!hasNewIds) {
-        console.log(`[onGoalAchieved] ${userId}: Phone celebrated (activities unchanged), skipping notification`);
-        return;
-      }
-    }
-
-    // Watch completed all goals — send push notification
-    console.log(`[onGoalAchieved] ${userId}: Watch completed all goals, sending notification`);
+    // master just went false → true — send push notification.
+    // Could come from watch (batchSave) or phone (updateUserProfile).
+    // The timestamp dedup below ensures only one notification per completion event.
+    console.log(`[onGoalAchieved] ${userId}: All goals completed, sending notification`);
 
     const prefs = await getUserPreferences(userId);
     if (!prefs.goalAchievements) {
       console.log(`[onGoalAchieved] ${userId}: goalAchievements preference disabled`);
       return;
     }
+
+    // Deduplicate: Cloud Functions has at-least-once delivery, so this trigger
+    // can fire multiple times for the same write. Use a short time window (30s)
+    // to prevent duplicate notifications while allowing re-completions.
+    const userRef = db.collection('users').doc(userId);
+    const userSnap = await userRef.get();
+    const lastNotifAt = userSnap.data()?.lastGoalAchievedNotifAt;
+
+    if (lastNotifAt) {
+      const elapsed = Date.now() - new Date(lastNotifAt).getTime();
+      if (elapsed < 30000) { // 30 second window for at-least-once dedup
+        console.log(`[onGoalAchieved] ${userId}: Duplicate trigger within 30s, skipping`);
+        return;
+      }
+    }
+
+    // Mark timestamp before sending (prevents race between duplicate triggers)
+    await userRef.set({ lastGoalAchievedNotifAt: new Date().toISOString() }, { merge: true });
 
     await sendNotificationToUser(
       userId,

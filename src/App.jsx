@@ -8263,7 +8263,7 @@ const SwipeableActivityItem = ({ children, onDelete, activity, onTap, onEdit }) 
         className="relative overflow-hidden rounded-xl"
         style={{
           backgroundColor: showDeleteButton ? '#FF453A' : 'transparent',
-          zIndex: showDeleteButton ? 9999 : 'auto',
+          zIndex: showDeleteButton ? 10 : 'auto',
           position: showDeleteButton ? 'relative' : 'static'
         }}
       >
@@ -10899,7 +10899,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
   const [showWorkoutPicker, setShowWorkoutPicker] = useState(false);
   const [workoutPickerDragY, setWorkoutPickerDragY] = useState(0);
   const [workoutPickerTouchStart, setWorkoutPickerTouchStart] = useState(null);
-  const [dismissedWarningKey, setDismissedWarningKey] = useState(() => sessionStorage.getItem('dismissedStreakWarning'));
+  const [dismissedWarningKey, setDismissedWarningKey] = useState(() => localStorage.getItem('dismissedStreakWarning'));
   const [activityReactions, setActivityReactions] = useState({});
   const [activityComments, setActivityComments] = useState({});
   const [reactionDetailModal, setReactionDetailModal] = useState(null); // { activityId, reactions, selectedEmoji }
@@ -11885,7 +11885,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
               </div>
             </div>
             <button
-              onClick={() => { sessionStorage.setItem('dismissedStreakWarning', warningKey); setDismissedWarningKey(warningKey); }}
+              onClick={() => { localStorage.setItem('dismissedStreakWarning', warningKey); setDismissedWarningKey(warningKey); }}
               className="absolute flex items-center justify-center"
               style={{ top: 4, right: 4, width: 44, height: 44, color: 'rgba(255,69,58,0.6)' }}
             >

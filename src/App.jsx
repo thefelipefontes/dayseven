@@ -247,6 +247,13 @@ const initialUserData = {
     shieldedWeeks: []      // Array of week keys where shield was activated
     // Shield cooldown: 1 use per 6 weeks, starting from user's first full week after sign-up
   },
+  vacationMode: {
+    isActive: false,
+    startDate: null,         // "YYYY-MM-DD" when activated
+    activationsThisYear: 0,  // Max 3 per year
+    activationYear: null,    // Year to track resets (e.g., 2026)
+    vacationWeeks: []        // Week keys where vacation was active (streaks freeze, don't increment)
+  },
   customActivities: [], // User-saved custom activity types
   personalRecords: {
     // Single workout records (with activity type that achieved it)
@@ -10887,15 +10894,136 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
           </div>
         </div>
       )}
+
+      {/* Vacation Mode Confirmation Modal */}
+      {showVacationConfirm && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setShowVacationConfirm(false)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div
+            className="relative w-[85%] max-w-sm rounded-2xl p-6"
+            style={{ backgroundColor: '#1a1a1a' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex flex-col items-center text-center mb-5">
+              <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
+                <span className="text-3xl">✈️</span>
+              </div>
+              <h3 className="text-white font-semibold text-lg">Activate Vacation Mode?</h3>
+              <p className="text-gray-400 text-sm mt-2 leading-relaxed">
+                Your streaks will be frozen while vacation mode is active. They won't increase, but they won't break either.
+              </p>
+            </div>
+
+            <div className="space-y-2 mb-5">
+              <div className="flex items-start gap-2.5 rounded-xl p-2.5" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="#00D1FF" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                </svg>
+                <p className="text-xs text-gray-300">Auto-deactivates after <span className="text-white font-medium">2 weeks</span></p>
+              </div>
+              <div className="flex items-start gap-2.5 rounded-xl p-2.5" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="#FF9500" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                </svg>
+                <p className="text-xs text-gray-300">
+                  {(() => {
+                    const vm = userData.vacationMode || {};
+                    const currentYear = new Date().getFullYear();
+                    const used = vm.activationYear === currentYear ? (vm.activationsThisYear || 0) : 0;
+                    const remaining = Math.max(0, 3 - used);
+                    return <><span className="text-white font-medium">{remaining} of 3</span> activation{remaining !== 1 ? 's' : ''} remaining this year</>;
+                  })()}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowVacationConfirm(false)}
+                className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+                style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowVacationConfirm(false);
+                  triggerHaptic(ImpactStyle.Heavy);
+                  onToggleVacationMode?.();
+                }}
+                className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+                style={{ backgroundColor: '#00D1FF' }}
+              >
+                Activate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Vacation Mode Deactivation Confirmation Modal */}
+      {showVacationDeactivateConfirm && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setShowVacationDeactivateConfirm(false)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div
+            className="relative w-[85%] max-w-sm rounded-2xl p-6"
+            style={{ backgroundColor: '#1a1a1a' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex flex-col items-center text-center mb-5">
+              <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
+                <span className="text-3xl">✈️</span>
+              </div>
+              <h3 className="text-white font-semibold text-lg">Deactivate Vacation Mode?</h3>
+              <p className="text-gray-400 text-sm mt-2 leading-relaxed">
+                Your streaks will no longer be frozen. You'll need to complete your weekly goals to keep them going.
+              </p>
+            </div>
+
+            <div className="rounded-xl p-3 mb-5" style={{ backgroundColor: 'rgba(255,149,0,0.08)', border: '1px solid rgba(255,149,0,0.15)' }}>
+              <div className="flex items-start gap-2">
+                <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="#FF9500" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                </svg>
+                <p className="text-xs leading-relaxed" style={{ color: '#FF9500' }}>
+                  This uses one of your activations. You won't get it back if you turn it off early.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowVacationDeactivateConfirm(false)}
+                className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+                style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+              >
+                Keep Active
+              </button>
+              <button
+                onClick={() => {
+                  setShowVacationDeactivateConfirm(false);
+                  triggerHaptic(ImpactStyle.Medium);
+                  onToggleVacationMode?.();
+                }}
+                className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+                style={{ backgroundColor: '#FF9500' }}
+              >
+                Deactivate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };
 
 // Home Tab - Simplified
 
-const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, autoImportedCount = 0, onDismissAutoImported }) => {
+const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, autoImportedCount = 0, onDismissAutoImported }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
+  const [showVacationDeactivateConfirm, setShowVacationDeactivateConfirm] = useState(false);
   const [showWorkoutPicker, setShowWorkoutPicker] = useState(false);
   const [workoutPickerDragY, setWorkoutPickerDragY] = useState(0);
   const [workoutPickerTouchStart, setWorkoutPickerTouchStart] = useState(null);
@@ -10905,6 +11033,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
   const [reactionDetailModal, setReactionDetailModal] = useState(null); // { activityId, reactions, selectedEmoji }
   const [commentDetailModal, setCommentDetailModal] = useState(null); // { activityId, comments }
   const [showShieldInfo, setShowShieldInfo] = useState(false);
+  const [showShieldConfirm, setShowShieldConfirm] = useState(false);
 
   // Lock body scroll when workout picker modal is open
   useEffect(() => {
@@ -11862,8 +11991,35 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
 
       {/* Weekly Goals - Hero Section */}
       <div className="mx-4 mb-4">
-        {/* Streak at Risk Warning */}
-        {!streakWarningDismissed && daysLeft <= 2 && (liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0) && (
+        {/* Vacation Mode Active Banner */}
+        {userData.vacationMode?.isActive && (
+          <div className="p-3 rounded-xl mb-3 flex items-center gap-3" style={{ backgroundColor: 'rgba(0,209,255,0.08)', border: '1px solid rgba(0,209,255,0.2)' }}>
+            <span className="text-lg">✈️</span>
+            <div className="flex-1">
+              <div className="text-xs font-semibold" style={{ color: '#00D1FF' }}>Vacation Mode Active</div>
+              <div className="text-[10px] text-gray-400 mt-0.5">
+                Your streaks are frozen until you deactivate
+                {userData.vacationMode.startDate && (() => {
+                  const start = new Date(userData.vacationMode.startDate + 'T12:00:00');
+                  const now = new Date();
+                  const daysUsed = Math.floor((now - start) / (24 * 60 * 60 * 1000));
+                  const daysRemaining = Math.max(0, 14 - daysUsed);
+                  return <span> · {daysRemaining} day{daysRemaining !== 1 ? 's' : ''} remaining</span>;
+                })()}
+              </div>
+            </div>
+            <button
+              onClick={() => setShowVacationDeactivateConfirm(true)}
+              className="px-3 py-1.5 rounded-lg text-[11px] font-semibold"
+              style={{ backgroundColor: 'rgba(0,209,255,0.15)', color: '#00D1FF' }}
+            >
+              Deactivate
+            </button>
+          </div>
+        )}
+
+        {/* Streak at Risk Warning - hidden during vacation */}
+        {!userData.vacationMode?.isActive && !streakWarningDismissed && daysLeft <= 2 && (liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0) && (
           <div
             className="relative p-3 rounded-xl mb-3 flex items-center gap-3"
             style={{
@@ -11896,8 +12052,8 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
           </div>
         )}
 
-        {/* Streak Shield Button */}
-        {daysLeft <= 2 && (liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0) && (userData.streaks.master > 0 || userData.streaks.lifts > 0 || userData.streaks.cardio > 0 || userData.streaks.recovery > 0) && (() => {
+        {/* Streak Shield Button - hidden during vacation */}
+        {!userData.vacationMode?.isActive && daysLeft <= 2 && (liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0) && (userData.streaks.master > 0 || userData.streaks.lifts > 0 || userData.streaks.cardio > 0 || userData.streaks.recovery > 0) && (() => {
           const currentWeek = getCurrentWeekKey();
           const isShielded = userData.streakShield?.lastUsedWeek === currentWeek;
 
@@ -11945,8 +12101,8 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                 }
                 if (onCooldown) return;
                 if (shieldAvailable) {
-                  triggerHaptic(ImpactStyle.Heavy);
-                  onUseStreakShield?.(currentWeek);
+                  triggerHaptic(ImpactStyle.Medium);
+                  setShowShieldConfirm(true);
                 }
               }}
               className="w-full p-3 rounded-xl mb-3 flex items-center gap-3 transition-all duration-150"
@@ -12042,6 +12198,117 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
               >
                 Got it
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Streak Shield Confirmation Modal */}
+        {showShieldConfirm && (() => {
+          const currentWeek = getCurrentWeekKey();
+          return (
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setShowShieldConfirm(false)}>
+              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+              <div
+                className="relative w-[85%] max-w-sm rounded-2xl p-6"
+                style={{ backgroundColor: '#1a1a1a' }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex flex-col items-center text-center mb-5">
+                  <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
+                    <span className="text-3xl">🛡️</span>
+                  </div>
+                  <h3 className="text-white font-semibold text-lg">Use Streak Shield?</h3>
+                  <p className="text-gray-400 text-sm mt-2 leading-relaxed">
+                    This will protect all your current streaks for this week, even if you don't complete your goals.
+                  </p>
+                </div>
+
+                <div className="rounded-xl p-3 mb-5" style={{ backgroundColor: 'rgba(255,149,0,0.08)', border: '1px solid rgba(255,149,0,0.15)' }}>
+                  <div className="flex items-start gap-2">
+                    <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="#FF9500" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                    </svg>
+                    <p className="text-xs leading-relaxed" style={{ color: '#FF9500' }}>
+                      You only get <span className="font-semibold">1 streak shield every 6 weeks</span>. Once used, you won't be able to use another one until the cooldown resets.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowShieldConfirm(false)}
+                    className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+                    style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowShieldConfirm(false);
+                      triggerHaptic(ImpactStyle.Heavy);
+                      onUseStreakShield?.(currentWeek);
+                    }}
+                    className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+                    style={{ backgroundColor: '#00D1FF' }}
+                  >
+                    Activate Shield
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Vacation Mode Deactivation Confirmation Modal */}
+        {showVacationDeactivateConfirm && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setShowVacationDeactivateConfirm(false)}>
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+            <div
+              className="relative w-[85%] max-w-sm rounded-2xl p-6"
+              style={{ backgroundColor: '#1a1a1a' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex flex-col items-center text-center mb-5">
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
+                  <span className="text-3xl">✈️</span>
+                </div>
+                <h3 className="text-white font-semibold text-lg">Deactivate Vacation Mode?</h3>
+                <p className="text-gray-400 text-sm mt-2 leading-relaxed">
+                  Your streaks will no longer be frozen. You'll need to complete your weekly goals to keep them going.
+                </p>
+              </div>
+
+              <div className="rounded-xl p-3 mb-5" style={{ backgroundColor: 'rgba(255,149,0,0.08)', border: '1px solid rgba(255,149,0,0.15)' }}>
+                <div className="flex items-start gap-2">
+                  <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="#FF9500" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                  </svg>
+                  <p className="text-xs leading-relaxed" style={{ color: '#FF9500' }}>
+                    This uses one of your activations. You won't get it back if you turn it off early.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowVacationDeactivateConfirm(false)}
+                  className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+                >
+                  Keep Active
+                </button>
+                <button
+                  onClick={() => {
+                    setShowVacationDeactivateConfirm(false);
+                    triggerHaptic(ImpactStyle.Medium);
+                    onDeactivateVacation?.();
+                  }}
+                  className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+                  style={{ backgroundColor: '#FF9500' }}
+                >
+                  Deactivate
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -16166,9 +16433,11 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
 };
 
 // Profile Tab Component
-const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onUpdateMaxHeartRate, onChangePassword, onResetPassword, onDeleteAccount, onNotificationSettings, isPro, onPresentPaywall, onPresentCustomerCenter, onRestorePurchases }) => {
+const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onUpdateMaxHeartRate, onChangePassword, onResetPassword, onDeleteAccount, onNotificationSettings, isPro, onPresentPaywall, onPresentCustomerCenter, onRestorePurchases, onToggleVacationMode }) => {
   const [isEmailPasswordUser, setIsEmailPasswordUser] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [showVacationConfirm, setShowVacationConfirm] = useState(false);
+  const [showVacationDeactivateConfirm, setShowVacationDeactivateConfirm] = useState(false);
 
   // Check if user signed in with email/password (not social login)
   useEffect(() => {
@@ -16975,6 +17244,107 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
               </button>
             </div>
 
+          </div>
+        </div>
+
+        {/* Vacation Mode Section */}
+        <div className="mb-6">
+          <h3 className="text-sm font-semibold text-gray-400 mb-3">VACATION MODE</h3>
+          <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+            <div className="flex items-center justify-between py-2">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
+                  <span className="text-base">✈️</span>
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm text-white">Vacation Mode</span>
+                    {!isPro && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(255,149,0,0.15)', color: '#FF9500' }}>PRO</span>}
+                  </div>
+                  <p className="text-[11px] text-gray-500">Freeze streaks while you're away</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  triggerHaptic(ImpactStyle.Light);
+                  if (!isPro) {
+                    onPresentPaywall?.();
+                    return;
+                  }
+                  if (userData.vacationMode?.isActive) {
+                    setShowVacationDeactivateConfirm(true);
+                  } else {
+                    setShowVacationConfirm(true);
+                  }
+                }}
+                className="w-12 h-7 rounded-full transition-all duration-200 relative"
+                style={{
+                  backgroundColor: userData.vacationMode?.isActive ? '#00D1FF' : 'rgba(255,255,255,0.2)'
+                }}
+              >
+                <div
+                  className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-200"
+                  style={{
+                    left: userData.vacationMode?.isActive ? '26px' : '4px'
+                  }}
+                />
+              </button>
+            </div>
+
+            {/* Active state info */}
+            {userData.vacationMode?.isActive && userData.vacationMode?.startDate && (
+              <div className="mt-3 pt-3 border-t border-zinc-700/50">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#00D1FF' }} />
+                  <span className="text-xs text-gray-300">
+                    Active since {new Date(userData.vacationMode.startDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </span>
+                </div>
+                <p className="text-[11px] text-gray-500 ml-4">
+                  {(() => {
+                    const start = new Date(userData.vacationMode.startDate + 'T12:00:00');
+                    const now = new Date();
+                    const daysUsed = Math.floor((now - start) / (24 * 60 * 60 * 1000));
+                    const daysRemaining = Math.max(0, 14 - daysUsed);
+                    return `${daysRemaining} day${daysRemaining !== 1 ? 's' : ''} remaining · Auto-deactivates after 2 weeks`;
+                  })()}
+                </p>
+              </div>
+            )}
+
+            {/* Inactive state info */}
+            {!userData.vacationMode?.isActive && (
+              <div className="mt-3 pt-3 border-t border-zinc-700/50">
+                <div className="space-y-2">
+                  <div className="flex items-start gap-2">
+                    <svg className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" fill="none" stroke="#00D1FF" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                    </svg>
+                    <p className="text-[11px] text-gray-400">Streaks stay frozen — no progress lost</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <svg className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" fill="none" stroke="#00D1FF" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                    </svg>
+                    <p className="text-[11px] text-gray-400">Max 2 weeks per activation, 3× per year</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <svg className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" fill="none" stroke="#FF9500" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                    </svg>
+                    <p className="text-[11px] text-gray-400">
+                      {(() => {
+                        const vm = userData.vacationMode || {};
+                        const currentYear = new Date().getFullYear();
+                        const used = vm.activationYear === currentYear ? (vm.activationsThisYear || 0) : 0;
+                        const remaining = Math.max(0, 3 - used);
+                        return `${remaining} of 3 activation${remaining !== 1 ? 's' : ''} remaining this year`;
+                      })()}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -18647,6 +19017,34 @@ export default function DaySevenApp() {
               }
             }));
           }
+          // Load vacation mode data
+          if (profileForStreaks?.vacationMode) {
+            const vm = profileForStreaks.vacationMode;
+            // Auto-deactivate if vacation exceeded 14 days
+            if (vm.isActive && vm.startDate) {
+              const start = new Date(vm.startDate + 'T12:00:00');
+              const now = new Date();
+              const daysSinceStart = Math.floor((now - start) / (24 * 60 * 60 * 1000));
+              if (daysSinceStart >= 14) {
+                const deactivated = { ...vm, isActive: false };
+                setUserData(prev => ({ ...prev, vacationMode: deactivated }));
+                updateUserProfile(user.uid, { vacationMode: deactivated }).catch(() => {});
+              } else {
+                // Add current week to vacationWeeks if not already there
+                const currentWeek = getCurrentWeekKey();
+                const updatedWeeks = vm.vacationWeeks || [];
+                if (!updatedWeeks.includes(currentWeek)) {
+                  const updated = { ...vm, vacationWeeks: [...updatedWeeks, currentWeek] };
+                  setUserData(prev => ({ ...prev, vacationMode: updated }));
+                  updateUserProfile(user.uid, { vacationMode: updated }).catch(() => {});
+                } else {
+                  setUserData(prev => ({ ...prev, vacationMode: vm }));
+                }
+              }
+            } else {
+              setUserData(prev => ({ ...prev, vacationMode: vm }));
+            }
+          }
           if (profileForStreaks?.weekCelebrations) {
             const wc = profileForStreaks.weekCelebrations;
             if (wc.week === getCurrentWeekKey()) {
@@ -18831,6 +19229,20 @@ export default function DaySevenApp() {
                   clearAllNotifications();
                   handleNotificationNavigation(notification, (tab) => {
                     setActiveTab(tab);
+                  }, {
+                    onShowSharePrompt: (summaryData) => {
+                      // Calculate last week's date range (Sunday to Saturday)
+                      const today = new Date();
+                      const lastSunday = new Date(today);
+                      lastSunday.setDate(today.getDate() - today.getDay() - 7);
+                      const lastSaturday = new Date(lastSunday);
+                      lastSaturday.setDate(lastSunday.getDate() + 6);
+                      // Open share card for last week after a brief delay to let home tab render
+                      setTimeout(() => {
+                        setShareWeekRange({ startDate: lastSunday, endDate: lastSaturday });
+                        setShowShare(true);
+                      }, 500);
+                    },
                   });
                 }
               );
@@ -19588,8 +20000,9 @@ export default function DaySevenApp() {
     currentWeekStart.setDate(today.getDate() - today.getDay()); // Sunday
     currentWeekStart.setHours(0, 0, 0, 0);
 
-    // Get shielded weeks
+    // Get shielded weeks and vacation weeks
     const shieldedWeeks = userDataRef.current?.streakShield?.shieldedWeeks || [];
+    const vacationWeeks = userDataRef.current?.vacationMode?.vacationWeeks || [];
 
     // Walk backwards week by week, starting from LAST completed week
     // (current week is still in progress, so start from the week before)
@@ -19607,8 +20020,15 @@ export default function DaySevenApp() {
       const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
       const weekEndStr = `${weekEnd.getFullYear()}-${String(weekEnd.getMonth() + 1).padStart(2, '0')}-${String(weekEnd.getDate()).padStart(2, '0')}`;
 
-      // Check if this week was shielded
+      // Check if this week was shielded or on vacation
       const isShielded = shieldedWeeks.includes(weekStartStr);
+      const isVacation = vacationWeeks.includes(weekStartStr);
+
+      // Vacation weeks: streak stays alive but doesn't increment (frozen)
+      if (isVacation) {
+        // Don't increment any streaks, but don't break them either — just skip
+        continue;
+      }
 
       // Get activities for this week
       const weekActivities = allActivities.filter(a => a.date >= weekStartStr && a.date <= weekEndStr);
@@ -19642,6 +20062,13 @@ export default function DaySevenApp() {
     const cwStartStr = `${currentWeekStart.getFullYear()}-${String(currentWeekStart.getMonth() + 1).padStart(2, '0')}-${String(currentWeekStart.getDate()).padStart(2, '0')}`;
     const cwEndStr = `${currentWeekEnd.getFullYear()}-${String(currentWeekEnd.getMonth() + 1).padStart(2, '0')}-${String(currentWeekEnd.getDate()).padStart(2, '0')}`;
     const currentWeekShielded = shieldedWeeks.includes(cwStartStr);
+    const currentWeekVacation = vacationWeeks.includes(cwStartStr);
+
+    // If current week is vacation, don't add to streaks (frozen)
+    if (currentWeekVacation) {
+      return streaks;
+    }
+
     const cwActivities = allActivities.filter(a => a.date >= cwStartStr && a.date <= cwEndStr);
     const cwLifts = cwActivities.filter(a => getActivityCategory(a) === 'lifting').length;
     const cwCardio = cwActivities.filter(a => getActivityCategory(a) === 'cardio').length;
@@ -20905,6 +21332,13 @@ export default function DaySevenApp() {
                       updateUserProfile(user.uid, { streakShield: newShield }).catch(() => {});
                     }
                   }}
+                  onDeactivateVacation={() => {
+                    const updated = { ...userData.vacationMode, isActive: false };
+                    setUserData(prev => ({ ...prev, vacationMode: updated }));
+                    if (user?.uid) {
+                      updateUserProfile(user.uid, { vacationMode: updated }).catch(() => {});
+                    }
+                  }}
                   autoImportedCount={autoImportedCount}
                   onDismissAutoImported={() => setAutoImportedCount(0)}
                 />
@@ -20997,6 +21431,41 @@ export default function DaySevenApp() {
                   onRestorePurchases={async () => {
                     const { isPro: restoredPro } = await restorePurchases();
                     setIsPro(restoredPro);
+                  }}
+                  onToggleVacationMode={() => {
+                    const vm = userData.vacationMode || {};
+                    if (vm.isActive) {
+                      // Deactivate
+                      const updated = { ...vm, isActive: false };
+                      setUserData(prev => ({ ...prev, vacationMode: updated }));
+                      if (user?.uid) {
+                        updateUserProfile(user.uid, { vacationMode: updated }).catch(() => {});
+                      }
+                    } else {
+                      // Activate — check limits
+                      const currentYear = new Date().getFullYear();
+                      const used = vm.activationYear === currentYear ? (vm.activationsThisYear || 0) : 0;
+                      if (used >= 3) {
+                        setToastMessage('You\'ve used all 3 vacation activations this year');
+                        setToastType('success');
+                        setShowToast(true);
+                        return;
+                      }
+                      const today = new Date();
+                      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+                      const currentWeek = getCurrentWeekKey();
+                      const updated = {
+                        isActive: true,
+                        startDate: todayStr,
+                        activationsThisYear: used + 1,
+                        activationYear: currentYear,
+                        vacationWeeks: [...(vm.vacationWeeks || []), ...(vm.vacationWeeks?.includes(currentWeek) ? [] : [currentWeek])]
+                      };
+                      setUserData(prev => ({ ...prev, vacationMode: updated }));
+                      if (user?.uid) {
+                        updateUserProfile(user.uid, { vacationMode: updated }).catch(() => {});
+                      }
+                    }
                   }}
                 />
               )}

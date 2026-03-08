@@ -467,7 +467,8 @@ export const handleNotificationNavigation = (notification, navigate, options = {
 
     case NotificationType.WEEKLY_SUMMARY:
     case NotificationType.MONTHLY_SUMMARY:
-      // If there's a share prompt, navigate to profile with share modal
+      navigate('home');
+      // If there's a share prompt, trigger the share card after navigating home
       if (data.showSharePrompt === 'true' && options.onShowSharePrompt) {
         options.onShowSharePrompt({
           type: type === NotificationType.WEEKLY_SUMMARY ? 'weekly' : 'monthly',
@@ -477,7 +478,6 @@ export const handleNotificationNavigation = (notification, navigate, options = {
           month: data.month,
         });
       }
-      navigate('profile');
       break;
 
     case NotificationType.NEW_ACTIVITY_DETECTED:

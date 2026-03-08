@@ -529,6 +529,9 @@ exports.sendStreakReminders = onSchedule(
 
       if (hasRecentActivity) continue; // Has recent activity, skip
 
+      // Skip users on vacation mode
+      if (userData.vacationMode?.isActive) continue;
+
       const prefs = await getUserPreferences(userId);
       if (!prefs.streakReminders) continue;
 
@@ -647,6 +650,9 @@ exports.sendGoalReminder = onSchedule(
     for (const userDoc of usersSnapshot.docs) {
       const userId = userDoc.id;
       const userData = userDoc.data();
+
+      // Skip users on vacation mode
+      if (userData.vacationMode?.isActive) continue;
 
       const prefs = await getUserPreferences(userId);
       if (!prefs.goalReminders) continue;

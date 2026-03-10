@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import HealthKit
+import CoreLocation
 
 // MARK: - Workout Result
 
@@ -82,6 +83,11 @@ class WorkoutManager: NSObject, ObservableObject {
     private var accumulatedPauseTime: TimeInterval = 0
     private var lastPauseDate: Date?
 
+    // Route tracking
+    private var locationManager: CLLocationManager?
+    private var routeBuilder: HKWorkoutRouteBuilder?
+    private var isOutdoorWorkout: Bool = false
+
     // Timer — use a display-link style timer that reads wall-clock time
     // so elapsed time stays accurate even if watchOS throttles the timer
     private var timer: Timer?
@@ -152,6 +158,14 @@ class WorkoutManager: NSObject, ObservableObject {
         session.startActivity(with: now)
         try await builder.beginCollection(at: now)
 
+        // Start GPS route collection for outdoor workouts
+        let isOutdoor = !isIndoor && WorkoutManager.isOutdoorActivityType(activityType)
+        isOutdoorWorkout = isOutdoor
+        if isOutdoor {
+            routeBuilder = HKWorkoutRouteBuilder(healthStore: healthStore, device: .local())
+            startLocationCollection()
+        }
+
         isActive = true
         isPaused = false
         activeStartDate = now
@@ -171,6 +185,19 @@ class WorkoutManager: NSObject, ObservableObject {
 
         try await builder.endCollection(at: endDate)
         let workout = try await builder.finishWorkout()
+
+        // Finalize GPS route if this was an outdoor workout
+        if isOutdoorWorkout, let rb = routeBuilder, let finishedWorkout = workout {
+            locationManager?.stopUpdatingLocation()
+            locationManager = nil
+            rb.finishRoute(with: finishedWorkout, metadata: nil) { _, error in
+                if let error = error {
+                    print("[WorkoutManager] Route finalization error: \(error.localizedDescription)")
+                }
+            }
+            routeBuilder = nil
+        }
+        isOutdoorWorkout = false
 
         stopTimer()
         isPaused = false
@@ -230,6 +257,10 @@ class WorkoutManager: NSObject, ObservableObject {
     // MARK: - Cancel Workout
 
     func cancelWorkout() {
+        locationManager?.stopUpdatingLocation()
+        locationManager = nil
+        routeBuilder = nil
+        isOutdoorWorkout = false
         session?.end()
         builder?.discardWorkout()
         stopTimer()
@@ -292,6 +323,27 @@ class WorkoutManager: NSObject, ObservableObject {
     private func stopTimer() {
         timer?.invalidate()
         timer = nil
+    }
+
+    // MARK: - GPS Route Helpers
+
+    private static func isOutdoorActivityType(_ type: HKWorkoutActivityType) -> Bool {
+        switch type {
+        case .running, .walking, .cycling, .hiking,
+             .soccer, .basketball, .americanFootball, .tennis, .golf:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func startLocationCollection() {
+        locationManager = CLLocationManager()
+        locationManager?.delegate = self
+        locationManager?.desiredAccuracy = kCLLocationAccuracyBest
+        locationManager?.distanceFilter = kCLDistanceFilterNone
+        locationManager?.requestWhenInUseAuthorization()
+        locationManager?.startUpdatingLocation()
     }
 
     // MARK: - Reset
@@ -385,5 +437,42 @@ extension WorkoutManager: HKLiveWorkoutBuilderDelegate {
 
     nonisolated func workoutBuilderDidCollectEvent(_ workoutBuilder: HKLiveWorkoutBuilder) {
         // Handle workout events if needed
+    }
+}
+
+// MARK: - CLLocationManagerDelegate
+
+extension WorkoutManager: CLLocationManagerDelegate {
+    nonisolated func locationManager(
+        _ manager: CLLocationManager,
+        didUpdateLocations locations: [CLLocation]
+    ) {
+        guard !locations.isEmpty else { return }
+        // Filter out locations with poor accuracy (>50m horizontal uncertainty)
+        let filtered = locations.filter { $0.horizontalAccuracy > 0 && $0.horizontalAccuracy < 50 }
+        guard !filtered.isEmpty else { return }
+
+        Task { @MainActor in
+            self.routeBuilder?.insertRouteData(filtered) { _, error in
+                if let error = error {
+                    print("[WorkoutManager] insertRouteData error: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let status = manager.authorizationStatus
+        if status == .authorizedWhenInUse || status == .authorizedAlways {
+            manager.startUpdatingLocation()
+        } else if status != .notDetermined {
+            // Location denied — silently degrade, workout continues without GPS
+            print("[WorkoutManager] Location authorization denied: \(status.rawValue)")
+            Task { @MainActor in
+                self.locationManager = nil
+                self.routeBuilder = nil
+                self.isOutdoorWorkout = false
+            }
+        }
     }
 }

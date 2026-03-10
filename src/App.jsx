@@ -12,11 +12,12 @@ import html2canvas from 'html2canvas';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
-import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged } from './services/healthService';
+import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, fetchWorkoutRoute } from './services/healthService';
 import NotificationSettings from './NotificationSettings';
 import { initializePushNotifications, handleNotificationNavigation, removeFCMToken, clearBadge, clearAllNotifications, incrementBadge, shouldShowNotification, getNotificationPreferences } from './services/notificationService';
 import { initializeRevenueCat, checkProStatus, addCustomerInfoListener, logoutRevenueCat, presentPaywall, presentCustomerCenter, restorePurchases } from './services/subscriptionService';
 import ActivityIcon, { ICON_PICKER_CATEGORIES, CATEGORY_COLORS as ICON_CATEGORY_COLORS } from './components/ActivityIcon';
+import RouteMapView from './components/RouteMapView';
 
 // Flag to suppress foreground refresh while photo picker is open
 // (prevents re-render glitch when returning from iOS photo picker)
@@ -6651,6 +6652,11 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
   const [newComment, setNewComment] = useState('');
   const [loadingInteractions, setLoadingInteractions] = useState(false);
 
+  // Route map state
+  const [routeCoords, setRouteCoords] = useState([]);
+  const [routeLoading, setRouteLoading] = useState(false);
+  const [routeChecked, setRouteChecked] = useState(false);
+
   const reactionEmojis = ['🔥', '💪', '👏', '❤️', '🎉'];
 
   // Determine the activity owner - use activity.userId if set, otherwise current user owns this activity
@@ -6668,6 +6674,38 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
       setNewComment('');
     }
   }, [isOpen, activity?.id, activityOwnerId]);
+
+  // Load GPS route for outdoor activities with a HealthKit UUID
+  useEffect(() => {
+    if (!isOpen || !activity) {
+      setRouteCoords([]);
+      setRouteChecked(false);
+      return;
+    }
+
+    const outdoorTypes = ['Running', 'Walking', 'Cycle', 'Hiking'];
+    const hasRoute = outdoorTypes.includes(activity.type) &&
+                     activity.subtype !== 'Indoor' &&
+                     (activity.healthKitUUID || activity.linkedHealthKitUUID);
+
+    if (!hasRoute) {
+      setRouteChecked(true);
+      return;
+    }
+
+    setRouteLoading(true);
+    setRouteChecked(false);
+
+    fetchWorkoutRoute(activity.healthKitUUID || activity.linkedHealthKitUUID)
+      .then(result => {
+        setRouteCoords(result.hasRoute ? result.coordinates : []);
+      })
+      .catch(() => setRouteCoords([]))
+      .finally(() => {
+        setRouteLoading(false);
+        setRouteChecked(true);
+      });
+  }, [isOpen, activity?.id, activity?.healthKitUUID]);
 
   const fetchInteractions = async () => {
     if (!activity?.id || !activityOwnerId) return;
@@ -6892,6 +6930,29 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
               </div>
             )}
           </div>
+
+          {/* Route Map */}
+          {routeLoading && (
+            <div className="flex items-center gap-2 p-4 rounded-xl mb-4"
+                 style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+              <div className="w-4 h-4 border-2 border-white/30 border-t-white/80 rounded-full animate-spin" />
+              <span className="text-xs text-gray-500">Loading route...</span>
+            </div>
+          )}
+          {!routeLoading && routeChecked && routeCoords.length >= 2 && (
+            <div className="mb-4">
+              <div className="text-xs text-gray-500 mb-2">Route</div>
+              <RouteMapView
+                coordinates={routeCoords}
+                color={color}
+                height={180}
+              />
+              <div className="flex justify-between text-xs text-gray-600 mt-1 px-1">
+                <span>Start</span>
+                <span>End</span>
+              </div>
+            </div>
+          )}
 
           {/* Notes */}
           {activity.notes && (

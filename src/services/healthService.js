@@ -614,6 +614,27 @@ export async function fetchLinkableWorkouts(date, linkedWorkoutIds = []) {
   }
 }
 
+// Fetch GPS route coordinates for a workout by its HealthKit UUID
+export async function fetchWorkoutRoute(healthKitUUID) {
+  if (!Capacitor.isNativePlatform()) return { hasRoute: false, coordinates: [] };
+  if (!healthKitUUID) return { hasRoute: false, coordinates: [] };
+
+  try {
+    const result = await withTimeout(
+      HealthKitWriter.getWorkoutRoute({ workoutUUID: healthKitUUID }),
+      10000,
+      'Route query timed out'
+    );
+    return {
+      hasRoute: result.hasRoute === true,
+      coordinates: result.coordinates || [],
+    };
+  } catch (error) {
+    console.warn('[HealthKit] fetchWorkoutRoute failed:', error);
+    return { hasRoute: false, coordinates: [] };
+  }
+}
+
 // Fetch today's steps from HealthKit
 export async function fetchTodaySteps() {
   if (!Capacitor.isNativePlatform()) return null;

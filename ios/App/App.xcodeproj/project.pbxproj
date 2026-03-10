@@ -12,8 +12,10 @@
 		120994CE2F3E747300DB44E4 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 120994CD2F3E747300DB44E4 /* SwiftUI.framework */; };
 		120994DB2F3E747300DB44E4 /* Dayseven Watch WidgetsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 120994C92F3E747300DB44E4 /* Dayseven Watch WidgetsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		122DD7C92F3BD50100F4A120 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 122DD7C82F3BD50100F4A120 /* FirebaseAuth */; };
+		12313CC42F5FBC32003C1421 /* CoreLocation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 12313CC32F5FBC32003C1421 /* CoreLocation.framework */; };
 		123B68512F3BB07000AA20FB /* DaySeven Watch Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 123B68312F3BB06F00AA20FB /* DaySeven Watch Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		128BFB892F53909000557204 /* StoreKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 128BFB882F53909000557204 /* StoreKit.framework */; };
+		12A1B2C32F80A00100AABB02 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 12A1B2C32F80A00100AABB01 /* PrivacyInfo.xcprivacy */; };
 		12FB87002F2C163E006FD735 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 12FB86FF2F2C163E006FD735 /* GoogleService-Info.plist */; };
 		12FB87052F2C6794006FD735 /* CustomViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12FB87042F2C6794006FD735 /* CustomViewController.swift */; };
 		12FB87062F2C7000006FD735 /* HealthKitWriterPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12FB87072F2C7000006FD735 /* HealthKitWriterPlugin.swift */; };
@@ -89,10 +91,12 @@
 		120994CB2F3E747300DB44E4 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		120994CD2F3E747300DB44E4 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		120994E82F3E765D00DB44E4 /* Dayseven Watch WidgetsExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Dayseven Watch WidgetsExtension.entitlements"; sourceTree = "<group>"; };
+		12313CC32F5FBC32003C1421 /* CoreLocation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreLocation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS26.2.sdk/System/Library/Frameworks/CoreLocation.framework; sourceTree = DEVELOPER_DIR; };
 		123B68312F3BB06F00AA20FB /* DaySeven Watch Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "DaySeven Watch Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		123B683D2F3BB07000AA20FB /* DaySeven Watch Watch AppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "DaySeven Watch Watch AppTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		123B68472F3BB07000AA20FB /* DaySeven Watch Watch AppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "DaySeven Watch Watch AppUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		128BFB882F53909000557204 /* StoreKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = StoreKit.framework; path = System/Library/Frameworks/StoreKit.framework; sourceTree = SDKROOT; };
+		12A1B2C32F80A00100AABB01 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		12FB86FF2F2C163E006FD735 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		12FB87012F2C173E006FD735 /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
 		12FB87042F2C6794006FD735 /* CustomViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomViewController.swift; sourceTree = "<group>"; };
@@ -147,6 +151,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				12313CC42F5FBC32003C1421 /* CoreLocation.framework in Frameworks */,
 				122DD7C92F3BD50100F4A120 /* FirebaseAuth in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -180,6 +185,7 @@
 		120994CA2F3E747300DB44E4 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				12313CC32F5FBC32003C1421 /* CoreLocation.framework */,
 				128BFB882F53909000557204 /* StoreKit.framework */,
 				120994CB2F3E747300DB44E4 /* WidgetKit.framework */,
 				120994CD2F3E747300DB44E4 /* SwiftUI.framework */,
@@ -228,6 +234,7 @@
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
 				504EC3131FED79650016851F /* Info.plist */,
+				12A1B2C32F80A00100AABB01 /* PrivacyInfo.xcprivacy */,
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
 			);
@@ -449,6 +456,7 @@
 				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
 				12FB87002F2C163E006FD735 /* GoogleService-Info.plist in Resources */,
+				12A1B2C32F80A00100AABB02 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -637,6 +645,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = dayseven;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "DaySeven reads your health data to display your steps, calories, and workout metrics.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "DaySeven saves your workouts to Apple Health so they appear in your health history.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "DaySeven uses your location to record GPS routes for outdoor workouts.\n\nDaySeven uses your location to record GPS routes for outdoor workouts.\n\ndayseven uses your location to record GPS routes for outdoor workouts.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKBackgroundModes = "workout-processing";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = app.dayseven.fitness;
@@ -646,7 +655,7 @@
 					"@executable_path/Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 1.3;
+				MARKETING_VERSION = 1.3.1;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = app.dayseven.fitness.watchkitapp;
@@ -683,6 +692,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = dayseven;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "DaySeven reads your health data to display your steps, calories, and workout metrics.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "DaySeven saves your workouts to Apple Health so they appear in your health history.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "DaySeven uses your location to record GPS routes for outdoor workouts.\n\nDaySeven uses your location to record GPS routes for outdoor workouts.\n\ndayseven uses your location to record GPS routes for outdoor workouts.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKBackgroundModes = "workout-processing";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = app.dayseven.fitness;
@@ -692,7 +702,7 @@
 					"@executable_path/Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 1.3;
+				MARKETING_VERSION = 1.3.1;
 				MTL_FAST_MATH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = app.dayseven.fitness.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -964,7 +974,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.3;
+				MARKETING_VERSION = 1.3.1;
 				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\"";
 				PRODUCT_BUNDLE_IDENTIFIER = app.dayseven.fitness;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -989,7 +999,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.3;
+				MARKETING_VERSION = 1.3.1;
 				PRODUCT_BUNDLE_IDENTIFIER = app.dayseven.fitness;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";

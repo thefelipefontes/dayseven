@@ -1690,10 +1690,12 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         // Fetch activities, records, and health data for each friend in parallel
         const friendDataPromises = friends.map(async (friend) => {
           try {
+            // Fetch each data source independently so a permission error on
+            // dailyHealth (restricted to owner) doesn't block activities/records
             const [friendActivities, friendRecords, friendHealthHistory] = await Promise.all([
-              getUserActivities(friend.uid),
-              getPersonalRecords(friend.uid),
-              getDailyHealthHistory(friend.uid, 365)
+              getUserActivities(friend.uid).catch(() => []),
+              getPersonalRecords(friend.uid).catch(() => null),
+              getDailyHealthHistory(friend.uid, 365).catch(() => [])
             ]);
 
             const friendStats = calculateLeaderboardStats(

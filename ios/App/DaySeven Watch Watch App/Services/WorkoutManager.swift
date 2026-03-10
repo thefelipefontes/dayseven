@@ -147,6 +147,13 @@ class WorkoutManager: NSObject, ObservableObject {
             workoutConfiguration: config
         )
 
+        // Explicitly enable distance collection for indoor workouts
+        // (HealthKit does not auto-collect it for indoor location type)
+        if isIndoor && (activityType == .walking || activityType == .running) {
+            let distanceType = HKQuantityType(.distanceWalkingRunning)
+            builder.dataSource?.enableCollection(for: distanceType, predicate: nil)
+        }
+
         workoutActivityType = activityType
         let now = Date()
         startDate = now

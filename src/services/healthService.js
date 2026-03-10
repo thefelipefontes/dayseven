@@ -702,6 +702,33 @@ export async function fetchTodayCalories() {
   }
 }
 
+// Fetch steps and calories for a specific date (for backfilling past days)
+export async function fetchHealthDataForDate(date) {
+  if (!Capacitor.isNativePlatform()) return null;
+
+  try {
+    const start = new Date(date);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(date);
+    end.setHours(23, 59, 59, 999);
+
+    const [stepsResult, calsResult] = await Promise.all([
+      Health.queryAggregated({ dataType: 'steps', startDate: start.toISOString(), endDate: end.toISOString() }),
+      Health.queryAggregated({ dataType: 'calories', startDate: start.toISOString(), endDate: end.toISOString() })
+    ]);
+
+    const steps = stepsResult.samples?.reduce((sum, s) => sum + (s.value || 0), 0)
+      ?? stepsResult.value ?? 0;
+    const calories = calsResult.samples?.reduce((sum, s) => sum + (s.value || 0), 0)
+      ?? calsResult.value ?? 0;
+
+    return { steps: Math.round(steps), calories: Math.round(calories) };
+  } catch (error) {
+    console.warn('[HealthKit] fetchHealthDataForDate failed:', error);
+    return null;
+  }
+}
+
 // Main function to sync HealthKit data
 export async function syncHealthKitData() {
   // Check availability

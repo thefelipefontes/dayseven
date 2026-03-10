@@ -12,7 +12,7 @@ import html2canvas from 'html2canvas';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
-import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, fetchWorkoutRoute } from './services/healthService';
+import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, fetchHealthDataForDate, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, fetchWorkoutRoute } from './services/healthService';
 import NotificationSettings from './NotificationSettings';
 import { initializePushNotifications, handleNotificationNavigation, removeFCMToken, clearBadge, clearAllNotifications, incrementBadge, shouldShowNotification, getNotificationPreferences } from './services/notificationService';
 import { initializeRevenueCat, checkProStatus, addCustomerInfoListener, logoutRevenueCat, presentPaywall, presentCustomerCenter, restorePurchases } from './services/subscriptionService';
@@ -18265,6 +18265,43 @@ export default function DaySevenApp() {
 
     syncToFirestore();
   }, [user?.uid, healthKitData.todaySteps, healthKitData.todayCalories]);
+
+  // Backfill yesterday's health data on app open
+  // The daily sync only writes while the app is open, so if the user closes
+  // the app mid-day, the final calorie/step totals are never captured.
+  // On next app open, query HealthKit for yesterday's complete data and update Firestore.
+  useEffect(() => {
+    if (!user?.uid || !Capacitor.isNativePlatform()) return;
+
+    const backfillYesterday = async () => {
+      try {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const dateStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+
+        const data = await fetchHealthDataForDate(yesterday);
+        if (data && (data.steps > 0 || data.calories > 0)) {
+          // Only update if HealthKit has more data than what's stored
+          const existing = await getDailyHealthData(user.uid, dateStr);
+          const existingCals = existing?.calories || 0;
+          const existingSteps = existing?.steps || 0;
+          if (data.calories > existingCals || data.steps > existingSteps) {
+            await saveDailyHealthData(user.uid, dateStr,
+              Math.max(data.steps, existingSteps),
+              Math.max(data.calories, existingCals)
+            );
+            // Refresh health history so the UI reflects the updated data
+            const refreshed = await getDailyHealthHistory(user.uid, 365);
+            setHealthHistory(refreshed);
+          }
+        }
+      } catch (e) {
+        // Silently fail
+      }
+    };
+
+    backfillYesterday();
+  }, [user?.uid]);
 
   // Load health data from Firestore on non-native platforms (desktop/web)
   useEffect(() => {

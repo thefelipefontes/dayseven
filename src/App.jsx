@@ -17214,11 +17214,11 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
                   <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                   <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                 </svg>
-                Mondays only
+                Sundays only
               </span>
             )}
           </div>
-          <p className="text-[11px] text-gray-500 mb-3">Goals can only be edited on Mondays to keep your streaks honest</p>
+          <p className="text-[11px] text-gray-500 mb-3">Goals can only be edited on Sundays to keep your streaks honest</p>
           <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
             <div className="grid grid-cols-2 gap-3">
               {Object.entries(goalLabels).map(([key, { label, icon, suffix, format }]) => (

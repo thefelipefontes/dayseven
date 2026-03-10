@@ -1687,16 +1687,27 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         // For regular users, fetch real friends and their data
         const friends = await getFriends(user.uid);
 
-        // Fetch activities, records, and health data for each friend in parallel
+        // Fetch activities and records for each friend in parallel
+        // Health data (dailyHealth) is fetched separately to avoid native plugin
+        // bridge issues — a permission-denied error from getCollection can disrupt
+        // other concurrent Capacitor calls in the same Promise.all batch
         const friendDataPromises = friends.map(async (friend) => {
           try {
-            // Fetch each data source independently so a permission error on
-            // dailyHealth (restricted to owner) doesn't block activities/records
-            const [friendActivities, friendRecords, friendHealthHistory] = await Promise.all([
-              getUserActivities(friend.uid).catch(() => []),
-              getPersonalRecords(friend.uid).catch(() => null),
-              getDailyHealthHistory(friend.uid, 365).catch(() => [])
+            // Step 1: Fetch activities and records (these always succeed for friends)
+            const [friendActivities, friendRecords] = await Promise.all([
+              getUserActivities(friend.uid).catch(e => { console.error(`[Leaderboard] getUserActivities failed for ${friend.username}:`, e.message); return []; }),
+              getPersonalRecords(friend.uid).catch(e => { console.error(`[Leaderboard] getPersonalRecords failed for ${friend.username}:`, e.message); return null; })
             ]);
+
+            // Step 2: Fetch health data separately so any failure can't corrupt the above
+            let friendHealthHistory = [];
+            try {
+              friendHealthHistory = await getDailyHealthHistory(friend.uid, 365);
+            } catch (healthErr) {
+              console.warn(`[Leaderboard] getDailyHealthHistory failed for ${friend.username}:`, healthErr.message);
+            }
+
+            console.log(`[Leaderboard] ${friend.username}: ${(friendActivities || []).length} activities, ${(friendHealthHistory || []).length} health days, records: ${!!friendRecords}`);
 
             const friendStats = calculateLeaderboardStats(
               friendActivities || [],
@@ -1712,6 +1723,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               ...friendStats
             };
           } catch (error) {
+            console.error(`[Leaderboard] FULL FAILURE for ${friend.username}:`, error.message, error.stack);
             // If we can't fetch a friend's data, return them with zero stats
             return {
               uid: friend.uid,

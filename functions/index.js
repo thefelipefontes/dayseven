@@ -121,15 +121,34 @@ async function getUserDisplayName(userId) {
  * - The canonical internal value is 'lifting' — always use 'lifting' when writing new code
  */
 function getActivityCategoryForGoals(activity) {
+  // 1. Explicit countToward field (set by user in finish modal)
   const ct = activity.countToward || '';
   if (ct === 'lifting' || ct === 'strength') return 'lifting';
   if (ct === 'cardio') return 'cardio';
   if (ct === 'recovery') return 'recovery';
   if (ct === 'warmup') return 'warmup';
+  // 2. Custom activity category fallback
   const cc = activity.customActivityCategory || '';
   if (cc === 'lifting' || cc === 'strength') return 'lifting';
   if (cc === 'cardio') return 'cardio';
   if (cc === 'recovery') return 'recovery';
+  // 3. Infer from activity type (matches client-side getDefaultCountToward)
+  const type = activity.type || '';
+  const subtype = activity.subtype || '';
+  if (['Strength Training', 'Weightlifting', 'Bodyweight', 'Circuit'].includes(type)) return 'lifting';
+  if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(type)) return 'cardio';
+  if (['Basketball', 'Soccer', 'Football', 'Tennis', 'Golf', 'Badminton', 'Boxing', 'Martial Arts',
+    'Baseball', 'Volleyball', 'Hockey', 'Lacrosse', 'Rugby', 'Softball', 'Squash', 'Table Tennis',
+    'Racquetball', 'Handball', 'Pickleball', 'Cricket', 'Australian Football', 'Wrestling',
+    'Fencing', 'Curling', 'Bowling', 'Track & Field', 'Jump Rope', 'Downhill Skiing',
+    'Cross Country Skiing', 'Snowboarding', 'Skating', 'Surfing', 'Water Polo',
+    'Paddle Sports'].includes(type)) return 'cardio';
+  if (type === 'Yoga') {
+    if (['Power', 'Hot', 'Vinyasa'].includes(subtype)) return 'cardio';
+    return 'recovery';
+  }
+  if (['Pilates', 'Stretching', 'Foam Rolling', 'Cold Plunge', 'Sauna'].includes(type)) return 'recovery';
+  if (['Swimming', 'Rowing', 'Hiking', 'Dance'].includes(type)) return 'cardio';
   return null;
 }
 
@@ -680,8 +699,8 @@ exports.sendGoalReminder = onSchedule(
       let recovery = 0;
 
       thisWeekActivities.forEach(activity => {
-        const category = activity.countToward || '';
-        if (category === 'lifting' || category === 'strength') {
+        const category = getActivityCategoryForGoals(activity);
+        if (category === 'lifting') {
           strength++;
         } else if (category === 'cardio') {
           cardio++;
@@ -704,7 +723,7 @@ exports.sendGoalReminder = onSchedule(
         await sendNotificationToUser(
           userId,
           'Goals Complete! 🎯',
-          `You've hit all ${totalGoals} workouts this week with ${daysLeft} days to spare. Amazing!`,
+          `You've hit all ${totalGoals} activities this week with ${daysLeft} days to spare. Amazing!`,
           {
             type: NotificationType.GOAL_REMINDER,
             allGoalsMet: 'true',
@@ -737,7 +756,7 @@ exports.sendGoalReminder = onSchedule(
 
       await sendNotificationToUser(
         userId,
-        `${totalDone}/${totalGoals} Workouts Done — ${daysLeft} Days Left`,
+        `${totalDone}/${totalGoals} Activities Done — ${daysLeft} Days Left`,
         body,
         {
           type: NotificationType.GOAL_REMINDER,
@@ -750,6 +769,7 @@ exports.sendGoalReminder = onSchedule(
     }
   }
 );
+
 
 /**
  * Weekly summary - runs every Sunday at 10 AM
@@ -789,8 +809,8 @@ exports.sendWeeklySummary = onSchedule(
 
       thisWeekActivities.forEach(activity => {
         totalCalories += activity.calories || 0;
-        const category = activity.countToward || '';
-        if (category === 'lifting' || category === 'strength') {
+        const category = getActivityCategoryForGoals(activity);
+        if (category === 'lifting') {
           strength++;
         } else if (category === 'cardio') {
           cardio++;
@@ -811,7 +831,7 @@ exports.sendWeeklySummary = onSchedule(
         await sendNotificationToUser(
           userId,
           'Weekly Check-in',
-          'No workouts logged this week. New week, fresh start!',
+          'No activities logged this week. New week, fresh start!',
           {
             type: NotificationType.WEEKLY_SUMMARY,
             activitiesCount: '0',
@@ -825,7 +845,7 @@ exports.sendWeeklySummary = onSchedule(
         await sendNotificationToUser(
           userId,
           'You Crushed Your Week! 🔥',
-          `${workouts} workouts, ${recovery} recovery, ${caloriesStr} cal. Tap to share with friends!`,
+          `${workouts} workouts, ${recovery} recovery sessions, ${caloriesStr} cal. Tap to share with friends!`,
           {
             type: NotificationType.WEEKLY_SUMMARY,
             workouts: workouts.toString(),
@@ -841,7 +861,7 @@ exports.sendWeeklySummary = onSchedule(
         await sendNotificationToUser(
           userId,
           'Your Week in Review',
-          `${workouts} workouts, ${recovery} recovery, ${caloriesStr} cal. Tap to share with friends!`,
+          `${workouts} workouts, ${recovery} recovery sessions, ${caloriesStr} cal. Tap to share with friends!`,
           {
             type: NotificationType.WEEKLY_SUMMARY,
             workouts: workouts.toString(),
@@ -925,7 +945,7 @@ exports.sendMonthlySummary = onSchedule(
         await sendNotificationToUser(
           userId,
           `${monthName} Recap`,
-          'No workouts logged last month. This month is a fresh start!',
+          'No activities logged last month. This month is a fresh start!',
           {
             type: NotificationType.MONTHLY_SUMMARY,
             month: monthName,
@@ -942,7 +962,7 @@ exports.sendMonthlySummary = onSchedule(
         await sendNotificationToUser(
           userId,
           `Your ${monthName} Recap 📊`,
-          `${lastMonthCount} workouts, ${timeStr} total${comparisonText}. Tap to share with friends!`,
+          `${lastMonthCount} activities, ${timeStr} total${comparisonText}. Tap to share with friends!`,
           {
             type: NotificationType.MONTHLY_SUMMARY,
             month: monthName,

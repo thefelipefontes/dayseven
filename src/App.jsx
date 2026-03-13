@@ -6914,10 +6914,14 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
               <ActivityIcon type={activity.type} subtype={activity.subtype} size={28} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} />
             </div>
             <div className="flex-1">
-              <div className="text-xl font-bold">{activity.type}</div>
-              {activity.strengthType && (activity.focusAreas?.length || activity.focusArea) ? (
-                <div className="text-sm text-gray-400">{activity.strengthType} • {normalizeFocusAreas(activity.focusAreas || [activity.focusArea]).join(', ')}</div>
-              ) : activity.subtype && (
+              <div className="text-xl font-bold">{
+                activity.type === 'Other' ? (activity.subtype || activity.type)
+                : activity.type === 'Strength Training' ? (activity.strengthType || activity.subtype || 'Strength Training')
+                : activity.type
+              }</div>
+              {activity.type === 'Strength Training' && (activity.focusAreas?.length || activity.focusArea) ? (
+                <div className="text-sm text-gray-400">{normalizeFocusAreas(activity.focusAreas || [activity.focusArea]).join(', ')}</div>
+              ) : activity.subtype && activity.type !== 'Other' && activity.type !== 'Strength Training' && (
                 <div className="text-sm text-gray-400">{activity.subtype}</div>
               )}
               {activity.type === 'Walking' && (
@@ -7980,26 +7984,39 @@ const DurationPicker = ({ hours, minutes, onChange, disabled = false }) => {
 
   const hoursRef = useRef(null);
   const minutesRef = useRef(null);
+  const hoursTouchRef = useRef({ startY: 0, startScroll: 0, lastY: 0, lastTime: 0, velocity: 0, animFrame: null, isTouching: false });
+  const minutesTouchRef = useRef({ startY: 0, startScroll: 0, lastY: 0, lastTime: 0, velocity: 0, animFrame: null, isTouching: false });
 
   const itemHeight = 32;
   const visibleItems = 3;
 
   useEffect(() => {
-    // Scroll to values when they change
-    if (hoursRef.current) {
+    if (hoursRef.current && !hoursTouchRef.current.isTouching) {
       hoursRef.current.scrollTop = hours * itemHeight;
     }
-    if (minutesRef.current) {
+    if (minutesRef.current && !minutesTouchRef.current.isTouching) {
       minutesRef.current.scrollTop = minutes * itemHeight;
     }
   }, [hours, minutes]);
+
+  const snapToNearest = (ref, options, type) => {
+    if (!ref.current) return;
+    const scrollTop = ref.current.scrollTop;
+    const index = Math.round(scrollTop / itemHeight);
+    const clampedIndex = Math.max(0, Math.min(options.length - 1, index));
+    ref.current.scrollTo({ top: clampedIndex * itemHeight, behavior: 'smooth' });
+    if (type === 'hours' && clampedIndex !== hours) {
+      onChange(clampedIndex, minutes);
+    } else if (type === 'minutes' && clampedIndex !== hours) {
+      onChange(hours, clampedIndex);
+    }
+  };
 
   const handleScroll = (ref, options, type) => {
     if (!ref.current) return;
     const scrollTop = ref.current.scrollTop;
     const index = Math.round(scrollTop / itemHeight);
     const clampedIndex = Math.max(0, Math.min(options.length - 1, index));
-
     if (type === 'hours' && clampedIndex !== hours) {
       onChange(clampedIndex, minutes);
     } else if (type === 'minutes' && clampedIndex !== minutes) {
@@ -8007,134 +8024,105 @@ const DurationPicker = ({ hours, minutes, onChange, disabled = false }) => {
     }
   };
 
-  const scrollToValue = (ref, value) => {
-    if (ref.current) {
-      ref.current.scrollTo({
-        top: value * itemHeight,
-        behavior: 'smooth'
-      });
+  const handleTouchStart = (e, ref, touchState) => {
+    if (touchState.current.animFrame) cancelAnimationFrame(touchState.current.animFrame);
+    const touch = e.touches[0];
+    touchState.current = {
+      startY: touch.clientY,
+      startScroll: ref.current.scrollTop,
+      lastY: touch.clientY,
+      lastTime: Date.now(),
+      velocity: 0,
+      animFrame: null,
+      isTouching: true
+    };
+  };
+
+  const handleTouchMove = (e, ref, touchState) => {
+    if (!touchState.current.isTouching) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    const now = Date.now();
+    const dt = now - touchState.current.lastTime;
+    const dy = touchState.current.lastY - touch.clientY;
+    if (dt > 0) {
+      touchState.current.velocity = dy / dt;
+    }
+    touchState.current.lastY = touch.clientY;
+    touchState.current.lastTime = now;
+    const delta = touchState.current.startY - touch.clientY;
+    ref.current.scrollTop = touchState.current.startScroll + delta;
+  };
+
+  const handleTouchEnd = (ref, touchState, options, type) => {
+    touchState.current.isTouching = false;
+    const velocity = touchState.current.velocity; // px/ms
+    const maxScroll = (options.length - 1) * itemHeight;
+
+    if (Math.abs(velocity) > 0.3) {
+      // Momentum: apply velocity with friction
+      let currentVelocity = velocity * 16; // convert to px/frame (~16ms)
+      const friction = 0.92;
+      const animate = () => {
+        currentVelocity *= friction;
+        if (Math.abs(currentVelocity) < 0.5) {
+          snapToNearest(ref, options, type);
+          return;
+        }
+        ref.current.scrollTop = Math.max(0, Math.min(maxScroll, ref.current.scrollTop + currentVelocity));
+        touchState.current.animFrame = requestAnimationFrame(animate);
+      };
+      touchState.current.animFrame = requestAnimationFrame(animate);
+    } else {
+      snapToNearest(ref, options, type);
     }
   };
 
+  const scrollToValue = (ref, value) => {
+    if (ref.current) {
+      ref.current.scrollTo({ top: value * itemHeight, behavior: 'smooth' });
+    }
+  };
+
+  const renderWheel = (ref, touchState, options, value, type, formatFn) => (
+    <div className="relative" style={{ height: itemHeight * visibleItems, width: '60px' }}>
+      {/* Fade overlays */}
+      <div className="absolute top-0 left-0 right-0 z-10 pointer-events-none"
+        style={{ height: itemHeight, background: 'linear-gradient(to bottom, rgba(10,10,10,1) 0%, rgba(10,10,10,0) 100%)' }} />
+      <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none"
+        style={{ height: itemHeight, background: 'linear-gradient(to top, rgba(10,10,10,1) 0%, rgba(10,10,10,0) 100%)' }} />
+      {/* Selection highlight */}
+      <div className="absolute left-0 right-0 z-5 pointer-events-none rounded-lg"
+        style={{ top: itemHeight, height: itemHeight, backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.3)' }} />
+      {/* Scrollable list */}
+      <div
+        ref={ref}
+        className="h-full overflow-y-scroll scrollbar-hide"
+        style={{ scrollSnapType: 'none', WebkitOverflowScrolling: 'auto' }}
+        onScroll={() => handleScroll(ref, options, type)}
+        onTouchStart={(e) => handleTouchStart(e, ref, touchState)}
+        onTouchMove={(e) => handleTouchMove(e, ref, touchState)}
+        onTouchEnd={() => handleTouchEnd(ref, touchState, options, type)}
+      >
+        <div style={{ height: itemHeight }} />
+        {options.map((v) => (
+          <div key={v} onClick={() => scrollToValue(ref, v)}
+            className="flex items-center justify-center cursor-pointer transition-all duration-150"
+            style={{ height: itemHeight, color: value === v ? '#00FF94' : 'rgba(255,255,255,0.5)', fontWeight: value === v ? 'bold' : 'normal', fontSize: value === v ? '18px' : '14px' }}>
+            {formatFn(v)}
+          </div>
+        ))}
+        <div style={{ height: itemHeight }} />
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex items-center justify-start gap-1" style={{ opacity: disabled ? 0.5 : 1 }}>
-      {/* Hours wheel */}
-      <div className="relative" style={{ height: itemHeight * visibleItems, width: '60px' }}>
-        {/* Fade overlays */}
-        <div
-          className="absolute top-0 left-0 right-0 z-10 pointer-events-none"
-          style={{
-            height: itemHeight,
-            background: 'linear-gradient(to bottom, rgba(10,10,10,1) 0%, rgba(10,10,10,0) 100%)'
-          }}
-        />
-        <div
-          className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none"
-          style={{
-            height: itemHeight,
-            background: 'linear-gradient(to top, rgba(10,10,10,1) 0%, rgba(10,10,10,0) 100%)'
-          }}
-        />
-        {/* Selection highlight */}
-        <div
-          className="absolute left-0 right-0 z-5 pointer-events-none rounded-lg"
-          style={{
-            top: itemHeight,
-            height: itemHeight,
-            backgroundColor: 'rgba(0,255,148,0.1)',
-            border: '1px solid rgba(0,255,148,0.3)'
-          }}
-        />
-        {/* Scrollable list */}
-        <div
-          ref={hoursRef}
-          className="h-full overflow-y-scroll scrollbar-hide"
-          style={{ scrollSnapType: 'y mandatory' }}
-          onScroll={() => handleScroll(hoursRef, hourOptions, 'hours')}
-        >
-          <div style={{ height: itemHeight }} /> {/* Top padding */}
-          {hourOptions.map((h) => (
-            <div
-              key={h}
-              onClick={() => scrollToValue(hoursRef, h)}
-              className="flex items-center justify-center cursor-pointer transition-all duration-150"
-              style={{
-                height: itemHeight,
-                scrollSnapAlign: 'center',
-                color: hours === h ? '#00FF94' : 'rgba(255,255,255,0.5)',
-                fontWeight: hours === h ? 'bold' : 'normal',
-                fontSize: hours === h ? '18px' : '14px'
-              }}
-            >
-              {h}
-            </div>
-          ))}
-          <div style={{ height: itemHeight }} /> {/* Bottom padding */}
-        </div>
-      </div>
-
-      {/* Hours label */}
+      {renderWheel(hoursRef, hoursTouchRef, hourOptions, hours, 'hours', (v) => v)}
       <div className="text-xs text-gray-400">hr</div>
-
-      {/* Separator */}
       <div className="text-xl font-bold text-gray-500">:</div>
-
-      {/* Minutes wheel */}
-      <div className="relative" style={{ height: itemHeight * visibleItems, width: '60px' }}>
-        {/* Fade overlays */}
-        <div
-          className="absolute top-0 left-0 right-0 z-10 pointer-events-none"
-          style={{
-            height: itemHeight,
-            background: 'linear-gradient(to bottom, rgba(10,10,10,1) 0%, rgba(10,10,10,0) 100%)'
-          }}
-        />
-        <div
-          className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none"
-          style={{
-            height: itemHeight,
-            background: 'linear-gradient(to top, rgba(10,10,10,1) 0%, rgba(10,10,10,0) 100%)'
-          }}
-        />
-        {/* Selection highlight */}
-        <div
-          className="absolute left-0 right-0 z-5 pointer-events-none rounded-lg"
-          style={{
-            top: itemHeight,
-            height: itemHeight,
-            backgroundColor: 'rgba(0,255,148,0.1)',
-            border: '1px solid rgba(0,255,148,0.3)'
-          }}
-        />
-        {/* Scrollable list */}
-        <div
-          ref={minutesRef}
-          className="h-full overflow-y-scroll scrollbar-hide"
-          style={{ scrollSnapType: 'y mandatory' }}
-          onScroll={() => handleScroll(minutesRef, minuteOptions, 'minutes')}
-        >
-          <div style={{ height: itemHeight }} /> {/* Top padding */}
-          {minuteOptions.map((m) => (
-            <div
-              key={m}
-              onClick={() => scrollToValue(minutesRef, m)}
-              className="flex items-center justify-center cursor-pointer transition-all duration-150"
-              style={{
-                height: itemHeight,
-                scrollSnapAlign: 'center',
-                color: minutes === m ? '#00FF94' : 'rgba(255,255,255,0.5)',
-                fontWeight: minutes === m ? 'bold' : 'normal',
-                fontSize: minutes === m ? '18px' : '14px'
-              }}
-            >
-              {String(m).padStart(2, '0')}
-            </div>
-          ))}
-          <div style={{ height: itemHeight }} /> {/* Bottom padding */}
-        </div>
-      </div>
-
-      {/* Minutes label */}
+      {renderWheel(minutesRef, minutesTouchRef, minuteOptions, minutes, 'minutes', (v) => String(v).padStart(2, '0'))}
       <div className="text-xs text-gray-400">min</div>
     </div>
   );
@@ -8386,7 +8374,7 @@ const SwipeableActivityItem = ({ children, onDelete, activity, onTap, onEdit }) 
         className="relative overflow-hidden rounded-xl"
         style={{
           backgroundColor: showDeleteButton ? '#FF453A' : 'transparent',
-          zIndex: showDeleteButton ? 10 : 'auto',
+          zIndex: showDeleteButton ? 9999 : 'auto',
           position: showDeleteButton ? 'relative' : 'static'
         }}
       >
@@ -8465,7 +8453,7 @@ const SwipeableActivityItem = ({ children, onDelete, activity, onTap, onEdit }) 
               </div>
               <h3 className="text-white font-bold text-lg mb-2">Delete Activity?</h3>
               <p className="text-gray-400 text-sm mb-1">
-                {activity.type}{activity.subtype ? ` • ${activity.subtype}` : ''}
+                {activity.type === 'Other' ? (activity.subtype || 'Other') : (activity.type + (activity.subtype ? ` • ${activity.subtype}` : ''))}
               </p>
               <p className="text-gray-500 text-xs">
                 This action cannot be undone.
@@ -9315,7 +9303,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               date,
               notes,
               distance: distance ? parseFloat(distance) : undefined,
-              duration: durationHours * 60 + durationMinutes,
+              duration: activityType === 'Chiropractic' ? undefined : (durationHours * 60 + durationMinutes),
               calories: calories ? parseInt(calories) : undefined,
               avgHr: avgHr ? parseInt(avgHr) : undefined,
               maxHr: maxHr ? parseInt(maxHr) : undefined,
@@ -10339,6 +10327,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             {/* Hide duration, date, metrics, notes, photo for "Start Workout" mode - these are entered when finishing */}
             {mode !== 'start' && (
               <>
+            {activityType !== 'Chiropractic' && (
             <div>
               <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">
                 Duration {isFromAppleHealth && <span style={{ color: '#00FF94' }}>(from Apple Health)</span>}
@@ -10352,6 +10341,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 }}
               />
             </div>
+            )}
 
             <div>
               <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Date</label>
@@ -12802,7 +12792,15 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                       <ActivityIcon type={activity.type} subtype={activity.subtype} size={20} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold truncate">{activity.type}{activity.subtype ? ` • ${activity.subtype}` : ''}</span>
+                          <span className="text-sm font-semibold truncate">{
+                            activity.type === 'Other' ? (activity.subtype || 'Other')
+                            : activity.type === 'Strength Training' ? (() => {
+                              const st = activity.strengthType || activity.subtype || 'Strength Training';
+                              const areas = normalizeFocusAreas(activity.focusAreas || (activity.focusArea ? [activity.focusArea] : []));
+                              return areas.length > 0 ? `${st} - ${areas.join(', ')}` : st;
+                            })()
+                            : (activity.subtype ? `${activity.type} • ${activity.subtype}` : activity.type)
+                          }</span>
                           {(() => {
                             const summary = getReactionSummary(activity.id);
                             const commentCount = getCommentCount(activity.id);
@@ -14994,7 +14992,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                               {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} />}
                               {activity.type === 'Strength Training'
                                 ? (() => { const areas = normalizeFocusAreas(activity.focusAreas || (activity.focusArea ? [activity.focusArea] : [])); return activity.subtype ? `${activity.subtype}${areas.length > 0 ? ` • ${areas.join(', ')}` : ''}` : (areas.length > 0 ? `Strength Training • ${areas.join(', ')}` : 'Strength Training'); })()
-                                : (activity.subtype ? `${activity.type} • ${activity.subtype}` : activity.type)}
+                                : (activity.type === 'Other' ? (activity.subtype || 'Other') : (activity.subtype ? `${activity.type} • ${activity.subtype}` : activity.type))}
                             </div>
                             <span className="text-gray-500 text-xs">›</span>
                           </div>
@@ -20533,7 +20531,7 @@ export default function DaySevenApp() {
       // Single activity: Highest calories (counts all activities except warmup)
       if (activity.calories && activity.calories > getRecordValue('highestCalories')) {
         updatedRecords.highestCalories = { value: activity.calories, activityType: activity.type };
-        recordsBroken.push(`${activity.calories} cals (${activity.type}) 🔥`);
+        recordsBroken.push(`${activity.calories} cals (${activity.type === 'Other' ? (activity.subtype || 'Other') : activity.type}) 🔥`);
       }
       
       // Single workout records (only for non-recovery activities)
@@ -20553,13 +20551,13 @@ export default function DaySevenApp() {
           const hours = Math.floor(activity.duration / 60);
           const mins = activity.duration % 60;
           const durationStr = hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
-          recordsBroken.push(`${durationStr} cardio (${activity.type}) ❤️‍🔥`);
+          recordsBroken.push(`${durationStr} cardio (${activity.type === 'Other' ? (activity.subtype || 'Other') : activity.type}) ❤️‍🔥`);
         }
 
         // Longest distance
         if (activity.distance && activity.distance > getRecordValue('longestDistance')) {
           updatedRecords.longestDistance = { value: activity.distance, activityType: activity.type };
-          recordsBroken.push(`${parseFloat(activity.distance).toFixed(2)} mi (${activity.type}) ❤️‍🔥`);
+          recordsBroken.push(`${parseFloat(activity.distance).toFixed(2)} mi (${activity.type === 'Other' ? (activity.subtype || 'Other') : activity.type}) ❤️‍🔥`);
         }
         
         // Fastest pace (for runs with distance and duration)

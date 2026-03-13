@@ -15,6 +15,20 @@ const isNative = Capacitor.isNativePlatform();
 const REVENUECAT_API_KEY = 'appl_UATysAceRzTnMyGAvenoKKlXXov';
 const ENTITLEMENT_ID = 'dayseven Pro';
 
+// Diagnostic mode — set to true to show alerts at failure points
+const RC_DEBUG = true;
+
+const debugLog = (message, data) => {
+  console.log(`[RC-Debug] ${message}`, data || '');
+  if (RC_DEBUG && isNative) {
+    // Use a non-blocking approach — queue alerts so they don't stack
+    setTimeout(() => {
+      const detail = data ? `\n\n${typeof data === 'object' ? JSON.stringify(data, null, 2) : data}` : '';
+      window.alert?.(`[RC] ${message}${detail}`);
+    }, 100);
+  }
+};
+
 // Lazy-loaded SDK references (avoids import errors on web)
 let Purchases = null;
 let RevenueCatUI = null;
@@ -42,7 +56,7 @@ const loadSDK = async () => {
 
     return true;
   } catch (error) {
-    console.error('[SubscriptionService] Failed to load RevenueCat SDK:', error);
+    debugLog('SDK LOAD FAILED', error.message);
     return false;
   }
 };
@@ -59,7 +73,10 @@ export const initializeRevenueCat = async (userId) => {
 
   try {
     const loaded = await loadSDK();
-    if (!loaded) return false;
+    if (!loaded) {
+      debugLog('INIT FAILED: SDK not loaded');
+      return false;
+    }
 
     await Purchases.setLogLevel({ level: LOG_LEVEL.INFO });
 
@@ -79,7 +96,7 @@ export const initializeRevenueCat = async (userId) => {
     console.log('[SubscriptionService] RevenueCat initialized for user:', userId);
     return true;
   } catch (error) {
-    console.error('[SubscriptionService] initializeRevenueCat error:', error);
+    debugLog('INIT ERROR', error.message);
     return false;
   }
 };
@@ -146,12 +163,25 @@ export const addCustomerInfoListener = async (callback) => {
  * @returns {Promise<{purchased: boolean, result: string|null}>}
  */
 export const presentPaywall = async (options = {}) => {
-  if (!isNative || !RevenueCatUI) return { purchased: false, result: null };
+  if (!isNative) {
+    debugLog('PAYWALL SKIP: not native platform');
+    return { purchased: false, result: null };
+  }
+  if (!RevenueCatUI) {
+    debugLog('PAYWALL SKIP: RevenueCatUI is null (SDK failed to load)');
+    return { purchased: false, result: null };
+  }
 
   try {
     // Check if offerings are available before presenting (avoids Error 23)
     const offerings = await Purchases.getOfferings();
     if (!offerings?.current) {
+      const offeringKeys = offerings?.all ? Object.keys(offerings.all) : [];
+      debugLog('PAYWALL SKIP: No current offering', {
+        hasOfferings: !!offerings,
+        allKeys: offeringKeys,
+        current: offerings?.current || null
+      });
       return { purchased: false, result: null };
     }
 
@@ -160,6 +190,11 @@ export const presentPaywall = async (options = {}) => {
       const offering = offerings?.all?.[options.offeringIdentifier];
       if (offering) {
         paywallOptions.offering = offering;
+      } else {
+        debugLog('PAYWALL WARNING: Offering not found', {
+          requested: options.offeringIdentifier,
+          available: Object.keys(offerings.all || {})
+        });
       }
     }
 
@@ -174,14 +209,17 @@ export const presentPaywall = async (options = {}) => {
         console.log('[SubscriptionService] Paywall dismissed by user');
         return { purchased: false, result };
       case PAYWALL_RESULT.NOT_PRESENTED:
+        debugLog('PAYWALL NOT_PRESENTED: SDK refused to show paywall');
+        return { purchased: false, result };
       case PAYWALL_RESULT.ERROR:
-        console.log('[SubscriptionService] Paywall not presented or error:', result);
+        debugLog('PAYWALL ERROR: SDK returned error result');
         return { purchased: false, result };
       default:
+        debugLog('PAYWALL UNKNOWN RESULT', result);
         return { purchased: false, result };
     }
   } catch (error) {
-    console.error('[SubscriptionService] presentPaywall error:', error);
+    debugLog('PAYWALL EXCEPTION', error.message);
     return { purchased: false, result: null };
   }
 };

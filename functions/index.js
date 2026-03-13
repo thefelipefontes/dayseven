@@ -1120,7 +1120,10 @@ exports.onFriendActivityLogged = onDocumentUpdated(
 
     // Get user's display name
     const displayName = after.displayName || after.username || 'A friend';
-    const activityType = notifiableActivity.type || 'a workout';
+    // For "Other" activities, show the custom name (stored in subtype) instead of "Other"
+    const activityType = notifiableActivity.type === 'Other'
+      ? (notifiableActivity.subtype || 'a workout')
+      : (notifiableActivity.type || 'a workout');
 
     // Get friends list
     const friendsSnap = await db.collection('users').doc(userId).collection('friends').get();

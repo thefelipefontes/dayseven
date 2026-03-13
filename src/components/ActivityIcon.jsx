@@ -53,6 +53,8 @@ import {
   // Icon picker - Recovery
   IconHeart,
   IconDroplets,
+  IconMassage,
+  IconBone,
   // Icon picker - Other
   IconTrophy,
   IconMedal,
@@ -157,6 +159,8 @@ const ICON_MAP = {
   // Recovery
   'Cold Plunge':         { Icon: IconSnowflake, category: 'recovery' },
   'Sauna':               { Icon: IconFlame, category: 'recovery' },
+  'Massage':             { Icon: IconMassage, category: 'recovery' },
+  'Chiropractic':        { Icon: IconBone, category: 'recovery' },
   // Uncategorized (from Apple Health — user needs to assign a goal category)
   'Swimming':            { Icon: IconSwimming, category: 'other' },
   'Hiking':              { Icon: IconMountain, category: 'other' },
@@ -318,6 +322,8 @@ const ICON_PICKER_CATEGORIES = [
       { name: 'IconFlame', Icon: IconFlame },
       { name: 'IconHeart', Icon: IconHeart },
       { name: 'IconDroplets', Icon: IconDroplets },
+      { name: 'IconMassage', Icon: IconMassage },
+      { name: 'IconBone', Icon: IconBone },
     ],
   },
   {

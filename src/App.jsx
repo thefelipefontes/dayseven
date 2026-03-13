@@ -1293,7 +1293,7 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
     ? (workout.strengthType || 'Strength')
     : workout.type;
   const subtypeName = workout.type === 'Strength Training'
-    ? (workout.focusAreas || (workout.focusArea ? [workout.focusArea] : [])).join(', ')
+    ? normalizeFocusAreas(workout.focusAreas || (workout.focusArea ? [workout.focusArea] : [])).join(', ')
     : (workout.subtype || '');
 
   // Position based on active tab:
@@ -1517,8 +1517,37 @@ const getDefaultCountToward = (type, sub) => {
   if (type === 'Pilates') return 'recovery';
   if (type === 'Cold Plunge') return 'recovery';
   if (type === 'Sauna') return 'recovery';
+  if (type === 'Massage') return 'recovery';
+  if (type === 'Chiropractic') return 'recovery';
   if (type === 'Walking') return null;
   return null;
+};
+
+const FOCUS_AREA_GROUPS = {
+  'Upper Body': ['Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps'],
+  'Lower Body': ['Quads', 'Hamstrings', 'Calves'],
+  'Core': ['Abs']
+};
+const ALL_FOCUS_AREAS = Object.values(FOCUS_AREA_GROUPS).flat();
+
+// Migrate old focus area names → new specific muscles
+const FOCUS_AREA_MIGRATION = {
+  'Full Body': [...FOCUS_AREA_GROUPS['Upper Body'], ...FOCUS_AREA_GROUPS['Lower Body'], 'Abs'],
+  'Upper': FOCUS_AREA_GROUPS['Upper Body'],
+  'Lower': FOCUS_AREA_GROUPS['Lower Body'],
+  'Legs': FOCUS_AREA_GROUPS['Lower Body'],
+};
+const normalizeFocusAreas = (areas) => {
+  if (!areas || areas.length === 0) return areas;
+  const result = new Set();
+  areas.forEach(a => {
+    if (FOCUS_AREA_MIGRATION[a]) {
+      FOCUS_AREA_MIGRATION[a].forEach(m => result.add(m));
+    } else {
+      result.add(a);
+    }
+  });
+  return [...result];
 };
 
 // Finish Workout Modal - Shown when user taps "Finish Timer"
@@ -1615,7 +1644,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
       setFinishCountToward(workout?.countToward ?? getDefaultCountToward(workout?.type, workout?.subtype));
       setFinishSportEmoji(workout?.sportEmoji || null);
       setFinishStrengthType(workout?.strengthType || '');
-      setFinishFocusAreas(workout?.focusAreas || (workout?.focusArea ? [workout.focusArea] : []));
+      setFinishFocusAreas(normalizeFocusAreas(workout?.focusAreas || (workout?.focusArea ? [workout.focusArea] : [])));
       setShowDiscardConfirm(false);
 
       // Get current metrics from the live workout session (don't end it yet)
@@ -2046,22 +2075,47 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
               </div>
               <div className="mb-4">
                 <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Focus Areas</label>
-                <div className="flex flex-wrap gap-2">
-                  {['Full Body', 'Upper', 'Lower', 'Chest', 'Back', 'Legs', 'Shoulders', 'Biceps', 'Triceps', 'Abs'].map((area) => {
-                    const isSelected = finishFocusAreas.includes(area);
+                <div className="grid grid-cols-3 gap-2">
+                  {Object.entries(FOCUS_AREA_GROUPS).map(([groupName, members]) => {
+                    const allSelected = members.every(m => finishFocusAreas.includes(m));
+                    const someSelected = members.some(m => finishFocusAreas.includes(m));
                     return (
-                      <button
-                        key={area}
-                        onClick={() => { setFinishFocusAreas(prev => prev.includes(area) ? prev.filter(a => a !== area) : [...prev, area]); triggerHaptic(ImpactStyle.Light); }}
-                        className="px-3 py-1.5 rounded-full text-xs transition-all duration-200"
-                        style={{
-                          backgroundColor: isSelected ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
-                          border: isSelected ? '1px solid #00FF94' : '1px solid transparent',
-                          color: isSelected ? '#00FF94' : 'white'
-                        }}
-                      >
-                        {area}
-                      </button>
+                      <div key={groupName} className="flex flex-col gap-1.5">
+                        <button
+                          onClick={() => {
+                            const newAreas = allSelected
+                              ? finishFocusAreas.filter(a => !members.includes(a))
+                              : [...new Set([...finishFocusAreas, ...members])];
+                            setFinishFocusAreas(newAreas);
+                            triggerHaptic(ImpactStyle.Light);
+                          }}
+                          className="px-2 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 text-center"
+                          style={{
+                            backgroundColor: allSelected ? 'rgba(0,255,148,0.25)' : someSelected ? 'rgba(0,255,148,0.1)' : 'rgba(255,255,255,0.08)',
+                            border: allSelected ? '1px solid #00FF94' : someSelected ? '1px solid rgba(0,255,148,0.4)' : '1px solid rgba(255,255,255,0.15)',
+                            color: allSelected || someSelected ? '#00FF94' : 'rgba(255,255,255,0.7)'
+                          }}
+                        >
+                          {groupName}
+                        </button>
+                        {members.map((area) => {
+                          const isSelected = finishFocusAreas.includes(area);
+                          return (
+                            <button
+                              key={area}
+                              onClick={() => { setFinishFocusAreas(prev => prev.includes(area) ? prev.filter(a => a !== area) : [...prev, area]); triggerHaptic(ImpactStyle.Light); }}
+                              className="px-2 py-1.5 rounded-lg text-xs transition-all duration-200 text-center"
+                              style={{
+                                backgroundColor: isSelected ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
+                                border: isSelected ? '1px solid #00FF94' : '1px solid transparent',
+                                color: isSelected ? '#00FF94' : 'white'
+                              }}
+                            >
+                              {area}
+                            </button>
+                          );
+                        })}
+                      </div>
                     );
                   })}
                 </div>
@@ -4347,7 +4401,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange }) => {
       if (a.type === 'Strength Training') return 'lifting';
       if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(a.type)) return 'cardio';
       if (a.type === 'Walking') return 'other';
-      if (['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
+      if (['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
       return 'other';
     };
 
@@ -5849,7 +5903,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
     }
     if (a.type === 'Strength Training') return 'lifting';
     if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(a.type)) return 'cardio';
-    if (['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
+    if (['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
     return 'other';
   };
   const lifts = weekData?.activities?.filter(a => getWeekActivityCategory(a) === 'lifting') || [];
@@ -6281,7 +6335,7 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
 
   // Activity type definitions
   const cardioTypes = ['Running', 'Cycle', 'Sports', 'Walking', 'Hiking', 'Swimming', 'Rowing', 'Stair Climbing', 'Elliptical', 'HIIT'];
-  const recoveryTypes = ['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'];
+  const recoveryTypes = ['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'];
 
   // Calculate stats from monthData
   const monthActivities = monthData?.activities || [];
@@ -6299,7 +6353,7 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
     }
     if (a.type === 'Strength Training') return 'lifting';
     if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(a.type)) return 'cardio';
-    if (['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
+    if (['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
     return 'other';
   };
 
@@ -6387,7 +6441,7 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
   // Most frequent activity types
   const strengthFocusCounts = {};
   monthActivities.filter(a => a.type === 'Strength Training').forEach(a => {
-    const areas = a.focusAreas || (a.focusArea ? [a.focusArea] : []);
+    const areas = normalizeFocusAreas(a.focusAreas || (a.focusArea ? [a.focusArea] : []));
     areas.forEach(area => {
       strengthFocusCounts[area] = (strengthFocusCounts[area] || 0) + 1;
     });
@@ -6862,7 +6916,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
             <div className="flex-1">
               <div className="text-xl font-bold">{activity.type}</div>
               {activity.strengthType && (activity.focusAreas?.length || activity.focusArea) ? (
-                <div className="text-sm text-gray-400">{activity.strengthType} • {(activity.focusAreas || [activity.focusArea]).join(', ')}</div>
+                <div className="text-sm text-gray-400">{activity.strengthType} • {normalizeFocusAreas(activity.focusAreas || [activity.focusArea]).join(', ')}</div>
               ) : activity.subtype && (
                 <div className="text-sm text-gray-400">{activity.subtype}</div>
               )}
@@ -8569,7 +8623,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       setActivityType(editType);
       setSubtype(pendingActivity?.subtype || '');
       setStrengthType(pendingActivity?.strengthType || '');
-      setFocusAreas(pendingActivity?.focusAreas || (pendingActivity?.focusArea ? [pendingActivity.focusArea] : []));
+      setFocusAreas(normalizeFocusAreas(pendingActivity?.focusAreas || (pendingActivity?.focusArea ? [pendingActivity.focusArea] : [])));
       setCustomSport('');
       setCustomSportEmoji('⚽');
       setShowSportEmojiPicker(false);
@@ -8577,7 +8631,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       // For "Other" activities OR uncategorized Apple Health types, load custom fields
       const isUncatType = pendingActivity?.type && !['Strength Training', 'Weightlifting', 'Bodyweight', 'Circuit',
         'Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Walking',
-        'Yoga', 'Pilates', 'Cold Plunge', 'Sauna', 'Other'].includes(pendingActivity.type);
+        'Yoga', 'Pilates', 'Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Other'].includes(pendingActivity.type);
       const loadCustomFields = pendingActivity?.type === 'Other' || isUncatType;
       setCustomActivityName(loadCustomFields
         ? (isUncatType ? (pendingActivity?.appleWorkoutName || pendingActivity?.type || '') : (pendingActivity?.subtype || ''))
@@ -8821,6 +8875,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
     { name: 'Walking', subtypes: ['Outdoor', 'Indoor'], category: 'hybrid' },
     { name: 'Cold Plunge', subtypes: [], category: 'recovery' },
     { name: 'Sauna', subtypes: [], category: 'recovery' },
+    { name: 'Massage', subtypes: [], category: 'recovery' },
+    { name: 'Chiropractic', subtypes: [], category: 'recovery' },
     { name: 'Other', subtypes: [], category: 'other' }
   ];
 
@@ -8862,7 +8918,19 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 
   // strengthTypes array removed — now flattened into activityTypes above.
 
-  const focusAreaOptions = ['Full Body', 'Upper', 'Lower', 'Chest', 'Back', 'Legs', 'Shoulders', 'Biceps', 'Triceps', 'Abs'];
+  const toggleFocusGroup = (groupName) => {
+    const members = FOCUS_AREA_GROUPS[groupName];
+    const allSelected = members.every(m => focusAreas.includes(m));
+    if (allSelected) {
+      setFocusAreas(prev => prev.filter(a => !members.includes(a)));
+    } else {
+      setFocusAreas(prev => [...new Set([...prev, ...members])]);
+    }
+  };
+
+  const toggleFocusArea = (area) => {
+    setFocusAreas(prev => prev.includes(area) ? prev.filter(a => a !== area) : [...prev, area]);
+  };
 
   // Uses shared getDefaultCountToward() defined above
 
@@ -8888,7 +8956,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   // Standard types that have built-in category mapping and icon
   const STANDARD_ACTIVITY_TYPES = ['Strength Training', 'Weightlifting', 'Bodyweight', 'Circuit',
     'Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Walking',
-    'Yoga', 'Pilates', 'Cold Plunge', 'Sauna', 'Other',
+    'Yoga', 'Pilates', 'Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Other',
     'Track & Field', 'Jump Rope', 'Downhill Skiing', 'Cross Country Skiing', 'Snowboarding', 'Skating', 'Surfing', 'Water Polo', 'Paddle Sports',
     'Basketball', 'Soccer', 'Football', 'Tennis', 'Golf', 'Badminton', 'Boxing', 'Martial Arts',
     'Baseball', 'Volleyball', 'Hockey', 'Lacrosse', 'Rugby', 'Softball', 'Squash', 'Table Tennis',
@@ -9850,21 +9918,42 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             {STRENGTH_TYPES.includes(activityType) && (
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Focus Areas</label>
-                <div className="flex flex-wrap gap-2">
-                  {focusAreaOptions.map((area) => (
-                    <button
-                      key={area}
-                      onClick={() => setFocusAreas(prev => prev.includes(area) ? prev.filter(a => a !== area) : [...prev, area])}
-                      className="px-4 py-2 rounded-full text-sm transition-all duration-200"
-                      style={{
-                        backgroundColor: focusAreas.includes(area) ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
-                        border: focusAreas.includes(area) ? '1px solid #00FF94' : '1px solid transparent',
-                        color: focusAreas.includes(area) ? '#00FF94' : 'white'
-                      }}
-                    >
-                      {area}
-                    </button>
-                  ))}
+                <div className="grid grid-cols-3 gap-2">
+                  {Object.entries(FOCUS_AREA_GROUPS).map(([groupName, members]) => {
+                    const allSelected = members.every(m => focusAreas.includes(m));
+                    const someSelected = members.some(m => focusAreas.includes(m));
+                    return (
+                      <div key={groupName} className="flex flex-col gap-1.5">
+                        {/* Group header — select/deselect all */}
+                        <button
+                          onClick={() => toggleFocusGroup(groupName)}
+                          className="px-2 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 text-center"
+                          style={{
+                            backgroundColor: allSelected ? 'rgba(0,255,148,0.25)' : someSelected ? 'rgba(0,255,148,0.1)' : 'rgba(255,255,255,0.08)',
+                            border: allSelected ? '1px solid #00FF94' : someSelected ? '1px solid rgba(0,255,148,0.4)' : '1px solid rgba(255,255,255,0.15)',
+                            color: allSelected || someSelected ? '#00FF94' : 'rgba(255,255,255,0.7)'
+                          }}
+                        >
+                          {groupName}
+                        </button>
+                        {/* Individual muscles */}
+                        {members.map((area) => (
+                          <button
+                            key={area}
+                            onClick={() => toggleFocusArea(area)}
+                            className="px-2 py-1.5 rounded-lg text-xs transition-all duration-200 text-center"
+                            style={{
+                              backgroundColor: focusAreas.includes(area) ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
+                              border: focusAreas.includes(area) ? '1px solid #00FF94' : '1px solid transparent',
+                              color: focusAreas.includes(area) ? '#00FF94' : 'white'
+                            }}
+                          >
+                            {area}
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -11161,7 +11250,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
       if (activity.countToward) return activity.countToward;
       if (activity.type === 'Strength Training') return 'lifting';
       if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(activity.type)) return 'cardio';
-      if (['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
+      if (['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
       return 'other';
     };
 
@@ -11183,6 +11272,8 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     // Recovery breakdown
     const coldPlunge = weekActivities.filter(a => a.type === 'Cold Plunge');
     const sauna = weekActivities.filter(a => a.type === 'Sauna');
+    const massage = weekActivities.filter(a => a.type === 'Massage');
+    const chiropractic = weekActivities.filter(a => a.type === 'Chiropractic');
     const yoga = weekActivities.filter(a => a.type === 'Yoga');
     const pilates = weekActivities.filter(a => a.type === 'Pilates');
     const otherRecovery = weekActivities.filter(a => a.type === 'Other' && (a.customActivityCategory === 'recovery' || a.countToward === 'recovery'));
@@ -11194,10 +11285,10 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     const nonCardioWalks = weekActivities.filter(a => a.type === 'Walking' && !a.countToward);
 
 
-    // Muscle group breakdown — count each focus area individually
+    // Muscle group breakdown — count each focus area individually (normalize old names)
     const muscleGroups = {};
     lifts.forEach(a => {
-      const areas = a.focusAreas || (a.focusArea ? [a.focusArea] : []);
+      const areas = normalizeFocusAreas(a.focusAreas || (a.focusArea ? [a.focusArea] : []));
       areas.forEach(area => {
         muscleGroups[area] = (muscleGroups[area] || 0) + 1;
       });
@@ -11209,7 +11300,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     return {
       lifts: { completed: lifts.length, goal: goals.liftsPerWeek, sessions: lifts.map(l => l.subtype || l.type), breakdown: { lifting: lifting.length, bodyweight: bodyweight.length, circuit: circuit.length }, muscleGroups, otherActivities: otherStrength },
       cardio: { completed: cardio.length, goal: goals.cardioPerWeek, miles: totalMiles, sessions: cardio.map(c => c.type), breakdown: { running: running.length, cycling: cycling.length, sports: sports.length, other: otherCardio.length }, otherActivities: otherCardio },
-      recovery: { completed: recovery.length, goal: goals.recoveryPerWeek, sessions: recovery.map(r => r.type), breakdown: { coldPlunge: coldPlunge.length, sauna: sauna.length, yoga: yoga.length, pilates: pilates.length }, otherActivities: otherRecovery },
+      recovery: { completed: recovery.length, goal: goals.recoveryPerWeek, sessions: recovery.map(r => r.type), breakdown: { coldPlunge: coldPlunge.length, sauna: sauna.length, massage: massage.length, chiropractic: chiropractic.length, yoga: yoga.length, pilates: pilates.length }, otherActivities: otherRecovery },
       // Non-cardio walks (don't count toward goals but should be displayed)
       walks: { count: nonCardioWalks.length, activities: nonCardioWalks },
       // Use HealthKit calories if connected (even if 0), otherwise fall back to activity sum
@@ -12562,6 +12653,14 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                   <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Sauna" size={10} /> Sauna</div>
                 </div>
                 <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.massage || 0}</div>
+                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Massage" size={10} /> Massage</div>
+                </div>
+                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.chiropractic || 0}</div>
+                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Chiropractic" size={10} /> Chiropractic</div>
+                </div>
+                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                   <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.yoga || 0}</div>
                   <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Yoga" size={10} /> Yoga</div>
                 </div>
@@ -12972,7 +13071,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
     }
     if (activity.type === 'Strength Training') return 'lifting';
     if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(activity.type)) return 'cardio';
-    if (['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
+    if (['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
     return 'other';
   };
 
@@ -13703,7 +13802,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
     }
     if (activity.type === 'Strength Training') return 'lifting';
     if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(activity.type)) return 'cardio';
-    if (['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
+    if (['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
     return 'other';
   };
 
@@ -14223,7 +14322,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
     const calcMuscleGroupBreakdown = (acts) => {
       const breakdown = {};
       acts.forEach(a => {
-        const areas = a.focusAreas || (a.focusArea ? [a.focusArea] : []);
+        const areas = normalizeFocusAreas(a.focusAreas || (a.focusArea ? [a.focusArea] : []));
         areas.forEach(area => {
           breakdown[area] = (breakdown[area] || 0) + 1;
         });
@@ -14894,7 +14993,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                             <div className="font-medium text-sm flex items-center gap-1">
                               {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} />}
                               {activity.type === 'Strength Training'
-                                ? (() => { const areas = activity.focusAreas || (activity.focusArea ? [activity.focusArea] : []); return activity.subtype ? `${activity.subtype}${areas.length > 0 ? ` • ${areas.join(', ')}` : ''}` : (areas.length > 0 ? `Strength Training • ${areas.join(', ')}` : 'Strength Training'); })()
+                                ? (() => { const areas = normalizeFocusAreas(activity.focusAreas || (activity.focusArea ? [activity.focusArea] : [])); return activity.subtype ? `${activity.subtype}${areas.length > 0 ? ` • ${areas.join(', ')}` : ''}` : (areas.length > 0 ? `Strength Training • ${areas.join(', ')}` : 'Strength Training'); })()
                                 : (activity.subtype ? `${activity.type} • ${activity.subtype}` : activity.type)}
                             </div>
                             <span className="text-gray-500 text-xs">›</span>
@@ -18912,7 +19011,7 @@ export default function DaySevenApp() {
       mostMilesWeek: 0,
     };
 
-    const recoveryTypes = ['Cold Plunge', 'Sauna'];
+    const recoveryTypes = ['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic'];
 
     // Calculate single-activity records
     activitiesList.forEach(activity => {
@@ -20069,7 +20168,7 @@ export default function DaySevenApp() {
     // Default categorization
     if (activity.type === 'Strength Training') return 'lifting';
     if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(activity.type)) return 'cardio';
-    if (['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
+    if (['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
     return 'other';
   };
 
@@ -20097,9 +20196,11 @@ export default function DaySevenApp() {
     const sports = weekActivities.filter(a => a.type === 'Sports');
     const coldPlunge = weekActivities.filter(a => a.type === 'Cold Plunge');
     const sauna = weekActivities.filter(a => a.type === 'Sauna');
+    const massage = weekActivities.filter(a => a.type === 'Massage');
+    const chiropractic = weekActivities.filter(a => a.type === 'Chiropractic');
     const yoga = weekActivities.filter(a => a.type === 'Yoga');
     const pilates = weekActivities.filter(a => a.type === 'Pilates');
-    
+
     const totalMiles = running.reduce((sum, r) => sum + (parseFloat(r.distance) || 0), 0);
     const totalCalories = weekActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
 
@@ -20127,6 +20228,8 @@ export default function DaySevenApp() {
         breakdown: {
           coldPlunge: coldPlunge.length,
           sauna: sauna.length,
+          massage: massage.length,
+          chiropractic: chiropractic.length,
           yoga: yoga.length,
           pilates: pilates.length
         }
@@ -20375,7 +20478,7 @@ export default function DaySevenApp() {
 
     // Write to HealthKit (fire-and-forget, don't block the save flow)
     // Skip if: editing existing activity, came from Apple Health, is HealthKit-sourced, linked to existing HealthKit workout, already saved (live workout), or is Cold Plunge/Sauna
-    const skipHealthKitTypes = ['Cold Plunge', 'Sauna'];
+    const skipHealthKitTypes = ['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic'];
     if (!isEdit && !activityData.fromAppleHealth && activityData.source !== 'healthkit' && !activityData.linkedHealthKitUUID && !activityData.healthKitSaved && !skipHealthKitTypes.includes(newActivity.type)) {
       saveWorkoutToHealthKit(newActivity)
         .then(() => {})
@@ -20412,7 +20515,7 @@ export default function DaySevenApp() {
       if (isWarmup) return null;
 
       // Recovery activities don't count as "workouts" for records
-      const recoveryTypes = ['Cold Plunge', 'Sauna'];
+      const recoveryTypes = ['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic'];
       const yogaPilatesAsRecovery = ['Yoga', 'Pilates'].includes(activity.type) && (!activity.countToward || activity.countToward === 'recovery');
       const isRecovery = recoveryTypes.includes(activity.type) || yogaPilatesAsRecovery;
       const isStrength = activity.type === 'Strength Training' || activity.countToward === 'strength';
@@ -20860,7 +20963,7 @@ export default function DaySevenApp() {
       };
 
       // Recovery activity types
-      const recoveryTypes = ['Cold Plunge', 'Sauna'];
+      const recoveryTypes = ['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic'];
 
       updatedActivities.forEach(activity => {
         const isWarmup = activity.countToward === 'warmup' || activity.customActivityCategory === 'warmup';
@@ -22030,7 +22133,7 @@ export default function DaySevenApp() {
             }
             if (a.type === 'Strength Training') return 'lifting';
             if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(a.type)) return 'cardio';
-            if (['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
+            if (['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
             return 'other';
           };
 
@@ -22038,7 +22141,7 @@ export default function DaySevenApp() {
           const calculateHistoricalStreaks = () => {
             const goals = userData.goals;
             const cardioTypes = ['Running', 'Cycle', 'Sports', 'Walking', 'Hiking', 'Swimming', 'Rowing', 'Stair Climbing', 'Elliptical', 'HIIT'];
-            const recoveryTypes = ['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'];
+            const recoveryTypes = ['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'];
 
             // Get the end of the selected week
             const selectedWeekEnd = new Date(weekRange.endStr + 'T23:59:59');
@@ -22214,7 +22317,7 @@ export default function DaySevenApp() {
           // Monthly stats
           ...(() => {
             const cardioTypes = ['Running', 'Cycle', 'Sports', 'Walking', 'Hiking', 'Swimming', 'Rowing', 'Stair Climbing', 'Elliptical', 'HIIT'];
-            const recoveryTypes = ['Cold Plunge', 'Sauna', 'Yoga', 'Pilates'];
+            const recoveryTypes = ['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'];
 
             // Use monthRange if provided, otherwise current month
             const getMonthRange = () => {
@@ -22332,7 +22435,7 @@ export default function DaySevenApp() {
             // Find most frequent strength focus area (Full Body, Upper, Lower, etc.)
             const strengthFocusCounts = {};
             monthlyActivities.filter(a => a.type === 'Strength Training').forEach(a => {
-              const areas = a.focusAreas || (a.focusArea ? [a.focusArea] : []);
+              const areas = normalizeFocusAreas(a.focusAreas || (a.focusArea ? [a.focusArea] : []));
               areas.forEach(area => {
                 strengthFocusCounts[area] = (strengthFocusCounts[area] || 0) + 1;
               });

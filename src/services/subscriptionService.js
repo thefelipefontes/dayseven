@@ -16,7 +16,7 @@ const REVENUECAT_API_KEY = 'appl_UATysAceRzTnMyGAvenoKKlXXov';
 const ENTITLEMENT_ID = 'dayseven Pro';
 
 // Diagnostic mode — set to true to show alerts at failure points
-const RC_DEBUG = true;
+const RC_DEBUG = false;
 
 const debugLog = (message, data) => {
   console.log(`[RC-Debug] ${message}`, data || '');

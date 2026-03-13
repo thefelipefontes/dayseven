@@ -12741,7 +12741,17 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                 >
                   <ActivityIcon type={latestActivities[0].type} subtype={latestActivities[0].subtype} size={20} sportEmoji={latestActivities[0].sportEmoji} customEmoji={latestActivities[0].customEmoji} customIcon={latestActivities[0].customIcon} />
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold truncate">{latestActivities[0].type}{latestActivities[0].subtype ? ` • ${latestActivities[0].subtype}` : ''}</div>
+                    <div className="text-sm font-semibold truncate">{
+                      latestActivities[0].type === 'Other' ? (latestActivities[0].subtype || 'Other')
+                      : latestActivities[0].type === 'Strength Training' ? (() => {
+                        const a = latestActivities[0];
+                        const st = a.strengthType || 'Strength Training';
+                        const areas = normalizeFocusAreas(a.focusAreas || (a.focusArea ? [a.focusArea] : []));
+                        if (areas.length > 0) return `${st} - ${areas.join(', ')}`;
+                        return a.subtype || st;
+                      })()
+                      : (latestActivities[0].subtype ? `${latestActivities[0].type} • ${latestActivities[0].subtype}` : latestActivities[0].type)
+                    }</div>
                     <div className="text-xs text-gray-400 flex items-center gap-2">
                       <span>{formatFriendlyDate(latestActivities[0].date)}{latestActivities[0].time ? ` at ${latestActivities[0].time}` : ''}{latestActivities[0].duration ? ` (${latestActivities[0].duration} min)` : ''}</span>
                       {(latestActivities[0].healthKitUUID || latestActivities[0].linkedHealthKitUUID || latestActivities[0].source === 'healthkit' || latestActivities[0].fromAppleHealth) && (
@@ -12795,9 +12805,11 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                           <span className="text-sm font-semibold truncate">{
                             activity.type === 'Other' ? (activity.subtype || 'Other')
                             : activity.type === 'Strength Training' ? (() => {
-                              const st = activity.strengthType || activity.subtype || 'Strength Training';
+                              const st = activity.strengthType || 'Strength Training';
                               const areas = normalizeFocusAreas(activity.focusAreas || (activity.focusArea ? [activity.focusArea] : []));
-                              return areas.length > 0 ? `${st} - ${areas.join(', ')}` : st;
+                              if (areas.length > 0) return `${st} - ${areas.join(', ')}`;
+                              // Fallback: subtype may already contain "Weightlifting - Chest, Back" format
+                              return activity.subtype || st;
                             })()
                             : (activity.subtype ? `${activity.type} • ${activity.subtype}` : activity.type)
                           }</span>

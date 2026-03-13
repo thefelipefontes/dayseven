@@ -1956,6 +1956,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
       isPhotoPrivate: activityPhoto ? isPhotoPrivate : undefined,
       // Link to Apple Health workout if selected
       linkedHealthKitUUID: linkedWorkout?.healthKitUUID || undefined,
+      linkedHealthKitStartDate: linkedWorkout?.healthKitStartDate || undefined,
       // Updated subtype and countToward from finish modal pickers
       subtype: finishSubtype || workout.subtype,
       countToward: finishCountToward !== undefined ? finishCountToward : workout.countToward,
@@ -6147,7 +6148,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
                       <div className="text-xs text-gray-500">{activity.date}</div>
                     </div>
                     <div className="flex gap-4 text-xs text-gray-400">
-                      {activity.distance && <span>{activity.distance} mi</span>}
+                      {activity.distance && <span>{parseFloat(activity.distance).toFixed(2)} mi</span>}
                       <span>{activity.duration} min</span>
                       <span>{activity.calories} cal</span>
                     </div>
@@ -6234,7 +6235,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
                       <div className="text-xs text-gray-500">{activity.date}</div>
                     </div>
                     <div className="flex gap-4 text-xs text-gray-400">
-                      {activity.distance && <span>{activity.distance} mi</span>}
+                      {activity.distance && <span>{parseFloat(activity.distance).toFixed(2)} mi</span>}
                       {activity.duration && <span>{activity.duration} min</span>}
                       {activity.calories && <span>{activity.calories} cal</span>}
                     </div>
@@ -6683,9 +6684,9 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
       return;
     }
 
-    const outdoorTypes = ['Running', 'Walking', 'Cycle', 'Hiking'];
-    const hasRoute = outdoorTypes.includes(activity.type) &&
-                     activity.subtype !== 'Indoor' &&
+    // Try to load route for any activity linked to Apple Health (not just specific types).
+    // The route query will return no data if the workout doesn't have GPS data.
+    const hasRoute = activity.subtype !== 'Indoor' &&
                      (activity.healthKitUUID || activity.linkedHealthKitUUID);
 
     if (!hasRoute) {
@@ -6696,7 +6697,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
     setRouteLoading(true);
     setRouteChecked(false);
 
-    fetchWorkoutRoute(activity.healthKitUUID || activity.linkedHealthKitUUID)
+    fetchWorkoutRoute(activity.healthKitUUID || activity.linkedHealthKitUUID, activity.healthKitStartDate || activity.linkedHealthKitStartDate)
       .then(result => {
         setRouteCoords(result.hasRoute ? result.coordinates : []);
       })
@@ -6818,7 +6819,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
       >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-white/10 flex-shrink-0">
-          <button 
+          <button
             onClick={handleClose}
             className="text-gray-400 text-sm transition-all duration-150 px-2 py-1 rounded-lg"
             onTouchStart={(e) => {
@@ -6907,7 +6908,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
             {activity.distance && (
               <div className="p-4 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                 <div className="text-xs text-gray-500 mb-1">Distance</div>
-                <div className="text-lg font-bold">{activity.distance} mi</div>
+                <div className="text-lg font-bold">{parseFloat(activity.distance).toFixed(2)} mi</div>
               </div>
             )}
             {activity.calories && (
@@ -9256,6 +9257,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               customIcon: showCustomActivityInput ? customActivityIcon : undefined, // Store icon name for new "Other" activities
               fromAppleHealth: isFromAppleHealth,
               linkedHealthKitUUID: linkedWorkout?.healthKitUUID || undefined, // Link to Apple Health workout
+              linkedHealthKitStartDate: linkedWorkout?.healthKitStartDate || undefined,
               sourceDevice: linkedWorkout?.sourceDevice || pendingActivity?.sourceDevice || undefined, // Device that recorded the workout
               countToward: showCustomActivityInput ? customActivityCategory : (countToward || undefined),
               customActivityCategory: showCustomActivityInput ? customActivityCategory : undefined,
@@ -9737,16 +9739,17 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
           </div>
         ) : (
           <div className="space-y-6">
-            {/* Back button */}
+            {/* Back button — hidden when single notification (header Cancel is enough) */}
+            {!(isFromNotification && otherPendingWorkoutsCount === 0) && (
             <button
               onClick={() => {
-                if (isFromNotification && onBackToWorkoutPicker) {
-                  // If from notification, go back to the workout picker modal
+                if (isFromNotification && otherPendingWorkoutsCount > 0 && onBackToWorkoutPicker) {
+                  // Multiple pending workouts — go back to the workout picker modal
                   onBackToWorkoutPicker();
-                } else {
-                  setActivityType(null);
-                  setSubtype('');
+                  return;
                 }
+                setActivityType(null);
+                setSubtype('');
                 setStrengthType('');
                 setFocusAreas([]);
                 setCustomSport('');
@@ -9782,6 +9785,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               <span>←</span>
               <span>{isFromNotification ? 'Back to linked activities' : 'Back to activities'}</span>
             </button>
+            )}
 
             {/* Selected activity display with Change option */}
             <button
@@ -11084,6 +11088,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
 const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, autoImportedCount = 0, onDismissAutoImported }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
+  const [dismissConfirmWorkouts, setDismissConfirmWorkouts] = useState(null); // Workouts pending dismiss confirmation
   const [showVacationDeactivateConfirm, setShowVacationDeactivateConfirm] = useState(false);
   const [showWorkoutPicker, setShowWorkoutPicker] = useState(false);
   const [workoutPickerDragY, setWorkoutPickerDragY] = useState(0);
@@ -11868,8 +11873,9 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    const uuidsToHide = workouts.map(w => w.healthKitUUID).filter(Boolean);
-                    setHiddenNotificationUUIDs(prev => [...new Set([...prev, ...uuidsToHide])]);
+                    triggerHaptic(ImpactStyle.Light);
+                    // Show confirmation before dismissing
+                    setDismissConfirmWorkouts(workouts);
                   }}
                   className="w-6 h-6 rounded-full flex items-center justify-center transition-all duration-150"
                   style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
@@ -12039,6 +12045,48 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                 className="w-full py-3 rounded-xl text-gray-400 font-medium transition-all active:bg-white/5"
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dismiss Workout Confirmation Modal */}
+      {dismissConfirmWorkouts && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" onClick={() => setDismissConfirmWorkouts(null)}>
+          <div className="absolute inset-0 bg-black/70" />
+          <div className="relative bg-zinc-900 rounded-2xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-white mb-2">
+              {dismissConfirmWorkouts.length > 1 ? `Dismiss ${dismissConfirmWorkouts.length} Workouts?` : 'Dismiss Workout?'}
+            </h3>
+            <p className="text-gray-400 text-sm mb-6">
+              {dismissConfirmWorkouts.length > 1
+                ? "These workouts won't appear in notifications or be available to link to activities."
+                : "This workout won't appear in notifications or be available to link to an activity."}
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDismissConfirmWorkouts(null)}
+                className="flex-1 py-3 rounded-xl font-medium bg-zinc-800 text-white"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  // Permanently dismiss
+                  dismissConfirmWorkouts.forEach(w => {
+                    if (w.healthKitUUID) {
+                      onDismissWorkout && onDismissWorkout(w);
+                    }
+                  });
+                  // Hide from banner immediately
+                  const uuidsToHide = dismissConfirmWorkouts.map(w => w.healthKitUUID).filter(Boolean);
+                  setHiddenNotificationUUIDs(prev => [...new Set([...prev, ...uuidsToHide])]);
+                  setDismissConfirmWorkouts(null);
+                }}
+                className="flex-1 py-3 rounded-xl font-medium bg-red-500 text-white"
+              >
+                Dismiss
               </button>
             </div>
           </div>
@@ -13552,7 +13600,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
                         </div>
                         <div className="flex gap-3 mt-1 text-[10px] text-gray-400">
                           {activity.duration && <span>{activity.duration} min</span>}
-                          {activity.distance && <span>{activity.distance} mi</span>}
+                          {activity.distance && <span>{parseFloat(activity.distance).toFixed(2)} mi</span>}
                           {activity.calories && <span>{activity.calories} cal</span>}
                           {activity.avgHr && <span>HR: {activity.avgHr}</span>}
                         </div>
@@ -14898,7 +14946,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                             <span className="text-gray-500 text-xs">›</span>
                           </div>
                           <div className="flex gap-4 text-xs text-gray-400">
-                            {activity.distance && <span>{activity.distance} mi</span>}
+                            {activity.distance && <span>{parseFloat(activity.distance).toFixed(2)} mi</span>}
                             {activity.duration && <span>{activity.duration} min</span>}
                             {activity.calories && <span>{activity.calories} cal</span>}
                             {(activity.healthKitUUID || activity.linkedHealthKitUUID || activity.source === 'healthkit' || activity.fromAppleHealth) && (
@@ -14989,7 +15037,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                             <span className="text-gray-500 text-xs">›</span>
                           </div>
                           <div className="flex gap-4 text-xs text-gray-400">
-                            {activity.distance && <span>{activity.distance} mi</span>}
+                            {activity.distance && <span>{parseFloat(activity.distance).toFixed(2)} mi</span>}
                             {activity.duration && <span>{activity.duration} min</span>}
                             {activity.calories && <span>{activity.calories} cal</span>}
                             {(activity.healthKitUUID || activity.linkedHealthKitUUID || activity.source === 'healthkit' || activity.fromAppleHealth) && (
@@ -20408,7 +20456,7 @@ export default function DaySevenApp() {
         // Longest distance
         if (activity.distance && activity.distance > getRecordValue('longestDistance')) {
           updatedRecords.longestDistance = { value: activity.distance, activityType: activity.type };
-          recordsBroken.push(`${activity.distance} mi (${activity.type}) ❤️‍🔥`);
+          recordsBroken.push(`${parseFloat(activity.distance).toFixed(2)} mi (${activity.type}) ❤️‍🔥`);
         }
         
         // Fastest pace (for runs with distance and duration)
@@ -21824,10 +21872,18 @@ export default function DaySevenApp() {
           setShowWorkoutPicker(true);
         }}
         onBackToWorkoutPicker={() => {
-          // Close modal and go back to the workout picker
+          // Check if there are other pending workouts to show in the picker
+          const otherWorkouts = (healthKitData.pendingWorkouts || []).filter(w =>
+            !dismissedWorkoutUUIDs.includes(w.healthKitUUID) &&
+            (w.healthKitUUID || w.id) !== (pendingActivity?.healthKitUUID || pendingActivity?.id)
+          );
           setShowAddActivity(false);
           setPendingActivity(null);
-          setShowWorkoutPicker(true);
+          if (otherWorkouts.length > 0) {
+            // Show the picker with other pending workouts
+            setShowWorkoutPicker(true);
+          }
+          // If no other workouts, just close the modal (don't open empty picker)
         }}
         dismissedWorkoutUUIDs={dismissedWorkoutUUIDs}
         linkedWorkoutUUIDs={[

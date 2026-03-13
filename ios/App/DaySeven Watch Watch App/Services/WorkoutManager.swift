@@ -147,10 +147,17 @@ class WorkoutManager: NSObject, ObservableObject {
             workoutConfiguration: config
         )
 
-        // Explicitly enable distance collection for indoor workouts
-        // (HealthKit does not auto-collect it for indoor location type)
-        if isIndoor && (activityType == .walking || activityType == .running) {
+        // Explicitly enable distance collection for walking, running, and cycling workouts.
+        // Indoor workouts require this because HealthKit doesn't auto-collect distance for indoor location type.
+        // We also enable it for outdoor workouts as a safety measure to ensure distance is always tracked.
+        if activityType == .walking || activityType == .running || activityType == .hiking {
             let distanceType = HKQuantityType(.distanceWalkingRunning)
+            builder.dataSource?.enableCollection(for: distanceType, predicate: nil)
+        } else if activityType == .cycling {
+            let distanceType = HKQuantityType(.distanceCycling)
+            builder.dataSource?.enableCollection(for: distanceType, predicate: nil)
+        } else if activityType == .swimming {
+            let distanceType = HKQuantityType(.distanceSwimming)
             builder.dataSource?.enableCollection(for: distanceType, predicate: nil)
         }
 

@@ -33,7 +33,7 @@ export async function isHealthKitAvailable() {
   }
 }
 
-// Request authorization for reading workout data (including heart rate)
+// Request authorization for reading workout data (including heart rate and routes)
 export async function requestHealthKitAuthorization() {
   if (!Capacitor.isNativePlatform()) return false;
 
@@ -42,6 +42,9 @@ export async function requestHealthKitAuthorization() {
       read: ['steps', 'calories', 'workouts', 'heartRate'],
       write: []
     });
+    // Also authorize workout routes + write types via our native plugin
+    // (capgo Health plugin doesn't cover HKSeriesType.workoutRoute)
+    HealthKitWriter.requestWriteAuthorization().catch(() => {});
     return true;
   } catch (error) {
     return false;
@@ -399,6 +402,7 @@ function convertWorkoutToActivity(workout, resolvedTypes = {}) {
     source: 'healthkit',
     sourceDevice: workout.sourceName || 'Apple Health',
     healthKitUUID: uniqueId, // Unique identifier for linking
+    healthKitStartDate: workout.startDate, // ISO date for route fallback lookup
     appleWorkoutName, // Human-readable name from Apple (e.g., "Walking", "Running")
     ...mapped // includes subtype, strengthType, sportEmoji, etc.
   };
@@ -615,19 +619,27 @@ export async function fetchLinkableWorkouts(date, linkedWorkoutIds = []) {
 }
 
 // Fetch GPS route coordinates for a workout by its HealthKit UUID
-export async function fetchWorkoutRoute(healthKitUUID) {
+export async function fetchWorkoutRoute(healthKitUUID, startDate) {
   if (!Capacitor.isNativePlatform()) return { hasRoute: false, coordinates: [] };
   if (!healthKitUUID) return { hasRoute: false, coordinates: [] };
 
   try {
+    const params = { workoutUUID: healthKitUUID };
+    // Pass startDate as fallback for legacy non-UUID identifiers
+    if (startDate) params.startDate = startDate;
     const result = await withTimeout(
-      HealthKitWriter.getWorkoutRoute({ workoutUUID: healthKitUUID }),
-      10000,
+      HealthKitWriter.getWorkoutRoute(params),
+      15000,
       'Route query timed out'
     );
+    // Validate coordinates — filter out any with invalid lat/lng
+    const coords = (result.coordinates || []).filter(c =>
+      c && typeof c.lat === 'number' && typeof c.lng === 'number' &&
+      isFinite(c.lat) && isFinite(c.lng)
+    );
     return {
-      hasRoute: result.hasRoute === true,
-      coordinates: result.coordinates || [],
+      hasRoute: result.hasRoute === true && coords.length >= 2,
+      coordinates: coords,
     };
   } catch (error) {
     console.warn('[HealthKit] fetchWorkoutRoute failed:', error);

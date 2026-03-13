@@ -38,6 +38,8 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
     ]
 
     private let healthStore = HKHealthStore()
+    // Retain active route queries to prevent premature deallocation
+    private var activeRouteQueries: [HKWorkoutRouteQuery] = []
 
     // MARK: - Plugin Lifecycle
 
@@ -1543,28 +1545,84 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     // MARK: - Workout Route Query
 
-    @objc func getWorkoutRoute(_ call: CAPPluginCall) {
-        guard HKHealthStore.isHealthDataAvailable() else {
-            call.resolve(["coordinates": [], "hasRoute": false])
-            return
-        }
-
-        guard let uuidString = call.getString("workoutUUID"),
-              let workoutUUID = UUID(uuidString: uuidString) else {
-            call.reject("Missing or invalid workoutUUID parameter")
-            return
-        }
-
-        // Request authorization for workout route type
-        let routeType = HKSeriesType.workoutRoute()
-        healthStore.requestAuthorization(toShare: nil, read: [routeType]) { [weak self] _, _ in
-            guard let self = self else { return }
-            self.fetchWorkoutAndRoute(uuid: workoutUUID, call: call)
+    private func resolveNoRoute(_ call: CAPPluginCall, reason: String) {
+        DispatchQueue.main.async {
+            call.resolve(["coordinates": [] as [[String: Any]], "hasRoute": false, "reason": reason])
         }
     }
 
+    @objc func getWorkoutRoute(_ call: CAPPluginCall) {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            resolveNoRoute(call, reason: "health_data_unavailable")
+            return
+        }
+
+        guard let uuidString = call.getString("workoutUUID") else {
+            resolveNoRoute(call, reason: "invalid_uuid")
+            return
+        }
+
+        // Try parsing as a real UUID first; if that fails, fall back to startDate-based lookup
+        if let workoutUUID = UUID(uuidString: uuidString) {
+            print("[HealthKitWriter] getWorkoutRoute called for UUID: \(uuidString)")
+            fetchWorkoutAndRoute(uuid: workoutUUID, call: call)
+        } else if let startDateStr = call.getString("startDate") {
+            print("[HealthKitWriter] getWorkoutRoute falling back to startDate lookup: \(startDateStr)")
+            fetchWorkoutByStartDate(startDateStr, call: call)
+        } else {
+            resolveNoRoute(call, reason: "invalid_uuid")
+        }
+    }
+
+    private func fetchWorkoutByStartDate(_ startDateStr: String, call: CAPPluginCall) {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var startDate = formatter.date(from: startDateStr)
+        if startDate == nil {
+            formatter.formatOptions = [.withInternetDateTime]
+            startDate = formatter.date(from: startDateStr)
+        }
+        guard let date = startDate else {
+            resolveNoRoute(call, reason: "invalid_start_date")
+            return
+        }
+
+        // Query workouts in a narrow window around the start date (±30 seconds)
+        let predicate = HKQuery.predicateForSamples(
+            withStart: date.addingTimeInterval(-30),
+            end: date.addingTimeInterval(30),
+            options: .strictStartDate
+        )
+        let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
+        let query = HKSampleQuery(
+            sampleType: HKObjectType.workoutType(),
+            predicate: predicate,
+            limit: 5,
+            sortDescriptors: [sortDescriptor]
+        ) { [weak self] _, samples, error in
+            guard let self = self else { return }
+
+            if let error = error {
+                print("[HealthKitWriter] StartDate workout query error: \(error.localizedDescription)")
+                self.resolveNoRoute(call, reason: "workout_query_error")
+                return
+            }
+
+            // Pick the workout closest to the exact start date
+            guard let workouts = samples as? [HKWorkout],
+                  let closest = workouts.min(by: { abs($0.startDate.timeIntervalSince(date)) < abs($1.startDate.timeIntervalSince(date)) }) else {
+                print("[HealthKitWriter] No workout found near startDate: \(startDateStr)")
+                self.resolveNoRoute(call, reason: "workout_not_found")
+                return
+            }
+
+            print("[HealthKitWriter] Found workout by startDate, looking for routes...")
+            self.fetchRouteForWorkout(closest, call: call)
+        }
+        healthStore.execute(query)
+    }
+
     private func fetchWorkoutAndRoute(uuid: UUID, call: CAPPluginCall) {
-        // Step 1: Find the HKWorkout by UUID
         let predicate = HKQuery.predicateForObject(with: uuid)
         let workoutQuery = HKSampleQuery(
             sampleType: HKObjectType.workoutType(),
@@ -1575,107 +1633,115 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             guard let self = self else { return }
 
             if let error = error {
-                DispatchQueue.main.async {
-                    call.resolve(["coordinates": [], "hasRoute": false, "reason": error.localizedDescription])
-                }
+                print("[HealthKitWriter] Workout query error: \(error.localizedDescription)")
+                self.resolveNoRoute(call, reason: "workout_query_error")
                 return
             }
 
             guard let workout = samples?.first as? HKWorkout else {
-                DispatchQueue.main.async {
-                    call.resolve(["coordinates": [], "hasRoute": false, "reason": "workout_not_found"])
-                }
+                print("[HealthKitWriter] Workout not found for UUID: \(uuid.uuidString)")
+                self.resolveNoRoute(call, reason: "workout_not_found")
                 return
             }
 
+            print("[HealthKitWriter] Found workout, looking for routes...")
             self.fetchRouteForWorkout(workout, call: call)
         }
         healthStore.execute(workoutQuery)
     }
 
     private func fetchRouteForWorkout(_ workout: HKWorkout, call: CAPPluginCall) {
-        // Step 2: Find HKWorkoutRoute objects associated with this workout
         let routeType = HKSeriesType.workoutRoute()
         let workoutPredicate = HKQuery.predicateForObjects(from: workout)
 
         let routeQuery = HKSampleQuery(
             sampleType: routeType,
             predicate: workoutPredicate,
-            limit: HKObjectQueryNoLimit,
+            limit: 1,
             sortDescriptors: nil
         ) { [weak self] _, samples, error in
             guard let self = self else { return }
 
-            if error != nil {
-                DispatchQueue.main.async {
-                    call.resolve(["coordinates": [], "hasRoute": false, "reason": "route_query_error"])
-                }
+            if let error = error {
+                print("[HealthKitWriter] Route sample query error: \(error.localizedDescription)")
+                self.resolveNoRoute(call, reason: "route_query_error")
                 return
             }
 
-            guard let routes = samples as? [HKWorkoutRoute], !routes.isEmpty else {
-                DispatchQueue.main.async {
-                    call.resolve(["coordinates": [], "hasRoute": false, "reason": "no_route_data"])
-                }
+            guard let route = samples?.first as? HKWorkoutRoute else {
+                print("[HealthKitWriter] No route data found for workout")
+                self.resolveNoRoute(call, reason: "no_route_data")
                 return
             }
 
-            // Step 3: Extract CLLocation samples from the route(s)
-            self.extractCoordinates(from: routes, call: call)
+            print("[HealthKitWriter] Found route, extracting coordinates...")
+            self.extractSingleRoute(route, call: call)
         }
         healthStore.execute(routeQuery)
     }
 
-    private func extractCoordinates(from routes: [HKWorkoutRoute], call: CAPPluginCall) {
-        var allCoordinates: [[String: Any]] = []
-        var remainingRoutes = routes.count
-        let lock = NSLock()
+    private func extractSingleRoute(_ route: HKWorkoutRoute, call: CAPPluginCall) {
+        var allCoords: [[String: Any]] = []
 
-        for route in routes {
-            var routeCoords: [[String: Any]] = []
+        let query = HKWorkoutRouteQuery(route: route) { [weak self] query, locations, done, error in
+            guard let self = self else { return }
 
-            let routeQuery = HKWorkoutRouteQuery(route: route) { _, locations, done, error in
-                if let error = error {
-                    print("[HealthKitWriter] Route query error: \(error.localizedDescription)")
-                }
-
-                if let locations = locations {
-                    let mapped = locations.map { location -> [String: Any] in
-                        return [
-                            "lat": location.coordinate.latitude,
-                            "lng": location.coordinate.longitude,
-                            "timestamp": location.timestamp.timeIntervalSince1970,
-                            "altitude": location.altitude,
-                            "speed": max(location.speed, 0),
-                            "accuracy": location.horizontalAccuracy
-                        ]
-                    }
-                    routeCoords.append(contentsOf: mapped)
-                }
-
+            if let error = error {
+                print("[HealthKitWriter] Route extraction error: \(error.localizedDescription)")
                 if done {
-                    lock.lock()
-                    allCoordinates.append(contentsOf: routeCoords)
-                    remainingRoutes -= 1
-                    let isLast = remainingRoutes == 0
-                    lock.unlock()
+                    self.removeRouteQuery(query)
+                    self.resolveNoRoute(call, reason: "extraction_error")
+                }
+                return
+            }
 
-                    if isLast {
-                        // Sort all coordinates by timestamp
-                        let sorted = allCoordinates.sorted {
-                            ($0["timestamp"] as? Double ?? 0) < ($1["timestamp"] as? Double ?? 0)
-                        }
-                        DispatchQueue.main.async {
-                            call.resolve([
-                                "hasRoute": true,
-                                "coordinates": sorted,
-                                "count": sorted.count
-                            ])
-                        }
-                    }
+            if let locations = locations {
+                for loc in locations {
+                    let lat = loc.coordinate.latitude
+                    let lng = loc.coordinate.longitude
+                    guard lat.isFinite, lng.isFinite, lat != 0 || lng != 0 else { continue }
+
+                    allCoords.append([
+                        "lat": lat,
+                        "lng": lng
+                    ])
                 }
             }
-            self.healthStore.execute(routeQuery)
+
+            if done {
+                self.removeRouteQuery(query)
+                print("[HealthKitWriter] Route extraction complete: \(allCoords.count) points")
+
+                // Downsample if too many points
+                var result = allCoords
+                let maxPoints = 500
+                if result.count > maxPoints {
+                    var downsampled: [[String: Any]] = []
+                    let step = Double(result.count) / Double(maxPoints)
+                    for i in 0..<maxPoints {
+                        let idx = min(Int(Double(i) * step), result.count - 1)
+                        downsampled.append(result[idx])
+                    }
+                    if let last = result.last { downsampled.append(last) }
+                    result = downsampled
+                }
+
+                DispatchQueue.main.async {
+                    call.resolve([
+                        "hasRoute": !result.isEmpty,
+                        "coordinates": result,
+                        "count": result.count
+                    ])
+                }
+            }
         }
+
+        // Retain query to prevent deallocation before callback completes
+        activeRouteQueries.append(query)
+        healthStore.execute(query)
+    }
+
+    private func removeRouteQuery(_ query: HKWorkoutRouteQuery) {
+        activeRouteQueries.removeAll { $0 === query }
     }
 }

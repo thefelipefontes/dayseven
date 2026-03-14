@@ -1,5 +1,6 @@
 /**
  * DaySeven Cloud Functions for Push Notifications
+ * Runtime: Node.js 22
  *
  * These functions trigger on Firestore events and send push notifications
  * to users via Firebase Cloud Messaging (FCM).

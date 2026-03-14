@@ -33,23 +33,25 @@ export async function isHealthKitAvailable() {
   }
 }
 
-// Request authorization for reading workout data (including heart rate and routes)
-// Only prompts the user once — subsequent calls return true immediately.
+// Request authorization for READING health data (steps, calories, workouts, heartRate).
+// Uses our native HealthKitWriter plugin instead of the capgo Health plugin because
+// the capgo plugin's requestAuthorization has a bug where iOS doesn't persist all
+// permission toggles (Active Energy and Workouts stay OFF despite user selecting "Turn On All").
+// After the first successful call we persist a flag so the dialog never shows again.
+// WRITE authorization is requested lazily — only when saving a workout (see requestHealthKitWriteAuthorization).
 let healthKitAuthorized = false;
+try { healthKitAuthorized = localStorage.getItem('hk_read_authorized') === '1'; } catch {}
 
 export async function requestHealthKitAuthorization() {
   if (!Capacitor.isNativePlatform()) return false;
   if (healthKitAuthorized) return true;
 
   try {
-    await Health.requestAuthorization({
-      read: ['steps', 'calories', 'workouts', 'heartRate'],
-      write: []
-    });
-    // Also authorize workout routes + write types via our native plugin
-    // (capgo Health plugin doesn't cover HKSeriesType.workoutRoute)
-    HealthKitWriter.requestWriteAuthorization().catch(() => {});
+    // Use native plugin — it calls HKHealthStore.requestAuthorization directly
+    // with read: [stepCount, activeEnergyBurned, heartRate, workoutType] and no write types
+    await HealthKitWriter.requestReadAuthorization();
     healthKitAuthorized = true;
+    try { localStorage.setItem('hk_read_authorized', '1'); } catch {}
     return true;
   } catch (error) {
     return false;

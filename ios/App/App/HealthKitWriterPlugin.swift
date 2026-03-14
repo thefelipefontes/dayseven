@@ -10,6 +10,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "HealthKitWriter"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "saveWorkout", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "requestReadAuthorization", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "requestWriteAuthorization", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "checkWriteAuthorization", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startLiveWorkout", returnType: CAPPluginReturnPromise),
@@ -301,6 +302,50 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     // MARK: - Authorization
+
+    /// Comprehensive HealthKit authorization — used on first app launch.
+    /// Requests ALL read + write types the app will ever need in a single dialog
+    /// so the user can "Turn On All" once and never deal with permissions again.
+    @objc func requestReadAuthorization(_ call: CAPPluginCall) {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            call.reject("HealthKit not available on this device")
+            return
+        }
+
+        guard let stepsType = HKObjectType.quantityType(forIdentifier: .stepCount),
+              let caloriesType = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned),
+              let heartRateType = HKObjectType.quantityType(forIdentifier: .heartRate),
+              let distanceWRType = HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning) else {
+            call.reject("Could not create HealthKit types")
+            return
+        }
+
+        // READ: everything the app reads from HealthKit
+        let typesToRead: Set<HKObjectType> = [
+            stepsType,
+            caloriesType,
+            heartRateType,
+            HKObjectType.workoutType(),
+            HKSeriesType.workoutRoute()
+        ]
+
+        // WRITE: workout saving (workouts, calories, distance)
+        let typesToWrite: Set<HKSampleType> = [
+            HKObjectType.workoutType(),
+            caloriesType,
+            distanceWRType
+        ]
+
+        healthStore.requestAuthorization(toShare: typesToWrite, read: typesToRead) { success, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    call.reject(error.localizedDescription)
+                } else {
+                    call.resolve(["authorized": success])
+                }
+            }
+        }
+    }
 
     @objc func requestWriteAuthorization(_ call: CAPPluginCall) {
         guard HKHealthStore.isHealthDataAvailable() else {

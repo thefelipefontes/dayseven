@@ -16,6 +16,13 @@ Sentry.init({
   tracesSampleRate: 0.1,
   replaysSessionSampleRate: 0.01,
   replaysOnErrorSampleRate: 0.5,
+  // Filter out noisy, benign errors
+  beforeSend(event) {
+    const message = event?.exception?.values?.[0]?.value || '';
+    // AbortError: iOS WKWebView aborts in-flight requests on app background/foreground transitions
+    if (message.includes('AbortError')) return null;
+    return event;
+  },
 })
 
 ReactDOM.createRoot(document.getElementById('root')).render(

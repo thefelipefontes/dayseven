@@ -34,8 +34,12 @@ export async function isHealthKitAvailable() {
 }
 
 // Request authorization for reading workout data (including heart rate and routes)
+// Only prompts the user once — subsequent calls return true immediately.
+let healthKitAuthorized = false;
+
 export async function requestHealthKitAuthorization() {
   if (!Capacitor.isNativePlatform()) return false;
+  if (healthKitAuthorized) return true;
 
   try {
     await Health.requestAuthorization({
@@ -45,6 +49,7 @@ export async function requestHealthKitAuthorization() {
     // Also authorize workout routes + write types via our native plugin
     // (capgo Health plugin doesn't cover HKSeriesType.workoutRoute)
     HealthKitWriter.requestWriteAuthorization().catch(() => {});
+    healthKitAuthorized = true;
     return true;
   } catch (error) {
     return false;

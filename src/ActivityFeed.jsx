@@ -562,7 +562,7 @@ const MemoizedActivityCard = React.memo(({
   formatCommentTime,
   reactionEmojis,
 }) => {
-  const { friend, type, duration, calories, distance, date, time, id, customEmoji, customIcon, sportEmoji } = activity;
+  const { friend, type, duration, calories, distance, date, time, id, customEmoji, customIcon, sportEmoji, strengthType, focusAreas, focusArea } = activity;
   const [showFullscreenPhoto, setShowFullscreenPhoto] = useState(false);
   const [openCommentId, setOpenCommentId] = useState(null);
   const [replyingTo, setReplyingTo] = useState(null); // { commentId, commenterName }
@@ -583,6 +583,16 @@ const MemoizedActivityCard = React.memo(({
       replyInputRef.current.focus();
     }
   }, [replyingTo]);
+
+  // For strength activities, show the strength type (Weightlifting/Bodyweight/Circuit) instead of "Strength Training"
+  const displayType = type === 'Strength Training'
+    ? (strengthType || activity.subtype || 'Strength')
+    : type;
+
+  // For strength activities, show focus areas as the subtitle instead of the subtype
+  const displaySubtype = type === 'Strength Training'
+    ? (focusAreas || (focusArea ? [focusArea] : [])).join(', ')
+    : (activity.subtype || '');
 
   // For "Other" activities, prefer customIcon (new format) over customEmoji (old format)
   const useEmoji = (type === 'Other' && customIcon) ? null // Will use ActivityIcon with customIcon
@@ -618,10 +628,10 @@ const MemoizedActivityCard = React.memo(({
       {/* Activity details */}
       <div className="flex items-center gap-3">
         <div className="w-12 h-12 rounded-xl bg-zinc-800 flex items-center justify-center">
-          {useEmoji ? <span className="text-2xl">{useEmoji}</span> : <ActivityIcon type={type} size={24} customIcon={customIcon} />}
+          {useEmoji ? <span className="text-2xl">{useEmoji}</span> : <ActivityIcon type={type} strengthType={strengthType} size={24} customIcon={customIcon} />}
         </div>
         <div className="flex-1">
-          <p className="text-white font-medium">{type}{activity.subtype ? ` • ${activity.subtype}` : ''}</p>
+          <p className="text-white font-medium">{displayType}{displaySubtype ? ` ${type === 'Strength Training' ? '-' : '•'} ${displaySubtype}` : ''}</p>
           <div className="flex items-center gap-3 mt-1">
             {duration && <span className="text-gray-400 text-sm">⏱ {formatDuration(duration)}</span>}
             {calories && <span className="text-gray-400 text-sm">🔥 {calories} cal</span>}

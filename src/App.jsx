@@ -4052,7 +4052,7 @@ const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1, goals 
 };
 
 // Share Modal
-const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange }) => {
+const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChange }) => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [cardType, setCardType] = useState('weekly');
@@ -4305,10 +4305,63 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange }) => {
     setTouchStart(null);
   };
 
+  // Generate past weeks for the week picker (Sunday–Saturday)
+  const weekOptions = useMemo(() => {
+    const weeks = [];
+    const today = new Date();
+    const currentSunday = new Date(today);
+    currentSunday.setDate(today.getDate() - today.getDay());
+    for (let i = 0; i < 8; i++) {
+      const start = new Date(currentSunday);
+      start.setDate(currentSunday.getDate() - (i * 7));
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6);
+      const formatD = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      weeks.push({
+        label: i === 0 ? `This Week (${formatD(start)} - ${formatD(end)})` : i === 1 ? `Last Week (${formatD(start)} - ${formatD(end)})` : `${formatD(start)} - ${formatD(end)}`,
+        startDate: start,
+        endDate: end,
+      });
+    }
+    return weeks;
+  }, []);
+
+  // Get the value string for the current week selection (to match select option)
+  const selectedWeekValue = useMemo(() => {
+    if (!weekRange?.startDate) {
+      // No explicit range — figure out which default applies
+      const today = new Date();
+      const day = today.getDay(); // 0=Sun
+      return day <= 3 ? '1' : '0'; // Sun–Wed: last week, Thu–Sat: this week
+    }
+    const start = weekRange.startDate instanceof Date ? weekRange.startDate : new Date(weekRange.startDate + 'T12:00:00');
+    // Find matching week option by comparing dates
+    for (let i = 0; i < weekOptions.length; i++) {
+      const optStart = weekOptions[i].startDate;
+      if (optStart.getFullYear() === start.getFullYear() && optStart.getMonth() === start.getMonth() && optStart.getDate() === start.getDate()) {
+        return String(i);
+      }
+    }
+    return '0';
+  }, [weekRange, weekOptions]);
+
   useEffect(() => {
     if (isOpen) {
       setIsClosing(false);
       setTimeout(() => setIsAnimating(true), 10);
+      // Smart default: Sun–Wed → last week, Thu–Sat → this week
+      if (!weekRange && onWeekChange) {
+        const today = new Date();
+        const day = today.getDay(); // 0=Sun
+        if (day <= 3) {
+          // Default to last week
+          const lastSunday = new Date(today);
+          lastSunday.setDate(today.getDate() - today.getDay() - 7);
+          const lastSaturday = new Date(lastSunday);
+          lastSaturday.setDate(lastSunday.getDate() + 6);
+          onWeekChange({ startDate: lastSunday, endDate: lastSaturday });
+        }
+      }
     } else {
       setIsAnimating(false);
     }
@@ -4806,25 +4859,25 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange }) => {
               <div className={`w-full grid grid-cols-2 ${isPostFormat ? 'gap-1.5 mb-2' : 'gap-2 mb-3'}`}>
                 {/* Best workout */}
                 {weeklyAnalysis?.bestCalorieWorkout && (
-                  <div className={`${isPostFormat ? 'p-2' : 'p-2.5'} rounded-xl text-center`} style={{ backgroundColor: 'rgba(255,149,0,0.08)' }}>
+                  <div className={`${isPostFormat ? 'p-2' : 'p-2.5'} rounded-xl text-center flex flex-col justify-center`} style={{ backgroundColor: 'rgba(255,149,0,0.08)' }}>
                     <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500 uppercase mb-0.5`}>Best Burn</div>
-                    <div className={isPostFormat ? 'text-base' : 'text-lg'}>{getActivityEmoji(weeklyAnalysis.bestCalorieWorkout.type)}</div>
+                    <div className={`${isPostFormat ? 'text-base' : 'text-lg'} flex justify-center`}>{getActivityEmoji(weeklyAnalysis.bestCalorieWorkout.type)}</div>
                     <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-black`} style={{ color: '#FF9500' }}>{parseInt(weeklyAnalysis.bestCalorieWorkout.calories).toLocaleString()}</div>
                     <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>calories</div>
                   </div>
                 )}
                 {/* Longest distance or longest workout */}
                 {weeklyAnalysis?.longestDistance && parseFloat(weeklyAnalysis.longestDistance.distance) > 0 ? (
-                  <div className={`${isPostFormat ? 'p-2' : 'p-2.5'} rounded-xl text-center`} style={{ backgroundColor: 'rgba(0,209,255,0.08)' }}>
+                  <div className={`${isPostFormat ? 'p-2' : 'p-2.5'} rounded-xl text-center flex flex-col justify-center`} style={{ backgroundColor: 'rgba(0,209,255,0.08)' }}>
                     <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500 uppercase mb-0.5`}>Furthest Distance</div>
-                    <div className={isPostFormat ? 'text-base' : 'text-lg'}>{getActivityEmoji(weeklyAnalysis.longestDistance.type)}</div>
+                    <div className={`${isPostFormat ? 'text-base' : 'text-lg'} flex justify-center`}>{getActivityEmoji(weeklyAnalysis.longestDistance.type)}</div>
                     <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-black`} style={{ color: '#00D1FF' }}>{parseFloat(weeklyAnalysis.longestDistance.distance).toFixed(2)}</div>
                     <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>miles</div>
                   </div>
                 ) : weeklyAnalysis?.longestWorkout && (
-                  <div className={`${isPostFormat ? 'p-2' : 'p-2.5'} rounded-xl text-center`} style={{ backgroundColor: 'rgba(0,255,148,0.08)' }}>
+                  <div className={`${isPostFormat ? 'p-2' : 'p-2.5'} rounded-xl text-center flex flex-col justify-center`} style={{ backgroundColor: 'rgba(0,255,148,0.08)' }}>
                     <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500 uppercase mb-0.5`}>Longest Session</div>
-                    <div className={isPostFormat ? 'text-base' : 'text-lg'}>{getActivityEmoji(weeklyAnalysis.longestWorkout.type)}</div>
+                    <div className={`${isPostFormat ? 'text-base' : 'text-lg'} flex justify-center`}>{getActivityEmoji(weeklyAnalysis.longestWorkout.type)}</div>
                     <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-black`} style={{ color: '#00FF94' }}>{weeklyAnalysis.longestWorkout.duration}</div>
                     <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>minutes</div>
                   </div>
@@ -5053,21 +5106,21 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange }) => {
                   {/* Best Burn */}
                   <div className={`${isPostFormat ? 'p-1' : 'p-1.5'} rounded-xl text-center`} style={{ backgroundColor: 'rgba(255,149,0,0.08)' }}>
                     <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500 uppercase`}>Best Burn</div>
-                    <div className={isPostFormat ? 'text-xs' : 'text-sm'}>{getActivityEmoji(stats?.monthlyHighestCalorieSession?.type, 14)}</div>
+                    <div className={`${isPostFormat ? 'text-xs' : 'text-sm'} flex justify-center`}>{getActivityEmoji(stats?.monthlyHighestCalorieSession?.type, 14)}</div>
                     <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} font-black`} style={{ color: '#FF9500' }}>{(stats?.monthlyHighestCalorieSession?.calories || 0).toLocaleString()}</div>
                     <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500`}>cal</div>
                   </div>
                   {/* Longest Session */}
                   <div className={`${isPostFormat ? 'p-1' : 'p-1.5'} rounded-xl text-center`} style={{ backgroundColor: 'rgba(147,112,219,0.08)' }}>
                     <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500 uppercase`}>Longest</div>
-                    <div className={isPostFormat ? 'text-xs' : 'text-sm'}>{getActivityEmoji(stats?.monthlyLongestSession?.type, 14)}</div>
+                    <div className={`${isPostFormat ? 'text-xs' : 'text-sm'} flex justify-center`}>{getActivityEmoji(stats?.monthlyLongestSession?.type, 14)}</div>
                     <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} font-black`} style={{ color: '#9370DB' }}>{stats?.monthlyLongestSession?.duration || 0}</div>
                     <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500`}>min</div>
                   </div>
                   {/* Furthest Distance */}
                   <div className={`${isPostFormat ? 'p-1' : 'p-1.5'} rounded-xl text-center`} style={{ backgroundColor: 'rgba(50,205,50,0.08)' }}>
                     <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500 uppercase`}>Furthest</div>
-                    <div className={isPostFormat ? 'text-xs' : 'text-sm'}>{getActivityEmoji(stats?.monthlyFurthestDistance?.type, 14)}</div>
+                    <div className={`${isPostFormat ? 'text-xs' : 'text-sm'} flex justify-center`}>{getActivityEmoji(stats?.monthlyFurthestDistance?.type, 14)}</div>
                     <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} font-black`} style={{ color: '#32CD32' }}>{(stats?.monthlyFurthestDistance?.distance || 0).toFixed(1)}</div>
                     <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500`}>mi</div>
                   </div>
@@ -5110,6 +5163,26 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange }) => {
           opacity: isAnimating ? 1 : 0
         }}
       >
+        {/* Week Picker - only show for weekly card type */}
+        {cardType === 'weekly' && onWeekChange && (
+          <div className="flex justify-center mb-2">
+            <select
+              value={selectedWeekValue}
+              onChange={(e) => {
+                const idx = parseInt(e.target.value);
+                const week = weekOptions[idx];
+                onWeekChange({ startDate: week.startDate, endDate: week.endDate });
+              }}
+              className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-xs appearance-none cursor-pointer pr-7"
+              style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
+            >
+              {weekOptions.map((week, i) => (
+                <option key={i} value={String(i)}>{week.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* Card Type Tabs */}
         <div className={`flex gap-1.5 p-1.5 rounded-2xl ${isMobile ? 'mb-3' : 'mb-5'}`} style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
           {cardTypes.map((type) => (
@@ -19477,6 +19550,15 @@ export default function DaySevenApp() {
                   if (socialTypes.includes(notifType) && activeTabRef.current !== 'feed') {
                     setUnreadFeedCount(prev => prev + 1);
                   }
+
+                  // If weekly/monthly summary arrived in foreground, persist share prompt for next app open
+                  const showPrompt = notification?.notification?.data?.showSharePrompt || notification?.data?.showSharePrompt;
+                  if ((notifType === 'weekly_summary' || notifType === 'monthly_summary') && showPrompt === 'true') {
+                    localStorage.setItem('pendingSharePrompt', JSON.stringify({
+                      type: notifType === 'weekly_summary' ? 'weekly' : 'monthly',
+                      sentAt: new Date().toISOString()
+                    }));
+                  }
                 },
                 (notification, actionId) => {
                   // Handle notification tap - navigate to appropriate screen
@@ -19486,6 +19568,11 @@ export default function DaySevenApp() {
                     setActiveTab(tab);
                   }, {
                     onShowSharePrompt: (summaryData) => {
+                      // Clear pending flag since user tapped the notification directly
+                      localStorage.removeItem('pendingSharePrompt');
+                      if (user?.uid) {
+                        updateUserProfile(user.uid, { pendingSharePrompt: null }).catch(() => {});
+                      }
                       // Calculate last week's date range (Sunday to Saturday)
                       const today = new Date();
                       const lastSunday = new Date(today);
@@ -19861,6 +19948,30 @@ export default function DaySevenApp() {
               // Refresh unread feed count (for red dot on Friends tab)
               if (freshProfile?.unreadFeedCount > 0) {
                 setUnreadFeedCount(freshProfile.unreadFeedCount);
+              }
+
+              // Check for pending share prompt (from weekly/monthly summary notification)
+              const pendingLocal = localStorage.getItem('pendingSharePrompt');
+              const pendingFirestore = freshProfile?.pendingSharePrompt;
+              const pending = pendingLocal ? JSON.parse(pendingLocal) : pendingFirestore;
+              if (pending?.type === 'weekly') {
+                // Clear the flag immediately so it only shows once
+                localStorage.removeItem('pendingSharePrompt');
+                updateUserProfile(user.uid, { pendingSharePrompt: null }).catch(() => {});
+                // Calculate last week's date range (Sunday to Saturday)
+                const today = new Date();
+                const lastSunday = new Date(today);
+                lastSunday.setDate(today.getDate() - today.getDay() - 7);
+                const lastSaturday = new Date(lastSunday);
+                lastSaturday.setDate(lastSunday.getDate() + 6);
+                // Only show if the prompt was sent within the last 7 days (avoid stale prompts)
+                const sentAge = pending.sentAt ? (Date.now() - new Date(pending.sentAt).getTime()) : 0;
+                if (sentAge < 7 * 24 * 60 * 60 * 1000) {
+                  setTimeout(() => {
+                    setShareWeekRange({ startDate: lastSunday, endDate: lastSaturday });
+                    setShowShare(true);
+                  }, 1000);
+                }
               }
 
               // Load streaks from Firestore (watch may have updated them)
@@ -22101,6 +22212,7 @@ export default function DaySevenApp() {
         }}
         weekRange={shareWeekRange}
         monthRange={shareMonthRange}
+        onWeekChange={(range) => setShareWeekRange(range)}
         stats={(() => {
           // Determine which week to use for stats
           const getWeekRange = () => {

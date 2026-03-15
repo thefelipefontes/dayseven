@@ -856,6 +856,10 @@ exports.sendWeeklySummary = onSchedule(
             showSharePrompt: 'true',
           }
         );
+        // Persist share prompt so app shows it on next open even without tapping notification
+        await db.collection('users').doc(userId).update({
+          pendingSharePrompt: { type: 'weekly', sentAt: new Date().toISOString() }
+        });
       } else {
         // Regular summary
         const caloriesStr = totalCalories >= 1000 ? `${(totalCalories / 1000).toFixed(1)}k` : totalCalories.toString();
@@ -872,6 +876,10 @@ exports.sendWeeklySummary = onSchedule(
             showSharePrompt: 'true',
           }
         );
+        // Persist share prompt so app shows it on next open even without tapping notification
+        await db.collection('users').doc(userId).update({
+          pendingSharePrompt: { type: 'weekly', sentAt: new Date().toISOString() }
+        });
       }
     }
   }

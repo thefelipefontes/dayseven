@@ -153,12 +153,15 @@ class WorkoutManager: NSObject, ObservableObject {
         if activityType == .walking || activityType == .running || activityType == .hiking {
             let distanceType = HKQuantityType(.distanceWalkingRunning)
             builder.dataSource?.enableCollection(for: distanceType, predicate: nil)
+            print("[WorkoutManager] Enabled distance collection: distanceWalkingRunning, locationType: \(config.locationType.rawValue)")
         } else if activityType == .cycling {
             let distanceType = HKQuantityType(.distanceCycling)
             builder.dataSource?.enableCollection(for: distanceType, predicate: nil)
+            print("[WorkoutManager] Enabled distance collection: distanceCycling, locationType: \(config.locationType.rawValue)")
         } else if activityType == .swimming {
             let distanceType = HKQuantityType(.distanceSwimming)
             builder.dataSource?.enableCollection(for: distanceType, predicate: nil)
+            print("[WorkoutManager] Enabled distance collection: distanceSwimming")
         }
 
         workoutActivityType = activityType
@@ -439,6 +442,7 @@ extension WorkoutManager: HKLiveWorkoutBuilderDelegate {
                      HKQuantityType(.distanceCycling),
                      HKQuantityType(.distanceSwimming):
                     if let value = statistics?.sumQuantity()?.doubleValue(for: .meter()) {
+                        print("[WorkoutManager] Distance update: \(value)m (\(value / 1609.34) mi)")
                         self.distance = value
                     }
 

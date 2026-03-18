@@ -100,10 +100,17 @@ class HealthKitService {
         let distanceCyclingType = HKQuantityType(.distanceCycling)
         let distanceSwimmingType = HKQuantityType(.distanceSwimming)
 
-        let typesToShare: Set<HKSampleType> = [workoutType]
+        let workoutRouteType = HKSeriesType.workoutRoute()
+
+        let typesToShare: Set<HKSampleType> = [
+            workoutType,
+            distanceWalkRunType, distanceCyclingType, distanceSwimmingType,
+            workoutRouteType
+        ]
         let typesToRead: Set<HKObjectType> = [
             workoutType, heartRateType, caloriesType, stepsType,
-            distanceWalkRunType, distanceCyclingType, distanceSwimmingType
+            distanceWalkRunType, distanceCyclingType, distanceSwimmingType,
+            workoutRouteType
         ]
 
         try await healthStore.requestAuthorization(toShare: typesToShare, read: typesToRead)

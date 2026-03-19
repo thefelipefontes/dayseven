@@ -41,7 +41,8 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         // Widget data
         CAPPluginMethod(name: "updateWidgetData", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "updateLiveActivityState", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "startWatchWorkoutLiveActivity", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "startWatchWorkoutLiveActivity", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "endAllLiveActivities", returnType: CAPPluginReturnPromise)
     ]
 
     private let healthStore = HKHealthStore()
@@ -507,6 +508,10 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func endLiveWorkout(_ call: CAPPluginCall) {
         guard let builder = workoutBuilder, let startDate = liveWorkoutStartDate else {
+            // Always dismiss Live Activity even if workout state is gone
+            if #available(iOS 16.2, *) {
+                endWorkoutLiveActivity()
+            }
             call.reject("No active workout to end")
             return
         }
@@ -527,6 +532,10 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             guard let self = self else { return }
 
             if !success {
+                // Still dismiss Live Activity even if collection end fails
+                if #available(iOS 16.2, *) {
+                    self.endWorkoutLiveActivity()
+                }
                 DispatchQueue.main.async {
                     call.reject(error?.localizedDescription ?? "Failed to end workout collection")
                 }
@@ -704,20 +713,33 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @available(iOS 16.2, *)
     private func endWorkoutLiveActivity() {
-        guard let activityId = liveActivityId else { return }
+        let targetId = liveActivityId
         let finalState = WorkoutActivityAttributes.ContentState(isPaused: false)
 
         Task {
-            for activity in Activity<WorkoutActivityAttributes>.activities {
-                if activity.id == activityId {
+            if let targetId = targetId {
+                // End only the phone workout's Live Activity
+                for activity in Activity<WorkoutActivityAttributes>.activities {
+                    if activity.id == targetId {
+                        await activity.end(
+                            .init(state: finalState, staleDate: nil),
+                            dismissalPolicy: .immediate
+                        )
+                        print("[LiveActivity] Ended phone activity: \(activity.id)")
+                        break
+                    }
+                }
+            } else {
+                // No ID — end ALL as fallback cleanup
+                for activity in Activity<WorkoutActivityAttributes>.activities {
                     await activity.end(
                         .init(state: finalState, staleDate: nil),
                         dismissalPolicy: .immediate
                     )
-                    break
+                    print("[LiveActivity] Ended activity (fallback): \(activity.id)")
                 }
             }
-            liveActivityId = nil
+            self.liveActivityId = nil
         }
     }
 
@@ -738,20 +760,65 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @available(iOS 16.2, *)
     private func dismissWorkoutLiveActivity() {
-        guard let activityId = liveActivityId else { return }
+        let targetId = liveActivityId
         let finalState = WorkoutActivityAttributes.ContentState(isPaused: false)
 
         Task {
-            for activity in Activity<WorkoutActivityAttributes>.activities {
-                if activity.id == activityId {
+            if let targetId = targetId {
+                // Dismiss only the phone workout's Live Activity
+                for activity in Activity<WorkoutActivityAttributes>.activities {
+                    if activity.id == targetId {
+                        await activity.end(
+                            .init(state: finalState, staleDate: nil),
+                            dismissalPolicy: .immediate
+                        )
+                        print("[LiveActivity] Dismissed phone activity: \(activity.id)")
+                        break
+                    }
+                }
+            } else {
+                // No ID — end ALL as fallback cleanup
+                for activity in Activity<WorkoutActivityAttributes>.activities {
                     await activity.end(
                         .init(state: finalState, staleDate: nil),
                         dismissalPolicy: .immediate
                     )
-                    break
+                    print("[LiveActivity] Dismissed activity (fallback): \(activity.id)")
                 }
             }
-            liveActivityId = nil
+            self.liveActivityId = nil
+        }
+    }
+
+    @objc func endAllLiveActivities(_ call: CAPPluginCall) {
+        if #available(iOS 16.2, *) {
+            let finalState = WorkoutActivityAttributes.ContentState(isPaused: false)
+            let activities = Activity<WorkoutActivityAttributes>.activities
+            let count = activities.count
+            print("[LiveActivity] endAllLiveActivities called, found \(count) active activities")
+
+            if activities.isEmpty {
+                call.resolve(["success": true, "ended": 0])
+                return
+            }
+
+            Task {
+                var ended = 0
+                for activity in activities {
+                    await activity.end(
+                        .init(state: finalState, staleDate: nil),
+                        dismissalPolicy: .immediate
+                    )
+                    ended += 1
+                    print("[LiveActivity] Force-ended activity: \(activity.id)")
+                }
+                self.liveActivityId = nil
+                DispatchQueue.main.async {
+                    call.resolve(["success": true, "ended": ended])
+                }
+            }
+        } else {
+            call.resolve(["success": true, "ended": 0])
         }
     }
 
@@ -1400,6 +1467,11 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func endWatchWorkout(_ call: CAPPluginCall) {
+        // Immediately dismiss Live Activity on the phone — don't wait for watch confirmation
+        if #available(iOS 16.2, *) {
+            WatchSessionManager.shared.endWatchWorkoutLiveActivity()
+        }
+
         let message: [String: Any] = ["action": "endWorkout"]
 
         WatchSessionManager.shared.sendToWatch(
@@ -1513,6 +1585,11 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func cancelWatchWorkout(_ call: CAPPluginCall) {
+        // Immediately dismiss Live Activity on the phone — don't wait for watch confirmation
+        if #available(iOS 16.2, *) {
+            WatchSessionManager.shared.endWatchWorkoutLiveActivity()
+        }
+
         let message: [String: Any] = ["action": "cancelWorkout"]
 
         WatchSessionManager.shared.sendToWatch(

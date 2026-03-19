@@ -123,7 +123,6 @@ struct WorkoutLiveActivityWidget: Widget {
             WorkoutLockScreenView(context: context)
         } dynamicIsland: { context in
             DynamicIsland {
-                // Expanded: leading
                 DynamicIslandExpandedRegion(.leading) {
                     HStack(spacing: 6) {
                         Image(systemName: context.attributes.activityIcon)
@@ -136,7 +135,6 @@ struct WorkoutLiveActivityWidget: Widget {
                     }
                 }
 
-                // Expanded: trailing
                 DynamicIslandExpandedRegion(.trailing) {
                     if context.state.isPaused {
                         Image(systemName: "pause.fill")
@@ -150,7 +148,6 @@ struct WorkoutLiveActivityWidget: Widget {
                     }
                 }
 
-                // Expanded: bottom
                 DynamicIslandExpandedRegion(.bottom) {
                     if context.state.isPaused {
                         Text("Workout Paused")
@@ -162,6 +159,7 @@ struct WorkoutLiveActivityWidget: Widget {
                 Image(systemName: context.attributes.activityIcon)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(colorForCategory(context.attributes.categoryColor))
+                    .padding(.leading, 2)
             } compactTrailing: {
                 if context.state.isPaused {
                     Image(systemName: "pause.fill")
@@ -172,6 +170,8 @@ struct WorkoutLiveActivityWidget: Widget {
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
                         .foregroundColor(colorForCategory(context.attributes.categoryColor))
                         .monospacedDigit()
+                        .frame(maxWidth: 48)
+                        .padding(.trailing, 2)
                 }
             } minimal: {
                 Image(systemName: context.attributes.activityIcon)

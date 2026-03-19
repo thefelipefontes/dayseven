@@ -11120,125 +11120,6 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
         </div>
       )}
 
-      {/* Vacation Mode Confirmation Modal */}
-      {showVacationConfirm && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setShowVacationConfirm(false)}>
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-          <div
-            className="relative w-[85%] max-w-sm rounded-2xl p-6"
-            style={{ backgroundColor: '#1a1a1a' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex flex-col items-center text-center mb-5">
-              <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
-                <span className="text-3xl">✈️</span>
-              </div>
-              <h3 className="text-white font-semibold text-lg">Activate Vacation Mode?</h3>
-              <p className="text-gray-400 text-sm mt-2 leading-relaxed">
-                Your streaks will be frozen while vacation mode is active. They won't increase, but they won't break either.
-              </p>
-            </div>
-
-            <div className="space-y-2 mb-5">
-              <div className="flex items-start gap-2.5 rounded-xl p-2.5" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-                <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="#00D1FF" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-                </svg>
-                <p className="text-xs text-gray-300">Auto-deactivates after <span className="text-white font-medium">2 weeks</span></p>
-              </div>
-              <div className="flex items-start gap-2.5 rounded-xl p-2.5" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-                <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="#FF9500" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
-                </svg>
-                <p className="text-xs text-gray-300">
-                  {(() => {
-                    const vm = userData.vacationMode || {};
-                    const currentYear = new Date().getFullYear();
-                    const used = vm.activationYear === currentYear ? (vm.activationsThisYear || 0) : 0;
-                    const remaining = Math.max(0, 3 - used);
-                    return <><span className="text-white font-medium">{remaining} of 3</span> activation{remaining !== 1 ? 's' : ''} remaining this year</>;
-                  })()}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowVacationConfirm(false)}
-                className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
-                style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setShowVacationConfirm(false);
-                  triggerHaptic(ImpactStyle.Heavy);
-                  onToggleVacationMode?.();
-                }}
-                className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
-                style={{ backgroundColor: '#00D1FF' }}
-              >
-                Activate
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Vacation Mode Deactivation Confirmation Modal */}
-      {showVacationDeactivateConfirm && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setShowVacationDeactivateConfirm(false)}>
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-          <div
-            className="relative w-[85%] max-w-sm rounded-2xl p-6"
-            style={{ backgroundColor: '#1a1a1a' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex flex-col items-center text-center mb-5">
-              <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
-                <span className="text-3xl">✈️</span>
-              </div>
-              <h3 className="text-white font-semibold text-lg">Deactivate Vacation Mode?</h3>
-              <p className="text-gray-400 text-sm mt-2 leading-relaxed">
-                Your streaks will no longer be frozen. You'll need to complete your weekly goals to keep them going.
-              </p>
-            </div>
-
-            <div className="rounded-xl p-3 mb-5" style={{ backgroundColor: 'rgba(255,149,0,0.08)', border: '1px solid rgba(255,149,0,0.15)' }}>
-              <div className="flex items-start gap-2">
-                <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="#FF9500" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
-                </svg>
-                <p className="text-xs leading-relaxed" style={{ color: '#FF9500' }}>
-                  This uses one of your activations. You won't get it back if you turn it off early.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowVacationDeactivateConfirm(false)}
-                className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
-                style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
-              >
-                Keep Active
-              </button>
-              <button
-                onClick={() => {
-                  setShowVacationDeactivateConfirm(false);
-                  triggerHaptic(ImpactStyle.Medium);
-                  onToggleVacationMode?.();
-                }}
-                className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
-                style={{ backgroundColor: '#FF9500' }}
-              >
-                Deactivate
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 };
@@ -18288,6 +18169,126 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Vacation Mode Confirmation Modal */}
+      {showVacationConfirm && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setShowVacationConfirm(false)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div
+            className="relative w-[85%] max-w-sm rounded-2xl p-6"
+            style={{ backgroundColor: '#1a1a1a' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex flex-col items-center text-center mb-5">
+              <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
+                <span className="text-3xl">✈️</span>
+              </div>
+              <h3 className="text-white font-semibold text-lg">Activate Vacation Mode?</h3>
+              <p className="text-gray-400 text-sm mt-2 leading-relaxed">
+                Your streaks will be frozen while vacation mode is active. They won't increase, but they won't break either.
+              </p>
+            </div>
+
+            <div className="space-y-2 mb-5">
+              <div className="flex items-start gap-2.5 rounded-xl p-2.5" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="#00D1FF" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                </svg>
+                <p className="text-xs text-gray-300">Auto-deactivates after <span className="text-white font-medium">2 weeks</span></p>
+              </div>
+              <div className="flex items-start gap-2.5 rounded-xl p-2.5" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="#FF9500" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                </svg>
+                <p className="text-xs text-gray-300">
+                  {(() => {
+                    const vm = userData.vacationMode || {};
+                    const currentYear = new Date().getFullYear();
+                    const used = vm.activationYear === currentYear ? (vm.activationsThisYear || 0) : 0;
+                    const remaining = Math.max(0, 3 - used);
+                    return <><span className="text-white font-medium">{remaining} of 3</span> activation{remaining !== 1 ? 's' : ''} remaining this year</>;
+                  })()}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowVacationConfirm(false)}
+                className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+                style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowVacationConfirm(false);
+                  triggerHaptic(ImpactStyle.Heavy);
+                  onToggleVacationMode?.();
+                }}
+                className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+                style={{ backgroundColor: '#00D1FF' }}
+              >
+                Activate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Vacation Mode Deactivation Confirmation Modal */}
+      {showVacationDeactivateConfirm && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setShowVacationDeactivateConfirm(false)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div
+            className="relative w-[85%] max-w-sm rounded-2xl p-6"
+            style={{ backgroundColor: '#1a1a1a' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex flex-col items-center text-center mb-5">
+              <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
+                <span className="text-3xl">✈️</span>
+              </div>
+              <h3 className="text-white font-semibold text-lg">Deactivate Vacation Mode?</h3>
+              <p className="text-gray-400 text-sm mt-2 leading-relaxed">
+                Your streaks will no longer be frozen. You'll need to complete your weekly goals to keep them going.
+              </p>
+            </div>
+
+            <div className="rounded-xl p-3 mb-5" style={{ backgroundColor: 'rgba(255,149,0,0.08)', border: '1px solid rgba(255,149,0,0.15)' }}>
+              <div className="flex items-start gap-2">
+                <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="#FF9500" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                </svg>
+                <p className="text-xs leading-relaxed" style={{ color: '#FF9500' }}>
+                  This uses one of your activations. You won't get it back if you turn it off early.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowVacationDeactivateConfirm(false)}
+                className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+                style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+              >
+                Keep Active
+              </button>
+              <button
+                onClick={() => {
+                  setShowVacationDeactivateConfirm(false);
+                  triggerHaptic(ImpactStyle.Medium);
+                  onToggleVacationMode?.();
+                }}
+                className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+                style={{ backgroundColor: '#FF9500' }}
+              >
+                Deactivate
+              </button>
             </div>
           </div>
         </div>

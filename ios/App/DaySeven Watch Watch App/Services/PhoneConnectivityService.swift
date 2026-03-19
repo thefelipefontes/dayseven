@@ -107,6 +107,43 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
         }
     }
 
+    // MARK: - Live Activity Push (via Cloud Function)
+
+    /// Request the server to start a Live Activity on the iPhone via APNs push.
+    /// This works even when the phone app is backgrounded (iOS 17.2+).
+    func requestLiveActivityPush(activityType: String, strengthType: String?) {
+        Task {
+            guard let user = Auth.auth().currentUser else {
+                print("[PhoneConnect] No auth user — skipping Live Activity push")
+                return
+            }
+
+            do {
+                let idToken = try await user.getIDToken()
+                let url = URL(string: "https://us-central1-dayseven-f1a89.cloudfunctions.net/startLiveActivityPush")!
+
+                var request = URLRequest(url: url)
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
+                request.timeoutInterval = 10
+
+                var body: [String: Any] = ["activityType": activityType]
+                if let strengthType = strengthType {
+                    body["strengthType"] = strengthType
+                }
+                request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+                let (data, response) = try await URLSession.shared.data(for: request)
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+                let responseStr = String(data: data, encoding: .utf8) ?? ""
+                print("[PhoneConnect] Live Activity push response: status=\(statusCode), body=\(responseStr)")
+            } catch {
+                print("[PhoneConnect] Live Activity push failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
     // MARK: - Activate WCSession
 
     private func activateSession() {

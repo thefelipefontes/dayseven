@@ -13,6 +13,10 @@ const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
 const { getAuth } = require("firebase-admin/auth");
+const jwt = require("jsonwebtoken");
+const http2 = require("http2");
+const fs = require("fs");
+const path = require("path");
 
 // Initialize Firebase Admin
 initializeApp();
@@ -61,6 +65,218 @@ exports.generateWatchToken = onRequest(async (req, res) => {
   } catch (err) {
     console.error("[generateWatchToken] Error:", err.message);
     res.status(500).json({ error: "Failed to generate token: " + err.message });
+  }
+});
+
+// ==========================================
+// ACTIVITYKIT LIVE ACTIVITY PUSH
+// ==========================================
+
+// APNs configuration
+const APNS_KEY_ID = "4RCDUK8HZW";
+const APNS_TEAM_ID = "J4CL5KMB23";
+const APNS_TOPIC = "app.dayseven.fitness.push-type.liveactivity";
+
+// Cache the APNs key and JWT
+let apnsKeyCache = null;
+let apnsJwtCache = null;
+let apnsJwtExpiry = 0;
+
+function getApnsKey() {
+  if (!apnsKeyCache) {
+    apnsKeyCache = fs.readFileSync(path.join(__dirname, "apns", "AuthKey_4RCDUK8HZW.p8"), "utf8");
+  }
+  return apnsKeyCache;
+}
+
+function getApnsJwt() {
+  const now = Math.floor(Date.now() / 1000);
+  // Refresh JWT every 50 minutes (APNs tokens are valid for 60 min)
+  if (apnsJwtCache && now < apnsJwtExpiry) {
+    return apnsJwtCache;
+  }
+  const key = getApnsKey();
+  apnsJwtCache = jwt.sign({ iss: APNS_TEAM_ID, iat: now }, key, {
+    algorithm: "ES256",
+    header: { alg: "ES256", kid: APNS_KEY_ID },
+  });
+  apnsJwtExpiry = now + 3000; // 50 minutes
+  return apnsJwtCache;
+}
+
+/**
+ * Send an APNs push notification for ActivityKit Live Activity
+ */
+function sendApnsLiveActivityPush(deviceToken, payload, useSandbox = false) {
+  return new Promise((resolve, reject) => {
+    const host = useSandbox ? "https://api.sandbox.push.apple.com" : "https://api.push.apple.com";
+    const client = http2.connect(host);
+
+    client.on("error", (err) => {
+      console.error("[APNs] Connection error:", err.message);
+      reject(err);
+    });
+
+    const headers = {
+      ":method": "POST",
+      ":path": `/3/device/${deviceToken}`,
+      "authorization": `bearer ${getApnsJwt()}`,
+      "apns-topic": APNS_TOPIC,
+      "apns-push-type": "liveactivity",
+      "apns-priority": "10",
+    };
+
+    const req = client.request(headers);
+    let responseData = "";
+    let statusCode = 0;
+
+    req.on("response", (headers) => {
+      statusCode = headers[":status"];
+    });
+
+    req.on("data", (chunk) => {
+      responseData += chunk;
+    });
+
+    req.on("end", () => {
+      client.close();
+      if (statusCode === 200) {
+        console.log("[APNs] Push sent successfully");
+        resolve({ success: true, status: statusCode });
+      } else {
+        console.error(`[APNs] Push failed: status=${statusCode}, body=${responseData}`);
+        resolve({ success: false, status: statusCode, error: responseData });
+      }
+    });
+
+    req.on("error", (err) => {
+      client.close();
+      reject(err);
+    });
+
+    req.write(JSON.stringify(payload));
+    req.end();
+  });
+}
+
+/**
+ * Map activity type to SF Symbol icon name (mirrors Swift liveActivityIconForType)
+ */
+function liveActivityIconForType(type) {
+  const lowered = (type || "").toLowerCase();
+  if (lowered.includes("run")) return "figure.run";
+  if (lowered.includes("cycl") || lowered.includes("bik")) return "figure.outdoor.cycle";
+  if (lowered.includes("swim")) return "figure.pool.swim";
+  if (lowered.includes("hik")) return "figure.hiking";
+  if (lowered.includes("walk")) return "figure.walk";
+  if (lowered.includes("yoga")) return "figure.yoga";
+  if (lowered.includes("strength") || lowered.includes("weight") || lowered.includes("lift")) return "dumbbell.fill";
+  if (lowered.includes("pilates")) return "figure.pilates";
+  if (lowered.includes("row")) return "figure.rower";
+  if (lowered.includes("stretch") || lowered.includes("cool") || lowered.includes("recover")) return "figure.cooldown";
+  if (lowered.includes("hiit") || lowered.includes("interval") || lowered.includes("cross")) return "flame.fill";
+  if (lowered.includes("dance")) return "figure.dance";
+  if (lowered.includes("box") || lowered.includes("martial") || lowered.includes("kickbox")) return "figure.boxing";
+  if (lowered.includes("elliptical")) return "figure.elliptical";
+  if (lowered.includes("stair")) return "figure.stair.stepper";
+  return "figure.mixed.cardio";
+}
+
+/**
+ * Map activity type to category color string (mirrors Swift liveActivityCategoryForType)
+ */
+function liveActivityCategoryForType(type) {
+  const lowered = (type || "").toLowerCase();
+  if (lowered.includes("strength") || lowered.includes("weight") || lowered.includes("lift")
+      || lowered.includes("bodyweight") || lowered.includes("calisthenics")) return "strength";
+  if (lowered.includes("yoga") || lowered.includes("stretch") || lowered.includes("pilates")
+      || lowered.includes("cool") || lowered.includes("recover") || lowered.includes("meditation")
+      || lowered.includes("foam") || lowered.includes("mobility")) return "recovery";
+  return "cardio";
+}
+
+/**
+ * Start a Live Activity on the user's iPhone via APNs push-to-start.
+ * Called by the Apple Watch when a workout begins.
+ */
+exports.startLiveActivityPush = onRequest(async (req, res) => {
+  console.log("[startLiveActivityPush] Called");
+
+  if (req.method !== "POST") {
+    res.status(405).json({ error: "Method not allowed" });
+    return;
+  }
+
+  // Authenticate via Bearer token
+  const authHeader = req.headers.authorization || "";
+  if (!authHeader.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Missing authorization token" });
+    return;
+  }
+
+  const idToken = authHeader.split("Bearer ")[1];
+
+  try {
+    const decodedToken = await getAuth().verifyIdToken(idToken);
+    const uid = decodedToken.uid;
+    console.log("[startLiveActivityPush] Verified user:", uid);
+
+    const { activityType, strengthType } = req.body;
+    const displayType = strengthType || activityType || "Other";
+    console.log("[startLiveActivityPush] Activity:", displayType);
+
+    // Get the user's Live Activity push-to-start token from Firestore
+    const tokenDoc = await db.collection("userTokens").doc(uid).get();
+    const tokenData = tokenDoc.data();
+    const liveActivityToken = tokenData?.liveActivityPushToken;
+
+    if (!liveActivityToken) {
+      console.log("[startLiveActivityPush] No liveActivityPushToken for user", uid);
+      res.status(404).json({ error: "No Live Activity push token found" });
+      return;
+    }
+
+    // Build the APNs payload for push-to-start
+    // startTime uses timeIntervalSince1970 (matches custom Codable on Swift side)
+    const now = Math.floor(Date.now() / 1000);
+    const payload = {
+      aps: {
+        timestamp: now,
+        event: "start",
+        "content-state": {
+          isPaused: false,
+        },
+        "attributes-type": "WorkoutActivityAttributes",
+        "attributes": {
+          activityType: displayType,
+          activityIcon: liveActivityIconForType(displayType),
+          startTime: Date.now() / 1000, // timeIntervalSince1970
+          categoryColor: liveActivityCategoryForType(displayType),
+        },
+        alert: {
+          title: displayType,
+          body: "Workout In Progress",
+        },
+      },
+    };
+
+    console.log("[startLiveActivityPush] Sending APNs push to token:", liveActivityToken.substring(0, 16) + "...");
+
+    // Try sandbox first (for dev builds), fall back to production
+    let result = await sendApnsLiveActivityPush(liveActivityToken, payload, true);
+    if (!result.success && result.status === 400) {
+      console.log("[startLiveActivityPush] Sandbox failed, trying production...");
+      result = await sendApnsLiveActivityPush(liveActivityToken, payload, false);
+    }
+
+    if (result.success) {
+      res.status(200).json({ success: true });
+    } else {
+      res.status(502).json({ success: false, apnsStatus: result.status, error: result.error });
+    }
+  } catch (err) {
+    console.error("[startLiveActivityPush] Error:", err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 

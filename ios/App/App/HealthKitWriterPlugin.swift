@@ -794,29 +794,41 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         if #available(iOS 16.2, *) {
             DispatchQueue.main.async {
                 let mgr = WatchSessionManager.shared
+
+                // Check if push-to-start already created one
                 if mgr.watchWorkoutLiveActivityId == nil {
-                    let icon = mgr.liveActivityIconForType(activityType)
-                    let category = mgr.liveActivityCategoryForType(activityType)
-                    let attributes = WorkoutActivityAttributes(
-                        activityType: activityType,
-                        activityIcon: icon,
-                        startTime: Date(),
-                        categoryColor: category
-                    )
-                    let initialState = WorkoutActivityAttributes.ContentState(isPaused: false)
-                    do {
-                        let activity = try Activity.request(
-                            attributes: attributes,
-                            content: .init(state: initialState, staleDate: nil),
-                            pushType: nil
-                        )
-                        mgr.watchWorkoutLiveActivityId = activity.id
-                        print("[LiveActivity] Started watch workout Live Activity from JS: \(activity.id)")
-                    } catch {
-                        print("[LiveActivity] Failed to start from JS: \(error)")
+                    let existing = Activity<WorkoutActivityAttributes>.activities
+                    if let pushStarted = existing.first {
+                        mgr.watchWorkoutLiveActivityId = pushStarted.id
+                        print("[LiveActivity] Adopted push-started Live Activity from JS: \(pushStarted.id)")
+                        return
                     }
-                } else {
+                }
+
+                guard mgr.watchWorkoutLiveActivityId == nil else {
                     print("[LiveActivity] Watch Live Activity already active, skipping")
+                    return
+                }
+
+                let icon = mgr.liveActivityIconForType(activityType)
+                let category = mgr.liveActivityCategoryForType(activityType)
+                let attributes = WorkoutActivityAttributes(
+                    activityType: activityType,
+                    activityIcon: icon,
+                    startTime: Date(),
+                    categoryColor: category
+                )
+                let initialState = WorkoutActivityAttributes.ContentState(isPaused: false)
+                do {
+                    let activity = try Activity.request(
+                        attributes: attributes,
+                        content: .init(state: initialState, staleDate: nil),
+                        pushType: nil
+                    )
+                    mgr.watchWorkoutLiveActivityId = activity.id
+                    print("[LiveActivity] Started watch workout Live Activity from JS: \(activity.id)")
+                } catch {
+                    print("[LiveActivity] Failed to start from JS: \(error)")
                 }
             }
         }

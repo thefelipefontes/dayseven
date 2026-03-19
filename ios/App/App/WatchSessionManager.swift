@@ -318,9 +318,17 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
 
     @available(iOS 16.2, *)
     private func startWatchWorkoutLiveActivity(activityType: String, startTime: Date) {
-        // Skip if a Live Activity is already running (prevents duplicates from sendMessage + transferUserInfo)
+        // Skip if we're already tracking one
         if watchWorkoutLiveActivityId != nil {
-            print("[WatchSession] Live Activity already active, skipping duplicate start")
+            print("[WatchSession] Live Activity already tracked, skipping duplicate start")
+            return
+        }
+
+        // Check if the APNs push already started a Live Activity (push-to-start)
+        let existingActivities = Activity<WorkoutActivityAttributes>.activities
+        if let existing = existingActivities.first {
+            watchWorkoutLiveActivityId = existing.id
+            print("[WatchSession] Adopted existing push-started Live Activity: \(existing.id)")
             return
         }
 
@@ -350,21 +358,18 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
 
     @available(iOS 16.2, *)
     func endWatchWorkoutLiveActivity() {
-        guard let activityId = watchWorkoutLiveActivityId else { return }
         let finalState = WorkoutActivityAttributes.ContentState(isPaused: false)
 
         Task {
+            // End ALL workout Live Activities (covers both locally-started and push-started)
             for activity in Activity<WorkoutActivityAttributes>.activities {
-                if activity.id == activityId {
-                    await activity.end(
-                        .init(state: finalState, staleDate: nil),
-                        dismissalPolicy: .immediate
-                    )
-                    break
-                }
+                await activity.end(
+                    .init(state: finalState, staleDate: nil),
+                    dismissalPolicy: .immediate
+                )
+                print("[WatchSession] Ended Live Activity: \(activity.id)")
             }
             watchWorkoutLiveActivityId = nil
-            print("[WatchSession] Live Activity ended")
         }
     }
 

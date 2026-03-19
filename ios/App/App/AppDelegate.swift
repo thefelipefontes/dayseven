@@ -2,12 +2,16 @@ import UIKit
 import Capacitor
 import FirebaseCore
 import FirebaseMessaging
+import FirebaseAuth
+import FirebaseFirestore
 import WatchConnectivity
+import ActivityKit
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
+    private var pushToStartTokenTask: Task<Void, Never>?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // Initialize Firebase
@@ -27,7 +31,46 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Activate WatchConnectivity for Apple Watch auth relay
         WatchSessionManager.shared.activate()
 
+        // Start observing ActivityKit push-to-start tokens (iOS 17.2+)
+        if #available(iOS 17.2, *) {
+            observeActivityKitPushToStartToken()
+        }
+
         return true
+    }
+
+    // MARK: - ActivityKit Push-to-Start Token
+
+    @available(iOS 17.2, *)
+    private func observeActivityKitPushToStartToken() {
+        pushToStartTokenTask = Task {
+            for await tokenData in Activity<WorkoutActivityAttributes>.pushToStartTokenUpdates {
+                let tokenHex = tokenData.map { String(format: "%02x", $0) }.joined()
+                print("[ActivityKit] Push-to-start token updated: \(tokenHex.prefix(32))...")
+                storeLiveActivityPushToken(tokenHex)
+            }
+        }
+    }
+
+    private func storeLiveActivityPushToken(_ tokenHex: String) {
+        guard let uid = Auth.auth().currentUser?.uid else {
+            print("[ActivityKit] No authenticated user — deferring token storage")
+            // Store token locally so it can be uploaded after sign-in
+            UserDefaults.standard.set(tokenHex, forKey: "pendingLiveActivityPushToken")
+            return
+        }
+
+        let db = Firestore.firestore()
+        db.collection("userTokens").document(uid).setData([
+            "liveActivityPushToken": tokenHex
+        ], merge: true) { error in
+            if let error = error {
+                print("[ActivityKit] Failed to store push token: \(error.localizedDescription)")
+            } else {
+                print("[ActivityKit] Push-to-start token stored for user \(uid)")
+                UserDefaults.standard.removeObject(forKey: "pendingLiveActivityPushToken")
+            }
+        }
     }
 
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {

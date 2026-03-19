@@ -63,6 +63,8 @@ class ExtensionDelegate: NSObject, WKExtensionDelegate {
                 print("[ExtDelegate] Workout started + remoteWorkoutRequest published")
                 // Notify the phone so it can switch from phone to watch source
                 phoneService.notifyPhoneWorkoutStarted(activityType: activityType, strengthType: nil)
+                // Also trigger Live Activity via APNs push (works even when phone is backgrounded)
+                phoneService.requestLiveActivityPush(activityType: activityType, strengthType: nil)
                 // Success haptic
                 WKInterfaceDevice.current().play(.success)
             } catch {

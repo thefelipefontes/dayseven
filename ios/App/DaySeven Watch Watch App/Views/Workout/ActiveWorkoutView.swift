@@ -403,6 +403,8 @@ struct ActiveWorkoutView: View {
                 activityType: activityType,
                 strengthType: strengthType
             )
+            // Also trigger Live Activity via APNs push (works even when phone is backgrounded)
+            appVM.phoneService.requestLiveActivityPush(activityType: activityType, strengthType: strengthType)
         } catch {
             errorMessage = error.localizedDescription
         }

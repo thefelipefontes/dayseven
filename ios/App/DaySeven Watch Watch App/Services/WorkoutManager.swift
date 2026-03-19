@@ -142,26 +142,36 @@ class WorkoutManager: NSObject, ObservableObject {
         session.delegate = self
         builder.delegate = self
 
-        builder.dataSource = HKLiveWorkoutDataSource(
-            healthStore: healthStore,
-            workoutConfiguration: config
-        )
+        // Use the builder's existing data source if available, otherwise create one.
+        // The associatedWorkoutBuilder() may come pre-configured with a data source
+        // that properly connects to watch sensors.
+        let dataSource: HKLiveWorkoutDataSource
+        if let existingDS = builder.dataSource {
+            dataSource = existingDS
+            print("[WorkoutManager] Using existing builder dataSource: \(existingDS)")
+        } else {
+            dataSource = HKLiveWorkoutDataSource(
+                healthStore: healthStore,
+                workoutConfiguration: config
+            )
+            builder.dataSource = dataSource
+            print("[WorkoutManager] Created new dataSource: \(dataSource)")
+        }
 
-        // Explicitly enable distance collection for walking, running, and cycling workouts.
-        // Indoor workouts require this because HealthKit doesn't auto-collect distance for indoor location type.
-        // We also enable it for outdoor workouts as a safety measure to ensure distance is always tracked.
+        // Enable distance collection BEFORE starting — add distance type to the data source
+        // so it's ready when the session begins collecting.
         if activityType == .walking || activityType == .running || activityType == .hiking {
             let distanceType = HKQuantityType(.distanceWalkingRunning)
-            builder.dataSource?.enableCollection(for: distanceType, predicate: nil)
-            print("[WorkoutManager] Enabled distance collection: distanceWalkingRunning, locationType: \(config.locationType.rawValue)")
+            dataSource.enableCollection(for: distanceType, predicate: nil)
+            print("[WorkoutManager] Enabled distanceWalkingRunning, locationType: \(config.locationType.rawValue)")
         } else if activityType == .cycling {
             let distanceType = HKQuantityType(.distanceCycling)
-            builder.dataSource?.enableCollection(for: distanceType, predicate: nil)
-            print("[WorkoutManager] Enabled distance collection: distanceCycling, locationType: \(config.locationType.rawValue)")
+            dataSource.enableCollection(for: distanceType, predicate: nil)
+            print("[WorkoutManager] Enabled distanceCycling, locationType: \(config.locationType.rawValue)")
         } else if activityType == .swimming {
             let distanceType = HKQuantityType(.distanceSwimming)
-            builder.dataSource?.enableCollection(for: distanceType, predicate: nil)
-            print("[WorkoutManager] Enabled distance collection: distanceSwimming")
+            dataSource.enableCollection(for: distanceType, predicate: nil)
+            print("[WorkoutManager] Enabled distanceSwimming")
         }
 
         workoutActivityType = activityType
@@ -174,6 +184,21 @@ class WorkoutManager: NSObject, ObservableObject {
 
         session.startActivity(with: now)
         try await builder.beginCollection(at: now)
+
+        // Also try enabling distance AFTER beginCollection as a belt-and-suspenders approach
+        if activityType == .walking || activityType == .running || activityType == .hiking {
+            let distanceType = HKQuantityType(.distanceWalkingRunning)
+            dataSource.enableCollection(for: distanceType, predicate: nil)
+        } else if activityType == .cycling {
+            let distanceType = HKQuantityType(.distanceCycling)
+            dataSource.enableCollection(for: distanceType, predicate: nil)
+        } else if activityType == .swimming {
+            let distanceType = HKQuantityType(.distanceSwimming)
+            dataSource.enableCollection(for: distanceType, predicate: nil)
+        }
+
+        // Log what the data source is actually collecting
+        print("[WorkoutManager] typesToCollect: \(dataSource.typesToCollect.map { $0.identifier })")
 
         // Start GPS route collection for outdoor workouts
         let isOutdoor = !isIndoor && WorkoutManager.isOutdoorActivityType(activityType)
@@ -207,10 +232,10 @@ class WorkoutManager: NSObject, ObservableObject {
         if isOutdoorWorkout, let rb = routeBuilder, let finishedWorkout = workout {
             locationManager?.stopUpdatingLocation()
             locationManager = nil
-            rb.finishRoute(with: finishedWorkout, metadata: nil) { _, error in
-                if let error = error {
-                    print("[WorkoutManager] Route finalization error: \(error.localizedDescription)")
-                }
+            do {
+                try await rb.finishRoute(with: finishedWorkout, metadata: nil)
+            } catch {
+                print("[WorkoutManager] Route finalization error: \(error.localizedDescription)")
             }
             routeBuilder = nil
         }
@@ -471,10 +496,10 @@ extension WorkoutManager: CLLocationManagerDelegate {
         guard !filtered.isEmpty else { return }
 
         Task { @MainActor in
-            self.routeBuilder?.insertRouteData(filtered) { _, error in
-                if let error = error {
-                    print("[WorkoutManager] insertRouteData error: \(error.localizedDescription)")
-                }
+            do {
+                try await self.routeBuilder?.insertRouteData(filtered)
+            } catch {
+                print("[WorkoutManager] insertRouteData error: \(error.localizedDescription)")
             }
         }
     }

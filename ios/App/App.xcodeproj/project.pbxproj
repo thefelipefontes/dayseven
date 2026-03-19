@@ -367,7 +367,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastSwiftUpdateCheck = 2620;
-				LastUpgradeCheck = 2620;
+				LastUpgradeCheck = 2630;
 				TargetAttributes = {
 					120994C82F3E747300DB44E4 = {
 						CreatedOnToolsVersion = 26.2;
@@ -557,7 +557,7 @@
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ENTITLEMENTS = "Dayseven Watch WidgetsExtension.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Dayseven Watch Widgets/Info.plist";
@@ -570,7 +570,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 1.3.4;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = "app.dayseven.fitness.watchkitapp.Dayseven-Watch-Widgets";
@@ -598,7 +598,7 @@
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ENTITLEMENTS = "Dayseven Watch WidgetsExtension.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Dayseven Watch Widgets/Info.plist";
@@ -611,7 +611,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 1.3.4;
 				MTL_FAST_MATH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = "app.dayseven.fitness.watchkitapp.Dayseven-Watch-Widgets";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -637,7 +637,7 @@
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ENTITLEMENTS = "DaySeven Watch Watch App/DaySeven Watch Watch App.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 5;
 				ENABLE_PREVIEWS = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -645,7 +645,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = dayseven;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "DaySeven reads your health data to display your steps, calories, and workout metrics.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "DaySeven saves your workouts to Apple Health so they appear in your health history.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "DaySeven uses your location to record GPS routes for outdoor workouts.\n\nDaySeven uses your location to record GPS routes for outdoor workouts.\n\ndayseven uses your location to record GPS routes for outdoor workouts.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "dayseven uses your location to record GPS routes for outdoor workouts.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKBackgroundModes = "workout-processing";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = app.dayseven.fitness;
@@ -684,7 +684,7 @@
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ENTITLEMENTS = "DaySeven Watch Watch App/DaySeven Watch Watch App.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 5;
 				ENABLE_PREVIEWS = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -692,7 +692,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = dayseven;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "DaySeven reads your health data to display your steps, calories, and workout metrics.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "DaySeven saves your workouts to Apple Health so they appear in your health history.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "DaySeven uses your location to record GPS routes for outdoor workouts.\n\nDaySeven uses your location to record GPS routes for outdoor workouts.\n\ndayseven uses your location to record GPS routes for outdoor workouts.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "dayseven uses your location to record GPS routes for outdoor workouts.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKBackgroundModes = "workout-processing";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = app.dayseven.fitness;
@@ -966,7 +966,7 @@
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 5;
 				DEVELOPMENT_TEAM = J4CL5KMB23;
 				INFOPLIST_FILE = App/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = dayseven;
@@ -992,7 +992,7 @@
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 5;
 				DEVELOPMENT_TEAM = J4CL5KMB23;
 				INFOPLIST_FILE = App/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = dayseven;

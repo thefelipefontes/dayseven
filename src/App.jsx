@@ -12,7 +12,7 @@ import html2canvas from 'html2canvas';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
-import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, fetchHealthDataForDate, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, fetchWorkoutRoute } from './services/healthService';
+import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, fetchHealthDataForDate, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, fetchWorkoutRoute, updateWidgetData } from './services/healthService';
 import NotificationSettings from './NotificationSettings';
 import { initializePushNotifications, handleNotificationNavigation, removeFCMToken, clearBadge, clearAllNotifications, incrementBadge, shouldShowNotification, getNotificationPreferences } from './services/notificationService';
 import { initializeRevenueCat, checkProStatus, addCustomerInfoListener, logoutRevenueCat, presentPaywall, presentCustomerCenter, restorePurchases } from './services/subscriptionService';
@@ -18708,6 +18708,7 @@ export default function DaySevenApp() {
         // Recalculate weekly progress for the UI rings
         const freshProgress = calculateWeeklyProgress(freshActivities);
         setWeeklyProgress(freshProgress);
+        pushWidgetData(freshProgress);
 
         // Check if phone should show a celebration
         // ALWAYS verify actual activity counts — never trust firestoreSaysMaster alone
@@ -19949,6 +19950,7 @@ export default function DaySevenApp() {
             // Recalculate weekly progress so dashboard rings update with fresh data
             const freshProgress = calculateWeeklyProgress(freshActivities);
             setWeeklyProgress(freshProgress);
+            pushWidgetData(freshProgress);
 
             // Check for pending celebrations from watch (goals completed on watch but not yet celebrated on phone)
             try {
@@ -20162,9 +20164,13 @@ export default function DaySevenApp() {
   // Ref to always have access to latest userData (avoids stale closure issues)
   const userDataRef = useRef(userData);
   const recordsLoadedRef = useRef(false);
+  const healthKitDataRef = useRef(healthKitData);
   useEffect(() => {
     userDataRef.current = userData;
   }, [userData]);
+  useEffect(() => {
+    healthKitDataRef.current = healthKitData;
+  }, [healthKitData]);
   useEffect(() => {
     recordsLoadedRef.current = recordsLoaded;
   }, [recordsLoaded]);
@@ -20372,6 +20378,51 @@ export default function DaySevenApp() {
       steps: { today: 0, goal: userData.goals.stepsPerDay }
     };
   };
+
+  // Push data to iPhone home screen widget via App Group
+  const pushWidgetData = (progress) => {
+    const s = userDataRef.current?.streaks || {};
+    const g = userDataRef.current?.goals || {};
+    const p = progress || weeklyProgress;
+    const hk = healthKitDataRef.current || {};
+
+    // Build recent activities for large widget (most recent first, max 5)
+    const allActs = activitiesRef.current || [];
+    const recentActivities = [...allActs]
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+      .slice(0, 5)
+      .map(a => {
+        const cat = getActivityCategory(a);
+        const name = a.type === 'Strength Training' ? (a.strengthType || a.subtype || 'Strength Training')
+          : a.type === 'Other' ? (a.subtype || 'Other')
+          : a.type;
+        return JSON.stringify({ name, category: cat, date: a.date || '', duration: a.duration || 0, calories: a.calories || 0 });
+      });
+
+    updateWidgetData({
+      masterStreak: s.master || 0,
+      liftsStreak: s.lifts || 0,
+      cardioStreak: s.cardio || 0,
+      recoveryStreak: s.recovery || 0,
+      liftsCompleted: p?.lifts?.completed || 0,
+      liftsGoal: g.liftsPerWeek || 4,
+      cardioCompleted: p?.cardio?.completed || 0,
+      cardioGoal: g.cardioPerWeek || 3,
+      recoveryCompleted: p?.recovery?.completed || 0,
+      recoveryGoal: g.recoveryPerWeek || 2,
+      todaySteps: hk.todaySteps || 0,
+      stepsGoal: g.stepsPerDay || 10000,
+      todayCalories: hk.todayCalories || 0,
+      recentActivities
+    });
+  };
+
+  // Re-push widget data when health stats update (steps/calories arrive async)
+  useEffect(() => {
+    if (healthKitData?.todaySteps > 0 || healthKitData?.todayCalories > 0) {
+      pushWidgetData();
+    }
+  }, [healthKitData?.todaySteps, healthKitData?.todayCalories]);
 
   // Recalculate streaks from actual activity history
   // Walks backwards week by week from the current week and counts consecutive completed weeks
@@ -20609,6 +20660,7 @@ export default function DaySevenApp() {
     // Recalculate weekly progress
     const newProgress = calculateWeeklyProgress(updatedActivities);
     setWeeklyProgress(newProgress);
+    pushWidgetData(newProgress);
 
     // Write to HealthKit (fire-and-forget, don't block the save flow)
     // Skip if: editing existing activity, came from Apple Health, is HealthKit-sourced, linked to existing HealthKit workout, already saved (live workout), or is Cold Plunge/Sauna
@@ -21080,6 +21132,7 @@ export default function DaySevenApp() {
     // Recalculate weekly progress
     const newProgress = calculateWeeklyProgress(updatedActivities);
     setWeeklyProgress(newProgress);
+    pushWidgetData(newProgress);
 
     // Recalculate single-activity personal records from remaining activities
     const recalculateRecords = () => {

@@ -3,6 +3,8 @@ import Capacitor
 import HealthKit
 import WatchConnectivity
 import UserNotifications
+import WidgetKit
+import ActivityKit
 
 @objc(HealthKitWriterPlugin)
 public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
@@ -35,7 +37,9 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         // Resolve raw HKWorkoutActivityType numbers to human-readable names
         CAPPluginMethod(name: "resolveWorkoutTypes", returnType: CAPPluginReturnPromise),
         // GPS route query
-        CAPPluginMethod(name: "getWorkoutRoute", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "getWorkoutRoute", returnType: CAPPluginReturnPromise),
+        // Widget data
+        CAPPluginMethod(name: "updateWidgetData", returnType: CAPPluginReturnPromise)
     ]
 
     private let healthStore = HKHealthStore()
@@ -85,10 +89,21 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             data["strengthType"] = strengthType
         }
         notifyListeners("watchWorkoutStarted", data: data)
+
+        // Start Live Activity for watch-originated workouts
+        if #available(iOS 16.2, *) {
+            let displayType = strengthType ?? activityType
+            startWorkoutLiveActivity(activityType: displayType, startTime: Date())
+        }
     }
 
     @objc private func handleWatchWorkoutEnded(_ notification: Notification) {
         notifyListeners("watchWorkoutEnded", data: [:])
+
+        // End Live Activity
+        if #available(iOS 16.2, *) {
+            endWorkoutLiveActivity()
+        }
     }
 
     // Live workout session
@@ -481,6 +496,11 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                 self.startHeartRateObserver(from: startDate)
                 self.startCaloriesObserver(from: startDate)
 
+                // Start Live Activity on lock screen
+                if #available(iOS 16.2, *) {
+                    self.startWorkoutLiveActivity(activityType: activityTypeString, startTime: startDate)
+                }
+
                 DispatchQueue.main.async {
                     call.resolve([
                         "success": true,
@@ -552,6 +572,11 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                     let maxHr = self.heartRateSamples.max() ?? 0
                     let duration = endDate.timeIntervalSince(startDate) / 60.0 // in minutes
 
+                    // End Live Activity
+                    if #available(iOS 16.2, *) {
+                        self.endWorkoutLiveActivity()
+                    }
+
                     // Clean up
                     self.workoutBuilder = nil
                     self.liveWorkoutStartDate = nil
@@ -606,6 +631,11 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         // Discard the workout builder without saving
         workoutBuilder?.discardWorkout()
 
+        // Dismiss Live Activity immediately
+        if #available(iOS 16.2, *) {
+            dismissWorkoutLiveActivity()
+        }
+
         // Clean up
         workoutBuilder = nil
         liveWorkoutStartDate = nil
@@ -617,6 +647,141 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         call.resolve(["success": true])
     }
+
+    // MARK: - Widget Data
+
+    @objc func updateWidgetData(_ call: CAPPluginCall) {
+        let suiteName = "group.app.dayseven.fitness"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            call.reject("Failed to access app group defaults")
+            return
+        }
+
+        defaults.set(call.getInt("masterStreak") ?? 0, forKey: "masterStreak")
+        defaults.set(call.getInt("liftsStreak") ?? 0, forKey: "liftsStreak")
+        defaults.set(call.getInt("cardioStreak") ?? 0, forKey: "cardioStreak")
+        defaults.set(call.getInt("recoveryStreak") ?? 0, forKey: "recoveryStreak")
+        defaults.set(call.getInt("liftsCompleted") ?? 0, forKey: "liftsCompleted")
+        defaults.set(call.getInt("liftsGoal") ?? 4, forKey: "liftsGoal")
+        defaults.set(call.getInt("cardioCompleted") ?? 0, forKey: "cardioCompleted")
+        defaults.set(call.getInt("cardioGoal") ?? 3, forKey: "cardioGoal")
+        defaults.set(call.getInt("recoveryCompleted") ?? 0, forKey: "recoveryCompleted")
+        defaults.set(call.getInt("recoveryGoal") ?? 2, forKey: "recoveryGoal")
+        defaults.set(call.getInt("todaySteps") ?? 0, forKey: "todaySteps")
+        defaults.set(call.getInt("stepsGoal") ?? 10000, forKey: "stepsGoal")
+        defaults.set(call.getInt("todayCalories") ?? 0, forKey: "todayCalories")
+        defaults.set(Date().timeIntervalSince1970, forKey: "lastUpdated")
+
+        // Recent activities for large widget (array of JSON strings)
+        if let recentActivities = call.getArray("recentActivities") as? [String] {
+            defaults.set(recentActivities, forKey: "recentActivities")
+        }
+
+        WidgetCenter.shared.reloadAllTimelines()
+
+        call.resolve(["success": true])
+    }
+
+    // MARK: - Live Activity
+
+    @available(iOS 16.2, *)
+    private func startWorkoutLiveActivity(activityType: String, startTime: Date) {
+        let icon = liveActivityIconForType(activityType)
+        let category = liveActivityCategoryForType(activityType)
+
+        let attributes = WorkoutActivityAttributes(
+            activityType: activityType,
+            activityIcon: icon,
+            startTime: startTime,
+            categoryColor: category
+        )
+        let initialState = WorkoutActivityAttributes.ContentState(isPaused: false)
+
+        do {
+            let activity = try Activity.request(
+                attributes: attributes,
+                content: .init(state: initialState, staleDate: nil),
+                pushType: nil
+            )
+            liveActivityId = activity.id
+        } catch {
+            print("[LiveActivity] Failed to start: \(error)")
+        }
+    }
+
+    @available(iOS 16.2, *)
+    private func endWorkoutLiveActivity() {
+        guard let activityId = liveActivityId else { return }
+        let finalState = WorkoutActivityAttributes.ContentState(isPaused: false)
+
+        Task {
+            for activity in Activity<WorkoutActivityAttributes>.activities {
+                if activity.id == activityId {
+                    await activity.end(
+                        .init(state: finalState, staleDate: nil),
+                        dismissalPolicy: .after(.now + 30)
+                    )
+                    break
+                }
+            }
+            liveActivityId = nil
+        }
+    }
+
+    @available(iOS 16.2, *)
+    private func dismissWorkoutLiveActivity() {
+        guard let activityId = liveActivityId else { return }
+        let finalState = WorkoutActivityAttributes.ContentState(isPaused: false)
+
+        Task {
+            for activity in Activity<WorkoutActivityAttributes>.activities {
+                if activity.id == activityId {
+                    await activity.end(
+                        .init(state: finalState, staleDate: nil),
+                        dismissalPolicy: .immediate
+                    )
+                    break
+                }
+            }
+            liveActivityId = nil
+        }
+    }
+
+    private func liveActivityIconForType(_ type: String) -> String {
+        let lowered = type.lowercased()
+        if lowered.contains("run") { return "figure.run" }
+        if lowered.contains("cycl") || lowered.contains("bik") { return "figure.outdoor.cycle" }
+        if lowered.contains("swim") { return "figure.pool.swim" }
+        if lowered.contains("hik") { return "figure.hiking" }
+        if lowered.contains("walk") { return "figure.walk" }
+        if lowered.contains("yoga") { return "figure.yoga" }
+        if lowered.contains("strength") || lowered.contains("weight") || lowered.contains("lift") { return "dumbbell.fill" }
+        if lowered.contains("pilates") { return "figure.pilates" }
+        if lowered.contains("row") { return "figure.rower" }
+        if lowered.contains("stretch") || lowered.contains("cool") || lowered.contains("recover") { return "figure.cooldown" }
+        if lowered.contains("hiit") || lowered.contains("interval") || lowered.contains("cross") { return "flame.fill" }
+        if lowered.contains("dance") { return "figure.dance" }
+        if lowered.contains("box") || lowered.contains("martial") || lowered.contains("kickbox") { return "figure.boxing" }
+        if lowered.contains("elliptical") { return "figure.elliptical" }
+        if lowered.contains("stair") { return "figure.stair.stepper" }
+        return "figure.mixed.cardio"
+    }
+
+    private func liveActivityCategoryForType(_ type: String) -> String {
+        let lowered = type.lowercased()
+        if lowered.contains("strength") || lowered.contains("weight") || lowered.contains("lift")
+            || lowered.contains("bodyweight") || lowered.contains("calisthenics") {
+            return "strength"
+        }
+        if lowered.contains("yoga") || lowered.contains("stretch") || lowered.contains("pilates")
+            || lowered.contains("cool") || lowered.contains("recover") || lowered.contains("meditation")
+            || lowered.contains("foam") || lowered.contains("mobility") {
+            return "recovery"
+        }
+        return "cardio"
+    }
+
+    private var liveActivityId: String?
 
     @objc func getLiveWorkoutMetrics(_ call: CAPPluginCall) {
         guard liveWorkoutStartDate != nil else {

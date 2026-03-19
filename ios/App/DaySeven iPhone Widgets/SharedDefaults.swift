@@ -20,6 +20,7 @@ struct SharedDefaults {
     static let stepsGoalKey = "stepsGoal"
     static let todayCaloriesKey = "todayCalories"
     static let lastUpdatedKey = "lastUpdated"
+    static let recentActivitiesKey = "recentActivities"
 
     // Celebration tracking keys (used by CelebrationManager)
     static let dailyGoalsCelebratedKey = "dailyGoalsCelebrated"
@@ -73,9 +74,34 @@ struct SharedDefaults {
             todaySteps: defaults.integer(forKey: todayStepsKey),
             stepsGoal: defaults.integer(forKey: stepsGoalKey) > 0 ? defaults.integer(forKey: stepsGoalKey) : 10000,
             todayCalories: defaults.integer(forKey: todayCaloriesKey),
-            lastUpdated: defaults.double(forKey: lastUpdatedKey)
+            lastUpdated: defaults.double(forKey: lastUpdatedKey),
+            recentActivities: Self.readRecentActivities(from: defaults)
         )
     }
+    private static func readRecentActivities(from defaults: UserDefaults) -> [WidgetActivity] {
+        guard let jsonStrings = defaults.stringArray(forKey: recentActivitiesKey) else { return [] }
+        return jsonStrings.compactMap { jsonString in
+            guard let data = jsonString.data(using: .utf8),
+                  let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+            return WidgetActivity(
+                name: dict["name"] as? String ?? "",
+                category: dict["category"] as? String ?? "other",
+                date: dict["date"] as? String ?? "",
+                duration: dict["duration"] as? Int ?? 0,
+                calories: dict["calories"] as? Int ?? 0
+            )
+        }
+    }
+}
+
+// MARK: - Widget Activity Model
+
+struct WidgetActivity {
+    let name: String
+    let category: String  // "lifting", "cardio", "recovery"
+    let date: String      // "YYYY-MM-DD"
+    let duration: Int     // minutes
+    let calories: Int
 }
 
 // MARK: - Widget Data Model
@@ -95,6 +121,7 @@ struct WidgetStreakData {
     let stepsGoal: Int
     let todayCalories: Int
     let lastUpdated: Double
+    let recentActivities: [WidgetActivity]
 
     var stepsProgress: Double {
         min(Double(todaySteps) / Double(stepsGoal), 1.0)
@@ -128,6 +155,7 @@ struct WidgetStreakData {
         cardioCompleted: 0, cardioGoal: 3,
         recoveryCompleted: 0, recoveryGoal: 2,
         todaySteps: 0, stepsGoal: 10000, todayCalories: 0,
-        lastUpdated: 0
+        lastUpdated: 0,
+        recentActivities: []
     )
 }

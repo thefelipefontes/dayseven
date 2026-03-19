@@ -38,7 +38,14 @@ extension WidgetStreakData {
         cardioCompleted: 2, cardioGoal: 3,
         recoveryCompleted: 2, recoveryGoal: 2,
         todaySteps: 8432, stepsGoal: 10000, todayCalories: 347,
-        lastUpdated: Date().timeIntervalSince1970
+        lastUpdated: Date().timeIntervalSince1970,
+        recentActivities: [
+            WidgetActivity(name: "Push Day", category: "lifting", date: "2026-03-19", duration: 55, calories: 320),
+            WidgetActivity(name: "Running", category: "cardio", date: "2026-03-18", duration: 32, calories: 285),
+            WidgetActivity(name: "Cold Plunge", category: "recovery", date: "2026-03-18", duration: 5, calories: 0),
+            WidgetActivity(name: "Pull Day", category: "lifting", date: "2026-03-17", duration: 48, calories: 290),
+            WidgetActivity(name: "Yoga", category: "recovery", date: "2026-03-16", duration: 30, calories: 120)
+        ]
     )
 }
 
@@ -259,111 +266,158 @@ struct LargeWidgetView: View {
     let data: WidgetStreakData
 
     var body: some View {
-        VStack(spacing: 12) {
-            // Streak badge
+        VStack(spacing: 14) {
+            // Streak badge + steps/calories (like medium widget)
             HStack(spacing: 4) {
                 Image(systemName: "flame.fill")
-                    .font(.system(size: 14))
+                    .font(.system(size: 13))
                     .foregroundColor(WidgetColors.streak)
                 Text("\(data.masterStreak) week streak")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundColor(WidgetColors.streak)
                 Spacer()
+                HStack(spacing: 3) {
+                    Image(systemName: "figure.walk")
+                        .font(.system(size: 10))
+                    Text(formatNumber(data.todaySteps))
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                }
+                .foregroundColor(WidgetColors.steps)
+                HStack(spacing: 3) {
+                    Image(systemName: "flame")
+                        .font(.system(size: 10))
+                    Text("\(data.todayCalories)")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                }
+                .foregroundColor(WidgetColors.calories)
             }
 
             // Three category rings
-            HStack(spacing: 16) {
-                VStack(spacing: 5) {
-                    CategoryRingView(completed: data.liftsCompleted, goal: data.liftsGoal, progress: data.liftsProgress, color: WidgetColors.strength, size: 80, lineWidth: 8)
+            HStack(spacing: 20) {
+                VStack(spacing: 6) {
+                    CategoryRingView(completed: data.liftsCompleted, goal: data.liftsGoal, progress: data.liftsProgress, color: WidgetColors.strength, size: 85, lineWidth: 8)
                     HStack(spacing: 3) {
                         Text("\u{1F4AA}")
-                            .font(.system(size: 12))
+                            .font(.system(size: 11))
                         Text("Strength")
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
                             .foregroundColor(WidgetColors.strength)
                     }
-                    if data.liftsStreak > 0 {
-                        HStack(spacing: 2) {
-                            Image(systemName: "flame.fill")
-                                .font(.system(size: 9))
-                            Text("\(data.liftsStreak)w")
-                                .font(.system(size: 10, weight: .bold, design: .rounded))
-                        }
-                        .foregroundColor(WidgetColors.streak)
-                    }
                 }
-                VStack(spacing: 5) {
-                    CategoryRingView(completed: data.cardioCompleted, goal: data.cardioGoal, progress: data.cardioProgress, color: WidgetColors.cardio, size: 80, lineWidth: 8)
+                VStack(spacing: 6) {
+                    CategoryRingView(completed: data.cardioCompleted, goal: data.cardioGoal, progress: data.cardioProgress, color: WidgetColors.cardio, size: 85, lineWidth: 8)
                     HStack(spacing: 3) {
                         Text("\u{2764}\u{FE0F}\u{200D}\u{1F525}")
-                            .font(.system(size: 12))
+                            .font(.system(size: 11))
                         Text("Cardio")
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
                             .foregroundColor(WidgetColors.cardio)
                     }
-                    if data.cardioStreak > 0 {
-                        HStack(spacing: 2) {
-                            Image(systemName: "flame.fill")
-                                .font(.system(size: 9))
-                            Text("\(data.cardioStreak)w")
-                                .font(.system(size: 10, weight: .bold, design: .rounded))
-                        }
-                        .foregroundColor(WidgetColors.streak)
-                    }
                 }
-                VStack(spacing: 5) {
-                    CategoryRingView(completed: data.recoveryCompleted, goal: data.recoveryGoal, progress: data.recoveryProgress, color: WidgetColors.recovery, size: 80, lineWidth: 8)
+                VStack(spacing: 6) {
+                    CategoryRingView(completed: data.recoveryCompleted, goal: data.recoveryGoal, progress: data.recoveryProgress, color: WidgetColors.recovery, size: 85, lineWidth: 8)
                     HStack(spacing: 3) {
                         Text("\u{1F9CA}")
-                            .font(.system(size: 12))
+                            .font(.system(size: 11))
                         Text("Recovery")
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
                             .foregroundColor(WidgetColors.recovery)
-                    }
-                    if data.recoveryStreak > 0 {
-                        HStack(spacing: 2) {
-                            Image(systemName: "flame.fill")
-                                .font(.system(size: 9))
-                            Text("\(data.recoveryStreak)w")
-                                .font(.system(size: 10, weight: .bold, design: .rounded))
-                        }
-                        .foregroundColor(WidgetColors.streak)
                     }
                 }
             }
 
-            // Steps and calories
-            HStack(spacing: 16) {
-                HStack(spacing: 6) {
-                    Image(systemName: "figure.walk")
-                        .font(.system(size: 14))
-                        .foregroundColor(WidgetColors.steps)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(formatNumber(data.todaySteps))
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
-                        Text("/ \(formatNumber(data.stepsGoal)) steps")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
+            // Divider
+            Rectangle()
+                .fill(Color.white.opacity(0.1))
+                .frame(height: 0.5)
+                .padding(.horizontal, 4)
+                .padding(.top, 2)
+
+            // Recent activities
+            if !data.recentActivities.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(Array(data.recentActivities.prefix(4).enumerated()), id: \.offset) { _, activity in
+                        HStack(spacing: 10) {
+                            Circle()
+                                .fill(colorForCategory(activity.category))
+                                .frame(width: 8, height: 8)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(activity.name)
+                                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                                    .foregroundColor(.white)
+                                    .lineLimit(1)
+                                HStack(spacing: 8) {
+                                    if activity.duration > 0 {
+                                        HStack(spacing: 2) {
+                                            Image(systemName: "clock")
+                                                .font(.system(size: 9))
+                                            Text(formatDuration(activity.duration))
+                                                .font(.system(size: 10, weight: .regular, design: .rounded))
+                                        }
+                                        .foregroundColor(.white.opacity(0.4))
+                                    }
+                                    if activity.calories > 0 {
+                                        HStack(spacing: 2) {
+                                            Image(systemName: "flame")
+                                                .font(.system(size: 9))
+                                            Text("\(activity.calories) cal")
+                                                .font(.system(size: 10, weight: .regular, design: .rounded))
+                                        }
+                                        .foregroundColor(.white.opacity(0.4))
+                                    }
+                                }
+                            }
+                            Spacer()
+                            Text(formatActivityDate(activity.date))
+                                .font(.system(size: 11, weight: .regular, design: .rounded))
+                                .foregroundColor(.white.opacity(0.4))
+                        }
+                        .padding(.vertical, 5)
                     }
                 }
-                HStack(spacing: 6) {
-                    Image(systemName: "flame")
-                        .font(.system(size: 14))
-                        .foregroundColor(WidgetColors.calories)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("\(data.todayCalories)")
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
-                        Text("kcal")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
-                    }
-                }
+            } else {
+                Spacer()
+                Text("No recent activities")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundColor(.white.opacity(0.4))
                 Spacer()
             }
+
+            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func colorForCategory(_ category: String) -> Color {
+        switch category {
+        case "lifting": return WidgetColors.strength
+        case "cardio": return WidgetColors.cardio
+        case "recovery": return WidgetColors.recovery
+        default: return .gray
+        }
+    }
+
+    private func formatDuration(_ minutes: Int) -> String {
+        if minutes >= 60 {
+            let h = minutes / 60
+            let m = minutes % 60
+            return m > 0 ? "\(h)h \(m)m" : "\(h)h"
+        }
+        return "\(minutes)m"
+    }
+
+    private func formatActivityDate(_ dateStr: String) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        guard let date = formatter.date(from: dateStr) else { return dateStr }
+
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) { return "Today" }
+        if calendar.isDateInYesterday(date) { return "Yesterday" }
+
+        let dayFormatter = DateFormatter()
+        dayFormatter.dateFormat = "EEE"
+        return dayFormatter.string(from: date)
     }
 
     private func formatNumber(_ value: Int) -> String {

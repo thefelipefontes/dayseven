@@ -19503,6 +19503,14 @@ export default function DaySevenApp() {
           const friendsList = await getFriends(user.uid);
           setFriends(friendsList);
 
+          // Preload friend profile photos so they're cached before tab switch
+          friendsList.forEach(f => {
+            if (f.photoURL) {
+              const img = new Image();
+              img.src = f.photoURL;
+            }
+          });
+
           // Load pending friend requests count
           const requests = await getFriendRequests(user.uid);
           setPendingFriendRequests(requests.length);
@@ -19681,6 +19689,7 @@ export default function DaySevenApp() {
       ]);
       setFriends(friendsList);
       setPendingFriendRequests(requests.length);
+      friendsList.forEach(f => { if (f.photoURL) { const img = new Image(); img.src = f.photoURL; } });
 
       // Refresh HealthKit data on pull-to-refresh (including workouts)
       // Use timeout so pull-to-refresh doesn't hang if HealthKit permission dialog is pending
@@ -22787,6 +22796,7 @@ export default function DaySevenApp() {
             if (user) {
               const friendsList = await getFriends(user.uid);
               setFriends(friendsList);
+              friendsList.forEach(f => { if (f.photoURL) { const img = new Image(); img.src = f.photoURL; } });
               const requests = await getFriendRequests(user.uid);
               setPendingFriendRequests(requests.length);
             }

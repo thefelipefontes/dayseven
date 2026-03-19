@@ -1109,6 +1109,26 @@ export async function cancelLiveWorkout() {
   }
 }
 
+// Start Live Activity for a watch workout (must be called from foreground)
+export async function startWatchWorkoutLiveActivity(activityType) {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    await HealthKitWriter.startWatchWorkoutLiveActivity({ activityType });
+  } catch (e) {
+    // Non-critical
+  }
+}
+
+// Update Live Activity state (pause/resume)
+export async function updateLiveActivityState(isPaused) {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    await HealthKitWriter.updateLiveActivityState({ isPaused });
+  } catch (e) {
+    // Non-critical
+  }
+}
+
 // Get current metrics from live workout
 export async function getLiveWorkoutMetrics() {
   if (!Capacitor.isNativePlatform()) {
@@ -1320,6 +1340,16 @@ export async function notifyWatchDataChanged() {
     await HealthKitWriter.notifyWatchDataChanged();
   } catch (e) {
     // Non-critical — watch will eventually refresh on its own
+  }
+}
+
+// Update iPhone home screen widget data via App Group
+export async function updateWidgetData(data) {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    await HealthKitWriter.updateWidgetData(data);
+  } catch (e) {
+    // Non-critical — widget will refresh on next timeline update
   }
 }
 

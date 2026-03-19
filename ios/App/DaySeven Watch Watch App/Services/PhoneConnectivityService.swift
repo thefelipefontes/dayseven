@@ -65,36 +65,46 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
             message["strengthType"] = strengthType
         }
 
+        guard let session = wcSession else {
+            print("[PhoneConnect] No WCSession for workout notification")
+            return
+        }
+
+        // Always try sendMessage first — from WatchKit extension it wakes the iOS app.
+        // Also send transferUserInfo as backup since sendMessage can silently fail
+        // when the phone is locked/backgrounded.
+        session.transferUserInfo(message)
+        print("[PhoneConnect] Queued workoutStarted via transferUserInfo")
+
         Task {
             for attempt in 1...5 {
-                guard let session = wcSession else {
-                    print("[PhoneConnect] No WCSession for workout notification")
-                    return
-                }
                 if session.isReachable {
                     session.sendMessage(message, replyHandler: nil, errorHandler: { error in
-                        print("[PhoneConnect] Failed to notify phone of workout start (attempt \(attempt)): \(error.localizedDescription)")
+                        print("[PhoneConnect] sendMessage workoutStarted failed (attempt \(attempt)): \(error.localizedDescription)")
                     })
-                    print("[PhoneConnect] Sent workoutStarted notification (attempt \(attempt))")
+                    print("[PhoneConnect] Sent workoutStarted via sendMessage (attempt \(attempt))")
                     return
                 }
                 print("[PhoneConnect] Phone not reachable (attempt \(attempt)/5), retrying in 1s...")
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
-            print("[PhoneConnect] Phone not reachable after 5 attempts — workout started notification not sent")
+            print("[PhoneConnect] Phone not reachable after 5 attempts — relying on transferUserInfo")
         }
     }
 
     /// Notify the phone that a workout was ended/cancelled on the watch
     func notifyPhoneWorkoutEnded() {
-        guard let session = wcSession, session.isReachable else {
-            print("[PhoneConnect] Phone not reachable for workout end notification")
-            return
-        }
         let message: [String: Any] = ["action": "workoutEnded"]
-        session.sendMessage(message, replyHandler: nil, errorHandler: { error in
-            print("[PhoneConnect] Failed to notify phone of workout end: \(error.localizedDescription)")
-        })
+        guard let session = wcSession else { return }
+
+        // Always queue transferUserInfo as reliable fallback
+        session.transferUserInfo(message)
+
+        if session.isReachable {
+            session.sendMessage(message, replyHandler: nil, errorHandler: { error in
+                print("[PhoneConnect] Failed to notify phone of workout end: \(error.localizedDescription)")
+            })
+        }
     }
 
     // MARK: - Activate WCSession

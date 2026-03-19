@@ -39,7 +39,9 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         // GPS route query
         CAPPluginMethod(name: "getWorkoutRoute", returnType: CAPPluginReturnPromise),
         // Widget data
-        CAPPluginMethod(name: "updateWidgetData", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "updateWidgetData", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "updateLiveActivityState", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "startWatchWorkoutLiveActivity", returnType: CAPPluginReturnPromise)
     ]
 
     private let healthStore = HKHealthStore()
@@ -89,21 +91,12 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             data["strengthType"] = strengthType
         }
         notifyListeners("watchWorkoutStarted", data: data)
-
-        // Start Live Activity for watch-originated workouts
-        if #available(iOS 16.2, *) {
-            let displayType = strengthType ?? activityType
-            startWorkoutLiveActivity(activityType: displayType, startTime: Date())
-        }
+        // Live Activity is started by WatchSessionManager directly
     }
 
     @objc private func handleWatchWorkoutEnded(_ notification: Notification) {
         notifyListeners("watchWorkoutEnded", data: [:])
-
-        // End Live Activity
-        if #available(iOS 16.2, *) {
-            endWorkoutLiveActivity()
-        }
+        // Live Activity is ended by WatchSessionManager directly
     }
 
     // Live workout session
@@ -719,12 +712,27 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                 if activity.id == activityId {
                     await activity.end(
                         .init(state: finalState, staleDate: nil),
-                        dismissalPolicy: .after(.now + 30)
+                        dismissalPolicy: .immediate
                     )
                     break
                 }
             }
             liveActivityId = nil
+        }
+    }
+
+    @available(iOS 16.2, *)
+    private func updateLiveActivityPaused(_ isPaused: Bool) {
+        guard let activityId = liveActivityId else { return }
+        let newState = WorkoutActivityAttributes.ContentState(isPaused: isPaused)
+
+        Task {
+            for activity in Activity<WorkoutActivityAttributes>.activities {
+                if activity.id == activityId {
+                    await activity.update(.init(state: newState, staleDate: nil))
+                    break
+                }
+            }
         }
     }
 
@@ -779,6 +787,51 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             return "recovery"
         }
         return "cardio"
+    }
+
+    @objc func startWatchWorkoutLiveActivity(_ call: CAPPluginCall) {
+        let activityType = call.getString("activityType") ?? "Other"
+        if #available(iOS 16.2, *) {
+            DispatchQueue.main.async {
+                let mgr = WatchSessionManager.shared
+                if mgr.watchWorkoutLiveActivityId == nil {
+                    let icon = mgr.liveActivityIconForType(activityType)
+                    let category = mgr.liveActivityCategoryForType(activityType)
+                    let attributes = WorkoutActivityAttributes(
+                        activityType: activityType,
+                        activityIcon: icon,
+                        startTime: Date(),
+                        categoryColor: category
+                    )
+                    let initialState = WorkoutActivityAttributes.ContentState(isPaused: false)
+                    do {
+                        let activity = try Activity.request(
+                            attributes: attributes,
+                            content: .init(state: initialState, staleDate: nil),
+                            pushType: nil
+                        )
+                        mgr.watchWorkoutLiveActivityId = activity.id
+                        print("[LiveActivity] Started watch workout Live Activity from JS: \(activity.id)")
+                    } catch {
+                        print("[LiveActivity] Failed to start from JS: \(error)")
+                    }
+                } else {
+                    print("[LiveActivity] Watch Live Activity already active, skipping")
+                }
+            }
+        }
+        call.resolve(["success": true])
+    }
+
+    @objc func updateLiveActivityState(_ call: CAPPluginCall) {
+        let isPaused = call.getBool("isPaused") ?? false
+        if #available(iOS 16.2, *) {
+            // Update phone-started workout Live Activity
+            updateLiveActivityPaused(isPaused)
+            // Update watch-started workout Live Activity
+            WatchSessionManager.shared.updateWatchWorkoutLiveActivityPaused(isPaused)
+        }
+        call.resolve(["success": true])
     }
 
     private var liveActivityId: String?

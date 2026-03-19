@@ -2,6 +2,7 @@ import Foundation
 import WatchConnectivity
 import FirebaseAuth
 import FirebaseFirestore
+import ActivityKit
 
 // MARK: - Notification Names for Watch ↔ Phone
 
@@ -21,6 +22,9 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     /// v2 onCall functions are at: https://<function-name>-<project-hash>.<region>.run.app
     /// But they also respond to the v1-style URL with proper callable protocol
     private let functionsBaseURL = "https://us-central1-dayseven-f1a89.cloudfunctions.net"
+
+    /// Track Live Activity started from watch workout notifications
+    var watchWorkoutLiveActivityId: String?
 
     private override init() {
         super.init()
@@ -177,20 +181,36 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
             let activityType = message["activityType"] as? String ?? "Other"
             let strengthType = message["strengthType"] as? String
             print("[WatchSession] Watch workout started: \(activityType)")
-            NotificationCenter.default.post(
-                name: .watchWorkoutStarted,
-                object: nil,
-                userInfo: [
-                    "activityType": activityType,
-                    "strengthType": strengthType as Any
-                ]
-            )
+
+            // Live Activity is started from JS when the app is in the foreground
+            // (background start fails with "visibility" error)
+
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: .watchWorkoutStarted,
+                    object: nil,
+                    userInfo: [
+                        "activityType": activityType,
+                        "strengthType": strengthType as Any
+                    ]
+                )
+            }
         case "workoutEnded":
             print("[WatchSession] Watch workout ended")
-            NotificationCenter.default.post(
-                name: .watchWorkoutEnded,
-                object: nil
-            )
+
+            // End Live Activity immediately on main thread
+            if #available(iOS 16.2, *) {
+                DispatchQueue.main.async {
+                    self.endWatchWorkoutLiveActivity()
+                }
+            }
+
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: .watchWorkoutEnded,
+                    object: nil
+                )
+            }
         default:
             print("[WatchSession] Unknown fire-and-forget action: \(action)")
         }
@@ -207,6 +227,37 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         print("[WatchSession] Received transferUserInfo: action=\(action)")
 
         switch action {
+        case "workoutStarted":
+            let activityType = userInfo["activityType"] as? String ?? "Other"
+            let strengthType = userInfo["strengthType"] as? String
+            print("[WatchSession] transferUserInfo: Watch workout started: \(activityType)")
+
+            // Live Activity is started from JS when the app is in the foreground
+
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: .watchWorkoutStarted,
+                    object: nil,
+                    userInfo: [
+                        "activityType": activityType,
+                        "strengthType": strengthType as Any
+                    ]
+                )
+            }
+
+        case "workoutEnded":
+            print("[WatchSession] transferUserInfo: Watch workout ended")
+
+            if #available(iOS 16.2, *) {
+                DispatchQueue.main.async {
+                    self.endWatchWorkoutLiveActivity()
+                }
+            }
+
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .watchWorkoutEnded, object: nil)
+            }
+
         case "activitySaved":
             // Same flow as the real-time message path: refresh Firestore cache and notify JS
             guard let uid = Auth.auth().currentUser?.uid else {
@@ -261,6 +312,109 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
                 }
             }
         }
+    }
+
+    // MARK: - Watch Workout Live Activity
+
+    @available(iOS 16.2, *)
+    private func startWatchWorkoutLiveActivity(activityType: String, startTime: Date) {
+        // Skip if a Live Activity is already running (prevents duplicates from sendMessage + transferUserInfo)
+        if watchWorkoutLiveActivityId != nil {
+            print("[WatchSession] Live Activity already active, skipping duplicate start")
+            return
+        }
+
+        let icon = liveActivityIconForType(activityType)
+        let category = liveActivityCategoryForType(activityType)
+
+        let attributes = WorkoutActivityAttributes(
+            activityType: activityType,
+            activityIcon: icon,
+            startTime: startTime,
+            categoryColor: category
+        )
+        let initialState = WorkoutActivityAttributes.ContentState(isPaused: false)
+
+        do {
+            let activity = try Activity.request(
+                attributes: attributes,
+                content: .init(state: initialState, staleDate: nil),
+                pushType: nil
+            )
+            watchWorkoutLiveActivityId = activity.id
+            print("[WatchSession] Live Activity started: \(activity.id)")
+        } catch {
+            print("[WatchSession] Failed to start Live Activity: \(error)")
+        }
+    }
+
+    @available(iOS 16.2, *)
+    func endWatchWorkoutLiveActivity() {
+        guard let activityId = watchWorkoutLiveActivityId else { return }
+        let finalState = WorkoutActivityAttributes.ContentState(isPaused: false)
+
+        Task {
+            for activity in Activity<WorkoutActivityAttributes>.activities {
+                if activity.id == activityId {
+                    await activity.end(
+                        .init(state: finalState, staleDate: nil),
+                        dismissalPolicy: .immediate
+                    )
+                    break
+                }
+            }
+            watchWorkoutLiveActivityId = nil
+            print("[WatchSession] Live Activity ended")
+        }
+    }
+
+    @available(iOS 16.2, *)
+    func updateWatchWorkoutLiveActivityPaused(_ isPaused: Bool) {
+        guard let activityId = watchWorkoutLiveActivityId else { return }
+        let newState = WorkoutActivityAttributes.ContentState(isPaused: isPaused)
+
+        Task {
+            for activity in Activity<WorkoutActivityAttributes>.activities {
+                if activity.id == activityId {
+                    await activity.update(.init(state: newState, staleDate: nil))
+                    break
+                }
+            }
+        }
+    }
+
+    func liveActivityIconForType(_ type: String) -> String {
+        let lowered = type.lowercased()
+        if lowered.contains("run") { return "figure.run" }
+        if lowered.contains("cycl") || lowered.contains("bik") { return "figure.outdoor.cycle" }
+        if lowered.contains("swim") { return "figure.pool.swim" }
+        if lowered.contains("hik") { return "figure.hiking" }
+        if lowered.contains("walk") { return "figure.walk" }
+        if lowered.contains("yoga") { return "figure.yoga" }
+        if lowered.contains("strength") || lowered.contains("weight") || lowered.contains("lift") { return "dumbbell.fill" }
+        if lowered.contains("pilates") { return "figure.pilates" }
+        if lowered.contains("row") { return "figure.rower" }
+        if lowered.contains("stretch") || lowered.contains("cool") || lowered.contains("recover") { return "figure.cooldown" }
+        if lowered.contains("hiit") || lowered.contains("interval") || lowered.contains("cross") { return "flame.fill" }
+        if lowered.contains("dance") { return "figure.dance" }
+        if lowered.contains("box") || lowered.contains("martial") || lowered.contains("kickbox") { return "figure.boxing" }
+        if lowered.contains("elliptical") { return "figure.elliptical" }
+        if lowered.contains("stair") { return "figure.stair.stepper" }
+        return "figure.mixed.cardio"
+    }
+
+    func liveActivityCategoryForType(_ type: String) -> String {
+        let lowered = type.lowercased()
+        if lowered.contains("strength") || lowered.contains("weight") || lowered.contains("lift")
+            || lowered.contains("bodyweight") || lowered.contains("calisthenics") {
+            return "strength"
+        }
+        if lowered.contains("yoga") || lowered.contains("stretch") || lowered.contains("pilates")
+            || lowered.contains("cool") || lowered.contains("recover") || lowered.contains("meditation")
+            || lowered.contains("foam") || lowered.contains("mobility") {
+            return "recovery"
+        }
+        return "cardio"
     }
 
     // MARK: - Generate Auth Token via Cloud Function

@@ -12,7 +12,7 @@ import html2canvas from 'html2canvas';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
-import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, fetchHealthDataForDate, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, fetchWorkoutRoute, updateWidgetData } from './services/healthService';
+import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, fetchHealthDataForDate, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, fetchWorkoutRoute, updateWidgetData, updateLiveActivityState, startWatchWorkoutLiveActivity } from './services/healthService';
 import NotificationSettings from './NotificationSettings';
 import { initializePushNotifications, handleNotificationNavigation, removeFCMToken, clearBadge, clearAllNotifications, incrementBadge, shouldShowNotification, getNotificationPreferences } from './services/notificationService';
 import { initializeRevenueCat, checkProStatus, addCustomerInfoListener, logoutRevenueCat, presentPaywall, presentCustomerCenter, restorePurchases } from './services/subscriptionService';
@@ -1219,6 +1219,7 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
 
     if (workout.source === 'watch') {
       // Poll watch metrics every 2 seconds
+      let lastPausedState = null;
       const pollWatch = async () => {
         try {
           const metrics = await getWatchWorkoutMetrics();
@@ -1229,12 +1230,19 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
               onResumedFromWatch();
             }
 
+            // Update Live Activity pause state when it changes
+            const currentPaused = metrics.isPaused || false;
+            if (lastPausedState !== currentPaused) {
+              lastPausedState = currentPaused;
+              updateLiveActivityState(currentPaused);
+            }
+
             setLiveMetrics({
               lastHr: metrics.heartRate || 0,
               avgHr: metrics.avgHeartRate || 0,
               calories: metrics.calories || 0,
               distance: metrics.distance || 0,
-              isPaused: metrics.isPaused || false,
+              isPaused: currentPaused,
               currentZone: metrics.currentZone || '',
             });
             // Use watch elapsed time directly — 1:1 mirror
@@ -18645,6 +18653,11 @@ export default function DaySevenApp() {
           console.log('[WatchEvent] Cancel phone workout failed (may not have been started):', e.message);
         }
       }
+
+      // Start Live Activity from foreground (background start fails with "visibility" error)
+      const displayType = data.strengthType || data.activityType || 'Other';
+      startWatchWorkoutLiveActivity(displayType);
+
       setActiveWorkout(prev => ({
         ...(prev || {}),
         type: prev?.type || data.activityType,

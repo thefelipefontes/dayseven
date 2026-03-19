@@ -1,0 +1,480 @@
+import WidgetKit
+import SwiftUI
+
+// MARK: - Timeline Entry
+
+struct DaySevenPhoneEntry: TimelineEntry {
+    let date: Date
+    let data: WidgetStreakData
+}
+
+// MARK: - Timeline Provider
+
+struct DaySevenPhoneTimelineProvider: TimelineProvider {
+    func placeholder(in context: Context) -> DaySevenPhoneEntry {
+        DaySevenPhoneEntry(date: .now, data: .placeholder)
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (DaySevenPhoneEntry) -> Void) {
+        let data = SharedDefaults.readStreakData()
+        completion(DaySevenPhoneEntry(date: .now, data: data))
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<DaySevenPhoneEntry>) -> Void) {
+        let data = SharedDefaults.readStreakData()
+        let entry = DaySevenPhoneEntry(date: .now, data: data)
+        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 30, to: .now)!
+        let timeline = Timeline(entries: [entry], policy: .after(nextUpdate))
+        completion(timeline)
+    }
+}
+
+// MARK: - Placeholder data for widget gallery
+
+extension WidgetStreakData {
+    static let placeholder = WidgetStreakData(
+        masterStreak: 7, liftsStreak: 12, cardioStreak: 9, recoveryStreak: 5,
+        liftsCompleted: 3, liftsGoal: 4,
+        cardioCompleted: 2, cardioGoal: 3,
+        recoveryCompleted: 2, recoveryGoal: 2,
+        todaySteps: 8432, stepsGoal: 10000, todayCalories: 347,
+        lastUpdated: Date().timeIntervalSince1970
+    )
+}
+
+// MARK: - Widget Colors
+
+struct WidgetColors {
+    static let strength = Color(red: 0.0, green: 1.0, blue: 0.58)    // #00FF94
+    static let cardio = Color(red: 1.0, green: 0.58, blue: 0.0)      // #FF9500
+    static let recovery = Color(red: 0.0, green: 0.82, blue: 1.0)    // #00D1FF
+    static let streak = Color.yellow
+    static let steps = Color.purple
+    static let calories = Color.orange
+    static let background = Color(red: 0.078, green: 0.078, blue: 0.078)
+}
+
+// MARK: - Progress Ring View (reusable)
+
+struct ProgressRingView: View {
+    let progress: Double
+    let color: Color
+    let lineWidth: CGFloat
+    let diameter: CGFloat
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(color.opacity(0.2), lineWidth: lineWidth)
+            Circle()
+                .trim(from: 0, to: min(progress, 1.0))
+                .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+        }
+        .frame(width: diameter, height: diameter)
+    }
+}
+
+// MARK: - Category Ring (matches app style)
+
+struct CategoryRingView: View {
+    let completed: Int
+    let goal: Int
+    let progress: Double
+    let color: Color
+    let size: CGFloat
+    let lineWidth: CGFloat
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(color.opacity(0.2), lineWidth: lineWidth)
+            Circle()
+                .trim(from: 0, to: min(progress, 1.0))
+                .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            Text("\(completed)/\(goal)")
+                .font(.system(size: size * 0.22, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+        }
+        .frame(width: size, height: size)
+    }
+}
+
+// MARK: - Small Widget (Three rings like app)
+
+struct SmallWidgetView: View {
+    let data: WidgetStreakData
+
+    private let outerSize: CGFloat = 100
+    private let ringWidth: CGFloat = 7
+    private let ringGap: CGFloat = 3
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Spacer(minLength: 0)
+
+            // Streak badge
+            HStack(spacing: 3) {
+                Image(systemName: "flame.fill")
+                    .font(.system(size: 10))
+                    .foregroundColor(WidgetColors.streak)
+                Text("\(data.masterStreak)")
+                    .font(.system(size: 12, weight: .black, design: .rounded))
+                    .foregroundColor(WidgetColors.streak)
+                Text("weeks")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(.white.opacity(0.7))
+            }
+
+            // Concentric rings: outer = strength, middle = cardio, inner = recovery
+            ZStack {
+                // Outer ring - Strength
+                ProgressRingView(progress: data.liftsProgress, color: WidgetColors.strength, lineWidth: ringWidth, diameter: outerSize)
+                // Middle ring - Cardio
+                ProgressRingView(progress: data.cardioProgress, color: WidgetColors.cardio, lineWidth: ringWidth, diameter: outerSize - (ringWidth + ringGap) * 2)
+                // Inner ring - Recovery
+                ProgressRingView(progress: data.recoveryProgress, color: WidgetColors.recovery, lineWidth: ringWidth, diameter: outerSize - (ringWidth + ringGap) * 4)
+            }
+            .frame(width: outerSize, height: outerSize)
+
+            // Steps and calories
+            HStack(spacing: 10) {
+                HStack(spacing: 2) {
+                    Image(systemName: "figure.walk")
+                        .font(.system(size: 10))
+                    Text(formatSteps(data.todaySteps))
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                }
+                .foregroundColor(WidgetColors.steps)
+                HStack(spacing: 2) {
+                    Image(systemName: "flame")
+                        .font(.system(size: 10))
+                    Text("\(data.todayCalories)")
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                }
+                .foregroundColor(WidgetColors.calories)
+            }
+            .offset(y: 5)
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func formatSteps(_ steps: Int) -> String {
+        if steps >= 10000 {
+            return "\(steps / 1000)k"
+        } else if steps >= 1000 {
+            return String(format: "%.1fk", Double(steps) / 1000.0)
+        }
+        return "\(steps)"
+    }
+}
+
+// MARK: - Medium Widget (Rings + Progress Bars)
+
+struct MediumWidgetView: View {
+    let data: WidgetStreakData
+
+    var body: some View {
+        VStack(spacing: 14) {
+            // Streak badge
+            HStack(spacing: 4) {
+                Image(systemName: "flame.fill")
+                    .font(.system(size: 12))
+                    .foregroundColor(WidgetColors.streak)
+                Text("\(data.masterStreak) week streak")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(WidgetColors.streak)
+                Spacer()
+                HStack(spacing: 3) {
+                    Image(systemName: "figure.walk")
+                        .font(.system(size: 10))
+                    Text(formatSteps(data.todaySteps))
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                }
+                .foregroundColor(WidgetColors.steps)
+                HStack(spacing: 3) {
+                    Image(systemName: "flame")
+                        .font(.system(size: 10))
+                    Text("\(data.todayCalories)")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                }
+                .foregroundColor(WidgetColors.calories)
+            }
+            .offset(y: -5)
+
+            // Three category rings in a row
+            HStack(spacing: 16) {
+                VStack(spacing: 7) {
+                    CategoryRingView(completed: data.liftsCompleted, goal: data.liftsGoal, progress: data.liftsProgress, color: WidgetColors.strength, size: 70, lineWidth: 7)
+                    HStack(spacing: 2) {
+                        Text("\u{1F4AA}")
+                            .font(.system(size: 10))
+                        Text("Strength")
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .foregroundColor(WidgetColors.strength)
+                    }
+                }
+                VStack(spacing: 7) {
+                    CategoryRingView(completed: data.cardioCompleted, goal: data.cardioGoal, progress: data.cardioProgress, color: WidgetColors.cardio, size: 70, lineWidth: 7)
+                    HStack(spacing: 2) {
+                        Text("\u{2764}\u{FE0F}\u{200D}\u{1F525}")
+                            .font(.system(size: 10))
+                        Text("Cardio")
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .foregroundColor(WidgetColors.cardio)
+                    }
+                }
+                VStack(spacing: 7) {
+                    CategoryRingView(completed: data.recoveryCompleted, goal: data.recoveryGoal, progress: data.recoveryProgress, color: WidgetColors.recovery, size: 70, lineWidth: 7)
+                    HStack(spacing: 2) {
+                        Text("\u{1F9CA}")
+                            .font(.system(size: 10))
+                        Text("Recovery")
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .foregroundColor(WidgetColors.recovery)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 4)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func formatSteps(_ steps: Int) -> String {
+        if steps >= 10000 {
+            return "\(steps / 1000)k"
+        } else if steps >= 1000 {
+            return String(format: "%.1fk", Double(steps) / 1000.0)
+        }
+        return "\(steps)"
+    }
+}
+
+// MARK: - Large Widget (Full Layout)
+
+struct LargeWidgetView: View {
+    let data: WidgetStreakData
+
+    var body: some View {
+        VStack(spacing: 12) {
+            // Streak badge
+            HStack(spacing: 4) {
+                Image(systemName: "flame.fill")
+                    .font(.system(size: 14))
+                    .foregroundColor(WidgetColors.streak)
+                Text("\(data.masterStreak) week streak")
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundColor(WidgetColors.streak)
+                Spacer()
+            }
+
+            // Three category rings
+            HStack(spacing: 16) {
+                VStack(spacing: 5) {
+                    CategoryRingView(completed: data.liftsCompleted, goal: data.liftsGoal, progress: data.liftsProgress, color: WidgetColors.strength, size: 80, lineWidth: 8)
+                    HStack(spacing: 3) {
+                        Text("\u{1F4AA}")
+                            .font(.system(size: 12))
+                        Text("Strength")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundColor(WidgetColors.strength)
+                    }
+                    if data.liftsStreak > 0 {
+                        HStack(spacing: 2) {
+                            Image(systemName: "flame.fill")
+                                .font(.system(size: 9))
+                            Text("\(data.liftsStreak)w")
+                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                        }
+                        .foregroundColor(WidgetColors.streak)
+                    }
+                }
+                VStack(spacing: 5) {
+                    CategoryRingView(completed: data.cardioCompleted, goal: data.cardioGoal, progress: data.cardioProgress, color: WidgetColors.cardio, size: 80, lineWidth: 8)
+                    HStack(spacing: 3) {
+                        Text("\u{2764}\u{FE0F}\u{200D}\u{1F525}")
+                            .font(.system(size: 12))
+                        Text("Cardio")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundColor(WidgetColors.cardio)
+                    }
+                    if data.cardioStreak > 0 {
+                        HStack(spacing: 2) {
+                            Image(systemName: "flame.fill")
+                                .font(.system(size: 9))
+                            Text("\(data.cardioStreak)w")
+                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                        }
+                        .foregroundColor(WidgetColors.streak)
+                    }
+                }
+                VStack(spacing: 5) {
+                    CategoryRingView(completed: data.recoveryCompleted, goal: data.recoveryGoal, progress: data.recoveryProgress, color: WidgetColors.recovery, size: 80, lineWidth: 8)
+                    HStack(spacing: 3) {
+                        Text("\u{1F9CA}")
+                            .font(.system(size: 12))
+                        Text("Recovery")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundColor(WidgetColors.recovery)
+                    }
+                    if data.recoveryStreak > 0 {
+                        HStack(spacing: 2) {
+                            Image(systemName: "flame.fill")
+                                .font(.system(size: 9))
+                            Text("\(data.recoveryStreak)w")
+                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                        }
+                        .foregroundColor(WidgetColors.streak)
+                    }
+                }
+            }
+
+            // Steps and calories
+            HStack(spacing: 16) {
+                HStack(spacing: 6) {
+                    Image(systemName: "figure.walk")
+                        .font(.system(size: 14))
+                        .foregroundColor(WidgetColors.steps)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(formatNumber(data.todaySteps))
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                        Text("/ \(formatNumber(data.stepsGoal)) steps")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                HStack(spacing: 6) {
+                    Image(systemName: "flame")
+                        .font(.system(size: 14))
+                        .foregroundColor(WidgetColors.calories)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("\(data.todayCalories)")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                        Text("kcal")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                Spacer()
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func formatNumber(_ value: Int) -> String {
+        if value >= 10000 {
+            return "\(value / 1000)k"
+        } else if value >= 1000 {
+            let formatter = NumberFormatter()
+            formatter.numberStyle = .decimal
+            return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+        }
+        return "\(value)"
+    }
+}
+
+// MARK: - Phone Category Bar View (for medium widget)
+
+struct PhoneCategoryBarView: View {
+    let label: String
+    let completed: Int
+    let goal: Int
+    let progress: Double
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(label)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundColor(.secondary)
+                .frame(width: 28, alignment: .leading)
+
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(color.opacity(0.2))
+                        .frame(height: 8)
+                    Capsule()
+                        .fill(color)
+                        .frame(width: geo.size.width * min(progress, 1.0), height: 8)
+                }
+            }
+            .frame(height: 8)
+
+            Text("\(completed)/\(goal)")
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundColor(completed >= goal ? color : .secondary)
+                .frame(width: 24, alignment: .trailing)
+        }
+    }
+}
+
+// MARK: - Widget Definition
+
+struct DaySevenProgressWidget: Widget {
+    let kind = "DaySevenPhoneWidget"
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: DaySevenPhoneTimelineProvider()) { entry in
+            if #available(iOS 17.0, *) {
+                DaySevenPhoneWidgetEntryView(entry: entry)
+                    .containerBackground(WidgetColors.background, for: .widget)
+            } else {
+                DaySevenPhoneWidgetEntryView(entry: entry)
+                    .padding()
+                    .background(WidgetColors.background)
+            }
+        }
+        .configurationDisplayName("DaySeven Progress")
+        .description("Track your weekly workout goals and daily activity.")
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+    }
+}
+
+// MARK: - Entry View Router
+
+struct DaySevenPhoneWidgetEntryView: View {
+    @Environment(\.widgetFamily) var family
+    let entry: DaySevenPhoneEntry
+
+    var body: some View {
+        switch family {
+        case .systemSmall:
+            SmallWidgetView(data: entry.data)
+        case .systemMedium:
+            MediumWidgetView(data: entry.data)
+        case .systemLarge:
+            LargeWidgetView(data: entry.data)
+        default:
+            SmallWidgetView(data: entry.data)
+        }
+    }
+}
+
+// MARK: - Previews
+
+@available(iOS 17.0, *)
+#Preview("Small", as: .systemSmall) {
+    DaySevenProgressWidget()
+} timeline: {
+    DaySevenPhoneEntry(date: .now, data: .placeholder)
+}
+
+@available(iOS 17.0, *)
+#Preview("Medium", as: .systemMedium) {
+    DaySevenProgressWidget()
+} timeline: {
+    DaySevenPhoneEntry(date: .now, data: .placeholder)
+}
+
+@available(iOS 17.0, *)
+#Preview("Large", as: .systemLarge) {
+    DaySevenProgressWidget()
+} timeline: {
+    DaySevenPhoneEntry(date: .now, data: .placeholder)
+}

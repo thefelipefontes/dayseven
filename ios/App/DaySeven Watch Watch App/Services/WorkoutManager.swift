@@ -284,6 +284,8 @@ class WorkoutManager: NSObject, ObservableObject {
         isPaused = true
         lastPauseDate = Date()
         stopTimer()
+        // Notify phone to update Live Activity
+        PhoneConnectivityService.shared.notifyPhoneWorkoutPaused(true, accumulatedPauseTime: accumulatedPauseTime)
     }
 
     func resume() {
@@ -294,6 +296,8 @@ class WorkoutManager: NSObject, ObservableObject {
         }
         lastPauseDate = nil
         startTimer()
+        // Notify phone to update Live Activity with accumulated pause time
+        PhoneConnectivityService.shared.notifyPhoneWorkoutPaused(false, accumulatedPauseTime: accumulatedPauseTime)
     }
 
     // MARK: - Cancel Workout

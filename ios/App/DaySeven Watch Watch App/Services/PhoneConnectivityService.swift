@@ -107,6 +107,20 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
         }
     }
 
+    /// Notify the phone that the workout was paused or resumed
+    func notifyPhoneWorkoutPaused(_ isPaused: Bool, accumulatedPauseTime: Double = 0) {
+        let message: [String: Any] = ["action": "workoutPaused", "isPaused": isPaused, "accumulatedPauseTime": accumulatedPauseTime]
+        guard let session = wcSession else { return }
+
+        if session.isReachable {
+            session.sendMessage(message, replyHandler: nil, errorHandler: { error in
+                print("[PhoneConnect] Failed to notify phone of pause state: \(error.localizedDescription)")
+            })
+        }
+        // Also queue via transferUserInfo for reliability
+        session.transferUserInfo(message)
+    }
+
     // MARK: - Live Activity Push (via Cloud Function)
 
     /// Request the server to start a Live Activity on the iPhone via APNs push.

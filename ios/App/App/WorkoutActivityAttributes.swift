@@ -4,6 +4,7 @@ import Foundation
 struct WorkoutActivityAttributes: ActivityAttributes {
     public struct ContentState: Codable, Hashable {
         var isPaused: Bool
+        var accumulatedPauseTime: Double = 0
     }
 
     // Static context (set at start, never changes)

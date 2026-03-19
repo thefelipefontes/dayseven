@@ -7,6 +7,7 @@ import SwiftUI
 struct WorkoutActivityAttributes: ActivityAttributes {
     public struct ContentState: Codable, Hashable {
         var isPaused: Bool
+        var accumulatedPauseTime: Double = 0
     }
 
     // Static context (set at start, never changes)
@@ -101,7 +102,7 @@ struct WorkoutLockScreenView: View {
                     .font(.system(size: 24))
                     .foregroundColor(.secondary)
             } else {
-                Text(context.attributes.startTime, style: .timer)
+                Text(context.attributes.startTime.addingTimeInterval(context.state.accumulatedPauseTime), style: .timer)
                     .font(.system(size: 32, weight: .bold, design: .rounded))
                     .foregroundColor(colorForCategory(context.attributes.categoryColor))
                     .monospacedDigit()
@@ -142,7 +143,7 @@ struct WorkoutLiveActivityWidget: Widget {
                             .font(.system(size: 20))
                             .foregroundColor(.secondary)
                     } else {
-                        Text(context.attributes.startTime, style: .timer)
+                        Text(context.attributes.startTime.addingTimeInterval(context.state.accumulatedPauseTime), style: .timer)
                             .font(.system(size: 20, weight: .bold, design: .rounded))
                             .foregroundColor(colorForCategory(context.attributes.categoryColor))
                             .monospacedDigit()
@@ -167,7 +168,7 @@ struct WorkoutLiveActivityWidget: Widget {
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 } else {
-                    Text(context.attributes.startTime, style: .timer)
+                    Text(context.attributes.startTime.addingTimeInterval(context.state.accumulatedPauseTime), style: .timer)
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
                         .foregroundColor(colorForCategory(context.attributes.categoryColor))
                         .monospacedDigit()

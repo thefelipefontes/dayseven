@@ -722,9 +722,9 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @available(iOS 16.2, *)
-    private func updateLiveActivityPaused(_ isPaused: Bool) {
+    private func updateLiveActivityPaused(_ isPaused: Bool, accumulatedPauseTime: Double = 0) {
         guard let activityId = liveActivityId else { return }
-        let newState = WorkoutActivityAttributes.ContentState(isPaused: isPaused)
+        let newState = WorkoutActivityAttributes.ContentState(isPaused: isPaused, accumulatedPauseTime: accumulatedPauseTime)
 
         Task {
             for activity in Activity<WorkoutActivityAttributes>.activities {
@@ -837,11 +837,12 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func updateLiveActivityState(_ call: CAPPluginCall) {
         let isPaused = call.getBool("isPaused") ?? false
+        let accumulatedPauseTime = call.getDouble("accumulatedPauseTime") ?? 0
         if #available(iOS 16.2, *) {
             // Update phone-started workout Live Activity
-            updateLiveActivityPaused(isPaused)
+            updateLiveActivityPaused(isPaused, accumulatedPauseTime: accumulatedPauseTime)
             // Update watch-started workout Live Activity
-            WatchSessionManager.shared.updateWatchWorkoutLiveActivityPaused(isPaused)
+            WatchSessionManager.shared.updateWatchWorkoutLiveActivityPaused(isPaused, accumulatedPauseTime: accumulatedPauseTime)
         }
         call.resolve(["success": true])
     }

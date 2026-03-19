@@ -211,6 +211,14 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
                     object: nil
                 )
             }
+        case "workoutPaused":
+            let isPaused = message["isPaused"] as? Bool ?? false
+            let accumulatedPauseTime = message["accumulatedPauseTime"] as? Double ?? 0
+            print("[WatchSession] Watch workout paused: \(isPaused), accumulatedPauseTime: \(accumulatedPauseTime)")
+
+            if #available(iOS 16.2, *) {
+                self.updateWatchWorkoutLiveActivityPaused(isPaused, accumulatedPauseTime: accumulatedPauseTime)
+            }
         default:
             print("[WatchSession] Unknown fire-and-forget action: \(action)")
         }
@@ -256,6 +264,15 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
 
             DispatchQueue.main.async {
                 NotificationCenter.default.post(name: .watchWorkoutEnded, object: nil)
+            }
+
+        case "workoutPaused":
+            let isPaused = userInfo["isPaused"] as? Bool ?? false
+            let accumulatedPauseTime = userInfo["accumulatedPauseTime"] as? Double ?? 0
+            print("[WatchSession] transferUserInfo: Watch workout paused: \(isPaused), accumulatedPauseTime: \(accumulatedPauseTime)")
+
+            if #available(iOS 16.2, *) {
+                self.updateWatchWorkoutLiveActivityPaused(isPaused, accumulatedPauseTime: accumulatedPauseTime)
             }
 
         case "activitySaved":
@@ -374,16 +391,13 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     }
 
     @available(iOS 16.2, *)
-    func updateWatchWorkoutLiveActivityPaused(_ isPaused: Bool) {
-        guard let activityId = watchWorkoutLiveActivityId else { return }
-        let newState = WorkoutActivityAttributes.ContentState(isPaused: isPaused)
+    func updateWatchWorkoutLiveActivityPaused(_ isPaused: Bool, accumulatedPauseTime: Double = 0) {
+        let newState = WorkoutActivityAttributes.ContentState(isPaused: isPaused, accumulatedPauseTime: accumulatedPauseTime)
 
         Task {
+            // Update ALL workout activities (covers both locally-started and push-started)
             for activity in Activity<WorkoutActivityAttributes>.activities {
-                if activity.id == activityId {
-                    await activity.update(.init(state: newState, staleDate: nil))
-                    break
-                }
+                await activity.update(.init(state: newState, staleDate: nil))
             }
         }
     }

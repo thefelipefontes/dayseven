@@ -245,6 +245,7 @@ exports.startLiveActivityPush = onRequest(async (req, res) => {
         event: "start",
         "content-state": {
           isPaused: false,
+          accumulatedPauseTime: 0,
         },
         "attributes-type": "WorkoutActivityAttributes",
         "attributes": {

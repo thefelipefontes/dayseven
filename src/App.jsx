@@ -18,6 +18,7 @@ import { initializePushNotifications, handleNotificationNavigation, removeFCMTok
 import { initializeRevenueCat, checkProStatus, addCustomerInfoListener, logoutRevenueCat, presentPaywall, presentCustomerCenter, restorePurchases } from './services/subscriptionService';
 import ActivityIcon, { ICON_PICKER_CATEGORIES, CATEGORY_COLORS as ICON_CATEGORY_COLORS } from './components/ActivityIcon';
 import RouteMapView from './components/RouteMapView';
+import MuscleBodyMap from './components/MuscleBodyMap';
 
 // Flag to suppress foreground refresh while photo picker is open
 // (prevents re-render glitch when returning from iOS photo picker)
@@ -13820,7 +13821,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
   const [dayModalAnimating, setDayModalAnimating] = useState(false);
   const [dayModalClosing, setDayModalClosing] = useState(false);
   const [compareWeek, setCompareWeek] = useState('average');
-  const [totalsView, setTotalsView] = useState('this-month');
+  const [totalsView, setTotalsView] = useState('this-week');
   // Progress photo comparison state
   const [selectedPhotos, setSelectedPhotos] = useState([]);
   const [showCompareModal, setShowCompareModal] = useState(false);
@@ -14268,8 +14269,22 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
     const lastMonthStr = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}`;
     
     let filteredActivities;
-    
-    if (totalsView === 'last-30-days') {
+
+    if (totalsView === 'this-week') {
+      // This week (Sunday - Saturday)
+      const dayOfWeek = today.getDay();
+      const sunday = new Date(today);
+      sunday.setDate(today.getDate() - dayOfWeek);
+      sunday.setHours(0, 0, 0, 0);
+      const saturday = new Date(sunday);
+      saturday.setDate(sunday.getDate() + 6);
+      saturday.setHours(23, 59, 59, 999);
+      filteredActivities = visibleActivities.filter(a => {
+        if (!a.date) return false;
+        const d = new Date(a.date + 'T12:00:00');
+        return d >= sunday && d <= saturday;
+      });
+    } else if (totalsView === 'last-30-days') {
       // Last 30 days — just use visibleActivities directly (already filtered for free users)
       filteredActivities = visibleActivities;
     } else if (totalsView === 'this-month') {
@@ -15213,6 +15228,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                   onChange={(e) => setTotalsView(e.target.value)}
                   className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-xs flex-shrink-0"
                 >
+                  <option value="this-week" className="bg-black">This Week</option>
                   <option value="this-month" className="bg-black">This Month</option>
                   <option value="last-month" className="bg-black">Last Month</option>
                   <option value={String(getCurrentYear())} className="bg-black">{getCurrentYear()}</option>
@@ -15236,6 +15252,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                   }}
                   className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-xs flex-shrink-0"
                 >
+                  <option value="this-week" className="bg-black">This Week</option>
                   <option value="last-30-days" className="bg-black">Last 30 Days</option>
                   <option value="this-month" className="bg-black">This Month</option>
                   <option value="pro-locked" className="bg-black">🔒 {getCurrentYear()}</option>
@@ -15318,7 +15335,16 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                       const currentYearStr = String(getCurrentYear());
 
                       let filteredHistory = healthHistory || [];
-                      if (totalsView === 'this-month') {
+                      if (totalsView === 'this-week') {
+                        const dayOfWeek = today.getDay();
+                        const sunday = new Date(today);
+                        sunday.setDate(today.getDate() - dayOfWeek);
+                        const sundayStr = `${sunday.getFullYear()}-${String(sunday.getMonth() + 1).padStart(2, '0')}-${String(sunday.getDate()).padStart(2, '0')}`;
+                        const saturday = new Date(sunday);
+                        saturday.setDate(sunday.getDate() + 6);
+                        const saturdayStr = `${saturday.getFullYear()}-${String(saturday.getMonth() + 1).padStart(2, '0')}-${String(saturday.getDate()).padStart(2, '0')}`;
+                        filteredHistory = filteredHistory.filter(h => h.date >= sundayStr && h.date <= saturdayStr);
+                      } else if (totalsView === 'this-month') {
                         filteredHistory = filteredHistory.filter(h => h.date?.startsWith(thisMonthStr));
                       } else if (totalsView === 'last-month') {
                         filteredHistory = filteredHistory.filter(h => h.date?.startsWith(lastMonthStr));
@@ -15346,13 +15372,18 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                 <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">💪 Muscle groups trained</div>
                 <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                   {Object.keys(totalsData.lifting || {}).length > 0 ? (
-                    <div className="space-y-2">
-                      {Object.entries(totalsData.lifting).map(([type, count]) => (
-                        <div key={type} className="flex items-center justify-between">
-                          <span className="text-gray-400">{type}</span>
-                          <span className="font-bold">{count}</span>
-                        </div>
-                      ))}
+                    <div>
+                      <div className="mb-4">
+                        <MuscleBodyMap muscleData={totalsData.lifting} />
+                      </div>
+                      <div className="space-y-2">
+                        {Object.entries(totalsData.lifting).map(([type, count]) => (
+                          <div key={type} className="flex items-center justify-between">
+                            <span className="text-gray-400">{type}</span>
+                            <span className="font-bold">{count}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   ) : (
                     <p className="text-gray-500 text-sm text-center">No strength training logged yet</p>

@@ -11,6 +11,8 @@ const MUSCLE_MAP = {
   'Quads': ['quadriceps'],
   'Hamstrings': ['hamstring'],
   'Calves': ['calves'],
+  'Glutes': ['gluteal'],
+  'Adductors': ['adductors'],
   'Abs': ['abs', 'obliques'],
 };
 

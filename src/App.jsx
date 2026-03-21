@@ -1534,7 +1534,7 @@ const getDefaultCountToward = (type, sub) => {
 
 const FOCUS_AREA_GROUPS = {
   'Upper Body': ['Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps'],
-  'Lower Body': ['Quads', 'Hamstrings', 'Calves'],
+  'Lower Body': ['Quads', 'Hamstrings', 'Glutes', 'Adductors', 'Calves'],
   'Core': ['Abs']
 };
 const ALL_FOCUS_AREAS = Object.values(FOCUS_AREA_GROUPS).flat();

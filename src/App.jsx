@@ -14372,17 +14372,6 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
             <span className="text-xs text-gray-500 uppercase tracking-wider">Active Streaks</span>
             <span>🔥</span>
           </div>
-          <button
-            onClick={onShare}
-            className="p-1.5 transition-colors duration-150 hover:text-white"
-            style={{ color: 'rgba(255,255,255,0.4)' }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-              <polyline points="16 6 12 2 8 6" />
-              <line x1="12" y1="2" x2="12" y2="15" />
-            </svg>
-          </button>
         </div>
         
         {/* Master Streak - Hero */}
@@ -15167,9 +15156,22 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
         <div ref={statsRef} className="mx-4 mt-2">
           {/* Stats Headline */}
           <div className="mb-4">
-            <div className="flex items-center gap-2">
-              <SectionIcon type="chart" />
-              <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Your Stats</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <SectionIcon type="chart" />
+                <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Your Stats</span>
+              </div>
+              <button
+                onClick={onShare}
+                className="p-1.5 transition-colors duration-150 hover:text-white"
+                style={{ color: 'rgba(255,255,255,0.4)' }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+                  <polyline points="16 6 12 2 8 6" />
+                  <line x1="12" y1="2" x2="12" y2="15" />
+                </svg>
+              </button>
             </div>
             <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Your totals over time</p>
           </div>
@@ -15325,51 +15327,68 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                 </div>
                 {/* Steps */}
                 <div className="p-3.5 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(168, 130, 255, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
-                  <div className="text-2xl font-black" style={{ color: '#A882FF' }}>
-                    {(() => {
-                      // Sum steps from healthHistory for the selected period
-                      const today = new Date();
-                      const thisMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-                      const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-                      const lastMonthStr = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}`;
-                      const currentYearStr = String(getCurrentYear());
+                  {(() => {
+                    // Sum steps from healthHistory for the selected period
+                    const today = new Date();
+                    const thisMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+                    const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+                    const lastMonthStr = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}`;
+                    const currentYearStr = String(getCurrentYear());
 
-                      let filteredHistory = healthHistory || [];
-                      if (totalsView === 'this-week') {
-                        const dayOfWeek = today.getDay();
-                        const sunday = new Date(today);
-                        sunday.setDate(today.getDate() - dayOfWeek);
-                        const sundayStr = `${sunday.getFullYear()}-${String(sunday.getMonth() + 1).padStart(2, '0')}-${String(sunday.getDate()).padStart(2, '0')}`;
-                        const saturday = new Date(sunday);
-                        saturday.setDate(sunday.getDate() + 6);
-                        const saturdayStr = `${saturday.getFullYear()}-${String(saturday.getMonth() + 1).padStart(2, '0')}-${String(saturday.getDate()).padStart(2, '0')}`;
-                        filteredHistory = filteredHistory.filter(h => h.date >= sundayStr && h.date <= saturdayStr);
-                      } else if (totalsView === 'this-month') {
-                        filteredHistory = filteredHistory.filter(h => h.date?.startsWith(thisMonthStr));
-                      } else if (totalsView === 'last-month') {
-                        filteredHistory = filteredHistory.filter(h => h.date?.startsWith(lastMonthStr));
-                      } else if (totalsView.match(/^\d{4}-\d{2}$/)) {
-                        filteredHistory = filteredHistory.filter(h => h.date?.startsWith(totalsView));
-                      } else if (totalsView === currentYearStr) {
-                        filteredHistory = filteredHistory.filter(h => h.date?.startsWith(currentYearStr));
-                      }
+                    let filteredHistory = healthHistory || [];
+                    if (totalsView === 'this-week') {
+                      const dayOfWeek = today.getDay();
+                      const sunday = new Date(today);
+                      sunday.setDate(today.getDate() - dayOfWeek);
+                      const sundayStr = `${sunday.getFullYear()}-${String(sunday.getMonth() + 1).padStart(2, '0')}-${String(sunday.getDate()).padStart(2, '0')}`;
+                      const saturday = new Date(sunday);
+                      saturday.setDate(sunday.getDate() + 6);
+                      const saturdayStr = `${saturday.getFullYear()}-${String(saturday.getMonth() + 1).padStart(2, '0')}-${String(saturday.getDate()).padStart(2, '0')}`;
+                      filteredHistory = filteredHistory.filter(h => h.date >= sundayStr && h.date <= saturdayStr);
+                    } else if (totalsView === 'this-month') {
+                      filteredHistory = filteredHistory.filter(h => h.date?.startsWith(thisMonthStr));
+                    } else if (totalsView === 'last-month') {
+                      filteredHistory = filteredHistory.filter(h => h.date?.startsWith(lastMonthStr));
+                    } else if (totalsView.match(/^\d{4}-\d{2}$/)) {
+                      filteredHistory = filteredHistory.filter(h => h.date?.startsWith(totalsView));
+                    } else if (totalsView === currentYearStr) {
+                      filteredHistory = filteredHistory.filter(h => h.date?.startsWith(currentYearStr));
+                    }
 
-                      const totalSteps = filteredHistory.reduce((sum, h) => sum + (h.steps || 0), 0);
-                      if (totalSteps >= 1000000) return `${(totalSteps / 1000000).toFixed(1)}M`;
-                      if (totalSteps >= 1000) return `${(totalSteps / 1000).toFixed(1)}K`;
-                      return totalSteps.toLocaleString();
-                    })()}
-                  </div>
-                  <div className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
-                    <span>👟</span>
-                    <span>Steps</span>
-                  </div>
+                    const totalSteps = filteredHistory.reduce((sum, h) => sum + (h.steps || 0), 0);
+                    const stepsDisplay = totalSteps >= 1000000 ? `${(totalSteps / 1000000).toFixed(1)}M` : totalSteps >= 1000 ? `${(totalSteps / 1000).toFixed(1)}K` : totalSteps.toLocaleString();
+                    const estMiles = totalSteps / 2100;
+
+                    return (
+                      <>
+                        <div className="text-2xl font-black" style={{ color: '#A882FF' }}>{stepsDisplay}</div>
+                        <div className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
+                          <span>👟</span>
+                          <span>Steps</span>
+                        </div>
+                        {estMiles >= 0.1 && (
+                          <div className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className="text-gray-500">📍 Est. distance</span>
+                              <span className="text-gray-400 font-medium">{estMiles.toFixed(1)} mi</span>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
 
               {/* Strength Breakdown */}
               <div className="mb-6">
-                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">💪 Muscle groups trained</div>
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">💪 Muscle groups trained {(() => {
+                  const labels = { 'this-week': '(this week)', 'this-month': '(this month)', 'last-month': '(last month)', 'last-30-days': '(last 30 days)', 'all-time': '(all time)' };
+                  if (labels[totalsView]) return labels[totalsView];
+                  if (/^\d{4}$/.test(totalsView)) return `(${totalsView})`;
+                  const monthMatch = monthOptions.find(m => m.value === totalsView);
+                  return monthMatch ? `(${monthMatch.label})` : '';
+                })()}</div>
                 <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                   {Object.keys(totalsData.lifting || {}).length > 0 ? (
                     <div>

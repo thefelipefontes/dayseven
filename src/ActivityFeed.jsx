@@ -600,6 +600,11 @@ const MemoizedActivityCard = React.memo(({
     : (type === 'Sports' && sportEmoji) ? sportEmoji
     : null;
 
+  // Category color tint for the icon background + icon color override
+  const category = getActivityCategory(activity);
+  const categoryBg = category === 'lifting' ? 'rgba(0,255,148,0.15)' : category === 'cardio' ? 'rgba(255,149,0,0.15)' : category === 'recovery' ? 'rgba(0,209,255,0.15)' : undefined;
+  const categoryIconColor = category === 'lifting' ? '#00FF94' : category === 'cardio' ? '#FF9500' : category === 'recovery' ? '#00D1FF' : undefined;
+
   // Count reactions by type
   const reactionCounts = {};
   reactions.forEach(r => {
@@ -627,8 +632,8 @@ const MemoizedActivityCard = React.memo(({
 
       {/* Activity details */}
       <div className="flex items-center gap-3">
-        <div className="w-12 h-12 rounded-xl bg-zinc-800 flex items-center justify-center">
-          {useEmoji ? <span className="text-2xl">{useEmoji}</span> : <ActivityIcon type={type} strengthType={strengthType} size={24} customIcon={customIcon} />}
+        <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: categoryBg || 'rgb(39,39,42)' }}>
+          {useEmoji ? <span className="text-2xl">{useEmoji}</span> : <ActivityIcon type={type} strengthType={strengthType} size={24} customIcon={customIcon} color={categoryIconColor} />}
         </div>
         <div className="flex-1">
           <p className="text-white font-medium">{displayType}{displaySubtype ? ` ${type === 'Strength Training' ? '-' : '•'} ${displaySubtype}` : ''}</p>

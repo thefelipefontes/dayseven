@@ -22382,11 +22382,6 @@ export default function DaySevenApp() {
           // Calculate historical streaks at the time of the selected week
           const calculateHistoricalStreaks = () => {
             const goals = userData.goals;
-            const cardioTypes = ['Running', 'Cycle', 'Sports', 'Walking', 'Hiking', 'Swimming', 'Rowing', 'Stair Climbing', 'Elliptical', 'HIIT'];
-            const recoveryTypes = ['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'];
-
-            // Get the end of the selected week
-            const selectedWeekEnd = new Date(weekRange.endStr + 'T23:59:59');
 
             // Filter activities up to and including the selected week
             const historicalActivities = activities.filter(a => a.date <= weekRange.endStr);
@@ -22409,67 +22404,63 @@ export default function DaySevenApp() {
               else if (cat === 'recovery') weekMap[weekKey].recovery++;
             });
 
-            // Get sorted week keys (newest first)
-            const sortedWeeks = Object.keys(weekMap).sort().reverse();
-
-            // Calculate streaks going backwards from the selected week
+            // Calculate streaks going backwards from the week BEFORE the selected week
+            // (matches History page logic: build streak from completed weeks, then check selected week separately)
             let masterStreak = 0;
             let strengthStreak = 0;
             let cardioStreak = 0;
             let recoveryStreak = 0;
+            let liftsAlive = true, cardioAlive = true, recoveryAlive = true;
 
-            // Get the week key for the selected week
-            const selectedWeekStart = new Date(weekRange.startStr + 'T12:00:00');
-            const selectedWeekKey = `${selectedWeekStart.getFullYear()}-${String(selectedWeekStart.getMonth() + 1).padStart(2, '0')}-${String(selectedWeekStart.getDate()).padStart(2, '0')}`;
+            let previousWeekDate = new Date(weekRange.startStr + 'T12:00:00');
+            previousWeekDate.setDate(previousWeekDate.getDate() - 7);
 
-            // Find the index of the selected week and iterate backwards
-            let currentWeekDate = new Date(weekRange.startStr + 'T12:00:00');
-            let masterBroken = false;
-            let strengthBroken = false;
-            let cardioBroken = false;
-            let recoveryBroken = false;
-
-            // Check consecutive weeks going backwards
-            for (let i = 0; i < 200; i++) { // Check up to 200 weeks back
-              const weekKey = `${currentWeekDate.getFullYear()}-${String(currentWeekDate.getMonth() + 1).padStart(2, '0')}-${String(currentWeekDate.getDate()).padStart(2, '0')}`;
+            // Check consecutive weeks going backwards from the week before the selected week
+            for (let i = 0; i < 200; i++) {
+              const weekKey = `${previousWeekDate.getFullYear()}-${String(previousWeekDate.getMonth() + 1).padStart(2, '0')}-${String(previousWeekDate.getDate()).padStart(2, '0')}`;
               const weekData = weekMap[weekKey] || { lifts: 0, cardio: 0, recovery: 0 };
 
               const liftsGoalMet = weekData.lifts >= goals.liftsPerWeek;
               const cardioGoalMet = weekData.cardio >= goals.cardioPerWeek;
               const recoveryGoalMet = weekData.recovery >= goals.recoveryPerWeek;
-              const allGoalsMet = liftsGoalMet && cardioGoalMet && recoveryGoalMet;
 
-              if (!masterBroken && allGoalsMet) {
-                masterStreak++;
-              } else {
-                masterBroken = true;
-              }
+              if (liftsAlive && liftsGoalMet) strengthStreak++;
+              else liftsAlive = false;
 
-              if (!strengthBroken && liftsGoalMet) {
-                strengthStreak++;
-              } else {
-                strengthBroken = true;
-              }
+              if (cardioAlive && cardioGoalMet) cardioStreak++;
+              else cardioAlive = false;
 
-              if (!cardioBroken && cardioGoalMet) {
-                cardioStreak++;
-              } else {
-                cardioBroken = true;
-              }
+              if (recoveryAlive && recoveryGoalMet) recoveryStreak++;
+              else recoveryAlive = false;
 
-              if (!recoveryBroken && recoveryGoalMet) {
-                recoveryStreak++;
-              } else {
-                recoveryBroken = true;
-              }
+              if (liftsAlive && cardioAlive && recoveryAlive) masterStreak++;
 
               // If all streaks are broken, stop checking
-              if (masterBroken && strengthBroken && cardioBroken && recoveryBroken) {
-                break;
-              }
+              if (!liftsAlive && !cardioAlive && !recoveryAlive) break;
 
               // Move to the previous week
-              currentWeekDate.setDate(currentWeekDate.getDate() - 7);
+              previousWeekDate.setDate(previousWeekDate.getDate() - 7);
+            }
+
+            // Now check the selected week itself — if goal is met, add to streak (or start fresh at 1)
+            const selectedWeekKey = (() => {
+              const d = new Date(weekRange.startStr + 'T12:00:00');
+              return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            })();
+            const selectedWeekData = weekMap[selectedWeekKey] || { lifts: 0, cardio: 0, recovery: 0 };
+
+            if (selectedWeekData.lifts >= goals.liftsPerWeek) {
+              strengthStreak = liftsAlive ? strengthStreak + 1 : 1;
+            }
+            if (selectedWeekData.cardio >= goals.cardioPerWeek) {
+              cardioStreak = cardioAlive ? cardioStreak + 1 : 1;
+            }
+            if (selectedWeekData.recovery >= goals.recoveryPerWeek) {
+              recoveryStreak = recoveryAlive ? recoveryStreak + 1 : 1;
+            }
+            const allSelectedMet = selectedWeekData.lifts >= goals.liftsPerWeek && selectedWeekData.cardio >= goals.cardioPerWeek && selectedWeekData.recovery >= goals.recoveryPerWeek;
+            if (allSelectedMet) {
+              masterStreak = (liftsAlive && cardioAlive && recoveryAlive) ? masterStreak + 1 : 1;
             }
 
             return { masterStreak, strengthStreak, cardioStreak, recoveryStreak };
@@ -22480,13 +22471,13 @@ export default function DaySevenApp() {
           return {
           // Streak stats (historical at time of selected week)
           streak: historicalStreaks.masterStreak,
-          longestStreak: userData.personalRecords.longestMasterStreak || userData.streaks.master,
+          longestStreak: Math.max(userData.personalRecords.longestMasterStreak || 0, userData.streaks.master, historicalStreaks.masterStreak),
           strengthStreak: historicalStreaks.strengthStreak,
           cardioStreak: historicalStreaks.cardioStreak,
           recoveryStreak: historicalStreaks.recoveryStreak,
-          longestStrengthStreak: userData.personalRecords.longestStrengthStreak || 0,
-          longestCardioStreak: userData.personalRecords.longestCardioStreak || 0,
-          longestRecoveryStreak: userData.personalRecords.longestRecoveryStreak || 0,
+          longestStrengthStreak: Math.max(userData.personalRecords.longestStrengthStreak || 0, historicalStreaks.strengthStreak),
+          longestCardioStreak: Math.max(userData.personalRecords.longestCardioStreak || 0, historicalStreaks.cardioStreak),
+          longestRecoveryStreak: Math.max(userData.personalRecords.longestRecoveryStreak || 0, historicalStreaks.recoveryStreak),
           // Last 4 weeks history relative to selected week (true = won, false = missed)
           last4Weeks: (() => {
             const weeks = [];

@@ -19557,7 +19557,8 @@ export default function DaySevenApp() {
           }
 
           // Load user's personal records, then recalculate from activities to ensure accuracy
-          const userRecords = await getPersonalRecords(user.uid);
+          const recordsResult = await getPersonalRecords(user.uid);
+          const userRecords = recordsResult?.personalRecords ?? recordsResult;
 
           // Recalculate records from activities and health history to ensure they're accurate
           // This fixes any corruption from race conditions or data issues

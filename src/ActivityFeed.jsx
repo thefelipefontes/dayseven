@@ -36,7 +36,11 @@ const getActivityCategory = (activity) => {
 };
 
 // Helper to calculate leaderboard stats from activities and health data
-const calculateLeaderboardStats = (activities, healthHistory, personalRecords) => {
+const calculateLeaderboardStats = (activities, healthHistory, recordsData) => {
+  // Support both old format (just personalRecords) and new format ({ personalRecords, streaks, weeksWon })
+  const personalRecords = recordsData?.personalRecords ?? recordsData;
+  const activeStreaks = recordsData?.streaks || null;
+  const weeksWonCount = recordsData?.weeksWon || 0;
   const now = new Date();
   const today = toLocalDateStr(now);
 
@@ -126,11 +130,11 @@ const calculateLeaderboardStats = (activities, healthHistory, personalRecords) =
   }).length;
 
   return {
-    masterStreak: personalRecords?.longestMasterStreak || 0,
-    strengthStreak: personalRecords?.longestStrengthStreak || 0,
-    cardioStreak: personalRecords?.longestCardioStreak || 0,
-    recoveryStreak: personalRecords?.longestRecoveryStreak || 0,
-    weeksWon: 0,
+    masterStreak: activeStreaks?.master ?? personalRecords?.longestMasterStreak ?? 0,
+    strengthStreak: activeStreaks?.lifts ?? personalRecords?.longestStrengthStreak ?? 0,
+    cardioStreak: activeStreaks?.cardio ?? personalRecords?.longestCardioStreak ?? 0,
+    recoveryStreak: activeStreaks?.recovery ?? personalRecords?.longestRecoveryStreak ?? 0,
+    weeksWon: weeksWonCount,
     totalWorkouts,
     stats: {
       calories: { week: weekStats.calories, month: monthStats.calories, year: yearStats.calories, all: allStats.calories },
@@ -937,6 +941,34 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   const [leaderboardCategory, setLeaderboardCategory] = useState('calories'); // Activity: 'calories', 'steps', 'workouts' | Streak: 'master', 'strength', 'cardio', 'recovery'
   const [leaderboardTimeRange, setLeaderboardTimeRange] = useState('week'); // Activity: 'week', 'month', 'year', 'all' | Streak: 'year', 'all'
   const [selectedFriend, setSelectedFriend] = useState(null); // For viewing friend profile
+
+  // Enrich friend data when selected — pull from leaderboard cache or fetch from Firestore
+  const handleSelectFriend = useCallback(async (friend) => {
+    if (!friend) { setSelectedFriend(null); return; }
+    // Check leaderboard data first (already has streaks/stats)
+    const enriched = leaderboardData.find(u => u.uid === friend.uid);
+    if (enriched) {
+      setSelectedFriend(enriched);
+      return;
+    }
+    // Fetch data first, then show the modal with complete data (no flash)
+    try {
+      const recordsResult = await getPersonalRecords(friend.uid);
+      const activeStreaks = recordsResult?.streaks || null;
+      const weeksWon = recordsResult?.weeksWon || 0;
+      setSelectedFriend({
+        ...friend,
+        masterStreak: activeStreaks?.master ?? 0,
+        strengthStreak: activeStreaks?.lifts ?? 0,
+        cardioStreak: activeStreaks?.cardio ?? 0,
+        recoveryStreak: activeStreaks?.recovery ?? 0,
+        weeksWon,
+      });
+    } catch (e) {
+      // On failure, show with zeros rather than not showing at all
+      setSelectedFriend(friend);
+    }
+  }, [leaderboardData]);
   const [expandedComments, setExpandedComments] = useState({}); // Track which activities have expanded comments
 
   // Local pull-to-refresh state (only for feed cards area)
@@ -3206,7 +3238,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               onDeleteComment={(commentId) => handleDeleteComment(commentId, activity)}
               onSubmitReply={(commentId, text) => handleAddReply(commentId, text, activity)}
               onDeleteReply={(commentId, replyId) => handleDeleteReply(commentId, replyId, activity)}
-              onSelectFriend={setSelectedFriend}
+              onSelectFriend={handleSelectFriend}
               commentInputRef={(el) => { commentInputRefs.current[key] = el; }}
               formatTimeAgo={formatTimeAgo}
               formatDuration={formatDuration}

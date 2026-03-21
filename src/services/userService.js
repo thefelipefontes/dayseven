@@ -696,19 +696,26 @@ export async function getPersonalRecords(uid) {
   const path = `users/${uid}`;
 
   try {
-    let personalRecords;
+    let personalRecords, streaks, weeksWon;
     if (isNative) {
       const { snapshot } = await FirebaseFirestore.getDocument({ reference: path });
       personalRecords = snapshot?.data?.personalRecords || null;
+      streaks = snapshot?.data?.streaks || null;
+      weeksWon = snapshot?.data?.weeksWon || 0;
     } else {
       const userRef = doc(db, 'users', uid);
       const userDoc = await withTimeout(getDoc(userRef));
-      personalRecords = userDoc.exists() ? (userDoc.data().personalRecords || null) : null;
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        personalRecords = data.personalRecords || null;
+        streaks = data.streaks || null;
+        weeksWon = data.weeksWon || 0;
+      }
     }
 
-    return personalRecords;
+    return { personalRecords, streaks, weeksWon };
   } catch (error) {
-    return null;
+    return { personalRecords: null, streaks: null, weeksWon: 0 };
   }
 }
 

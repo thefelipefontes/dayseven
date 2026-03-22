@@ -4100,6 +4100,12 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
           clonedElement.style.overflow = 'hidden';
           clonedElement.style.background = 'linear-gradient(180deg, #0a0a0a 0%, #0d0d0d 50%, #000000 100%)';
 
+          // Fix ring text vertical centering for html2canvas
+          const ringTexts = clonedElement.querySelectorAll('[data-ring-text="true"]');
+          ringTexts.forEach(el => {
+            el.style.marginTop = '-3px';
+          });
+
           // Fix all elements
           const allElements = clonedElement.querySelectorAll('*');
           allElements.forEach(el => {
@@ -4470,14 +4476,42 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
     // Count workouts (strength + cardio) vs recovery using effective category
     const workoutCounts = {};
     const recoveryCounts = {};
+    const strengthCounts = {};
+    const cardioCounts = {};
+    const muscleGroupCounts = {};
+    const upperBody = new Set(FOCUS_AREA_GROUPS['Upper Body']);
+    const lowerBody = new Set(FOCUS_AREA_GROUPS['Lower Body']);
     activities.forEach(a => {
       const cat = getEffectiveCategory(a);
-      if (cat === 'lifting' || cat === 'cardio') {
+      if (cat === 'lifting') {
+        const name = a.strengthType || a.subtype || 'Strength Training';
+        strengthCounts[name] = (strengthCounts[name] || 0) + 1;
+        workoutCounts[a.type] = (workoutCounts[a.type] || 0) + 1;
+        // Count muscle groups for top focus areas
+        const areas = normalizeFocusAreas(a.focusAreas || (a.focusArea ? [a.focusArea] : []));
+        if (areas) areas.forEach(mg => { muscleGroupCounts[mg] = (muscleGroupCounts[mg] || 0) + 1; });
+      } else if (cat === 'cardio') {
+        cardioCounts[a.type] = (cardioCounts[a.type] || 0) + 1;
         workoutCounts[a.type] = (workoutCounts[a.type] || 0) + 1;
       } else if (cat === 'recovery') {
         recoveryCounts[a.type] = (recoveryCounts[a.type] || 0) + 1;
       }
     });
+
+    // Top strength focus areas: top upper, top lower, abs can replace either if higher
+    const sortedMuscles = Object.entries(muscleGroupCounts).sort((a, b) => b[1] - a[1]);
+    const topUpper = sortedMuscles.find(([name]) => upperBody.has(name));
+    const topLower = sortedMuscles.find(([name]) => lowerBody.has(name));
+    const absEntry = muscleGroupCounts['Abs'] ? ['Abs', muscleGroupCounts['Abs']] : null;
+    let topMuscles = [topUpper, topLower].filter(Boolean);
+    if (absEntry && topMuscles.length === 2) {
+      // Replace whichever has lower count if abs beats it
+      const minIdx = topMuscles[0][1] <= topMuscles[1][1] ? 0 : 1;
+      if (absEntry[1] > topMuscles[minIdx][1]) topMuscles[minIdx] = absEntry;
+    } else if (absEntry && topMuscles.length < 2) {
+      topMuscles.push(absEntry);
+    }
+    topMuscles.sort((a, b) => b[1] - a[1]);
 
     const mostCommonWorkout = Object.entries(workoutCounts).sort((a, b) => b[1] - a[1])[0];
     const mostCommonRecovery = Object.entries(recoveryCounts).sort((a, b) => b[1] - a[1])[0];
@@ -4497,8 +4531,9 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
       (parseFloat(a.distance) || 0) > (parseFloat(longest?.distance) || 0) ? a : longest
     , null);
 
-    // Days worked out
-    const uniqueDays = new Set(activities.map(a => a.date)).size;
+    // Days worked out (only count days with strength/cardio activities)
+    const workoutActivities = activities.filter(a => { const cat = getEffectiveCategory(a); return cat === 'lifting' || cat === 'cardio'; });
+    const uniqueDays = new Set(workoutActivities.map(a => a.date)).size;
 
     // Total duration
     const totalMinutes = activities.reduce((sum, a) => sum + (parseInt(a.duration) || 0), 0);
@@ -4519,7 +4554,10 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
       totalMinutes,
       totalCalories,
       totalDistance,
-      totalWorkouts: activities.filter(a => { const cat = getEffectiveCategory(a); return cat === 'lifting' || cat === 'cardio'; }).length
+      totalWorkouts: activities.filter(a => { const cat = getEffectiveCategory(a); return cat === 'lifting' || cat === 'cardio'; }).length,
+      topStrength: topMuscles.slice(0, 2),
+      topCardio: Object.entries(cardioCounts).sort((a, b) => b[1] - a[1]).slice(0, 2),
+      topRecovery: Object.entries(recoveryCounts).sort((a, b) => b[1] - a[1]).slice(0, 2),
     };
   };
 
@@ -4767,7 +4805,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                         <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="#00FF94" strokeWidth={ringStroke} strokeLinecap="round"
                           strokeDasharray={ringCircumference} strokeDashoffset={ringCircumference - (liftsPercent / 100) * ringCircumference} />
                       </svg>
-                      <div className="absolute inset-0 flex items-center justify-center" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <div className="absolute inset-0 flex items-center justify-center" data-ring-text="true" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`} style={{ lineHeight: 1 }}>{weeklyLifts}/{liftsGoal}</span>
                       </div>
                     </div>
@@ -4780,7 +4818,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                         <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="#FF9500" strokeWidth={ringStroke} strokeLinecap="round"
                           strokeDasharray={ringCircumference} strokeDashoffset={ringCircumference - (cardioPercent / 100) * ringCircumference} />
                       </svg>
-                      <div className="absolute inset-0 flex items-center justify-center" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <div className="absolute inset-0 flex items-center justify-center" data-ring-text="true" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`} style={{ lineHeight: 1 }}>{weeklyCardio}/{cardioGoal}</span>
                       </div>
                     </div>
@@ -4793,7 +4831,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                         <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="#00D1FF" strokeWidth={ringStroke} strokeLinecap="round"
                           strokeDasharray={ringCircumference} strokeDashoffset={ringCircumference - (recoveryPercent / 100) * ringCircumference} />
                       </svg>
-                      <div className="absolute inset-0 flex items-center justify-center" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <div className="absolute inset-0 flex items-center justify-center" data-ring-text="true" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`} style={{ lineHeight: 1 }}>{weeklyRecovery}/{recoveryGoal}</span>
                       </div>
                     </div>
@@ -4801,28 +4839,34 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                   </div>
                 </div>
 
-                {/* Streaks */}
+                {/* Master Streak + Top Activities */}
                 <div className={`w-full ${isPostFormat ? 'py-2 px-3' : 'py-3 px-4'} rounded-2xl`} style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
                   <div className="w-full" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
                     <span className={isPostFormat ? 'text-lg' : 'text-xl'} style={{ lineHeight: '1.2' }}>🔥</span>
                     <span className={`${isPostFormat ? 'text-xl' : 'text-2xl'} font-black`} style={{ color: '#00FF94', lineHeight: '1.2' }}>{stats?.streak || 0}</span>
                     <span className={`${isPostFormat ? 'text-[11px]' : 'text-xs'} text-gray-400`} style={{ lineHeight: '1.2' }}>weeks hitting all goals</span>
                   </div>
-                  <div className={`w-full h-px ${isPostFormat ? 'my-1.5' : 'my-3'}`} style={{ backgroundColor: 'rgba(255,255,255,0.05)' }} />
-                  <div className="w-full" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around' }}>
-                    <div style={{ textAlign: 'center' }}>
-                      <div className={`${isPostFormat ? 'text-[15px]' : 'text-base'} font-bold`} style={{ color: '#00FF94', lineHeight: '1.2' }}>{stats?.strengthStreak || 0}</div>
-                      <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-500 mt-0.5`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><span style={{ fontSize: '0.9em' }}>💪</span><span>weeks</span></div>
-                    </div>
-                    <div style={{ textAlign: 'center' }}>
-                      <div className={`${isPostFormat ? 'text-[15px]' : 'text-base'} font-bold`} style={{ color: '#FF9500', lineHeight: '1.2' }}>{stats?.cardioStreak || 0}</div>
-                      <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-500 mt-0.5`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><span style={{ fontSize: '0.9em' }}>❤️‍🔥</span><span>weeks</span></div>
-                    </div>
-                    <div style={{ textAlign: 'center' }}>
-                      <div className={`${isPostFormat ? 'text-[15px]' : 'text-base'} font-bold`} style={{ color: '#00D1FF', lineHeight: '1.2' }}>{stats?.recoveryStreak || 0}</div>
-                      <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} text-gray-500 mt-0.5`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><span style={{ fontSize: '0.9em' }}>🧊</span><span>weeks</span></div>
-                    </div>
-                  </div>
+                  {(() => {
+                    const segments = [];
+                    const strengthNames = (weeklyAnalysis?.topStrength || []).map(([name]) => name);
+                    if (strengthNames.length > 0) segments.push({ text: strengthNames.join('/'), color: '#00FF94' });
+                    (weeklyAnalysis?.topCardio || []).forEach(([name]) => segments.push({ text: name, color: '#FF9500' }));
+                    (weeklyAnalysis?.topRecovery || []).forEach(([name]) => segments.push({ text: name, color: '#00D1FF' }));
+                    return segments.length > 0 && (
+                      <>
+                        <div className={`w-full h-px ${isPostFormat ? 'my-1.5' : 'my-2'}`} style={{ backgroundColor: 'rgba(255,255,255,0.05)' }} />
+                        <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500 uppercase tracking-wider text-center mb-1`}>Most Frequent</div>
+                        <div className={`${isPostFormat ? 'text-[11px]' : 'text-xs'} text-center`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                          {segments.map((seg, i) => (
+                            <span key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              {i > 0 && <span style={{ color: 'rgba(255,255,255,0.2)' }}>·</span>}
+                              <span style={{ color: seg.color }}>{seg.text}</span>
+                            </span>
+                          ))}
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
               </div>
@@ -5096,15 +5140,15 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                   {/* Most Frequent subsection */}
                   <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500 uppercase tracking-wider text-center mb-1`}>Most Frequent</div>
                   <div className={`flex justify-center items-center ${isPostFormat ? 'gap-2' : 'gap-3'} text-center`}>
-                    <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>
+                    <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'}`} style={{ color: '#00FF94' }}>
                       {stats?.monthlyMostFrequentStrength || 'Full Body'}
                     </span>
-                    <span className="text-gray-600">•</span>
-                    <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>
+                    <span style={{ color: 'rgba(255,255,255,0.2)' }}>·</span>
+                    <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'}`} style={{ color: '#FF9500' }}>
                       {stats?.monthlyMostFrequentCardio || 'Running'}
                     </span>
-                    <span className="text-gray-600">•</span>
-                    <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>
+                    <span style={{ color: 'rgba(255,255,255,0.2)' }}>·</span>
+                    <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'}`} style={{ color: '#00D1FF' }}>
                       {stats?.monthlyMostFrequentRecovery?.type || 'Sauna'}
                     </span>
                   </div>

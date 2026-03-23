@@ -42,7 +42,8 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "updateWidgetData", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "updateLiveActivityState", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startWatchWorkoutLiveActivity", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "endAllLiveActivities", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "endAllLiveActivities", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "checkActiveLiveActivity", returnType: CAPPluginReturnPromise)
     ]
 
     private let healthStore = HKHealthStore()
@@ -819,6 +820,24 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
         } else {
             call.resolve(["success": true, "ended": 0])
+        }
+    }
+
+    @objc func checkActiveLiveActivity(_ call: CAPPluginCall) {
+        if #available(iOS 16.2, *) {
+            let activities = Activity<WorkoutActivityAttributes>.activities
+            if let active = activities.first {
+                let attrs = active.attributes
+                call.resolve([
+                    "isActive": true,
+                    "activityType": attrs.activityType,
+                    "startTime": ISO8601DateFormatter().string(from: attrs.startTime)
+                ])
+            } else {
+                call.resolve(["isActive": false])
+            }
+        } else {
+            call.resolve(["isActive": false])
         }
     }
 

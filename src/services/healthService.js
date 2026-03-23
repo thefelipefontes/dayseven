@@ -1119,6 +1119,26 @@ export async function startWatchWorkoutLiveActivity(activityType) {
   }
 }
 
+// End all Live Activities (safety net for when native async Task doesn't complete)
+export async function endAllLiveActivities() {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    await HealthKitWriter.endAllLiveActivities();
+  } catch (e) {
+    // Non-critical
+  }
+}
+
+// Check if there's an active Live Activity (for restoring state on app resume)
+export async function checkActiveLiveActivity() {
+  if (!Capacitor.isNativePlatform()) return { isActive: false };
+  try {
+    return await HealthKitWriter.checkActiveLiveActivity();
+  } catch (e) {
+    return { isActive: false };
+  }
+}
+
 // Update Live Activity state (pause/resume)
 export async function updateLiveActivityState(isPaused) {
   if (!Capacitor.isNativePlatform()) return;

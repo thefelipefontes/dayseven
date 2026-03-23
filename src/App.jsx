@@ -12,7 +12,7 @@ import html2canvas from 'html2canvas';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
-import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, fetchHealthDataForDate, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, fetchWorkoutRoute, updateWidgetData, updateLiveActivityState, startWatchWorkoutLiveActivity } from './services/healthService';
+import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, fetchHealthDataForDate, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, fetchWorkoutRoute, updateWidgetData, updateLiveActivityState, startWatchWorkoutLiveActivity, endAllLiveActivities, checkActiveLiveActivity } from './services/healthService';
 import NotificationSettings from './NotificationSettings';
 import { initializePushNotifications, handleNotificationNavigation, removeFCMToken, clearBadge, clearAllNotifications, incrementBadge, shouldShowNotification, getNotificationPreferences } from './services/notificationService';
 import { initializeRevenueCat, checkProStatus, addCustomerInfoListener, logoutRevenueCat, presentPaywall, presentCustomerCenter, restorePurchases } from './services/subscriptionService';
@@ -18651,7 +18651,7 @@ export default function DaySevenApp() {
   // and cleared on app open via clearBadge() + Firestore reset.
   // No need for a local useEffect to sync badge with pendingFriendRequests.
 
-  // Load active workout from localStorage on mount
+  // Load active workout from localStorage on mount, and check for active Live Activities
   useEffect(() => {
     try {
       const saved = localStorage.getItem('activeWorkout');
@@ -18665,11 +18665,26 @@ export default function DaySevenApp() {
             if (!metrics.isActive) {
               // Watch workout ended while app was closed — clear it
               setActiveWorkout(null);
+              endAllLiveActivities();
             }
           }).catch(() => {
             // Can't reach watch — keep workout state, it'll re-check when reachable
           });
         }
+      } else {
+        // No saved workout state — check if a Live Activity is running
+        // (watch may have started a workout while app was closed/backgrounded)
+        checkActiveLiveActivity().then(result => {
+          if (result.isActive) {
+            console.log('[LiveActivity] Found active Live Activity on mount, restoring state:', result.activityType);
+            setActiveWorkout({
+              type: result.activityType,
+              startTime: result.startTime,
+              source: 'watch',
+              icon: '⌚',
+            });
+          }
+        });
       }
     } catch (e) {
       // Invalid data, ignore
@@ -18684,6 +18699,31 @@ export default function DaySevenApp() {
     } else {
       localStorage.removeItem('activeWorkout');
     }
+  }, [activeWorkout]);
+
+  // Sync Live Activity state when app returns to foreground
+  useEffect(() => {
+    const handleVisibility = async () => {
+      if (document.visibilityState !== 'visible') return;
+      const result = await checkActiveLiveActivity();
+      if (result.isActive && !activeWorkout) {
+        // Live Activity running but no in-app state — restore it
+        console.log('[LiveActivity] Restored active workout on resume:', result.activityType);
+        setActiveWorkout({
+          type: result.activityType,
+          startTime: result.startTime,
+          source: 'watch',
+          icon: '⌚',
+        });
+      } else if (!result.isActive && activeWorkout?.source === 'watch') {
+        // Live Activity ended while backgrounded — clear in-app state
+        console.log('[LiveActivity] Watch workout ended while backgrounded, clearing state');
+        setActiveWorkout(null);
+        setShowFinishWorkout(false);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [activeWorkout]);
 
   // Listen for watch workout started/ended events (when user starts/ends on watch directly,
@@ -18716,8 +18756,10 @@ export default function DaySevenApp() {
       }));
     });
 
-    const removeEndListener = addWatchWorkoutEndedListener(() => {
+    const removeEndListener = addWatchWorkoutEndedListener(async () => {
       console.log('[WatchEvent] Workout ended on watch');
+      // End Live Activity from JS as safety net (native async Task may not complete in background)
+      await endAllLiveActivities();
       setActiveWorkout(null);
       setShowFinishWorkout(false);
     });

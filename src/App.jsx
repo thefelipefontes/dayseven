@@ -11294,17 +11294,12 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     const totalMiles = running.reduce((sum, r) => sum + (parseFloat(r.distance) || 0), 0);
     const totalCalories = weekActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
 
-    // For today's calories: combine HealthKit active calories with manually-logged workout calories
-    // (excluding HealthKit-sourced workouts to avoid double-counting)
-    // This matches the History page's Daily Totals logic
-    const now = new Date();
-    const todayDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    const todayActivities = weekActivities.filter(a => a.date === todayDate);
-    const manualTodayCalories = todayActivities
-      .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID && a.source !== 'healthkit' && a.source !== 'apple-watch' && !a.fromAppleHealth)
-      .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
+    // For today's calories: use HealthKit active calories directly when connected.
+    // HealthKit already includes all active energy from wearables (Apple Watch, Whoop, etc.),
+    // so adding manual workout calories on top would double-count.
+    // Only fall back to summing activity calories when HealthKit is not connected.
     const todayBurnedCalories = healthKitData.isConnected
-      ? (healthKitData.todayCalories || 0) + manualTodayCalories
+      ? (healthKitData.todayCalories || 0)
       : totalCalories;
 
     return {
@@ -11313,12 +11308,11 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
       recovery: { completed: recovery.length, goal: goals.recoveryPerWeek, sessions: recovery.map(r => r.type), breakdown: { coldPlunge: coldPlunge.length, sauna: sauna.length, massage: massage.length, chiropractic: chiropractic.length, yoga: yoga.length, pilates: pilates.length }, otherActivities: otherRecovery },
       // Non-cardio walks (don't count toward goals but should be displayed)
       walks: { count: nonCardioWalks.length, activities: nonCardioWalks },
-      // Combine HealthKit calories with manually-logged workout calories
-      // HealthKit provides active energy from wearables; manual calories cover workouts not in HealthKit
+      // Use HealthKit active calories directly — wearables already track all active energy
       calories: {
         burned: todayBurnedCalories,
         goal: goals.caloriesPerDay,
-        source: healthKitData.isConnected ? 'healthkit+manual' : 'manual'
+        source: healthKitData.isConnected ? 'healthkit' : 'manual'
       },
       // Use HealthKit steps
       steps: { today: healthKitData.todaySteps || 0, goal: goals.stepsPerDay }
@@ -13183,12 +13177,8 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
 
         let value = 0;
         if (metric === 'calories') {
-          // HealthKit calories + manually logged calories (not from HealthKit)
-          const healthKitCals = healthData?.calories || 0;
-          const manualCals = dayActivities
-            .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID && a.source !== 'healthkit' && a.source !== 'apple-watch' && !a.fromAppleHealth)
-            .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
-          value = healthKitCals + manualCals;
+          // Use HealthKit calories directly — wearables already track all active energy
+          value = healthData?.calories || 0;
         } else if (metric === 'steps') {
           // Use steps from HealthKit
           value = healthData?.steps || 0;
@@ -13232,12 +13222,8 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
           const dayActivities = activities.filter(a => a.date === dateStr);
 
           if (metric === 'calories') {
-            // HealthKit calories + manually logged calories (not from HealthKit)
-            const healthKitCals = healthData?.calories || 0;
-            const manualCals = dayActivities
-              .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID && a.source !== 'healthkit' && a.source !== 'apple-watch' && !a.fromAppleHealth)
-              .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
-            value += healthKitCals + manualCals;
+            // Use HealthKit calories directly — wearables already track all active energy
+            value += healthData?.calories || 0;
           } else if (metric === 'steps') {
             // Use steps from HealthKit
             value += healthData?.steps || 0;
@@ -13291,12 +13277,8 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
           const dayActivities = activities.filter(a => a.date === dateStr);
 
           if (metric === 'calories') {
-            // HealthKit calories + manually logged calories (not from HealthKit)
-            const healthKitCals = healthData?.calories || 0;
-            const manualCals = dayActivities
-              .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID && a.source !== 'healthkit' && a.source !== 'apple-watch' && !a.fromAppleHealth)
-              .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
-            value += healthKitCals + manualCals;
+            // Use HealthKit calories directly — wearables already track all active energy
+            value += healthData?.calories || 0;
           } else if (metric === 'steps') {
             // Use steps from HealthKit
             value += healthData?.steps || 0;
@@ -13653,12 +13635,8 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
 
         // Get HealthKit data for this day
         const dayHealthData = healthDataByDate[dateStr];
-        // HealthKit calories + manually logged calories (not from HealthKit)
-        const healthKitCals = dayHealthData?.calories || 0;
-        const manualCals = fullDayActivities
-          .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID && a.source !== 'healthkit' && a.source !== 'apple-watch' && !a.fromAppleHealth)
-          .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
-        const dayCalories = healthKitCals + manualCals;
+        // Use HealthKit calories directly — wearables already track all active energy
+        const dayCalories = dayHealthData?.calories || 0;
         const daySteps = dayHealthData?.steps || 0;
         const dayMiles = fullDayActivities.reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
         const totalDuration = fullDayActivities.reduce((sum, a) => sum + (a.duration || 0), 0);
@@ -14130,11 +14108,8 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
       const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
       const healthData = healthDataByDate[dateStr];
       const dayActivities = activities.filter(a => a.date === dateStr);
+      // Use HealthKit calories directly — wearables already track all active energy
       lastWeekCalories += healthData?.calories || 0;
-      // Add calories from truly manual workouts
-      lastWeekCalories += dayActivities
-        .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID && a.source !== 'healthkit' && a.source !== 'apple-watch' && !a.fromAppleHealth)
-        .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
     }
 
     // Calculate average from first activity to now
@@ -14179,10 +14154,8 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
           const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
           const healthData = healthDataByDate[dateStr];
           const dayActivities = activities.filter(a => a.date === dateStr);
+          // Use HealthKit calories directly — wearables already track all active energy
           totalCalories += healthData?.calories || 0;
-          totalCalories += dayActivities
-            .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID && a.source !== 'healthkit' && a.source !== 'apple-watch' && !a.fromAppleHealth)
-            .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
         }
 
         avgLifts = Math.round((totalLifts / weeksBetween) * 10) / 10;
@@ -14263,13 +14236,8 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
       // Use activities array (source of truth) instead of calendarData
       const dayActivities = activities.filter(a => a.date === dateStr);
 
-      // Add HealthKit calories (includes workout calories from Apple Watch/Whoop)
+      // Use HealthKit calories directly — wearables already track all active energy
       weekCalories += healthData?.calories || 0;
-      // Add calories from truly manual workouts (not from HealthKit and not linked to HealthKit)
-      const manualWorkoutCalories = dayActivities
-        .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID && a.source !== 'healthkit' && a.source !== 'apple-watch' && !a.fromAppleHealth)
-        .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
-      weekCalories += manualWorkoutCalories;
 
       // Add HealthKit steps
       weekSteps += healthData?.steps || 0;
@@ -14873,12 +14841,8 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
         // Calculate daily totals from actual data
         // Get HealthKit data for this day
         const dayHealthData = healthDataByDate[selectedDate];
-        // HealthKit calories + manually logged calories (not from HealthKit)
-        const healthKitCals = dayHealthData?.calories || 0;
-        const manualCals = fullDayActivities
-          .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID && a.source !== 'healthkit' && a.source !== 'apple-watch' && !a.fromAppleHealth)
-          .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
-        const dayCalories = healthKitCals + manualCals;
+        // Use HealthKit calories directly — wearables already track all active energy
+        const dayCalories = dayHealthData?.calories || 0;
         const daySteps = dayHealthData?.steps || 0;
         const dayMiles = fullDayActivities.reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
         const totalSessions = fullDayActivities.length;
@@ -16619,15 +16583,9 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
           let weekSteps = 0;
           weekDates.forEach(dateStr => {
             const healthData = healthDataByDate[dateStr];
-            // Add HealthKit calories (includes workout calories from Apple Watch/Whoop)
+            // Use HealthKit calories directly — wearables already track all active energy
             weekCalories += healthData?.calories || 0;
             weekSteps += healthData?.steps || 0;
-            // Add calories from truly manual workouts (not from HealthKit and not linked to HealthKit)
-            const dayActivities = weekActivities.filter(a => a.date === dateStr);
-            const manualWorkoutCalories = dayActivities
-              .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID && a.source !== 'healthkit' && a.source !== 'apple-watch' && !a.fromAppleHealth)
-              .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
-            weekCalories += manualWorkoutCalories;
           });
 
           return {
@@ -16676,14 +16634,9 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
           let monthSteps = 0;
           monthDates.forEach(dateStr => {
             const healthData = healthDataByDate[dateStr];
+            // Use HealthKit calories directly — wearables already track all active energy
             monthCalories += healthData?.calories || 0;
             monthSteps += healthData?.steps || 0;
-            // Add calories from truly manual workouts
-            const dayActivities = monthActivities.filter(a => a.date === dateStr);
-            const manualWorkoutCalories = dayActivities
-              .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID && a.source !== 'healthkit' && a.source !== 'apple-watch' && !a.fromAppleHealth)
-              .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
-            monthCalories += manualWorkoutCalories;
           });
 
           return {
@@ -19333,15 +19286,9 @@ export default function DaySevenApp() {
           week.miles += (parseFloat(activity.distance) || 0);
         });
 
-        // Calculate calories: HealthKit data + manual workout calories (same logic as UI)
+        // Use HealthKit calories directly — wearables already track all active energy
         const healthData = healthDataByDate[dateStr];
         weekCalories += healthData?.calories || 0;
-
-        // Add calories from truly manual workouts (not from HealthKit)
-        const manualWorkoutCalories = dayActivities
-          .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID && a.source !== 'healthkit' && a.source !== 'apple-watch' && !a.fromAppleHealth)
-          .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
-        weekCalories += manualWorkoutCalories;
       });
 
       week.calories = weekCalories;
@@ -20944,16 +20891,9 @@ export default function DaySevenApp() {
         date.setDate(weekStart.getDate() + d);
         const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
-        // Add HealthKit calories for this day
+        // Use HealthKit calories directly — wearables already track all active energy
         const healthData = healthDataByDate[dateStr];
         weeklyCalories += healthData?.calories || 0;
-
-        // Add calories from truly manual workouts (not from HealthKit)
-        const dayActivities = updatedActivities.filter(a => a.date === dateStr);
-        const manualWorkoutCalories = dayActivities
-          .filter(a => !a.healthKitUUID && !a.linkedHealthKitUUID && a.source !== 'healthkit' && a.source !== 'apple-watch' && !a.fromAppleHealth)
-          .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
-        weeklyCalories += manualWorkoutCalories;
       }
 
       const currentMostCalories = getRecordValue('mostCaloriesWeek');

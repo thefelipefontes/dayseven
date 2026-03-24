@@ -1679,6 +1679,12 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                   setMaxHr(watchMetrics.maxHeartRate.toString());
                   hasData = true;
                 }
+                // Distance comes in meters from watch — convert to miles
+                if (watchMetrics.distance > 0) {
+                  const distanceMiles = (watchMetrics.distance / 1609.34).toFixed(2);
+                  setDistance(distanceMiles);
+                  hasData = true;
+                }
               }
             } catch (e) {
               console.log('[FinishModal] Watch metrics error:', e.message);
@@ -4691,7 +4697,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                     <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{records.mostRecoveryWeek || 0}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}>🔥 Most Calories/Day</span>
+                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}>🔥 Most Calories/Workout</span>
                     <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{records.mostCaloriesDay ? records.mostCaloriesDay.toLocaleString() : (getRecordVal(records.highestCalories) || '--')}</span>
                   </div>
                   <div className="flex justify-between items-center">
@@ -4962,7 +4968,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                 // Priority: higher = more impressive (calories and distance are most shareable)
                 if (weeklyAnalysis?.bestCalorieWorkout &&
                     parseInt(weeklyAnalysis.bestCalorieWorkout.calories) === getRecordVal(records.highestCalories)) {
-                  weeklyPRs.push({ label: 'Highest Calories', value: parseInt(weeklyAnalysis.bestCalorieWorkout.calories).toLocaleString(), priority: 5 });
+                  weeklyPRs.push({ label: 'Highest Calorie Workout', value: parseInt(weeklyAnalysis.bestCalorieWorkout.calories).toLocaleString(), priority: 5 });
                 }
                 if (weeklyAnalysis?.longestDistance &&
                     parseFloat(weeklyAnalysis.longestDistance.distance) === getRecordVal(records.longestDistance)) {
@@ -15518,11 +15524,11 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
               <div>
                 <div className="text-xs text-gray-600 uppercase tracking-wider mb-3">Single Workout Records</div>
                 <div className="p-4 rounded-2xl bg-zinc-900/50 space-y-3">
-                  {/* Highest Calories */}
+                  {/* Highest Calorie Workout */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <span className="text-sm">🔥</span>
-                      <div className="text-xs text-gray-500">Highest Calories</div>
+                      <div className="text-xs text-gray-500">Highest Calorie Workout</div>
                     </div>
                     <div className="text-right">
                       <div className="text-base font-bold text-white">
@@ -19209,6 +19215,9 @@ export default function DaySevenApp() {
       mostWorkoutsWeek: 0,
       mostCaloriesWeek: 0,
       mostMilesWeek: 0,
+      mostRunsWeek: 0,
+      mostLiftsWeek: 0,
+      mostRecoveryWeek: 0,
     };
 
     const recoveryTypes = ['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic'];
@@ -19300,6 +19309,23 @@ export default function DaySevenApp() {
     activitiesList.forEach(a => a.date && allDates.add(a.date));
     safeHealthHistory.forEach(h => h.date && allDates.add(h.date));
 
+    // Helper to categorize activities (matches getShareCategory used by streaks)
+    const getCategory = (a) => {
+      if (a.countToward === 'warmup' || a.customActivityCategory === 'warmup') return 'warmup';
+      if (a.countToward) {
+        if (a.countToward === 'strength') return 'lifting';
+        return a.countToward;
+      }
+      if (a.customActivityCategory) {
+        if (a.customActivityCategory === 'strength') return 'lifting';
+        return a.customActivityCategory;
+      }
+      if (a.type === 'Strength Training') return 'lifting';
+      if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(a.type)) return 'cardio';
+      if (['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
+      return 'other';
+    };
+
     // Group dates by week and calculate stats
     allDates.forEach(dateStr => {
       const actDate = new Date(dateStr + 'T12:00:00'); // Use noon to avoid timezone issues
@@ -19308,7 +19334,7 @@ export default function DaySevenApp() {
       const weekKey = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
 
       if (!weeklyData[weekKey]) {
-        weeklyData[weekKey] = { workouts: 0, calories: 0, miles: 0, dates: new Set() };
+        weeklyData[weekKey] = { workouts: 0, lifts: 0, runs: 0, cardio: 0, recovery: 0, calories: 0, miles: 0, dates: new Set() };
       }
       weeklyData[weekKey].dates.add(dateStr);
     });
@@ -19319,13 +19345,24 @@ export default function DaySevenApp() {
       let weekCalories = 0;
 
       week.dates.forEach(dateStr => {
-        // Get activities for this day
         const dayActivities = activitiesList.filter(a => a.date === dateStr);
 
-        // Count workouts and miles from activities
         dayActivities.forEach(activity => {
-          week.workouts++;
+          const cat = getCategory(activity);
+          if (cat === 'warmup') return; // Skip warmups
+
           week.miles += (parseFloat(activity.distance) || 0);
+
+          // Only count strength + cardio toward "most workouts" (not walks, recovery, etc.)
+          if (cat === 'lifting' || cat === 'cardio') {
+            week.workouts++;
+          }
+
+          // Track per-category counts
+          if (cat === 'lifting') week.lifts++;
+          if (cat === 'cardio') week.cardio++;
+          if (cat === 'recovery') week.recovery++;
+          if (activity.type === 'Running') week.runs++;
         });
 
         // Use HealthKit calories directly — wearables already track all active energy
@@ -19336,19 +19373,50 @@ export default function DaySevenApp() {
       week.calories = weekCalories;
     });
 
+    // Calculate weekly records
     Object.values(weeklyData).forEach(week => {
       if (week.workouts > newRecords.mostWorkoutsWeek) newRecords.mostWorkoutsWeek = week.workouts;
       if (week.calories > newRecords.mostCaloriesWeek) newRecords.mostCaloriesWeek = Math.round(week.calories);
       if (week.miles > newRecords.mostMilesWeek) newRecords.mostMilesWeek = parseFloat(week.miles.toFixed(1));
+      if (week.runs > newRecords.mostRunsWeek) newRecords.mostRunsWeek = week.runs;
+      if (week.lifts > newRecords.mostLiftsWeek) newRecords.mostLiftsWeek = week.lifts;
+      if (week.recovery > newRecords.mostRecoveryWeek) newRecords.mostRecoveryWeek = week.recovery;
     });
 
-    // Preserve streak records from existing records (these are tracked separately)
+    // Calculate longest historical streaks from weekly data
+    // Sort weeks chronologically and find longest consecutive streak for each category
+    const goals = existingRecords?._goals || {};
+    const liftsGoal = goals.liftsPerWeek || 4;
+    const cardioGoal = goals.cardioPerWeek || 2;
+    const recoveryGoal = goals.recoveryPerWeek || 2;
+
+    const sortedWeekKeys = Object.keys(weeklyData).sort();
+    let longestMaster = 0, longestStrength = 0, longestCardio = 0, longestRecovery = 0;
+    let curMaster = 0, curStrength = 0, curCardio = 0, curRecovery = 0;
+
+    sortedWeekKeys.forEach(weekKey => {
+      const week = weeklyData[weekKey];
+      const liftsMet = week.lifts >= liftsGoal;
+      const cardioMet = week.cardio >= cardioGoal;
+      const recoveryMet = week.recovery >= recoveryGoal;
+
+      curStrength = liftsMet ? curStrength + 1 : 0;
+      curCardio = cardioMet ? curCardio + 1 : 0;
+      curRecovery = recoveryMet ? curRecovery + 1 : 0;
+      curMaster = (liftsMet && cardioMet && recoveryMet) ? curMaster + 1 : 0;
+
+      longestStrength = Math.max(longestStrength, curStrength);
+      longestCardio = Math.max(longestCardio, curCardio);
+      longestRecovery = Math.max(longestRecovery, curRecovery);
+      longestMaster = Math.max(longestMaster, curMaster);
+    });
+
     return {
       ...newRecords,
-      longestMasterStreak: existingRecords?.longestMasterStreak || 0,
-      longestStrengthStreak: existingRecords?.longestStrengthStreak || 0,
-      longestCardioStreak: existingRecords?.longestCardioStreak || 0,
-      longestRecoveryStreak: existingRecords?.longestRecoveryStreak || 0,
+      longestMasterStreak: Math.max(longestMaster, existingRecords?.longestMasterStreak || 0),
+      longestStrengthStreak: Math.max(longestStrength, existingRecords?.longestStrengthStreak || 0),
+      longestCardioStreak: Math.max(longestCardio, existingRecords?.longestCardioStreak || 0),
+      longestRecoveryStreak: Math.max(longestRecovery, existingRecords?.longestRecoveryStreak || 0),
     };
   };
 
@@ -19615,7 +19683,7 @@ export default function DaySevenApp() {
           // Recalculate records from activities and health history to ensure they're accurate
           // This fixes any corruption from race conditions or data issues
           try {
-            const recalculatedRecords = recalculateAllRecordsFromActivities(userActivities || [], userRecords, healthHistoryData || []);
+            const recalculatedRecords = recalculateAllRecordsFromActivities(userActivities || [], { ...userRecords, _goals: userGoals || {} }, healthHistoryData || []);
 
             setUserData(prev => ({
               ...prev,

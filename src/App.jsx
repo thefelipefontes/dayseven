@@ -1707,6 +1707,12 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                 setMaxHr(liveResult.maxHr.toString());
                 hasData = true;
               }
+              // Distance comes in meters — convert to miles
+              if (liveResult.distance > 0) {
+                const distanceMiles = (liveResult.distance / 1609.34).toFixed(2);
+                setDistance(distanceMiles);
+                hasData = true;
+              }
             }
           }
 
@@ -22267,7 +22273,7 @@ export default function DaySevenApp() {
           // watchWorkoutStarted listener will cancel the phone session and switch to watch source.
           setActiveWorkout({ ...workoutData, source: 'phone', startTime: new Date().toISOString() });
           const activityType = getHealthKitActivityType(workoutData);
-          await startLiveWorkout(activityType);
+          await startLiveWorkout(activityType, workoutData.subtype);
 
           // Proactive watch detection: poll every 2s for up to 15s to see if the watch
           // woke up and started tracking (startWatchApp may have woken it).

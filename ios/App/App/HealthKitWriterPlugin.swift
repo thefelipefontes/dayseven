@@ -109,6 +109,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
     // Observer queries for real-time monitoring during live workout
     private var heartRateQuery: HKObserverQuery?
     private var caloriesQuery: HKObserverQuery?
+    private var distanceQuery: HKObserverQuery?
     private var observerStartDate: Date?
 
     // Background workout detection
@@ -118,6 +119,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     // Accumulated metrics during observation
     private var accumulatedCalories: Double = 0
+    private var accumulatedDistance: Double = 0  // in meters
     private var heartRateSamples: [Double] = []  // For calculating avg/max
     private var heartRateHKSamples: [HKQuantitySample] = []  // Actual samples to attach to workout
     private var lastHeartRate: Double = 0
@@ -421,6 +423,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         let activityType = mapActivityType(activityTypeString)
+        let subtype = call.getString("subtype")
 
         // Request authorization first
         let workoutType = HKObjectType.workoutType()
@@ -430,8 +433,12 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
+        var typesToRead: Set<HKObjectType> = [heartRateType, caloriesType]
+        // Add distance to read types for activities that track it
+        if let distanceType = HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning) {
+            typesToRead.insert(distanceType)
+        }
         let typesToShare: Set<HKSampleType> = [workoutType]
-        let typesToRead: Set<HKObjectType> = [heartRateType, caloriesType]
 
         healthStore.requestAuthorization(toShare: typesToShare, read: typesToRead) { [weak self] success, error in
             guard let self = self else { return }
@@ -453,7 +460,13 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             // Create workout configuration
             let configuration = HKWorkoutConfiguration()
             configuration.activityType = activityType
-            configuration.locationType = .unknown
+            if subtype?.lowercased() == "indoor" {
+                configuration.locationType = .indoor
+            } else if subtype?.lowercased() == "outdoor" {
+                configuration.locationType = .outdoor
+            } else {
+                configuration.locationType = .unknown
+            }
 
             // Create workout builder
             let builder = HKWorkoutBuilder(healthStore: self.healthStore, configuration: configuration, device: .local())
@@ -464,6 +477,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
 
             // Reset metrics
             self.accumulatedCalories = 0
+            self.accumulatedDistance = 0
             self.heartRateSamples = []
             self.heartRateHKSamples = []
             self.lastHeartRate = 0
@@ -487,9 +501,10 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                     return
                 }
 
-                // Start observing heart rate and calories
+                // Start observing heart rate, calories, and distance
                 self.startHeartRateObserver(from: startDate)
                 self.startCaloriesObserver(from: startDate)
+                self.startDistanceObserver(from: startDate)
 
                 // Start Live Activity on lock screen
                 if #available(iOS 16.2, *) {
@@ -594,6 +609,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                                 "calories": Int(round(finalCalories)),
                                 "avgHr": Int(round(avgHr)),
                                 "maxHr": Int(round(maxHr)),
+                                "distance": self.accumulatedDistance, // meters
                                 "sampleCount": self.heartRateSamples.count
                             ])
                         } else {
@@ -602,6 +618,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
 
                         // Reset metrics
                         self.accumulatedCalories = 0
+                        self.accumulatedDistance = 0
                         self.heartRateSamples = []
                         self.heartRateHKSamples = []
                         self.lastHeartRate = 0
@@ -644,6 +661,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         liveWorkoutStartDate = nil
         observerStartDate = nil
         accumulatedCalories = 0
+        accumulatedDistance = 0
         heartRateSamples = []
         heartRateHKSamples = []
         lastHeartRate = 0
@@ -964,6 +982,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             "avgHr": Int(round(avgHr)),
             "maxHr": Int(round(maxHr)),
             "lastHr": Int(round(lastHeartRate)),
+            "distance": accumulatedDistance, // meters
             "sampleCount": heartRateSamples.count
         ])
     }
@@ -1137,6 +1156,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             let observerStart = Date()
             self.observerStartDate = observerStart
             self.accumulatedCalories = 0
+            self.accumulatedDistance = 0
             self.heartRateSamples = []
             self.heartRateHKSamples = []
             self.lastHeartRate = 0
@@ -1169,6 +1189,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         observerStartDate = nil
         accumulatedCalories = 0
+        accumulatedDistance = 0
         heartRateSamples = []
         heartRateHKSamples = []
         lastHeartRate = 0
@@ -1199,6 +1220,10 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         if let query = caloriesQuery {
             healthStore.stop(query)
             caloriesQuery = nil
+        }
+        if let query = distanceQuery {
+            healthStore.stop(query)
+            distanceQuery = nil
         }
     }
 
@@ -1319,6 +1344,56 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                         "calories": Int(round(totalCalories))
                     ])
                 }
+            }
+        }
+
+        healthStore.execute(query)
+    }
+
+    private func startDistanceObserver(from startDate: Date) {
+        guard let distanceType = HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning) else { return }
+
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: nil, options: .strictStartDate)
+
+        distanceQuery = HKObserverQuery(sampleType: distanceType, predicate: predicate) { [weak self] query, completionHandler, error in
+            guard let self = self else {
+                completionHandler()
+                return
+            }
+
+            if error != nil {
+                completionHandler()
+                return
+            }
+
+            self.fetchDistanceSamples(from: startDate)
+            completionHandler()
+        }
+
+        if let query = distanceQuery {
+            healthStore.execute(query)
+            fetchDistanceSamples(from: startDate)
+        }
+    }
+
+    private func fetchDistanceSamples(from startDate: Date) {
+        guard let distanceType = HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning) else { return }
+
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: nil, options: .strictStartDate)
+        let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+
+        let query = HKSampleQuery(sampleType: distanceType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) { [weak self] _, samples, error in
+            guard let self = self, error == nil, let samples = samples as? [HKQuantitySample] else { return }
+
+            let meterUnit = HKUnit.meter()
+            var totalDistance: Double = 0
+
+            for sample in samples {
+                totalDistance += sample.quantity.doubleValue(for: meterUnit)
+            }
+
+            if totalDistance > 0 {
+                self.accumulatedDistance = totalDistance
             }
         }
 

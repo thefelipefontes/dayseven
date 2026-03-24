@@ -1049,13 +1049,15 @@ export async function saveWorkoutToHealthKit(activity) {
 
 // Start a live workout session - this creates an actual workout in HealthKit
 // and will collect metrics in real-time. No need to start on Apple Watch separately.
-export async function startLiveWorkout(activityType) {
+export async function startLiveWorkout(activityType, subtype) {
   if (!Capacitor.isNativePlatform()) {
     return { success: false, reason: 'not_native' };
   }
 
   try {
-    const result = await HealthKitWriter.startLiveWorkout({ activityType });
+    const params = { activityType };
+    if (subtype) params.subtype = subtype;
+    const result = await HealthKitWriter.startLiveWorkout(params);
     return {
       success: true,
       startDate: result.startDate,

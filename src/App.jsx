@@ -17,7 +17,7 @@ import NotificationSettings from './NotificationSettings';
 import { initializePushNotifications, handleNotificationNavigation, removeFCMToken, clearBadge, clearAllNotifications, incrementBadge, shouldShowNotification, getNotificationPreferences } from './services/notificationService';
 import { initializeRevenueCat, checkProStatus, addCustomerInfoListener, logoutRevenueCat, presentPaywall, presentCustomerCenter, restorePurchases } from './services/subscriptionService';
 import ActivityIcon, { ICON_PICKER_CATEGORIES, CATEGORY_COLORS as ICON_CATEGORY_COLORS } from './components/ActivityIcon';
-import RouteMapView from './components/RouteMapView';
+import RouteMapView, { ll2px, bestFit, makeTiles, RouteOverlay, TileLayer, TILE } from './components/RouteMapView';
 import MuscleBodyMap from './components/MuscleBodyMap';
 
 // Flag to suppress foreground refresh while photo picker is open
@@ -5441,6 +5441,693 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
   );
 };
 
+// ─── Activity Stamp Modal ─────────────────────────────────────────────────────
+const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCoords = [], getActivityCategory }) => {
+  const cardRef = useRef(null);
+  const [stampMode, setStampMode] = useState('dark'); // 'dark' or 'transparent'
+  const [isSharing, setIsSharing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setIsClosing(false);
+      requestAnimationFrame(() => setIsAnimating(true));
+    } else {
+      setIsAnimating(false);
+    }
+  }, [isOpen]);
+
+  const handleClose = () => {
+    setIsClosing(true);
+    setIsAnimating(false);
+    setTimeout(() => {
+      setIsClosing(false);
+      onClose();
+    }, 250);
+  };
+
+  if (!isOpen && !isClosing) return null;
+  if (!activity) return null;
+
+  const category = getActivityCategory(activity);
+  const categoryColor = category === 'lifting' ? '#00FF94' : category === 'cardio' ? '#FF9500' : category === 'recovery' ? '#00D1FF' : '#9CA3AF';
+  const isTransparent = stampMode === 'transparent';
+
+  // Format duration
+  const duration = activity.duration || 0;
+  const durationStr = duration >= 60
+    ? `${Math.floor(duration / 60)}h ${duration % 60}m`
+    : `${duration}m`;
+
+  // Format distance
+  const distance = parseFloat(activity.distance) || 0;
+  const hasDistance = distance > 0;
+  const distanceStr = distance >= 10 ? distance.toFixed(1) : distance.toFixed(2);
+
+  // Calculate pace (min/mi)
+  const pace = hasDistance && duration > 0 ? duration / distance : 0;
+  const paceMin = Math.floor(pace);
+  const paceSec = Math.round((pace - paceMin) * 60);
+  const paceStr = `${paceMin}:${String(paceSec).padStart(2, '0')}`;
+
+  // Activity display name
+  const activityName = activity.subtype && activity.subtype !== 'Indoor' && activity.subtype !== 'Outdoor'
+    ? activity.subtype
+    : activity.type === 'Strength Training'
+      ? (activity.strengthType || 'Strength')
+      : activity.type;
+
+  // Activity emoji
+  const activityEmoji = activity.customEmoji || activity.sportEmoji || (
+    activity.type === 'Running' ? '🏃' :
+    activity.type === 'Cycle' ? '🚴' :
+    activity.type === 'Strength Training' ? '🏋️' :
+    activity.type === 'Yoga' ? '🧘' :
+    activity.type === 'Cold Plunge' ? '🧊' :
+    activity.type === 'Sauna' ? '🧖' :
+    activity.type === 'Sports' ? '⚽' :
+    activity.type === 'Pilates' ? '🤸' :
+    activity.type === 'Elliptical' ? '🏃' :
+    activity.type === 'Stair Climbing' ? '🪜' :
+    activity.type === 'Walking' ? '🚶' :
+    activity.type === 'Massage' ? '💆' :
+    '💪'
+  );
+
+  // Format date
+  const formatStampDate = (dateStr) => {
+    if (!dateStr) return '';
+    const parts = dateStr.split('-');
+    const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  };
+
+  // Muscle data for strength activities
+  const getMuscleData = () => {
+    const areas = activity.focusAreas || (activity.focusArea ? [activity.focusArea] : []);
+    const data = {};
+    areas.forEach(a => { data[a] = 1; });
+    return data;
+  };
+
+  // Mini activity rings component
+  const MiniRings = ({ size = 50 }) => {
+    const rings = [
+      { progress: weeklyProgress?.lifts ? Math.min(weeklyProgress.lifts.completed / weeklyProgress.lifts.goal, 1) : 0, color: '#00FF94', label: 'S' },
+      { progress: weeklyProgress?.cardio ? Math.min(weeklyProgress.cardio.completed / weeklyProgress.cardio.goal, 1) : 0, color: '#FF9500', label: 'C' },
+      { progress: weeklyProgress?.recovery ? Math.min(weeklyProgress.recovery.completed / weeklyProgress.recovery.goal, 1) : 0, color: '#00D1FF', label: 'R' },
+    ];
+    const cx = size / 2, cy = size / 2;
+    const strokeWidth = 3.5;
+    const gap = 4.5;
+
+    return (
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        {rings.map((ring, i) => {
+          const r = (size / 2) - strokeWidth / 2 - i * gap;
+          const circumference = 2 * Math.PI * r;
+          const offset = circumference * (1 - ring.progress);
+          return (
+            <g key={i}>
+              <circle cx={cx} cy={cy} r={r} fill="none"
+                stroke={isTransparent ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.08)'}
+                strokeWidth={strokeWidth} />
+              <circle cx={cx} cy={cy} r={r} fill="none"
+                stroke={ring.color} strokeWidth={strokeWidth}
+                strokeDasharray={circumference} strokeDashoffset={offset}
+                strokeLinecap="round"
+                transform={`rotate(-90 ${cx} ${cy})`}
+                style={isTransparent ? { filter: `drop-shadow(0 0 3px ${ring.color})` } : {}} />
+            </g>
+          );
+        })}
+      </svg>
+    );
+  };
+
+  // Static route map for stamp
+  const StaticRouteMap = ({ coords, width, height, color, transparent }) => {
+    if (!coords || coords.length < 2) return null;
+    const fit = bestFit(coords, width, height, 20);
+    const { tiles, pts } = makeTiles(coords, width, height, fit.z, fit.cp, true, 0);
+
+    return (
+      <div style={{ position: 'relative', width, height, overflow: 'hidden', borderRadius: 8 }}>
+        {!transparent && tiles.map(t => (
+          <img key={t.key} src={t.url} alt="" crossOrigin="anonymous" draggable={false}
+            style={{ position: 'absolute', left: t.left, top: t.top, width: TILE, height: TILE, pointerEvents: 'none' }} />
+        ))}
+        {pts && pts.length >= 2 && (() => {
+          const s = pts[0], e = pts[pts.length - 1];
+          const d = pts.map(p => `${p.x},${p.y}`).join(' ');
+          return (
+            <svg width={width} height={height} style={{ position: 'absolute', top: 0, left: 0 }}>
+              <polyline points={d} fill="none" stroke={transparent ? 'rgba(255,255,255,0.2)' : color}
+                strokeWidth={transparent ? 4 : 6} strokeOpacity={transparent ? 1 : 0.35}
+                strokeLinecap="round" strokeLinejoin="round" />
+              <polyline points={d} fill="none" stroke={transparent ? 'rgba(255,255,255,0.8)' : color}
+                strokeWidth={transparent ? 2 : 3} strokeLinecap="round" strokeLinejoin="round"
+                style={transparent ? { filter: 'drop-shadow(0 0 4px rgba(255,255,255,0.4))' } : {}} />
+              <circle cx={s.x} cy={s.y} r={4} fill="#00FF94" stroke="#fff" strokeWidth={1.5} />
+              <circle cx={e.x} cy={e.y} r={4} fill={transparent ? '#fff' : color} stroke="#fff" strokeWidth={1.5} />
+            </svg>
+          );
+        })()}
+      </div>
+    );
+  };
+
+  // Image generation
+  const generateStampImage = async () => {
+    if (!cardRef.current) return null;
+    try {
+      const w = 270, h = 480;
+      const canvas = await html2canvas(cardRef.current, {
+        backgroundColor: isTransparent ? null : '#0a0a0a',
+        scale: 3,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        width: w,
+        height: h,
+        onclone: (clonedDoc, clonedElement) => {
+          clonedElement.style.transform = 'none';
+          clonedElement.style.width = `${w}px`;
+          clonedElement.style.height = `${h}px`;
+          clonedElement.style.borderRadius = '0';
+          clonedElement.style.overflow = 'hidden';
+          if (!isTransparent) {
+            clonedElement.style.background = 'linear-gradient(180deg, #0a0a0a 0%, #0d0d0d 50%, #000000 100%)';
+          }
+          const allElements = clonedElement.querySelectorAll('*');
+          allElements.forEach(el => {
+            el.style.animation = 'none';
+            el.style.transition = 'none';
+            // Fix gradient text
+            const cs = window.getComputedStyle(el);
+            if (cs.webkitBackgroundClip === 'text' || cs.backgroundClip === 'text' ||
+                el.style.webkitBackgroundClip === 'text' || el.style.WebkitBackgroundClip === 'text') {
+              el.style.background = 'none';
+              el.style.webkitBackgroundClip = 'unset';
+              el.style.WebkitBackgroundClip = 'unset';
+              el.style.backgroundClip = 'unset';
+              el.style.webkitTextFillColor = 'unset';
+              el.style.WebkitTextFillColor = 'unset';
+              el.style.color = 'rgba(255, 255, 255, 0.7)';
+            }
+            // Fix text vertical alignment
+            const tagName = el.tagName.toLowerCase();
+            if ((tagName === 'span' || tagName === 'div') && el.textContent?.trim() && el.children.length === 0) {
+              const currentTransform = el.style.transform || '';
+              if (!currentTransform.includes('translateY')) {
+                el.style.transform = currentTransform + ' translateY(-6px)';
+              }
+            }
+          });
+        }
+      });
+
+      // Apply rounded corners for dark mode
+      if (!isTransparent) {
+        const roundedCanvas = document.createElement('canvas');
+        roundedCanvas.width = canvas.width;
+        roundedCanvas.height = canvas.height;
+        const ctx = roundedCanvas.getContext('2d');
+        const radius = 16 * 3;
+        ctx.beginPath();
+        ctx.moveTo(radius, 0);
+        ctx.lineTo(canvas.width - radius, 0);
+        ctx.quadraticCurveTo(canvas.width, 0, canvas.width, radius);
+        ctx.lineTo(canvas.width, canvas.height - radius);
+        ctx.quadraticCurveTo(canvas.width, canvas.height, canvas.width - radius, canvas.height);
+        ctx.lineTo(radius, canvas.height);
+        ctx.quadraticCurveTo(0, canvas.height, 0, canvas.height - radius);
+        ctx.lineTo(0, radius);
+        ctx.quadraticCurveTo(0, 0, radius, 0);
+        ctx.closePath();
+        ctx.clip();
+        ctx.drawImage(canvas, 0, 0);
+        return roundedCanvas;
+      }
+      return canvas;
+    } catch (error) {
+      return null;
+    }
+  };
+
+  const handleSaveStamp = async () => {
+    setIsSaving(true);
+    try {
+      const canvas = await generateStampImage();
+      if (!canvas) { alert('Failed to generate image. Please try again.'); return; }
+      const dataUrl = canvas.toDataURL('image/png', 1.0);
+      if (Capacitor.isNativePlatform()) {
+        try {
+          const { Media } = await import('@capacitor-community/media');
+          await Media.savePhoto({ path: dataUrl, albumIdentifier: undefined });
+          triggerHaptic(ImpactStyle.Medium);
+          return;
+        } catch (e) { /* fall through */ }
+      }
+      const link = document.createElement('a');
+      link.download = `dayseven-stamp-${Date.now()}.png`;
+      link.href = dataUrl;
+      link.click();
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleShareStamp = async () => {
+    setIsSharing(true);
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    try {
+      const canvas = await generateStampImage();
+      if (!canvas) { alert('Failed to generate image. Please try again.'); setIsSharing(false); return; }
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png', 1.0));
+      const file = new File([blob], `dayseven-stamp.png`, { type: 'image/png' });
+      if (navigator.share) {
+        try {
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file] });
+            setIsSharing(false);
+            return;
+          }
+          await navigator.share({ title: 'Day Seven', text: 'Check out my workout!' });
+          const link = document.createElement('a');
+          link.download = `dayseven-stamp-${Date.now()}.png`;
+          link.href = canvas.toDataURL('image/png', 1.0);
+          link.click();
+          setIsSharing(false);
+          return;
+        } catch (e) {
+          if (e.name === 'AbortError') { setIsSharing(false); return; }
+        }
+      }
+      const link = document.createElement('a');
+      link.download = `dayseven-stamp-${Date.now()}.png`;
+      link.href = canvas.toDataURL('image/png', 1.0);
+      link.click();
+    } catch (error) {
+      alert('Failed to generate image. Please try again.');
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
+  // Text shadow for transparent mode
+  const tShadow = isTransparent ? '0 1px 6px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,0.5)' : 'none';
+  const textColor = '#fff';
+
+  // Ring completion text
+  const ringCompletionParts = [];
+  if (weeklyProgress?.lifts) ringCompletionParts.push(`${weeklyProgress.lifts.completed}/${weeklyProgress.lifts.goal}`);
+  if (weeklyProgress?.cardio) ringCompletionParts.push(`${weeklyProgress.cardio.completed}/${weeklyProgress.cardio.goal}`);
+  if (weeklyProgress?.recovery) ringCompletionParts.push(`${weeklyProgress.recovery.completed}/${weeklyProgress.recovery.goal}`);
+
+  return (
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        backgroundColor: 'rgba(0,0,0,0.85)',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        opacity: isAnimating && !isClosing ? 1 : 0,
+        transition: 'opacity 0.25s ease-out',
+        padding: '20px 0',
+      }}
+      onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
+    >
+      {/* Mode toggle */}
+      <div style={{
+        display: 'flex', gap: 4, marginBottom: 16, padding: 3,
+        borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.08)',
+      }}>
+        <button
+          onClick={() => setStampMode('dark')}
+          style={{
+            padding: '6px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+            backgroundColor: stampMode === 'dark' ? 'rgba(255,255,255,0.15)' : 'transparent',
+            color: stampMode === 'dark' ? '#fff' : 'rgba(255,255,255,0.5)',
+            border: 'none', cursor: 'pointer',
+          }}
+        >
+          Dark
+        </button>
+        <button
+          onClick={() => setStampMode('transparent')}
+          style={{
+            padding: '6px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+            backgroundColor: stampMode === 'transparent' ? 'rgba(255,255,255,0.15)' : 'transparent',
+            color: stampMode === 'transparent' ? '#fff' : 'rgba(255,255,255,0.5)',
+            border: 'none', cursor: 'pointer',
+          }}
+        >
+          Overlay
+        </button>
+      </div>
+
+      {/* Stamp Card Preview */}
+      <div style={{
+        width: 270, height: 480, borderRadius: 16, overflow: 'hidden',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+        ...(isTransparent ? {
+          backgroundImage: `linear-gradient(45deg, #1a1a1a 25%, transparent 25%), linear-gradient(-45deg, #1a1a1a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #1a1a1a 75%), linear-gradient(-45deg, transparent 75%, #1a1a1a 75%)`,
+          backgroundSize: '16px 16px',
+          backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0px',
+        } : {}),
+      }}>
+        {/* Actual stamp content captured by html2canvas */}
+        <div
+          ref={cardRef}
+          style={{
+            width: 270, height: 480,
+            background: isTransparent ? 'transparent' : 'linear-gradient(180deg, #0a0a0a 0%, #0d0d0d 50%, #000000 100%)',
+            display: 'flex', flexDirection: 'column',
+            padding: '24px 20px 16px',
+            position: 'relative',
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          }}
+        >
+          {/* Header: Emoji + Activity Name + Date */}
+          <div style={{ textAlign: 'center', marginBottom: 16 }}>
+            <div style={{ fontSize: 32, marginBottom: 4, textShadow: tShadow }}>{activityEmoji}</div>
+            <div style={{
+              fontSize: 18, fontWeight: 700, color: textColor, letterSpacing: '-0.3px',
+              textShadow: tShadow, marginBottom: 2,
+            }}>
+              {activityName}
+            </div>
+            <div style={{
+              fontSize: 11, color: isTransparent ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.4)',
+              textShadow: tShadow, letterSpacing: '0.5px',
+            }}>
+              {formatStampDate(activity.date)}{activity.time ? ` • ${activity.time}` : ''}
+            </div>
+          </div>
+
+          {/* Middle: Category-specific content */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 12 }}>
+            {/* Route map for cardio with GPS data */}
+            {category === 'cardio' && routeCoords.length >= 2 && (
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 4 }}>
+                <StaticRouteMap
+                  coords={routeCoords}
+                  width={230}
+                  height={140}
+                  color={categoryColor}
+                  transparent={isTransparent}
+                />
+              </div>
+            )}
+
+            {/* Big stat display for cardio/distance */}
+            {category === 'cardio' && hasDistance && (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{
+                  fontSize: 48, fontWeight: 800, color: textColor,
+                  lineHeight: 1, letterSpacing: '-2px', textShadow: tShadow,
+                }}>
+                  {distanceStr}
+                </div>
+                <div style={{
+                  fontSize: 14, fontWeight: 600, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.4)',
+                  textShadow: tShadow, letterSpacing: '1px', textTransform: 'uppercase',
+                }}>
+                  miles
+                </div>
+              </div>
+            )}
+
+            {/* Stat row for cardio */}
+            {category === 'cardio' && (
+              <div style={{ display: 'flex', justifyContent: 'center', gap: 24 }}>
+                {hasDistance && pace > 0 && (
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: textColor, textShadow: tShadow }}>
+                      {paceStr}
+                    </div>
+                    <div style={{
+                      fontSize: 10, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
+                      textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px',
+                    }}>
+                      /mi pace
+                    </div>
+                  </div>
+                )}
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: textColor, textShadow: tShadow }}>
+                    {durationStr}
+                  </div>
+                  <div style={{
+                    fontSize: 10, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
+                    textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px',
+                  }}>
+                    time
+                  </div>
+                </div>
+                {activity.calories > 0 && (
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: textColor, textShadow: tShadow }}>
+                      {activity.calories}
+                    </div>
+                    <div style={{
+                      fontSize: 10, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
+                      textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px',
+                    }}>
+                      cal
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Big stat + muscle body map for strength */}
+            {category === 'lifting' && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: 28 }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 32, fontWeight: 800, color: textColor, textShadow: tShadow, lineHeight: 1 }}>
+                      {durationStr}
+                    </div>
+                    <div style={{
+                      fontSize: 10, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
+                      textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: 2,
+                    }}>
+                      duration
+                    </div>
+                  </div>
+                  {activity.calories > 0 && (
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 32, fontWeight: 800, color: textColor, textShadow: tShadow, lineHeight: 1 }}>
+                        {activity.calories}
+                      </div>
+                      <div style={{
+                        fontSize: 10, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
+                        textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: 2,
+                      }}>
+                        cal
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {/* Muscle groups */}
+                {(activity.focusAreas?.length > 0 || activity.focusArea) && (
+                  <div style={{ display: 'flex', justifyContent: 'center' }}>
+                    <div style={{ height: 140, opacity: isTransparent ? 0.85 : 1 }}>
+                      <MuscleBodyMap muscleData={getMuscleData()} />
+                    </div>
+                  </div>
+                )}
+                {/* Muscle group labels */}
+                {(activity.focusAreas?.length > 0 || activity.focusArea) && (
+                  <div style={{
+                    display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 4,
+                    marginTop: -4,
+                  }}>
+                    {(activity.focusAreas || [activity.focusArea]).map(area => (
+                      <span key={area} style={{
+                        fontSize: 9, fontWeight: 600, color: '#00FF94',
+                        padding: '2px 8px', borderRadius: 8,
+                        backgroundColor: isTransparent ? 'rgba(0,255,148,0.15)' : 'rgba(0,255,148,0.1)',
+                        textShadow: isTransparent ? '0 1px 3px rgba(0,0,0,0.5)' : 'none',
+                      }}>
+                        {area}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Recovery: Large duration + calming display */}
+            {category === 'recovery' && (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{
+                  fontSize: 48, fontWeight: 800, color: textColor,
+                  lineHeight: 1, letterSpacing: '-2px', textShadow: tShadow,
+                }}>
+                  {durationStr}
+                </div>
+                <div style={{
+                  fontSize: 14, fontWeight: 600, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.4)',
+                  textShadow: tShadow, letterSpacing: '1px', textTransform: 'uppercase', marginTop: 4,
+                }}>
+                  {activity.type === 'Cold Plunge' || activity.type === 'Sauna' ? 'session' : 'duration'}
+                </div>
+                {activity.calories > 0 && (
+                  <div style={{ marginTop: 16 }}>
+                    <div style={{ fontSize: 22, fontWeight: 700, color: textColor, textShadow: tShadow }}>
+                      {activity.calories}
+                    </div>
+                    <div style={{
+                      fontSize: 10, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
+                      textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px',
+                    }}>
+                      calories
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Other category: Duration + calories */}
+            {category !== 'cardio' && category !== 'lifting' && category !== 'recovery' && (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{
+                  fontSize: 48, fontWeight: 800, color: textColor,
+                  lineHeight: 1, letterSpacing: '-2px', textShadow: tShadow,
+                }}>
+                  {durationStr}
+                </div>
+                <div style={{
+                  fontSize: 14, fontWeight: 600, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.4)',
+                  textShadow: tShadow, letterSpacing: '1px', textTransform: 'uppercase', marginTop: 4,
+                }}>
+                  duration
+                </div>
+                {activity.calories > 0 && (
+                  <div style={{ marginTop: 16 }}>
+                    <div style={{ fontSize: 22, fontWeight: 700, color: textColor, textShadow: tShadow }}>
+                      {activity.calories}
+                    </div>
+                    <div style={{
+                      fontSize: 10, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
+                      textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px',
+                    }}>
+                      calories
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Cardio without distance — show big duration */}
+            {category === 'cardio' && !hasDistance && (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{
+                  fontSize: 48, fontWeight: 800, color: textColor,
+                  lineHeight: 1, letterSpacing: '-2px', textShadow: tShadow,
+                }}>
+                  {durationStr}
+                </div>
+                <div style={{
+                  fontSize: 14, fontWeight: 600, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.4)',
+                  textShadow: tShadow, letterSpacing: '1px', textTransform: 'uppercase', marginTop: 4,
+                }}>
+                  duration
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Footer: Rings + Branding */}
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            marginTop: 'auto', paddingTop: 8,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <MiniRings size={44} />
+              <div>
+                <div style={{
+                  fontSize: 9, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
+                  textShadow: tShadow, letterSpacing: '0.3px',
+                }}>
+                  This week
+                </div>
+                <div style={{
+                  fontSize: 10, fontWeight: 600, color: isTransparent ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.5)',
+                  textShadow: tShadow,
+                }}>
+                  {ringCompletionParts.join(' · ')}
+                </div>
+              </div>
+            </div>
+            <div style={{
+              fontSize: 10, fontWeight: 700, color: isTransparent ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.25)',
+              letterSpacing: '2px', textTransform: 'uppercase',
+              textShadow: tShadow,
+            }}>
+              DAYSEVEN
+            </div>
+          </div>
+
+          {/* Accent line at top */}
+          {!isTransparent && (
+            <div style={{
+              position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
+              width: 40, height: 3, borderRadius: 2,
+              backgroundColor: categoryColor, opacity: 0.6,
+            }} />
+          )}
+        </div>
+      </div>
+
+      {/* Action Buttons */}
+      <div style={{ display: 'flex', gap: 12, marginTop: 20, width: 270 }}>
+        <button
+          onClick={handleSaveStamp}
+          disabled={isSaving}
+          style={{
+            flex: 1, padding: '12px 0', borderRadius: 12, border: 'none',
+            backgroundColor: 'rgba(255,255,255,0.1)', color: '#fff',
+            fontSize: 14, fontWeight: 600, cursor: 'pointer',
+            opacity: isSaving ? 0.5 : 1,
+          }}
+        >
+          {isSaving ? 'Saving...' : 'Save'}
+        </button>
+        <button
+          onClick={handleShareStamp}
+          disabled={isSharing}
+          style={{
+            flex: 1, padding: '12px 0', borderRadius: 12, border: 'none',
+            backgroundColor: categoryColor, color: '#000',
+            fontSize: 14, fontWeight: 600, cursor: 'pointer',
+            opacity: isSharing ? 0.5 : 1,
+          }}
+        >
+          {isSharing ? 'Sharing...' : 'Share'}
+        </button>
+      </div>
+
+      {/* Close button */}
+      <button
+        onClick={handleClose}
+        style={{
+          marginTop: 12, padding: '8px 24px', borderRadius: 8,
+          backgroundColor: 'transparent', border: 'none',
+          color: 'rgba(255,255,255,0.5)', fontSize: 14, fontWeight: 500,
+          cursor: 'pointer',
+        }}
+      >
+        Close
+      </button>
+    </div>
+  );
+};
+
 // Change Password Modal
 const ChangePasswordModal = ({ isOpen, onClose, user }) => {
   const [currentPassword, setCurrentPassword] = useState('');
@@ -6832,7 +7519,7 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
 };
 
 // Activity Detail Modal
-const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user, userProfile }) => {
+const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user, userProfile, onShareStamp }) => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -7353,6 +8040,39 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
 
           {/* Action Buttons */}
           <div className="space-y-2 pb-4">
+            {/* Share Stamp Button */}
+            {onShareStamp && (
+              <button
+                onClick={() => {
+                  onShareStamp(activity, routeCoords);
+                  handleClose();
+                }}
+                className="w-full py-3 rounded-xl font-medium transition-all duration-150"
+                style={{ backgroundColor: 'rgba(255,149,0,0.1)', color: '#FF9500' }}
+                onTouchStart={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.98)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,149,0,0.2)';
+                }}
+                onTouchEnd={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,149,0,0.1)';
+                }}
+                onMouseDown={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.98)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,149,0,0.2)';
+                }}
+                onMouseUp={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,149,0,0.1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,149,0,0.1)';
+                }}
+              >
+                Share Stamp
+              </button>
+            )}
             {/* Edit Button */}
             <button
               onClick={() => {
@@ -11183,7 +11903,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
 
 // Home Tab - Simplified
 
-const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, autoImportedCount = 0, onDismissAutoImported }) => {
+const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, autoImportedCount = 0, onDismissAutoImported, onShareStamp }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
   const [dismissConfirmWorkouts, setDismissConfirmWorkouts] = useState(null); // Workouts pending dismiss confirmation
@@ -12971,6 +13691,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         onEdit={onEditActivity}
         user={user}
         userProfile={userProfile}
+        onShareStamp={onShareStamp}
       />
 
       {/* Reactions Detail Modal */}
@@ -13749,7 +14470,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
 };
 
 // History Tab
-const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory = [], healthKitData = {}, userData, onAddActivity, onDeleteActivity, onEditActivity, initialView = 'calendar', initialStatsSubView = 'overview', activeStreaksRef, calendarRef, statsRef, progressPhotosRef, user, userProfile, isPro, onPresentPaywall }) => {
+const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory = [], healthKitData = {}, userData, onAddActivity, onDeleteActivity, onEditActivity, initialView = 'calendar', initialStatsSubView = 'overview', activeStreaksRef, calendarRef, statsRef, progressPhotosRef, user, userProfile, isPro, onPresentPaywall, onShareStamp }) => {
   const [view, setView] = useState(initialView);
   const [statsSubView, setStatsSubView] = useState(initialStatsSubView); // 'overview' or 'records'
 
@@ -16679,6 +17400,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
         }}
         user={user}
         userProfile={userProfile}
+        onShareStamp={onShareStamp}
       />
     </div>
   );
@@ -18374,6 +19096,9 @@ export default function DaySevenApp() {
   const [showShare, setShowShare] = useState(false);
   const [shareWeekRange, setShareWeekRange] = useState(null); // { startDate, endDate } for week-specific sharing
   const [shareMonthRange, setShareMonthRange] = useState(null); // { startDate, endDate } for month-specific sharing
+  const [showStampModal, setShowStampModal] = useState(false);
+  const [stampActivity, setStampActivity] = useState(null);
+  const [stampRouteCoords, setStampRouteCoords] = useState([]);
   const [showFriends, setShowFriends] = useState(false);
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);
   const [friends, setFriends] = useState([]);
@@ -21767,6 +22492,10 @@ export default function DaySevenApp() {
                 if (!finishedWorkout.duration && watchResult.duration) {
                   finishedWorkout.duration = watchResult.duration;
                 }
+                // Distance from watch is in miles (already converted by WorkoutResult)
+                if (!finishedWorkout.distance && watchResult.distance > 0) {
+                  finishedWorkout.distance = parseFloat(watchResult.distance.toFixed(2));
+                }
               }
             } catch (e) {
               console.log('[FinishWorkout] Watch end error:', e.message);
@@ -21791,6 +22520,20 @@ export default function DaySevenApp() {
 
           // Save the finished workout to Firestore using the existing handler
           handleActivitySaved(workoutData);
+
+          // Open stamp modal for sharing
+          setStampActivity(workoutData);
+          // Fetch route coords if distance activity with HealthKit UUID
+          const hasHkUUID = workoutData.healthKitUUID || workoutData.linkedHealthKitUUID;
+          const isOutdoor = workoutData.subtype !== 'Indoor';
+          if (hasHkUUID && isOutdoor) {
+            fetchWorkoutRoute(workoutData.healthKitUUID || workoutData.linkedHealthKitUUID, workoutData.healthKitStartDate || workoutData.linkedHealthKitStartDate)
+              .then(result => setStampRouteCoords(result.hasRoute ? result.coordinates : []))
+              .catch(() => setStampRouteCoords([]));
+          } else {
+            setStampRouteCoords([]);
+          }
+          setShowStampModal(true);
 
           // Clear active workout state
           setActiveWorkout(null);
@@ -21951,6 +22694,11 @@ export default function DaySevenApp() {
                   }}
                   autoImportedCount={autoImportedCount}
                   onDismissAutoImported={() => setAutoImportedCount(0)}
+                  onShareStamp={(activity, routeCoords) => {
+                    setStampActivity(activity);
+                    setStampRouteCoords(routeCoords || []);
+                    setShowStampModal(true);
+                  }}
                 />
               )}
               {activeTab === 'history' && (
@@ -21996,6 +22744,11 @@ export default function DaySevenApp() {
                       const proStatus = await checkProStatus();
                       setIsPro(proStatus);
                     }
+                  }}
+                  onShareStamp={(activity, routeCoords) => {
+                    setStampActivity(activity);
+                    setStampRouteCoords(routeCoords || []);
+                    setShowStampModal(true);
                   }}
                 />
               )}
@@ -22919,6 +23672,19 @@ export default function DaySevenApp() {
           // Clear pending toast if user shares (don't interrupt share flow)
           setPendingToast(null);
         }}
+      />
+
+      <ActivityStampModal
+        isOpen={showStampModal}
+        onClose={() => {
+          setShowStampModal(false);
+          setStampActivity(null);
+          setStampRouteCoords([]);
+        }}
+        activity={stampActivity}
+        weeklyProgress={weeklyProgress}
+        routeCoords={stampRouteCoords}
+        getActivityCategory={getActivityCategory}
       />
 
       <Toast

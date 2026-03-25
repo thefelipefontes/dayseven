@@ -1,5 +1,5 @@
 import Foundation
-import Capacitor
+@preconcurrency import Capacitor
 import HealthKit
 import WatchConnectivity
 import UserNotifications

@@ -206,9 +206,15 @@ struct ActiveWorkoutView: View {
                         Text(wm.distance > 10 ? String(format: "%.2f", wm.distance / 1609.34) : "0.00")
                             .font(.system(size: 24, weight: .bold, design: .rounded))
                             .foregroundColor(.blue)
-                        Text("MI")
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundColor(.gray)
+                        if wm.distance <= 10 && wm.elapsedTime > 60 {
+                            Text("Check Settings")
+                                .font(.system(size: 8, weight: .medium))
+                                .foregroundColor(.orange)
+                        } else {
+                            Text("MI")
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundColor(.gray)
+                        }
                     }
                 }
             } else {

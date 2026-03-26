@@ -37,6 +37,7 @@ const triggerHaptic = async (style = ImpactStyle.Medium) => {
 // DAY SEVEN Logo component - uses wordmark image
 const DaySevenLogo = ({ size = 'base', opacity = 0.7 }) => {
   const sizeMap = {
+    'xs': 'h-[14px]',
     'sm': 'h-4',
     'base': 'h-5',
   };
@@ -4731,8 +4732,8 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
 
             {/* Footer */}
             <div className="text-center mt-1">
-              <DaySevenLogo gradient={['#FFD700', '#FFA500']} size="sm" />
-              <div className={`${isPostFormat ? 'text-[8px]' : 'text-[8px]'} text-gray-600 tracking-widest uppercase`}>Personal Bests</div>
+              <DaySevenLogo gradient={['#FFD700', '#FFA500']} size="xs" />
+              <div className="text-[8px] text-gray-600 tracking-widest uppercase -mt-0.5">Personal Bests</div>
             </div>
           </div>
         );
@@ -4790,14 +4791,14 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
         if (weeklySlide === 0) {
           return (
             <div
-              className={`relative h-full flex flex-col ${isPostFormat ? 'pt-4 pb-6 px-4' : 'py-5 px-5'}`}
+              className={`relative h-full flex flex-col ${isPostFormat ? 'pt-4 pb-6 px-4' : 'py-5 px-5 justify-center'}`}
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
             >
               {/* Main content wrapper */}
               <div className={isPostFormat ? 'flex-1' : ''}>
               {/* Header */}
-              <div className={`text-center ${isPostFormat ? '' : 'mt-6'}`}>
+              <div className={`text-center ${isPostFormat ? '' : ''}`}>
                 <div className={isPostFormat ? 'text-2xl' : 'text-3xl'} style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>📅</div>
                 <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-500 uppercase tracking-wider mt-1.5`}>{getWeekDateRange()}</div>
                 <div className={`font-black ${isPostFormat ? 'text-2xl' : 'text-2xl'}`} style={{ color: allGoalsMet ? colors.primary : 'white' }}>
@@ -4807,7 +4808,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
               </div>
 
               {/* Content */}
-              <div className={`${isPostFormat ? 'flex-none py-2' : 'flex-1 pt-3 pb-4'} flex flex-col justify-center`}>
+              <div className={`${isPostFormat ? 'flex-none py-2' : 'flex-none pt-3 pb-2'} flex flex-col justify-center`}>
                 {/* Progress bar */}
                 <div className={`w-full ${isPostFormat ? 'mb-4' : 'mb-5'}`}>
                   <div className={`${isPostFormat ? 'h-2' : 'h-2'} rounded-full overflow-hidden flex`} style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
@@ -4875,10 +4876,12 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                   </div>
                   {(() => {
                     const segments = [];
-                    const strengthNames = (weeklyAnalysis?.topStrength || []).map(([name]) => name);
+                    const strengthNames = (weeklyAnalysis?.topStrength || []).slice(0, 2).map(([name]) => name);
                     if (strengthNames.length > 0) segments.push({ text: strengthNames.join('/'), color: '#00FF94' });
-                    (weeklyAnalysis?.topCardio || []).forEach(([name]) => segments.push({ text: name, color: '#FF9500' }));
-                    (weeklyAnalysis?.topRecovery || []).forEach(([name]) => segments.push({ text: name, color: '#00D1FF' }));
+                    const topCardioName = weeklyAnalysis?.topCardio?.[0]?.[0];
+                    if (topCardioName) segments.push({ text: topCardioName, color: '#FF9500' });
+                    const topRecoveryName = weeklyAnalysis?.topRecovery?.[0]?.[0];
+                    if (topRecoveryName) segments.push({ text: topRecoveryName, color: '#00D1FF' });
                     return segments.length > 0 && (
                       <>
                         <div className={`w-full h-px ${isPostFormat ? 'my-1.5' : 'my-2'}`} style={{ backgroundColor: 'rgba(255,255,255,0.05)' }} />
@@ -4896,12 +4899,12 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                   })()}
                 </div>
               </div>
-              </div>
 
               {/* Footer */}
-              <div className={`text-center ${isPostFormat ? 'mt-0' : 'mt-1'}`}>
-                <DaySevenLogo gradient={['#00FF94', '#00D1FF']} size={isPostFormat ? 'base' : 'base'} />
-                <div className={`${isPostFormat ? 'text-[10px] -mt-0.5' : 'text-[10px]'} text-gray-600 tracking-widest uppercase`}>Weekly Recap</div>
+              <div className="text-center mt-2">
+                <DaySevenLogo gradient={['#00FF94', '#00D1FF']} size="xs" />
+                <div className="text-[8px] text-gray-600 tracking-widest uppercase -mt-0.5">Weekly Recap</div>
+              </div>
               </div>
             </div>
           );
@@ -5008,8 +5011,10 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
 
                 if (weeklyPRs.length === 0) return null;
 
-                // Sort by priority (highest first) and take top 3
-                const topPRs = weeklyPRs.sort((a, b) => b.priority - a.priority).slice(0, 3);
+                // Sort by priority (highest first) and take top 2 to avoid overflow
+                const sortedPRs = weeklyPRs.sort((a, b) => b.priority - a.priority);
+                const topPRs = sortedPRs.slice(0, 2);
+                const extraCount = sortedPRs.length - topPRs.length;
 
                 return (
                   <div className="w-full">
@@ -5020,6 +5025,11 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                           <span style={{ color: '#FFD700' }}>🏆 {pr.label}: {pr.value}</span>
                         </div>
                       ))}
+                      {extraCount > 0 && (
+                        <div className={`${isPostFormat ? 'px-1.5 py-0.5' : 'px-2 py-0.5'} rounded-full ${isPostFormat ? 'text-[8px]' : 'text-[9px]'}`} style={{ backgroundColor: 'rgba(255,215,0,0.05)', border: '1px solid rgba(255,215,0,0.15)' }}>
+                          <span style={{ color: 'rgba(255,215,0,0.6)' }}>+{extraCount} more</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -5027,8 +5037,8 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
             </div>
 
             <div className="text-center mt-auto w-full">
-              <DaySevenLogo gradient={['#00FF94', '#00D1FF']} size={isPostFormat ? 'sm' : 'base'} />
-              <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-600 tracking-widest uppercase -mt-0.5`}>Week Highlights</div>
+              <DaySevenLogo gradient={['#00FF94', '#00D1FF']} size="xs" />
+              <div className="text-[8px] text-gray-600 tracking-widest uppercase -mt-0.5">Week Highlights</div>
             </div>
           </div>
         );
@@ -5109,8 +5119,8 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                 </div>
               </div>
               <div className={`text-center ${isPostFormat ? '-mt-0.5' : 'mt-0.5'}`}>
-                <DaySevenLogo gradient={['#ffffff', '#888888']} size={isPostFormat ? 'sm' : 'base'} />
-                <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-600 tracking-widest uppercase -mt-0.5`}>Streak Stats</div>
+                <DaySevenLogo gradient={['#ffffff', '#888888']} size="xs" />
+                <div className="text-[8px] text-gray-600 tracking-widest uppercase -mt-0.5">Streak Stats</div>
               </div>
             </div>
           </div>
@@ -5219,8 +5229,8 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
 
             {/* Footer */}
             <div className="text-center mt-auto w-full">
-              <DaySevenLogo gradient={['#8B5CF6', '#06B6D4']} size={isPostFormat ? 'sm' : 'base'} />
-              <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-600 tracking-widest uppercase -mt-0.5`}>Monthly Stats</div>
+              <DaySevenLogo gradient={['#8B5CF6', '#06B6D4']} size="xs" />
+              <div className="text-[8px] text-gray-600 tracking-widest uppercase -mt-0.5">Monthly Stats</div>
             </div>
           </div>
         );

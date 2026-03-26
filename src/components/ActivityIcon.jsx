@@ -159,6 +159,7 @@ const ICON_MAP = {
   // Recovery
   'Cold Plunge':         { Icon: IconSnowflake, category: 'recovery' },
   'Sauna':               { Icon: IconFlame, category: 'recovery' },
+  'Contrast Therapy':    { Icon: IconDroplets, category: 'recovery' },
   'Massage':             { Icon: IconMassage, category: 'recovery' },
   'Chiropractic':        { Icon: IconBone, category: 'recovery' },
   // Uncategorized (from Apple Health — user needs to assign a goal category)

@@ -866,6 +866,7 @@ export function getHealthKitActivityType(activity) {
     'Pilates': 'pilates',
     'Cold Plunge': 'Cold Plunge',
     'Sauna': 'Sauna',
+    'Contrast Therapy': 'Contrast Therapy',
     'Swimming': 'swimming',
     'Hiking': 'hiking',
     'Rowing': 'rowing',

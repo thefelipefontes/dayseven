@@ -21,6 +21,7 @@ struct SharedDefaults {
     static let todayCaloriesKey = "todayCalories"
     static let lastUpdatedKey = "lastUpdated"
     static let recentActivitiesKey = "recentActivities"
+    static let daysLeftInWeekKey = "daysLeftInWeek"
 
     // Celebration tracking keys (used by CelebrationManager)
     static let dailyGoalsCelebratedKey = "dailyGoalsCelebrated"
@@ -74,6 +75,7 @@ struct SharedDefaults {
             todaySteps: defaults.integer(forKey: todayStepsKey),
             stepsGoal: defaults.integer(forKey: stepsGoalKey) > 0 ? defaults.integer(forKey: stepsGoalKey) : 10000,
             todayCalories: defaults.integer(forKey: todayCaloriesKey),
+            daysLeftInWeek: defaults.integer(forKey: daysLeftInWeekKey),
             lastUpdated: defaults.double(forKey: lastUpdatedKey),
             recentActivities: Self.readRecentActivities(from: defaults)
         )
@@ -120,6 +122,7 @@ struct WidgetStreakData {
     let todaySteps: Int
     let stepsGoal: Int
     let todayCalories: Int
+    let daysLeftInWeek: Int
     let lastUpdated: Double
     let recentActivities: [WidgetActivity]
 
@@ -155,6 +158,7 @@ struct WidgetStreakData {
         cardioCompleted: 0, cardioGoal: 3,
         recoveryCompleted: 0, recoveryGoal: 2,
         todaySteps: 0, stepsGoal: 10000, todayCalories: 0,
+        daysLeftInWeek: 0,
         lastUpdated: 0,
         recentActivities: []
     )

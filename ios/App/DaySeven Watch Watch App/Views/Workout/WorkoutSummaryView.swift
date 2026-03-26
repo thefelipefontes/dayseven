@@ -51,7 +51,7 @@ struct WorkoutSummaryView: View {
 
     /// Whether this is a recovery activity (Sauna, Cold Plunge) — hides calories from summary
     private var isRecoveryActivity: Bool {
-        ["sauna", "cold plunge"].contains(activityType.lowercased())
+        ["sauna", "cold plunge", "contrast therapy"].contains(activityType.lowercased())
     }
 
     /// Average pace formatted as M:SS /mi (only meaningful for distance activities)
@@ -94,7 +94,7 @@ struct WorkoutSummaryView: View {
     /// Activity-aware noun: "Activity" for Sauna/Cold Plunge, "Walk" for Walking, "Workout" for everything else
     private var activityNoun: String {
         switch activityType {
-        case "Sauna", "Cold Plunge": return "Activity"
+        case "Sauna", "Cold Plunge", "Contrast Therapy": return "Activity"
         case "Walking": return "Walk"
         default: return "Workout"
         }

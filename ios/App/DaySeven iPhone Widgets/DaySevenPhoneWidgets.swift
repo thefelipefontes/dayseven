@@ -38,6 +38,7 @@ extension WidgetStreakData {
         cardioCompleted: 2, cardioGoal: 3,
         recoveryCompleted: 2, recoveryGoal: 2,
         todaySteps: 8432, stepsGoal: 10000, todayCalories: 347,
+        daysLeftInWeek: 3,
         lastUpdated: Date().timeIntervalSince1970,
         recentActivities: [
             WidgetActivity(name: "Push Day", category: "lifting", date: "2026-03-19", duration: 55, calories: 320),
@@ -185,7 +186,7 @@ struct MediumWidgetView: View {
     let data: WidgetStreakData
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 8) {
             // Streak badge
             HStack(spacing: 4) {
                 Image(systemName: "flame.fill")
@@ -210,12 +211,13 @@ struct MediumWidgetView: View {
                 }
                 .foregroundColor(WidgetColors.calories)
             }
-            .offset(y: -5)
+
+            Spacer()
 
             // Three category rings in a row
             HStack(spacing: 16) {
                 VStack(spacing: 7) {
-                    CategoryRingView(completed: data.liftsCompleted, goal: data.liftsGoal, progress: data.liftsProgress, color: WidgetColors.strength, size: 70, lineWidth: 7)
+                    CategoryRingView(completed: data.liftsCompleted, goal: data.liftsGoal, progress: data.liftsProgress, color: WidgetColors.strength, size: 80, lineWidth: 7)
                     HStack(spacing: 2) {
                         Text("\u{1F4AA}")
                             .font(.system(size: 10))
@@ -225,7 +227,7 @@ struct MediumWidgetView: View {
                     }
                 }
                 VStack(spacing: 7) {
-                    CategoryRingView(completed: data.cardioCompleted, goal: data.cardioGoal, progress: data.cardioProgress, color: WidgetColors.cardio, size: 70, lineWidth: 7)
+                    CategoryRingView(completed: data.cardioCompleted, goal: data.cardioGoal, progress: data.cardioProgress, color: WidgetColors.cardio, size: 80, lineWidth: 7)
                     HStack(spacing: 2) {
                         Text("\u{2764}\u{FE0F}\u{200D}\u{1F525}")
                             .font(.system(size: 10))
@@ -235,7 +237,7 @@ struct MediumWidgetView: View {
                     }
                 }
                 VStack(spacing: 7) {
-                    CategoryRingView(completed: data.recoveryCompleted, goal: data.recoveryGoal, progress: data.recoveryProgress, color: WidgetColors.recovery, size: 70, lineWidth: 7)
+                    CategoryRingView(completed: data.recoveryCompleted, goal: data.recoveryGoal, progress: data.recoveryProgress, color: WidgetColors.recovery, size: 80, lineWidth: 7)
                     HStack(spacing: 2) {
                         Text("\u{1F9CA}")
                             .font(.system(size: 10))
@@ -245,6 +247,13 @@ struct MediumWidgetView: View {
                     }
                 }
             }
+            .offset(y: -6)
+
+            // Days left
+            Text(data.daysLeftInWeek == 0 ? "Last day!" : "\(data.daysLeftInWeek) day\(data.daysLeftInWeek == 1 ? "" : "s") left")
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundColor(.white.opacity(0.35))
+                .offset(y: -1)
         }
         .padding(.horizontal, 4)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -294,7 +303,7 @@ struct LargeWidgetView: View {
 
             // Three category rings
             HStack(spacing: 20) {
-                VStack(spacing: 6) {
+                VStack(spacing: 8) {
                     CategoryRingView(completed: data.liftsCompleted, goal: data.liftsGoal, progress: data.liftsProgress, color: WidgetColors.strength, size: 85, lineWidth: 8)
                     HStack(spacing: 3) {
                         Text("\u{1F4AA}")
@@ -304,7 +313,7 @@ struct LargeWidgetView: View {
                             .foregroundColor(WidgetColors.strength)
                     }
                 }
-                VStack(spacing: 6) {
+                VStack(spacing: 8) {
                     CategoryRingView(completed: data.cardioCompleted, goal: data.cardioGoal, progress: data.cardioProgress, color: WidgetColors.cardio, size: 85, lineWidth: 8)
                     HStack(spacing: 3) {
                         Text("\u{2764}\u{FE0F}\u{200D}\u{1F525}")
@@ -314,7 +323,7 @@ struct LargeWidgetView: View {
                             .foregroundColor(WidgetColors.cardio)
                     }
                 }
-                VStack(spacing: 6) {
+                VStack(spacing: 8) {
                     CategoryRingView(completed: data.recoveryCompleted, goal: data.recoveryGoal, progress: data.recoveryProgress, color: WidgetColors.recovery, size: 85, lineWidth: 8)
                     HStack(spacing: 3) {
                         Text("\u{1F9CA}")
@@ -325,13 +334,18 @@ struct LargeWidgetView: View {
                     }
                 }
             }
+            .offset(y: 3)
+
+            // Days left
+            Text(data.daysLeftInWeek == 0 ? "Last day!" : "\(data.daysLeftInWeek) day\(data.daysLeftInWeek == 1 ? "" : "s") left")
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundColor(.white.opacity(0.4))
 
             // Divider
             Rectangle()
                 .fill(Color.white.opacity(0.1))
                 .frame(height: 0.5)
                 .padding(.horizontal, 4)
-                .padding(.top, 2)
 
             // Recent activities
             if !data.recentActivities.isEmpty {

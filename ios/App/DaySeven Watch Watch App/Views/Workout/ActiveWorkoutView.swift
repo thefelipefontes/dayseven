@@ -41,7 +41,7 @@ struct ActiveWorkoutView: View {
 
     /// Whether this is a recovery timer activity (Sauna, Cold Plunge) — simplified UI
     private var isRecoveryTimer: Bool {
-        let recoveryTypes = ["sauna", "cold plunge"]
+        let recoveryTypes = ["sauna", "cold plunge", "contrast therapy"]
         return recoveryTypes.contains(activityType.lowercased())
     }
 

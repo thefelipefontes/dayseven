@@ -309,7 +309,7 @@ const markPhoneCelebrationShown = () => {
 const initialWeeklyProgress = {
   lifts: { completed: 0, goal: 4, sessions: [] },
   cardio: { completed: 0, goal: 3, sessions: [], breakdown: { running: 0, cycling: 0, sports: 0 } },
-  recovery: { completed: 0, goal: 2, sessions: [], breakdown: { coldPlunge: 0, sauna: 0, yoga: 0 } },
+  recovery: { completed: 0, goal: 2, sessions: [], breakdown: { coldPlunge: 0, sauna: 0, contrastTherapy: 0, coldShower: 0, hotPlunge: 0, yoga: 0 } },
   calories: { burned: 0, goal: 500 },
   steps: { today: 0, goal: 10000 }
 };
@@ -1579,6 +1579,10 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
   const [finishSportEmoji, setFinishSportEmoji] = useState(null);
   const [finishStrengthType, setFinishStrengthType] = useState('');
   const [finishFocusAreas, setFinishFocusAreas] = useState([]);
+  const [contrastColdType, setContrastColdType] = useState('Cold Plunge');
+  const [contrastHotType, setContrastHotType] = useState('Sauna');
+  const [contrastColdMinutes, setContrastColdMinutes] = useState(5);
+  const [contrastHotMinutes, setContrastHotMinutes] = useState(10);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 
   const fileInputRef = useRef(null);
@@ -1654,6 +1658,13 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
       setFinishSportEmoji(workout?.sportEmoji || null);
       setFinishStrengthType(workout?.strengthType || '');
       setFinishFocusAreas(normalizeFocusAreas(workout?.focusAreas || (workout?.focusArea ? [workout.focusArea] : [])));
+      // Load contrast therapy fields if editing
+      if (workout?.type === 'Contrast Therapy') {
+        setContrastColdType(workout.coldType || 'Cold Plunge');
+        setContrastHotType(workout.hotType || 'Sauna');
+        setContrastColdMinutes(workout.coldDuration || 5);
+        setContrastHotMinutes(workout.hotDuration || 10);
+      }
       setShowDiscardConfirm(false);
 
       // Get current metrics from the live workout session (don't end it yet)
@@ -1761,6 +1772,10 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
       setFinishSportEmoji(null);
       setFinishStrengthType('');
       setFinishFocusArea('');
+      setContrastColdType('Cold Plunge');
+      setContrastHotType('Sauna');
+      setContrastColdMinutes(5);
+      setContrastHotMinutes(10);
       setShowDiscardConfirm(false);
     }
   }, [isOpen, workout?.startTime]);
@@ -4481,7 +4496,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
       if (a.type === 'Strength Training') return 'lifting';
       if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(a.type)) return 'cardio';
       if (a.type === 'Walking') return 'other';
-      if (['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
+      if (['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
       return 'other';
     };
 
@@ -5507,6 +5522,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
     activity.type === 'Yoga' ? '🧘' :
     activity.type === 'Cold Plunge' ? '🧊' :
     activity.type === 'Sauna' ? '🧖' :
+    activity.type === 'Contrast Therapy' ? '💧' :
     activity.type === 'Sports' ? '⚽' :
     activity.type === 'Pilates' ? '🤸' :
     activity.type === 'Elliptical' ? '🏃' :
@@ -5974,7 +5990,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
                   fontSize: 14, fontWeight: 600, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.4)',
                   textShadow: tShadow, letterSpacing: '1px', textTransform: 'uppercase', marginTop: 4,
                 }}>
-                  {activity.type === 'Cold Plunge' || activity.type === 'Sauna' ? 'session' : 'duration'}
+                  {activity.type === 'Cold Plunge' || activity.type === 'Sauna' || activity.type === 'Contrast Therapy' ? 'session' : 'duration'}
                 </div>
                 {activity.calories > 0 && (
                   <div style={{ marginTop: 16 }}>
@@ -6728,7 +6744,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
     }
     if (a.type === 'Strength Training') return 'lifting';
     if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(a.type)) return 'cardio';
-    if (['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
+    if (['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
     return 'other';
   };
   const lifts = weekData?.activities?.filter(a => getWeekActivityCategory(a) === 'lifting') || [];
@@ -7160,7 +7176,7 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
 
   // Activity type definitions
   const cardioTypes = ['Running', 'Cycle', 'Sports', 'Walking', 'Hiking', 'Swimming', 'Rowing', 'Stair Climbing', 'Elliptical', 'HIIT'];
-  const recoveryTypes = ['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'];
+  const recoveryTypes = ['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'];
 
   // Calculate stats from monthData
   const monthActivities = monthData?.activities || [];
@@ -7178,7 +7194,7 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
     }
     if (a.type === 'Strength Training') return 'lifting';
     if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(a.type)) return 'cardio';
-    if (['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
+    if (['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
     return 'other';
   };
 
@@ -8986,6 +9002,104 @@ const DurationPicker = ({ hours, minutes, onChange, disabled = false }) => {
   );
 };
 
+// Minutes-only Picker (reuses DurationPicker scroll wheel style)
+const MinutesPicker = ({ value, onChange, label = 'min' }) => {
+  const minuteOptions = Array.from({ length: 60 }, (_, i) => i);
+  const ref = useRef(null);
+  const touchState = useRef({ startY: 0, startScroll: 0, lastY: 0, lastTime: 0, velocity: 0, animFrame: null, isTouching: false });
+  const itemHeight = 32;
+  const visibleItems = 3;
+
+  useEffect(() => {
+    if (ref.current && !touchState.current.isTouching) {
+      ref.current.scrollTop = value * itemHeight;
+    }
+  }, [value]);
+
+  const snapToNearest = () => {
+    if (!ref.current) return;
+    const index = Math.round(ref.current.scrollTop / itemHeight);
+    const clamped = Math.max(0, Math.min(minuteOptions.length - 1, index));
+    ref.current.scrollTo({ top: clamped * itemHeight, behavior: 'smooth' });
+    if (clamped !== value) onChange(clamped);
+  };
+
+  const handleScroll = () => {
+    if (!ref.current) return;
+    const index = Math.round(ref.current.scrollTop / itemHeight);
+    const clamped = Math.max(0, Math.min(minuteOptions.length - 1, index));
+    if (clamped !== value) onChange(clamped);
+  };
+
+  const handleTouchStart = (e) => {
+    if (touchState.current.animFrame) cancelAnimationFrame(touchState.current.animFrame);
+    const touch = e.touches[0];
+    touchState.current = { startY: touch.clientY, startScroll: ref.current.scrollTop, lastY: touch.clientY, lastTime: Date.now(), velocity: 0, animFrame: null, isTouching: true };
+  };
+
+  const handleTouchMove = (e) => {
+    if (!touchState.current.isTouching) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    const now = Date.now();
+    const dt = now - touchState.current.lastTime;
+    if (dt > 0) touchState.current.velocity = (touchState.current.lastY - touch.clientY) / dt;
+    touchState.current.lastY = touch.clientY;
+    touchState.current.lastTime = now;
+    ref.current.scrollTop = touchState.current.startScroll + (touchState.current.startY - touch.clientY);
+  };
+
+  const handleTouchEnd = () => {
+    touchState.current.isTouching = false;
+    const velocity = touchState.current.velocity;
+    const maxScroll = (minuteOptions.length - 1) * itemHeight;
+    if (Math.abs(velocity) > 0.3) {
+      let cv = velocity * 16;
+      const friction = 0.92;
+      const animate = () => {
+        cv *= friction;
+        if (Math.abs(cv) < 0.5) { snapToNearest(); return; }
+        ref.current.scrollTop = Math.max(0, Math.min(maxScroll, ref.current.scrollTop + cv));
+        touchState.current.animFrame = requestAnimationFrame(animate);
+      };
+      touchState.current.animFrame = requestAnimationFrame(animate);
+    } else {
+      snapToNearest();
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1">
+      <div className="relative" style={{ height: itemHeight * visibleItems, width: '60px' }}>
+        <div className="absolute top-0 left-0 right-0 z-10 pointer-events-none"
+          style={{ height: itemHeight, background: 'linear-gradient(to bottom, rgba(10,10,10,1) 0%, rgba(10,10,10,0) 100%)' }} />
+        <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none"
+          style={{ height: itemHeight, background: 'linear-gradient(to top, rgba(10,10,10,1) 0%, rgba(10,10,10,0) 100%)' }} />
+        <div className="absolute left-0 right-0 z-5 pointer-events-none rounded-lg"
+          style={{ top: itemHeight, height: itemHeight, backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.3)' }} />
+        <div ref={ref} className="h-full overflow-y-scroll scrollbar-hide"
+          style={{ scrollSnapType: 'none', WebkitOverflowScrolling: 'auto' }}
+          onScroll={handleScroll}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
+          <div style={{ height: itemHeight }} />
+          {minuteOptions.map(v => (
+            <div key={v} onClick={() => { if (ref.current) ref.current.scrollTo({ top: v * itemHeight, behavior: 'smooth' }); }}
+              className="flex items-center justify-center cursor-pointer transition-all duration-150"
+              style={{ height: itemHeight, color: value === v ? '#00FF94' : 'rgba(255,255,255,0.5)', fontWeight: value === v ? 'bold' : 'normal', fontSize: value === v ? '18px' : '14px' }}>
+              {String(v).padStart(2, '0')}
+            </div>
+          ))}
+          <div style={{ height: itemHeight }} />
+        </div>
+      </div>
+      <div className="text-xs text-gray-400">{label}</div>
+    </div>
+  );
+};
+
 // Context to track which swipeable item is currently open
 const SwipeableContext = createContext({ openId: null, setOpenId: () => {}, closeAll: () => {} });
 
@@ -9452,6 +9566,11 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   const [photoPreview, setPhotoPreview] = useState(null);
   const [isPhotoPrivate, setIsPhotoPrivate] = useState(false);
   const [showPhotoOptions, setShowPhotoOptions] = useState(false);
+  // Contrast Therapy state
+  const [contrastColdType, setContrastColdType] = useState('Cold Plunge');
+  const [contrastHotType, setContrastHotType] = useState('Sauna');
+  const [contrastColdMinutes, setContrastColdMinutes] = useState(5);
+  const [contrastHotMinutes, setContrastHotMinutes] = useState(10);
   const photoInputRef = useRef(null);
   const cameraInputRef = useRef(null);
   const hasInitializedRef = useRef(false);
@@ -9477,7 +9596,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       // For "Other" activities OR uncategorized Apple Health types, load custom fields
       const isUncatType = pendingActivity?.type && !['Strength Training', 'Weightlifting', 'Bodyweight', 'Circuit',
         'Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Walking',
-        'Yoga', 'Pilates', 'Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Other'].includes(pendingActivity.type);
+        'Yoga', 'Pilates', 'Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Other'].includes(pendingActivity.type);
       const loadCustomFields = pendingActivity?.type === 'Other' || isUncatType;
       setCustomActivityName(loadCustomFields
         ? (isUncatType ? (pendingActivity?.appleWorkoutName || pendingActivity?.type || '') : (pendingActivity?.subtype || ''))
@@ -9537,6 +9656,10 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
           // Default to 5 minutes for Cold Plunge
           setDurationHours(0);
           setDurationMinutes(5);
+        } else if (pendingActivity?.type === 'Contrast Therapy') {
+          // Default to 15 minutes for Contrast Therapy
+          setDurationHours(0);
+          setDurationMinutes(15);
         } else {
           // Default to 1 hour for other activities
           setDurationHours(1);
@@ -9573,6 +9696,13 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       setPhotoPreview(pendingActivity?.photoURL || null);
       setIsPhotoPrivate(pendingActivity?.isPhotoPrivate || false);
       setShowPhotoOptions(false);
+      // Load contrast therapy fields if editing
+      if (pendingActivity?.type === 'Contrast Therapy') {
+        setContrastColdType(pendingActivity.coldType || 'Cold Plunge');
+        setContrastHotType(pendingActivity.hotType || 'Sauna');
+        setContrastColdMinutes(pendingActivity.coldDuration || 5);
+        setContrastHotMinutes(pendingActivity.hotDuration || 10);
+      }
     }
     // Reset the initialization flag when modal closes
     if (!isOpen) {
@@ -9580,6 +9710,10 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       setIsChangingActivityType(false);
       setIsFromNotification(false);
       setShowAllInitialWorkouts(false);
+      setContrastColdType('Cold Plunge');
+      setContrastHotType('Sauna');
+      setContrastColdMinutes(5);
+      setContrastHotMinutes(10);
     }
   }, [isOpen, pendingActivity, defaultDate]);
 
@@ -9721,6 +9855,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
     { name: 'Walking', subtypes: ['Outdoor', 'Indoor'], category: 'hybrid' },
     { name: 'Cold Plunge', subtypes: [], category: 'recovery' },
     { name: 'Sauna', subtypes: [], category: 'recovery' },
+    { name: 'Contrast Therapy', subtypes: [], category: 'recovery' },
     { name: 'Massage', subtypes: [], category: 'recovery' },
     { name: 'Chiropractic', subtypes: [], category: 'recovery' },
     { name: 'Other', subtypes: [], category: 'other' }
@@ -9802,7 +9937,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   // Standard types that have built-in category mapping and icon
   const STANDARD_ACTIVITY_TYPES = ['Strength Training', 'Weightlifting', 'Bodyweight', 'Circuit',
     'Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Walking',
-    'Yoga', 'Pilates', 'Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Other',
+    'Yoga', 'Pilates', 'Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Other',
     'Track & Field', 'Jump Rope', 'Downhill Skiing', 'Cross Country Skiing', 'Snowboarding', 'Skating', 'Surfing', 'Water Polo', 'Paddle Sports',
     'Basketball', 'Soccer', 'Football', 'Tennis', 'Golf', 'Badminton', 'Boxing', 'Martial Arts',
     'Baseball', 'Volleyball', 'Hockey', 'Lacrosse', 'Rugby', 'Softball', 'Squash', 'Table Tennis',
@@ -10161,10 +10296,17 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               date,
               notes,
               distance: distance ? parseFloat(distance) : undefined,
-              duration: activityType === 'Chiropractic' ? undefined : (durationHours * 60 + durationMinutes),
+              duration: activityType === 'Chiropractic' ? undefined : activityType === 'Contrast Therapy' ? (contrastColdMinutes + contrastHotMinutes) : (durationHours * 60 + durationMinutes),
               calories: calories ? parseInt(calories) : undefined,
               avgHr: avgHr ? parseInt(avgHr) : undefined,
               maxHr: maxHr ? parseInt(maxHr) : undefined,
+              // Contrast Therapy fields
+              ...(activityType === 'Contrast Therapy' ? {
+                coldType: contrastColdType,
+                hotType: contrastHotType,
+                coldDuration: contrastColdMinutes,
+                hotDuration: contrastHotMinutes,
+              } : {}),
               saveCustomSport,
               sportEmoji,
               customEmoji: showCustomActivityInput ? customActivityEmoji : undefined, // Store emoji for old "Other" activities
@@ -10531,6 +10673,9 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                         } else if (type.name === 'Cold Plunge') {
                           setDurationHours(0);
                           setDurationMinutes(5);
+                        } else if (type.name === 'Contrast Therapy') {
+                          setDurationHours(0);
+                          setDurationMinutes(15);
                         } else if (type.name === 'Stair Climbing' || type.name === 'Elliptical') {
                           setDurationHours(0);
                           setDurationMinutes(20);
@@ -11185,7 +11330,58 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             {/* Hide duration, date, metrics, notes, photo for "Start Workout" mode - these are entered when finishing */}
             {mode !== 'start' && (
               <>
-            {activityType !== 'Chiropractic' && (
+            {activityType === 'Contrast Therapy' ? (
+            <div className="space-y-4">
+              {/* Cold Type Picker */}
+              <div>
+                <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Cold</label>
+                <div className="flex gap-2 mb-2">
+                  {['Cold Plunge', 'Cold Shower'].map(type => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => setContrastColdType(type)}
+                      className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-all duration-150"
+                      style={{
+                        backgroundColor: contrastColdType === type ? 'rgba(0, 209, 255, 0.15)' : 'rgba(255,255,255,0.05)',
+                        border: contrastColdType === type ? '1px solid rgba(0, 209, 255, 0.4)' : '1px solid rgba(255,255,255,0.1)',
+                        color: contrastColdType === type ? '#00D1FF' : 'rgba(255,255,255,0.5)'
+                      }}
+                    >
+                      {type === 'Cold Plunge' ? '🧊' : '🚿'} {type}
+                    </button>
+                  ))}
+                </div>
+                <MinutesPicker value={contrastColdMinutes} onChange={setContrastColdMinutes} />
+              </div>
+              {/* Hot Type Picker */}
+              <div>
+                <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Hot</label>
+                <div className="flex gap-2 mb-2">
+                  {['Sauna', 'Hot Plunge'].map(type => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => setContrastHotType(type)}
+                      className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-all duration-150"
+                      style={{
+                        backgroundColor: contrastHotType === type ? 'rgba(255, 149, 0, 0.15)' : 'rgba(255,255,255,0.05)',
+                        border: contrastHotType === type ? '1px solid rgba(255, 149, 0, 0.4)' : '1px solid rgba(255,255,255,0.1)',
+                        color: contrastHotType === type ? '#FF9500' : 'rgba(255,255,255,0.5)'
+                      }}
+                    >
+                      {type === 'Sauna' ? '🔥' : '♨️'} {type}
+                    </button>
+                  ))}
+                </div>
+                <MinutesPicker value={contrastHotMinutes} onChange={setContrastHotMinutes} />
+              </div>
+              {/* Total Duration */}
+              <div className="text-center text-xs text-gray-500">
+                Total: {contrastColdMinutes + contrastHotMinutes} min
+              </div>
+            </div>
+            ) : activityType !== 'Chiropractic' && (
             <div>
               <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">
                 Duration {isFromAppleHealth && <span style={{ color: '#00FF94' }}>(from Apple Health)</span>}
@@ -11979,7 +12175,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
       if (activity.countToward) return activity.countToward;
       if (activity.type === 'Strength Training') return 'lifting';
       if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(activity.type)) return 'cardio';
-      if (['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
+      if (['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
       return 'other';
     };
 
@@ -12001,11 +12197,18 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     // Recovery breakdown
     const coldPlunge = weekActivities.filter(a => a.type === 'Cold Plunge');
     const sauna = weekActivities.filter(a => a.type === 'Sauna');
+    const contrastTherapy = weekActivities.filter(a => a.type === 'Contrast Therapy');
     const massage = weekActivities.filter(a => a.type === 'Massage');
     const chiropractic = weekActivities.filter(a => a.type === 'Chiropractic');
     const yoga = weekActivities.filter(a => a.type === 'Yoga');
     const pilates = weekActivities.filter(a => a.type === 'Pilates');
     const otherRecovery = weekActivities.filter(a => a.type === 'Other' && (a.customActivityCategory === 'recovery' || a.countToward === 'recovery'));
+
+    // Contrast Therapy adds individual tallies to each chosen subtype
+    const contrastColdPlungeTally = contrastTherapy.filter(a => a.coldType === 'Cold Plunge').length;
+    const contrastColdShowerTally = contrastTherapy.filter(a => a.coldType === 'Cold Shower').length;
+    const contrastSaunaTally = contrastTherapy.filter(a => a.hotType === 'Sauna').length;
+    const contrastHotPlungeTally = contrastTherapy.filter(a => a.hotType === 'Hot Plunge').length;
 
     // Strength "Other" activities
     const otherStrength = weekActivities.filter(a => a.type === 'Other' && (a.customActivityCategory === 'strength' || a.countToward === 'strength'));
@@ -12037,7 +12240,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     return {
       lifts: { completed: lifts.length, goal: goals.liftsPerWeek, sessions: lifts.map(l => l.subtype || l.type), breakdown: { lifting: lifting.length, bodyweight: bodyweight.length, circuit: circuit.length }, muscleGroups, otherActivities: otherStrength },
       cardio: { completed: cardio.length, goal: goals.cardioPerWeek, miles: totalMiles, sessions: cardio.map(c => c.type), breakdown: { running: running.length, cycling: cycling.length, sports: sports.length, other: otherCardio.length }, otherActivities: otherCardio },
-      recovery: { completed: recovery.length, goal: goals.recoveryPerWeek, sessions: recovery.map(r => r.type), breakdown: { coldPlunge: coldPlunge.length, sauna: sauna.length, massage: massage.length, chiropractic: chiropractic.length, yoga: yoga.length, pilates: pilates.length }, otherActivities: otherRecovery },
+      recovery: { completed: recovery.length, goal: goals.recoveryPerWeek, sessions: recovery.map(r => r.type), breakdown: { coldPlunge: coldPlunge.length + contrastColdPlungeTally, sauna: sauna.length + contrastSaunaTally, contrastTherapy: contrastTherapy.length, coldShower: contrastColdShowerTally, hotPlunge: contrastHotPlungeTally, massage: massage.length, chiropractic: chiropractic.length, yoga: yoga.length, pilates: pilates.length }, otherActivities: otherRecovery },
       // Non-cardio walks (don't count toward goals but should be displayed)
       walks: { count: nonCardioWalks.length, activities: nonCardioWalks },
       // Use HealthKit active calories directly — wearables already track all active energy
@@ -12601,7 +12804,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         if (visiblePendingSync.length === 0 || !showWorkoutNotification) return null;
 
         // Types that auto-categorize into strength/cardio/recovery goals
-        const KNOWN_CATEGORY_TYPES = ['Strength Training', 'Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Yoga', 'Pilates', 'Cold Plunge', 'Sauna',
+        const KNOWN_CATEGORY_TYPES = ['Strength Training', 'Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Yoga', 'Pilates', 'Cold Plunge', 'Sauna', 'Contrast Therapy',
           'Track & Field', 'Jump Rope', 'Downhill Skiing', 'Cross Country Skiing', 'Snowboarding', 'Skating', 'Surfing', 'Water Polo', 'Paddle Sports',
           'Basketball', 'Soccer', 'Football', 'Tennis', 'Golf', 'Badminton', 'Boxing', 'Martial Arts',
           'Baseball', 'Volleyball', 'Hockey', 'Lacrosse', 'Rugby', 'Softball', 'Squash', 'Table Tennis',
@@ -13389,6 +13592,22 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                   <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Sauna" size={10} /> Sauna</div>
                 </div>
                 <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.contrastTherapy || 0}</div>
+                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Contrast Therapy" size={10} /> Contrast</div>
+                </div>
+                {(weekProgress.recovery?.breakdown?.coldShower || 0) > 0 && (
+                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.coldShower}</div>
+                  <div className="flex items-center gap-1 text-[10px] text-gray-400">🚿 Cold Shower</div>
+                </div>
+                )}
+                {(weekProgress.recovery?.breakdown?.hotPlunge || 0) > 0 && (
+                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.hotPlunge}</div>
+                  <div className="flex items-center gap-1 text-[10px] text-gray-400">♨️ Hot Plunge</div>
+                </div>
+                )}
+                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                   <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.massage || 0}</div>
                   <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Massage" size={10} /> Massage</div>
                 </div>
@@ -13828,7 +14047,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
     }
     if (activity.type === 'Strength Training') return 'lifting';
     if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(activity.type)) return 'cardio';
-    if (['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
+    if (['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
     return 'other';
   };
 
@@ -14543,7 +14762,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
     }
     if (activity.type === 'Strength Training') return 'lifting';
     if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(activity.type)) return 'cardio';
-    if (['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
+    if (['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
     return 'other';
   };
 
@@ -19951,7 +20170,7 @@ export default function DaySevenApp() {
       mostRecoveryWeek: 0,
     };
 
-    const recoveryTypes = ['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic'];
+    const recoveryTypes = ['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic'];
 
     // Calculate single-activity records
     activitiesList.forEach(activity => {
@@ -20053,7 +20272,7 @@ export default function DaySevenApp() {
       }
       if (a.type === 'Strength Training') return 'lifting';
       if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(a.type)) return 'cardio';
-      if (['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
+      if (['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
       return 'other';
     };
 
@@ -21214,7 +21433,7 @@ export default function DaySevenApp() {
     // Default categorization
     if (activity.type === 'Strength Training') return 'lifting';
     if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(activity.type)) return 'cardio';
-    if (['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
+    if (['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
     return 'other';
   };
 
@@ -21242,10 +21461,17 @@ export default function DaySevenApp() {
     const sports = weekActivities.filter(a => a.type === 'Sports');
     const coldPlunge = weekActivities.filter(a => a.type === 'Cold Plunge');
     const sauna = weekActivities.filter(a => a.type === 'Sauna');
+    const contrastTherapy = weekActivities.filter(a => a.type === 'Contrast Therapy');
     const massage = weekActivities.filter(a => a.type === 'Massage');
     const chiropractic = weekActivities.filter(a => a.type === 'Chiropractic');
     const yoga = weekActivities.filter(a => a.type === 'Yoga');
     const pilates = weekActivities.filter(a => a.type === 'Pilates');
+
+    // Contrast Therapy adds individual tallies to each chosen subtype
+    const contrastColdPlungeTally = contrastTherapy.filter(a => a.coldType === 'Cold Plunge').length;
+    const contrastColdShowerTally = contrastTherapy.filter(a => a.coldType === 'Cold Shower').length;
+    const contrastSaunaTally = contrastTherapy.filter(a => a.hotType === 'Sauna').length;
+    const contrastHotPlungeTally = contrastTherapy.filter(a => a.hotType === 'Hot Plunge').length;
 
     const totalMiles = running.reduce((sum, r) => sum + (parseFloat(r.distance) || 0), 0);
     const totalCalories = weekActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
@@ -21272,8 +21498,11 @@ export default function DaySevenApp() {
         goal: userData.goals.recoveryPerWeek,
         sessions: recovery.map(r => r.type),
         breakdown: {
-          coldPlunge: coldPlunge.length,
-          sauna: sauna.length,
+          coldPlunge: coldPlunge.length + contrastColdPlungeTally,
+          sauna: sauna.length + contrastSaunaTally,
+          contrastTherapy: contrastTherapy.length,
+          coldShower: contrastColdShowerTally,
+          hotPlunge: contrastHotPlungeTally,
           massage: massage.length,
           chiropractic: chiropractic.length,
           yoga: yoga.length,
@@ -21305,6 +21534,9 @@ export default function DaySevenApp() {
         return JSON.stringify({ name, category: cat, date: a.date || '', duration: a.duration || 0, calories: a.calories || 0 });
       });
 
+    // Days left in the week (Sunday=0 through Saturday=6)
+    const daysLeft = 6 - new Date().getDay();
+
     updateWidgetData({
       masterStreak: s.master || 0,
       liftsStreak: s.lifts || 0,
@@ -21319,6 +21551,7 @@ export default function DaySevenApp() {
       todaySteps: hk.todaySteps || 0,
       stepsGoal: g.stepsPerDay || 10000,
       todayCalories: hk.todayCalories || 0,
+      daysLeftInWeek: daysLeft,
       recentActivities
     });
   };
@@ -21570,7 +21803,7 @@ export default function DaySevenApp() {
 
     // Write to HealthKit (fire-and-forget, don't block the save flow)
     // Skip if: editing existing activity, came from Apple Health, is HealthKit-sourced, linked to existing HealthKit workout, already saved (live workout), or is Cold Plunge/Sauna
-    const skipHealthKitTypes = ['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic'];
+    const skipHealthKitTypes = ['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic'];
     if (!isEdit && !activityData.fromAppleHealth && activityData.source !== 'healthkit' && !activityData.linkedHealthKitUUID && !activityData.healthKitSaved && !skipHealthKitTypes.includes(newActivity.type)) {
       saveWorkoutToHealthKit(newActivity)
         .then(() => {})
@@ -21607,7 +21840,7 @@ export default function DaySevenApp() {
       if (isWarmup) return null;
 
       // Recovery activities don't count as "workouts" for records
-      const recoveryTypes = ['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic'];
+      const recoveryTypes = ['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic'];
       const yogaPilatesAsRecovery = ['Yoga', 'Pilates'].includes(activity.type) && (!activity.countToward || activity.countToward === 'recovery');
       const isRecovery = recoveryTypes.includes(activity.type) || yogaPilatesAsRecovery;
       const isStrength = activity.type === 'Strength Training' || activity.countToward === 'strength';
@@ -22049,7 +22282,7 @@ export default function DaySevenApp() {
       };
 
       // Recovery activity types
-      const recoveryTypes = ['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic'];
+      const recoveryTypes = ['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic'];
 
       updatedActivities.forEach(activity => {
         const isWarmup = activity.countToward === 'warmup' || activity.customActivityCategory === 'warmup';
@@ -23248,7 +23481,7 @@ export default function DaySevenApp() {
             }
             if (a.type === 'Strength Training') return 'lifting';
             if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(a.type)) return 'cardio';
-            if (['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
+            if (['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
             return 'other';
           };
 
@@ -23423,7 +23656,7 @@ export default function DaySevenApp() {
           // Monthly stats
           ...(() => {
             const cardioTypes = ['Running', 'Cycle', 'Sports', 'Walking', 'Hiking', 'Swimming', 'Rowing', 'Stair Climbing', 'Elliptical', 'HIIT'];
-            const recoveryTypes = ['Cold Plunge', 'Sauna', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'];
+            const recoveryTypes = ['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'];
 
             // Use monthRange if provided, otherwise current month
             const getMonthRange = () => {

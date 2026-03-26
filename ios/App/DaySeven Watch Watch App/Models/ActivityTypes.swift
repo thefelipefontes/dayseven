@@ -147,6 +147,13 @@ struct ActivityTypes {
             subtypes: [],
             category: .recovery
         ),
+        ActivityTypeDefinition(
+            name: "Contrast Therapy",
+            emoji: "\u{1F4A7}",
+            sfSymbol: "drop.halffull",
+            subtypes: [],
+            category: .recovery
+        ),
     ]
 
     static func forCategory(_ category: ActivityCategoryType) -> [ActivityTypeDefinition] {
@@ -172,7 +179,7 @@ struct ActivityTypes {
             return "lifting"
         case "Running", "Cycle", "Sports", "Stair Climbing", "Elliptical":
             return "cardio"
-        case "Cold Plunge", "Sauna", "Yoga", "Pilates":
+        case "Cold Plunge", "Sauna", "Contrast Therapy", "Yoga", "Pilates":
             return "recovery"
         default:
             return "other"
@@ -232,7 +239,7 @@ struct ActivityTypes {
             return .yoga
         case "pilates":
             return .pilates
-        case "cold plunge", "sauna":
+        case "cold plunge", "sauna", "contrast therapy":
             return .preparationAndRecovery
 
         // Sports

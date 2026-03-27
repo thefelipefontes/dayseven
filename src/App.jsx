@@ -8,7 +8,7 @@ import Friends from './Friends';
 import ActivityFeed from './ActivityFeed';
 import { createUserProfile, getUserProfile, updateUserProfile, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, deleteActivityPhoto, saveUserGoals, getUserGoals, setOnboardingComplete, setTourComplete, savePersonalRecords, getPersonalRecords, saveDailyHealthData, getDailyHealthData, getDailyHealthHistory } from './services/userService';
 import { getFriends, getReactions, getFriendRequests, getComments, addReply, getReplies, deleteReply, addReaction, removeReaction, addComment, cleanupActivitySocialData } from './services/friendService';
-import html2canvas from 'html2canvas';
+
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
@@ -19,6 +19,8 @@ import { initializeRevenueCat, checkProStatus, addCustomerInfoListener, logoutRe
 import ActivityIcon, { ICON_PICKER_CATEGORIES, CATEGORY_COLORS as ICON_CATEGORY_COLORS } from './components/ActivityIcon';
 import RouteMapView, { ll2px, bestFit, makeTiles, RouteOverlay, TileLayer, TILE } from './components/RouteMapView';
 import MuscleBodyMap from './components/MuscleBodyMap';
+import { Dumbbell } from 'lucide-react';
+import { IconRun, IconSnowflake } from '@tabler/icons-react';
 
 // Flag to suppress foreground refresh while photo picker is open
 // (prevents re-render glitch when returning from iOS photo picker)
@@ -4112,91 +4114,68 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
       const actualWidth = isStory ? 270 : 320;
       const actualHeight = isStory ? 480 : 400;
 
-      const canvas = await html2canvas(cardRef.current, {
-        backgroundColor: null,
-        scale: 3,
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
-        width: actualWidth,
-        height: actualHeight,
-        onclone: (clonedDoc, clonedElement) => {
-          clonedElement.style.transform = 'none';
-          clonedElement.style.width = `${actualWidth}px`;
-          clonedElement.style.height = `${actualHeight}px`;
-          clonedElement.style.borderRadius = '0';
-          clonedElement.style.overflow = 'hidden';
-          clonedElement.style.background = 'linear-gradient(180deg, #0a0a0a 0%, #0d0d0d 50%, #000000 100%)';
+      const { toCanvas } = await import('html-to-image');
+      // Temporarily reset transform and absolute positioning for clean capture
+      const el = cardRef.current;
+      const saved = {
+        transform: el.style.transform,
+        transformOrigin: el.style.transformOrigin,
+        position: el.style.position || '',
+        boxShadow: el.style.boxShadow,
+        transition: el.style.transition || '',
+        overflow: el.style.overflow || '',
+        width: el.style.width,
+        height: el.style.height,
+      };
+      el.style.transition = 'none';
+      el.style.transform = 'none';
+      el.style.transformOrigin = 'top left';
+      el.style.position = 'relative';
+      el.style.boxShadow = 'none';
+      el.style.overflow = 'hidden';
+      el.style.width = `${actualWidth}px`;
+      el.style.height = `${actualHeight}px`;
+      // Force reflow so browser applies style changes before capture
+      el.getBoundingClientRect();
 
-          // Fix ring text vertical centering for html2canvas
-          const ringTexts = clonedElement.querySelectorAll('[data-ring-text="true"]');
-          ringTexts.forEach(el => {
-            el.style.marginTop = '-3px';
-          });
-
-          // Fix all elements
-          const allElements = clonedElement.querySelectorAll('*');
-          allElements.forEach(el => {
-            // Pause animations
-            el.style.animation = 'none';
-            el.style.transition = 'none';
-
-            // Fix gradient text - html2canvas doesn't support background-clip: text
-            // So we replace gradient text with solid color
-            const computedStyle = window.getComputedStyle(el);
-            if (computedStyle.webkitBackgroundClip === 'text' ||
-                computedStyle.backgroundClip === 'text' ||
-                el.style.webkitBackgroundClip === 'text' ||
-                el.style.WebkitBackgroundClip === 'text') {
-              el.style.background = 'none';
-              el.style.webkitBackgroundClip = 'unset';
-              el.style.WebkitBackgroundClip = 'unset';
-              el.style.backgroundClip = 'unset';
-              el.style.webkitTextFillColor = 'unset';
-              el.style.WebkitTextFillColor = 'unset';
-              // Set a visible color based on the text content
-              el.style.color = 'rgba(255, 255, 255, 0.7)';
+      let canvas;
+      try {
+        canvas = await toCanvas(el, {
+          width: actualWidth,
+          height: actualHeight,
+          pixelRatio: 3,
+          backgroundColor: '#0a0a0a',
+          cacheBust: true,
+          filter: (node) => {
+            if (node.style) {
+              node.style.animation = 'none';
+              node.style.transition = 'none';
             }
+            return true;
+          },
+        });
+      } finally {
+        el.style.transform = saved.transform;
+        el.style.transformOrigin = saved.transformOrigin;
+        el.style.position = saved.position;
+        el.style.boxShadow = saved.boxShadow;
+        el.style.transition = saved.transition;
+        el.style.overflow = saved.overflow;
+        el.style.width = saved.width;
+        el.style.height = saved.height;
+      }
 
-            // Fix vertical text alignment for html2canvas export
-            // Text renders slightly lower in html2canvas, so we push it up
-            const tagName = el.tagName.toLowerCase();
-            if (tagName === 'span' || tagName === 'div') {
-              const text = el.textContent?.trim();
-              // Apply to text elements (not containers with many children)
-              if (text && el.children.length === 0) {
-                const currentTransform = el.style.transform || '';
-                const isPostFormat = actualWidth / actualHeight > 0.7;
-
-                // Slide 1 specific: Move streak category numbers to the right (colored numbers: #00FF94, #FF9500, #00D1FF)
-                const elColor = el.style.color?.toLowerCase();
-                const isStreakColor = elColor === '#00ff94' || elColor === '#ff9500' || elColor === '#00d1ff' ||
-                  elColor === 'rgb(0, 255, 148)' || elColor === 'rgb(255, 149, 0)' || elColor === 'rgb(0, 209, 255)';
-                // Streak category numbers are single/double digit numbers with streak colors and lineHeight 1.2
-                const isStreakCategoryNumber = /^\d+$/.test(text) && isStreakColor && el.style.lineHeight === '1.2' &&
-                  tagName === 'div' && el.classList.contains('font-bold');
-
-                if (isStreakCategoryNumber) {
-                  el.style.transform = currentTransform + ' translateX(5.5px) translateY(-6px)';
-                } else if (!currentTransform.includes('translateY')) {
-                  // Slide 1: Move "weeks hitting all goals" up (in the main streak row, not slide 3)
-                  if (text === 'weeks hitting all goals' && el.style.lineHeight === '1.2') {
-                    el.style.transform = currentTransform + ' translateY(-4px)';
-                  // Move "Master Streak" and "weeks hitting all goals" on slide 3 - different for post vs story
-                  } else if (text === 'Master Streak') {
-                    el.style.transform = currentTransform + ` translateY(${isPostFormat ? '2px' : '6px'})`;
-                  // Move big hero numbers up higher (large font size numbers)
-                  } else if (/^\d+$/.test(text) && el.style.fontSize && (el.style.fontSize.includes('3rem') || el.style.fontSize.includes('4rem'))) {
-                    el.style.transform = currentTransform + ' translateY(-12px)';
-                  } else {
-                    el.style.transform = currentTransform + ' translateY(-6px)';
-                  }
-                }
-              }
-            }
-          });
-        }
-      });
+      // Crop to exact card dimensions (remove any overflow from glow/shadow)
+      const expectedW = actualWidth * 3;
+      const expectedH = actualHeight * 3;
+      if (canvas.width > expectedW || canvas.height > expectedH) {
+        const cropCanvas = document.createElement('canvas');
+        cropCanvas.width = expectedW;
+        cropCanvas.height = expectedH;
+        const cropCtx = cropCanvas.getContext('2d');
+        cropCtx.drawImage(canvas, 0, 0, expectedW, expectedH, 0, 0, expectedW, expectedH);
+        canvas = cropCanvas;
+      }
 
       // Apply rounded corners by drawing on a new canvas
       const roundedCanvas = document.createElement('canvas');
@@ -4223,8 +4202,8 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
       ctx.drawImage(canvas, 0, 0);
 
       return roundedCanvas;
-      return canvas;
     } catch (error) {
+      console.error('[ShareModal] Export failed:', error);
       return null;
     }
   };
@@ -5517,30 +5496,19 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
   const paceSec = Math.round((pace - paceMin) * 60);
   const paceStr = `${paceMin}:${String(paceSec).padStart(2, '0')}`;
 
-  // Activity display name
-  const activityName = activity.subtype && activity.subtype !== 'Indoor' && activity.subtype !== 'Outdoor'
+  // Activity display name — strip body parts for strength (shown separately via muscle labels)
+  const rawActivityName = activity.subtype && activity.subtype !== 'Indoor' && activity.subtype !== 'Outdoor'
     ? activity.subtype
     : activity.type === 'Strength Training'
       ? (activity.strengthType || 'Strength')
       : activity.type;
+  // Remove " - Chest, Back, ..." suffix from strength names
+  const activityName = rawActivityName.includes(' - ') ? rawActivityName.split(' - ')[0] : rawActivityName;
 
-  // Activity emoji
-  const activityEmoji = activity.customEmoji || activity.sportEmoji || (
-    activity.type === 'Running' ? '🏃' :
-    activity.type === 'Cycle' ? '🚴' :
-    activity.type === 'Strength Training' ? '🏋️' :
-    activity.type === 'Yoga' ? '🧘' :
-    activity.type === 'Cold Plunge' ? '🧊' :
-    activity.type === 'Sauna' ? '🧖' :
-    activity.type === 'Contrast Therapy' ? '💧' :
-    activity.type === 'Sports' ? '⚽' :
-    activity.type === 'Pilates' ? '🤸' :
-    activity.type === 'Elliptical' ? '🏃' :
-    activity.type === 'Stair Climbing' ? '🪜' :
-    activity.type === 'Walking' ? '🚶' :
-    activity.type === 'Massage' ? '💆' :
-    '💪'
-  );
+  // Determine the base type for ActivityIcon (e.g., 'Weightlifting', 'Running')
+  const activityIconType = activity.type === 'Strength Training'
+    ? (activity.strengthType?.split(' - ')[0] || 'Strength Training')
+    : activity.type;
 
   // Format date
   const formatStampDate = (dateStr) => {
@@ -5625,54 +5593,27 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
     );
   };
 
-  // Image generation
+  // Image generation using html-to-image (faithful browser rendering via SVG foreignObject)
   const generateStampImage = async () => {
     if (!cardRef.current) return null;
     try {
       const w = 270, h = 480;
-      const canvas = await html2canvas(cardRef.current, {
-        backgroundColor: isTransparent ? null : '#0a0a0a',
-        scale: 3,
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
+      const scale = 3;
+      const { toCanvas } = await import('html-to-image');
+      const canvas = await toCanvas(cardRef.current, {
         width: w,
         height: h,
-        onclone: (clonedDoc, clonedElement) => {
-          clonedElement.style.transform = 'none';
-          clonedElement.style.width = `${w}px`;
-          clonedElement.style.height = `${h}px`;
-          clonedElement.style.borderRadius = '0';
-          clonedElement.style.overflow = 'hidden';
-          if (!isTransparent) {
-            clonedElement.style.background = 'linear-gradient(180deg, #0a0a0a 0%, #0d0d0d 50%, #000000 100%)';
+        pixelRatio: scale,
+        backgroundColor: isTransparent ? null : '#0a0a0a',
+        cacheBust: true,
+        filter: (node) => {
+          // Skip animations
+          if (node.style) {
+            node.style.animation = 'none';
+            node.style.transition = 'none';
           }
-          const allElements = clonedElement.querySelectorAll('*');
-          allElements.forEach(el => {
-            el.style.animation = 'none';
-            el.style.transition = 'none';
-            // Fix gradient text
-            const cs = window.getComputedStyle(el);
-            if (cs.webkitBackgroundClip === 'text' || cs.backgroundClip === 'text' ||
-                el.style.webkitBackgroundClip === 'text' || el.style.WebkitBackgroundClip === 'text') {
-              el.style.background = 'none';
-              el.style.webkitBackgroundClip = 'unset';
-              el.style.WebkitBackgroundClip = 'unset';
-              el.style.backgroundClip = 'unset';
-              el.style.webkitTextFillColor = 'unset';
-              el.style.WebkitTextFillColor = 'unset';
-              el.style.color = 'rgba(255, 255, 255, 0.7)';
-            }
-            // Fix text vertical alignment
-            const tagName = el.tagName.toLowerCase();
-            if ((tagName === 'span' || tagName === 'div') && el.textContent?.trim() && el.children.length === 0) {
-              const currentTransform = el.style.transform || '';
-              if (!currentTransform.includes('translateY')) {
-                el.style.transform = currentTransform + ' translateY(-6px)';
-              }
-            }
-          });
-        }
+          return true;
+        },
       });
 
       // Apply rounded corners for dark mode
@@ -5681,7 +5622,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
         roundedCanvas.width = canvas.width;
         roundedCanvas.height = canvas.height;
         const ctx = roundedCanvas.getContext('2d');
-        const radius = 16 * 3;
+        const radius = 16 * scale;
         ctx.beginPath();
         ctx.moveTo(radius, 0);
         ctx.lineTo(canvas.width - radius, 0);
@@ -5699,6 +5640,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
       }
       return canvas;
     } catch (error) {
+      console.error('[StampExport] Failed:', error);
       return null;
     }
   };
@@ -5767,12 +5709,6 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
   const tShadow = isTransparent ? '0 1px 6px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,0.5)' : 'none';
   const textColor = '#fff';
 
-  // Ring completion text
-  const ringCompletionParts = [];
-  if (weeklyProgress?.lifts) ringCompletionParts.push(`${weeklyProgress.lifts.completed}/${weeklyProgress.lifts.goal}`);
-  if (weeklyProgress?.cardio) ringCompletionParts.push(`${weeklyProgress.cardio.completed}/${weeklyProgress.cardio.goal}`);
-  if (weeklyProgress?.recovery) ringCompletionParts.push(`${weeklyProgress.recovery.completed}/${weeklyProgress.recovery.goal}`);
-
   return (
     <div
       style={{
@@ -5824,7 +5760,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
           backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0px',
         } : {}),
       }}>
-        {/* Actual stamp content captured by html2canvas */}
+        {/* Actual stamp content captured by html-to-image */}
         <div
           ref={cardRef}
           style={{
@@ -5836,25 +5772,52 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
             fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
           }}
         >
-          {/* Header: Emoji + Activity Name + Date */}
-          <div style={{ textAlign: 'center', marginBottom: 16 }}>
-            <div style={{ fontSize: 32, marginBottom: 4, textShadow: tShadow }}>{activityEmoji}</div>
-            <div style={{
-              fontSize: 18, fontWeight: 700, color: textColor, letterSpacing: '-0.3px',
-              textShadow: tShadow, marginBottom: 2,
-            }}>
-              {activityName}
+          {/* Top branding */}
+          <div style={{
+            fontSize: 9, fontWeight: 700, color: isTransparent ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.2)',
+            letterSpacing: '2.5px', textTransform: 'uppercase', textAlign: 'center',
+            textShadow: tShadow, marginBottom: 10,
+          }}>
+            DAYSEVEN
+          </div>
+
+          {/* Header: Icon + Activity Name + Date (centered as group) */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
+              <div style={{
+                width: 30, height: 30, borderRadius: 8,
+                backgroundColor: isTransparent ? 'rgba(255,255,255,0.12)' : `${categoryColor}15`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
+              }}>
+                <ActivityIcon
+                  type={activityIconType}
+                  strengthType={activity.strengthType?.split(' - ')[0]}
+                  subtype={activity.subtype}
+                  customIcon={activity.customIcon}
+                  sportEmoji={activity.sportEmoji}
+                  customEmoji={activity.customEmoji}
+                  size={16}
+                  color={isTransparent ? '#fff' : categoryColor}
+                />
+              </div>
+              <div style={{
+                fontSize: 16, fontWeight: 700, color: textColor, letterSpacing: '-0.3px',
+                textShadow: tShadow, lineHeight: 1.2,
+              }}>
+                {activityName}
+              </div>
             </div>
             <div style={{
-              fontSize: 11, color: isTransparent ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.4)',
-              textShadow: tShadow, letterSpacing: '0.5px',
+              fontSize: 10, color: isTransparent ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.4)',
+              textShadow: tShadow, letterSpacing: '0.3px', marginTop: 3, textAlign: 'center',
             }}>
               {formatStampDate(activity.date)}{activity.time ? ` • ${activity.time}` : ''}
             </div>
           </div>
 
           {/* Middle: Category-specific content */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 12 }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 8 }}>
             {/* Route map for cardio with GPS data */}
             {category === 'cardio' && routeCoords.length >= 2 && (
               <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 4 }}>
@@ -5929,16 +5892,17 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
               </div>
             )}
 
-            {/* Big stat + muscle body map for strength */}
+            {/* Stats + muscle body map for strength */}
             {category === 'lifting' && (
               <>
-                <div style={{ display: 'flex', justifyContent: 'center', gap: 28 }}>
+                {/* Stats row — smaller, right under header */}
+                <div style={{ display: 'flex', justifyContent: 'center', gap: 24, marginTop: -4 }}>
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 32, fontWeight: 800, color: textColor, textShadow: tShadow, lineHeight: 1 }}>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: textColor, textShadow: tShadow, lineHeight: 1 }}>
                       {durationStr}
                     </div>
                     <div style={{
-                      fontSize: 10, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
+                      fontSize: 9, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
                       textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: 2,
                     }}>
                       duration
@@ -5946,11 +5910,11 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
                   </div>
                   {activity.calories > 0 && (
                     <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: 32, fontWeight: 800, color: textColor, textShadow: tShadow, lineHeight: 1 }}>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: textColor, textShadow: tShadow, lineHeight: 1 }}>
                         {activity.calories}
                       </div>
                       <div style={{
-                        fontSize: 10, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
+                        fontSize: 9, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
                         textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: 2,
                       }}>
                         cal
@@ -5958,30 +5922,31 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
                     </div>
                   )}
                 </div>
-                {/* Muscle groups */}
+                {/* Muscle body map (compact) + labels underneath feet */}
                 {(activity.focusAreas?.length > 0 || activity.focusArea) && (
-                  <div style={{ display: 'flex', justifyContent: 'center' }}>
-                    <div style={{ height: 140, opacity: isTransparent ? 0.85 : 1 }}>
-                      <MuscleBodyMap muscleData={getMuscleData()} />
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0, flex: 1, justifyContent: 'flex-start' }}>
+                    <div style={{
+                      opacity: isTransparent ? 0.85 : 1,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      marginTop: -8, marginBottom: -8,
+                    }}>
+                      <MuscleBodyMap muscleData={getMuscleData()} scale={0.62} hideLabels />
                     </div>
-                  </div>
-                )}
-                {/* Muscle group labels */}
-                {(activity.focusAreas?.length > 0 || activity.focusArea) && (
-                  <div style={{
-                    display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 4,
-                    marginTop: -4,
-                  }}>
-                    {(activity.focusAreas || [activity.focusArea]).map(area => (
-                      <span key={area} style={{
-                        fontSize: 9, fontWeight: 600, color: '#00FF94',
-                        padding: '2px 8px', borderRadius: 8,
-                        backgroundColor: isTransparent ? 'rgba(0,255,148,0.15)' : 'rgba(0,255,148,0.1)',
-                        textShadow: isTransparent ? '0 1px 3px rgba(0,0,0,0.5)' : 'none',
-                      }}>
-                        {area}
-                      </span>
-                    ))}
+                    <div style={{
+                      display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 4,
+                      marginTop: 2,
+                    }}>
+                      {(activity.focusAreas || [activity.focusArea]).map(area => (
+                        <span key={area} style={{
+                          fontSize: 9, fontWeight: 600, color: '#00FF94',
+                          padding: '2px 8px', borderRadius: 8,
+                          backgroundColor: isTransparent ? 'rgba(0,255,148,0.15)' : 'rgba(0,255,148,0.1)',
+                          textShadow: isTransparent ? '0 1px 3px rgba(0,0,0,0.5)' : 'none',
+                        }}>
+                          {area}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 )}
               </>
@@ -6068,34 +6033,45 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
             )}
           </div>
 
-          {/* Footer: Rings + Branding */}
+          {/* Footer: Rings + Category fractions with icons (centered row) */}
           <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            marginTop: 'auto', paddingTop: 8,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            marginTop: 'auto', paddingTop: 0, gap: 10,
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <MiniRings size={44} />
-              <div>
-                <div style={{
-                  fontSize: 9, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
-                  textShadow: tShadow, letterSpacing: '0.3px',
-                }}>
-                  This week
-                </div>
-                <div style={{
-                  fontSize: 10, fontWeight: 600, color: isTransparent ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.5)',
-                  textShadow: tShadow,
-                }}>
-                  {ringCompletionParts.join(' · ')}
-                </div>
+            <MiniRings size={40} />
+            <div>
+              <div style={{
+                fontSize: 9, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
+                textShadow: tShadow, letterSpacing: '0.3px', marginBottom: 2,
+              }}>
+                This week
               </div>
-            </div>
-            <div style={{
-              fontSize: 10, fontWeight: 700, color: isTransparent ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.25)',
-              letterSpacing: '2px', textTransform: 'uppercase',
-              textShadow: tShadow,
-            }}>
-              DAYSEVEN
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                {weeklyProgress?.lifts && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                    <Dumbbell size={11} color="#00FF94" strokeWidth={2.5} />
+                    <span style={{ fontSize: 12, fontWeight: 600, color: isTransparent ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.5)', textShadow: tShadow }}>
+                      {weeklyProgress.lifts.completed}/{weeklyProgress.lifts.goal}
+                    </span>
+                  </div>
+                )}
+                {weeklyProgress?.cardio && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                    <IconRun size={11} color="#FF9500" strokeWidth={2.5} />
+                    <span style={{ fontSize: 12, fontWeight: 600, color: isTransparent ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.5)', textShadow: tShadow }}>
+                      {weeklyProgress.cardio.completed}/{weeklyProgress.cardio.goal}
+                    </span>
+                  </div>
+                )}
+                {weeklyProgress?.recovery && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                    <IconSnowflake size={11} color="#00D1FF" strokeWidth={2.5} />
+                    <span style={{ fontSize: 12, fontWeight: 600, color: isTransparent ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.5)', textShadow: tShadow }}>
+                      {weeklyProgress.recovery.completed}/{weeklyProgress.recovery.goal}
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -23925,7 +23901,7 @@ export default function DaySevenApp() {
           setStampRouteCoords([]);
         }}
         activity={stampActivity}
-        weeklyProgress={weeklyProgress}
+        weeklyProgress={showStampModal ? calculateWeeklyProgress(activities) : weeklyProgress}
         routeCoords={stampRouteCoords}
         getActivityCategory={getActivityCategory}
       />

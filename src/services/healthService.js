@@ -862,6 +862,7 @@ export function getHealthKitActivityType(activity) {
   const typeMap = {
     'Running': 'running',
     'Cycle': 'cycle',
+    'Walking': 'walking',
     'Yoga': 'yoga',
     'Pilates': 'pilates',
     'Cold Plunge': 'Cold Plunge',
@@ -870,8 +871,13 @@ export function getHealthKitActivityType(activity) {
     'Swimming': 'swimming',
     'Hiking': 'hiking',
     'Rowing': 'rowing',
+    'Elliptical': 'elliptical',
+    'Stair Climbing': 'stair climbing',
+    'HIIT': 'hiit',
     'Dance': 'dance',
     'Cooldown': 'cooldown',
+    'Massage': 'recovery',
+    'Chiropractic': 'recovery',
   };
 
   return typeMap[type] || 'other';

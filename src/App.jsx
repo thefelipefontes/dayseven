@@ -5977,8 +5977,8 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
 
           {/* Middle: Category-specific content */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 8 }}>
-            {/* Route map for cardio with GPS data */}
-            {category === 'cardio' && routeCoords.length >= 2 && (
+            {/* Route map for activities with GPS data */}
+            {routeCoords.length >= 2 && (
               <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 4 }}>
                 <StaticRouteMap
                   coords={routeCoords}
@@ -10733,7 +10733,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                               {(workout.calories || workout.distance) && (
                                 <div className="flex gap-2 mt-1 text-xs text-gray-500">
                                   {workout.calories && <span>🔥 {workout.calories} cal</span>}
-                                  {workout.distance && <span>📍 {workout.distance} mi</span>}
+                                  {workout.distance && <span>📍 {parseFloat(workout.distance).toFixed(2)} mi</span>}
                                 </div>
                               )}
                             </div>
@@ -11815,7 +11815,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                                 <span>❤️ {linkedWorkout.avgHr} bpm avg</span>
                               )}
                               {linkedWorkout.distance && (
-                                <span>📍 {linkedWorkout.distance} mi</span>
+                                <span>📍 {parseFloat(linkedWorkout.distance).toFixed(2)} mi</span>
                               )}
                             </div>
                           )}
@@ -11877,7 +11877,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                                     <span>❤️ {workout.avgHr} bpm avg</span>
                                   )}
                                   {workout.distance && (
-                                    <span>📍 {workout.distance} mi</span>
+                                    <span>📍 {parseFloat(workout.distance).toFixed(2)} mi</span>
                                   )}
                                 </div>
                               )}
@@ -11913,7 +11913,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                                   <span>🔥 {linkedWorkout.calories} cal</span>
                                 )}
                                 {linkedWorkout.distance && (
-                                  <span>📍 {linkedWorkout.distance} mi</span>
+                                  <span>📍 {parseFloat(linkedWorkout.distance).toFixed(2)} mi</span>
                                 )}
                               </div>
                             )}
@@ -12199,7 +12199,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
               {(workout.calories || workout.distance || workout.avgHr) && (
                 <div className="flex gap-3 mt-1.5 text-xs text-gray-500">
                   {workout.calories && <span>🔥 {workout.calories} cal</span>}
-                  {workout.distance && <span>📍 {workout.distance} mi</span>}
+                  {workout.distance && <span>📍 {parseFloat(workout.distance).toFixed(2)} mi</span>}
                   {workout.avgHr && <span>♥ {workout.avgHr} bpm</span>}
                 </div>
               )}

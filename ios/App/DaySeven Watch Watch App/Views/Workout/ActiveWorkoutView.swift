@@ -20,6 +20,9 @@ struct ActiveWorkoutView: View {
     @State private var workoutResult: WorkoutResult?
     @State private var errorMessage: String?
     @State private var glowBreathing = false
+    /// Delayed flag — only true after isEnding has been true for 0.8s.
+    /// Prevents a flash of "Saving..." when HealthKit finishes quickly.
+    @State private var showSavingOverlay = false
     private var wm: WorkoutManager { workoutMgr }
 
     /// Whether the user selected "Indoor" for this workout
@@ -63,7 +66,19 @@ struct ActiveWorkoutView: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            if isStarted && wm.isActive {
+            if isStarted && showSavingOverlay {
+                // Workout is being saved (shown only after 0.8s grace period)
+                VStack(spacing: 12) {
+                    Spacer()
+                    ProgressView()
+                        .tint(.green)
+                        .scaleEffect(1.5)
+                    Text("Saving workout...")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.white)
+                    Spacer()
+                }
+            } else if isStarted && wm.isActive {
                 // Workout actively running — show timer/controls
                 activeWorkoutContent
             } else if isStarted && shouldShowSummary {
@@ -106,6 +121,18 @@ struct ActiveWorkoutView: View {
         .navigationBarBackButtonHidden(isStarted || shouldShowSummary)
         .task {
             await startWorkout()
+        }
+        .onChange(of: wm.isEnding) { _, ending in
+            if ending {
+                // Wait 0.8s before showing "Saving..." — if it finishes faster, skip it
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                    if wm.isEnding {
+                        showSavingOverlay = true
+                    }
+                }
+            } else {
+                showSavingOverlay = false
+            }
         }
     }
 

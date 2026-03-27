@@ -62,6 +62,10 @@ class WorkoutManager: NSObject, ObservableObject {
     // ActiveWorkoutView uses this to show black instead of timer during nav pop.
     @Published var isDismissingSummary = false
 
+    /// True from the moment user taps End until endWorkout() completes.
+    /// Used to block UI interaction and show loading state.
+    @Published var isEnding = false
+
     // Workout metadata — set by ActiveWorkoutView at start, read by summary overlay in RootView
     @Published var summaryActivityType: String = ""
     @Published var summaryStrengthType: String? = nil
@@ -221,11 +225,32 @@ class WorkoutManager: NSObject, ObservableObject {
         guard let session = session, let builder = builder, let startDate = startDate else {
             throw WorkoutError.noActiveWorkout
         }
+        guard !isEnding else { throw WorkoutError.noActiveWorkout }
+
+        // Immediately block UI interaction and stop the timer
+        isEnding = true
+        stopTimer()
+        isPaused = false
 
         let endDate = Date()
+
+        // Capture all metric values NOW, before the slow HealthKit async calls,
+        // so they can't be lost if something goes wrong.
+        let capturedCalories = Int(activeCalories)
+        let capturedAvgHr = heartRateSamples.isEmpty ? 0 : Int(averageHeartRate)
+        let capturedMaxHr = Int(maxHeartRate)
+        let capturedDistance = distance / 1609.34
+        let totalSeconds = endDate.timeIntervalSince(startDate)
+        let totalDuration = Int(totalSeconds / 60)
+
         session.end()
 
-        try await builder.endCollection(at: endDate)
+        // These HealthKit calls can take 3-5+ seconds
+        do {
+            try await builder.endCollection(at: endDate)
+        } catch {
+            print("[WorkoutManager] endCollection error: \(error.localizedDescription)")
+        }
         let workout = try await builder.finishWorkout()
 
         // Finalize GPS route if this was an outdoor workout
@@ -241,22 +266,15 @@ class WorkoutManager: NSObject, ObservableObject {
         }
         isOutdoorWorkout = false
 
-        stopTimer()
-        isPaused = false
-
-        let totalSeconds = endDate.timeIntervalSince(startDate)
-        let totalDuration = Int(totalSeconds / 60)
-        let distanceMiles = distance / 1609.34
-
         let result = WorkoutResult(
             workoutUUID: workout?.uuid.uuidString ?? UUID().uuidString,
             startDate: startDate,
             duration: max(totalDuration, 1),
             durationSeconds: totalSeconds,
-            calories: Int(activeCalories),
-            avgHr: heartRateSamples.isEmpty ? 0 : Int(averageHeartRate),
-            maxHr: Int(maxHeartRate),
-            distance: distanceMiles > 0.01 ? distanceMiles : nil
+            calories: capturedCalories,
+            avgHr: capturedAvgHr,
+            maxHr: capturedMaxHr,
+            distance: capturedDistance > 0.01 ? capturedDistance : nil
         )
 
         // IMPORTANT: Publish result BEFORE setting isActive = false
@@ -265,6 +283,7 @@ class WorkoutManager: NSObject, ObservableObject {
         // re-trigger startWorkout or show wrong dot count.
         self.lastResult = result
         isActive = false
+        isEnding = false
 
         // Clean up
         self.session = nil
@@ -303,6 +322,11 @@ class WorkoutManager: NSObject, ObservableObject {
     // MARK: - Cancel Workout
 
     func cancelWorkout() {
+        // Don't cancel while endWorkout() is in progress — that would zero out metrics
+        guard !isEnding else {
+            print("[WorkoutManager] cancelWorkout ignored — endWorkout in progress")
+            return
+        }
         locationManager?.stopUpdatingLocation()
         locationManager = nil
         routeBuilder = nil

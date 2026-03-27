@@ -32,6 +32,7 @@ struct WorkoutControlsTab: View {
                 .cornerRadius(14)
             }
             .buttonStyle(.plain)
+            .disabled(workoutMgr.isEnding)
 
             // End
             Button {
@@ -44,18 +45,24 @@ struct WorkoutControlsTab: View {
                 }
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 16, weight: .bold))
-                    Text("End")
+                    if workoutMgr.isEnding {
+                        ProgressView()
+                            .tint(.white)
+                    } else {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .bold))
+                    }
+                    Text(workoutMgr.isEnding ? "Saving..." : "End")
                         .font(.system(size: 16, weight: .bold))
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
-                .background(Color.red)
+                .background(workoutMgr.isEnding ? Color.gray : Color.red)
                 .foregroundColor(.white)
                 .cornerRadius(14)
             }
             .buttonStyle(.plain)
+            .disabled(workoutMgr.isEnding)
 
             Spacer()
         }

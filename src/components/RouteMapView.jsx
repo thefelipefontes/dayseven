@@ -391,4 +391,5 @@ const RouteMapView = ({ coordinates = [], color = '#00D1FF', height = 200 }) => 
   );
 };
 
+export { ll2px, bestFit, makeTiles, RouteOverlay, TileLayer, TILE };
 export default RouteMapView;

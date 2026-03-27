@@ -5767,16 +5767,175 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
             width: 270, height: 480,
             background: isTransparent ? 'transparent' : 'linear-gradient(180deg, #0a0a0a 0%, #0d0d0d 50%, #000000 100%)',
             display: 'flex', flexDirection: 'column',
-            padding: '24px 20px 16px',
+            padding: isTransparent ? '0 16px 16px' : '24px 20px 16px',
             position: 'relative',
             fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            justifyContent: isTransparent ? 'flex-end' : 'flex-start',
           }}
         >
+          {isTransparent ? (
+            /* ─── OVERLAY MODE: Strava-style minimal stats ─── */
+            <>
+              {/* Activity name with icon */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                fontSize: 12, fontWeight: 600, color: '#fff',
+                textShadow: tShadow, marginBottom: 4, letterSpacing: '0.2px',
+              }}>
+                <div style={{
+                  width: 20, height: 20, borderRadius: 5,
+                  backgroundColor: category === 'lifting' ? 'rgba(0,255,148,0.2)' : category === 'cardio' ? 'rgba(255,149,0,0.2)' : 'rgba(0,209,255,0.2)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  {category === 'lifting' ? <Dumbbell size={11} color="#00FF94" strokeWidth={2.5} /> :
+                   category === 'cardio' ? <IconRun size={11} color="#FF9500" strokeWidth={2.5} /> :
+                   <Snowflake size={11} color="#00D1FF" strokeWidth={2.5} />}
+                </div>
+                {activityName}
+              </div>
+
+              {/* Hero stat */}
+              {category === 'cardio' && hasDistance ? (
+                <div style={{ marginBottom: 2 }}>
+                  <div style={{
+                    fontSize: 32, fontWeight: 800, color: '#fff',
+                    lineHeight: 1, letterSpacing: '-1.5px', textShadow: tShadow,
+                  }}>
+                    {distanceStr}
+                  </div>
+                  <div style={{
+                    fontSize: 11, fontWeight: 600, color: '#fff',
+                    textShadow: tShadow, letterSpacing: '1.5px', textTransform: 'uppercase', marginTop: 1,
+                  }}>
+                    miles
+                  </div>
+                </div>
+              ) : category === 'lifting' && activity.calories > 0 ? (
+                <div style={{ marginBottom: 2 }}>
+                  <div style={{
+                    fontSize: 32, fontWeight: 800, color: '#fff',
+                    lineHeight: 1, letterSpacing: '-1px', textShadow: tShadow,
+                  }}>
+                    {activity.calories}
+                  </div>
+                  <div style={{
+                    fontSize: 11, fontWeight: 600, color: '#fff',
+                    textShadow: tShadow, letterSpacing: '1.5px', textTransform: 'uppercase', marginTop: 1,
+                  }}>
+                    calories
+                  </div>
+                </div>
+              ) : (
+                <div style={{ marginBottom: 2 }}>
+                  <div style={{
+                    fontSize: 32, fontWeight: 800, color: '#fff',
+                    lineHeight: 1, letterSpacing: '-1px', textShadow: tShadow,
+                  }}>
+                    {durationStr}
+                  </div>
+                  <div style={{
+                    fontSize: 11, fontWeight: 600, color: '#fff',
+                    textShadow: tShadow, letterSpacing: '1.5px', textTransform: 'uppercase', marginTop: 1,
+                  }}>
+                    {category === 'recovery' && (activity.type === 'Cold Plunge' || activity.type === 'Sauna' || activity.type === 'Contrast Therapy') ? 'session' : 'duration'}
+                  </div>
+                </div>
+              )}
+
+              {/* Divider line */}
+              <div style={{
+                width: 40, height: 2, backgroundColor: 'rgba(255,255,255,0.6)',
+                marginTop: 6, marginBottom: 8, borderRadius: 1,
+              }} />
+
+              {/* Secondary stats row */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 0,
+                fontSize: 11, fontWeight: 600, color: '#fff',
+                textShadow: tShadow, marginBottom: 10, flexWrap: 'wrap',
+              }}>
+                {category === 'cardio' && hasDistance && pace > 0 && (
+                  <>
+                    <span>{paceStr} /mi</span>
+                    <span style={{ margin: '0 6px', opacity: 0.4 }}>·</span>
+                  </>
+                )}
+                {category === 'cardio' && hasDistance && (
+                  <>
+                    <span>{durationStr}</span>
+                    {activity.calories > 0 && <span style={{ margin: '0 6px', opacity: 0.4 }}>·</span>}
+                  </>
+                )}
+                {/* Lifting: duration + muscle groups as secondary (calories is hero) */}
+                {category === 'lifting' ? (
+                  <>
+                    <span>{durationStr}</span>
+                    {(activity.focusAreas?.length > 0 || activity.focusArea) && (
+                      <>
+                        <span style={{ margin: '0 6px', opacity: 0.5 }}>·</span>
+                        <span style={{ color: '#fff' }}>
+                          {(activity.focusAreas || [activity.focusArea]).join(' · ')}
+                        </span>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {activity.calories > 0 && (
+                      <span>{activity.calories} cal</span>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* Mini rings + fractions row */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <MiniRings size={32} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  {weeklyProgress?.lifts && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                      <Dumbbell size={10} color="#00FF94" strokeWidth={2.5} />
+                      <span style={{ fontSize: 11, fontWeight: 600, color: '#fff', textShadow: tShadow }}>
+                        {weeklyProgress.lifts.completed}/{weeklyProgress.lifts.goal}
+                      </span>
+                    </div>
+                  )}
+                  {weeklyProgress?.cardio && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                      <IconRun size={10} color="#FF9500" strokeWidth={2.5} />
+                      <span style={{ fontSize: 11, fontWeight: 600, color: '#fff', textShadow: tShadow }}>
+                        {weeklyProgress.cardio.completed}/{weeklyProgress.cardio.goal}
+                      </span>
+                    </div>
+                  )}
+                  {weeklyProgress?.recovery && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                      <IconSnowflake size={10} color="#00D1FF" strokeWidth={2.5} />
+                      <span style={{ fontSize: 11, fontWeight: 600, color: '#fff', textShadow: tShadow }}>
+                        {weeklyProgress.recovery.completed}/{weeklyProgress.recovery.goal}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Brand */}
+              <div style={{
+                fontSize: 8, fontWeight: 700, color: '#fff',
+                letterSpacing: '2px', textTransform: 'uppercase',
+                textShadow: tShadow,
+              }}>
+                DAYSEVEN
+              </div>
+            </>
+          ) : (
+            /* ─── DARK CARD MODE ─── */
+            <>
           {/* Top branding */}
           <div style={{
-            fontSize: 9, fontWeight: 700, color: isTransparent ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.2)',
+            fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.2)',
             letterSpacing: '2.5px', textTransform: 'uppercase', textAlign: 'center',
-            textShadow: tShadow, marginBottom: 10,
+            marginBottom: 10,
           }}>
             DAYSEVEN
           </div>
@@ -5786,7 +5945,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
               <div style={{
                 width: 30, height: 30, borderRadius: 8,
-                backgroundColor: isTransparent ? 'rgba(255,255,255,0.12)' : `${categoryColor}15`,
+                backgroundColor: `${categoryColor}15`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 flexShrink: 0,
               }}>
@@ -5798,19 +5957,19 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
                   sportEmoji={activity.sportEmoji}
                   customEmoji={activity.customEmoji}
                   size={16}
-                  color={isTransparent ? '#fff' : categoryColor}
+                  color={categoryColor}
                 />
               </div>
               <div style={{
                 fontSize: 16, fontWeight: 700, color: textColor, letterSpacing: '-0.3px',
-                textShadow: tShadow, lineHeight: 1.2,
+                lineHeight: 1.2,
               }}>
                 {activityName}
               </div>
             </div>
             <div style={{
-              fontSize: 10, color: isTransparent ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.4)',
-              textShadow: tShadow, letterSpacing: '0.3px', marginTop: 3, textAlign: 'center',
+              fontSize: 10, color: 'rgba(255,255,255,0.4)',
+              letterSpacing: '0.3px', marginTop: 3, textAlign: 'center',
             }}>
               {formatStampDate(activity.date)}{activity.time ? ` • ${activity.time}` : ''}
             </div>
@@ -6076,12 +6235,12 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
           </div>
 
           {/* Accent line at top */}
-          {!isTransparent && (
-            <div style={{
-              position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
-              width: 40, height: 3, borderRadius: 2,
-              backgroundColor: categoryColor, opacity: 0.6,
-            }} />
+          <div style={{
+            position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
+            width: 40, height: 3, borderRadius: 2,
+            backgroundColor: categoryColor, opacity: 0.6,
+          }} />
+            </>
           )}
         </div>
       </div>

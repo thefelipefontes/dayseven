@@ -5789,7 +5789,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
                 }}>
                   {category === 'lifting' ? <Dumbbell size={11} color="#00FF94" strokeWidth={2.5} /> :
                    category === 'cardio' ? <IconRun size={11} color="#FF9500" strokeWidth={2.5} /> :
-                   <Snowflake size={11} color="#00D1FF" strokeWidth={2.5} />}
+                   <IconSnowflake size={11} color="#00D1FF" strokeWidth={2.5} />}
                 </div>
                 {activityName}
               </div>

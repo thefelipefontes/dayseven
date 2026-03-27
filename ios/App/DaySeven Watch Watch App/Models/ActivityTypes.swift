@@ -175,8 +175,10 @@ struct ActivityTypes {
         }
         // Priority 3: Type-based defaults
         switch activity.type {
-        case "Strength Training", "Weightlifting", "Bodyweight", "Circuit":
+        case "Strength Training", "Weightlifting", "Bodyweight":
             return "lifting"
+        case "Circuit":
+            return "lifting+cardio"
         case "Running", "Cycle", "Sports", "Stair Climbing", "Elliptical":
             return "cardio"
         case "Cold Plunge", "Sauna", "Contrast Therapy", "Yoga", "Pilates":
@@ -192,8 +194,10 @@ struct ActivityTypes {
         // If an explicit countToward was provided (e.g. from hybrid picker), use it
         if let ct = countToward, !ct.isEmpty { return ct }
         switch type {
-        case "Weightlifting", "Bodyweight", "Circuit":
+        case "Weightlifting", "Bodyweight":
             return "lifting"
+        case "Circuit":
+            return "lifting+cardio"
         case "Yoga", "Pilates":
             return "recovery"
         default:
@@ -203,6 +207,28 @@ struct ActivityTypes {
 
     /// The hybrid categories that Yoga/Pilates can count toward
     static let hybridCountTowardOptions = ["Recovery", "Cardio", "Strength"]
+
+    /// Circuit training count-toward options (defaults to both)
+    static let circuitCountTowardOptions = ["Strength + Cardio", "Strength", "Cardio"]
+
+    /// Map circuit picker display value to stored countToward value
+    static func circuitCountTowardValue(_ display: String) -> String {
+        switch display {
+        case "Strength + Cardio": return "lifting+cardio"
+        case "Strength": return "lifting"
+        case "Cardio": return "cardio"
+        default: return "lifting+cardio"
+        }
+    }
+
+    /// Map stored countToward value to circuit picker display value
+    static func circuitCountTowardDisplay(_ value: String?) -> String {
+        switch value {
+        case "lifting": return "Strength"
+        case "cardio": return "Cardio"
+        default: return "Strength + Cardio"
+        }
+    }
 
     // MARK: - HKWorkoutActivityType Mapping (matches HealthKitWriterPlugin.swift line 795)
 

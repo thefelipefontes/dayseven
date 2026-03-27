@@ -50,9 +50,9 @@ func calculateWeeklyProgress(activities: [Activity], goals: UserGoals) -> Weekly
         return date >= startOfWeek && date <= today
     }
 
-    // Count by category
-    let liftsCount = weekActivities.filter { ActivityTypes.getActivityCategory($0) == "lifting" }.count
-    let cardioCount = weekActivities.filter { ActivityTypes.getActivityCategory($0) == "cardio" }.count
+    // Count by category (lifting+cardio counts in both)
+    let liftsCount = weekActivities.filter { let c = ActivityTypes.getActivityCategory($0); return c == "lifting" || c == "lifting+cardio" }.count
+    let cardioCount = weekActivities.filter { let c = ActivityTypes.getActivityCategory($0); return c == "cardio" || c == "lifting+cardio" }.count
     let recoveryCount = weekActivities.filter { ActivityTypes.getActivityCategory($0) == "recovery" }.count
 
     return WeeklyProgress(
@@ -86,8 +86,8 @@ func calculateWeeklyStats(activities: [Activity]) -> WeeklyStats {
 
     let totalCalories = weekActivities.reduce(0) { $0 + ($1.calories ?? 0) }
     let totalMiles = weekActivities.reduce(0.0) { $0 + ($1.distance ?? 0) }
-    let strengthCount = weekActivities.filter { ActivityTypes.getActivityCategory($0) == "lifting" }.count
-    let cardioCount = weekActivities.filter { ActivityTypes.getActivityCategory($0) == "cardio" }.count
+    let strengthCount = weekActivities.filter { let c = ActivityTypes.getActivityCategory($0); return c == "lifting" || c == "lifting+cardio" }.count
+    let cardioCount = weekActivities.filter { let c = ActivityTypes.getActivityCategory($0); return c == "cardio" || c == "lifting+cardio" }.count
     let recoveryCount = weekActivities.filter { ActivityTypes.getActivityCategory($0) == "recovery" }.count
 
     return WeeklyStats(

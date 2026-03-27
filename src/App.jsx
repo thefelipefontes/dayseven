@@ -1508,7 +1508,7 @@ const getDefaultCountToward = (type, sub) => {
   if (type === 'Strength Training') return 'lifting';
   if (type === 'Weightlifting') return 'lifting';
   if (type === 'Bodyweight') return 'lifting';
-  if (type === 'Circuit') return 'lifting';
+  if (type === 'Circuit') return 'lifting+cardio';
   if (type === 'Running') return 'cardio';
   if (type === 'Cycle') return 'cardio';
   if (type === 'Sports') return 'cardio';
@@ -2206,23 +2206,35 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
               <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Count Toward</label>
               <div className="flex gap-2">
                 <button
-                  onClick={() => { setFinishCountToward('lifting'); triggerHaptic(ImpactStyle.Light); }}
+                  onClick={() => {
+                    // Circuit: toggle strength in multi-select mode
+                    if (finishCountToward === 'lifting+cardio') setFinishCountToward('cardio');
+                    else if (finishCountToward === 'cardio') setFinishCountToward('lifting+cardio');
+                    else setFinishCountToward('lifting');
+                    triggerHaptic(ImpactStyle.Light);
+                  }}
                   className="flex-1 p-2.5 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
                   style={{
-                    backgroundColor: finishCountToward === 'lifting' ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
-                    border: finishCountToward === 'lifting' ? '1px solid #00FF94' : '1px solid transparent',
-                    color: finishCountToward === 'lifting' ? '#00FF94' : 'white'
+                    backgroundColor: (finishCountToward === 'lifting' || finishCountToward === 'lifting+cardio') ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
+                    border: (finishCountToward === 'lifting' || finishCountToward === 'lifting+cardio') ? '1px solid #00FF94' : '1px solid transparent',
+                    color: (finishCountToward === 'lifting' || finishCountToward === 'lifting+cardio') ? '#00FF94' : 'white'
                   }}
                 >
                   <span>💪</span> Strength
                 </button>
                 <button
-                  onClick={() => { setFinishCountToward('cardio'); triggerHaptic(ImpactStyle.Light); }}
+                  onClick={() => {
+                    // Circuit: toggle cardio in multi-select mode
+                    if (finishCountToward === 'lifting+cardio') setFinishCountToward('lifting');
+                    else if (finishCountToward === 'lifting') setFinishCountToward('lifting+cardio');
+                    else setFinishCountToward('cardio');
+                    triggerHaptic(ImpactStyle.Light);
+                  }}
                   className="flex-1 p-2.5 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
                   style={{
-                    backgroundColor: finishCountToward === 'cardio' ? 'rgba(255,149,0,0.2)' : 'rgba(255,255,255,0.05)',
-                    border: finishCountToward === 'cardio' ? '1px solid #FF9500' : '1px solid transparent',
-                    color: finishCountToward === 'cardio' ? '#FF9500' : 'white'
+                    backgroundColor: (finishCountToward === 'cardio' || finishCountToward === 'lifting+cardio') ? 'rgba(255,149,0,0.2)' : 'rgba(255,255,255,0.05)',
+                    border: (finishCountToward === 'cardio' || finishCountToward === 'lifting+cardio') ? '1px solid #FF9500' : '1px solid transparent',
+                    color: (finishCountToward === 'cardio' || finishCountToward === 'lifting+cardio') ? '#FF9500' : 'white'
                   }}
                 >
                   <span>❤️‍🔥</span> Cardio
@@ -2265,6 +2277,11 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                   </button>
                 )}
               </div>
+              {finishCountToward === 'lifting+cardio' && (
+                <p className="text-[11px] text-gray-500 mt-2">
+                  Circuit training combines resistance exercises with elevated heart rates, so it can count toward both strength and cardio goals.
+                </p>
+              )}
             </div>
           )}
 
@@ -11129,23 +11146,31 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Count Toward</label>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => setCountToward('lifting')}
+                    onClick={() => {
+                      if (countToward === 'lifting+cardio') setCountToward('cardio');
+                      else if (countToward === 'cardio') setCountToward('lifting+cardio');
+                      else setCountToward('lifting');
+                    }}
                     className="flex-1 p-3 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
                     style={{
-                      backgroundColor: countToward === 'lifting' ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
-                      border: countToward === 'lifting' ? '1px solid #00FF94' : '1px solid transparent',
-                      color: countToward === 'lifting' ? '#00FF94' : 'white'
+                      backgroundColor: (countToward === 'lifting' || countToward === 'lifting+cardio') ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
+                      border: (countToward === 'lifting' || countToward === 'lifting+cardio') ? '1px solid #00FF94' : '1px solid transparent',
+                      color: (countToward === 'lifting' || countToward === 'lifting+cardio') ? '#00FF94' : 'white'
                     }}
                   >
                     <span>💪</span> Strength
                   </button>
                   <button
-                    onClick={() => setCountToward('cardio')}
+                    onClick={() => {
+                      if (countToward === 'lifting+cardio') setCountToward('lifting');
+                      else if (countToward === 'lifting') setCountToward('lifting+cardio');
+                      else setCountToward('cardio');
+                    }}
                     className="flex-1 p-3 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
                     style={{
-                      backgroundColor: countToward === 'cardio' ? 'rgba(255,149,0,0.2)' : 'rgba(255,255,255,0.05)',
-                      border: countToward === 'cardio' ? '1px solid #FF9500' : '1px solid transparent',
-                      color: countToward === 'cardio' ? '#FF9500' : 'white'
+                      backgroundColor: (countToward === 'cardio' || countToward === 'lifting+cardio') ? 'rgba(255,149,0,0.2)' : 'rgba(255,255,255,0.05)',
+                      border: (countToward === 'cardio' || countToward === 'lifting+cardio') ? '1px solid #FF9500' : '1px solid transparent',
+                      color: (countToward === 'cardio' || countToward === 'lifting+cardio') ? '#FF9500' : 'white'
                     }}
                   >
                     <span>❤️‍🔥</span> Cardio
@@ -11162,6 +11187,11 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     <span>🧊</span> Recovery
                   </button>
                 </div>
+                {countToward === 'lifting+cardio' && (
+                  <p className="text-[11px] text-gray-500 mt-2">
+                    Circuit training combines resistance exercises with elevated heart rates, so it can count toward both strength and cardio goals.
+                  </p>
+                )}
                 {/* Second row: Warm Up + Don't Count (Walking only) */}
                 <div className="flex gap-2 mt-2">
                   <button
@@ -12324,9 +12354,10 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
       return 'other';
     };
 
-    const lifts = weekActivities.filter(a => getCategory(a) === 'lifting');
-    const cardio = weekActivities.filter(a => getCategory(a) === 'cardio');
-    const recovery = weekActivities.filter(a => getCategory(a) === 'recovery');
+    const cat = (a) => getCategory(a);
+    const lifts = weekActivities.filter(a => cat(a) === 'lifting' || cat(a) === 'lifting+cardio');
+    const cardio = weekActivities.filter(a => cat(a) === 'cardio' || cat(a) === 'lifting+cardio');
+    const recovery = weekActivities.filter(a => cat(a) === 'recovery');
 
     // Cardio breakdown
     const running = weekActivities.filter(a => a.type === 'Running');
@@ -20449,13 +20480,13 @@ export default function DaySevenApp() {
           week.miles += (parseFloat(activity.distance) || 0);
 
           // Only count strength + cardio toward "most workouts" (not walks, recovery, etc.)
-          if (cat === 'lifting' || cat === 'cardio') {
+          if (cat === 'lifting' || cat === 'cardio' || cat === 'lifting+cardio') {
             week.workouts++;
           }
 
-          // Track per-category counts
-          if (cat === 'lifting') week.lifts++;
-          if (cat === 'cardio') week.cardio++;
+          // Track per-category counts (lifting+cardio counts in both)
+          if (cat === 'lifting' || cat === 'lifting+cardio') week.lifts++;
+          if (cat === 'cardio' || cat === 'lifting+cardio') week.cardio++;
           if (cat === 'recovery') week.recovery++;
           if (activity.type === 'Running') week.runs++;
         });
@@ -21750,8 +21781,8 @@ export default function DaySevenApp() {
 
       // Get activities for this week
       const weekActivities = allActivities.filter(a => a.date >= weekStartStr && a.date <= weekEndStr);
-      const liftsCount = weekActivities.filter(a => getActivityCategory(a) === 'lifting').length;
-      const cardioCount = weekActivities.filter(a => getActivityCategory(a) === 'cardio').length;
+      const liftsCount = weekActivities.filter(a => { const c = getActivityCategory(a); return c === 'lifting' || c === 'lifting+cardio'; }).length;
+      const cardioCount = weekActivities.filter(a => { const c = getActivityCategory(a); return c === 'cardio' || c === 'lifting+cardio'; }).length;
       const recoveryCount = weekActivities.filter(a => getActivityCategory(a) === 'recovery').length;
 
       const liftsGoalMet = isShielded || liftsCount >= goals.liftsPerWeek;
@@ -21788,8 +21819,8 @@ export default function DaySevenApp() {
     }
 
     const cwActivities = allActivities.filter(a => a.date >= cwStartStr && a.date <= cwEndStr);
-    const cwLifts = cwActivities.filter(a => getActivityCategory(a) === 'lifting').length;
-    const cwCardio = cwActivities.filter(a => getActivityCategory(a) === 'cardio').length;
+    const cwLifts = cwActivities.filter(a => { const c = getActivityCategory(a); return c === 'lifting' || c === 'lifting+cardio'; }).length;
+    const cwCardio = cwActivities.filter(a => { const c = getActivityCategory(a); return c === 'cardio' || c === 'lifting+cardio'; }).length;
     const cwRecovery = cwActivities.filter(a => getActivityCategory(a) === 'recovery').length;
 
     // Current week counts independently — if goal is met, it's at least a 1-week streak

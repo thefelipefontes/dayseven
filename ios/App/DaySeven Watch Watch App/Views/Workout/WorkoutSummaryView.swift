@@ -199,10 +199,17 @@ struct WorkoutSummaryView: View {
         }
         .sheet(isPresented: $showCountTowardPicker) {
             NavigationStack {
-                PickerListView(title: "Counts Toward", value: selectedCountToward?.capitalized, options: ActivityTypes.hybridCountTowardOptions, selection: Binding(
-                    get: { selectedCountToward?.capitalized },
-                    set: { selectedCountToward = $0?.lowercased() }
-                ))
+                if isCircuitActivity {
+                    PickerListView(title: "Counts Toward", value: ActivityTypes.circuitCountTowardDisplay(selectedCountToward), options: ActivityTypes.circuitCountTowardOptions, selection: Binding(
+                        get: { ActivityTypes.circuitCountTowardDisplay(selectedCountToward) },
+                        set: { if let v = $0 { selectedCountToward = ActivityTypes.circuitCountTowardValue(v) } }
+                    ))
+                } else {
+                    PickerListView(title: "Counts Toward", value: selectedCountToward?.capitalized, options: ActivityTypes.hybridCountTowardOptions, selection: Binding(
+                        get: { selectedCountToward?.capitalized },
+                        set: { selectedCountToward = $0?.lowercased() }
+                    ))
+                }
             }
         }
     }
@@ -295,13 +302,23 @@ struct WorkoutSummaryView: View {
         activityTypeDef?.isHybrid ?? false
     }
 
+    private var isCircuitActivity: Bool {
+        strengthType == "Circuit"
+    }
+
     private var detailPickersSection: some View {
         VStack(spacing: 6) {
-            // Counts toward picker (Yoga/Pilates hybrid)
+            // Counts toward picker
             if isHybridActivity {
                 sheetPickerButton(
                     title: "Counts Toward",
                     value: selectedCountToward?.capitalized,
+                    showSheet: $showCountTowardPicker
+                )
+            } else if isCircuitActivity {
+                sheetPickerButton(
+                    title: "Counts Toward",
+                    value: ActivityTypes.circuitCountTowardDisplay(selectedCountToward),
                     showSheet: $showCountTowardPicker
                 )
             }

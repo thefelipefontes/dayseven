@@ -8016,6 +8016,27 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
             </div>
           )}
 
+          {/* Muscle Heatmap for Strength Training */}
+          {(() => {
+            const areas = activity.focusAreas || (activity.focusArea ? [activity.focusArea] : []);
+            if (areas.length === 0 || activity.type !== 'Strength Training') return null;
+            const muscleData = {};
+            areas.forEach(a => { muscleData[a] = 1; });
+            return (
+              <div className="mb-4">
+                <div className="text-xs text-gray-500 mb-2">Muscles Worked</div>
+                <div className="p-4 rounded-xl flex flex-col items-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  <MuscleBodyMap muscleData={muscleData} scale={0.62} hideLabels />
+                  <div className="flex flex-wrap gap-1.5 mt-3 justify-center">
+                    {areas.map(a => (
+                      <span key={a} className="px-2 py-0.5 rounded-full text-[10px] font-medium" style={{ backgroundColor: 'rgba(0,255,148,0.15)', color: '#00FF94' }}>{a}</span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Notes */}
           {activity.notes && (
             <div className="p-4 rounded-xl mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
@@ -9508,7 +9529,7 @@ const SwipeableActivityItem = ({ children, onDelete, activity, onTap, onEdit }) 
         className="relative overflow-hidden rounded-xl"
         style={{
           backgroundColor: showDeleteButton ? '#FF453A' : 'transparent',
-          zIndex: showDeleteButton ? 9999 : 'auto',
+          zIndex: showDeleteButton ? 10 : 'auto',
           position: showDeleteButton ? 'relative' : 'static'
         }}
       >
@@ -15199,8 +15220,8 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
         return;
       }
       const weekActivities = activities.filter(a => a.date >= startStr && a.date <= endStr);
-      const lifts = weekActivities.filter(a => getActivityCategory(a) === 'lifting').length;
-      const cardio = weekActivities.filter(a => getActivityCategory(a) === 'cardio').length;
+      const lifts = weekActivities.filter(a => { const c = getActivityCategory(a); return c === 'lifting' || c === 'lifting+cardio'; }).length;
+      const cardio = weekActivities.filter(a => { const c = getActivityCategory(a); return c === 'cardio' || c === 'lifting+cardio'; }).length;
       const recovery = weekActivities.filter(a => getActivityCategory(a) === 'recovery').length;
       result[week.id] = lifts >= goals.liftsPerWeek && cardio >= goals.cardioPerWeek && recovery >= goals.recoveryPerWeek;
     });
@@ -15513,7 +15534,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
             <span>🔥</span>
           </div>
         </div>
-        
+
         {/* Master Streak - Hero */}
         <div className="p-4 rounded-2xl mb-3" style={{ background: 'linear-gradient(135deg, rgba(255,215,0,0.15) 0%, rgba(255,149,0,0.1) 100%)', border: '1px solid rgba(255,215,0,0.3)' }}>
           <div className="flex items-center gap-3 mb-2">
@@ -15527,42 +15548,76 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
             Your longest: {records.longestMasterStreak} weeks
           </div>
         </div>
-        
-        {/* Sub Streaks - 3 columns */}
-        <div className="grid grid-cols-3 gap-2">
-          {/* Strength Streak */}
-          <div className="px-2.5 py-2 rounded-xl bg-zinc-800/60 relative overflow-hidden">
-            <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ backgroundColor: '#00FF94' }}></div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-sm">💪</span>
-              <span className="text-lg font-bold leading-tight" style={{ color: '#00FF94' }}>{streaks.lifts}</span>
-            </div>
-            <span className="text-[11px] text-gray-400">Strength</span>
-            <span className="text-[10px] text-gray-500 block">{goals.liftsPerWeek}+/week</span>
-          </div>
 
-          {/* Cardio Streak */}
-          <div className="px-2.5 py-2 rounded-xl bg-zinc-800/60 relative overflow-hidden">
-            <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ backgroundColor: '#FF9500' }}></div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-sm">❤️‍🔥</span>
-              <span className="text-lg font-bold leading-tight" style={{ color: '#FF9500' }}>{streaks.cardio}</span>
-            </div>
-            <span className="text-[11px] text-gray-400">Cardio</span>
-            <span className="text-[10px] text-gray-500 block">{goals.cardioPerWeek}+/week</span>
+        <div className="flex items-center justify-end gap-1.5 mb-2">
+          <div className="w-3.5 h-3.5 rounded-full flex items-center justify-center bg-gray-600">
+            <span className="text-[8px] text-black font-bold leading-none">✓</span>
           </div>
-
-          {/* Recovery Streak */}
-          <div className="px-2.5 py-2 rounded-xl bg-zinc-800/60 relative overflow-hidden">
-            <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ backgroundColor: '#00D1FF' }}></div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-sm">🧊</span>
-              <span className="text-lg font-bold leading-tight" style={{ color: '#00D1FF' }}>{streaks.recovery}</span>
-            </div>
-            <span className="text-[11px] text-gray-400">Recovery</span>
-            <span className="text-[10px] text-gray-500 block">{goals.recoveryPerWeek}+/week</span>
-          </div>
+          <span className="text-[9px] text-gray-600">= this week's goal hit</span>
         </div>
+
+        {/* Sub Streaks - 3 columns */}
+        {(() => {
+          // Compute current week goal completion for checkmark badges
+          const todayDate = new Date();
+          const cwStart = new Date(todayDate);
+          cwStart.setDate(todayDate.getDate() - todayDate.getDay());
+          cwStart.setHours(0, 0, 0, 0);
+          const cwStartStr = `${cwStart.getFullYear()}-${String(cwStart.getMonth() + 1).padStart(2, '0')}-${String(cwStart.getDate()).padStart(2, '0')}`;
+          const cwEnd = new Date(cwStart);
+          cwEnd.setDate(cwEnd.getDate() + 6);
+          const cwEndStr = `${cwEnd.getFullYear()}-${String(cwEnd.getMonth() + 1).padStart(2, '0')}-${String(cwEnd.getDate()).padStart(2, '0')}`;
+          const cwActs = activities.filter(a => a.date >= cwStartStr && a.date <= cwEndStr);
+          const cwLiftsOk = cwActs.filter(a => { const c = getActivityCategory(a); return c === 'lifting' || c === 'lifting+cardio'; }).length >= goals.liftsPerWeek;
+          const cwCardioOk = cwActs.filter(a => { const c = getActivityCategory(a); return c === 'cardio' || c === 'lifting+cardio'; }).length >= goals.cardioPerWeek;
+          const cwRecoveryOk = cwActs.filter(a => getActivityCategory(a) === 'recovery').length >= goals.recoveryPerWeek;
+
+          const CheckBadge = ({ met, color }) => met ? (
+            <div className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full flex items-center justify-center" style={{ backgroundColor: color }}>
+              <span className="text-[9px] text-black font-bold leading-none">✓</span>
+            </div>
+          ) : null;
+
+          return (
+            <div className="grid grid-cols-3 gap-2">
+              {/* Strength Streak */}
+              <div className="px-2.5 py-2 rounded-xl bg-zinc-800/60 relative overflow-hidden">
+                <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ backgroundColor: '#00FF94' }}></div>
+                <CheckBadge met={cwLiftsOk} color="#00FF94" />
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm">💪</span>
+                  <span className="text-lg font-bold leading-tight" style={{ color: '#00FF94' }}>{streaks.lifts}</span>
+                </div>
+                <span className="text-[11px] text-gray-400">Strength</span>
+                <span className="text-[10px] text-gray-500 block">{goals.liftsPerWeek}+/week</span>
+              </div>
+
+              {/* Cardio Streak */}
+              <div className="px-2.5 py-2 rounded-xl bg-zinc-800/60 relative overflow-hidden">
+                <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ backgroundColor: '#FF9500' }}></div>
+                <CheckBadge met={cwCardioOk} color="#FF9500" />
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm">❤️‍🔥</span>
+                  <span className="text-lg font-bold leading-tight" style={{ color: '#FF9500' }}>{streaks.cardio}</span>
+                </div>
+                <span className="text-[11px] text-gray-400">Cardio</span>
+                <span className="text-[10px] text-gray-500 block">{goals.cardioPerWeek}+/week</span>
+              </div>
+
+              {/* Recovery Streak */}
+              <div className="px-2.5 py-2 rounded-xl bg-zinc-800/60 relative overflow-hidden">
+                <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ backgroundColor: '#00D1FF' }}></div>
+                <CheckBadge met={cwRecoveryOk} color="#00D1FF" />
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm">🧊</span>
+                  <span className="text-lg font-bold leading-tight" style={{ color: '#00D1FF' }}>{streaks.recovery}</span>
+                </div>
+                <span className="text-[11px] text-gray-400">Recovery</span>
+                <span className="text-[10px] text-gray-500 block">{goals.recoveryPerWeek}+/week</span>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* View Toggles + Content Wrapper for Tour */}
@@ -21626,9 +21681,9 @@ export default function DaySevenApp() {
       return actDate >= startOfWeek && actDate <= today;
     });
 
-    // Categorize using the helper (respects countToward)
-    const lifts = weekActivities.filter(a => getActivityCategory(a) === 'lifting');
-    const cardio = weekActivities.filter(a => getActivityCategory(a) === 'cardio');
+    // Categorize using the helper (respects countToward, lifting+cardio counts in both)
+    const lifts = weekActivities.filter(a => { const c = getActivityCategory(a); return c === 'lifting' || c === 'lifting+cardio'; });
+    const cardio = weekActivities.filter(a => { const c = getActivityCategory(a); return c === 'cardio' || c === 'lifting+cardio'; });
     const recovery = weekActivities.filter(a => getActivityCategory(a) === 'recovery');
     
     // For breakdown, use actual activity types
@@ -21823,19 +21878,21 @@ export default function DaySevenApp() {
     const cwCardio = cwActivities.filter(a => { const c = getActivityCategory(a); return c === 'cardio' || c === 'lifting+cardio'; }).length;
     const cwRecovery = cwActivities.filter(a => getActivityCategory(a) === 'recovery').length;
 
-    // Current week counts independently — if goal is met, it's at least a 1-week streak
+    // Current week extends the streak if it's contiguous (streaks > 0 means the most recent
+    // past week had the goal met). If the past chain broke at an older week, the streak from
+    // recent weeks is still valid and the current week should extend it, not reset to 1.
     if (currentWeekShielded || cwLifts >= goals.liftsPerWeek) {
-      streaks.lifts = liftsAlive ? streaks.lifts + 1 : 1;
+      streaks.lifts = streaks.lifts > 0 ? streaks.lifts + 1 : 1;
     }
     if (currentWeekShielded || cwCardio >= goals.cardioPerWeek) {
-      streaks.cardio = cardioAlive ? streaks.cardio + 1 : 1;
+      streaks.cardio = streaks.cardio > 0 ? streaks.cardio + 1 : 1;
     }
     if (currentWeekShielded || cwRecovery >= goals.recoveryPerWeek) {
-      streaks.recovery = recoveryAlive ? streaks.recovery + 1 : 1;
+      streaks.recovery = streaks.recovery > 0 ? streaks.recovery + 1 : 1;
     }
     const allCurrentMet = currentWeekShielded || (cwLifts >= goals.liftsPerWeek && cwCardio >= goals.cardioPerWeek && cwRecovery >= goals.recoveryPerWeek);
     if (allCurrentMet) {
-      streaks.master = (liftsAlive && cardioAlive && recoveryAlive) ? streaks.master + 1 : 1;
+      streaks.master = streaks.master > 0 ? streaks.master + 1 : 1;
     }
 
     return streaks;
@@ -22189,16 +22246,16 @@ export default function DaySevenApp() {
     };
 
     // Check if this activity just completed a goal (wasn't complete before, is now)
-    const justCompletedLifts = activityCategory === 'lifting' && 
-      prevProgress.lifts.completed < goals.liftsPerWeek && 
+    const justCompletedLifts = (activityCategory === 'lifting' || activityCategory === 'lifting+cardio') &&
+      prevProgress.lifts.completed < goals.liftsPerWeek &&
       newProgress.lifts.completed >= goals.liftsPerWeek;
-    
-    const justCompletedCardio = activityCategory === 'cardio' && 
-      prevProgress.cardio.completed < goals.cardioPerWeek && 
+
+    const justCompletedCardio = (activityCategory === 'cardio' || activityCategory === 'lifting+cardio') &&
+      prevProgress.cardio.completed < goals.cardioPerWeek &&
       newProgress.cardio.completed >= goals.cardioPerWeek;
-    
-    const justCompletedRecovery = activityCategory === 'recovery' && 
-      prevProgress.recovery.completed < goals.recoveryPerWeek && 
+
+    const justCompletedRecovery = activityCategory === 'recovery' &&
+      prevProgress.recovery.completed < goals.recoveryPerWeek &&
       newProgress.recovery.completed >= goals.recoveryPerWeek;
     
     // Check for streak milestones (every 5 weeks)

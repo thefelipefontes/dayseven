@@ -5,6 +5,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import ActivityIcon from './components/ActivityIcon';
+import { isDemoAccount } from './demoData';
 
 // Convert a Date to YYYY-MM-DD string in local timezone (avoids UTC date shifting)
 const toLocalDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -668,12 +669,14 @@ const MemoizedActivityCard = React.memo(({
             onTouchMove={(e) => e.stopPropagation()}
             onTouchEnd={(e) => e.stopPropagation()}
           >
-            <TouchButton onClick={() => setShowFullscreenPhoto(false)} className="absolute top-4 right-4 w-10 h-10 bg-white/10 rounded-full flex items-center justify-center z-10">
-              <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </TouchButton>
-            <img src={activity.photoURL} alt="Activity fullscreen" className="max-w-full max-h-full object-contain" onClick={(e) => e.stopPropagation()} />
+            <div className="relative max-w-full max-h-full flex flex-col items-end" onClick={(e) => e.stopPropagation()}>
+              <TouchButton onClick={() => setShowFullscreenPhoto(false)} className="mb-2 mr-1 w-10 h-10 bg-white/10 rounded-full flex items-center justify-center shrink-0">
+                <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </TouchButton>
+              <img src={activity.photoURL} alt="Activity fullscreen" className="max-w-full max-h-[85vh] object-contain" />
+            </div>
           </div>
         </>
       )}
@@ -1034,12 +1037,8 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   };
 
   const loadFeed = useCallback(async () => {
-    // Check if this is the appreview account
-    const isAppReviewAccount = userProfile?.username?.toLowerCase() === 'appreview' ||
-                               user?.email?.toLowerCase() === 'appreview@dayseven.app';
-
     // Generate dummy feed data for appreview account
-    if (isAppReviewAccount) {
+    if (isDemoAccount(userProfile, user)) {
       const dummyFriends = [
         { uid: 'dummy1', username: 'alex_fitness', displayName: 'Alex Thompson', photoURL: 'https://i.pravatar.cc/150?img=1' },
         { uid: 'dummy2', username: 'sarah_runs', displayName: 'Sarah Chen', photoURL: 'https://i.pravatar.cc/150?img=5' },
@@ -2550,20 +2549,21 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           onTouchMove={(e) => e.stopPropagation()}
           onTouchEnd={(e) => e.stopPropagation()}
         >
-          <TouchButton
-            onClick={() => setShowFullPhoto(false)}
-            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center z-10"
-          >
-            <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </TouchButton>
-          <img
-            src={friend.photoURL}
-            alt={friend.displayName}
-            className="max-w-[90vw] max-h-[90vh] rounded-2xl object-contain"
-            onClick={e => e.stopPropagation()}
-          />
+          <div className="relative max-w-full max-h-full flex flex-col items-end" onClick={e => e.stopPropagation()}>
+            <TouchButton
+              onClick={() => setShowFullPhoto(false)}
+              className="mb-2 mr-1 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center"
+            >
+              <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </TouchButton>
+            <img
+              src={friend.photoURL}
+              alt={friend.displayName}
+              className="max-w-[90vw] max-h-[85vh] rounded-2xl object-contain"
+            />
+          </div>
         </div>
       )}
       </>

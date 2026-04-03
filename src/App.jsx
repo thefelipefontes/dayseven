@@ -19,6 +19,7 @@ import { initializeRevenueCat, checkProStatus, addCustomerInfoListener, logoutRe
 import ActivityIcon, { ICON_PICKER_CATEGORIES, CATEGORY_COLORS as ICON_CATEGORY_COLORS } from './components/ActivityIcon';
 import RouteMapView, { ll2px, bestFit, makeTiles, RouteOverlay, TileLayer, TILE } from './components/RouteMapView';
 import MuscleBodyMap from './components/MuscleBodyMap';
+import { isDemoAccount, getDemoActivities, getDemoUserData, getDemoHealthKitData, getDemoCalendarData } from './demoData';
 import { Dumbbell } from 'lucide-react';
 import { IconRun, IconSnowflake } from '@tabler/icons-react';
 
@@ -8209,20 +8210,21 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
               className="fixed inset-0 z-[100] bg-black flex items-center justify-center"
               onClick={() => setShowFullscreenPhoto(false)}
             >
-              <button
-                onClick={() => setShowFullscreenPhoto(false)}
-                className="absolute top-4 right-4 w-10 h-10 bg-white/10 rounded-full flex items-center justify-center z-10"
-              >
-                <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-              <img
-                src={activity.photoURL}
-                alt="Activity fullscreen"
-                className="max-w-full max-h-full object-contain"
-                onClick={(e) => e.stopPropagation()}
-              />
+              <div className="relative max-w-full max-h-full flex flex-col items-end" onClick={(e) => e.stopPropagation()}>
+                <button
+                  onClick={() => setShowFullscreenPhoto(false)}
+                  className="mb-2 mr-1 w-10 h-10 bg-white/10 rounded-full flex items-center justify-center shrink-0"
+                >
+                  <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+                <img
+                  src={activity.photoURL}
+                  alt="Activity fullscreen"
+                  className="max-w-full max-h-[85vh] object-contain"
+                />
+              </div>
             </div>
           )}
 
@@ -12457,10 +12459,10 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
   const cardioPercent = weekProgress.cardio?.goal > 0 ? Math.min((weekProgress.cardio.completed / weekProgress.cardio.goal) * 100, 100) : 0;
   const recoveryPercent = weekProgress.recovery?.goal > 0 ? Math.min((weekProgress.recovery.completed / weekProgress.recovery.goal) * 100, 100) : 0;
 
-  // Calculate days left in the week (until Saturday)
+  // Calculate days left in the week (including today, through Saturday)
   const today = new Date();
   const dayOfWeek = today.getDay(); // 0 = Sunday, 6 = Saturday
-  const daysLeft = 6 - dayOfWeek; // Days until Saturday
+  const daysLeft = 7 - dayOfWeek; // Days left including today (Saturday = 1, Friday = 2, etc.)
   
   const liftsRemaining = Math.max(0, weekProgress.lifts.goal - weekProgress.lifts.completed);
   const cardioRemaining = Math.max(0, (weekProgress.cardio?.goal || 0) - (weekProgress.cardio?.completed || 0));
@@ -13355,7 +13357,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         )}
 
         {/* Streak at Risk Warning - hidden during vacation */}
-        {!userData.vacationMode?.isActive && !streakWarningDismissed && daysLeft <= 2 && (liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0) && (
+        {!userData.vacationMode?.isActive && !streakWarningDismissed && daysLeft <= 3 && (liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0) && (
           <div
             className="relative p-3 rounded-xl mb-3 flex items-center gap-3"
             style={{
@@ -13366,7 +13368,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
             <span className="text-xl">⚠️</span>
             <div className="flex-1 pr-6">
               <div className="text-xs font-semibold" style={{ color: '#FF453A' }}>
-                {daysLeft === 0 ? 'Last day to hit your goals!' : `Only ${daysLeft} day${daysLeft === 1 ? '' : 's'} left!`}
+                {daysLeft === 1 ? 'Last day to hit your goals!' : `${daysLeft} days left (including today)!`}
               </div>
               <div className="text-[10px] text-gray-400 mt-0.5">
                 {[
@@ -13389,7 +13391,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         )}
 
         {/* Streak Shield Button - hidden during vacation */}
-        {!userData.vacationMode?.isActive && daysLeft <= 2 && (liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0) && (userData.streaks.master > 0 || userData.streaks.lifts > 0 || userData.streaks.cardio > 0 || userData.streaks.recovery > 0) && (() => {
+        {!userData.vacationMode?.isActive && daysLeft <= 3 && (liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0) && (userData.streaks.master > 0 || userData.streaks.lifts > 0 || userData.streaks.cardio > 0 || userData.streaks.recovery > 0) && (() => {
           const currentWeek = getCurrentWeekKey();
           const isShielded = userData.streakShield?.lastUsedWeek === currentWeek;
 
@@ -13656,7 +13658,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
               <SectionIcon type="target" />
               <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>This Week's Goals</span>
             </div>
-            <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Hit these to keep your streaks alive · {daysLeft} days left</p>
+            <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Hit these to keep your streaks alive · {daysLeft} day{daysLeft !== 1 ? 's' : ''} left</p>
           </div>
 
           {/* Individual Goals - The Main Event */}
@@ -20639,6 +20641,20 @@ export default function DaySevenApp() {
       setActiveTab('home'); // Always go to home screen after login
       setAuthLoading(false);
 
+      // Demo mode: load mock data for appreview account (marketing screen recordings)
+      if (isDemoAccount(profile, user)) {
+        const demoActivities = getDemoActivities();
+        const demoUserData = getDemoUserData();
+        const demoHealthKit = getDemoHealthKitData();
+        setActivities(demoActivities);
+        activitiesRef.current = demoActivities;
+        setUserData(demoUserData);
+        setCalendarData(getDemoCalendarData(demoActivities));
+        setHealthKitData(prev => ({ ...prev, ...demoHealthKit }));
+        setIsPro(true); // Show pro features in demo
+        return;
+      }
+
       // Load remaining data in background (don't await)
       (async () => {
         try {
@@ -21765,8 +21781,8 @@ export default function DaySevenApp() {
         return JSON.stringify({ name, category: cat, date: a.date || '', duration: a.duration || 0, calories: a.calories || 0 });
       });
 
-    // Days left in the week (Sunday=0 through Saturday=6)
-    const daysLeft = 6 - new Date().getDay();
+    // Days left in the week including today (Sunday=0 through Saturday=6)
+    const daysLeft = 7 - new Date().getDay();
 
     updateWidgetData({
       masterStreak: s.master || 0,

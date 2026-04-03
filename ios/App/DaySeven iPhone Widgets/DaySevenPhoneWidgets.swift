@@ -250,7 +250,7 @@ struct MediumWidgetView: View {
             .offset(y: -6)
 
             // Days left
-            Text(data.daysLeftInWeek == 0 ? "Last day!" : "\(data.daysLeftInWeek) day\(data.daysLeftInWeek == 1 ? "" : "s") left")
+            Text(data.daysLeftInWeek <= 1 ? "Last day!" : "\(data.daysLeftInWeek) days left")
                 .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundColor(.white.opacity(0.35))
                 .offset(y: -1)
@@ -337,7 +337,7 @@ struct LargeWidgetView: View {
             .offset(y: 3)
 
             // Days left
-            Text(data.daysLeftInWeek == 0 ? "Last day!" : "\(data.daysLeftInWeek) day\(data.daysLeftInWeek == 1 ? "" : "s") left")
+            Text(data.daysLeftInWeek <= 1 ? "Last day!" : "\(data.daysLeftInWeek) days left")
                 .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundColor(.white.opacity(0.4))
 

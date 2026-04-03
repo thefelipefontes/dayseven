@@ -66,18 +66,21 @@ struct ActiveWorkoutView: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            if isStarted && showSavingOverlay {
+            if isStarted && (showSavingOverlay || wm.isEnding) {
                 // Workout is being saved (shown only after 0.8s grace period)
                 VStack(spacing: 12) {
                     Spacer()
-                    ProgressView()
-                        .tint(.green)
-                        .scaleEffect(1.5)
-                    Text("Saving workout...")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.white)
+                    if showSavingOverlay {
+                        ProgressView()
+                            .tint(.green)
+                            .scaleEffect(1.5)
+                        Text("Saving workout...")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
                     Spacer()
                 }
+                .frame(maxWidth: .infinity)
             } else if isStarted && wm.isActive {
                 // Workout actively running — show timer/controls
                 activeWorkoutContent
@@ -130,7 +133,11 @@ struct ActiveWorkoutView: View {
                         showSavingOverlay = true
                     }
                 }
-            } else {
+            }
+            // Don't clear showSavingOverlay here — wait for lastResult
+        }
+        .onChange(of: wm.lastResult) { _, result in
+            if result != nil {
                 showSavingOverlay = false
             }
         }

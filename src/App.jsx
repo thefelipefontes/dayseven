@@ -9531,7 +9531,7 @@ const SwipeableActivityItem = ({ children, onDelete, activity, onTap, onEdit }) 
         className="relative overflow-hidden rounded-xl"
         style={{
           backgroundColor: showDeleteButton ? '#FF453A' : 'transparent',
-          zIndex: showDeleteButton ? 10 : 'auto',
+          zIndex: showDeleteButton ? 9999 : 'auto',
           position: showDeleteButton ? 'relative' : 'static'
         }}
       >
@@ -9544,20 +9544,8 @@ const SwipeableActivityItem = ({ children, onDelete, activity, onTap, onEdit }) 
           <button
             onClick={handleDeleteClick}
             className="h-full w-full flex items-center justify-center gap-2 text-white font-medium transition-transform duration-150"
-            onTouchStart={(e) => {
-              e.currentTarget.style.transform = 'scale(0.9)';
-            }}
             onTouchEnd={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-            }}
-            onMouseDown={(e) => {
-              e.currentTarget.style.transform = 'scale(0.9)';
-            }}
-            onMouseUp={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
+              e.stopPropagation();
             }}
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">

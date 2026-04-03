@@ -9,7 +9,7 @@
     "build:mobile": "vite build && npx cap sync",
     "ios": "npx cap open ios",
     "android": "npx cap open android",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package || true"
   },
   "dependencies": {
     "@capacitor-community/media": "^9.0.1",

@@ -535,7 +535,7 @@ class AppViewModel: ObservableObject {
 
     /// Notifies the iPhone that data changed. Uses sendMessage for real-time when reachable,
     /// falls back to transferUserInfo for background/unreachable delivery.
-    private func notifyPhoneDataChanged() {
+    func notifyPhoneDataChanged() {
         if WCSession.default.isReachable {
             WCSession.default.sendMessage(["action": "activitySaved"], replyHandler: { reply in
                 print("[NotifyPhone] iPhone refreshed: \(reply)")

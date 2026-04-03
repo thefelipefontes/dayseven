@@ -5,7 +5,7 @@ import CoreLocation
 
 // MARK: - Workout Result
 
-struct WorkoutResult {
+struct WorkoutResult: Equatable {
     var workoutUUID: String
     var startDate: Date
     var duration: Int // minutes

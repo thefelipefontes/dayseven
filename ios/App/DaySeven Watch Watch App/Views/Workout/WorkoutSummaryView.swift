@@ -22,6 +22,7 @@ struct WorkoutSummaryView: View {
     @State private var selectedCountToward: String? = nil
 
     @State private var isSaved = false
+    @State private var isAutoSaving = false
     @State private var showDiscardAlert = false
     @State private var savedActivityId: ActivityID?
 
@@ -169,9 +170,23 @@ struct WorkoutSummaryView: View {
         .alert("Discard \(activityNoun)?", isPresented: $showDiscardAlert) {
             Button("Discard", role: .destructive) {
                 Task {
+                    // Wait for auto-save to finish so we have an activity ID to delete
+                    if isAutoSaving {
+                        // Poll briefly — auto-save is already in flight
+                        for _ in 0..<50 {
+                            if !isAutoSaving { break }
+                            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
+                        }
+                    }
+
                     // Delete the auto-saved activity from Firestore
                     if let activityId = savedActivityId {
                         await appVM.deleteActivity(withId: activityId)
+                    } else {
+                        // Auto-save may not have completed — force a refresh on the phone
+                        // so it picks up the correct state from Firestore
+                        print("[WorkoutSummary] Discard: no savedActivityId — notifying phone to refresh")
+                        appVM.notifyPhoneDataChanged()
                     }
                     workoutMgr.cancelWorkout()
                     if let onDone = onDone {
@@ -376,6 +391,9 @@ struct WorkoutSummaryView: View {
     // MARK: - Auto-Save Workout (saves immediately like Apple Fitness)
 
     private func autoSaveWorkout() async {
+        isAutoSaving = true
+        defer { isAutoSaving = false }
+
         let countToward = ActivityTypes.getDefaultCountToward(type: activityType, subtype: selectedSubtype, countToward: selectedCountToward)
 
         let activity = Activity.create(

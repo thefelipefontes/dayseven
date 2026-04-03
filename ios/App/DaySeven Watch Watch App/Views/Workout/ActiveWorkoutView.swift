@@ -85,14 +85,9 @@ struct ActiveWorkoutView: View {
                 // Workout actively running — show timer/controls
                 activeWorkoutContent
             } else if isStarted && shouldShowSummary {
-                // Summary overlay covers this view. Show timer underneath
-                // unless we're dismissing (Done/Discard tapped), then show black
-                // so no timer flash when overlay disappears during nav pop.
-                if wm.isDismissingSummary {
-                    Color.black
-                } else {
-                    activeWorkoutContent
-                }
+                // Show black underneath the summary overlay to prevent
+                // any flash of the controls/timer during transition.
+                Color.black
             } else if isStarted {
                 // Workout ended and summary dismissed — show black while
                 // NavigationStack pops this view off (prevents "Starting..." flash)

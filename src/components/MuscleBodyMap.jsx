@@ -16,7 +16,30 @@ const MUSCLE_MAP = {
   'Abs': ['abs', 'obliques'],
 };
 
-const MuscleBodyMap = ({ muscleData = {}, scale: scaleProp = 1, hideLabels = false }) => {
+// Expand grouped focus areas (from watch) into granular muscle names
+const FOCUS_AREA_EXPANSION = {
+  'Full Body': ['Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps', 'Quads', 'Hamstrings', 'Glutes', 'Adductors', 'Calves', 'Abs'],
+  'Upper': ['Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps'],
+  'Lower': ['Quads', 'Hamstrings', 'Glutes', 'Adductors', 'Calves'],
+  'Legs': ['Quads', 'Hamstrings', 'Glutes', 'Adductors', 'Calves'],
+};
+
+const expandMuscleData = (muscleData) => {
+  const expanded = {};
+  Object.entries(muscleData).forEach(([name, count]) => {
+    const parts = FOCUS_AREA_EXPANSION[name];
+    if (parts) {
+      parts.forEach(p => { expanded[p] = Math.max(expanded[p] || 0, count); });
+    } else {
+      expanded[name] = Math.max(expanded[name] || 0, count);
+    }
+  });
+  return expanded;
+};
+
+const MuscleBodyMap = ({ muscleData: rawMuscleData = {}, scale: scaleProp = 1, hideLabels = false }) => {
+  const muscleData = useMemo(() => expandMuscleData(rawMuscleData), [rawMuscleData]);
+
   const maxCount = useMemo(() => {
     const values = Object.values(muscleData);
     return values.length > 0 ? Math.max(...values) : 1;

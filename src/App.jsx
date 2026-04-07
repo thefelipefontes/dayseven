@@ -6113,7 +6113,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
                       display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 4,
                       marginTop: 2,
                     }}>
-                      {(activity.focusAreas || [activity.focusArea]).map(area => (
+                      {normalizeFocusAreas(activity.focusAreas || [activity.focusArea]).map(area => (
                         <span key={area} style={{
                           fontSize: 9, fontWeight: 600, color: '#00FF94',
                           padding: '2px 8px', borderRadius: 8,
@@ -17847,11 +17847,12 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
 };
 
 // Profile Tab Component
-const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onUpdateMaxHeartRate, onChangePassword, onResetPassword, onDeleteAccount, onNotificationSettings, isPro, onPresentPaywall, onPresentCustomerCenter, onRestorePurchases, onToggleVacationMode }) => {
+const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onUpdateMaxHeartRate, onChangePassword, onResetPassword, onDeleteAccount, onNotificationSettings, isPro, onPresentPaywall, onPresentCustomerCenter, onRestorePurchases, onToggleVacationMode, onUseStreakShield }) => {
   const [isEmailPasswordUser, setIsEmailPasswordUser] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [showVacationConfirm, setShowVacationConfirm] = useState(false);
   const [showVacationDeactivateConfirm, setShowVacationDeactivateConfirm] = useState(false);
+  const [showShieldConfirmProfile, setShowShieldConfirmProfile] = useState(false);
 
   // Check if user signed in with email/password (not social login)
   useEffect(() => {
@@ -18761,6 +18762,159 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
             )}
           </div>
         </div>
+
+        {/* Streak Shield Section */}
+        <div className="mb-6">
+          <h3 className="text-sm font-semibold text-gray-400 mb-3">STREAK SHIELD</h3>
+          <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+            <div className="flex items-center gap-3 py-2">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
+                <span className="text-base">🛡️</span>
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm text-white">Streak Shield</span>
+                  {!isPro && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(255,149,0,0.15)', color: '#FF9500' }}>PRO</span>}
+                </div>
+                <p className="text-[11px] text-gray-500">Protect your streaks when you miss a week</p>
+              </div>
+            </div>
+            <div className="mt-3 pt-3 border-t border-zinc-700/50">
+              {(() => {
+                const SHIELD_COOLDOWN_WEEKS = 6;
+                const lastUsedWeek = userData.streakShield?.lastUsedWeek;
+                const currentWeek = getCurrentWeekKey();
+                const isShielded = lastUsedWeek === currentWeek;
+
+                // Already used this week
+                if (isShielded) {
+                  return (
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#00FF94' }} />
+                      <span className="text-xs font-semibold" style={{ color: '#00FF94' }}>Active this week</span>
+                    </div>
+                  );
+                }
+
+                let onCooldown = false;
+                let weeksRemaining = 0;
+                let availableDate = null;
+
+                if (lastUsedWeek) {
+                  const lastUsedDate = new Date(lastUsedWeek + 'T12:00:00');
+                  const currentWeekDate = new Date(currentWeek + 'T12:00:00');
+                  const weeksSinceUsed = Math.floor((currentWeekDate - lastUsedDate) / (7 * 24 * 60 * 60 * 1000));
+                  if (weeksSinceUsed < SHIELD_COOLDOWN_WEEKS) {
+                    onCooldown = true;
+                    weeksRemaining = SHIELD_COOLDOWN_WEEKS - weeksSinceUsed;
+                    availableDate = new Date(lastUsedDate);
+                    availableDate.setDate(availableDate.getDate() + SHIELD_COOLDOWN_WEEKS * 7);
+                  }
+                }
+
+                const shieldAvailable = !onCooldown;
+
+                return (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: shieldAvailable ? '#00FF94' : '#FF9500' }} />
+                        <span className="text-xs font-semibold" style={{ color: shieldAvailable ? '#00FF94' : '#FF9500' }}>
+                          {shieldAvailable ? 'Available' : 'On cooldown'}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          if (!isPro) { onPresentPaywall?.(); return; }
+                          if (shieldAvailable) {
+                            triggerHaptic(ImpactStyle.Medium);
+                            setShowShieldConfirmProfile(true);
+                          }
+                        }}
+                        className="px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all duration-150"
+                        style={{
+                          backgroundColor: shieldAvailable ? 'rgba(0,209,255,0.15)' : 'rgba(255,255,255,0.05)',
+                          color: shieldAvailable ? '#00D1FF' : '#555',
+                          opacity: shieldAvailable ? 1 : 0.6,
+                        }}
+                        disabled={!shieldAvailable && isPro}
+                      >
+                        {!isPro ? 'Upgrade to Pro' : shieldAvailable ? 'Use Now' : 'On Cooldown'}
+                      </button>
+                    </div>
+                    {lastUsedWeek && (
+                      <p className="text-[11px] text-gray-500 ml-4">
+                        Last used: week of {new Date(lastUsedWeek + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </p>
+                    )}
+                    {onCooldown && availableDate && (
+                      <p className="text-[11px] text-gray-500 ml-4">
+                        Available again: {availableDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ({weeksRemaining} week{weeksRemaining !== 1 ? 's' : ''} remaining)
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+
+        {/* Streak Shield Confirmation Modal (Profile) */}
+        {showShieldConfirmProfile && (() => {
+          const currentWeek = getCurrentWeekKey();
+          return (
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setShowShieldConfirmProfile(false)}>
+              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+              <div
+                className="relative w-[85%] max-w-sm rounded-2xl p-6"
+                style={{ backgroundColor: '#1a1a1a' }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex flex-col items-center text-center mb-5">
+                  <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
+                    <span className="text-3xl">🛡️</span>
+                  </div>
+                  <h3 className="text-white font-semibold text-lg">Use Streak Shield?</h3>
+                  <p className="text-gray-400 text-sm mt-2 leading-relaxed">
+                    This will protect all your current streaks for this week, even if you don't complete your goals.
+                  </p>
+                </div>
+
+                <div className="rounded-xl p-3 mb-5" style={{ backgroundColor: 'rgba(255,149,0,0.08)', border: '1px solid rgba(255,149,0,0.15)' }}>
+                  <div className="flex items-start gap-2">
+                    <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="#FF9500" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                    </svg>
+                    <p className="text-xs leading-relaxed" style={{ color: '#FF9500' }}>
+                      You only get <span className="font-semibold">1 streak shield every 6 weeks</span>. Once used, you won't be able to use another one until the cooldown resets.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowShieldConfirmProfile(false)}
+                    className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+                    style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowShieldConfirmProfile(false);
+                      triggerHaptic(ImpactStyle.Heavy);
+                      onUseStreakShield?.(currentWeek);
+                    }}
+                    className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+                    style={{ backgroundColor: '#00D1FF' }}
+                  >
+                    Activate Shield
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Notifications Section - Only on native */}
         {Capacitor.isNativePlatform() && (
@@ -23031,18 +23185,27 @@ export default function DaySevenApp() {
               WebkitMaskImage: 'linear-gradient(to bottom, black 0%, black 82%, transparent 100%)'
             }}
           >
-            <div className="flex items-center gap-0 cursor-pointer pointer-events-auto" onClick={handleLogoTap}>
-              <img
-                src="/icon-transparent.png"
-                alt="Day Seven"
-                className={`${iconSize} transition-all duration-300 ease-out`}
-              />
-              <img
-                src="/wordmark.png"
-                alt="dayseven"
-                className={`h-4 ${wordmarkWidth} transition-all duration-300 ease-out overflow-hidden`}
-                style={{ opacity: wordmarkOpacity }}
-              />
+            <div className="flex items-center justify-between pointer-events-auto">
+              <div className="flex items-center gap-0 cursor-pointer" onClick={handleLogoTap}>
+                <img
+                  src="/icon-transparent.png"
+                  alt="Day Seven"
+                  className={`${iconSize} transition-all duration-300 ease-out`}
+                />
+                <img
+                  src="/wordmark.png"
+                  alt="dayseven"
+                  className={`h-4 ${wordmarkWidth} transition-all duration-300 ease-out overflow-hidden`}
+                  style={{ opacity: wordmarkOpacity }}
+                />
+              </div>
+              {userData?.streaks?.master > 0 && (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full transition-all duration-300 ease-out" style={{ backgroundColor: 'rgba(255,215,0,0.1)', border: '1px solid rgba(255,215,0,0.2)' }}>
+                  <span style={{ fontSize: isCollapsed ? 12 : 14 }} className="transition-all duration-300">🔥</span>
+                  <span className="font-bold transition-all duration-300" style={{ color: '#FFD700', fontSize: isCollapsed ? 12 : 14 }}>{userData.streaks.master}</span>
+                  <span className="font-medium transition-all duration-300" style={{ color: 'rgba(255,215,0,0.7)', fontSize: isCollapsed ? 9 : 11 }}>week streak</span>
+                </div>
+              )}
             </div>
           </div>
         );
@@ -23298,6 +23461,16 @@ export default function DaySevenApp() {
                       if (user?.uid) {
                         updateUserProfile(user.uid, { vacationMode: updated }).catch(() => {});
                       }
+                    }
+                  }}
+                  onUseStreakShield={(weekKey) => {
+                    const newShield = {
+                      lastUsedWeek: weekKey,
+                      shieldedWeeks: [...(userData.streakShield?.shieldedWeeks || []), weekKey]
+                    };
+                    setUserData(prev => ({ ...prev, streakShield: newShield }));
+                    if (user?.uid) {
+                      updateUserProfile(user.uid, { streakShield: newShield }).catch(() => {});
                     }
                   }}
                 />

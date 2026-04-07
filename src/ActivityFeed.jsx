@@ -566,6 +566,8 @@ const MemoizedActivityCard = React.memo(({
   formatDuration,
   formatCommentTime,
   reactionEmojis,
+  isPro,
+  onPresentPaywall,
 }) => {
   const { friend, type, duration, calories, distance, date, time, id, customEmoji, customIcon, sportEmoji, strengthType, focusAreas, focusArea } = activity;
   const [showFullscreenPhoto, setShowFullscreenPhoto] = useState(false);
@@ -651,10 +653,23 @@ const MemoizedActivityCard = React.memo(({
       </div>
 
       {/* Activity Photo */}
-      {activity.photoURL && !activity.isPhotoPrivate && (
+      {activity.photoURL && !activity.isPhotoPrivate && (() => {
+        const feedPhotoLocked = !isPro && activity.date && (() => {
+          const actDate = new Date(activity.date + 'T12:00:00');
+          const cutoff = new Date(); const dow = cutoff.getDay(); cutoff.setDate(cutoff.getDate() - dow - 7);
+          return actDate < cutoff;
+        })();
+        return (
         <>
-          <TouchButton onClick={() => setShowFullscreenPhoto(true)} className="mt-3 rounded-xl overflow-hidden w-full relative group block">
-            <img src={activity.photoURL} alt="Activity" className="w-full h-auto max-h-80 object-cover" />
+          <TouchButton onClick={() => { if (feedPhotoLocked) { onPresentPaywall?.(); return; } setShowFullscreenPhoto(true); }} className="mt-3 rounded-xl overflow-hidden w-full relative group block">
+            <img src={activity.photoURL} alt="Activity" className="w-full h-auto max-h-80 object-cover" style={feedPhotoLocked ? { filter: 'blur(12px)', transform: 'scale(1.05)' } : undefined} />
+            {feedPhotoLocked && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30">
+                <span className="text-2xl mb-1">🔒</span>
+                <span className="text-xs text-white/90 font-semibold">Upgrade to Pro</span>
+                <span className="text-[10px] text-white/60 mt-0.5">to view older photos</span>
+              </div>
+            )}
           </TouchButton>
           {/* Fullscreen modal - always rendered but hidden to prevent flash */}
           <div
@@ -679,7 +694,8 @@ const MemoizedActivityCard = React.memo(({
             </div>
           </div>
         </>
-      )}
+        );
+      })()}
 
       {/* Reactions and Comments section */}
       {id && (
@@ -930,7 +946,7 @@ const MemoizedActivityCard = React.memo(({
   );
 });
 
-const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingRequestsCount = 0, onActiveViewChange }) => {
+const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingRequestsCount = 0, onActiveViewChange, isPro = false, onPresentPaywall }) => {
   const [feedActivities, setFeedActivities] = useState([]);
   const [activityReactions, setActivityReactions] = useState({});
   const [activityComments, setActivityComments] = useState({});
@@ -2721,7 +2737,20 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               {/* Time Range Dropdown */}
               <select
                 value={leaderboardTimeRange}
-                onChange={(e) => setLeaderboardTimeRange(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (!isPro && val !== 'week' && leaderboardSection === 'activity') {
+                    e.target.value = leaderboardTimeRange; // revert
+                    onPresentPaywall?.();
+                    return;
+                  }
+                  if (!isPro && val === 'all' && leaderboardSection === 'streak') {
+                    e.target.value = leaderboardTimeRange; // revert
+                    onPresentPaywall?.();
+                    return;
+                  }
+                  setLeaderboardTimeRange(val);
+                }}
                 className="px-2.5 py-1.5 rounded-lg bg-zinc-800/50 border border-white/10 text-white text-xs appearance-none cursor-pointer shrink-0"
                 style={{
                   backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23999'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
@@ -2734,14 +2763,14 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                 {leaderboardSection === 'activity' ? (
                   <>
                     <option value="week">Week</option>
-                    <option value="month">Month</option>
-                    <option value="year">Year</option>
-                    <option value="all">All Time</option>
+                    <option value="month">{isPro ? 'Month' : 'Month 🔒'}</option>
+                    <option value="year">{isPro ? 'Year' : 'Year 🔒'}</option>
+                    <option value="all">{isPro ? 'All Time' : 'All Time 🔒'}</option>
                   </>
                 ) : (
                   <>
                     <option value="year">This Year</option>
-                    <option value="all">All Time</option>
+                    <option value="all">{isPro ? 'All Time' : 'All Time 🔒'}</option>
                   </>
                 )}
               </select>
@@ -3244,6 +3273,8 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               formatDuration={formatDuration}
               formatCommentTime={formatCommentTime}
               reactionEmojis={reactionEmojis}
+              isPro={isPro}
+              onPresentPaywall={onPresentPaywall}
             />
           );
         })}

@@ -7698,7 +7698,7 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
 };
 
 // Activity Detail Modal
-const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user, userProfile, onShareStamp }) => {
+const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user, userProfile, onShareStamp, isPro, onPresentPaywall }) => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -8047,22 +8047,40 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
           )}
 
           {/* Activity Photo */}
-          {activity.photoURL && (
+          {activity.photoURL && (() => {
+            const photoLocked = !isPro && activity.date && (() => {
+              const actDate = new Date(activity.date + 'T12:00:00');
+              const cutoff = new Date(); const dow = cutoff.getDay(); cutoff.setDate(cutoff.getDate() - dow - 7);
+              return actDate < cutoff;
+            })();
+            return (
             <div className="mb-4 rounded-xl overflow-hidden">
               <button
-                onClick={() => setShowFullscreenPhoto(true)}
+                onClick={() => {
+                  if (photoLocked) { onPresentPaywall?.(); return; }
+                  setShowFullscreenPhoto(true);
+                }}
                 className="w-full relative group"
               >
                 <img
                   src={activity.photoURL}
                   alt="Activity"
                   className="w-full h-auto max-h-64 object-cover"
+                  style={photoLocked ? { filter: 'blur(12px)', transform: 'scale(1.05)' } : undefined}
                 />
+                {photoLocked ? (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30">
+                    <span className="text-2xl mb-1">🔒</span>
+                    <span className="text-xs text-white/90 font-semibold">Upgrade to Pro</span>
+                    <span className="text-[10px] text-white/60 mt-0.5">to view older photos</span>
+                  </div>
+                ) : (
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
                   <svg className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
                   </svg>
                 </div>
+                )}
               </button>
               {activity.isPhotoPrivate && (
                 <div className="flex items-center gap-1 p-2 bg-black/50 text-xs text-gray-400">
@@ -8073,7 +8091,8 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
                 </div>
               )}
             </div>
-          )}
+            );
+          })()}
 
           {/* Reactions & Comments Section - show if user is logged in (below photo, Instagram-style) */}
           {user && (
@@ -14098,6 +14117,8 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         user={user}
         userProfile={userProfile}
         onShareStamp={onShareStamp}
+        isPro={isPro}
+        onPresentPaywall={onPresentPaywall}
       />
 
       {/* Reactions Detail Modal */}
@@ -14880,12 +14901,14 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
   const [view, setView] = useState(initialView);
   const [statsSubView, setStatsSubView] = useState(initialStatsSubView); // 'overview' or 'records'
 
-  // Free users: limit activity history to last 30 days
+  // Free users: limit activity history to current week + last week
   const historyCutoffDate = useMemo(() => {
     if (isPro) return null;
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 30);
-    return cutoff.toISOString().split('T')[0];
+    const today = new Date();
+    const dayOfWeek = today.getDay(); // 0 = Sunday
+    const lastWeekSunday = new Date(today);
+    lastWeekSunday.setDate(today.getDate() - dayOfWeek - 7); // Sunday of last week
+    return lastWeekSunday.toISOString().split('T')[0];
   }, [isPro]);
 
   const visibleActivities = useMemo(() => {
@@ -15647,10 +15670,6 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
           </button>
           <button
             onClick={() => {
-              if (!isPro) {
-                onPresentPaywall?.();
-                return;
-              }
               setView('progress');
             }}
             className="flex-1 py-2 rounded-lg text-sm font-medium transition-colors duration-200 relative z-10"
@@ -15658,7 +15677,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
               color: view === 'progress' ? 'white' : 'rgba(255,255,255,0.5)'
             }}
           >
-            Compare {!isPro && '🔒'}
+            Compare
           </button>
         </div>
 
@@ -15672,7 +15691,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
             onTouchEnd={(e) => e.currentTarget.style.opacity = '1'}
           >
             <span className="text-sm">⚡</span>
-            <span className="text-xs text-gray-300 flex-1 text-left">Viewing last 30 days. <span style={{ color: '#FF9500' }}>Upgrade to Pro</span> for full history.</span>
+            <span className="text-xs text-gray-300 flex-1 text-left">Viewing this week & last week only. <span style={{ color: '#FF9500' }}>Upgrade to Pro</span> for full history.</span>
             <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
             </svg>
@@ -16899,6 +16918,20 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
         );
 
         const handlePhotoSelect = (activityId) => {
+          // Free users: block selecting photos older than current + last week
+          if (!isPro) {
+            const activity = activities.find(a => a.id === activityId);
+            if (activity) {
+              const activityDate = new Date(activity.date + 'T12:00:00');
+              const cutoff = new Date();
+              const dow = cutoff.getDay();
+              cutoff.setDate(cutoff.getDate() - dow - 7);
+              if (activityDate < cutoff) {
+                onPresentPaywall?.();
+                return;
+              }
+            }
+          }
           setSelectedPhotos(prev => {
             if (prev.includes(activityId)) {
               return prev.filter(id => id !== activityId);
@@ -17216,6 +17249,11 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                     {displayedPhotos.map(activity => {
                       const isSelected = selectedPhotos.includes(activity.id);
                       const selectionIndex = selectedPhotos.indexOf(activity.id);
+                      const isLocked = !isPro && (() => {
+                        const actDate = new Date(activity.date + 'T12:00:00');
+                        const cutoff = new Date(); const dow = cutoff.getDay(); cutoff.setDate(cutoff.getDate() - dow - 7);
+                        return actDate < cutoff;
+                      })();
 
                       return (
                         <button
@@ -17230,7 +17268,15 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                             src={activity.photoURL}
                             alt={activity.type}
                             className="w-full h-full object-cover"
+                            style={isLocked ? { filter: 'blur(8px)', transform: 'scale(1.1)' } : undefined}
                           />
+                          {/* Lock overlay for free users on old photos */}
+                          {isLocked && (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40">
+                              <span className="text-lg">🔒</span>
+                              <span className="text-[9px] text-white/80 font-medium mt-0.5">Pro</span>
+                            </div>
+                          )}
                           {/* Overlay with date */}
                           <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2">
                             <div className="flex items-center gap-1">
@@ -17301,6 +17347,11 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                             {group.activities.map(activity => {
                               const isSelected = selectedPhotos.includes(activity.id);
                               const selectionIndex = selectedPhotos.indexOf(activity.id);
+                              const isLocked = !isPro && (() => {
+                                const actDate = new Date(activity.date + 'T12:00:00');
+                                const cutoff = new Date(); const dow = cutoff.getDay(); cutoff.setDate(cutoff.getDate() - dow - 7);
+                                return actDate < cutoff;
+                              })();
 
                               return (
                                 <button
@@ -17315,7 +17366,15 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                                     src={activity.photoURL}
                                     alt={activity.type}
                                     className="w-full h-full object-cover"
+                                    style={isLocked ? { filter: 'blur(8px)', transform: 'scale(1.1)' } : undefined}
                                   />
+                                  {/* Lock overlay for free users on old photos */}
+                                  {isLocked && (
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40">
+                                      <span className="text-lg">🔒</span>
+                                      <span className="text-[9px] text-white/80 font-medium mt-0.5">Pro</span>
+                                    </div>
+                                  )}
                                   {/* Overlay with date */}
                                   <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2">
                                     <div className="flex items-center gap-1">
@@ -17841,6 +17900,8 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
         user={user}
         userProfile={userProfile}
         onShareStamp={onShareStamp}
+        isPro={isPro}
+        onPresentPaywall={onPresentPaywall}
       />
     </div>
   );
@@ -23393,6 +23454,14 @@ export default function DaySevenApp() {
                   onOpenFriends={() => setShowFriends(true)}
                   pendingRequestsCount={pendingFriendRequests}
                   onActiveViewChange={setFeedActiveView}
+                  isPro={isPro}
+                  onPresentPaywall={async () => {
+                    const { purchased } = await presentPaywall();
+                    if (purchased) {
+                      const proStatus = await checkProStatus();
+                      setIsPro(proStatus);
+                    }
+                  }}
                 />
               )}
               {activeTab === 'profile' && (

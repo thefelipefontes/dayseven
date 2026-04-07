@@ -15780,14 +15780,10 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
             </button>
             <button
               onClick={() => {
-                // Check if entire displayed month is before cutoff
+                // Free users: block all month stats (7-day window is too small for meaningful monthly stats)
                 if (historyCutoffDate) {
-                  const monthEnd = new Date(displayedYear, displayedMonth + 1, 0);
-                  const monthEndStr = monthEnd.toISOString().split('T')[0];
-                  if (monthEndStr < historyCutoffDate) {
-                    onPresentPaywall?.();
-                    return;
-                  }
+                  onPresentPaywall?.();
+                  return;
                 }
                 setSelectedMonth({ month: displayedMonth, year: displayedYear });
                 setShowMonthStats(true);

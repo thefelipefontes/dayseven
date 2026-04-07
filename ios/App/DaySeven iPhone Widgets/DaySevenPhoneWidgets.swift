@@ -186,77 +186,84 @@ struct MediumWidgetView: View {
     let data: WidgetStreakData
 
     var body: some View {
-        VStack(spacing: 8) {
-            // Streak badge
-            HStack(spacing: 4) {
-                Image(systemName: "flame.fill")
-                    .font(.system(size: 12))
-                    .foregroundColor(WidgetColors.streak)
-                Text("\(data.masterStreak) week streak")
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundColor(WidgetColors.streak)
+        GeometryReader { geo in
+            let availableHeight = geo.size.height
+            let ringSize = min(availableHeight * 0.58, 80.0)
+            let lineWidth = max(ringSize * 0.088, 5.0)
+
+            VStack(spacing: 0) {
+                // Streak badge + daily stats
+                HStack(spacing: 4) {
+                    Image(systemName: "flame.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(WidgetColors.streak)
+                    Text("\(data.masterStreak) week streak")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundColor(WidgetColors.streak)
+                    Spacer()
+                    HStack(spacing: 3) {
+                        Image(systemName: "figure.walk")
+                            .font(.system(size: 10))
+                        Text(formatSteps(data.todaySteps))
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                    }
+                    .foregroundColor(WidgetColors.steps)
+                    HStack(spacing: 3) {
+                        Image(systemName: "flame")
+                            .font(.system(size: 10))
+                        Text("\(data.todayCalories)")
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                    }
+                    .foregroundColor(WidgetColors.calories)
+                }
+
                 Spacer()
-                HStack(spacing: 3) {
-                    Image(systemName: "figure.walk")
-                        .font(.system(size: 10))
-                    Text(formatSteps(data.todaySteps))
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
+
+                // Three category rings in a row
+                HStack(spacing: 12) {
+                    VStack(spacing: 4) {
+                        CategoryRingView(completed: data.liftsCompleted, goal: data.liftsGoal, progress: data.liftsProgress, color: WidgetColors.strength, size: ringSize, lineWidth: lineWidth)
+                        HStack(spacing: 2) {
+                            Text("\u{1F4AA}")
+                                .font(.system(size: 10))
+                            Text("Strength")
+                                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                .foregroundColor(WidgetColors.strength)
+                        }
+                    }
+                    VStack(spacing: 4) {
+                        CategoryRingView(completed: data.cardioCompleted, goal: data.cardioGoal, progress: data.cardioProgress, color: WidgetColors.cardio, size: ringSize, lineWidth: lineWidth)
+                        HStack(spacing: 2) {
+                            Text("\u{2764}\u{FE0F}\u{200D}\u{1F525}")
+                                .font(.system(size: 10))
+                            Text("Cardio")
+                                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                .foregroundColor(WidgetColors.cardio)
+                        }
+                    }
+                    VStack(spacing: 4) {
+                        CategoryRingView(completed: data.recoveryCompleted, goal: data.recoveryGoal, progress: data.recoveryProgress, color: WidgetColors.recovery, size: ringSize, lineWidth: lineWidth)
+                        HStack(spacing: 2) {
+                            Text("\u{1F9CA}")
+                                .font(.system(size: 10))
+                            Text("Recovery")
+                                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                .foregroundColor(WidgetColors.recovery)
+                        }
+                    }
                 }
-                .foregroundColor(WidgetColors.steps)
-                HStack(spacing: 3) {
-                    Image(systemName: "flame")
-                        .font(.system(size: 10))
-                    Text("\(data.todayCalories)")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                }
-                .foregroundColor(WidgetColors.calories)
+
+                Spacer()
+
+                // Days left
+                Text(data.daysLeftInWeek <= 1 ? "Last day!" : "\(data.daysLeftInWeek) days left")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundColor(.white.opacity(0.35))
             }
-
-            Spacer()
-
-            // Three category rings in a row
-            HStack(spacing: 16) {
-                VStack(spacing: 7) {
-                    CategoryRingView(completed: data.liftsCompleted, goal: data.liftsGoal, progress: data.liftsProgress, color: WidgetColors.strength, size: 80, lineWidth: 7)
-                    HStack(spacing: 2) {
-                        Text("\u{1F4AA}")
-                            .font(.system(size: 10))
-                        Text("Strength")
-                            .font(.system(size: 10, weight: .semibold, design: .rounded))
-                            .foregroundColor(WidgetColors.strength)
-                    }
-                }
-                VStack(spacing: 7) {
-                    CategoryRingView(completed: data.cardioCompleted, goal: data.cardioGoal, progress: data.cardioProgress, color: WidgetColors.cardio, size: 80, lineWidth: 7)
-                    HStack(spacing: 2) {
-                        Text("\u{2764}\u{FE0F}\u{200D}\u{1F525}")
-                            .font(.system(size: 10))
-                        Text("Cardio")
-                            .font(.system(size: 10, weight: .semibold, design: .rounded))
-                            .foregroundColor(WidgetColors.cardio)
-                    }
-                }
-                VStack(spacing: 7) {
-                    CategoryRingView(completed: data.recoveryCompleted, goal: data.recoveryGoal, progress: data.recoveryProgress, color: WidgetColors.recovery, size: 80, lineWidth: 7)
-                    HStack(spacing: 2) {
-                        Text("\u{1F9CA}")
-                            .font(.system(size: 10))
-                        Text("Recovery")
-                            .font(.system(size: 10, weight: .semibold, design: .rounded))
-                            .foregroundColor(WidgetColors.recovery)
-                    }
-                }
-            }
-            .offset(y: -6)
-
-            // Days left
-            Text(data.daysLeftInWeek <= 1 ? "Last day!" : "\(data.daysLeftInWeek) days left")
-                .font(.system(size: 11, weight: .medium, design: .rounded))
-                .foregroundColor(.white.opacity(0.35))
-                .offset(y: -1)
+            .padding(.horizontal, 4)
+            .padding(.vertical, -4)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(.horizontal, 4)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func formatSteps(_ steps: Int) -> String {

@@ -2513,7 +2513,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           <div className="grid grid-cols-3 gap-3 mb-6">
             <div className="bg-zinc-800 rounded-xl p-3 text-center">
               <p className="text-2xl font-bold text-white">{friend?.masterStreak || 0}</p>
-              <p className="text-gray-500 text-xs">Week Streak</p>
+              <p className="text-gray-500 text-xs">Hybrid Streak</p>
             </div>
             <div className="bg-zinc-800 rounded-xl p-3 text-center">
               <p className="text-2xl font-bold text-white">{friend?.weeksWon || 0}</p>

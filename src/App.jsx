@@ -3991,7 +3991,7 @@ const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1, goals 
           {/* Streak count */}
           <div className="flex items-center justify-center gap-2 mb-4">
             <span className="text-2xl">🔥</span>
-            <span className="text-xl font-bold text-white">{streakCount} Week Streak</span>
+            <span className="text-xl font-bold text-white">{streakCount} Week Hybrid Streak</span>
           </div>
 
           {/* Goals summary */}
@@ -4796,7 +4796,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
         const achievements = [];
         if (allGoalsMet) achievements.push({ emoji: '🏆', text: 'All goals completed!' });
         if (weeklyAnalysis?.uniqueDays >= 5) achievements.push({ emoji: '📅', text: `Worked out ${weeklyAnalysis.uniqueDays} days` });
-        if (stats?.streak >= 2) achievements.push({ emoji: '🔥', text: `${stats.streak} week streak!` });
+        if (stats?.streak >= 2) achievements.push({ emoji: '🔥', text: `${stats.streak} week hybrid streak!` });
         // Show total distance if > 0
         if (weeklyAnalysis?.totalDistance > 0) {
           achievements.push({ emoji: '🏃', text: `${parseFloat(weeklyAnalysis.totalDistance).toFixed(1)}mi run` });
@@ -5080,7 +5080,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                 <div className="font-black leading-none" style={{ fontSize: isPostFormat ? '3rem' : '4rem', color: colors.primary, textShadow: `0 0 40px ${colors.glow}, 0 0 80px ${colors.glow}`, animation: 'ring-pulse 3s ease-in-out infinite' }}>
                   {stats?.streak || 0}
                 </div>
-                <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} font-semibold tracking-widest text-gray-400 uppercase mt-1`}>🔥 Master Streak</div>
+                <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} font-semibold tracking-widest text-gray-400 uppercase mt-1`}>🔥 Hybrid Streak</div>
                 <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500`}>weeks hitting all goals</div>
               </div>
 
@@ -15602,13 +15602,13 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
           </div>
         </div>
 
-        {/* Master Streak - Hero */}
+        {/* Hybrid Streak - Hero */}
         <div className="p-4 rounded-2xl mb-3" style={{ background: 'linear-gradient(135deg, rgba(255,215,0,0.15) 0%, rgba(255,149,0,0.1) 100%)', border: '1px solid rgba(255,215,0,0.3)' }}>
           <div className="flex items-center gap-3 mb-2">
             <span className="text-2xl">🏆</span>
             <div>
               <div className="text-3xl font-black" style={{ color: '#FFD700' }}>{streaks.master} Weeks</div>
-              <div className="text-sm text-gray-300">All goals hit</div>
+              <div className="text-sm text-gray-300">Hybrid Streak</div>
             </div>
           </div>
           <div className="text-xs text-gray-500 mt-2 pt-2 border-t border-white/10">
@@ -16724,7 +16724,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                     <div className="flex items-center gap-3">
                       <span className="text-lg">🏆</span>
                       <div>
-                        <div className="text-xs text-gray-500">Longest Master Streak</div>
+                        <div className="text-xs text-gray-500">Longest Hybrid Streak</div>
                         <div className="text-2xl font-black text-white">
                           {records.longestMasterStreak ? `${records.longestMasterStreak} weeks` : '—'}
                         </div>
@@ -23313,7 +23313,7 @@ export default function DaySevenApp() {
                 <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full transition-all duration-300 ease-out" style={{ backgroundColor: 'rgba(255,215,0,0.1)', border: '1px solid rgba(255,215,0,0.2)' }}>
                   <span style={{ fontSize: isCollapsed ? 12 : 14 }} className="transition-all duration-300">🔥</span>
                   <span className="font-bold transition-all duration-300" style={{ color: '#FFD700', fontSize: isCollapsed ? 12 : 14 }}>{userData.streaks.master}</span>
-                  <span className="font-medium transition-all duration-300" style={{ color: 'rgba(255,215,0,0.7)', fontSize: isCollapsed ? 9 : 11 }}>week streak</span>
+                  <span className="font-medium transition-all duration-300" style={{ color: 'rgba(255,215,0,0.7)', fontSize: isCollapsed ? 9 : 11 }}>hybrid streak</span>
                 </div>
               )}
             </div>

@@ -197,7 +197,7 @@ struct MediumWidgetView: View {
                     Image(systemName: "flame.fill")
                         .font(.system(size: 12))
                         .foregroundColor(WidgetColors.streak)
-                    Text("\(data.masterStreak) week streak")
+                    Text("\(data.masterStreak) hybrid streak")
                         .font(.system(size: 13, weight: .bold, design: .rounded))
                         .foregroundColor(WidgetColors.streak)
                     Spacer()
@@ -282,13 +282,17 @@ struct LargeWidgetView: View {
     let data: WidgetStreakData
 
     var body: some View {
-        VStack(spacing: 14) {
-            // Streak badge + steps/calories (like medium widget)
+        GeometryReader { geo in
+        let ringSize = min(geo.size.height * 0.22, 85.0)
+        let lineWidth = max(ringSize * 0.094, 6.0)
+
+        VStack(spacing: 10) {
+            // Streak badge + steps/calories
             HStack(spacing: 4) {
                 Image(systemName: "flame.fill")
                     .font(.system(size: 13))
                     .foregroundColor(WidgetColors.streak)
-                Text("\(data.masterStreak) week streak")
+                Text("\(data.masterStreak) hybrid streak")
                     .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundColor(WidgetColors.streak)
                 Spacer()
@@ -309,9 +313,9 @@ struct LargeWidgetView: View {
             }
 
             // Three category rings
-            HStack(spacing: 20) {
-                VStack(spacing: 8) {
-                    CategoryRingView(completed: data.liftsCompleted, goal: data.liftsGoal, progress: data.liftsProgress, color: WidgetColors.strength, size: 85, lineWidth: 8)
+            HStack(spacing: 16) {
+                VStack(spacing: 6) {
+                    CategoryRingView(completed: data.liftsCompleted, goal: data.liftsGoal, progress: data.liftsProgress, color: WidgetColors.strength, size: ringSize, lineWidth: lineWidth)
                     HStack(spacing: 3) {
                         Text("\u{1F4AA}")
                             .font(.system(size: 11))
@@ -320,8 +324,8 @@ struct LargeWidgetView: View {
                             .foregroundColor(WidgetColors.strength)
                     }
                 }
-                VStack(spacing: 8) {
-                    CategoryRingView(completed: data.cardioCompleted, goal: data.cardioGoal, progress: data.cardioProgress, color: WidgetColors.cardio, size: 85, lineWidth: 8)
+                VStack(spacing: 6) {
+                    CategoryRingView(completed: data.cardioCompleted, goal: data.cardioGoal, progress: data.cardioProgress, color: WidgetColors.cardio, size: ringSize, lineWidth: lineWidth)
                     HStack(spacing: 3) {
                         Text("\u{2764}\u{FE0F}\u{200D}\u{1F525}")
                             .font(.system(size: 11))
@@ -330,8 +334,8 @@ struct LargeWidgetView: View {
                             .foregroundColor(WidgetColors.cardio)
                     }
                 }
-                VStack(spacing: 8) {
-                    CategoryRingView(completed: data.recoveryCompleted, goal: data.recoveryGoal, progress: data.recoveryProgress, color: WidgetColors.recovery, size: 85, lineWidth: 8)
+                VStack(spacing: 6) {
+                    CategoryRingView(completed: data.recoveryCompleted, goal: data.recoveryGoal, progress: data.recoveryProgress, color: WidgetColors.recovery, size: ringSize, lineWidth: lineWidth)
                     HStack(spacing: 3) {
                         Text("\u{1F9CA}")
                             .font(.system(size: 11))
@@ -341,7 +345,6 @@ struct LargeWidgetView: View {
                     }
                 }
             }
-            .offset(y: 3)
 
             // Days left
             Text(data.daysLeftInWeek <= 1 ? "Last day!" : "\(data.daysLeftInWeek) days left")
@@ -407,6 +410,7 @@ struct LargeWidgetView: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } // GeometryReader
     }
 
     private func colorForCategory(_ category: String) -> Color {

@@ -734,7 +734,7 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall }) => {
               <div className="grid grid-cols-3 gap-3 mb-4">
                 <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                   <p className="text-2xl font-bold text-white">{selectedProfile.masterStreak || 0}</p>
-                  <p className="text-gray-500 text-xs">Week Streak</p>
+                  <p className="text-gray-500 text-xs">Hybrid Streak</p>
                 </div>
                 <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                   <p className="text-2xl font-bold text-white">{selectedProfile.weeksWon || 0}</p>

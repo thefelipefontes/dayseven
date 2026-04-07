@@ -4109,7 +4109,7 @@ const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1, goals 
 };
 
 // Share Modal
-const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChange }) => {
+const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChange, onMonthChange, isPro, onPresentPaywall }) => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [cardType, setCardType] = useState('weekly');
@@ -4365,6 +4365,32 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
     }
     return weeks;
   }, []);
+
+  // Generate past months for the month picker
+  const monthOptions = useMemo(() => {
+    const months = [];
+    const today = new Date();
+    for (let i = 0; i < 6; i++) {
+      const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      const start = new Date(d.getFullYear(), d.getMonth(), 1);
+      const end = new Date(d.getFullYear(), d.getMonth() + 1, 0); // last day of month
+      const label = i === 0 ? `This Month (${start.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })})` : start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      months.push({ label, startDate: start, endDate: end });
+    }
+    return months;
+  }, []);
+
+  const selectedMonthValue = useMemo(() => {
+    if (!monthRange?.startDate) return '0'; // default to this month
+    const start = monthRange.startDate instanceof Date ? monthRange.startDate : new Date(monthRange.startDate + 'T12:00:00');
+    for (let i = 0; i < monthOptions.length; i++) {
+      const optStart = monthOptions[i].startDate;
+      if (optStart.getFullYear() === start.getFullYear() && optStart.getMonth() === start.getMonth()) {
+        return String(i);
+      }
+    }
+    return '0';
+  }, [monthRange, monthOptions]);
 
   // Get the value string for the current week selection (to match select option)
   const selectedWeekValue = useMemo(() => {
@@ -5257,6 +5283,11 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
               value={selectedWeekValue}
               onChange={(e) => {
                 const idx = parseInt(e.target.value);
+                if (!isPro && idx > 1) {
+                  e.target.value = selectedWeekValue; // revert
+                  onPresentPaywall?.();
+                  return;
+                }
                 const week = weekOptions[idx];
                 onWeekChange({ startDate: week.startDate, endDate: week.endDate });
               }}
@@ -5264,7 +5295,32 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
               style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
             >
               {weekOptions.map((week, i) => (
-                <option key={i} value={String(i)}>{week.label}</option>
+                <option key={i} value={String(i)}>{week.label}{!isPro && i > 1 ? ' 🔒' : ''}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Month Picker - only show for monthly card type */}
+        {cardType === 'monthly' && onMonthChange && (
+          <div className="flex justify-center mb-2">
+            <select
+              value={selectedMonthValue}
+              onChange={(e) => {
+                const idx = parseInt(e.target.value);
+                if (!isPro && idx > 0) {
+                  e.target.value = selectedMonthValue; // revert
+                  onPresentPaywall?.();
+                  return;
+                }
+                const month = monthOptions[idx];
+                onMonthChange({ startDate: month.startDate, endDate: month.endDate });
+              }}
+              className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-xs appearance-none cursor-pointer pr-7"
+              style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
+            >
+              {monthOptions.map((month, i) => (
+                <option key={i} value={String(i)}>{month.label}{!isPro && i > 0 ? ' 🔒' : ''}</option>
               ))}
             </select>
           </div>
@@ -23914,7 +23970,16 @@ export default function DaySevenApp() {
         }}
         weekRange={shareWeekRange}
         monthRange={shareMonthRange}
+        isPro={isPro}
+        onPresentPaywall={async () => {
+          const { purchased } = await presentPaywall();
+          if (purchased) {
+            const proStatus = await checkProStatus();
+            setIsPro(proStatus);
+          }
+        }}
         onWeekChange={(range) => setShareWeekRange(range)}
+        onMonthChange={(range) => setShareMonthRange(range)}
         stats={(() => {
           // Determine which week to use for stats
           const getWeekRange = () => {

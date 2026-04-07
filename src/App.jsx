@@ -4374,7 +4374,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
       const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
       const start = new Date(d.getFullYear(), d.getMonth(), 1);
       const end = new Date(d.getFullYear(), d.getMonth() + 1, 0); // last day of month
-      const label = i === 0 ? `This Month (${start.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })})` : start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      const label = i === 0 ? `This Month (${start.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })})` : i === 1 ? `Last Month (${start.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })})` : start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
       months.push({ label, startDate: start, endDate: end });
     }
     return months;
@@ -5308,7 +5308,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
               value={selectedMonthValue}
               onChange={(e) => {
                 const idx = parseInt(e.target.value);
-                if (!isPro && idx > 0) {
+                if (!isPro && idx > 1) {
                   e.target.value = selectedMonthValue; // revert
                   onPresentPaywall?.();
                   return;
@@ -5320,7 +5320,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
               style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
             >
               {monthOptions.map((month, i) => (
-                <option key={i} value={String(i)}>{month.label}{!isPro && i > 0 ? ' 🔒' : ''}</option>
+                <option key={i} value={String(i)}>{month.label}{!isPro && i > 1 ? ' 🔒' : ''}</option>
               ))}
             </select>
           </div>

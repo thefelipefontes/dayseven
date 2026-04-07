@@ -656,7 +656,7 @@ const MemoizedActivityCard = React.memo(({
       {activity.photoURL && !activity.isPhotoPrivate && (() => {
         const feedPhotoLocked = !isPro && activity.date && (() => {
           const actDate = new Date(activity.date + 'T12:00:00');
-          const cutoff = new Date(); const dow = cutoff.getDay(); cutoff.setDate(cutoff.getDate() - dow - 7);
+          const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 7);
           return actDate < cutoff;
         })();
         return (

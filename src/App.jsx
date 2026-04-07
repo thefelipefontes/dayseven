@@ -8050,7 +8050,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
           {activity.photoURL && (() => {
             const photoLocked = !isPro && activity.date && (() => {
               const actDate = new Date(activity.date + 'T12:00:00');
-              const cutoff = new Date(); const dow = cutoff.getDay(); cutoff.setDate(cutoff.getDate() - dow - 7);
+              const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 7);
               return actDate < cutoff;
             })();
             return (
@@ -14901,14 +14901,12 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
   const [view, setView] = useState(initialView);
   const [statsSubView, setStatsSubView] = useState(initialStatsSubView); // 'overview' or 'records'
 
-  // Free users: limit activity history to current week + last week
+  // Free users: limit activity history to last 7 days
   const historyCutoffDate = useMemo(() => {
     if (isPro) return null;
-    const today = new Date();
-    const dayOfWeek = today.getDay(); // 0 = Sunday
-    const lastWeekSunday = new Date(today);
-    lastWeekSunday.setDate(today.getDate() - dayOfWeek - 7); // Sunday of last week
-    return lastWeekSunday.toISOString().split('T')[0];
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 7);
+    return cutoff.toISOString().split('T')[0];
   }, [isPro]);
 
   const visibleActivities = useMemo(() => {
@@ -15691,7 +15689,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
             onTouchEnd={(e) => e.currentTarget.style.opacity = '1'}
           >
             <span className="text-sm">⚡</span>
-            <span className="text-xs text-gray-300 flex-1 text-left">Viewing this week & last week only. <span style={{ color: '#FF9500' }}>Upgrade to Pro</span> for full history.</span>
+            <span className="text-xs text-gray-300 flex-1 text-left">Viewing last 7 days. <span style={{ color: '#FF9500' }}>Upgrade to Pro</span> for full history.</span>
             <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
             </svg>
@@ -16918,14 +16916,13 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
         );
 
         const handlePhotoSelect = (activityId) => {
-          // Free users: block selecting photos older than current + last week
+          // Free users: block selecting photos older than 7 days
           if (!isPro) {
             const activity = activities.find(a => a.id === activityId);
             if (activity) {
               const activityDate = new Date(activity.date + 'T12:00:00');
               const cutoff = new Date();
-              const dow = cutoff.getDay();
-              cutoff.setDate(cutoff.getDate() - dow - 7);
+              cutoff.setDate(cutoff.getDate() - 7);
               if (activityDate < cutoff) {
                 onPresentPaywall?.();
                 return;
@@ -17251,7 +17248,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                       const selectionIndex = selectedPhotos.indexOf(activity.id);
                       const isLocked = !isPro && (() => {
                         const actDate = new Date(activity.date + 'T12:00:00');
-                        const cutoff = new Date(); const dow = cutoff.getDay(); cutoff.setDate(cutoff.getDate() - dow - 7);
+                        const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 7);
                         return actDate < cutoff;
                       })();
 
@@ -17349,7 +17346,7 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                               const selectionIndex = selectedPhotos.indexOf(activity.id);
                               const isLocked = !isPro && (() => {
                                 const actDate = new Date(activity.date + 'T12:00:00');
-                                const cutoff = new Date(); const dow = cutoff.getDay(); cutoff.setDate(cutoff.getDate() - dow - 7);
+                                const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 7);
                                 return actDate < cutoff;
                               })();
 

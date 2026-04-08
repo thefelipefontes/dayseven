@@ -647,7 +647,7 @@ const MemoizedActivityCard = React.memo(({
           <div className="flex items-center gap-3 mt-1">
             {duration && <span className="text-gray-400 text-sm">⏱ {formatDuration(duration)}</span>}
             {calories && <span className="text-gray-400 text-sm">🔥 {calories} cal</span>}
-            {distance && <span className="text-gray-400 text-sm">📍 {distance} mi</span>}
+            {distance && <span className="text-gray-400 text-sm">📍 {parseFloat(distance).toFixed(1)} mi</span>}
           </div>
         </div>
       </div>

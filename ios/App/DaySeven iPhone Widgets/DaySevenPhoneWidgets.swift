@@ -197,7 +197,7 @@ struct MediumWidgetView: View {
                     Image(systemName: "flame.fill")
                         .font(.system(size: 12))
                         .foregroundColor(WidgetColors.streak)
-                    Text("\(data.masterStreak) hybrid streak")
+                    Text("\(data.masterStreak) week hybrid streak")
                         .font(.system(size: 13, weight: .bold, design: .rounded))
                         .foregroundColor(WidgetColors.streak)
                     Spacer()
@@ -292,7 +292,7 @@ struct LargeWidgetView: View {
                 Image(systemName: "flame.fill")
                     .font(.system(size: 13))
                     .foregroundColor(WidgetColors.streak)
-                Text("\(data.masterStreak) hybrid streak")
+                Text("\(data.masterStreak) week hybrid streak")
                     .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundColor(WidgetColors.streak)
                 Spacer()
@@ -311,6 +311,8 @@ struct LargeWidgetView: View {
                 }
                 .foregroundColor(WidgetColors.calories)
             }
+
+            Spacer().frame(height: 6)
 
             // Three category rings
             HStack(spacing: 16) {
@@ -406,8 +408,6 @@ struct LargeWidgetView: View {
                     .foregroundColor(.white.opacity(0.4))
                 Spacer()
             }
-
-            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         } // GeometryReader

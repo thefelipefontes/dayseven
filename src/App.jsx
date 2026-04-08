@@ -15512,9 +15512,24 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
         const d = new Date(a.date + 'T12:00:00');
         return d >= sunday && d <= saturday;
       });
+    } else if (totalsView === 'last-7-days') {
+      // Last 7 days
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 7);
+      filteredActivities = activities.filter(a => {
+        if (!a.date) return false;
+        const d = new Date(a.date + 'T12:00:00');
+        return d >= cutoff;
+      });
     } else if (totalsView === 'last-30-days') {
-      // Last 30 days — just use visibleActivities directly (already filtered for free users)
-      filteredActivities = visibleActivities;
+      // Last 30 days (full 30 days, not limited by free tier cutoff)
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 30);
+      filteredActivities = activities.filter(a => {
+        if (!a.date) return false;
+        const d = new Date(a.date + 'T12:00:00');
+        return d >= cutoff;
+      });
     } else if (totalsView === 'this-month') {
       // This month
       filteredActivities = visibleActivities.filter(a => a.date && a.date.startsWith(thisMonthStr));
@@ -16505,8 +16520,9 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                   className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-xs flex-shrink-0"
                 >
                   <option value="this-week" className="bg-black">This Week</option>
-                  <option value="last-30-days" className="bg-black">Last 30 Days</option>
-                  <option value="this-month" className="bg-black">This Month</option>
+                  <option value="last-7-days" className="bg-black">Last 7 Days</option>
+                  <option value="pro-locked" className="bg-black">🔒 Last 30 Days</option>
+                  <option value="pro-locked" className="bg-black">🔒 This Month</option>
                   <option value="pro-locked" className="bg-black">🔒 {getCurrentYear()}</option>
                   <option value="pro-locked" className="bg-black">🔒 All-Time</option>
                 </select>
@@ -16595,6 +16611,16 @@ const HistoryTab = ({ onShare, activities = [], calendarData = {}, healthHistory
                       saturday.setDate(sunday.getDate() + 6);
                       const saturdayStr = `${saturday.getFullYear()}-${String(saturday.getMonth() + 1).padStart(2, '0')}-${String(saturday.getDate()).padStart(2, '0')}`;
                       filteredHistory = filteredHistory.filter(h => h.date >= sundayStr && h.date <= saturdayStr);
+                    } else if (totalsView === 'last-7-days') {
+                      const cutoff = new Date();
+                      cutoff.setDate(cutoff.getDate() - 7);
+                      const cutoffStr = cutoff.toISOString().split('T')[0];
+                      filteredHistory = filteredHistory.filter(h => h.date >= cutoffStr);
+                    } else if (totalsView === 'last-30-days') {
+                      const cutoff = new Date();
+                      cutoff.setDate(cutoff.getDate() - 30);
+                      const cutoffStr = cutoff.toISOString().split('T')[0];
+                      filteredHistory = filteredHistory.filter(h => h.date >= cutoffStr);
                     } else if (totalsView === 'this-month') {
                       filteredHistory = filteredHistory.filter(h => h.date?.startsWith(thisMonthStr));
                     } else if (totalsView === 'last-month') {
@@ -20290,6 +20316,9 @@ export default function DaySevenApp() {
   // Tapping the already-active tab scrolls to top (Instagram-style)
   const switchTab = useCallback((newTab) => {
     if (newTab === activeTab) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      document.documentElement.scrollTo({ top: 0, behavior: 'smooth' });
+      document.body.scrollTo({ top: 0, behavior: 'smooth' });
       scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
@@ -23310,11 +23339,15 @@ export default function DaySevenApp() {
                 />
               </div>
               {userData?.streaks?.master > 0 && (
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full transition-all duration-300 ease-out" style={{ backgroundColor: 'rgba(255,215,0,0.1)', border: '1px solid rgba(255,215,0,0.2)' }}>
+                <button
+                  onClick={() => switchTab('history')}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full transition-all duration-300 ease-out active:scale-95"
+                  style={{ backgroundColor: 'rgba(255,215,0,0.1)', border: '1px solid rgba(255,215,0,0.2)' }}
+                >
                   <span style={{ fontSize: isCollapsed ? 12 : 14 }} className="transition-all duration-300">🔥</span>
                   <span className="font-bold transition-all duration-300" style={{ color: '#FFD700', fontSize: isCollapsed ? 12 : 14 }}>{userData.streaks.master}</span>
-                  <span className="font-medium transition-all duration-300" style={{ color: 'rgba(255,215,0,0.7)', fontSize: isCollapsed ? 9 : 11 }}>hybrid streak</span>
-                </div>
+                  <span className="font-medium transition-all duration-300" style={{ color: 'rgba(255,215,0,0.7)', fontSize: isCollapsed ? 9 : 11 }}>week hybrid streak</span>
+                </button>
               )}
             </div>
           </div>

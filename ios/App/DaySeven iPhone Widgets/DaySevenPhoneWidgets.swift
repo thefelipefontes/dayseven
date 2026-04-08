@@ -220,7 +220,7 @@ struct MediumWidgetView: View {
                 Spacer(minLength: 12)
 
                 // Three category rings in a row
-                HStack(spacing: 12) {
+                HStack(spacing: 15) {
                     VStack(spacing: 7) {
                         CategoryRingView(completed: data.liftsCompleted, goal: data.liftsGoal, progress: data.liftsProgress, color: WidgetColors.strength, size: ringSize, lineWidth: lineWidth)
                         HStack(spacing: 2) {
@@ -315,7 +315,7 @@ struct LargeWidgetView: View {
             Spacer().frame(height: 6)
 
             // Three category rings
-            HStack(spacing: 16) {
+            HStack(spacing: 19) {
                 VStack(spacing: 6) {
                     CategoryRingView(completed: data.liftsCompleted, goal: data.liftsGoal, progress: data.liftsProgress, color: WidgetColors.strength, size: ringSize, lineWidth: lineWidth)
                     HStack(spacing: 3) {

@@ -72,11 +72,15 @@ class AppViewModel: ObservableObject {
             .store(in: &cancellables)
 
         // Wire up background health monitoring for steps/calories celebrations
+        // Note: isBackground=false so visual overlay shows when app is in foreground
+        // (e.g. during an active workout). The celebration won't re-fire thanks to
+        // hasCelebrated() guard, and if the app is truly backgrounded the overlay
+        // simply won't be visible.
         healthKitService.onStepsUpdated = { [weak self] steps in
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
                 self.todaySteps = steps
-                self.checkDailyGoalCelebrations(isBackground: true)
+                self.checkDailyGoalCelebrations(isBackground: false)
                 self.pushDataToWidget()
             }
         }
@@ -85,7 +89,7 @@ class AppViewModel: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
                 self.todayCalories = calories
-                self.checkDailyGoalCelebrations(isBackground: true)
+                self.checkDailyGoalCelebrations(isBackground: false)
                 self.pushDataToWidget()
             }
         }

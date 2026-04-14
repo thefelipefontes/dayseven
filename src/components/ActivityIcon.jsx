@@ -166,7 +166,8 @@ const ICON_MAP = {
   'Swimming':            { Icon: IconSwimming, category: 'other' },
   'Hiking':              { Icon: IconMountain, category: 'other' },
   'Dance':               { Icon: IconMusic, category: 'other' },
-  'Rowing':              { Icon: IconKayak, category: 'other' },
+  'Rowing':              { Icon: IconKayak, category: 'cardio' },
+  'Ski Trainer':         { Icon: IconSkiJumping, category: 'cardio' },
   'Cooldown':            { Icon: IconSnowflake, category: 'other' },
   // Combat / martial arts
   'Kickboxing':          { Icon: IconKarate, category: 'other' },

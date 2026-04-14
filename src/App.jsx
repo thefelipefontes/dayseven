@@ -290,6 +290,14 @@ const getCurrentWeekKey = () => {
   return toLocalDateStr(sunday);
 };
 
+const getPreviousWeekKey = () => {
+  const today = new Date();
+  const day = today.getDay(); // 0 = Sunday
+  const sunday = new Date(today);
+  sunday.setDate(today.getDate() - day - 7);
+  return toLocalDateStr(sunday);
+};
+
 // Default empty week celebration state
 const emptyWeekCelebrations = { week: '', lifts: false, cardio: false, recovery: false, master: false };
 
@@ -1515,6 +1523,8 @@ const getDefaultCountToward = (type, sub) => {
   if (type === 'Sports') return 'cardio';
   if (type === 'Stair Climbing') return 'cardio';
   if (type === 'Elliptical') return 'cardio';
+  if (type === 'Rowing') return 'cardio';
+  if (type === 'Ski Trainer') return 'cardio';
   // Team / competitive sports
   if (['Basketball', 'Soccer', 'Football', 'Tennis', 'Golf', 'Badminton', 'Boxing', 'Martial Arts',
     'Baseball', 'Volleyball', 'Hockey', 'Lacrosse', 'Rugby', 'Softball', 'Squash', 'Table Tennis',
@@ -10098,6 +10108,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
     ], category: 'cardio' },
     { name: 'Stair Climbing', subtypes: [], category: 'cardio' },
     { name: 'Elliptical', subtypes: [], category: 'cardio' },
+    { name: 'Rowing', subtypes: [], category: 'cardio' },
+    { name: 'Ski Trainer', subtypes: [], category: 'cardio' },
     { name: 'Yoga', subtypes: ['Vinyasa', 'Power', 'Hot', 'Yin', 'Restorative'], category: 'hybrid' },
     { name: 'Pilates', subtypes: ['Mat', 'Reformer', 'Tower', 'Chair'], category: 'hybrid' },
     { name: 'Walking', subtypes: ['Outdoor', 'Indoor'], category: 'hybrid' },
@@ -10184,7 +10196,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   const showCustomSportInput = activityType === 'Sports' && subtype === 'Other';
   // Standard types that have built-in category mapping and icon
   const STANDARD_ACTIVITY_TYPES = ['Strength Training', 'Weightlifting', 'Bodyweight', 'Circuit',
-    'Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Walking',
+    'Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Rowing', 'Ski Trainer', 'Walking',
     'Yoga', 'Pilates', 'Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Other',
     'Track & Field', 'Jump Rope', 'Downhill Skiing', 'Cross Country Skiing', 'Snowboarding', 'Skating', 'Surfing', 'Water Polo', 'Paddle Sports',
     'Basketball', 'Soccer', 'Football', 'Tennis', 'Golf', 'Badminton', 'Boxing', 'Martial Arts',
@@ -13066,7 +13078,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         if (visiblePendingSync.length === 0 || !showWorkoutNotification) return null;
 
         // Types that auto-categorize into strength/cardio/recovery goals
-        const KNOWN_CATEGORY_TYPES = ['Strength Training', 'Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Yoga', 'Pilates', 'Cold Plunge', 'Sauna', 'Contrast Therapy',
+        const KNOWN_CATEGORY_TYPES = ['Strength Training', 'Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Rowing', 'Ski Trainer', 'Yoga', 'Pilates', 'Cold Plunge', 'Sauna', 'Contrast Therapy',
           'Track & Field', 'Jump Rope', 'Downhill Skiing', 'Cross Country Skiing', 'Snowboarding', 'Skating', 'Surfing', 'Water Polo', 'Paddle Sports',
           'Basketball', 'Soccer', 'Football', 'Tennis', 'Golf', 'Badminton', 'Boxing', 'Martial Arts',
           'Baseball', 'Volleyball', 'Hockey', 'Lacrosse', 'Rugby', 'Softball', 'Squash', 'Table Tennis',
@@ -13454,9 +13466,44 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         )}
 
         {/* Streak Shield Button - hidden during vacation */}
-        {!userData.vacationMode?.isActive && daysLeft <= 3 && (liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0) && (userData.streaks.master > 0 || userData.streaks.lifts > 0 || userData.streaks.cardio > 0 || userData.streaks.recovery > 0) && (() => {
+        {!userData.vacationMode?.isActive && (() => {
           const currentWeek = getCurrentWeekKey();
-          const isShielded = userData.streakShield?.lastUsedWeek === currentWeek;
+          const previousWeek = getPreviousWeekKey();
+          const hasActiveStreak = userData.streaks.master > 0 || userData.streaks.lifts > 0 || userData.streaks.cardio > 0 || userData.streaks.recovery > 0;
+
+          // Determine if this is a retroactive shield (Sunday/Monday, saving last week)
+          const isRetroactive = dayOfWeek <= 1;
+
+          // For retroactive: check if previous week goals were incomplete
+          let showRetroactive = false;
+          if (isRetroactive && hasActiveStreak) {
+            const prevWeekStart = new Date(previousWeek + 'T00:00:00');
+            const prevWeekEnd = new Date(prevWeekStart);
+            prevWeekEnd.setDate(prevWeekEnd.getDate() + 6);
+            const prevWeekStartStr = previousWeek;
+            const prevWeekEndStr = `${prevWeekEnd.getFullYear()}-${String(prevWeekEnd.getMonth() + 1).padStart(2, '0')}-${String(prevWeekEnd.getDate()).padStart(2, '0')}`;
+            const prevActivities = activities.filter(a => a.date >= prevWeekStartStr && a.date <= prevWeekEndStr);
+            const goals = userData?.goals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2 };
+            const getCategory = (activity) => {
+              if (activity.countToward) return activity.countToward;
+              return getDefaultCountToward(activity.type, activity.subtype);
+            };
+            const prevLifts = prevActivities.filter(a => { const c = getCategory(a); return c === 'lifting' || c === 'lifting+cardio'; }).length;
+            const prevCardio = prevActivities.filter(a => { const c = getCategory(a); return c === 'cardio' || c === 'lifting+cardio'; }).length;
+            const prevRecovery = prevActivities.filter(a => getCategory(a) === 'recovery').length;
+            const prevIncomplete = prevLifts < goals.liftsPerWeek || prevCardio < (goals.cardioPerWeek || 2) || prevRecovery < (goals.recoveryPerWeek || 2);
+            const prevAlreadyShielded = (userData.streakShield?.shieldedWeeks || []).includes(previousWeek);
+            showRetroactive = prevIncomplete && !prevAlreadyShielded;
+          }
+
+          // Current week shield (Thu/Fri/Sat as before)
+          const showCurrentWeek = daysLeft <= 3 && (liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0) && hasActiveStreak;
+
+          if (!showRetroactive && !showCurrentWeek) return null;
+
+          // Determine which week the shield applies to
+          const shieldWeekKey = showRetroactive ? previousWeek : currentWeek;
+          const isShielded = (userData.streakShield?.shieldedWeeks || []).includes(shieldWeekKey);
 
           // Calculate 6-week cooldown from last use
           const SHIELD_COOLDOWN_WEEKS = 6;
@@ -13464,10 +13511,10 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
           let weeksUntilAvailable = 0;
           let onCooldown = false;
 
-          if (lastUsedWeek && lastUsedWeek !== currentWeek) {
+          if (lastUsedWeek && lastUsedWeek !== shieldWeekKey) {
             const lastUsedDate = new Date(lastUsedWeek + 'T12:00:00');
-            const currentWeekDate = new Date(currentWeek + 'T12:00:00');
-            const weeksSinceUsed = Math.floor((currentWeekDate - lastUsedDate) / (7 * 24 * 60 * 60 * 1000));
+            const shieldWeekDate = new Date(shieldWeekKey + 'T12:00:00');
+            const weeksSinceUsed = Math.floor((shieldWeekDate - lastUsedDate) / (7 * 24 * 60 * 60 * 1000));
             if (weeksSinceUsed < SHIELD_COOLDOWN_WEEKS) {
               onCooldown = true;
               weeksUntilAvailable = SHIELD_COOLDOWN_WEEKS - weeksSinceUsed;
@@ -13482,7 +13529,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                 <span className="text-lg">🛡️</span>
                 <div className="flex-1">
                   <div className="text-xs font-semibold" style={{ color: '#00FF94' }}>Streak Shield Active</div>
-                  <div className="text-[10px] text-gray-400 mt-0.5">Your streaks are protected this week</div>
+                  <div className="text-[10px] text-gray-400 mt-0.5">{showRetroactive ? "Last week's streaks are protected" : 'Your streaks are protected this week'}</div>
                 </div>
                 <button onClick={(e) => { e.stopPropagation(); setShowShieldInfo(true); }} className="w-6 h-6 flex items-center justify-center rounded-full" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
                   <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -13518,11 +13565,11 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
               <span className="text-lg">🛡️</span>
               <div className="flex-1 text-left">
                 <div className="text-xs font-semibold" style={{ color: !isPro ? '#9ca3af' : onCooldown ? '#9ca3af' : '#00D1FF' }}>
-                  {!isPro ? 'Streak Shield' : onCooldown ? 'Streak Shield on Cooldown' : 'Use Streak Shield'}
+                  {!isPro ? 'Streak Shield' : onCooldown ? 'Streak Shield on Cooldown' : showRetroactive ? 'Save Last Week\'s Streak' : 'Use Streak Shield'}
                   {!isPro && <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(255,149,0,0.15)', color: '#FF9500' }}>PRO</span>}
                 </div>
                 <div className="text-[10px] text-gray-400 mt-0.5">
-                  {!isPro ? 'Protect your streaks when life gets busy' : onCooldown ? `Available again in ${weeksUntilAvailable} week${weeksUntilAvailable === 1 ? '' : 's'}` : 'Protect your streaks for this week (1 per 6 weeks)'}
+                  {!isPro ? 'Protect your streaks when life gets busy' : onCooldown ? `Available again in ${weeksUntilAvailable} week${weeksUntilAvailable === 1 ? '' : 's'}` : showRetroactive ? 'Retroactively protect your streaks from last week' : 'Protect your streaks for this week (1 per 6 weeks)'}
                 </div>
               </div>
               <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
@@ -13587,7 +13634,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                   </div>
                   <div>
                     <p className="text-white text-sm font-medium">Appears when you need it</p>
-                    <p className="text-gray-400 text-xs mt-0.5">The shield shows up in the last 2 days of the week when your goals are incomplete and you have an active streak.</p>
+                    <p className="text-gray-400 text-xs mt-0.5">The shield shows up in the last days of the week when your goals are incomplete, or on Sunday/Monday to retroactively save last week's streak.</p>
                   </div>
                 </div>
               </div>
@@ -13606,6 +13653,9 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         {/* Streak Shield Confirmation Modal */}
         {showShieldConfirm && (() => {
           const currentWeek = getCurrentWeekKey();
+          const previousWeek = getPreviousWeekKey();
+          const isRetroactive = dayOfWeek <= 1 && !(userData.streakShield?.shieldedWeeks || []).includes(previousWeek);
+          const shieldWeekKey = isRetroactive ? previousWeek : currentWeek;
           return (
             <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setShowShieldConfirm(false)}>
               <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
@@ -13618,9 +13668,11 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                   <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
                     <span className="text-3xl">🛡️</span>
                   </div>
-                  <h3 className="text-white font-semibold text-lg">Use Streak Shield?</h3>
+                  <h3 className="text-white font-semibold text-lg">{isRetroactive ? 'Save Last Week\'s Streak?' : 'Use Streak Shield?'}</h3>
                   <p className="text-gray-400 text-sm mt-2 leading-relaxed">
-                    This will protect all your current streaks for this week, even if you don't complete your goals.
+                    {isRetroactive
+                      ? 'This will retroactively protect all your streaks for last week, even though you didn\'t complete your goals.'
+                      : 'This will protect all your current streaks for this week, even if you don\'t complete your goals.'}
                   </p>
                 </div>
 
@@ -13647,7 +13699,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                     onClick={() => {
                       setShowShieldConfirm(false);
                       triggerHaptic(ImpactStyle.Heavy);
-                      onUseStreakShield?.(currentWeek);
+                      onUseStreakShield?.(shieldWeekKey);
                     }}
                     className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
                     style={{ backgroundColor: '#00D1FF' }}
@@ -18920,14 +18972,18 @@ const ProfileTab = ({ user, userProfile, userData, onSignOut, onEditGoals, onUpd
                 const SHIELD_COOLDOWN_WEEKS = 6;
                 const lastUsedWeek = userData.streakShield?.lastUsedWeek;
                 const currentWeek = getCurrentWeekKey();
-                const isShielded = lastUsedWeek === currentWeek;
+                const previousWeek = getPreviousWeekKey();
+                const isShieldedCurrent = lastUsedWeek === currentWeek;
+                const isShieldedPrevious = lastUsedWeek === previousWeek;
+                const today = new Date();
+                const isRetroWindow = today.getDay() <= 1; // Sunday or Monday
 
-                // Already used this week
-                if (isShielded) {
+                // Already used this week or last week (retroactive)
+                if (isShieldedCurrent || (isShieldedPrevious && isRetroWindow)) {
                   return (
                     <div className="flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#00FF94' }} />
-                      <span className="text-xs font-semibold" style={{ color: '#00FF94' }}>Active this week</span>
+                      <span className="text-xs font-semibold" style={{ color: '#00FF94' }}>{isShieldedCurrent ? 'Active this week' : 'Active for last week'}</span>
                     </div>
                   );
                 }
@@ -23338,7 +23394,7 @@ export default function DaySevenApp() {
                   style={{ opacity: wordmarkOpacity }}
                 />
               </div>
-              {userData?.streaks?.master > 0 && (
+              {userData?.streaks?.master > 0 && !activeWorkout && (
                 <button
                   onClick={() => switchTab('history')}
                   className="flex items-center gap-1.5 px-2.5 py-1 rounded-full transition-all duration-300 ease-out active:scale-95"
@@ -23456,10 +23512,25 @@ export default function DaySevenApp() {
                       lastUsedWeek: weekKey,
                       shieldedWeeks: [...(userData.streakShield?.shieldedWeeks || []), weekKey]
                     };
-                    setUserData(prev => ({ ...prev, streakShield: newShield }));
-                    if (user?.uid) {
-                      updateUserProfile(user.uid, { streakShield: newShield }).catch(() => {});
-                    }
+                    setUserData(prev => {
+                      const updated = { ...prev, streakShield: newShield };
+                      // Recalculate streaks after shield activation (especially important for retroactive use)
+                      const goals = prev.goals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2 };
+                      // Temporarily update the ref so recalculate picks up the new shieldedWeeks
+                      const prevRef = userDataRef.current;
+                      userDataRef.current = updated;
+                      const recalculated = recalculateStreaksFromHistory(activities, goals);
+                      userDataRef.current = prevRef;
+                      if (recalculated) {
+                        updated.streaks = { ...prev.streaks, ...recalculated };
+                        if (user?.uid) {
+                          updateUserProfile(user.uid, { streakShield: newShield, streaks: updated.streaks }).catch(() => {});
+                        }
+                      } else if (user?.uid) {
+                        updateUserProfile(user.uid, { streakShield: newShield }).catch(() => {});
+                      }
+                      return updated;
+                    });
                   }}
                   onDeactivateVacation={() => {
                     const updated = { ...userData.vacationMode, isActive: false };
@@ -23619,10 +23690,23 @@ export default function DaySevenApp() {
                       lastUsedWeek: weekKey,
                       shieldedWeeks: [...(userData.streakShield?.shieldedWeeks || []), weekKey]
                     };
-                    setUserData(prev => ({ ...prev, streakShield: newShield }));
-                    if (user?.uid) {
-                      updateUserProfile(user.uid, { streakShield: newShield }).catch(() => {});
-                    }
+                    setUserData(prev => {
+                      const updated = { ...prev, streakShield: newShield };
+                      const goals = prev.goals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2 };
+                      const prevRef = userDataRef.current;
+                      userDataRef.current = updated;
+                      const recalculated = recalculateStreaksFromHistory(activities, goals);
+                      userDataRef.current = prevRef;
+                      if (recalculated) {
+                        updated.streaks = { ...prev.streaks, ...recalculated };
+                        if (user?.uid) {
+                          updateUserProfile(user.uid, { streakShield: newShield, streaks: updated.streaks }).catch(() => {});
+                        }
+                      } else if (user?.uid) {
+                        updateUserProfile(user.uid, { streakShield: newShield }).catch(() => {});
+                      }
+                      return updated;
+                    });
                   }}
                 />
               )}

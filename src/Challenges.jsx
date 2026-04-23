@@ -159,6 +159,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
   const [selectedFriendUids, setSelectedFriendUids] = useState(() => new Set());
   const [windowHours, setWindowHours] = useState(24);
   const [sendMode, setSendMode] = useState('group'); // 'group' or 'individual' — only relevant when 2+ selected
+  const [title, setTitle] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [isClosing, setIsClosing] = useState(false);
@@ -168,6 +169,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
       setSelectedFriendUids(preSelectedFriendUid ? new Set([preSelectedFriendUid]) : new Set());
       setWindowHours(24);
       setSendMode('group');
+      setTitle('');
       setError(null);
       setIsClosing(false);
     }
@@ -219,6 +221,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
           friendUids: [uid],
           activity,
           windowHours,
+          title,
         })
       ));
       allFailed = results.every(r => r.error);
@@ -230,6 +233,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
         friendUids: friendUidsArray,
         activity,
         windowHours,
+        title,
       });
       allFailed = !!result.error;
     }
@@ -274,6 +278,18 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
           <>
             {/* Scrollable middle */}
             <div className="flex-1 overflow-y-auto px-4 pb-3">
+              {/* Title (optional) */}
+              <p className="text-xs text-gray-400 mb-2">Title (optional)</p>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                maxLength={60}
+                placeholder="e.g. Saturday long run"
+                className="w-full mb-4 px-3 py-3 rounded-xl text-white placeholder-gray-600 text-sm focus:outline-none"
+                style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+              />
+
               {/* Match rule preview */}
               <div
                 className="mb-4 p-3 rounded-xl"
@@ -516,7 +532,14 @@ export function ChallengeCard({ challenge, currentUid, onAccept, onDecline, onCa
           <span style={{ color, fontSize: 18 }}>{isGroup ? '👥' : '⚡'}</span>
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-white text-sm font-medium truncate">{title}</p>
+          {challenge.title ? (
+            <>
+              <p className="text-white text-sm font-semibold truncate">{challenge.title}</p>
+              <p className="text-gray-500 text-xs truncate">{title}</p>
+            </>
+          ) : (
+            <p className="text-white text-sm font-medium truncate">{title}</p>
+          )}
           <p className="text-gray-500 text-xs">{statusLabel}</p>
           <p className="text-white text-sm mt-1">{ruleLabel}</p>
           {showCountdown && (

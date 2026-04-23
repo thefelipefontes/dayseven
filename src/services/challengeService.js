@@ -155,7 +155,7 @@ function buildActivitySnapshot(activity) {
  *
  * Returns { challengeId } on success or { error } on failure.
  */
-export async function createChallenge({ challengerUid, challengerName, friendUid, friendUids, activity, windowHours }) {
+export async function createChallenge({ challengerUid, challengerName, friendUid, friendUids, activity, windowHours, title }) {
   // Accept both shapes: friendUid (legacy single-friend caller) or friendUids (array).
   const targets = Array.from(new Set((friendUids && friendUids.length ? friendUids : (friendUid ? [friendUid] : []))));
   if (!challengerUid || targets.length === 0 || !activity) {
@@ -185,12 +185,15 @@ export async function createChallenge({ challengerUid, challengerName, friendUid
     participants[uid] = { status: 'pending' };
   }
 
+  const cleanTitle = (title || '').trim().slice(0, 60);
+
   const data = {
     id: challengeId,
     type: isGroup ? 'group' : '1v1',
     mode: 'all_complete',
     challengerUid,
     challengerName: challengerName || '',
+    title: cleanTitle,
     participantUids: [challengerUid, ...targets],
     participants,
     challengerActivity: buildActivitySnapshot(activity),

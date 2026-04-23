@@ -94,6 +94,12 @@ export default function ChallengesTab({ user, userProfile, friends = [], onChall
 
   return (
     <div className="px-4 pb-32">
+      {/* Header */}
+      <div className="pt-2 pb-4">
+        <h1 className="text-xl font-bold text-white">Challenges</h1>
+        <p className="text-sm text-gray-500">Head-to-head bets with your friends.</p>
+      </div>
+
       {/* Profile card */}
       <div
         className="rounded-2xl p-4 mb-4 flex items-center gap-4"

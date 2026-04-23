@@ -724,12 +724,6 @@ export default function ProfilePage(props) {
 
       {/* === original HistoryTab body starts here === */}
       <div className="pb-32">
-      {/* Header */}
-      <div className="px-4 pt-2 pb-4">
-        <h1 className="text-xl font-bold text-white">History</h1>
-        <p className="text-sm text-gray-500">Track your progress over time.</p>
-      </div>
-
       {/* Active Streaks Section */}
       <div ref={activeStreaksRef} className="mx-4 mb-4">
         <div className="flex items-center justify-between mb-3">

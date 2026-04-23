@@ -297,6 +297,10 @@ const NotificationType = {
   WEEKLY_SUMMARY: 'weekly_summary',
   MONTHLY_SUMMARY: 'monthly_summary',
   NEW_ACTIVITY_DETECTED: 'new_activity_detected',
+  CHALLENGE_RECEIVED: 'challenge_received',
+  CHALLENGE_ACCEPTED: 'challenge_accepted',
+  CHALLENGE_COMPLETED: 'challenge_completed',
+  CHALLENGE_EXPIRING: 'challenge_expiring',
 };
 
 /**
@@ -430,6 +434,10 @@ function getDefaultPreferences() {
     weeklySummary: true,
     monthlySummary: true,
     newActivityDetected: true,
+    challengeReceived: true,
+    challengeAccepted: true,
+    challengeCompleted: true,
+    challengeExpiring: true,
     quietHoursEnabled: false,
     quietHoursStart: '22:00',
     quietHoursEnd: '07:00',
@@ -1511,5 +1519,589 @@ exports.protectUserFields = onDocumentWritten(
         }
       }
     }
+  }
+);
+
+// ==========================================
+// CHALLENGES
+// ==========================================
+
+/**
+ * Check whether a logged activity satisfies a challenge's match rule.
+ * Mirrors buildMatchRule() in src/services/challengeService.js — keep them in sync.
+ */
+function activityMatchesRule(activity, rule) {
+  if (!activity || !rule) return false;
+  const category = getActivityCategoryForGoals(activity);
+  if (category !== rule.category) return false;
+
+  if (rule.activityType && activity.type !== rule.activityType) return false;
+
+  if (rule.distanceMin) {
+    const distance = parseFloat(activity.distance) || 0;
+    if (distance < rule.distanceMin) return false;
+    return true;
+  }
+
+  const duration = parseInt(activity.duration, 10) || 0;
+  return duration >= (rule.durationMin || 0);
+}
+
+/**
+ * Notify every recipient (1v1 = one friend, group = N friends) when a new challenge lands.
+ */
+exports.onChallengeCreated = onDocumentCreated(
+  'challenges/{challengeId}',
+  async (event) => {
+    const challenge = event.data.data();
+    const { challengerUid, challengerName, matchRule, type, participants, title, challengerActivity } = challenge;
+    if (!challengerUid) return;
+
+    // Recipient list: participants map keys (preferred) OR legacy friendUid (Phase 1 1v1)
+    const recipientUids = participants
+      ? Object.keys(participants)
+      : (challenge.friendUid ? [challenge.friendUid] : []);
+    if (recipientUids.length === 0) return;
+
+    const fromName = challengerName || await getUserDisplayName(challengerUid);
+
+    // Scope label for the notification headline. Pulled from the challenger's actual
+    // activity (so Cold Plunge reads as "Cold Plunge", not just "Recovery") with
+    // short verb substitutions for the common distance sports.
+    const SCOPE_DISPLAY = {
+      Running: 'Run',
+      Cycle: 'Ride',
+      Swimming: 'Swim',
+      Rowing: 'Row',
+      Hiking: 'Hike',
+      'Strength Training': 'Strength',
+      Weightlifting: 'Strength',
+      Bodyweight: 'Strength',
+      Circuit: 'Strength',
+    };
+    const rawType = challengerActivity?.type;
+    const categoryFallback = {
+      lifting: 'Strength',
+      cardio: 'Cardio',
+      recovery: 'Recovery',
+    }[matchRule?.category] || 'Workout';
+    const scope = SCOPE_DISPLAY[rawType] || rawType || categoryFallback;
+
+    const emoji = type === 'group' ? '👊' : '⚡';
+    const headline = `New Challenge: ${scope} ${emoji}`;
+
+    await Promise.all(recipientUids.map(async (recipientUid) => {
+      const prefs = await getUserPreferences(recipientUid);
+      if (!prefs.challengeReceived) return;
+
+      const target = type === 'group' ? 'the squad' : 'you';
+      const otherCount = recipientUids.filter(u => u !== recipientUid).length;
+      const groupSuffix = type === 'group' && otherCount > 0
+        ? ` (you + ${otherCount} other${otherCount === 1 ? '' : 's'})`
+        : '';
+
+      // With the scope already in the headline, the body just needs WHO.
+      // Title, when present, rides in the body for extra flavor.
+      const body = title
+        ? `${fromName} challenged ${target}: ${title}${groupSuffix}`
+        : `${fromName} challenged ${target}${groupSuffix}`;
+
+      await sendNotificationToUser(
+        recipientUid,
+        headline,
+        body,
+        {
+          type: NotificationType.CHALLENGE_RECEIVED,
+          fromUserId: challengerUid,
+          challengeId: event.params.challengeId,
+        }
+      );
+    }));
+  }
+);
+
+/**
+ * Notify the challenger when ANY recipient accepts.
+ * Decline is silent (loss-only mechanics suppress acceptance — don't shame people for declining).
+ *
+ * Handles three cases:
+ *  - Phase 1 1v1: legacy friendStatus pending → accepted
+ *  - Phase 3 1v1/group: participants[uid].status pending → accepted (per friend)
+ */
+exports.onChallengeUpdated = onDocumentUpdated(
+  'challenges/{challengeId}',
+  async (event) => {
+    const before = event.data.before.data();
+    const after = event.data.after.data();
+    if (!before || !after) return;
+
+    const { challengerUid, matchRule } = after;
+    if (!challengerUid) return;
+
+    // Find every friend who newly transitioned to 'accepted' in this write.
+    const newAccepters = [];
+
+    if (after.participants) {
+      for (const [uid, p] of Object.entries(after.participants)) {
+        const prevStatus = before.participants?.[uid]?.status;
+        if (p.status === 'accepted' && prevStatus !== 'accepted') {
+          newAccepters.push(uid);
+        }
+      }
+    } else {
+      // Legacy 1v1 path
+      if (before.friendStatus !== 'accepted' && after.friendStatus === 'accepted' && after.friendUid) {
+        newAccepters.push(after.friendUid);
+      }
+    }
+
+    if (newAccepters.length === 0) return;
+
+    const prefs = await getUserPreferences(challengerUid);
+    if (!prefs.challengeAccepted) return;
+
+    const windowH = after.windowHours || 24;
+    const isGroup = after.type === 'group';
+
+    await Promise.all(newAccepters.map(async (friendUid) => {
+      const friendName = await getUserDisplayName(friendUid);
+      await sendNotificationToUser(
+        challengerUid,
+        'Challenge Accepted! 🔥',
+        isGroup
+          ? `${friendName} joined the group challenge — ${windowH}h on their clock.`
+          : `${friendName} took the bait — ${windowH}h on the clock.`,
+        {
+          type: NotificationType.CHALLENGE_ACCEPTED,
+          fromUserId: friendUid,
+          challengeId: event.params.challengeId,
+        }
+      );
+    }));
+  }
+);
+
+/**
+ * On any user activity write, check their active challenges-as-recipient.
+ * If a newly-logged activity satisfies the match rule, mark the challenge completed
+ * and increment win counters on both users.
+ *
+ * Notes:
+ *  - Only matches the recipient's challenges (the challenger has already done it by definition).
+ *  - One activity can fulfill multiple challenges by design (see plan §3 — friends shouldn't be
+ *    punished for genuinely doing the work).
+ *  - Idempotent via challenge.status check inside the transaction.
+ */
+exports.onUserActivitiesUpdatedForChallenges = onDocumentUpdated(
+  'users/{userId}',
+  async (event) => {
+    const userId = event.params.userId;
+    const before = event.data.before.data();
+    const after = event.data.after.data();
+    if (!after) return;
+
+    const beforeActivities = before?.activities || [];
+    const afterActivities = after?.activities || [];
+    if (afterActivities.length <= beforeActivities.length) return;
+
+    const beforeIds = new Set(beforeActivities.map(a => String(a.id)));
+    const newActivities = afterActivities.filter(a => !beforeIds.has(String(a.id)));
+    if (newActivities.length === 0) return;
+
+    // Find this user's active incoming challenges (1v1 or group, this user is a recipient).
+    const challengesSnap = await db.collection('challenges')
+      .where('participantUids', 'array-contains', userId)
+      .where('status', '==', 'active')
+      .get();
+
+    if (challengesSnap.empty) return;
+
+    const completions = [];
+
+    for (const challengeDoc of challengesSnap.docs) {
+      const challenge = challengeDoc.data();
+
+      // Determine my participant status — must be 'accepted' for me to complete.
+      let myStatus;
+      if (challenge.participants && challenge.participants[userId]) {
+        myStatus = challenge.participants[userId].status;
+      } else if (challenge.friendUid === userId) {
+        myStatus = challenge.friendStatus;
+      } else {
+        continue; // I'm not a recipient on this one
+      }
+      if (myStatus !== 'accepted') continue;
+
+      // Find the first new activity that matches (oldest first for determinism)
+      const sorted = newActivities.slice().sort((a, b) => {
+        const at = new Date(a.date || 0).getTime();
+        const bt = new Date(b.date || 0).getTime();
+        return at - bt;
+      });
+      const matched = sorted.find(a => activityMatchesRule(a, challenge.matchRule));
+      if (!matched) continue;
+
+      completions.push({ challengeDoc, challenge, matched });
+    }
+
+    if (completions.length === 0) return;
+
+    // For each completion: transactional write to flip THIS participant's status + bump counters
+    // on both this user and the challenger. Group challenges: overall status only flips to
+    // 'completed' once all participants are resolved (handled here on every completion just in case).
+    await Promise.all(completions.map(async ({ challengeDoc, challenge, matched }) => {
+      try {
+        await db.runTransaction(async (tx) => {
+          const fresh = await tx.get(challengeDoc.ref);
+          if (!fresh.exists) return;
+          const data = fresh.data();
+
+          // Re-check my status inside the transaction to avoid double-completion races.
+          const myStatusFresh = data.participants?.[userId]?.status
+            || (data.friendUid === userId ? data.friendStatus : null);
+          if (myStatusFresh !== 'accepted') return;
+
+          const now = new Date();
+          const nowIso = now.toISOString();
+
+          // Flip my participant state
+          const update = {};
+          if (data.participants) {
+            update[`participants.${userId}.status`] = 'completed';
+            update[`participants.${userId}.completedAt`] = nowIso;
+            update[`participants.${userId}.fulfillingActivityId`] = String(matched.id || '');
+          }
+          // Legacy 1v1 fields
+          if (data.friendUid === userId) {
+            update.friendStatus = 'completed';
+            update.completedAt = nowIso;
+            update.fulfillingActivityId = String(matched.id || '');
+          }
+
+          // Determine if the overall challenge is now done.
+          // For 1v1: any completion finishes it.
+          // For group: only finish overall when no participants are still pending or accepted.
+          let overallNowComplete = false;
+          if (data.type !== 'group') {
+            overallNowComplete = true;
+          } else {
+            const allParticipants = data.participants || {};
+            const stillOpen = Object.entries(allParticipants).some(([uid, p]) => {
+              if (uid === userId) return false; // we just completed this one
+              return p.status === 'pending' || p.status === 'accepted';
+            });
+            overallNowComplete = !stillOpen;
+          }
+
+          if (overallNowComplete) {
+            update.status = 'completed';
+            update.completedAt = nowIso;
+            // winnerUids = challenger + every participant who completed (including this one)
+            const completedUids = [challenge.challengerUid, userId];
+            if (data.participants) {
+              for (const [uid, p] of Object.entries(data.participants)) {
+                if (uid === userId) continue;
+                if (p.status === 'completed') completedUids.push(uid);
+              }
+            }
+            update.winnerUids = Array.from(new Set(completedUids));
+          }
+
+          tx.update(challengeDoc.ref, update);
+
+          // Counter writes: per-completion (1 win to me, 1 win to challenger, h2h +1 each direction)
+          const challengerRef = db.collection('users').doc(challenge.challengerUid);
+          const friendRef = db.collection('users').doc(userId);
+          const [challengerSnap, friendSnap] = await Promise.all([
+            tx.get(challengerRef),
+            tx.get(friendRef),
+          ]);
+          const challengerStats = (challengerSnap.data()?.challengeStats) || {};
+          const friendStats = (friendSnap.data()?.challengeStats) || {};
+
+          const challengerNewStreak = (challengerStats.currentWinStreak || 0) + 1;
+          const friendNewStreak = (friendStats.currentWinStreak || 0) + 1;
+
+          tx.set(challengerRef, {
+            challengeStats: {
+              wins: FieldValue.increment(1),
+              currentWinStreak: challengerNewStreak,
+              longestWinStreak: Math.max(challengerStats.longestWinStreak || 0, challengerNewStreak),
+            },
+            h2hRecords: {
+              [userId]: {
+                wins: FieldValue.increment(1),
+                lastChallengeAt: nowIso,
+              },
+            },
+          }, { merge: true });
+
+          tx.set(friendRef, {
+            challengeStats: {
+              wins: FieldValue.increment(1),
+              currentWinStreak: friendNewStreak,
+              longestWinStreak: Math.max(friendStats.longestWinStreak || 0, friendNewStreak),
+            },
+            h2hRecords: {
+              [challenge.challengerUid]: {
+                wins: FieldValue.increment(1),
+                lastChallengeAt: nowIso,
+              },
+            },
+          }, { merge: true });
+        });
+
+        // Notify both parties (outside the transaction to avoid retries on push failure)
+        const [challengerPrefs, friendPrefs] = await Promise.all([
+          getUserPreferences(challenge.challengerUid),
+          getUserPreferences(userId),
+        ]);
+        const friendName = await getUserDisplayName(userId);
+        const isGroup = challenge.type === 'group';
+
+        if (challengerPrefs.challengeCompleted) {
+          await sendNotificationToUser(
+            challenge.challengerUid,
+            'Challenge Won! 🏆',
+            isGroup
+              ? `${friendName} crushed your group challenge — +1 for you both.`
+              : `${friendName} matched your challenge — you both win.`,
+            {
+              type: NotificationType.CHALLENGE_COMPLETED,
+              fromUserId: userId,
+              challengeId: challengeDoc.id,
+            }
+          );
+        }
+        if (friendPrefs.challengeCompleted) {
+          await sendNotificationToUser(
+            userId,
+            'Challenge Complete! 🏆',
+            'You crushed it. Win logged.',
+            {
+              type: NotificationType.CHALLENGE_COMPLETED,
+              fromUserId: challenge.challengerUid,
+              challengeId: challengeDoc.id,
+            }
+          );
+        }
+      } catch (err) {
+        console.error('[onUserActivitiesUpdatedForChallenges] completion failed:', err);
+      }
+    }));
+  }
+);
+
+/**
+ * Cron: every 5 minutes, expire challenges past their deadline.
+ *
+ * Rules:
+ *  - 1v1 pending → cancelled (silent, no penalty)
+ *  - 1v1 active → expired (loss to friend who accepted but didn't complete)
+ *  - Group per-participant pending past overall expiry → cancelled for them (no penalty)
+ *  - Group per-participant accepted past their personal expiry → expired (loss for them)
+ *  - Group overall flips to 'completed' (if any won) or 'expired' (none won) when all participants resolved
+ */
+exports.expireChallenges = onSchedule(
+  { schedule: 'every 5 minutes', timeZone: 'UTC' },
+  async () => {
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const nowMs = now.getTime();
+
+    // Query all open challenges; per-participant expiry can be earlier OR later than overall.
+    const openSnap = await db.collection('challenges')
+      .where('status', 'in', ['pending', 'active'])
+      .get();
+
+    if (openSnap.empty) {
+      console.log('[expireChallenges] nothing open');
+      return;
+    }
+
+    await Promise.all(openSnap.docs.map(async (doc) => {
+      try {
+        await db.runTransaction(async (tx) => {
+          const fresh = await tx.get(doc.ref);
+          if (!fresh.exists) return;
+          const data = fresh.data();
+          if (data.status !== 'pending' && data.status !== 'active') return;
+
+          const overallExpiredMs = data.expiresAt ? new Date(data.expiresAt).getTime() : 0;
+          const overallExpired = overallExpiredMs && overallExpiredMs < nowMs;
+
+          // Pending challenges auto-cancel halfway through the window (respondByAt).
+          // Falls back to expiresAt for legacy Phase 1 challenges that don't have respondByAt.
+          const respondByMs = data.respondByAt ? new Date(data.respondByAt).getTime() : overallExpiredMs;
+          const respondByExpired = respondByMs && respondByMs < nowMs;
+
+          // Legacy 1v1 path (no participants map)
+          if (!data.participants) {
+            if (data.status === 'pending') {
+              if (!respondByExpired) return;
+              tx.update(doc.ref, {
+                status: 'cancelled',
+                resolvedAt: nowIso,
+                expiredReason: 'pending_timeout',
+              });
+            } else {
+              if (!overallExpired) return;
+              tx.update(doc.ref, {
+                status: 'expired',
+                friendStatus: 'expired',
+                resolvedAt: nowIso,
+              });
+              if (data.friendUid) {
+                tx.set(db.collection('users').doc(data.friendUid), {
+                  challengeStats: { losses: FieldValue.increment(1), currentWinStreak: 0 },
+                  h2hRecords: { [data.challengerUid]: { losses: FieldValue.increment(1), lastChallengeAt: nowIso } },
+                }, { merge: true });
+              }
+            }
+            return;
+          }
+
+          // Phase 3 path: iterate participants
+          const participantUpdates = {};
+          const lossUpdates = []; // {uid, isLoss}
+
+          for (const [uid, p] of Object.entries(data.participants)) {
+            if (p.status === 'pending' && respondByExpired) {
+              participantUpdates[`participants.${uid}.status`] = 'cancelled';
+              participantUpdates[`participants.${uid}.resolvedAt`] = nowIso;
+            } else if (p.status === 'accepted' && overallExpired) {
+              participantUpdates[`participants.${uid}.status`] = 'expired';
+              participantUpdates[`participants.${uid}.resolvedAt`] = nowIso;
+              lossUpdates.push({ uid, isLoss: true });
+            }
+          }
+
+          // Decide overall status: all participants must be in a terminal state to flip overall.
+          // Build a "what-will-it-be" view by overlaying participantUpdates onto current.
+          const finalParticipantStatuses = {};
+          for (const [uid, p] of Object.entries(data.participants)) {
+            const overrideStatus = participantUpdates[`participants.${uid}.status`];
+            finalParticipantStatuses[uid] = overrideStatus || p.status;
+          }
+          const stillOpen = Object.values(finalParticipantStatuses).some(s => s === 'pending' || s === 'accepted');
+          const anyCompleted = Object.values(finalParticipantStatuses).some(s => s === 'completed');
+
+          if (!stillOpen) {
+            participantUpdates.status = anyCompleted ? 'completed' : 'expired';
+            participantUpdates.resolvedAt = nowIso;
+          }
+
+          if (Object.keys(participantUpdates).length === 0 && lossUpdates.length === 0) return;
+
+          if (Object.keys(participantUpdates).length > 0) {
+            tx.update(doc.ref, participantUpdates);
+          }
+
+          // Apply per-participant losses (server-only counters)
+          for (const { uid } of lossUpdates) {
+            tx.set(db.collection('users').doc(uid), {
+              challengeStats: { losses: FieldValue.increment(1), currentWinStreak: 0 },
+              h2hRecords: {
+                [data.challengerUid]: {
+                  losses: FieldValue.increment(1),
+                  lastChallengeAt: nowIso,
+                },
+              },
+            }, { merge: true });
+          }
+        });
+      } catch (err) {
+        console.error(`[expireChallenges] failed to expire ${doc.id}:`, err);
+      }
+    }));
+  }
+);
+
+/**
+ * Cron: every 30 minutes, ping participants when their personal challenge clock has
+ * ~45-75 minutes left. Uses an `expiringSoonNotified` flag per-participant (groups)
+ * or on the doc (legacy 1v1) to ensure exactly-once delivery.
+ */
+exports.challengeExpiringSoon = onSchedule(
+  { schedule: 'every 30 minutes', timeZone: 'UTC' },
+  async () => {
+    const now = Date.now();
+    const windowStartMs = now + 45 * 60 * 1000;
+    const windowEndMs = now + 75 * 60 * 1000;
+
+    const snap = await db.collection('challenges')
+      .where('status', '==', 'active')
+      .get();
+
+    if (snap.empty) return;
+
+    await Promise.all(snap.docs.map(async (doc) => {
+      const data = doc.data();
+      try {
+        const challengerName = data.challengerName || await getUserDisplayName(data.challengerUid);
+
+        // Phase 3 path: per-participant. Timer is now shared (overall expiresAt) so the
+        // window-check is the same for everyone, but we still gate on per-participant
+        // notification flag so each accepter gets their own ping (skipping decliners).
+        if (data.participants) {
+          const overallMs = data.expiresAt ? new Date(data.expiresAt).getTime() : 0;
+          if (overallMs < windowStartMs || overallMs > windowEndMs) return;
+
+          const updates = {};
+          const recipientsToNotify = [];
+
+          for (const [uid, p] of Object.entries(data.participants)) {
+            if (p.status !== 'accepted') continue;
+            if (p.expiringSoonNotified) continue;
+            updates[`participants.${uid}.expiringSoonNotified`] = true;
+            recipientsToNotify.push(uid);
+          }
+
+          if (recipientsToNotify.length === 0) return;
+
+          await Promise.all(recipientsToNotify.map(async (uid) => {
+            const prefs = await getUserPreferences(uid);
+            if (!prefs.challengeExpiring) return;
+            await sendNotificationToUser(
+              uid,
+              'Challenge Ending Soon ⏰',
+              `~1h left on ${challengerName}'s challenge.`,
+              {
+                type: NotificationType.CHALLENGE_EXPIRING,
+                fromUserId: data.challengerUid,
+                challengeId: doc.id,
+              }
+            );
+          }));
+
+          await doc.ref.update(updates);
+          return;
+        }
+
+        // Legacy 1v1 path
+        if (data.expiringSoonNotified) return;
+        const overallMs = data.expiresAt ? new Date(data.expiresAt).getTime() : 0;
+        if (overallMs < windowStartMs || overallMs > windowEndMs) return;
+        if (!data.friendUid) return;
+
+        const prefs = await getUserPreferences(data.friendUid);
+        if (!prefs.challengeExpiring) return;
+
+        await sendNotificationToUser(
+          data.friendUid,
+          'Challenge Ending Soon ⏰',
+          `~1h left on ${challengerName}'s challenge.`,
+          {
+            type: NotificationType.CHALLENGE_EXPIRING,
+            fromUserId: data.challengerUid,
+            challengeId: doc.id,
+          }
+        );
+
+        await doc.ref.update({ expiringSoonNotified: true });
+      } catch (err) {
+        console.error(`[challengeExpiringSoon] failed for ${doc.id}:`, err);
+      }
+    }));
   }
 );

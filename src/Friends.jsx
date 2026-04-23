@@ -23,7 +23,7 @@ const triggerHaptic = async (style = ImpactStyle.Medium) => {
 
 const FREE_FRIEND_LIMIT = 3;
 
-const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall }) => {
+const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenChallenge }) => {
   const [activeTab, setActiveTab] = useState('friends');
   const [friends, setFriends] = useState([]);
   const [requests, setRequests] = useState([]);
@@ -731,20 +731,35 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall }) => {
 
             {/* Stats */}
             <div className="px-6 pb-4">
-              <div className="grid grid-cols-3 gap-3 mb-4">
-                <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <p className="text-2xl font-bold text-white">{selectedProfile.masterStreak || 0}</p>
-                  <p className="text-gray-500 text-xs">Hybrid Streak</p>
-                </div>
-                <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <p className="text-2xl font-bold text-white">{selectedProfile.weeksWon || 0}</p>
-                  <p className="text-gray-500 text-xs">Weeks Won</p>
-                </div>
-                <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <p className="text-2xl font-bold text-white">{selectedProfile.totalWorkouts || 0}</p>
-                  <p className="text-gray-500 text-xs">Workouts</p>
-                </div>
-              </div>
+              {(() => {
+                const h2h = userProfile?.h2hRecords?.[selectedProfile.uid];
+                const wins = h2h?.wins || 0;
+                const losses = h2h?.losses || 0;
+                const isFriendOfMine = isFriend(selectedProfile.uid);
+                return (
+                  <div className="grid grid-cols-3 gap-3 mb-4">
+                    <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                      <p className="text-2xl font-bold text-white">{selectedProfile.masterStreak || 0}</p>
+                      <p className="text-gray-500 text-xs">Hybrid Streak</p>
+                    </div>
+                    <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                      <p className="text-2xl font-bold text-white">{selectedProfile.weeksWon || 0}</p>
+                      <p className="text-gray-500 text-xs">Weeks Won</p>
+                    </div>
+                    {isFriendOfMine ? (
+                      <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.2)' }}>
+                        <p className="text-2xl font-bold" style={{ color: '#FFD60A' }}>{wins}-{losses}</p>
+                        <p className="text-gray-500 text-xs">Head to Head</p>
+                      </div>
+                    ) : (
+                      <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                        <p className="text-2xl font-bold text-white">{selectedProfile.totalWorkouts || 0}</p>
+                        <p className="text-gray-500 text-xs">Workouts</p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Streak breakdown */}
               <div className="space-y-2 mb-4">
@@ -772,16 +787,31 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall }) => {
             {/* Action buttons based on relationship */}
             <div className="px-6 pb-6">
               {isFriend(selectedProfile.uid) ? (
-                <button
-                  onClick={() => {
-                    handleRemoveFriend(selectedProfile.uid);
-                    setSelectedProfile(null);
-                  }}
-                  className="w-full py-3 rounded-xl font-medium transition-all duration-150 active:scale-98 text-red-400"
-                  style={{ backgroundColor: 'rgba(255,69,58,0.1)' }}
-                >
-                  Remove Friend
-                </button>
+                <div className="space-y-2">
+                  {onOpenChallenge && (
+                    <button
+                      onClick={() => {
+                        triggerHaptic(ImpactStyle.Light);
+                        onOpenChallenge(selectedProfile);
+                        setSelectedProfile(null);
+                      }}
+                      className="w-full py-3 rounded-xl font-semibold transition-all duration-150 active:scale-98"
+                      style={{ backgroundColor: '#FFD60A', color: 'black' }}
+                    >
+                      ⚡ Challenge {selectedProfile.displayName?.split(' ')[0] || selectedProfile.username}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      handleRemoveFriend(selectedProfile.uid);
+                      setSelectedProfile(null);
+                    }}
+                    className="w-full py-3 rounded-xl font-medium transition-all duration-150 active:scale-98 text-red-400"
+                    style={{ backgroundColor: 'rgba(255,69,58,0.1)' }}
+                  >
+                    Remove Friend
+                  </button>
+                </div>
               ) : hasSentRequest(selectedProfile.uid) ? (
                 <button
                   className="w-full py-3 rounded-xl font-medium text-gray-400"

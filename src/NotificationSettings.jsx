@@ -37,6 +37,11 @@ const NotificationSettings = ({ userId, onClose }) => {
     goalAchievements: true,
     weeklySummary: true,
     monthlySummary: true,
+    // Challenges
+    challengeReceived: true,
+    challengeAccepted: true,
+    challengeCompleted: true,
+    challengeExpiring: true,
     // Quiet hours
     quietHoursEnabled: false,
     quietHoursStart: '22:00',
@@ -66,7 +71,7 @@ const NotificationSettings = ({ userId, onClose }) => {
           if (prefs) {
             setPreferences(prev => ({ ...prev, ...prefs }));
             // Check if ALL toggleable preferences are on
-            const toggleKeys = ['friendRequests', 'reactions', 'comments', 'friendActivity', 'streakReminders', 'goalReminders', 'dailyReminders', 'newActivityDetected', 'streakMilestones', 'goalAchievements', 'weeklySummary', 'monthlySummary'];
+            const toggleKeys = ['friendRequests', 'reactions', 'comments', 'friendActivity', 'streakReminders', 'goalReminders', 'dailyReminders', 'newActivityDetected', 'streakMilestones', 'goalAchievements', 'weeklySummary', 'monthlySummary', 'challengeReceived', 'challengeAccepted', 'challengeCompleted', 'challengeExpiring'];
             const allOn = toggleKeys.every(key => prefs[key]);
             setAllEnabled(allOn);
           }
@@ -102,7 +107,7 @@ const NotificationSettings = ({ userId, onClose }) => {
     setPreferences(newPrefs);
 
     // Update master toggle state — only ON if ALL are enabled
-    const toggleKeys = ['friendRequests', 'reactions', 'comments', 'friendActivity', 'streakReminders', 'goalReminders', 'dailyReminders', 'newActivityDetected', 'streakMilestones', 'goalAchievements', 'weeklySummary', 'monthlySummary'];
+    const toggleKeys = ['friendRequests', 'reactions', 'comments', 'friendActivity', 'streakReminders', 'goalReminders', 'dailyReminders', 'newActivityDetected', 'streakMilestones', 'goalAchievements', 'weeklySummary', 'monthlySummary', 'challengeReceived', 'challengeAccepted', 'challengeCompleted', 'challengeExpiring'];
     const allOn = toggleKeys.every(k => newPrefs[k]);
     setAllEnabled(allOn);
 
@@ -124,7 +129,7 @@ const NotificationSettings = ({ userId, onClose }) => {
     const newEnabled = !allEnabled;
     setAllEnabled(newEnabled);
 
-    const toggleKeys = ['friendRequests', 'reactions', 'comments', 'friendActivity', 'streakReminders', 'goalReminders', 'dailyReminders', 'newActivityDetected', 'streakMilestones', 'goalAchievements', 'weeklySummary', 'monthlySummary'];
+    const toggleKeys = ['friendRequests', 'reactions', 'comments', 'friendActivity', 'streakReminders', 'goalReminders', 'dailyReminders', 'newActivityDetected', 'streakMilestones', 'goalAchievements', 'weeklySummary', 'monthlySummary', 'challengeReceived', 'challengeAccepted', 'challengeCompleted', 'challengeExpiring'];
     const newPrefs = { ...preferences };
     toggleKeys.forEach(key => { newPrefs[key] = newEnabled; });
     setPreferences(newPrefs);
@@ -326,6 +331,35 @@ const NotificationSettings = ({ userId, onClose }) => {
               description="When friends complete workouts"
               enabled={preferences.friendActivity}
               onToggle={() => handleToggle('friendActivity')}
+            />
+          </div>
+
+          {/* Challenges */}
+          <SectionHeader>Challenges</SectionHeader>
+          <div className="bg-zinc-900/50 rounded-xl px-4">
+            <SettingRow
+              label="New Challenges"
+              description="When a friend challenges you"
+              enabled={preferences.challengeReceived}
+              onToggle={() => handleToggle('challengeReceived')}
+            />
+            <SettingRow
+              label="Accepted Challenges"
+              description="When a friend accepts your challenge"
+              enabled={preferences.challengeAccepted}
+              onToggle={() => handleToggle('challengeAccepted')}
+            />
+            <SettingRow
+              label="Completed Challenges"
+              description="When a challenge is won"
+              enabled={preferences.challengeCompleted}
+              onToggle={() => handleToggle('challengeCompleted')}
+            />
+            <SettingRow
+              label="Expiring Soon"
+              description="Reminder ~1h before a challenge expires"
+              enabled={preferences.challengeExpiring}
+              onToggle={() => handleToggle('challengeExpiring')}
             />
           </div>
 

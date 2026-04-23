@@ -55,6 +55,12 @@ export const NotificationType = {
   GOAL_ACHIEVED: 'goal_achieved',
   WEEKLY_SUMMARY: 'weekly_summary',
   MONTHLY_SUMMARY: 'monthly_summary',
+
+  // Challenge notifications
+  CHALLENGE_RECEIVED: 'challenge_received',
+  CHALLENGE_ACCEPTED: 'challenge_accepted',
+  CHALLENGE_COMPLETED: 'challenge_completed',
+  CHALLENGE_EXPIRING: 'challenge_expiring',
 };
 
 /**
@@ -285,6 +291,12 @@ export const getDefaultPreferences = () => ({
   weeklySummary: true,
   monthlySummary: true,
 
+  // Challenges (split per type so users can mute completion pings while keeping invites)
+  challengeReceived: true,
+  challengeAccepted: true,
+  challengeCompleted: true,
+  challengeExpiring: true,
+
   // Quiet hours
   quietHoursEnabled: false,
   quietHoursStart: '22:00',
@@ -347,6 +359,10 @@ export const shouldShowNotification = (notification, preferences) => {
     [NotificationType.GOAL_ACHIEVED]: 'goalAchievements',
     [NotificationType.WEEKLY_SUMMARY]: 'weeklySummary',
     [NotificationType.MONTHLY_SUMMARY]: 'monthlySummary',
+    [NotificationType.CHALLENGE_RECEIVED]: 'challengeReceived',
+    [NotificationType.CHALLENGE_ACCEPTED]: 'challengeAccepted',
+    [NotificationType.CHALLENGE_COMPLETED]: 'challengeCompleted',
+    [NotificationType.CHALLENGE_EXPIRING]: 'challengeExpiring',
   };
 
   const prefKey = prefMap[type];
@@ -485,6 +501,14 @@ export const handleNotificationNavigation = (notification, navigate, options = {
       if (options.onShowPendingWorkouts) {
         options.onShowPendingWorkouts(data.workoutId);
       }
+      navigate('home');
+      break;
+
+    case NotificationType.CHALLENGE_RECEIVED:
+    case NotificationType.CHALLENGE_ACCEPTED:
+    case NotificationType.CHALLENGE_COMPLETED:
+    case NotificationType.CHALLENGE_EXPIRING:
+      // Challenges live on the home tab
       navigate('home');
       break;
 

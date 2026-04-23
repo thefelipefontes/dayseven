@@ -15,6 +15,13 @@ const isNative = Capacitor.isNativePlatform();
 const REVENUECAT_API_KEY = 'appl_UATysAceRzTnMyGAvenoKKlXXov';
 const ENTITLEMENT_ID = 'dayseven Pro';
 
+// Dev override: these accounts always report Pro regardless of RevenueCat state.
+// Why: sandbox subscriptions expire/renew rapidly and can flip to free mid-session.
+const DEV_PRO_EMAILS = new Set(['felipefontes@felipefontes.com']);
+let _currentUserEmail = null;
+export const setDevAuthEmail = (email) => { _currentUserEmail = email || null; };
+const isDevProUser = () => DEV_PRO_EMAILS.has(_currentUserEmail || '');
+
 // Diagnostic mode — set to true to show alerts at failure points
 const RC_DEBUG = false;
 
@@ -107,6 +114,7 @@ export const initializeRevenueCat = async (userId) => {
  * @returns {Promise<boolean>}
  */
 export const checkProStatus = async () => {
+  if (isDevProUser()) return true;
   if (!isNative || !Purchases) return false;
 
   try {
@@ -146,7 +154,7 @@ export const addCustomerInfoListener = async (callback) => {
 
   try {
     await Purchases.addCustomerInfoUpdateListener((customerInfo) => {
-      const isPro = !!customerInfo?.entitlements?.active?.[ENTITLEMENT_ID];
+      const isPro = !!customerInfo?.entitlements?.active?.[ENTITLEMENT_ID] || isDevProUser();
       callback({ isPro, customerInfo });
     });
   } catch (error) {
@@ -269,7 +277,7 @@ export const restorePurchases = async () => {
 
   try {
     const { customerInfo } = await Purchases.restorePurchases();
-    const isPro = !!customerInfo?.entitlements?.active?.[ENTITLEMENT_ID];
+    const isPro = !!customerInfo?.entitlements?.active?.[ENTITLEMENT_ID] || isDevProUser();
     console.log('[SubscriptionService] Purchases restored, isPro:', isPro);
     return { isPro, customerInfo };
   } catch (error) {

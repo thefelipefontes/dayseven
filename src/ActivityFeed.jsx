@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, createContext, useContext } from 'react';
-import { getUserActivities, getPersonalRecords, getDailyHealthHistory } from './services/userService';
+import { getUserActivities, getPersonalRecords, getDailyHealthHistory, getUserProfile } from './services/userService';
 import { addReaction, getReactions, removeReaction, addComment, getComments, deleteComment, addReply, getReplies, deleteReply, getFriends } from './services/friendService';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
@@ -946,7 +946,7 @@ const MemoizedActivityCard = React.memo(({
   );
 });
 
-const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingRequestsCount = 0, onActiveViewChange, isPro = false, onPresentPaywall }) => {
+const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingRequestsCount = 0, onActiveViewChange, isPro = false, onPresentPaywall, onOpenChallenge }) => {
   const [feedActivities, setFeedActivities] = useState([]);
   const [activityReactions, setActivityReactions] = useState({});
   const [activityComments, setActivityComments] = useState({});
@@ -956,9 +956,9 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   const [activeView, setActiveView] = useState('feed'); // 'feed' or 'leaderboard'
   const [leaderboardData, setLeaderboardData] = useState([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
-  const [leaderboardSection, setLeaderboardSection] = useState('activity'); // 'activity' or 'streak'
-  const [leaderboardCategory, setLeaderboardCategory] = useState('calories'); // Activity: 'calories', 'steps', 'workouts' | Streak: 'master', 'strength', 'cardio', 'recovery'
-  const [leaderboardTimeRange, setLeaderboardTimeRange] = useState('week'); // Activity: 'week', 'month', 'year', 'all' | Streak: 'year', 'all'
+  const [leaderboardSection, setLeaderboardSection] = useState('activity'); // 'activity', 'streak', or 'challenges'
+  const [leaderboardCategory, setLeaderboardCategory] = useState('calories'); // Activity: 'calories', 'steps', 'workouts' | Streak: 'master', 'strength', 'cardio', 'recovery' | Challenges: 'wins', 'currentStreak', 'longestStreak'
+  const [leaderboardTimeRange, setLeaderboardTimeRange] = useState('week'); // Activity: 'week', 'month', 'year', 'all' | Streak/Challenges: 'all'
   const [selectedFriend, setSelectedFriend] = useState(null); // For viewing friend profile
 
   // Enrich friend data when selected — pull from leaderboard cache or fetch from Firestore
@@ -1704,6 +1704,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         displayName: userProfile?.displayName || 'You',
         photoURL: userProfile?.photoURL,
         ...currentUserStats,
+        challengeStats: userProfile?.challengeStats || null,
         isCurrentUser: true
       };
 
@@ -1755,10 +1756,11 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         // other concurrent Capacitor calls in the same Promise.all batch
         const friendDataPromises = friends.map(async (friend) => {
           try {
-            // Step 1: Fetch activities and records (these always succeed for friends)
-            const [friendActivities, friendRecords] = await Promise.all([
+            // Step 1: Fetch activities, records, and profile (for challengeStats)
+            const [friendActivities, friendRecords, friendProfile] = await Promise.all([
               getUserActivities(friend.uid).catch(e => { console.error(`[Leaderboard] getUserActivities failed for ${friend.username}:`, e.message); return []; }),
-              getPersonalRecords(friend.uid).catch(e => { console.error(`[Leaderboard] getPersonalRecords failed for ${friend.username}:`, e.message); return null; })
+              getPersonalRecords(friend.uid).catch(e => { console.error(`[Leaderboard] getPersonalRecords failed for ${friend.username}:`, e.message); return null; }),
+              getUserProfile(friend.uid).catch(() => null)
             ]);
 
             // Step 2: Fetch health data separately so any failure can't corrupt the above
@@ -1782,7 +1784,8 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               username: friend.username,
               displayName: friend.displayName,
               photoURL: friend.photoURL,
-              ...friendStats
+              ...friendStats,
+              challengeStats: friendProfile?.challengeStats || null
             };
           } catch (error) {
             console.error(`[Leaderboard] FULL FAILURE for ${friend.username}:`, error.message, error.stack);
@@ -2119,6 +2122,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
 
     const getValue = (tr = timeRange) => {
       const v = userData.volume || {};
+      const cs = userData.challengeStats || {};
       switch (category) {
         case 'strength': return userData.strengthStreak || 0;
         case 'cardio': return userData.cardioStreak || 0;
@@ -2131,6 +2135,9 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         case 'strengthSessions': return v.strengthSessions?.[tr] || 0;
         case 'cardioSessions': return (v.runs?.[tr] || 0) + (v.rides?.[tr] || 0);
         case 'recoverySessions': return v.recoverySessions?.[tr] || 0;
+        case 'wins': return cs.wins || 0;
+        case 'currentStreak': return cs.currentWinStreak || 0;
+        case 'longestStreak': return cs.longestWinStreak || 0;
         default: return userData.masterStreak || 0;
       }
     };
@@ -2150,6 +2157,9 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         case 'strengthSessions': return 'sessions';
         case 'cardioSessions': return 'sessions';
         case 'recoverySessions': return 'sessions';
+        case 'wins': return 'wins';
+        case 'currentStreak': return 'streak';
+        case 'longestStreak': return 'longest';
         default: return 'streak';
       }
     };
@@ -2296,6 +2306,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
 
     const getValue = (userData) => {
       const v = userData.volume || {};
+      const cs = userData.challengeStats || {};
       switch (category) {
         case 'strength': return userData.strengthStreak || 0;
         case 'cardio': return userData.cardioStreak || 0;
@@ -2308,6 +2319,9 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         case 'strengthSessions': return v.strengthSessions?.[timeRange] || 0;
         case 'cardioSessions': return (v.runs?.[timeRange] || 0) + (v.rides?.[timeRange] || 0);
         case 'recoverySessions': return v.recoverySessions?.[timeRange] || 0;
+        case 'wins': return cs.wins || 0;
+        case 'currentStreak': return cs.currentWinStreak || 0;
+        case 'longestStreak': return cs.longestWinStreak || 0;
         default: return userData.masterStreak || 0;
       }
     };
@@ -2510,20 +2524,35 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             </div>
 
           {/* Stats grid */}
-          <div className="grid grid-cols-3 gap-3 mb-6">
-            <div className="bg-zinc-800 rounded-xl p-3 text-center">
-              <p className="text-2xl font-bold text-white">{friend?.masterStreak || 0}</p>
-              <p className="text-gray-500 text-xs">Hybrid Streak</p>
-            </div>
-            <div className="bg-zinc-800 rounded-xl p-3 text-center">
-              <p className="text-2xl font-bold text-white">{friend?.weeksWon || 0}</p>
-              <p className="text-gray-500 text-xs">Weeks Won</p>
-            </div>
-            <div className="bg-zinc-800 rounded-xl p-3 text-center">
-              <p className="text-2xl font-bold text-white">{friend?.totalWorkouts || 0}</p>
-              <p className="text-gray-500 text-xs">Workouts</p>
-            </div>
-          </div>
+          {(() => {
+            const isFriendOfMine = !!(friend?.uid && (friends || []).some(f => f.uid === friend.uid));
+            const h2h = userProfile?.h2hRecords?.[friend?.uid];
+            const wins = h2h?.wins || 0;
+            const losses = h2h?.losses || 0;
+            return (
+              <div className="grid grid-cols-3 gap-3 mb-6">
+                <div className="bg-zinc-800 rounded-xl p-3 text-center">
+                  <p className="text-2xl font-bold text-white">{friend?.masterStreak || 0}</p>
+                  <p className="text-gray-500 text-xs">Hybrid Streak</p>
+                </div>
+                <div className="bg-zinc-800 rounded-xl p-3 text-center">
+                  <p className="text-2xl font-bold text-white">{friend?.weeksWon || 0}</p>
+                  <p className="text-gray-500 text-xs">Weeks Won</p>
+                </div>
+                {isFriendOfMine ? (
+                  <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.2)' }}>
+                    <p className="text-2xl font-bold" style={{ color: '#FFD60A' }}>{wins}-{losses}</p>
+                    <p className="text-gray-500 text-xs">Head to Head</p>
+                  </div>
+                ) : (
+                  <div className="bg-zinc-800 rounded-xl p-3 text-center">
+                    <p className="text-2xl font-bold text-white">{friend?.totalWorkouts || 0}</p>
+                    <p className="text-gray-500 text-xs">Workouts</p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Streak breakdown */}
           <div className="space-y-2 mb-6">
@@ -2541,13 +2570,32 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             </div>
           </div>
 
-          {/* Close button */}
-          <TouchButton
-            onClick={handleClose}
-            className="w-full py-3 rounded-full bg-zinc-800 text-white font-medium transition-all duration-150 text-center"
-          >
-            Close
-          </TouchButton>
+          {/* Action buttons */}
+          {(() => {
+            const isFriendOfMine = !!(friend?.uid && (friends || []).some(f => f.uid === friend.uid));
+            return (
+              <div className="space-y-2">
+                {isFriendOfMine && onOpenChallenge && (
+                  <TouchButton
+                    onClick={() => {
+                      onOpenChallenge(friend);
+                      handleClose();
+                    }}
+                    className="w-full py-3 rounded-full font-semibold transition-all duration-150 text-center"
+                    style={{ backgroundColor: '#FFD60A', color: 'black' }}
+                  >
+                    ⚡ Challenge {friend?.displayName?.split(' ')[0] || friend?.username}
+                  </TouchButton>
+                )}
+                <TouchButton
+                  onClick={handleClose}
+                  className="w-full py-3 rounded-full bg-zinc-800 text-white font-medium transition-all duration-150 text-center"
+                >
+                  Close
+                </TouchButton>
+              </div>
+            );
+          })()}
         </div>
       </div>
 
@@ -2680,6 +2728,13 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           case 'recoverySessions': return v.recoverySessions?.[tr] || 0;
           default: return userData.stats?.calories?.[tr] || 0;
         }
+      } else if (leaderboardSection === 'challenges') {
+        const cs = userData.challengeStats || {};
+        switch (leaderboardCategory) {
+          case 'currentStreak': return cs.currentWinStreak || 0;
+          case 'longestStreak': return cs.longestWinStreak || 0;
+          default: return cs.wins || 0;
+        }
       } else {
         // Streak section
         switch (leaderboardCategory) {
@@ -2706,6 +2761,12 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           case 'cardioSessions': return '🏃 Cardio Sessions';
           case 'recoverySessions': return '🧊 Recovery Sessions';
           default: return '🔥 Calories Burned';
+        }
+      } else if (leaderboardSection === 'challenges') {
+        switch (leaderboardCategory) {
+          case 'currentStreak': return '🔥 Current Win Streak';
+          case 'longestStreak': return '👑 Longest Win Streak';
+          default: return '⚡ Challenge Wins';
         }
       } else {
         switch (leaderboardCategory) {
@@ -2767,6 +2828,8 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                     <option value="year">{isPro ? 'Year' : 'Year 🔒'}</option>
                     <option value="all">{isPro ? 'All Time' : 'All Time 🔒'}</option>
                   </>
+                ) : leaderboardSection === 'challenges' ? (
+                  <option value="all">All Time</option>
                 ) : (
                   <>
                     <option value="year">This Year</option>
@@ -2778,19 +2841,24 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>See how you rank among friends</p>
           </div>
 
-          {/* Section Toggle - Activity vs Streak */}
-          <div className="relative flex p-1 rounded-lg mb-3 max-w-[240px] mx-auto" style={{ backgroundColor: 'rgba(255,255,255,0.05)', touchAction: 'pan-y' }}>
+          {/* Section Toggle - Activity / Streaks / Challenges */}
+          <div className="relative flex p-1 rounded-lg mb-3 max-w-[320px] mx-auto" style={{ backgroundColor: 'rgba(255,255,255,0.05)', touchAction: 'pan-y' }}>
             <div
               className="absolute top-1 bottom-1 rounded-md transition-all duration-300 ease-out"
               style={{
-                backgroundColor: leaderboardSection === 'activity' ? '#00FF94' : '#FFD700',
-                width: 'calc((100% - 8px) / 2)',
-                left: leaderboardSection === 'activity' ? '4px' : 'calc(50% + 0px)'
+                backgroundColor: leaderboardSection === 'activity' ? '#00FF94' : leaderboardSection === 'streak' ? '#FFD700' : '#FFD60A',
+                width: 'calc((100% - 8px) / 3)',
+                left: leaderboardSection === 'activity'
+                  ? '4px'
+                  : leaderboardSection === 'streak'
+                    ? 'calc(4px + (100% - 8px) / 3)'
+                    : 'calc(4px + 2 * (100% - 8px) / 3)'
               }}
             />
             {[
               { key: 'activity', label: '📊 Activity' },
-              { key: 'streak', label: '🔥 Streaks' }
+              { key: 'streak', label: '🔥 Streaks' },
+              { key: 'challenges', label: '⚡ Challenges' }
             ].map((section) => (
               <TouchButton
                 key={section.key}
@@ -2802,11 +2870,15 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                     if (leaderboardTimeRange !== 'week' && leaderboardTimeRange !== 'month' && leaderboardTimeRange !== 'year' && leaderboardTimeRange !== 'all') {
                       setLeaderboardTimeRange('week');
                     }
-                  } else {
+                  } else if (section.key === 'streak') {
                     setLeaderboardCategory('master');
                     if (leaderboardTimeRange === 'week' || leaderboardTimeRange === 'month') {
                       setLeaderboardTimeRange('year');
                     }
+                  } else {
+                    // challenges — only "all time" makes sense
+                    setLeaderboardCategory('wins');
+                    setLeaderboardTimeRange('all');
                   }
                 }}
                 className="flex-1 py-1.5 rounded-md text-xs font-semibold transition-colors duration-200 relative z-10 text-center"
@@ -2827,6 +2899,22 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                 { key: 'strengthSessions', label: '🏋️ Strength', color: '#00FF94' },
                 { key: 'cardioSessions', label: '🏃 Cardio', color: '#FF9500' },
                 { key: 'recoverySessions', label: '🧊 Recovery', color: '#00D1FF' }
+              ].map((cat) => (
+                <ScrollablePill
+                  key={cat.key}
+                  onClick={() => setLeaderboardCategory(cat.key)}
+                  isSelected={leaderboardCategory === cat.key}
+                  color={cat.color}
+                  textColor="black"
+                >
+                  {cat.label}
+                </ScrollablePill>
+              ))
+            ) : leaderboardSection === 'challenges' ? (
+              [
+                { key: 'wins', label: '⚡ Wins', color: '#FFD60A' },
+                { key: 'currentStreak', label: '🔥 Win Streak', color: '#FF9500' },
+                { key: 'longestStreak', label: '👑 Longest', color: '#FFD700' }
               ].map((cat) => (
                 <ScrollablePill
                   key={cat.key}
@@ -2898,7 +2986,9 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                           ? (leaderboardCategory === 'calories' ? 'cal' :
                              leaderboardCategory === 'steps' ? 'steps' :
                              leaderboardCategory === 'workouts' ? 'workouts' : 'sessions')
-                          : 'streak'}
+                          : leaderboardSection === 'challenges'
+                            ? (leaderboardCategory === 'wins' ? 'wins' : 'streak')
+                            : 'streak'}
                       </p>
                     </div>
                   </div>

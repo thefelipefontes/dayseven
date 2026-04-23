@@ -10,7 +10,15 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+build
 *.local
+
+# Xcode build artifacts
+ios/App/App.xcarchive/
+ios/App/*.xcarchive/
+
+# macOS Finder/Capacitor-created duplicate config files (e.g. "config 2.xml")
+ios/App/App/config [0-9]*.xml
 
 # Editor directories and files
 .vscode/*

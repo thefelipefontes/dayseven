@@ -19,6 +19,7 @@ ios/App/*.xcarchive/
 
 # macOS Finder/Capacitor-created duplicate config files (e.g. "config 2.xml")
 ios/App/App/config [0-9]*.xml
+android/app/src/main/res/xml/config [0-9]*.xml
 
 # Editor directories and files
 .vscode/*
@@ -37,3 +38,15 @@ ios/App/App/config [0-9]*.xml
 .env.*.local
 # iOS Firebase config (contains API keys)
 ios/App/App/GoogleService-Info.plist
+ios/App/DaySeven Watch Watch App/GoogleService-Info.plist
+
+# Local dev/build config
+.claude/launch.json
+ios/debug.xcconfig
+ios/App/archive.plist
+
+# User-uploaded media (not source)
+public/feed-photos/
+
+# Orphaned Xcode duplicate (not referenced by project.pbxproj)
+ios/App/Dayseven Watch Widgets 2/

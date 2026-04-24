@@ -27,6 +27,10 @@
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
+		AA0001012F90000100AA0001 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 120994CB2F3E747300DB44E4 /* WidgetKit.framework */; };
+		AA0001022F90000100AA0002 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 120994CD2F3E747300DB44E4 /* SwiftUI.framework */; };
+		AA0001032F90000100AA0003 /* DaySeven iPhone WidgetsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AA0001062F90000100AA0006 /* DaySeven iPhone WidgetsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		AA0002012F90000200AA0001 /* WorkoutActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0002022F90000200AA0002 /* WorkoutActivityAttributes.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -58,6 +62,13 @@
 			remoteGlobalIDString = 123B68302F3BB06F00AA20FB;
 			remoteInfo = "DaySeven Watch Watch App";
 		};
+		AA0001042F90000100AA0004 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA00010A2F90000100AA000A;
+			remoteInfo = "DaySeven iPhone WidgetsExtension";
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -81,6 +92,17 @@
 				123B68512F3BB07000AA20FB /* DaySeven Watch Watch App.app in Embed Watch Content */,
 			);
 			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0001052F90000100AA0005 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				AA0001032F90000100AA0003 /* DaySeven iPhone WidgetsExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -111,6 +133,9 @@
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
+		AA0001062F90000100AA0006 /* DaySeven iPhone WidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "DaySeven iPhone WidgetsExtension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0001112F90000100AA0011 /* DaySevenPhoneWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DaySevenPhoneWidgets.entitlements; sourceTree = "<group>"; };
+		AA0002022F90000200AA0002 /* WorkoutActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutActivityAttributes.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -128,6 +153,13 @@
 			);
 			target = 120994C82F3E747300DB44E4 /* Dayseven Watch WidgetsExtension */;
 		};
+		AA0001072F90000100AA0007 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = AA00010A2F90000100AA000A /* DaySeven iPhone WidgetsExtension */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -135,6 +167,7 @@
 		123B68322F3BB06F00AA20FB /* DaySeven Watch Watch App */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (120994E72F3E75C500DB44E4 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = "DaySeven Watch Watch App"; sourceTree = "<group>"; };
 		123B68402F3BB07000AA20FB /* DaySeven Watch Watch AppTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "DaySeven Watch Watch AppTests"; sourceTree = "<group>"; };
 		123B684A2F3BB07000AA20FB /* DaySeven Watch Watch AppUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "DaySeven Watch Watch AppUITests"; sourceTree = "<group>"; };
+		AA0001082F90000100AA0008 /* DaySeven iPhone Widgets */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (AA0001072F90000100AA0007 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = "DaySeven iPhone Widgets"; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -179,6 +212,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA0001092F90000100AA0009 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA0001022F90000100AA0002 /* SwiftUI.framework in Frameworks */,
+				AA0001012F90000100AA0001 /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -203,6 +245,8 @@
 				123B68402F3BB07000AA20FB /* DaySeven Watch Watch AppTests */,
 				123B684A2F3BB07000AA20FB /* DaySeven Watch Watch AppUITests */,
 				120994CF2F3E747300DB44E4 /* Dayseven Watch Widgets */,
+				AA0001082F90000100AA0008 /* DaySeven iPhone Widgets */,
+				AA0001112F90000100AA0011 /* DaySevenPhoneWidgets.entitlements */,
 				120994CA2F3E747300DB44E4 /* Frameworks */,
 				504EC3051FED79650016851F /* Products */,
 			);
@@ -216,6 +260,7 @@
 				123B683D2F3BB07000AA20FB /* DaySeven Watch Watch AppTests.xctest */,
 				123B68472F3BB07000AA20FB /* DaySeven Watch Watch AppUITests.xctest */,
 				120994C92F3E747300DB44E4 /* Dayseven Watch WidgetsExtension.appex */,
+				AA0001062F90000100AA0006 /* DaySeven iPhone WidgetsExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -224,6 +269,7 @@
 			isa = PBXGroup;
 			children = (
 				120991FF2F3CC38400DB44E4 /* WatchSessionManager.swift */,
+				AA0002022F90000200AA0002 /* WorkoutActivityAttributes.swift */,
 				12FB87012F2C173E006FD735 /* App.entitlements */,
 				12FB87042F2C6794006FD735 /* CustomViewController.swift */,
 				12FB87072F2C7000006FD735 /* HealthKitWriterPlugin.swift */,
@@ -345,11 +391,13 @@
 				504EC3011FED79650016851F /* Frameworks */,
 				504EC3021FED79650016851F /* Resources */,
 				123B68552F3BB07000AA20FB /* Embed Watch Content */,
+				AA0001052F90000100AA0005 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				123B68502F3BB07000AA20FB /* PBXTargetDependency */,
+				AA00010D2F90000100AA000D /* PBXTargetDependency */,
 			);
 			name = App;
 			packageProductDependencies = (
@@ -359,6 +407,28 @@
 			productReference = 504EC3041FED79650016851F /* App.app */;
 			productType = "com.apple.product-type.application";
 		};
+		AA00010A2F90000100AA000A /* DaySeven iPhone WidgetsExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0001102F90000100AA0010 /* Build configuration list for PBXNativeTarget "DaySeven iPhone WidgetsExtension" */;
+			buildPhases = (
+				AA00010C2F90000100AA000C /* Sources */,
+				AA0001092F90000100AA0009 /* Frameworks */,
+				AA00010B2F90000100AA000B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA0001082F90000100AA0008 /* DaySeven iPhone Widgets */,
+			);
+			name = "DaySeven iPhone WidgetsExtension";
+			packageProductDependencies = (
+			);
+			productName = "DaySeven iPhone WidgetsExtension";
+			productReference = AA0001062F90000100AA0006 /* DaySeven iPhone WidgetsExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -367,7 +437,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastSwiftUpdateCheck = 2620;
-				LastUpgradeCheck = 2630;
+				LastUpgradeCheck = 2640;
 				TargetAttributes = {
 					120994C82F3E747300DB44E4 = {
 						CreatedOnToolsVersion = 26.2;
@@ -387,6 +457,9 @@
 						CreatedOnToolsVersion = 9.2;
 						LastSwiftMigration = 1100;
 						ProvisioningStyle = Automatic;
+					};
+					AA00010A2F90000100AA000A = {
+						CreatedOnToolsVersion = 26.2;
 					};
 				};
 			};
@@ -412,6 +485,7 @@
 				123B683C2F3BB07000AA20FB /* DaySeven Watch Watch AppTests */,
 				123B68462F3BB07000AA20FB /* DaySeven Watch Watch AppUITests */,
 				120994C82F3E747300DB44E4 /* Dayseven Watch WidgetsExtension */,
+				AA00010A2F90000100AA000A /* DaySeven iPhone WidgetsExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -460,6 +534,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA00010B2F90000100AA000B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -499,6 +580,14 @@
 				12FB87052F2C6794006FD735 /* CustomViewController.swift in Sources */,
 				120992002F3CC38400DB44E4 /* WatchSessionManager.swift in Sources */,
 				12FB87062F2C7000006FD735 /* HealthKitWriterPlugin.swift in Sources */,
+				AA0002012F90000200AA0001 /* WorkoutActivityAttributes.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA00010C2F90000100AA000C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -524,6 +613,11 @@
 			isa = PBXTargetDependency;
 			target = 123B68302F3BB06F00AA20FB /* DaySeven Watch Watch App */;
 			targetProxy = 123B684F2F3BB07000AA20FB /* PBXContainerItemProxy */;
+		};
+		AA00010D2F90000100AA000D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA00010A2F90000100AA000A /* DaySeven iPhone WidgetsExtension */;
+			targetProxy = AA0001042F90000100AA0004 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -557,7 +651,7 @@
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ENTITLEMENTS = "Dayseven Watch WidgetsExtension.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 1;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Dayseven Watch Widgets/Info.plist";
@@ -570,7 +664,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 1.3.4;
+				MARKETING_VERSION = 1.4;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = "app.dayseven.fitness.watchkitapp.Dayseven-Watch-Widgets";
@@ -598,7 +692,7 @@
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ENTITLEMENTS = "Dayseven Watch WidgetsExtension.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 1;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Dayseven Watch Widgets/Info.plist";
@@ -611,7 +705,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 1.3.4;
+				MARKETING_VERSION = 1.4;
 				MTL_FAST_MATH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = "app.dayseven.fitness.watchkitapp.Dayseven-Watch-Widgets";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -637,7 +731,7 @@
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ENTITLEMENTS = "DaySeven Watch Watch App/DaySeven Watch Watch App.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -655,7 +749,7 @@
 					"@executable_path/Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 1.3.4;
+				MARKETING_VERSION = 1.4;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = app.dayseven.fitness.watchkitapp;
@@ -684,7 +778,7 @@
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ENTITLEMENTS = "DaySeven Watch Watch App/DaySeven Watch Watch App.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -702,7 +796,7 @@
 					"@executable_path/Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 1.3.4;
+				MARKETING_VERSION = 1.4;
 				MTL_FAST_MATH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = app.dayseven.fitness.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -966,7 +1060,7 @@
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = J4CL5KMB23;
 				INFOPLIST_FILE = App/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = dayseven;
@@ -975,7 +1069,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.3.4;
+				MARKETING_VERSION = 1.4;
 				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\"";
 				PRODUCT_BUNDLE_IDENTIFIER = app.dayseven.fitness;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -992,7 +1086,7 @@
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = J4CL5KMB23;
 				INFOPLIST_FILE = App/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = dayseven;
@@ -1001,10 +1095,86 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.3.4;
+				MARKETING_VERSION = 1.4;
 				PRODUCT_BUNDLE_IDENTIFIER = app.dayseven.fitness;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		AA00010E2F90000100AA000E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_ENTITLEMENTS = DaySevenPhoneWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = J4CL5KMB23;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "DaySeven iPhone Widgets/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "DaySeven Widgets";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.4;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = app.dayseven.fitness.iphonewidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		AA00010F2F90000100AA000F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_ENTITLEMENTS = DaySevenPhoneWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = J4CL5KMB23;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "DaySeven iPhone Widgets/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "DaySeven Widgets";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.4;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = app.dayseven.fitness.iphonewidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
@@ -1063,6 +1233,15 @@
 			buildConfigurations = (
 				504EC3171FED79650016851F /* Debug */,
 				504EC3181FED79650016851F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA0001102F90000100AA0010 /* Build configuration list for PBXNativeTarget "DaySeven iPhone WidgetsExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA00010E2F90000100AA000E /* Debug */,
+				AA00010F2F90000100AA000F /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

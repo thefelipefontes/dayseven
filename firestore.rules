@@ -60,5 +60,28 @@ service cloud.firestore {
     match /userTokens/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
+
+    // Friend challenges
+    // Read: any participant. Create: only the challenger. Update: only the friend (accept/decline)
+    // or the challenger (cancel while pending). Win/loss/score writes happen server-side via Admin SDK.
+    match /challenges/{challengeId} {
+      allow read: if request.auth != null
+        && request.auth.uid in resource.data.participantUids;
+
+      allow create: if request.auth != null
+        && request.auth.uid == request.resource.data.challengerUid
+        && request.resource.data.status == 'pending'
+        && request.auth.uid in request.resource.data.participantUids;
+
+      // Clients may transition status (accept/decline/cancel) and set acceptedAt/expiresAt/resolvedAt,
+      // but cannot mutate the challenger's snapshot, the match rule, or score-related fields.
+      allow update: if request.auth != null
+        && request.auth.uid in resource.data.participantUids
+        && request.resource.data.challengerUid == resource.data.challengerUid
+        && request.resource.data.participantUids == resource.data.participantUids
+        && request.resource.data.challengerActivity == resource.data.challengerActivity
+        && request.resource.data.matchRule == resource.data.matchRule
+        && request.resource.data.windowHours == resource.data.windowHours;
+    }
   }
 }

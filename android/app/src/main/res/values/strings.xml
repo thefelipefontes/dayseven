@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Day Seven</string>
+    <string name="title_activity_main">Day Seven</string>
+    <string name="package_name">com.dayseven.app</string>
+    <string name="custom_url_scheme">com.dayseven.app</string>
+</resources>

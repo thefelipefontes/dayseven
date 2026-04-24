@@ -36,7 +36,15 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
   const [challenges, setChallenges] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [segment, setSegment] = useState('active');
+  const [pendingSubSegment, setPendingSubSegment] = useState('received');
   const [showSelfProfile, setShowSelfProfile] = useState(false);
+  const [introDismissed, setIntroDismissed] = useState(() => {
+    try { return localStorage.getItem('dismissedChallengesIntro') === '1'; } catch { return false; }
+  });
+  const dismissIntro = () => {
+    try { localStorage.setItem('dismissedChallengesIntro', '1'); } catch {}
+    setIntroDismissed(true);
+  };
   useTicker(60000);
 
   useEffect(() => {
@@ -102,6 +110,34 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
         <p className="text-sm text-gray-500">Head-to-head bets with your friends.</p>
       </div>
 
+      {/* First-time intro — explains how challenges work. Dismissible; persisted in localStorage. */}
+      {!introDismissed && (
+        <div
+          className="relative mb-4 p-3 pr-10 rounded-xl"
+          style={{ backgroundColor: 'rgba(4,209,255,0.06)', border: '1px solid rgba(4,209,255,0.2)' }}
+        >
+          <div className="flex items-start gap-2">
+            <span className="text-base flex-shrink-0">⚡</span>
+            <div>
+              <p className="text-[13px] font-semibold text-white mb-1">How challenges work</p>
+              <p className="text-[11px] leading-snug" style={{ color: 'rgba(255,255,255,0.65)' }}>
+                After logging an activity, challenge a friend to match it within 24–72 hours. If they accept, they have until the timer runs out to complete the same kind of workout. Everyone who finishes in time wins the challenge.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={dismissIntro}
+            aria-label="Dismiss"
+            className="absolute top-1 right-1 w-8 h-8 flex items-center justify-center"
+            style={{ color: 'rgba(255,255,255,0.4)' }}
+          >
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+              <path d="M3 3L11 11M11 3L3 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+      )}
+
       {/* Profile card */}
       <div
         className="rounded-2xl p-4 mb-4 flex items-center gap-4"
@@ -146,9 +182,21 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
 
       {/* Segmented control */}
       <div
-        className="flex items-center p-1 rounded-xl mb-4"
+        className="relative flex items-center p-1 rounded-xl mb-4"
         style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
       >
+        <div
+          className="absolute top-1 bottom-1 rounded-lg transition-all duration-300 ease-out"
+          style={{
+            backgroundColor: 'rgba(255,255,255,0.08)',
+            width: 'calc((100% - 8px) / 3)',
+            left: segment === 'active'
+              ? '4px'
+              : segment === 'pending'
+                ? 'calc(4px + (100% - 8px) / 3)'
+                : 'calc(4px + 2 * (100% - 8px) / 3)',
+          }}
+        />
         {SEGMENTS.map(s => {
           const selected = segment === s.key;
           const badgeCount =
@@ -159,9 +207,8 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
             <button
               key={s.key}
               onClick={() => onSegment(s.key)}
-              className="flex-1 py-2 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-1.5"
+              className="flex-1 py-2 rounded-lg text-sm font-medium transition-colors duration-200 flex items-center justify-center gap-1.5 relative z-10"
               style={{
-                backgroundColor: selected ? 'rgba(255,255,255,0.08)' : 'transparent',
                 color: selected ? 'white' : 'rgba(255,255,255,0.5)',
               }}
             >
@@ -203,16 +250,57 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
           </div>
         )
       ) : segment === 'pending' ? (
-        pendingCount === 0 ? (
-          <EmptyState
-            title="No pending challenges"
-            subtitle="Invites you send or receive show up here."
-          />
-        ) : (
-          <>
-            {buckets.pendingReceived.length > 0 && (
-              <div className="mb-4">
-                <p className="text-xs uppercase tracking-wider mb-2" style={{ color: 'rgba(255,255,255,0.4)' }}>Received</p>
+        <>
+          {/* Received/Sent sub-toggle */}
+            <div
+              className="relative flex items-center p-1 rounded-lg mb-3 max-w-[240px] mx-auto"
+              style={{ backgroundColor: 'rgba(255,255,255,0.04)' }}
+            >
+              <div
+                className="absolute top-1 bottom-1 rounded-md transition-all duration-300 ease-out"
+                style={{
+                  backgroundColor: 'rgba(255,255,255,0.08)',
+                  width: 'calc((100% - 8px) / 2)',
+                  left: pendingSubSegment === 'received' ? '4px' : 'calc(4px + (100% - 8px) / 2)',
+                }}
+              />
+              {[
+                { key: 'received', label: 'Received', count: buckets.pendingReceived.length },
+                { key: 'sent', label: 'Sent', count: buckets.pendingSent.length },
+              ].map(s => {
+                const selected = pendingSubSegment === s.key;
+                return (
+                  <button
+                    key={s.key}
+                    onClick={() => { triggerHaptic(ImpactStyle.Light); setPendingSubSegment(s.key); }}
+                    className="flex-1 py-1 rounded-md text-[11px] font-medium transition-colors duration-200 flex items-center justify-center gap-1.5 relative z-10"
+                    style={{
+                      color: selected ? 'white' : 'rgba(255,255,255,0.5)',
+                    }}
+                  >
+                    <span>{s.label}</span>
+                    {s.count > 0 && (
+                      <span
+                        className="text-[9px] px-1.5 rounded-full font-semibold"
+                        style={{
+                          backgroundColor: selected ? '#FFD60A' : 'rgba(255,255,255,0.1)',
+                          color: selected ? 'black' : 'rgba(255,255,255,0.6)',
+                          minWidth: 16,
+                          lineHeight: '14px',
+                        }}
+                      >
+                        {s.count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {pendingSubSegment === 'received' ? (
+              buckets.pendingReceived.length === 0 ? (
+                <EmptyState title="No received invites" subtitle="Challenge requests from friends will show up here." />
+              ) : (
                 <div className="space-y-2">
                   {buckets.pendingReceived.map(c => (
                     <ChallengeCard
@@ -224,11 +312,11 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
                     />
                   ))}
                 </div>
-              </div>
-            )}
-            {buckets.pendingSent.length > 0 && (
-              <div>
-                <p className="text-xs uppercase tracking-wider mb-2" style={{ color: 'rgba(255,255,255,0.4)' }}>Sent</p>
+              )
+            ) : (
+              buckets.pendingSent.length === 0 ? (
+                <EmptyState title="No sent invites" subtitle="Challenges you've sent waiting for a friend to accept will show up here." />
+              ) : (
                 <div className="space-y-2">
                   {buckets.pendingSent.map(c => (
                     <ChallengeCard
@@ -239,10 +327,9 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
                     />
                   ))}
                 </div>
-              </div>
+              )
             )}
-          </>
-        )
+        </>
       ) : (
         buckets.completed.length === 0 ? (
           <EmptyState

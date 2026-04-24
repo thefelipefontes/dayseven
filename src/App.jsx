@@ -10,7 +10,7 @@ import { ChallengeFriendModal, ChallengesSection, ChallengeActivityPickerModal }
 import ChallengesTab from './ChallengesTab';
 import SettingsPage from './Settings';
 import ProfilePage from './Profile';
-import { getChallengeCategory, isChallengeable } from './services/challengeService';
+import { isChallengeable } from './services/challengeService';
 import { createUserProfile, getUserProfile, updateUserProfile, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, deleteActivityPhoto, saveUserGoals, getUserGoals, setOnboardingComplete, setTourComplete, savePersonalRecords, getPersonalRecords, saveDailyHealthData, getDailyHealthData, getDailyHealthHistory } from './services/userService';
 import { getFriends, getReactions, getFriendRequests, getComments, addReply, getReplies, deleteReply, addReaction, removeReaction, addComment, cleanupActivitySocialData } from './services/friendService';
 
@@ -14422,9 +14422,9 @@ export default function DaySevenApp() {
     // Skip celebration for edits
     if (isEdit) return;
 
-    // Offer to challenge a friend with this activity (only if user has friends + activity is challengeable)
-    const challengeCategory = getChallengeCategory(newActivity);
-    if (challengeCategory && challengeCategory !== 'warmup' && friends.length > 0) {
+    // Offer to challenge a friend with this activity (only if user has friends + activity is challengeable).
+    // isChallengeable enforces same-day, category, and non-warmup in one check.
+    if (isChallengeable(newActivity) && friends.length > 0) {
       setChallengeModalActivity(newActivity);
     }
 

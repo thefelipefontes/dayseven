@@ -31,12 +31,13 @@ import { FirebaseFirestore } from '@capacitor-firebase/firestore';
 
 const isNative = Capacitor.isNativePlatform();
 
-export const FREE_ACTIVE_CHALLENGE_CAP = 3;
+// Free users can receive challenges but can't send any — sending is a Pro feature.
+// Pro users have no sent cap.
+export const FREE_ACTIVE_CHALLENGE_CAP = 0;
 export const CHALLENGE_WINDOW_HOURS = [24, 48, 72];
 
-// Past activities only stay challengeable for a week — keeps the feature current and
-// stops people from farming friends with old PRs.
-export const CHALLENGE_BACKDATE_DAYS = 7;
+// Challenges are same-day only — activity must be logged for today (user's local date).
+// Keeps the feature kinetic ("I just did this, your turn") and avoids stale invites.
 
 // Distance-bearing cardio types: a "Running" challenge can only be won with a Run, not a Bike.
 // All other activities just need to match category — any duration/distance counts.
@@ -48,18 +49,17 @@ const withTimeout = (promise, ms = 10000) => Promise.race([
 ]);
 
 /**
- * Whether a past activity is still recent enough to challenge a friend with.
- * Uses the activity's logged date (not its creation timestamp) to match user intuition.
+ * Whether an activity is eligible to be sent as a challenge.
+ * Rule: activity must be logged for today (user's local date).
  */
 export function isChallengeable(activity) {
   if (!activity) return false;
   const category = getChallengeCategory(activity);
   if (!category || category === 'warmup') return false;
-  if (!activity.date) return true; // brand-new save without a date yet — assume current
-  const activityDate = new Date(activity.date + 'T12:00:00');
-  if (Number.isNaN(activityDate.getTime())) return false;
-  const cutoff = Date.now() - CHALLENGE_BACKDATE_DAYS * 24 * 60 * 60 * 1000;
-  return activityDate.getTime() >= cutoff;
+  if (!activity.date) return true; // brand-new save without a date yet — assume today
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  return activity.date === todayStr;
 }
 
 /**
@@ -155,7 +155,7 @@ function buildActivitySnapshot(activity) {
  *
  * Returns { challengeId } on success or { error } on failure.
  */
-export async function createChallenge({ challengerUid, challengerName, friendUid, friendUids, activity, windowHours, title }) {
+export async function createChallenge({ challengerUid, challengerName, friendUid, friendUids, activity, windowHours, title, requirePhoto = false }) {
   // Accept both shapes: friendUid (legacy single-friend caller) or friendUids (array).
   const targets = Array.from(new Set((friendUids && friendUids.length ? friendUids : (friendUid ? [friendUid] : []))));
   if (!challengerUid || targets.length === 0 || !activity) {
@@ -199,6 +199,7 @@ export async function createChallenge({ challengerUid, challengerName, friendUid
     challengerActivity: buildActivitySnapshot(activity),
     matchRule,
     windowHours,
+    requirePhoto: !!requirePhoto,
     createdAt: now.toISOString(),
     expiresAt: expiresAt.toISOString(),
     respondByAt: respondByAt.toISOString(),

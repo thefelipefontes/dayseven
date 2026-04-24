@@ -71,7 +71,7 @@ export function ChallengeActivityPickerModal({ isOpen, onClose, activities = [],
     setTimeout(() => onClose(), 250);
   };
 
-  // Filter to challengeable activities (last 7 days, non-warmup, has matchable category)
+  // Filter to challengeable activities (same day only, non-warmup, has matchable category)
   const eligible = (activities || []).filter(isChallengeable);
   // Sort newest first
   eligible.sort((a, b) => {
@@ -100,14 +100,14 @@ export function ChallengeActivityPickerModal({ isOpen, onClose, activities = [],
         </div>
 
         <p className="text-xs text-gray-400 px-4 pb-3">
-          Challenge {friend?.displayName || friend?.username || 'them'} with one of your last 7 days of workouts.
+          Challenge {friend?.displayName || friend?.username || 'them'} with a workout from today.
         </p>
 
         <div className="flex-1 overflow-y-auto pb-8 px-4">
           {eligible.length === 0 ? (
             <div className="py-12 text-center">
-              <p className="text-gray-400 mb-2">No challengeable workouts in the last 7 days.</p>
-              <p className="text-gray-500 text-sm">Log a workout, then come back here.</p>
+              <p className="text-gray-400 mb-2">No workouts logged today.</p>
+              <p className="text-gray-500 text-sm">Challenges are same-day only — log a workout first, then come back here.</p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -160,6 +160,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
   const [windowHours, setWindowHours] = useState(24);
   const [sendMode, setSendMode] = useState('group'); // 'group' or 'individual' — only relevant when 2+ selected
   const [title, setTitle] = useState('');
+  const [requirePhoto, setRequirePhoto] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [isClosing, setIsClosing] = useState(false);
@@ -170,6 +171,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
       setWindowHours(24);
       setSendMode('group');
       setTitle('');
+      setRequirePhoto(false);
       setError(null);
       setIsClosing(false);
     }
@@ -222,6 +224,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
           activity,
           windowHours,
           title,
+          requirePhoto,
         })
       ));
       allFailed = results.every(r => r.error);
@@ -234,6 +237,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
         activity,
         windowHours,
         title,
+        requirePhoto,
       });
       allFailed = !!result.error;
     }
@@ -321,15 +325,44 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
                 ))}
               </div>
 
-              {/* Free-tier cap banner */}
+              {/* Require-photo toggle */}
+              <button
+                onClick={() => { setRequirePhoto(p => !p); triggerHaptic(ImpactStyle.Light); }}
+                className="w-full flex items-center justify-between p-3 rounded-xl mb-5 text-left"
+                style={{
+                  backgroundColor: requirePhoto ? 'rgba(255,214,10,0.08)' : 'rgba(255,255,255,0.04)',
+                  border: `1px solid ${requirePhoto ? 'rgba(255,214,10,0.3)' : 'transparent'}`,
+                }}
+              >
+                <div>
+                  <p className="text-sm font-medium text-white">📸 Require photo proof</p>
+                  <p className="text-[11px] mt-0.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
+                    They must attach a photo to their workout for it to count.
+                  </p>
+                </div>
+                <div
+                  className="w-10 h-6 rounded-full relative transition-colors flex-shrink-0 ml-3"
+                  style={{ backgroundColor: requirePhoto ? '#FFD60A' : 'rgba(255,255,255,0.15)' }}
+                >
+                  <div
+                    className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all"
+                    style={{ left: requirePhoto ? '18px' : '2px' }}
+                  />
+                </div>
+              </button>
+
+              {/* Free-tier gate: sending challenges is Pro-only */}
               {overCap && (
                 <button
                   onClick={onPresentPaywall}
                   className="w-full mb-4 p-3 rounded-xl text-left"
                   style={{ backgroundColor: 'rgba(255,149,0,0.08)', border: '1px solid rgba(255,149,0,0.2)' }}
                 >
-                  <p className="text-sm" style={{ color: '#FF9500' }}>
-                    You have {activeOutgoingCount} active challenges. Upgrade to Pro for unlimited.
+                  <p className="text-sm font-medium" style={{ color: '#FF9500' }}>
+                    Sending challenges is a Pro feature.
+                  </p>
+                  <p className="text-xs mt-0.5" style={{ color: 'rgba(255,149,0,0.8)' }}>
+                    Upgrade to challenge your friends.
                   </p>
                 </button>
               )}
@@ -542,6 +575,11 @@ export function ChallengeCard({ challenge, currentUid, onAccept, onDecline, onCa
           )}
           <p className="text-gray-500 text-xs">{statusLabel}</p>
           <p className="text-white text-sm mt-1">{ruleLabel}</p>
+          {challenge.requirePhoto && (
+            <p className="text-[11px] mt-0.5" style={{ color: '#FFD60A' }}>
+              📸 Photo required
+            </p>
+          )}
           {showCountdown && (
             <p className="text-xs mt-0.5" style={{ color: remaining === 'Expired' ? '#ef4444' : 'rgba(255,255,255,0.5)' }}>
               {remaining}

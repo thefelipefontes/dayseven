@@ -38,6 +38,8 @@ export default function OwnProfileModal({ user, userProfile, userData, onClose }
   const recoveryStreak = userData?.streaks?.recovery || 0;
   const weeksWon = userData?.personalRecords?.weeksWon || 0;
   const challengesWon = userProfile?.challengeStats?.wins || 0;
+  const challengesAccepted = userProfile?.challengeStats?.accepted || 0;
+  const completionRate = challengesAccepted > 0 ? Math.round((challengesWon / challengesAccepted) * 100) : null;
 
   return (
     <>
@@ -103,6 +105,12 @@ export default function OwnProfileModal({ user, userProfile, userData, onClose }
               <span className="text-gray-400">🧘 Recovery Streak</span>
               <span className="text-white font-bold">{recoveryStreak}</span>
             </div>
+            {completionRate !== null && (
+              <div className="flex items-center justify-between rounded-lg p-3" style={{ backgroundColor: 'rgba(255,214,10,0.05)' }}>
+                <span className="text-gray-400">🎯 Challenge Completion</span>
+                <span className="text-white font-bold">{completionRate}%</span>
+              </div>
+            )}
           </div>
 
           <button

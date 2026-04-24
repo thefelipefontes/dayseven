@@ -870,37 +870,8 @@ export default function ProfilePage(props) {
 
           return (
             <div className="mt-3">
-              <p className="text-[12px] leading-snug" style={{ color: '#FF453A' }}>
-                <span className="font-semibold">
-                  {daysLeft === 1 ? 'Last day to keep your streak' : `${daysLeft} days left to keep your streak`}
-                </span>
-                <span style={{ color: 'rgba(255,69,58,0.75)' }}> — {remainingText} remaining</span>
-                {!isPro ? (
-                  <>
-                    {' · '}
-                    <button
-                      onClick={() => onPresentPaywall?.()}
-                      className="font-semibold"
-                      style={{ color: '#FFD60A' }}
-                    >
-                      Upgrade for Shield →
-                    </button>
-                  </>
-                ) : shieldAvailable ? (
-                  <>
-                    {' · '}
-                    <button
-                      onClick={() => setQuickActionModal('shield')}
-                      className="font-semibold"
-                      style={{ color: '#00D1FF' }}
-                    >
-                      🛡️ Use Shield →
-                    </button>
-                  </>
-                ) : null}
-              </p>
-              <p className="text-[11px] mt-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>
-                At risk of breaking your streak? Tap 🛡️ or 🌴 to save it
+              <p className="text-[12px] leading-snug" style={{ color: 'rgba(255,255,255,0.45)' }}>
+                {remainingText} left this week
               </p>
             </div>
           );

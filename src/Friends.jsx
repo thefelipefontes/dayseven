@@ -732,56 +732,59 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
             {/* Stats */}
             <div className="px-6 pb-4">
               {(() => {
-                const h2h = userProfile?.h2hRecords?.[selectedProfile.uid];
-                const wins = h2h?.wins || 0;
-                const losses = h2h?.losses || 0;
-                const isFriendOfMine = isFriend(selectedProfile.uid);
+                const challengeStats = selectedProfile.challengeStats || {};
+                const challengesWon = challengeStats.wins || 0;
+                const accepted = challengeStats.accepted || 0;
+                const completionRate = accepted > 0 ? Math.round((challengesWon / accepted) * 100) : null;
                 return (
-                  <div className="grid grid-cols-3 gap-3 mb-4">
-                    <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                      <p className="text-2xl font-bold text-white">{selectedProfile.masterStreak || 0}</p>
-                      <p className="text-gray-500 text-xs">Hybrid Streak</p>
-                    </div>
-                    <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                      <p className="text-2xl font-bold text-white">{selectedProfile.weeksWon || 0}</p>
-                      <p className="text-gray-500 text-xs">Weeks Won</p>
-                    </div>
-                    {isFriendOfMine ? (
-                      <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.2)' }}>
-                        <p className="text-2xl font-bold" style={{ color: '#FFD60A' }}>{wins}-{losses}</p>
-                        <p className="text-gray-500 text-xs">Head to Head</p>
-                      </div>
-                    ) : (
+                  <>
+                    <div className="grid grid-cols-3 gap-3 mb-4">
                       <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                        <p className="text-2xl font-bold text-white">{selectedProfile.totalWorkouts || 0}</p>
-                        <p className="text-gray-500 text-xs">Workouts</p>
+                        <p className="text-2xl font-bold text-white">{selectedProfile.masterStreak || 0}</p>
+                        <p className="text-gray-500 text-xs">Hybrid Streak</p>
                       </div>
-                    )}
-                  </div>
+                      <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                        <p className="text-2xl font-bold text-white">{selectedProfile.weeksWon || 0}</p>
+                        <p className="text-gray-500 text-xs">Weeks Won</p>
+                      </div>
+                      <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.2)' }}>
+                        <p className="text-2xl font-bold" style={{ color: '#FFD60A' }}>{challengesWon}</p>
+                        <p className="text-gray-500 text-xs">Challenges Won</p>
+                      </div>
+                    </div>
+
+                    {/* Streak breakdown */}
+                    <div className="space-y-2 mb-4">
+                      <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                        <span className="text-gray-400 flex items-center gap-2">
+                          <span style={{ color: '#00FF94' }}>💪</span> Strength Streak
+                        </span>
+                        <span className="text-white font-bold">{selectedProfile.strengthStreak || 0}</span>
+                      </div>
+                      <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                        <span className="text-gray-400 flex items-center gap-2">
+                          <span style={{ color: '#FF9500' }}>🏃</span> Cardio Streak
+                        </span>
+                        <span className="text-white font-bold">{selectedProfile.cardioStreak || 0}</span>
+                      </div>
+                      <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                        <span className="text-gray-400 flex items-center gap-2">
+                          <span style={{ color: '#00D1FF' }}>🧊</span> Recovery Streak
+                        </span>
+                        <span className="text-white font-bold">{selectedProfile.recoveryStreak || 0}</span>
+                      </div>
+                      {completionRate !== null && (
+                        <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: 'rgba(255,214,10,0.05)' }}>
+                          <span className="text-gray-400 flex items-center gap-2">
+                            <span style={{ color: '#FFD60A' }}>🎯</span> Challenge Completion
+                          </span>
+                          <span className="text-white font-bold">{completionRate}%</span>
+                        </div>
+                      )}
+                    </div>
+                  </>
                 );
               })()}
-
-              {/* Streak breakdown */}
-              <div className="space-y-2 mb-4">
-                <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <span className="text-gray-400 flex items-center gap-2">
-                    <span style={{ color: '#00FF94' }}>💪</span> Strength Streak
-                  </span>
-                  <span className="text-white font-bold">{selectedProfile.strengthStreak || 0}</span>
-                </div>
-                <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <span className="text-gray-400 flex items-center gap-2">
-                    <span style={{ color: '#FF9500' }}>🏃</span> Cardio Streak
-                  </span>
-                  <span className="text-white font-bold">{selectedProfile.cardioStreak || 0}</span>
-                </div>
-                <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <span className="text-gray-400 flex items-center gap-2">
-                    <span style={{ color: '#00D1FF' }}>🧊</span> Recovery Streak
-                  </span>
-                  <span className="text-white font-bold">{selectedProfile.recoveryStreak || 0}</span>
-                </div>
-              </div>
             </div>
 
             {/* Action buttons based on relationship */}

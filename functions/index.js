@@ -1657,6 +1657,17 @@ exports.onChallengeUpdated = onDocumentUpdated(
 
     if (newAccepters.length === 0) return;
 
+    // Bump `accepted` counter for each newly-accepting user. This is the denominator
+    // for completion rate (wins / accepted). Only accepters score in this system —
+    // the challenger never gets credit for sending.
+    await Promise.all(newAccepters.map(uid =>
+      db.collection('users').doc(uid).set({
+        challengeStats: { accepted: FieldValue.increment(1) },
+      }, { merge: true }).catch(err =>
+        console.error(`[onChallengeUpdated] failed to bump accepted for ${uid}:`, err)
+      )
+    ));
+
     const prefs = await getUserPreferences(challengerUid);
     if (!prefs.challengeAccepted) return;
 
@@ -1717,6 +1728,7 @@ exports.onUserActivitiesUpdatedForChallenges = onDocumentUpdated(
     if (challengesSnap.empty) return;
 
     const completions = [];
+    const photoNudges = [];
 
     for (const challengeDoc of challengesSnap.docs) {
       const challenge = challengeDoc.data();
@@ -1741,8 +1753,36 @@ exports.onUserActivitiesUpdatedForChallenges = onDocumentUpdated(
       const matched = sorted.find(a => activityMatchesRule(a, challenge.matchRule));
       if (!matched) continue;
 
+      // Photo-required challenges only complete if the matching activity has a photo.
+      // Otherwise, surface a nudge so the accepter knows their workout didn't auto-complete.
+      if (challenge.requirePhoto && !matched.photoURL) {
+        photoNudges.push({ challengeDoc, challenge });
+        continue;
+      }
+
       completions.push({ challengeDoc, challenge, matched });
     }
+
+    // Send photo nudges (outside the completion loop — fire-and-forget notifications)
+    await Promise.all(photoNudges.map(async ({ challengeDoc, challenge }) => {
+      try {
+        const prefs = await getUserPreferences(userId);
+        if (!prefs.challengeCompleted) return;
+        const challengerName = challenge.challengerName || await getUserDisplayName(challenge.challengerUid);
+        await sendNotificationToUser(
+          userId,
+          'Add a photo to finish! 📸',
+          `Your workout matched ${challengerName}'s challenge — add a photo to the activity to lock it in.`,
+          {
+            type: NotificationType.CHALLENGE_COMPLETED,
+            fromUserId: challenge.challengerUid,
+            challengeId: challengeDoc.id,
+          }
+        );
+      } catch (err) {
+        console.error('[onUserActivitiesUpdatedForChallenges] photo nudge failed:', err);
+      }
+    }));
 
     if (completions.length === 0) return;
 
@@ -1796,8 +1836,9 @@ exports.onUserActivitiesUpdatedForChallenges = onDocumentUpdated(
           if (overallNowComplete) {
             update.status = 'completed';
             update.completedAt = nowIso;
-            // winnerUids = challenger + every participant who completed (including this one)
-            const completedUids = [challenge.challengerUid, userId];
+            // winnerUids = every participant who accepted & completed. Challenger never wins —
+            // only accepters score in this system.
+            const completedUids = [userId];
             if (data.participants) {
               for (const [uid, p] of Object.entries(data.participants)) {
                 if (uid === userId) continue;
@@ -1809,44 +1850,17 @@ exports.onUserActivitiesUpdatedForChallenges = onDocumentUpdated(
 
           tx.update(challengeDoc.ref, update);
 
-          // Counter writes: per-completion (1 win to me, 1 win to challenger, h2h +1 each direction)
-          const challengerRef = db.collection('users').doc(challenge.challengerUid);
+          // Only the accepter (this user) scores. Challenger gets no counter bump.
           const friendRef = db.collection('users').doc(userId);
-          const [challengerSnap, friendSnap] = await Promise.all([
-            tx.get(challengerRef),
-            tx.get(friendRef),
-          ]);
-          const challengerStats = (challengerSnap.data()?.challengeStats) || {};
+          const friendSnap = await tx.get(friendRef);
           const friendStats = (friendSnap.data()?.challengeStats) || {};
-
-          const challengerNewStreak = (challengerStats.currentWinStreak || 0) + 1;
           const friendNewStreak = (friendStats.currentWinStreak || 0) + 1;
-
-          tx.set(challengerRef, {
-            challengeStats: {
-              wins: FieldValue.increment(1),
-              currentWinStreak: challengerNewStreak,
-              longestWinStreak: Math.max(challengerStats.longestWinStreak || 0, challengerNewStreak),
-            },
-            h2hRecords: {
-              [userId]: {
-                wins: FieldValue.increment(1),
-                lastChallengeAt: nowIso,
-              },
-            },
-          }, { merge: true });
 
           tx.set(friendRef, {
             challengeStats: {
               wins: FieldValue.increment(1),
               currentWinStreak: friendNewStreak,
               longestWinStreak: Math.max(friendStats.longestWinStreak || 0, friendNewStreak),
-            },
-            h2hRecords: {
-              [challenge.challengerUid]: {
-                wins: FieldValue.increment(1),
-                lastChallengeAt: nowIso,
-              },
             },
           }, { merge: true });
         });
@@ -1862,10 +1876,10 @@ exports.onUserActivitiesUpdatedForChallenges = onDocumentUpdated(
         if (challengerPrefs.challengeCompleted) {
           await sendNotificationToUser(
             challenge.challengerUid,
-            'Challenge Won! 🏆',
+            'Challenge Completed! 🎯',
             isGroup
-              ? `${friendName} crushed your group challenge — +1 for you both.`
-              : `${friendName} matched your challenge — you both win.`,
+              ? `${friendName} crushed your group challenge.`
+              : `${friendName} matched your challenge.`,
             {
               type: NotificationType.CHALLENGE_COMPLETED,
               fromUserId: userId,
@@ -1954,7 +1968,6 @@ exports.expireChallenges = onSchedule(
               if (data.friendUid) {
                 tx.set(db.collection('users').doc(data.friendUid), {
                   challengeStats: { losses: FieldValue.increment(1), currentWinStreak: 0 },
-                  h2hRecords: { [data.challengerUid]: { losses: FieldValue.increment(1), lastChallengeAt: nowIso } },
                 }, { merge: true });
               }
             }
@@ -2001,12 +2014,6 @@ exports.expireChallenges = onSchedule(
           for (const { uid } of lossUpdates) {
             tx.set(db.collection('users').doc(uid), {
               challengeStats: { losses: FieldValue.increment(1), currentWinStreak: 0 },
-              h2hRecords: {
-                [data.challengerUid]: {
-                  losses: FieldValue.increment(1),
-                  lastChallengeAt: nowIso,
-                },
-              },
             }, { merge: true });
           }
         });
@@ -2105,3 +2112,135 @@ exports.challengeExpiringSoon = onSchedule(
     }));
   }
 );
+
+/**
+ * One-time migration: rebuilds `challengeStats` on every user doc from the authoritative
+ * `challenges/*` collection, and strips the legacy `h2hRecords` field. Idempotent — safe
+ * to run multiple times; always derives from challenge docs.
+ *
+ * New scoring model (applied here):
+ *  - Only accepters score. Challenger never gets wins/losses for sending.
+ *  - `accepted` = total challenges this user accepted (denominator for completion rate).
+ *  - `wins` = accepted-and-completed.
+ *  - `losses` = accepted-but-expired.
+ *  - Streaks are recomputed chronologically from the same events.
+ *
+ * Gate: requires a Firebase Auth custom claim `admin: true` on the caller. Set via:
+ *   admin.auth().setCustomUserClaims(<uid>, { admin: true })
+ */
+exports.backfillChallengeStats = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Sign-in required.');
+  }
+  if (!request.auth.token?.admin) {
+    throw new HttpsError('permission-denied', 'Admin only.');
+  }
+
+  console.log('[backfillChallengeStats] started by', request.auth.uid);
+
+  const challengesSnap = await db.collection('challenges').get();
+  console.log(`[backfillChallengeStats] processing ${challengesSnap.size} challenges`);
+
+  // Build per-user resolution events from challenge docs.
+  const perUser = new Map(); // uid -> { accepted, events: [{type, at}] }
+  const recordFor = (uid) => {
+    if (!uid) return null;
+    let rec = perUser.get(uid);
+    if (!rec) { rec = { accepted: 0, events: [] }; perUser.set(uid, rec); }
+    return rec;
+  };
+
+  // A participant counts as having accepted if their final status is one of these.
+  // pending/declined/cancelled mean they never accepted.
+  const ACCEPTED_STATUSES = new Set(['accepted', 'completed', 'expired']);
+
+  for (const doc of challengesSnap.docs) {
+    const c = doc.data();
+
+    // Phase 3: participants map
+    if (c.participants && typeof c.participants === 'object') {
+      for (const [uid, p] of Object.entries(c.participants)) {
+        if (!p || !ACCEPTED_STATUSES.has(p.status)) continue;
+        const rec = recordFor(uid);
+        rec.accepted += 1;
+        if (p.status === 'completed') {
+          const at = p.completedAt || p.resolvedAt || c.completedAt || c.resolvedAt || c.createdAt;
+          rec.events.push({ type: 'win', at: at ? new Date(at) : new Date(0) });
+        } else if (p.status === 'expired') {
+          const at = p.resolvedAt || c.resolvedAt || c.expiresAt;
+          rec.events.push({ type: 'loss', at: at ? new Date(at) : new Date(0) });
+        }
+      }
+      continue;
+    }
+
+    // Legacy 1v1: friendUid + friendStatus
+    if (c.friendUid && ACCEPTED_STATUSES.has(c.friendStatus)) {
+      const rec = recordFor(c.friendUid);
+      rec.accepted += 1;
+      if (c.friendStatus === 'completed') {
+        const at = c.completedAt || c.resolvedAt || c.createdAt;
+        rec.events.push({ type: 'win', at: at ? new Date(at) : new Date(0) });
+      } else if (c.friendStatus === 'expired') {
+        const at = c.resolvedAt || c.expiresAt;
+        rec.events.push({ type: 'loss', at: at ? new Date(at) : new Date(0) });
+      }
+    }
+  }
+
+  // Derive final stats per user (wins, losses, streaks).
+  const finalStats = new Map();
+  for (const [uid, rec] of perUser.entries()) {
+    rec.events.sort((a, b) => a.at.getTime() - b.at.getTime());
+    let wins = 0, losses = 0, currentWinStreak = 0, longestWinStreak = 0;
+    for (const e of rec.events) {
+      if (e.type === 'win') {
+        wins += 1;
+        currentWinStreak += 1;
+        if (currentWinStreak > longestWinStreak) longestWinStreak = currentWinStreak;
+      } else {
+        losses += 1;
+        currentWinStreak = 0;
+      }
+    }
+    finalStats.set(uid, { accepted: rec.accepted, wins, losses, currentWinStreak, longestWinStreak });
+  }
+
+  // Write: one update per user doc. `update()` fully replaces `challengeStats` (no deep
+  // merge) and deletes `h2hRecords`. Users with no challenge history get zeroed stats
+  // so the schema is uniform across the collection.
+  const usersSnap = await db.collection('users').get();
+  const ZERO = { accepted: 0, wins: 0, losses: 0, currentWinStreak: 0, longestWinStreak: 0 };
+  let batch = db.batch();
+  let pending = 0;
+  let written = 0;
+  const MAX_BATCH = 400;
+
+  for (const userDoc of usersSnap.docs) {
+    const stats = finalStats.get(userDoc.id) || ZERO;
+    batch.update(userDoc.ref, {
+      challengeStats: stats,
+      h2hRecords: FieldValue.delete(),
+    });
+    pending += 1;
+    if (pending >= MAX_BATCH) {
+      await batch.commit();
+      written += pending;
+      batch = db.batch();
+      pending = 0;
+    }
+  }
+  if (pending > 0) {
+    await batch.commit();
+    written += pending;
+  }
+
+  const result = {
+    success: true,
+    challengesProcessed: challengesSnap.size,
+    usersUpdated: written,
+    usersWithChallengeHistory: perUser.size,
+  };
+  console.log('[backfillChallengeStats] done:', result);
+  return result;
+});

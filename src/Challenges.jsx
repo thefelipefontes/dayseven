@@ -493,6 +493,26 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
 // Card: one challenge row in the Home section
 // =====================================================================
 
+// Tiny pill shown next to the friend's name on a challenge card so you can tell
+// at a glance whether you're the challenger (Sent) or the recipient (Received).
+function PerspectivePill({ isChallenger }) {
+  const label = isChallenger ? 'Sent' : 'Received';
+  const color = isChallenger ? '#FFD60A' : '#00D1FF';
+  return (
+    <span
+      className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0"
+      style={{
+        color,
+        backgroundColor: `${color}18`,
+        border: `1px solid ${color}40`,
+        lineHeight: '12px',
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
 export function ChallengeCard({ challenge, currentUid, onAccept, onDecline, onCancel }) {
   const [confirmCancel, setConfirmCancel] = useState(false);
   const isChallenger = challenge.challengerUid === currentUid;
@@ -567,11 +587,17 @@ export function ChallengeCard({ challenge, currentUid, onAccept, onDecline, onCa
         <div className="flex-1 min-w-0">
           {challenge.title ? (
             <>
-              <p className="text-white text-sm font-semibold truncate">{challenge.title}</p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-white text-sm font-semibold truncate">{challenge.title}</p>
+                <PerspectivePill isChallenger={isChallenger} />
+              </div>
               <p className="text-gray-500 text-xs truncate">{title}</p>
             </>
           ) : (
-            <p className="text-white text-sm font-medium truncate">{title}</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-white text-sm font-medium truncate">{title}</p>
+              <PerspectivePill isChallenger={isChallenger} />
+            </div>
           )}
           <p className="text-gray-500 text-xs">{statusLabel}</p>
           <p className="text-white text-sm mt-1">{ruleLabel}</p>

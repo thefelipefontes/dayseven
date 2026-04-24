@@ -36,7 +36,9 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
   const [challenges, setChallenges] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [segment, setSegment] = useState('active');
-  const [pendingSubSegment, setPendingSubSegment] = useState('received');
+  // Shared across all three main segments — perspective (received/sent) is "sticky"
+  // so switching from Pending→Active keeps you on the same side you were looking at.
+  const [subSegment, setSubSegment] = useState('received');
   const [showSelfProfile, setShowSelfProfile] = useState(false);
   const [introDismissed, setIntroDismissed] = useState(() => {
     try { return localStorage.getItem('dismissedChallengesIntro') === '1'; } catch { return false; }
@@ -68,6 +70,15 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
   })), [challenges, friendsByUid]);
 
   const buckets = useMemo(() => bucketChallenges(enriched, user?.uid), [enriched, user?.uid]);
+
+  // Split the flat active/completed buckets into received (I'm an accepter) vs sent (I'm the challenger).
+  const splits = useMemo(() => {
+    const activeReceived = buckets.active.filter(c => c.challengerUid !== user?.uid);
+    const activeSent = buckets.active.filter(c => c.challengerUid === user?.uid);
+    const completedReceived = buckets.completed.filter(c => c.challengerUid !== user?.uid);
+    const completedSent = buckets.completed.filter(c => c.challengerUid === user?.uid);
+    return { activeReceived, activeSent, completedReceived, completedSent };
+  }, [buckets.active, buckets.completed, user?.uid]);
 
   // Mirror the home section's badge/cap accounting so counts stay in sync when the user
   // lands here first without mounting HomeTab.
@@ -236,114 +247,80 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
         <div className="py-10 flex justify-center">
           <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
         </div>
-      ) : segment === 'active' ? (
-        buckets.active.length === 0 ? (
-          <EmptyState
-            title="No active challenges"
-            subtitle="Challenge a friend from the friends feed or after logging an activity."
-          />
-        ) : (
-          <div className="space-y-2">
-            {buckets.active.map(c => (
-              <ChallengeCard key={c.id} challenge={c} currentUid={user.uid} />
-            ))}
-          </div>
-        )
-      ) : segment === 'pending' ? (
-        <>
-          {/* Received/Sent sub-toggle */}
-            <div
-              className="relative flex items-center p-1 rounded-lg mb-3 max-w-[240px] mx-auto"
-              style={{ backgroundColor: 'rgba(255,255,255,0.04)' }}
-            >
-              <div
-                className="absolute top-1 bottom-1 rounded-md transition-all duration-300 ease-out"
-                style={{
-                  backgroundColor: 'rgba(255,255,255,0.08)',
-                  width: 'calc((100% - 8px) / 2)',
-                  left: pendingSubSegment === 'received' ? '4px' : 'calc(4px + (100% - 8px) / 2)',
-                }}
-              />
-              {[
-                { key: 'received', label: 'Received', count: buckets.pendingReceived.length },
-                { key: 'sent', label: 'Sent', count: buckets.pendingSent.length },
-              ].map(s => {
-                const selected = pendingSubSegment === s.key;
-                return (
-                  <button
-                    key={s.key}
-                    onClick={() => { triggerHaptic(ImpactStyle.Light); setPendingSubSegment(s.key); }}
-                    className="flex-1 py-1 rounded-md text-[11px] font-medium transition-colors duration-200 flex items-center justify-center gap-1.5 relative z-10"
-                    style={{
-                      color: selected ? 'white' : 'rgba(255,255,255,0.5)',
-                    }}
-                  >
-                    <span>{s.label}</span>
-                    {s.count > 0 && (
-                      <span
-                        className="text-[9px] px-1.5 rounded-full font-semibold"
-                        style={{
-                          backgroundColor: selected ? '#FFD60A' : 'rgba(255,255,255,0.1)',
-                          color: selected ? 'black' : 'rgba(255,255,255,0.6)',
-                          minWidth: 16,
-                          lineHeight: '14px',
-                        }}
-                      >
-                        {s.count}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+      ) : (() => {
+        // Pick the list + empty copy for the current (segment, subSegment) combo.
+        // Only pending.received gets accept/decline; only pending.sent gets cancel.
+        const views = {
+          'active|received': {
+            list: splits.activeReceived,
+            emptyTitle: "Nothing for you to finish",
+            emptySubtitle: "Challenges you've accepted and still need to complete will show up here.",
+          },
+          'active|sent': {
+            list: splits.activeSent,
+            emptyTitle: "Nothing waiting on friends",
+            emptySubtitle: "Challenges you've sent that friends accepted will show up here until they finish.",
+          },
+          'pending|received': {
+            list: buckets.pendingReceived,
+            emptyTitle: "No received invites",
+            emptySubtitle: "Challenge requests from friends will show up here.",
+            onAccept: handleAccept,
+            onDecline: handleDecline,
+          },
+          'pending|sent': {
+            list: buckets.pendingSent,
+            emptyTitle: "No sent invites",
+            emptySubtitle: "Challenges you've sent waiting for a friend to accept will show up here.",
+            onCancel: handleCancel,
+          },
+          'completed|received': {
+            list: splits.completedReceived,
+            emptyTitle: "No completed challenges yet",
+            emptySubtitle: "Challenges you've accepted and finished will land here.",
+          },
+          'completed|sent': {
+            list: splits.completedSent,
+            emptyTitle: "No completed challenges yet",
+            emptySubtitle: "Challenges you sent that friends finished will land here.",
+          },
+        };
 
-            {pendingSubSegment === 'received' ? (
-              buckets.pendingReceived.length === 0 ? (
-                <EmptyState title="No received invites" subtitle="Challenge requests from friends will show up here." />
-              ) : (
-                <div className="space-y-2">
-                  {buckets.pendingReceived.map(c => (
-                    <ChallengeCard
-                      key={c.id}
-                      challenge={c}
-                      currentUid={user.uid}
-                      onAccept={handleAccept}
-                      onDecline={handleDecline}
-                    />
-                  ))}
-                </div>
-              )
+        const subCounts = {
+          active: { received: splits.activeReceived.length, sent: splits.activeSent.length },
+          pending: { received: buckets.pendingReceived.length, sent: buckets.pendingSent.length },
+          completed: { received: splits.completedReceived.length, sent: splits.completedSent.length },
+        }[segment];
+
+        const view = views[`${segment}|${subSegment}`];
+
+        return (
+          <>
+            <SubToggle
+              value={subSegment}
+              onChange={(k) => { triggerHaptic(ImpactStyle.Light); setSubSegment(k); }}
+              receivedCount={subCounts.received}
+              sentCount={subCounts.sent}
+            />
+            {view.list.length === 0 ? (
+              <EmptyState title={view.emptyTitle} subtitle={view.emptySubtitle} />
             ) : (
-              buckets.pendingSent.length === 0 ? (
-                <EmptyState title="No sent invites" subtitle="Challenges you've sent waiting for a friend to accept will show up here." />
-              ) : (
-                <div className="space-y-2">
-                  {buckets.pendingSent.map(c => (
-                    <ChallengeCard
-                      key={c.id}
-                      challenge={c}
-                      currentUid={user.uid}
-                      onCancel={handleCancel}
-                    />
-                  ))}
-                </div>
-              )
+              <div className="space-y-2">
+                {view.list.map(c => (
+                  <ChallengeCard
+                    key={c.id}
+                    challenge={c}
+                    currentUid={user.uid}
+                    onAccept={view.onAccept}
+                    onDecline={view.onDecline}
+                    onCancel={view.onCancel}
+                  />
+                ))}
+              </div>
             )}
-        </>
-      ) : (
-        buckets.completed.length === 0 ? (
-          <EmptyState
-            title="No completed challenges yet"
-            subtitle="Finished challenges will land here."
-          />
-        ) : (
-          <div className="space-y-2">
-            {buckets.completed.map(c => (
-              <ChallengeCard key={c.id} challenge={c} currentUid={user.uid} />
-            ))}
-          </div>
-        )
-      )}
+          </>
+        );
+      })()}
 
       {showSelfProfile && (
         <OwnProfileModal
@@ -372,6 +349,54 @@ function EmptyState({ title, subtitle }) {
     <div className="py-12 text-center">
       <p className="text-white text-sm font-medium">{title}</p>
       <p className="text-xs mt-1 px-8" style={{ color: 'rgba(255,255,255,0.5)' }}>{subtitle}</p>
+    </div>
+  );
+}
+
+function SubToggle({ value, onChange, receivedCount, sentCount }) {
+  const items = [
+    { key: 'received', label: 'Received', count: receivedCount },
+    { key: 'sent', label: 'Sent', count: sentCount },
+  ];
+  return (
+    <div
+      className="relative flex items-center p-1 rounded-lg mb-3 max-w-[240px] mx-auto"
+      style={{ backgroundColor: 'rgba(255,255,255,0.04)' }}
+    >
+      <div
+        className="absolute top-1 bottom-1 rounded-md transition-all duration-300 ease-out"
+        style={{
+          backgroundColor: 'rgba(255,255,255,0.08)',
+          width: 'calc((100% - 8px) / 2)',
+          left: value === 'received' ? '4px' : 'calc(4px + (100% - 8px) / 2)',
+        }}
+      />
+      {items.map(s => {
+        const selected = value === s.key;
+        return (
+          <button
+            key={s.key}
+            onClick={() => onChange(s.key)}
+            className="flex-1 py-1 rounded-md text-[11px] font-medium transition-colors duration-200 flex items-center justify-center gap-1.5 relative z-10"
+            style={{ color: selected ? 'white' : 'rgba(255,255,255,0.5)' }}
+          >
+            <span>{s.label}</span>
+            {s.count > 0 && (
+              <span
+                className="text-[9px] px-1.5 rounded-full font-semibold"
+                style={{
+                  backgroundColor: selected ? '#FFD60A' : 'rgba(255,255,255,0.1)',
+                  color: selected ? 'black' : 'rgba(255,255,255,0.6)',
+                  minWidth: 16,
+                  lineHeight: '14px',
+                }}
+              >
+                {s.count}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }

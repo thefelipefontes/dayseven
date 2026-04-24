@@ -1046,11 +1046,15 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
   const [isExpanded, setIsExpanded] = useState(false);
   const [liveMetrics, setLiveMetrics] = useState({ lastHr: 0, calories: 0 });
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  // Watch-workout pause sync: source of truth is the watch, but we keep these
+  // in local state so the timer tick can compute elapsed without a round-trip.
+  const pauseStateRef = useRef({ isPaused: false, accumulatedPauseMs: 0 });
 
   // Reset timer state when a new workout starts (prevents stale elapsed from previous workout)
   useEffect(() => {
     setElapsed(0);
     setFrozenElapsed(null);
+    pauseStateRef.current = { isPaused: false, accumulatedPauseMs: 0 };
   }, [workout?.startTime]);
 
   // Collapse and freeze timer when finishing
@@ -1063,16 +1067,23 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
     }
   }, [isFinishing]);
 
-  // Update elapsed time every second (phone workouts only)
-  // Watch workouts get elapsed time directly from the 1s poll below
+  // Update elapsed time every second using wall-clock.
+  // For watch workouts we subtract the pause time synced from the 1s poll,
+  // so the on-screen timer stays smooth (like the Live Activity) instead of
+  // lagging behind each WCSession round-trip.
   useEffect(() => {
     if (!workout?.startTime || isFinishing) return;
-    if (workout.source === 'watch') return;
 
     const updateElapsed = () => {
       const start = new Date(workout.startTime).getTime();
       const now = Date.now();
-      setElapsed(Math.floor((now - start) / 1000));
+      if (workout.source === 'watch') {
+        const { isPaused, accumulatedPauseMs } = pauseStateRef.current;
+        if (isPaused) return; // freeze — poll will refresh pause time
+        setElapsed(Math.max(0, Math.floor((now - start - accumulatedPauseMs) / 1000)));
+      } else {
+        setElapsed(Math.floor((now - start) / 1000));
+      }
     };
     updateElapsed();
     const interval = setInterval(updateElapsed, 1000);
@@ -1096,11 +1107,24 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
               onResumedFromWatch();
             }
 
-            // Update Live Activity pause state when it changes
             const currentPaused = metrics.isPaused || false;
+            // Sync pause state for the local timer tick — the tick computes
+            // elapsed from wall-clock so the phone timer matches the Live
+            // Activity's native ticking instead of jumping on poll boundaries.
+            const pauseSeconds = typeof metrics.accumulatedPauseSeconds === 'number'
+              ? metrics.accumulatedPauseSeconds
+              : 0;
+            pauseStateRef.current = {
+              isPaused: currentPaused,
+              accumulatedPauseMs: pauseSeconds * 1000,
+            };
+            // Update Live Activity when pause state flips. Pass the current
+            // accumulatedPauseTime so the native ticking timer offsets by the
+            // correct amount after resume — otherwise it defaults to 0 and the
+            // Live Activity timer jumps to wall-clock (drifting from the watch).
             if (lastPausedState !== currentPaused) {
               lastPausedState = currentPaused;
-              updateLiveActivityState(currentPaused);
+              updateLiveActivityState(currentPaused, pauseSeconds);
             }
 
             setLiveMetrics({
@@ -1111,8 +1135,9 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
               isPaused: currentPaused,
               currentZone: metrics.currentZone || '',
             });
-            // Use watch elapsed time directly — 1:1 mirror
-            if (metrics.elapsedSeconds !== undefined) {
+            // While paused, mirror the watch's frozen elapsed so the display
+            // reflects the exact pause moment (tick is frozen on this branch).
+            if (currentPaused && metrics.elapsedSeconds !== undefined) {
               setElapsed(metrics.elapsedSeconds);
             }
           }

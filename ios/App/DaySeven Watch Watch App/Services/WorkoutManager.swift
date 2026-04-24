@@ -87,6 +87,17 @@ class WorkoutManager: NSObject, ObservableObject {
     private var accumulatedPauseTime: TimeInterval = 0
     private var lastPauseDate: Date?
 
+    /// Total paused time so far, including any in-progress pause. Used so the phone
+    /// app can compute elapsed locally (now - startDate - effectivePauseTime) and
+    /// stay smooth like the Live Activity instead of lagging behind WCSession polls.
+    var effectivePauseTime: TimeInterval {
+        var total = accumulatedPauseTime
+        if let pauseStart = lastPauseDate {
+            total += Date().timeIntervalSince(pauseStart)
+        }
+        return total
+    }
+
     // Route tracking
     private var locationManager: CLLocationManager?
     private var routeBuilder: HKWorkoutRouteBuilder?
@@ -230,9 +241,23 @@ class WorkoutManager: NSObject, ObservableObject {
         // Immediately block UI interaction and stop the timer
         isEnding = true
         stopTimer()
-        isPaused = false
 
         let endDate = Date()
+
+        // If user ended while paused, close out the in-progress pause interval
+        // so it's included in accumulatedPauseTime below, and resume the HealthKit
+        // session before ending it. Without the resume, session.end() on a paused
+        // session can leave the workout in a state where finishRoute(with:) fails
+        // and the GPS route is lost.
+        let wasPaused = isPaused
+        if let pauseStart = lastPauseDate {
+            accumulatedPauseTime += endDate.timeIntervalSince(pauseStart)
+            lastPauseDate = nil
+        }
+        if wasPaused {
+            session.resume()
+        }
+        isPaused = false
 
         // Capture all metric values NOW, before the slow HealthKit async calls,
         // so they can't be lost if something goes wrong.
@@ -240,8 +265,10 @@ class WorkoutManager: NSObject, ObservableObject {
         let capturedAvgHr = heartRateSamples.isEmpty ? 0 : Int(averageHeartRate)
         let capturedMaxHr = Int(maxHeartRate)
         let capturedDistance = distance / 1609.34
-        let totalSeconds = endDate.timeIntervalSince(startDate)
-        let totalDuration = Int(totalSeconds / 60)
+        // Active time only — exclude paused intervals so pace and total time
+        // reflect actual effort, not wall-clock time.
+        let activeSeconds = max(0, endDate.timeIntervalSince(startDate) - accumulatedPauseTime)
+        let totalDuration = Int(activeSeconds / 60)
 
         session.end()
 
@@ -270,7 +297,7 @@ class WorkoutManager: NSObject, ObservableObject {
             workoutUUID: workout?.uuid.uuidString ?? UUID().uuidString,
             startDate: startDate,
             duration: max(totalDuration, 1),
-            durationSeconds: totalSeconds,
+            durationSeconds: activeSeconds,
             calories: capturedCalories,
             avgHr: capturedAvgHr,
             maxHr: capturedMaxHr,
@@ -524,6 +551,11 @@ extension WorkoutManager: CLLocationManagerDelegate {
         guard !filtered.isEmpty else { return }
 
         Task { @MainActor in
+            // Skip insertion while paused. Otherwise a dense cluster of stationary
+            // points lands inside the workout's paused interval, which makes
+            // finishRoute(with:) reject the whole route — users report losing
+            // the entire route polyline after any pause/resume cycle.
+            guard !self.isPaused else { return }
             do {
                 try await self.routeBuilder?.insertRouteData(filtered)
             } catch {

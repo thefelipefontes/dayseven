@@ -535,6 +535,7 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
                 "isActive": true,
                 "isPaused": wm.isPaused,
                 "elapsedSeconds": Int(wm.elapsedTime),
+                "accumulatedPauseSeconds": wm.effectivePauseTime,
                 "heartRate": Int(wm.heartRate),
                 "avgHeartRate": Int(wm.averageHeartRate),
                 "maxHeartRate": Int(wm.maxHeartRate),

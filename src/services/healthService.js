@@ -1148,11 +1148,14 @@ export async function checkActiveLiveActivity() {
   }
 }
 
-// Update Live Activity state (pause/resume)
-export async function updateLiveActivityState(isPaused) {
+// Update Live Activity state (pause/resume).
+// accumulatedPauseTime (seconds) MUST be passed when resuming so the Live
+// Activity's ticking timer offsets correctly — otherwise it defaults to 0
+// native-side and the timer jumps to wall-clock (ignoring the pause).
+export async function updateLiveActivityState(isPaused, accumulatedPauseTime = 0) {
   if (!Capacitor.isNativePlatform()) return;
   try {
-    await HealthKitWriter.updateLiveActivityState({ isPaused });
+    await HealthKitWriter.updateLiveActivityState({ isPaused, accumulatedPauseTime });
   } catch (e) {
     // Non-critical
   }

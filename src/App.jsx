@@ -11293,6 +11293,10 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
 
           const shieldAvailable = isPro && !isShielded && !onCooldown;
 
+          // Hide on cooldown — purely informational, not actionable from home.
+          // Status is visible on the Profile page and full management in Settings.
+          if (isPro && onCooldown && !isShielded) return null;
+
           if (isShielded) {
             return (
               <div className="p-3 rounded-xl mb-3 flex items-center gap-3" style={{ backgroundColor: 'rgba(0,255,148,0.08)', border: '1px solid rgba(0,255,148,0.2)' }}>
@@ -13206,6 +13210,7 @@ export default function DaySevenApp() {
           // Load user's personal records, then recalculate from activities to ensure accuracy
           const recordsResult = await getPersonalRecords(user.uid);
           const userRecords = recordsResult?.personalRecords ?? recordsResult;
+          const userWeeksWon = recordsResult?.weeksWon || 0;
 
           // Recalculate records from activities and health history to ensure they're accurate
           // This fixes any corruption from race conditions or data issues
@@ -13214,7 +13219,7 @@ export default function DaySevenApp() {
 
             setUserData(prev => ({
               ...prev,
-              personalRecords: { ...prev.personalRecords, ...recalculatedRecords }
+              personalRecords: { ...prev.personalRecords, ...recalculatedRecords, weeksWon: userWeeksWon }
             }));
 
             // Save recalculated records if they differ from stored records
@@ -13226,7 +13231,7 @@ export default function DaySevenApp() {
             if (userRecords) {
               setUserData(prev => ({
                 ...prev,
-                personalRecords: { ...prev.personalRecords, ...userRecords }
+                personalRecords: { ...prev.personalRecords, ...userRecords, weeksWon: userWeeksWon }
               }));
             }
           }
@@ -15561,7 +15566,10 @@ export default function DaySevenApp() {
                 <ChallengesTab
                   user={user}
                   userProfile={userProfile}
+                  userData={userData}
+                  activities={activities}
                   friends={friends}
+                  isPro={isPro}
                   onChallengeCountsChange={({ activeOutgoingCount }) => setActiveOutgoingChallengeCount(activeOutgoingCount)}
                 />
               )}
@@ -15637,6 +15645,62 @@ export default function DaySevenApp() {
                   friends={friends}
                   onChallengeActivity={(activity) => setChallengeModalActivity(activity)}
                   historyLatestActivityRef={historyLatestActivityRef}
+                  onUseStreakShield={(weekKey) => {
+                    const newShield = {
+                      lastUsedWeek: weekKey,
+                      shieldedWeeks: [...(userData.streakShield?.shieldedWeeks || []), weekKey]
+                    };
+                    setUserData(prev => {
+                      const updated = { ...prev, streakShield: newShield };
+                      const goals = prev.goals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2 };
+                      const prevRef = userDataRef.current;
+                      userDataRef.current = updated;
+                      const recalculated = recalculateStreaksFromHistory(activities, goals);
+                      userDataRef.current = prevRef;
+                      if (recalculated) {
+                        updated.streaks = { ...prev.streaks, ...recalculated };
+                        if (user?.uid) {
+                          updateUserProfile(user.uid, { streakShield: newShield, streaks: updated.streaks }).catch(() => {});
+                        }
+                      } else if (user?.uid) {
+                        updateUserProfile(user.uid, { streakShield: newShield }).catch(() => {});
+                      }
+                      return updated;
+                    });
+                  }}
+                  onToggleVacationMode={() => {
+                    const vm = userData.vacationMode || {};
+                    if (vm.isActive) {
+                      const updated = { ...vm, isActive: false };
+                      setUserData(prev => ({ ...prev, vacationMode: updated }));
+                      if (user?.uid) {
+                        updateUserProfile(user.uid, { vacationMode: updated }).catch(() => {});
+                      }
+                    } else {
+                      const currentYear = new Date().getFullYear();
+                      const used = vm.activationYear === currentYear ? (vm.activationsThisYear || 0) : 0;
+                      if (used >= 3) {
+                        setToastMessage('You\'ve used all 3 vacation activations this year');
+                        setToastType('success');
+                        setShowToast(true);
+                        return;
+                      }
+                      const today = new Date();
+                      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+                      const currentWeek = getCurrentWeekKey();
+                      const updated = {
+                        isActive: true,
+                        startDate: todayStr,
+                        activationsThisYear: used + 1,
+                        activationYear: currentYear,
+                        vacationWeeks: [...(vm.vacationWeeks || []), ...(vm.vacationWeeks?.includes(currentWeek) ? [] : [currentWeek])]
+                      };
+                      setUserData(prev => ({ ...prev, vacationMode: updated }));
+                      if (user?.uid) {
+                        updateUserProfile(user.uid, { vacationMode: updated }).catch(() => {});
+                      }
+                    }
+                  }}
                 />
               )}
             </>
@@ -15644,6 +15708,19 @@ export default function DaySevenApp() {
         </div>
         {showSettings && (
           <div className="fixed inset-0 z-50" style={{ backgroundColor: '#000' }}>
+            {/* Status bar blur — same treatment as the regular non-home tabs underneath. */}
+            <div
+              className="fixed top-0 left-0 right-0 pointer-events-none"
+              style={{
+                height: 'calc(env(safe-area-inset-top, 0px) + 30px)',
+                zIndex: 60,
+                background: 'linear-gradient(to bottom, rgba(10, 10, 10, 1) 0%, rgba(10, 10, 10, 1) 50%, rgba(10, 10, 10, 0.9) 70%, rgba(10, 10, 10, 0.6) 85%, transparent 100%)',
+                maskImage: 'linear-gradient(to bottom, black 0%, black 50%, rgba(0,0,0,0.7) 70%, rgba(0,0,0,0.3) 85%, transparent 100%)',
+                WebkitMaskImage: 'linear-gradient(to bottom, black 0%, black 50%, rgba(0,0,0,0.7) 70%, rgba(0,0,0,0.3) 85%, transparent 100%)',
+                backdropFilter: 'blur(20px)',
+                WebkitBackdropFilter: 'blur(20px)',
+              }}
+            />
             <SettingsPage
               onClose={() => setShowSettings(false)}
               user={user}

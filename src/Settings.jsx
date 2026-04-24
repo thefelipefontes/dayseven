@@ -571,8 +571,12 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                     {userProfile?.displayName?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || '?'}
                   </span>
                 )}
-                {/* Camera overlay */}
-                <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                {/* Camera overlay — only show during upload. iOS WebKit's sticky :hover
+                    after a tap-then-navigate from Profile was making this appear unprompted. */}
+                <div
+                  className="absolute inset-0 bg-black/50 flex items-center justify-center transition-opacity"
+                  style={{ opacity: isUploadingPhoto ? 1 : 0, pointerEvents: 'none' }}
+                >
                   {isUploadingPhoto ? (
                     <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
                   ) : (

@@ -2546,8 +2546,8 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                   </div>
                 ) : (
                   <div className="bg-zinc-800 rounded-xl p-3 text-center">
-                    <p className="text-2xl font-bold text-white">{friend?.totalWorkouts || 0}</p>
-                    <p className="text-gray-500 text-xs">Workouts</p>
+                    <p className="text-2xl font-bold text-white">{friend?.challengeStats?.wins || 0}</p>
+                    <p className="text-gray-500 text-xs">Challenges Won</p>
                   </div>
                 )}
               </div>

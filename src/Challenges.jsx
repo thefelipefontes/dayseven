@@ -664,10 +664,8 @@ export function ChallengesSection({ user, friends = [], onChallengeCountsChange 
     await cancelChallenge(c.id, user.uid);
   };
 
-  const totalVisible = buckets.pendingReceived.length + buckets.active.length + buckets.pendingSent.length;
-
-  // Don't render anything if no challenges and not loading — keeps the home tab clean for new users
-  if (!isLoading && totalVisible === 0) return null;
+  // Home only surfaces active challenges — pending/completed live on the Challenges tab.
+  if (!isLoading && buckets.active.length === 0) return null;
 
   return (
     <div className="px-4 mb-4">
@@ -676,14 +674,9 @@ export function ChallengesSection({ user, friends = [], onChallengeCountsChange 
           <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="#04d1ff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
           </svg>
-          <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Challenges</span>
-          {buckets.pendingReceived.length > 0 && (
-            <span className="text-xs px-1.5 py-0.5 rounded-full" style={{ backgroundColor: '#FFD60A', color: 'black' }}>
-              {buckets.pendingReceived.length}
-            </span>
-          )}
+          <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Active Challenges</span>
         </div>
-        <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Active bets with your friends</p>
+        <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Bets in progress with your friends</p>
       </div>
 
       {isLoading ? (
@@ -692,16 +685,8 @@ export function ChallengesSection({ user, friends = [], onChallengeCountsChange 
         </div>
       ) : (
         <div className="space-y-2">
-          {buckets.pendingReceived.map(c => (
-            <ChallengeCard key={c.id} challenge={c} currentUid={user.uid}
-              onAccept={handleAccept} onDecline={handleDecline} />
-          ))}
           {buckets.active.map(c => (
             <ChallengeCard key={c.id} challenge={c} currentUid={user.uid} />
-          ))}
-          {buckets.pendingSent.map(c => (
-            <ChallengeCard key={c.id} challenge={c} currentUid={user.uid}
-              onCancel={handleCancel} />
           ))}
         </div>
       )}

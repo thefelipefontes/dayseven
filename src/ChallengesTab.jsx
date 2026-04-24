@@ -9,6 +9,7 @@ import {
   countActiveOutgoing,
 } from './services/challengeService';
 import { ChallengeCard } from './Challenges';
+import OwnProfileModal from './components/OwnProfileModal';
 
 const triggerHaptic = async (style = ImpactStyle.Light) => {
   try { await Haptics.impact({ style }); } catch {
@@ -31,10 +32,11 @@ const SEGMENTS = [
   { key: 'completed', label: 'Completed' },
 ];
 
-export default function ChallengesTab({ user, userProfile, friends = [], onChallengeCountsChange }) {
+export default function ChallengesTab({ user, userProfile, userData, activities = [], friends = [], isPro = false, onChallengeCountsChange }) {
   const [challenges, setChallenges] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [segment, setSegment] = useState('active');
+  const [showSelfProfile, setShowSelfProfile] = useState(false);
   useTicker(60000);
 
   useEffect(() => {
@@ -93,7 +95,7 @@ export default function ChallengesTab({ user, userProfile, friends = [], onChall
   };
 
   return (
-    <div className="px-4 pb-32">
+    <div className="px-4 pb-32 min-h-screen">
       {/* Header */}
       <div className="pt-2 pb-4">
         <h1 className="text-xl font-bold text-white">Challenges</h1>
@@ -105,8 +107,10 @@ export default function ChallengesTab({ user, userProfile, friends = [], onChall
         className="rounded-2xl p-4 mb-4 flex items-center gap-4"
         style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}
       >
-        <div
-          className="w-16 h-16 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0"
+        <button
+          onClick={() => { triggerHaptic(ImpactStyle.Light); setShowSelfProfile(true); }}
+          aria-label="Open your profile"
+          className="w-16 h-16 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0 active:scale-95 transition-transform"
           style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}
         >
           {userProfile?.photoURL ? (
@@ -114,10 +118,23 @@ export default function ChallengesTab({ user, userProfile, friends = [], onChall
           ) : (
             <span className="text-white text-xl font-semibold">{initial}</span>
           )}
-        </div>
+        </button>
         <div className="flex-1 min-w-0">
-          <p className="text-white text-base font-semibold truncate">
-            {userProfile?.displayName || userProfile?.username || 'You'}
+          <div className="flex items-center gap-2">
+            <p className="text-white text-base font-semibold truncate">
+              {userProfile?.displayName || userProfile?.username || 'You'}
+            </p>
+            {(userData?.streaks?.master || 0) > 0 && (
+              <span className="text-sm flex-shrink-0" style={{ color: '#FFD60A' }}>
+                {userData.streaks.master}🔥
+              </span>
+            )}
+          </div>
+          <p className="text-xs truncate" style={{ color: 'rgba(255,255,255,0.5)' }}>
+            {userProfile?.username && <>@{userProfile.username} · </>}
+            <span style={{ color: isPro ? '#FFD60A' : 'rgba(255,255,255,0.5)', fontWeight: isPro ? 600 : 400 }}>
+              {isPro ? 'Pro' : 'Free'}
+            </span>
           </p>
           <div className="flex items-center gap-3 mt-1">
             <RecordPill label="Active" value={activeCount} color="#FFD60A" />
@@ -239,6 +256,16 @@ export default function ChallengesTab({ user, userProfile, friends = [], onChall
             ))}
           </div>
         )
+      )}
+
+      {showSelfProfile && (
+        <OwnProfileModal
+          user={user}
+          userProfile={userProfile}
+          userData={userData}
+          activities={activities}
+          onClose={() => setShowSelfProfile(false)}
+        />
       )}
     </div>
   );

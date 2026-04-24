@@ -17,6 +17,7 @@ import WeekStatsModal from './components/WeekStatsModal';
 import MonthStatsModal from './components/MonthStatsModal';
 import ActivityDetailModal from './components/ActivityDetailModal';
 import TrendsView from './components/TrendsView';
+import OwnProfileModal from './components/OwnProfileModal';
 
 
 
@@ -31,8 +32,28 @@ export default function ProfilePage(props) {
     onShare, activities = [], calendarData = {}, healthHistory = [], healthKitData = {}, userData,
     onAddActivity, onDeleteActivity, onEditActivity, initialView = 'calendar', initialStatsSubView = 'overview',
     activeStreaksRef, calendarRef, statsRef, progressPhotosRef, isPro, onPresentPaywall, onShareStamp,
-    friends = [], onChallengeActivity, historyLatestActivityRef
+    friends = [], onChallengeActivity, historyLatestActivityRef,
+    onUseStreakShield, onToggleVacationMode
   } = props;
+
+  const [showSelfProfile, setShowSelfProfile] = useState(false);
+  const [quickActionModal, setQuickActionModal] = useState(null); // 'shield' | 'vacation' | null
+  const [quickActionAnimating, setQuickActionAnimating] = useState(false);
+
+  // Drive open/close animation for the quick-action modal — matches the
+  // FriendProfileModal / OwnProfileModal timing so transitions feel consistent.
+  useEffect(() => {
+    if (quickActionModal) {
+      const t = setTimeout(() => setQuickActionAnimating(true), 10);
+      return () => clearTimeout(t);
+    }
+    setQuickActionAnimating(false);
+  }, [quickActionModal]);
+
+  const closeQuickAction = () => {
+    setQuickActionAnimating(false);
+    setTimeout(() => setQuickActionModal(null), 250);
+  };
 
   // === Begin verbatim HistoryTab body (state / effects / helpers / JSX) ===
   const [view, setView] = useState(initialView);
@@ -690,8 +711,10 @@ export default function ProfilePage(props) {
           className="rounded-2xl p-4 flex items-center gap-4"
           style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}
         >
-          <div
-            className="w-16 h-16 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0"
+          <button
+            onClick={() => { triggerHaptic(ImpactStyle.Light); setShowSelfProfile(true); }}
+            aria-label="Open your profile"
+            className="w-16 h-16 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0 active:scale-95 transition-transform"
             style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}
           >
             {userProfile?.photoURL ? (
@@ -699,14 +722,87 @@ export default function ProfilePage(props) {
             ) : (
               <span className="text-white text-xl font-semibold">{initial}</span>
             )}
-          </div>
+          </button>
           <div className="flex-1 min-w-0">
-            <p className="text-white text-base font-semibold truncate">
-              {userProfile?.displayName || userProfile?.username || 'You'}
+            <div className="flex items-center gap-2">
+              <p className="text-white text-base font-semibold truncate">
+                {userProfile?.displayName || userProfile?.username || 'You'}
+              </p>
+              {(userData?.streaks?.master || 0) > 0 && (
+                <span className="text-sm flex-shrink-0" style={{ color: '#FFD60A' }}>
+                  {userData.streaks.master}🔥
+                </span>
+              )}
+            </div>
+            <p className="text-xs truncate" style={{ color: 'rgba(255,255,255,0.5)' }}>
+              {userProfile?.username && <>@{userProfile.username} · </>}
+              <span style={{ color: isPro ? '#FFD60A' : 'rgba(255,255,255,0.5)', fontWeight: isPro ? 600 : 400 }}>
+                {isPro ? 'Pro' : 'Free'}
+              </span>
             </p>
-            {userProfile?.username && (
-              <p className="text-xs truncate" style={{ color: 'rgba(255,255,255,0.5)' }}>@{userProfile.username}</p>
-            )}
+            {/* Compact shield + vacation status — tap each to open the action modal */}
+            {(() => {
+              const SHIELD_COOLDOWN_WEEKS = 6;
+              const _today = new Date();
+              const _sunday = new Date(_today);
+              _sunday.setDate(_today.getDate() - _today.getDay());
+              const currentWeek = `${_sunday.getFullYear()}-${String(_sunday.getMonth() + 1).padStart(2, '0')}-${String(_sunday.getDate()).padStart(2, '0')}`;
+              const isShielded = (userData?.streakShield?.shieldedWeeks || []).includes(currentWeek);
+              const lastUsedWeek = userData?.streakShield?.lastUsedWeek;
+              let shieldText = '';
+              if (!isPro) {
+                shieldText = 'Pro only';
+              } else if (isShielded) {
+                shieldText = 'Active';
+              } else if (lastUsedWeek) {
+                const lastUsedDate = new Date(lastUsedWeek);
+                const weeksSince = Math.floor((_sunday - lastUsedDate) / (7 * 24 * 60 * 60 * 1000));
+                if (weeksSince < SHIELD_COOLDOWN_WEEKS) {
+                  shieldText = `${SHIELD_COOLDOWN_WEEKS - weeksSince}w`;
+                } else {
+                  shieldText = 'Available';
+                }
+              } else {
+                shieldText = 'Available';
+              }
+              const vacationActive = !!userData?.vacationMode?.isActive;
+              const vmCurrentYear = new Date().getFullYear();
+              const vmUsed = userData?.vacationMode?.activationYear === vmCurrentYear ? (userData?.vacationMode?.activationsThisYear || 0) : 0;
+              const vacationsLeft = Math.max(0, 3 - vmUsed);
+              let vacationText;
+              let vacationColor;
+              if (!isPro) {
+                vacationText = 'Pro only';
+                vacationColor = 'rgba(255,255,255,0.45)';
+              } else if (vacationActive) {
+                vacationText = 'Active';
+                vacationColor = '#FF9500';
+              } else if (vacationsLeft > 0) {
+                vacationText = 'Available';
+                vacationColor = 'rgba(255,255,255,0.45)';
+              } else {
+                vacationText = 'Used up';
+                vacationColor = 'rgba(255,255,255,0.45)';
+              }
+              return (
+                <div className="flex items-center gap-3 mt-1 text-[11px]" style={{ color: 'rgba(255,255,255,0.45)' }}>
+                  <button
+                    onClick={() => setQuickActionModal('shield')}
+                    className="flex items-center gap-1 active:opacity-60"
+                  >
+                    <span>🛡️</span>
+                    <span>{shieldText}</span>
+                  </button>
+                  <button
+                    onClick={() => setQuickActionModal('vacation')}
+                    className="flex items-center gap-1 active:opacity-60"
+                  >
+                    <span>🌴</span>
+                    <span style={{ color: vacationColor }}>{vacationText}</span>
+                  </button>
+                </div>
+              );
+            })()}
           </div>
           <button
             onClick={onOpenSettings}
@@ -720,16 +816,111 @@ export default function ProfilePage(props) {
             </svg>
           </button>
         </div>
+
+        {/* Streak risk warning — shows in the last few days of the week if any goal
+            is still incomplete and a streak is on the line. Free users get a paywall
+            CTA, Pro users get a one-tap shield. */}
+        {(() => {
+          if (userData?.vacationMode?.isActive) return null;
+
+          const today = new Date();
+          const dayOfWeek = today.getDay();
+          const daysLeft = 7 - dayOfWeek; // Sun=7, Sat=1
+
+          const cwStart = new Date(today);
+          cwStart.setDate(today.getDate() - dayOfWeek);
+          cwStart.setHours(0, 0, 0, 0);
+          const cwStartStr = `${cwStart.getFullYear()}-${String(cwStart.getMonth() + 1).padStart(2, '0')}-${String(cwStart.getDate()).padStart(2, '0')}`;
+
+          const cwActs = activities.filter(a => a.date >= cwStartStr);
+          const liftsCount = cwActs.filter(a => { const c = getActivityCategory(a); return c === 'lifting' || c === 'lifting+cardio'; }).length;
+          const cardioCount = cwActs.filter(a => { const c = getActivityCategory(a); return c === 'cardio' || c === 'lifting+cardio'; }).length;
+          const recoveryCount = cwActs.filter(a => getActivityCategory(a) === 'recovery').length;
+
+          const liftsRemaining = Math.max(0, goals.liftsPerWeek - liftsCount);
+          const cardioRemaining = Math.max(0, goals.cardioPerWeek - cardioCount);
+          const recoveryRemaining = Math.max(0, goals.recoveryPerWeek - recoveryCount);
+          const anyRemaining = liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0;
+
+          const hasActiveStreak = (userData?.streaks?.master || 0) > 0
+            || (userData?.streaks?.lifts || 0) > 0
+            || (userData?.streaks?.cardio || 0) > 0
+            || (userData?.streaks?.recovery || 0) > 0;
+
+          if (!(daysLeft <= 3 && anyRemaining && hasActiveStreak)) return null;
+
+          // Compute shield availability for the CTA
+          const SHIELD_COOLDOWN_WEEKS = 6;
+          const currentWeek = cwStartStr;
+          const isShielded = (userData?.streakShield?.shieldedWeeks || []).includes(currentWeek);
+          const lastUsedWeek = userData?.streakShield?.lastUsedWeek;
+          let shieldOnCooldown = false;
+          if (lastUsedWeek) {
+            const lastUsedDate = new Date(lastUsedWeek);
+            const weeksSince = Math.floor((cwStart - lastUsedDate) / (7 * 24 * 60 * 60 * 1000));
+            if (weeksSince < SHIELD_COOLDOWN_WEEKS) shieldOnCooldown = true;
+          }
+          const shieldAvailable = isPro && !isShielded && !shieldOnCooldown;
+
+          const remainingText = [
+            liftsRemaining > 0 ? `${liftsRemaining} strength` : null,
+            cardioRemaining > 0 ? `${cardioRemaining} cardio` : null,
+            recoveryRemaining > 0 ? `${recoveryRemaining} recovery` : null,
+          ].filter(Boolean).join(', ');
+
+          return (
+            <div className="mt-3">
+              <p className="text-[12px] leading-snug" style={{ color: '#FF453A' }}>
+                <span className="font-semibold">
+                  {daysLeft === 1 ? 'Last day to keep your streak' : `${daysLeft} days left to keep your streak`}
+                </span>
+                <span style={{ color: 'rgba(255,69,58,0.75)' }}> — {remainingText} remaining</span>
+                {!isPro ? (
+                  <>
+                    {' · '}
+                    <button
+                      onClick={() => onPresentPaywall?.()}
+                      className="font-semibold"
+                      style={{ color: '#FFD60A' }}
+                    >
+                      Upgrade for Shield →
+                    </button>
+                  </>
+                ) : shieldAvailable ? (
+                  <>
+                    {' · '}
+                    <button
+                      onClick={() => setQuickActionModal('shield')}
+                      className="font-semibold"
+                      style={{ color: '#00D1FF' }}
+                    >
+                      🛡️ Use Shield →
+                    </button>
+                  </>
+                ) : null}
+              </p>
+              <p className="text-[11px] mt-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                At risk of breaking your streak? Tap 🛡️ or 🌴 to save it
+              </p>
+            </div>
+          );
+        })()}
       </div>
 
       {/* === original HistoryTab body starts here === */}
       <div className="pb-32">
       {/* Active Streaks Section */}
       <div ref={activeStreaksRef} className="mx-4 mb-4">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-500 uppercase tracking-wider">Active Streaks</span>
             <span>🔥</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3.5 h-3.5 rounded-full flex items-center justify-center bg-gray-600">
+              <span className="text-[8px] text-black font-bold leading-none">✓</span>
+            </div>
+            <span className="text-[9px] text-gray-600">= this week's goal hit</span>
           </div>
         </div>
 
@@ -745,13 +936,6 @@ export default function ProfilePage(props) {
           <div className="text-xs text-gray-500 mt-2 pt-2 border-t border-white/10">
             Your longest: {records.longestMasterStreak} weeks
           </div>
-        </div>
-
-        <div className="flex items-center justify-end gap-1.5 mb-2">
-          <div className="w-3.5 h-3.5 rounded-full flex items-center justify-center bg-gray-600">
-            <span className="text-[8px] text-black font-bold leading-none">✓</span>
-          </div>
-          <span className="text-[9px] text-gray-600">= this week's goal hit</span>
         </div>
 
         {/* Sub Streaks - 3 columns */}
@@ -3174,6 +3358,205 @@ export default function ProfilePage(props) {
         friends={friends}
       />
     </div>
+
+    {showSelfProfile && (
+      <OwnProfileModal
+        user={user}
+        userProfile={userProfile}
+        userData={userData}
+        activities={activities}
+        onClose={() => setShowSelfProfile(false)}
+      />
+    )}
+
+    {quickActionModal && (() => {
+      const SHIELD_COOLDOWN_WEEKS = 6;
+      const _today = new Date();
+      const _sunday = new Date(_today);
+      _sunday.setDate(_today.getDate() - _today.getDay());
+      const currentWeek = `${_sunday.getFullYear()}-${String(_sunday.getMonth() + 1).padStart(2, '0')}-${String(_sunday.getDate()).padStart(2, '0')}`;
+
+      const isShielded = (userData?.streakShield?.shieldedWeeks || []).includes(currentWeek);
+      const lastUsedWeek = userData?.streakShield?.lastUsedWeek;
+      let onCooldown = false;
+      let weeksUntilAvailable = 0;
+      if (lastUsedWeek) {
+        const lastUsedDate = new Date(lastUsedWeek);
+        const currentWeekDate = new Date(currentWeek);
+        const weeksSinceUsed = Math.floor((currentWeekDate - lastUsedDate) / (7 * 24 * 60 * 60 * 1000));
+        if (weeksSinceUsed < SHIELD_COOLDOWN_WEEKS) {
+          onCooldown = true;
+          weeksUntilAvailable = SHIELD_COOLDOWN_WEEKS - weeksSinceUsed;
+        }
+      }
+      const vacationActive = !!userData?.vacationMode?.isActive;
+      const vacationStart = userData?.vacationMode?.startDate;
+      const vacationDaysRemaining = vacationActive && vacationStart ? (() => {
+        const start = new Date(vacationStart + 'T12:00:00');
+        const daysUsed = Math.floor((new Date() - start) / (24 * 60 * 60 * 1000));
+        return Math.max(0, 14 - daysUsed);
+      })() : null;
+      const vacationsLeft = (() => {
+        const vm = userData?.vacationMode || {};
+        const currentYear = new Date().getFullYear();
+        const used = vm.activationYear === currentYear ? (vm.activationsThisYear || 0) : 0;
+        return Math.max(0, 3 - used);
+      })();
+
+      const isShield = quickActionModal === 'shield';
+      const title = isShield ? 'Streak Shield' : 'Vacation Mode';
+      const emoji = isShield ? '🛡️' : '🌴';
+      const subtitle = !isPro ? 'Pro Feature' : null;
+
+      // Build a status line + 3 bullet rows. Mirrors the Streak Shield info sheet on
+      // Home and the vacation mode section in Settings so wording stays consistent.
+      let statusLabel = null;
+      let statusColor = '#00FF94';
+      let details = [];
+      let actionLabel = null;
+      let actionColor = '#FFD60A';
+      let onAction = null;
+
+      if (isShield) {
+        if (!isPro) {
+          statusLabel = 'Pro only';
+          statusColor = '#FF9500';
+        } else if (isShielded) {
+          statusLabel = 'Active this week';
+          statusColor = '#00FF94';
+        } else if (onCooldown) {
+          statusLabel = `On cooldown · ${weeksUntilAvailable}w`;
+          statusColor = '#FF9500';
+        } else {
+          statusLabel = 'Available';
+          statusColor = '#00FF94';
+        }
+
+        details = [
+          { color: '#00FF94', title: 'Protects your streaks', body: "If you can't complete your weekly goals, activate the shield to keep all your streaks from resetting." },
+          { color: '#00D1FF', title: 'Available once every 6 weeks', body: "After using a shield, there's a 6-week cooldown before you can use another one. Use it wisely!" },
+          { color: '#FF9500', title: 'Appears when you need it', body: "The shield shows up in the last days of the week when your goals are incomplete, or on Sunday/Monday to retroactively save last week's streak." },
+        ];
+
+        if (!isPro) {
+          actionLabel = 'Upgrade to Pro';
+          actionColor = '#FFD60A';
+          onAction = () => { triggerHaptic(ImpactStyle.Medium); onPresentPaywall?.(); closeQuickAction(); };
+        } else if (!isShielded && !onCooldown) {
+          actionLabel = 'Use Shield';
+          actionColor = '#00D1FF';
+          onAction = () => { triggerHaptic(ImpactStyle.Medium); onUseStreakShield?.(currentWeek); closeQuickAction(); };
+        }
+      } else {
+        if (!isPro) {
+          statusLabel = 'Pro only';
+          statusColor = '#FF9500';
+        } else if (vacationActive) {
+          statusLabel = vacationDaysRemaining !== null ? `Active · ${vacationDaysRemaining} day${vacationDaysRemaining === 1 ? '' : 's'} left` : 'Active';
+          statusColor = '#00D1FF';
+        } else {
+          statusLabel = 'Off';
+          statusColor = 'rgba(255,255,255,0.5)';
+        }
+
+        details = [
+          { color: '#00D1FF', title: 'Streaks stay frozen', body: 'No progress lost while vacation mode is on.' },
+          { color: '#00D1FF', title: 'Max 2 weeks per activation', body: 'Automatically deactivates after 14 days.' },
+          { color: '#FF9500', title: `${vacationsLeft} of 3 activations left`, body: 'Your yearly quota resets each January.' },
+        ];
+
+        if (!isPro) {
+          actionLabel = 'Upgrade to Pro';
+          actionColor = '#FFD60A';
+          onAction = () => { triggerHaptic(ImpactStyle.Medium); onPresentPaywall?.(); closeQuickAction(); };
+        } else if (vacationActive) {
+          actionLabel = 'Deactivate';
+          actionColor = '#FF9500';
+          onAction = () => { triggerHaptic(ImpactStyle.Medium); onToggleVacationMode?.(); closeQuickAction(); };
+        } else if (vacationsLeft > 0) {
+          actionLabel = 'Activate';
+          actionColor = '#FF9500';
+          onAction = () => { triggerHaptic(ImpactStyle.Medium); onToggleVacationMode?.(); closeQuickAction(); };
+        }
+      }
+
+      return (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 transition-all duration-300"
+          style={{ backgroundColor: quickActionAnimating ? 'rgba(0,0,0,0.8)' : 'rgba(0,0,0,0)' }}
+          onClick={closeQuickAction}
+        >
+          <div
+            className="w-full max-w-sm bg-zinc-900 rounded-2xl p-6 transition-all duration-300 ease-out"
+            style={{
+              transform: quickActionAnimating ? 'scale(1) translateY(0)' : 'scale(0.95) translateY(20px)',
+              opacity: quickActionAnimating ? 1 : 0,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center gap-3 mb-4">
+              <div
+                className="w-10 h-10 rounded-xl flex items-center justify-center"
+                style={{ backgroundColor: isShield ? 'rgba(0,209,255,0.1)' : 'rgba(255,149,0,0.1)' }}
+              >
+                <span className="text-xl">{emoji}</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-white text-base font-semibold">{title}</h2>
+                {subtitle && <p className="text-xs text-gray-400">{subtitle}</p>}
+              </div>
+              {statusLabel && (
+                <span className="text-xs font-semibold flex-shrink-0" style={{ color: statusColor }}>{statusLabel}</span>
+              )}
+            </div>
+
+            {/* Details */}
+            <div className="space-y-3 mb-5">
+              {details.map((d, i) => (
+                <div key={i} className="flex gap-3">
+                  <div
+                    className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
+                    style={{ backgroundColor: `${d.color}20` }}
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke={d.color} viewBox="0 0 24 24" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                    </svg>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-white text-sm font-medium">{d.title}</p>
+                    <p className="text-gray-400 text-xs mt-0.5">{d.body}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-2">
+              <button
+                onClick={closeQuickAction}
+                onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.96)'; }}
+                onTouchEnd={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+                className="flex-1 py-3 rounded-full bg-zinc-800 text-white text-sm font-medium transition-transform"
+              >
+                {actionLabel ? 'Cancel' : 'Close'}
+              </button>
+              {actionLabel && onAction && (
+                <button
+                  onClick={onAction}
+                  onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.96)'; }}
+                  onTouchEnd={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+                  className="flex-1 py-3 rounded-full text-sm font-semibold transition-transform"
+                  style={{ backgroundColor: actionColor, color: 'black' }}
+                >
+                  {actionLabel}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    })()}
     </>
   );
 }

@@ -623,7 +623,7 @@ function PerspectivePill({ isChallenger }) {
   );
 }
 
-export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid = {}, compact = false, onAccept, onDecline, onCancel, onRequestCancel, onRespondCancel }) {
+export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid = {}, compact = false, onSeeDetails, onAccept, onDecline, onCancel, onRequestCancel, onRespondCancel }) {
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [confirmRequestCancel, setConfirmRequestCancel] = useState(false);
   const isChallenger = challenge.challengerUid === currentUid;
@@ -739,9 +739,17 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
   const chipColor = isExpired ? '#FF453A' : (isUrgent ? '#FF453A' : 'rgba(255,255,255,0.65)');
   const chipBg = (isExpired || isUrgent) ? 'rgba(255,69,58,0.12)' : 'rgba(255,255,255,0.06)';
 
+  // In compact mode (Home), the whole card is tappable — jumps to the Challenges tab
+  // on the active segment with the correct perspective for this card.
+  const handleCardTap = compact && onSeeDetails
+    ? () => { triggerHaptic(ImpactStyle.Light); onSeeDetails(challenge); }
+    : null;
+
   return (
     <div
-      className="relative p-3 rounded-xl"
+      role={handleCardTap ? 'button' : undefined}
+      onClick={handleCardTap || undefined}
+      className={`relative p-3 rounded-xl ${handleCardTap ? 'active:opacity-70 transition-opacity cursor-pointer' : ''}`}
       style={{
         backgroundColor: 'rgba(255,255,255,0.03)',
         border: `1px solid ${color}25`,
@@ -1005,6 +1013,7 @@ export function ChallengesSection({ user, userProfile, friends = [], onChallenge
               userProfile={userProfile}
               friendsByUid={friendsByUid}
               compact
+              onSeeDetails={onSeeDetails}
             />
           ))}
         </div>

@@ -15550,7 +15550,19 @@ export default function DaySevenApp() {
                       historyLatestActivityRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                     }, 150);
                   }}
-                  onNavigateToChallenges={() => switchTab('challenges')}
+                  onNavigateToChallenges={(challenge) => {
+                    // Tapped a specific home card → jump to its segment + perspective.
+                    // Section "See all" passes no challenge → just switch tab.
+                    if (challenge?.id) {
+                      const isMine = challenge.challengerUid === user?.uid;
+                      setChallengesNavTarget({
+                        segment: 'active',
+                        subSegment: isMine ? 'sent' : 'received',
+                        nonce: Date.now(),
+                      });
+                    }
+                    switchTab('challenges');
+                  }}
                   isPro={isPro}
                   onPresentPaywall={async () => {
                     const { purchased } = await presentPaywall();

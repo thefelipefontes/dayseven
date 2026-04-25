@@ -2,9 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import {
   createChallenge,
-  acceptChallenge,
-  declineChallenge,
-  cancelChallenge,
   subscribeToChallenges,
   bucketChallenges,
   countActiveOutgoing,
@@ -493,6 +490,119 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
 // Card: one challenge row in the Home section
 // =====================================================================
 
+// Small mono SVG glyph keyed off the matchRule category. Used inside the center
+// "vs" badge between the two avatars on a challenge card.
+function ActivityGlyph({ category, size = 11, color = 'black' }) {
+  const stroke = { stroke: color, strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', fill: 'none' };
+  if (category === 'lifting') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" {...stroke}>
+        <path d="M3 9v6M21 9v6M6 7v10M18 7v10M6 12h12" />
+      </svg>
+    );
+  }
+  if (category === 'cardio') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+        <path d="M13 2L3 14h7l-1 8 11-13h-7l0-7z" />
+      </svg>
+    );
+  }
+  if (category === 'recovery') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" {...stroke}>
+        <path d="M12 3c4 4 4 10 0 14M12 3c-4 4-4 10 0 14M12 17v4" />
+      </svg>
+    );
+  }
+  return null;
+}
+
+// Tiny avatar bubble. Renders a square photo if available, otherwise an initial on a
+// neutral background. Used inside ChallengeIcon for the stacked "you vs them" badge.
+function MiniAvatar({ photoURL, initial, size, borderColor }) {
+  return (
+    <div
+      className="rounded-full overflow-hidden flex items-center justify-center flex-shrink-0"
+      style={{
+        width: size,
+        height: size,
+        backgroundColor: '#27272a',
+        border: `1.5px solid ${borderColor}`,
+        boxSizing: 'border-box',
+      }}
+    >
+      {photoURL ? (
+        <img src={photoURL} alt="" className="w-full h-full object-cover" />
+      ) : (
+        <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: Math.round(size * 0.45), fontWeight: 600 }}>
+          {(initial || '?').toUpperCase()}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Visual identity of a challenge row: two overlapping avatars (you + opponent)
+ * with the category-colored activity badge centered on top of the overlap zone
+ * as a "vs" stamp. Avatars stay in-flow (negative margin for overlap) — only the
+ * single small icon uses absolute positioning, which kept iOS WebKit happy where
+ * an earlier all-absolute version did not.
+ */
+function ChallengeIcon({ category, color, mePhotoURL, meInitial, opponentPhotoURL, opponentInitial, isGroup, groupCount }) {
+  const avatarSize = 40;
+  const iconSize = 19;
+  const overlap = 8;
+  const cardBg = '#0d0d0e'; // matches the card background blend; used as avatar/badge border
+  return (
+    <div className="relative flex items-center flex-shrink-0">
+      <MiniAvatar photoURL={mePhotoURL} initial={meInitial} size={avatarSize} borderColor={cardBg} />
+      <div className="relative flex-shrink-0" style={{ marginLeft: -overlap, width: avatarSize, height: avatarSize }}>
+        <MiniAvatar photoURL={opponentPhotoURL} initial={opponentInitial} size={avatarSize} borderColor={cardBg} />
+        {isGroup && (
+          <div
+            className="absolute rounded-full flex items-center justify-center"
+            style={{
+              right: -4,
+              bottom: -4,
+              minWidth: 16,
+              height: 16,
+              padding: '0 4px',
+              backgroundColor: color,
+              color: 'black',
+              fontSize: 9,
+              fontWeight: 700,
+              border: `1.5px solid ${cardBg}`,
+              boxSizing: 'border-box',
+              lineHeight: '12px',
+            }}
+          >
+            +{Math.max(1, groupCount || 1)}
+          </div>
+        )}
+      </div>
+      {/* Activity badge — single absolutely-positioned element centered on the overlap zone. */}
+      <div
+        className="absolute rounded-full flex items-center justify-center pointer-events-none"
+        style={{
+          left: '50%',
+          top: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: iconSize,
+          height: iconSize,
+          backgroundColor: color,
+          border: `2px solid ${cardBg}`,
+          boxSizing: 'border-box',
+          zIndex: 10,
+        }}
+      >
+        <ActivityGlyph category={category} size={Math.round(iconSize * 0.55)} color="black" />
+      </div>
+    </div>
+  );
+}
+
 // Tiny pill shown next to the friend's name on a challenge card so you can tell
 // at a glance whether you're the challenger (Sent) or the recipient (Received).
 function PerspectivePill({ isChallenger }) {
@@ -513,34 +623,65 @@ function PerspectivePill({ isChallenger }) {
   );
 }
 
-export function ChallengeCard({ challenge, currentUid, onAccept, onDecline, onCancel }) {
+export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid = {}, compact = false, onAccept, onDecline, onCancel, onRequestCancel, onRespondCancel }) {
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [confirmRequestCancel, setConfirmRequestCancel] = useState(false);
   const isChallenger = challenge.challengerUid === currentUid;
   const isGroup = challenge.type === 'group';
-  const color = CATEGORY_COLOR[challenge.matchRule?.category] || '#888';
+  const category = challenge.matchRule?.category;
+  const color = CATEGORY_COLOR[category] || '#888';
   const ruleLabel = describeMatchRule(challenge.matchRule);
 
   // For groups, my personal status drives accept/decline; for 1v1 fall back to legacy fields.
   const myParticipant = challenge.participants?.[currentUid];
   const myStatus = myParticipant?.status || (challenge.friendUid === currentUid ? challenge.friendStatus : null);
 
-  // Personal countdown: groups have per-participant expiresAt once accepted; otherwise overall.
+  // Pending = "waiting to accept"; the deadline shown is respondByAt (8h from send),
+  // not the workout window. Once accepted, expiresAt drives the countdown.
+  const isPendingPhase = challenge.status === 'pending';
   const personalExpiresAt = myParticipant?.expiresAt || challenge.expiresAt;
-  const remaining = formatRemaining(isChallenger ? challenge.expiresAt : personalExpiresAt);
+  const countdownTarget = isPendingPhase
+    ? (challenge.respondByAt || challenge.expiresAt)
+    : (isChallenger ? challenge.expiresAt : personalExpiresAt);
+  const remaining = formatRemaining(countdownTarget);
+  const remainingMs = countdownTarget ? new Date(countdownTarget).getTime() - Date.now() : 0;
+  const isExpired = remaining === 'Expired';
+  const isUrgent = !isExpired && remainingMs > 0 && remainingMs < 60 * 60 * 1000; // <1h left
 
-  // Title row varies by 1v1 vs group, and challenger vs recipient
-  let title;
-  if (isGroup) {
-    if (isChallenger) {
-      const total = (challenge.participantUids || []).length - 1; // excludes challenger
-      title = `Group challenge · ${total} friends`;
-    } else {
-      title = `${challenge.challengerName || 'Friend'} + group`;
-    }
+  // Resolve "me" + "opponent" identities for the stacked-avatar icon.
+  const meDisplayName = userProfile?.displayName || userProfile?.username || 'You';
+  const mePhotoURL = userProfile?.photoURL || null;
+  const meInitial = meDisplayName.charAt(0);
+
+  // Opponent for the icon: in 1v1, that's the other party; in group, the challenger
+  // (when you're a recipient) or the first non-you participant (when you're the challenger).
+  let opponentUid = null;
+  if (isChallenger) {
+    opponentUid = (challenge.participantUids || []).find(u => u !== currentUid) || challenge.friendUid;
   } else {
-    title = isChallenger
-      ? (challenge.friendName || 'Friend')
-      : (challenge.challengerName || 'Friend');
+    opponentUid = challenge.challengerUid;
+  }
+  const opponentFriend = opponentUid ? friendsByUid[opponentUid] : null;
+  const opponentName = opponentFriend?.displayName
+    || opponentFriend?.username
+    || (isChallenger ? challenge.friendName : challenge.challengerName)
+    || 'Friend';
+  const opponentPhotoURL = opponentFriend?.photoURL || null;
+  const opponentInitial = opponentName.charAt(0);
+
+  // Group "+N" badge counts the *other* participants (not me, not the named opponent).
+  const groupExtraCount = isGroup
+    ? Math.max(1, (challenge.participantUids || []).length - 2)
+    : 0;
+
+  // Primary text row: friend name (1v1) or group label, with optional title above as flavor.
+  let primaryName;
+  if (isGroup) {
+    primaryName = isChallenger
+      ? `Group · ${(challenge.participantUids || []).length - 1} friends`
+      : `${challenge.challengerName || 'Friend'} + group`;
+  } else {
+    primaryName = opponentName;
   }
 
   // Group progress count (challenger view)
@@ -552,67 +693,146 @@ export function ChallengeCard({ challenge, currentUid, onAccept, onDecline, onCa
     groupProgress = `${completed} of ${total} complete`;
   }
 
-  let statusLabel;
+  // Status label only shows when it carries new info — not for active 1v1 ("In progress"
+  // is redundant with the burst-icon + visible countdown). Group sender keeps the
+  // "X of Y complete" progress line because that's actually informative.
+  let statusLabel = null;
   if (isChallenger) {
     if (challenge.status === 'pending') statusLabel = 'Waiting for response';
-    else if (challenge.status === 'active') statusLabel = groupProgress || 'In progress';
+    else if (challenge.status === 'active' && isGroup) statusLabel = groupProgress;
     else if (challenge.status === 'completed') statusLabel = groupProgress || 'Completed';
   } else {
     if (myStatus === 'pending') statusLabel = isGroup ? 'Group challenge for you' : 'Wants to challenge you';
-    else if (myStatus === 'accepted') statusLabel = 'Your challenge';
     else if (myStatus === 'completed') statusLabel = 'You completed it';
+    // accepted (active) recipient: drop "Your challenge" label — the rule line below carries the action.
   }
 
-  const showAcceptDecline = !isChallenger && myStatus === 'pending';
-  const showCancel = isChallenger && challenge.status === 'pending';
-  const showCountdown = isChallenger
-    ? (challenge.status !== 'completed')
-    : (myStatus === 'accepted'); // recipients only see countdown once they've accepted
+  // Mutual cancel state (1v1 active only). Open = request awaiting accepter response.
+  const cancelRequest = challenge.cancelRequest && !challenge.cancelRequest.response ? challenge.cancelRequest : null;
+  const isCancelRequester = cancelRequest && cancelRequest.requestedBy === currentUid;
+  const isCancelResponder = cancelRequest && !isCancelRequester && myStatus === 'accepted';
+
+  // In compact mode (Home tab), all action UI is hidden — users get a "See details ›"
+  // link that hops them to the Challenges tab where the full action surface lives.
+  const showAcceptDecline = !compact && !isChallenger && myStatus === 'pending';
+  const showCancel = !compact && isChallenger && challenge.status === 'pending';
+  // Sender can request cancel of an active 1v1 (group cancel unsupported in v1)
+  const showRequestCancel = !compact && isChallenger && challenge.status === 'active' && !isGroup && !cancelRequest;
+  const showCancelBanner = !compact && cancelRequest;
+  // Pending shows accept-window countdown (visible to both sides);
+  // active shows workout countdown to challenger always, and accepter once they've accepted.
+  const showCountdown = isPendingPhase
+    ? (isChallenger || myStatus === 'pending')
+    : (isChallenger
+        ? (challenge.status !== 'completed')
+        : (myStatus === 'accepted'));
+  const countdownPrefix = isPendingPhase ? 'to accept · ' : '';
+
+  // Rule line: always shown — it's the action context ("Do any strength workout").
+  const ruleLine = ruleLabel;
+
+  // Compact countdown chip: drops "left", short prefix for pending.
+  const countdownChipText = remaining
+    .replace(' left', '')
+    .replace('Expired', 'Expired');
+  const countdownChipLabel = isPendingPhase ? `accept · ${countdownChipText}` : countdownChipText;
+  const chipColor = isExpired ? '#FF453A' : (isUrgent ? '#FF453A' : 'rgba(255,255,255,0.65)');
+  const chipBg = (isExpired || isUrgent) ? 'rgba(255,69,58,0.12)' : 'rgba(255,255,255,0.06)';
 
   return (
     <div
-      className="p-3 rounded-xl"
+      className="relative p-3 rounded-xl"
       style={{
         backgroundColor: 'rgba(255,255,255,0.03)',
         border: `1px solid ${color}25`,
       }}
     >
-      <div className="flex items-start gap-3">
+      {/* Top-right countdown chip — frees a row inside the body. Color flips red <1h. */}
+      {showCountdown && (
         <div
-          className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
-          style={{ backgroundColor: `${color}20` }}
+          className="absolute px-2 py-0.5 rounded-md"
+          style={{
+            top: 8,
+            right: 8,
+            backgroundColor: chipBg,
+            color: chipColor,
+            fontSize: 11,
+            fontWeight: 500,
+            lineHeight: '14px',
+          }}
         >
-          <span style={{ color, fontSize: 18 }}>{isGroup ? '👥' : '⚡'}</span>
+          {countdownChipLabel}
         </div>
+      )}
+
+      <div className="flex items-center gap-3" style={{ paddingRight: showCountdown ? 70 : 0 }}>
+        <ChallengeIcon
+          category={category}
+          color={color}
+          mePhotoURL={mePhotoURL}
+          meInitial={meInitial}
+          opponentPhotoURL={opponentPhotoURL}
+          opponentInitial={opponentInitial}
+          isGroup={isGroup}
+          groupCount={groupExtraCount}
+        />
         <div className="flex-1 min-w-0">
-          {challenge.title ? (
-            <>
-              <div className="flex items-center gap-1.5">
-                <p className="text-white text-sm font-semibold truncate">{challenge.title}</p>
-                <PerspectivePill isChallenger={isChallenger} />
-              </div>
-              <p className="text-gray-500 text-xs truncate">{title}</p>
-            </>
-          ) : (
-            <div className="flex items-center gap-1.5">
-              <p className="text-white text-sm font-medium truncate">{title}</p>
-              <PerspectivePill isChallenger={isChallenger} />
-            </div>
+          {/* Optional flavor title sits above the friend name as small italic text.
+              Friend name is always the primary identifier — that's the unique "who am I betting against." */}
+          {challenge.title && (
+            <p className="text-[11px] italic truncate" style={{ color: 'rgba(255,255,255,0.55)' }}>
+              {challenge.title}
+            </p>
           )}
-          <p className="text-gray-500 text-xs">{statusLabel}</p>
-          <p className="text-white text-sm mt-1">{ruleLabel}</p>
+          <div className="flex items-center gap-1.5">
+            <p className="text-white text-sm font-semibold truncate">{primaryName}</p>
+            <PerspectivePill isChallenger={isChallenger} />
+          </div>
+          {statusLabel && (
+            <p className="text-gray-500 text-xs">{statusLabel}</p>
+          )}
+          <p className="text-white text-sm mt-1">{ruleLine}</p>
           {challenge.requirePhoto && (
             <p className="text-[11px] mt-0.5" style={{ color: '#FFD60A' }}>
               📸 Photo required
             </p>
           )}
-          {showCountdown && (
-            <p className="text-xs mt-0.5" style={{ color: remaining === 'Expired' ? '#ef4444' : 'rgba(255,255,255,0.5)' }}>
-              {remaining}
-            </p>
-          )}
         </div>
       </div>
+
+      {/* Mutual-cancel banner: shown when there's an open request, instead of the
+          regular request-cancel button. Both sides see context; only the responder
+          gets Accept/Decline buttons. Hidden in compact mode (Home) — Challenges tab
+          handles all action UI. */}
+      {showCancelBanner && (
+        <div
+          className="mt-3 p-2.5 rounded-lg"
+          style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.25)' }}
+        >
+          <p className="text-xs" style={{ color: 'rgba(255,255,255,0.85)' }}>
+            {isCancelRequester
+              ? 'You asked to cancel. Waiting for them to respond.'
+              : `${challenge.challengerName || 'Your friend'} wants to cancel this challenge.`}
+          </p>
+          {isCancelResponder && (
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={() => onRespondCancel?.(challenge, false)}
+                className="flex-1 py-1.5 rounded-md text-xs font-medium bg-zinc-800 text-gray-300"
+              >
+                Keep going
+              </button>
+              <button
+                onClick={() => onRespondCancel?.(challenge, true)}
+                className="flex-1 py-1.5 rounded-md text-xs font-semibold"
+                style={{ backgroundColor: '#FFD60A', color: 'black' }}
+              >
+                Cancel it
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {showAcceptDecline && (
         <div className="flex gap-2 mt-3">
@@ -632,38 +852,70 @@ export function ChallengeCard({ challenge, currentUid, onAccept, onDecline, onCa
         </div>
       )}
 
+      {/* Compact cancel link (sender, pending). Tap → inline confirm row. */}
       {showCancel && (
-        <div className="mt-3">
+        <div className="mt-2 flex justify-end">
           {!confirmCancel ? (
             <button
               onClick={() => { triggerHaptic(ImpactStyle.Light); setConfirmCancel(true); }}
-              className="w-full py-2 rounded-lg text-sm font-medium"
-              style={{ backgroundColor: 'rgba(255,69,58,0.08)', color: '#FF453A' }}
+              className="text-xs font-medium px-1"
+              style={{ color: '#FF453A' }}
             >
-              Cancel Challenge
+              Cancel challenge
             </button>
           ) : (
-            <div>
-              <p className="text-xs text-gray-400 text-center mb-2">Cancel this challenge?</p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => { triggerHaptic(ImpactStyle.Light); setConfirmCancel(false); }}
-                  className="flex-1 py-2 rounded-lg text-sm font-medium bg-zinc-800 text-gray-300"
-                >
-                  Keep It
-                </button>
-                <button
-                  onClick={() => { triggerHaptic(ImpactStyle.Medium); onCancel?.(challenge); }}
-                  className="flex-1 py-2 rounded-lg text-sm font-semibold text-white"
-                  style={{ backgroundColor: '#FF453A' }}
-                >
-                  Yes, Cancel
-                </button>
-              </div>
+            <div className="flex items-center gap-3 text-xs">
+              <span className="text-gray-500">Cancel this challenge?</span>
+              <button
+                onClick={() => { triggerHaptic(ImpactStyle.Light); setConfirmCancel(false); }}
+                className="font-medium text-gray-300"
+              >
+                Keep
+              </button>
+              <button
+                onClick={() => { triggerHaptic(ImpactStyle.Medium); onCancel?.(challenge); }}
+                className="font-semibold"
+                style={{ color: '#FF453A' }}
+              >
+                Cancel
+              </button>
             </div>
           )}
         </div>
       )}
+
+      {/* Compact request-cancel link (sender, active 1v1). Tap → inline confirm row. */}
+      {showRequestCancel && (
+        <div className="mt-2 flex justify-end">
+          {!confirmRequestCancel ? (
+            <button
+              onClick={() => { triggerHaptic(ImpactStyle.Light); setConfirmRequestCancel(true); }}
+              className="text-xs font-medium px-1"
+              style={{ color: '#FF453A' }}
+            >
+              Request cancel
+            </button>
+          ) : (
+            <div className="flex items-center gap-3 text-xs">
+              <span className="text-gray-500 truncate">Ask {opponentName.split(' ')[0]}?</span>
+              <button
+                onClick={() => { triggerHaptic(ImpactStyle.Light); setConfirmRequestCancel(false); }}
+                className="font-medium text-gray-300"
+              >
+                Nevermind
+              </button>
+              <button
+                onClick={() => { triggerHaptic(ImpactStyle.Medium); setConfirmRequestCancel(false); onRequestCancel?.(challenge); }}
+                className="font-semibold"
+                style={{ color: '#FF453A' }}
+              >
+                Send
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
     </div>
   );
 }
@@ -672,7 +924,7 @@ export function ChallengeCard({ challenge, currentUid, onAccept, onDecline, onCa
 // Section: rendered on the Home tab. Self-loads challenges + handles actions.
 // =====================================================================
 
-export function ChallengesSection({ user, friends = [], onChallengeCountsChange }) {
+export function ChallengesSection({ user, userProfile, friends = [], onChallengeCountsChange, onSeeDetails }) {
   const [challenges, setChallenges] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   useTicker(60000);
@@ -711,24 +963,9 @@ export function ChallengesSection({ user, friends = [], onChallengeCountsChange 
     });
   }, [buckets.pendingReceived.length, enriched, user?.uid, onChallengeCountsChange]);
 
-  // Accept/decline/cancel — the real-time listener picks up the write automatically,
-  // so no manual reload needed.
-  const handleAccept = async (c) => {
-    triggerHaptic(ImpactStyle.Medium);
-    await acceptChallenge(c.id, user.uid);
-  };
-
-  const handleDecline = async (c) => {
-    triggerHaptic(ImpactStyle.Light);
-    await declineChallenge(c.id, user.uid);
-  };
-
-  const handleCancel = async (c) => {
-    triggerHaptic(ImpactStyle.Light);
-    await cancelChallenge(c.id, user.uid);
-  };
-
   // Home only surfaces active challenges — pending/completed live on the Challenges tab.
+  // All actions (accept/decline/cancel/request-cancel) live there too; Home cards are
+  // read-only summaries with a "See details ›" link.
   if (!isLoading && buckets.active.length === 0) return null;
 
   return (
@@ -740,7 +977,18 @@ export function ChallengesSection({ user, friends = [], onChallengeCountsChange 
           </svg>
           <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Active Challenges</span>
         </div>
-        <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Bets in progress with your friends</p>
+        <div className="flex items-center justify-between gap-3 -mt-1 pl-[30px]">
+          <p className="text-[13px]" style={{ color: '#777' }}>Bets in progress with your friends</p>
+          {!isLoading && buckets.active.length > 0 && (
+            <button
+              onClick={() => onSeeDetails?.()}
+              className="text-xs font-medium flex-shrink-0"
+              style={{ color: 'rgba(255,255,255,0.55)' }}
+            >
+              See all ›
+            </button>
+          )}
+        </div>
       </div>
 
       {isLoading ? (
@@ -750,7 +998,14 @@ export function ChallengesSection({ user, friends = [], onChallengeCountsChange 
       ) : (
         <div className="space-y-2">
           {buckets.active.map(c => (
-            <ChallengeCard key={c.id} challenge={c} currentUid={user.uid} />
+            <ChallengeCard
+              key={c.id}
+              challenge={c}
+              currentUid={user.uid}
+              userProfile={userProfile}
+              friendsByUid={friendsByUid}
+              compact
+            />
           ))}
         </div>
       )}

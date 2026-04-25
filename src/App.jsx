@@ -10147,7 +10147,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
 
 // Home Tab - Simplified
 
-const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeCountsChange, onChallengeActivity, onNavigateToHistory }) => {
+const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeCountsChange, onChallengeActivity, onNavigateToHistory, onNavigateToChallenges }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
   const [dismissConfirmWorkouts, setDismissConfirmWorkouts] = useState(null); // Workouts pending dismiss confirmation
@@ -11760,7 +11760,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         {/* End of weeklyGoalsRef wrapper */}
       </div>
 
-      <ChallengesSection user={user} friends={friends} onChallengeCountsChange={onChallengeCountsChange} />
+      <ChallengesSection user={user} userProfile={userProfile} friends={friends} onChallengeCountsChange={onChallengeCountsChange} onSeeDetails={onNavigateToChallenges} />
 
       {/* Section Divider */}
       <div className="mx-4 mb-4">
@@ -11903,6 +11903,9 @@ export default function DaySevenApp() {
   const [friends, setFriends] = useState([]);
   const [challengeModalActivity, setChallengeModalActivity] = useState(null); // activity to challenge a friend with (null = modal closed)
   const [activeOutgoingChallengeCount, setActiveOutgoingChallengeCount] = useState(0);
+  // Set when a challenge notification is tapped — tells ChallengesTab which segment/sub
+  // to open. Includes a `nonce` so re-navigating to the same target still re-applies.
+  const [challengesNavTarget, setChallengesNavTarget] = useState(null);
   const [challengePickerForFriend, setChallengePickerForFriend] = useState(null); // friend object when picking which past activity to challenge with
   const [preSelectedChallengeFriend, setPreSelectedChallengeFriend] = useState(null); // friend uid to pre-fill in ChallengeFriendModal
   const [showCelebration, setShowCelebration] = useState(false);
@@ -13309,8 +13312,17 @@ export default function DaySevenApp() {
                   // Handle notification tap - navigate to appropriate screen
                   clearBadge();
                   clearAllNotifications();
-                  handleNotificationNavigation(notification, (tab) => {
+                  handleNotificationNavigation(notification, (tab, opts) => {
                     setActiveTab(tab);
+                    // Challenge notifs hint at which segment/sub-segment to open.
+                    if (tab === 'challenges' && (opts?.challengesSegment || opts?.challengesSubSegment)) {
+                      setChallengesNavTarget({
+                        segment: opts.challengesSegment || null,
+                        subSegment: opts.challengesSubSegment || null,
+                        // identity bump so ChallengesTab re-applies even if values match a prior nav
+                        nonce: Date.now(),
+                      });
+                    }
                   }, {
                     onShowSharePrompt: (summaryData) => {
                       // Clear pending flag since user tapped the notification directly
@@ -15538,6 +15550,7 @@ export default function DaySevenApp() {
                       historyLatestActivityRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                     }, 150);
                   }}
+                  onNavigateToChallenges={() => switchTab('challenges')}
                   isPro={isPro}
                   onPresentPaywall={async () => {
                     const { purchased } = await presentPaywall();
@@ -15596,6 +15609,7 @@ export default function DaySevenApp() {
                   friends={friends}
                   isPro={isPro}
                   onChallengeCountsChange={({ activeOutgoingCount }) => setActiveOutgoingChallengeCount(activeOutgoingCount)}
+                  navTarget={challengesNavTarget}
                 />
               )}
               {activeTab === 'feed' && (

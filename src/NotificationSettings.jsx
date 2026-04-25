@@ -42,6 +42,8 @@ const NotificationSettings = ({ userId, onClose }) => {
     challengeAccepted: true,
     challengeCompleted: true,
     challengeExpiring: true,
+    challengeAcceptExpired: true,
+    challengeCancelRequest: true,
     // Quiet hours
     quietHoursEnabled: false,
     quietHoursStart: '22:00',
@@ -71,7 +73,7 @@ const NotificationSettings = ({ userId, onClose }) => {
           if (prefs) {
             setPreferences(prev => ({ ...prev, ...prefs }));
             // Check if ALL toggleable preferences are on
-            const toggleKeys = ['friendRequests', 'reactions', 'comments', 'friendActivity', 'streakReminders', 'goalReminders', 'dailyReminders', 'newActivityDetected', 'streakMilestones', 'goalAchievements', 'weeklySummary', 'monthlySummary', 'challengeReceived', 'challengeAccepted', 'challengeCompleted', 'challengeExpiring'];
+            const toggleKeys = ['friendRequests', 'reactions', 'comments', 'friendActivity', 'streakReminders', 'goalReminders', 'dailyReminders', 'newActivityDetected', 'streakMilestones', 'goalAchievements', 'weeklySummary', 'monthlySummary', 'challengeReceived', 'challengeAccepted', 'challengeCompleted', 'challengeExpiring', 'challengeAcceptExpired', 'challengeCancelRequest'];
             const allOn = toggleKeys.every(key => prefs[key]);
             setAllEnabled(allOn);
           }
@@ -107,7 +109,7 @@ const NotificationSettings = ({ userId, onClose }) => {
     setPreferences(newPrefs);
 
     // Update master toggle state — only ON if ALL are enabled
-    const toggleKeys = ['friendRequests', 'reactions', 'comments', 'friendActivity', 'streakReminders', 'goalReminders', 'dailyReminders', 'newActivityDetected', 'streakMilestones', 'goalAchievements', 'weeklySummary', 'monthlySummary', 'challengeReceived', 'challengeAccepted', 'challengeCompleted', 'challengeExpiring'];
+    const toggleKeys = ['friendRequests', 'reactions', 'comments', 'friendActivity', 'streakReminders', 'goalReminders', 'dailyReminders', 'newActivityDetected', 'streakMilestones', 'goalAchievements', 'weeklySummary', 'monthlySummary', 'challengeReceived', 'challengeAccepted', 'challengeCompleted', 'challengeExpiring', 'challengeAcceptExpired', 'challengeCancelRequest'];
     const allOn = toggleKeys.every(k => newPrefs[k]);
     setAllEnabled(allOn);
 
@@ -129,7 +131,7 @@ const NotificationSettings = ({ userId, onClose }) => {
     const newEnabled = !allEnabled;
     setAllEnabled(newEnabled);
 
-    const toggleKeys = ['friendRequests', 'reactions', 'comments', 'friendActivity', 'streakReminders', 'goalReminders', 'dailyReminders', 'newActivityDetected', 'streakMilestones', 'goalAchievements', 'weeklySummary', 'monthlySummary', 'challengeReceived', 'challengeAccepted', 'challengeCompleted', 'challengeExpiring'];
+    const toggleKeys = ['friendRequests', 'reactions', 'comments', 'friendActivity', 'streakReminders', 'goalReminders', 'dailyReminders', 'newActivityDetected', 'streakMilestones', 'goalAchievements', 'weeklySummary', 'monthlySummary', 'challengeReceived', 'challengeAccepted', 'challengeCompleted', 'challengeExpiring', 'challengeAcceptExpired', 'challengeCancelRequest'];
     const newPrefs = { ...preferences };
     toggleKeys.forEach(key => { newPrefs[key] = newEnabled; });
     setPreferences(newPrefs);
@@ -360,6 +362,18 @@ const NotificationSettings = ({ userId, onClose }) => {
               description="Reminder ~1h before a challenge expires"
               enabled={preferences.challengeExpiring}
               onToggle={() => handleToggle('challengeExpiring')}
+            />
+            <SettingRow
+              label="No Response"
+              description="When a friend doesn't accept your challenge in time"
+              enabled={preferences.challengeAcceptExpired}
+              onToggle={() => handleToggle('challengeAcceptExpired')}
+            />
+            <SettingRow
+              label="Cancel Requests"
+              description="When a friend wants to cancel an active challenge (or responds to yours)"
+              enabled={preferences.challengeCancelRequest}
+              onToggle={() => handleToggle('challengeCancelRequest')}
             />
           </div>
 

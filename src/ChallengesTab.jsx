@@ -6,6 +6,8 @@ import {
   acceptChallenge,
   declineChallenge,
   cancelChallenge,
+  requestCancelChallenge,
+  respondToCancelRequest,
   countActiveOutgoing,
 } from './services/challengeService';
 import { ChallengeCard } from './Challenges';
@@ -32,13 +34,21 @@ const SEGMENTS = [
   { key: 'completed', label: 'Completed' },
 ];
 
-export default function ChallengesTab({ user, userProfile, userData, activities = [], friends = [], isPro = false, onChallengeCountsChange }) {
+export default function ChallengesTab({ user, userProfile, userData, activities = [], friends = [], isPro = false, onChallengeCountsChange, navTarget = null }) {
   const [challenges, setChallenges] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [segment, setSegment] = useState('active');
   // Shared across all three main segments — perspective (received/sent) is "sticky"
   // so switching from Pending→Active keeps you on the same side you were looking at.
   const [subSegment, setSubSegment] = useState('received');
+
+  // Notification-tap navigation: when navTarget changes (parent bumps `nonce` per tap),
+  // jump to the segment/sub-segment the notification is about.
+  useEffect(() => {
+    if (!navTarget) return;
+    if (navTarget.segment) setSegment(navTarget.segment);
+    if (navTarget.subSegment) setSubSegment(navTarget.subSegment);
+  }, [navTarget]);
   const [showSelfProfile, setShowSelfProfile] = useState(false);
   const [introDismissed, setIntroDismissed] = useState(() => {
     try { return localStorage.getItem('dismissedChallengesIntro') === '1'; } catch { return false; }
@@ -101,6 +111,14 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
     triggerHaptic(ImpactStyle.Light);
     await cancelChallenge(c.id, user.uid);
   };
+  const handleRequestCancel = async (c) => {
+    triggerHaptic(ImpactStyle.Light);
+    await requestCancelChallenge(c.id, user.uid);
+  };
+  const handleRespondCancel = async (c, accept) => {
+    triggerHaptic(accept ? ImpactStyle.Medium : ImpactStyle.Light);
+    await respondToCancelRequest(c.id, user.uid, accept);
+  };
 
   const pendingCount = buckets.pendingReceived.length + buckets.pendingSent.length;
   const activeCount = buckets.active.length;
@@ -132,7 +150,7 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
             <div>
               <p className="text-[13px] font-semibold text-white mb-1">How challenges work</p>
               <p className="text-[11px] leading-snug" style={{ color: 'rgba(255,255,255,0.65)' }}>
-                After logging an activity, challenge a friend to match it within 24–72 hours. If they accept, they have until the timer runs out to complete the same kind of workout. Everyone who finishes in time wins the challenge.
+                After logging an activity, challenge a friend to match it. They have 8 hours to accept — once they do, the 24–72 hour timer starts. Everyone who finishes the same kind of workout in time wins.
               </p>
             </div>
           </div>
@@ -255,11 +273,14 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
             list: splits.activeReceived,
             emptyTitle: "Nothing for you to finish",
             emptySubtitle: "Challenges you've accepted and still need to complete will show up here.",
+            onRespondCancel: handleRespondCancel,
           },
           'active|sent': {
             list: splits.activeSent,
             emptyTitle: "Nothing waiting on friends",
             emptySubtitle: "Challenges you've sent that friends accepted will show up here until they finish.",
+            onRequestCancel: handleRequestCancel,
+            onRespondCancel: handleRespondCancel,
           },
           'pending|received': {
             list: buckets.pendingReceived,
@@ -311,9 +332,13 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
                     key={c.id}
                     challenge={c}
                     currentUid={user.uid}
+                    userProfile={userProfile}
+                    friendsByUid={friendsByUid}
                     onAccept={view.onAccept}
                     onDecline={view.onDecline}
                     onCancel={view.onCancel}
+                    onRequestCancel={view.onRequestCancel}
+                    onRespondCancel={view.onRespondCancel}
                   />
                 ))}
               </div>

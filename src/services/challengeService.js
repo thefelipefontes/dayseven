@@ -36,6 +36,11 @@ const isNative = Capacitor.isNativePlatform();
 export const FREE_ACTIVE_CHALLENGE_CAP = 0;
 export const CHALLENGE_WINDOW_HOURS = [24, 48, 72];
 
+// Hard cap on how long a recipient has to accept a pending challenge.
+// Timer for the workout itself (windowHours) does NOT start until accept — this just
+// bounds how long the invite stays open so the same-day-ish kineticism is preserved.
+export const ACCEPT_WINDOW_HOURS = 8;
+
 // Challenges are same-day only — activity must be logged for today (user's local date).
 // Keeps the feature kinetic ("I just did this, your turn") and avoids stale invites.
 
@@ -172,11 +177,12 @@ export async function createChallenge({ challengerUid, challengerName, friendUid
 
   const isGroup = targets.length > 1;
   const now = new Date();
-  const windowMs = windowHours * 60 * 60 * 1000;
-  const expiresAt = new Date(now.getTime() + windowMs);
-  // Pending challenges auto-decline halfway through the window — keeps stale invites from
-  // lingering and creates urgency to respond.
-  const respondByAt = new Date(now.getTime() + windowMs / 2);
+  // Hard 8h to accept. The workout timer (windowHours) starts on accept, not on send,
+  // so a busy accepter who sees the invite hours later still gets the full window to do it.
+  const respondByAt = new Date(now.getTime() + ACCEPT_WINDOW_HOURS * 60 * 60 * 1000);
+  // expiresAt is provisional until someone accepts — match respondByAt so any code path that
+  // reads it for an unaccepted challenge gets a sane "deadline." Overwritten on accept.
+  const expiresAt = respondByAt;
   const challengeId = `${challengerUid}_${isGroup ? 'group' : targets[0]}_${now.getTime()}`;
 
   // participants map drives all per-friend state — used for both 1v1 and group going forward.
@@ -242,8 +248,9 @@ function getMyParticipantStatus(challenge, uid) {
 }
 
 /**
- * Friend accepts. Timer does NOT reset — the original window from creation still applies
- * (predictable end time for both parties). Late accepters get whatever's left.
+ * Friend accepts. Timer for the workout starts NOW — expiresAt is set to acceptedAt + windowHours.
+ * For groups, this is the first accept's clock; subsequent accepters race against the same end time
+ * so the challenger has one predictable deadline to watch.
  */
 export async function acceptChallenge(challengeId, friendUid) {
   if (!challengeId || !friendUid) return { error: 'missing_args' };
@@ -255,6 +262,7 @@ export async function acceptChallenge(challengeId, friendUid) {
 
     const now = new Date();
     const isGroup = existing.type === 'group';
+    const windowMs = (existing.windowHours || 24) * 60 * 60 * 1000;
 
     const update = {};
     if (existing.participants) {
@@ -263,6 +271,13 @@ export async function acceptChallenge(challengeId, friendUid) {
     }
     // Overall challenge status moves to active on first acceptance
     update.status = 'active';
+
+    // Timer-on-accept: only set expiresAt if this is the first acceptance.
+    // (For groups, second+ accepters slot into the existing deadline.)
+    if (existing.status === 'pending') {
+      update.expiresAt = new Date(now.getTime() + windowMs).toISOString();
+      update.firstAcceptedAt = now.toISOString();
+    }
 
     // Legacy 1v1 fields
     if (!isGroup && existing.friendUid === friendUid) {
@@ -321,8 +336,91 @@ export async function declineChallenge(challengeId, friendUid) {
 }
 
 /**
+ * Sender requests to cancel an active challenge (1v1 only). The accepter must
+ * agree via respondToCancelRequest before the challenge is actually cancelled —
+ * this prevents the accepter from being on the hook with no escape, while also
+ * preventing the sender from unilaterally retracting once the timer's started.
+ *
+ * For pending (not-yet-accepted) challenges, sender uses cancelChallenge instead
+ * (no mutual approval needed — nothing's at stake yet).
+ */
+export async function requestCancelChallenge(challengeId, requesterUid) {
+  if (!challengeId || !requesterUid) return { error: 'missing_args' };
+
+  try {
+    const existing = await getChallengeById(challengeId);
+    if (!existing) return { error: 'not_found' };
+    if (existing.challengerUid !== requesterUid) return { error: 'not_challenger' };
+    if (existing.status !== 'active') return { error: 'not_active' };
+    // Group cancel is intentionally unsupported in v1 — semantics with N accepters get messy.
+    if (existing.type === 'group') return { error: 'group_unsupported' };
+    if (existing.cancelRequest && !existing.cancelRequest.response) return { error: 'already_requested' };
+
+    const update = {
+      cancelRequest: {
+        requestedBy: requesterUid,
+        requestedAt: new Date().toISOString(),
+        response: null,
+        respondedAt: null,
+      },
+    };
+
+    if (isNative) {
+      await FirebaseFirestore.updateDocument({ reference: `challenges/${challengeId}`, data: update });
+    } else {
+      await withTimeout(updateDoc(doc(db, 'challenges', challengeId), update));
+    }
+    return { success: true };
+  } catch (error) {
+    console.error('[challengeService] requestCancelChallenge failed:', error);
+    return { error: 'write_failed' };
+  }
+}
+
+/**
+ * Accepter responds to the sender's cancel request — accept (challenge ends, no stats
+ * impact for either side) or decline (challenge continues normally, request is cleared).
+ */
+export async function respondToCancelRequest(challengeId, accepterUid, accept) {
+  if (!challengeId || !accepterUid) return { error: 'missing_args' };
+
+  try {
+    const existing = await getChallengeById(challengeId);
+    if (!existing) return { error: 'not_found' };
+    if (existing.status !== 'active') return { error: 'not_active' };
+    if (!existing.cancelRequest || existing.cancelRequest.response) return { error: 'no_open_request' };
+    if (existing.cancelRequest.requestedBy === accepterUid) return { error: 'cant_respond_own_request' };
+
+    // Sanity check: the responder must actually be a participant who accepted.
+    const myStatus = getMyParticipantStatus(existing, accepterUid);
+    if (myStatus !== 'accepted') return { error: 'not_accepter' };
+
+    const now = new Date().toISOString();
+    const update = {
+      'cancelRequest.response': accept ? 'accepted' : 'declined',
+      'cancelRequest.respondedAt': now,
+    };
+
+    if (accept) {
+      update.status = 'cancelled';
+      update.resolvedAt = now;
+    }
+
+    if (isNative) {
+      await FirebaseFirestore.updateDocument({ reference: `challenges/${challengeId}`, data: update });
+    } else {
+      await withTimeout(updateDoc(doc(db, 'challenges', challengeId), update));
+    }
+    return { success: true };
+  } catch (error) {
+    console.error('[challengeService] respondToCancelRequest failed:', error);
+    return { error: 'write_failed' };
+  }
+}
+
+/**
  * Challenger cancels their own challenge — only allowed while still pending
- * (once the friend accepts, the timer's running and it's not fair to retract).
+ * (once the friend accepts, mutual cancel via requestCancelChallenge is required).
  */
 export async function cancelChallenge(challengeId, challengerUid) {
   if (!challengeId || !challengerUid) return { error: 'missing_args' };

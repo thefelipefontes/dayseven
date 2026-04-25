@@ -301,6 +301,10 @@ const NotificationType = {
   CHALLENGE_ACCEPTED: 'challenge_accepted',
   CHALLENGE_COMPLETED: 'challenge_completed',
   CHALLENGE_EXPIRING: 'challenge_expiring',
+  CHALLENGE_ACCEPT_EXPIRED: 'challenge_accept_expired',
+  CHALLENGE_CANCEL_REQUESTED: 'challenge_cancel_requested',
+  CHALLENGE_CANCEL_ACCEPTED: 'challenge_cancel_accepted',
+  CHALLENGE_CANCEL_DECLINED: 'challenge_cancel_declined',
 };
 
 /**
@@ -438,6 +442,8 @@ function getDefaultPreferences() {
     challengeAccepted: true,
     challengeCompleted: true,
     challengeExpiring: true,
+    challengeAcceptExpired: true,
+    challengeCancelRequest: true,
     quietHoursEnabled: false,
     quietHoursStart: '22:00',
     quietHoursEnd: '07:00',
@@ -1621,12 +1627,10 @@ exports.onChallengeCreated = onDocumentCreated(
 );
 
 /**
- * Notify the challenger when ANY recipient accepts.
- * Decline is silent (loss-only mechanics suppress acceptance — don't shame people for declining).
- *
- * Handles three cases:
- *  - Phase 1 1v1: legacy friendStatus pending → accepted
- *  - Phase 3 1v1/group: participants[uid].status pending → accepted (per friend)
+ * Multi-purpose lifecycle trigger. Fires on every challenge update and dispatches:
+ *  - Acceptance: bumps accepted counter + notifies challenger ("Challenge Accepted")
+ *  - Accept-window expiry: notifies challenger that no one took it
+ *  - Cancel request lifecycle: notifies accepter on request, sender on response
  */
 exports.onChallengeUpdated = onDocumentUpdated(
   'challenges/{challengeId}',
@@ -1635,12 +1639,13 @@ exports.onChallengeUpdated = onDocumentUpdated(
     const after = event.data.after.data();
     if (!before || !after) return;
 
-    const { challengerUid, matchRule } = after;
+    const { challengerUid } = after;
     if (!challengerUid) return;
 
-    // Find every friend who newly transitioned to 'accepted' in this write.
-    const newAccepters = [];
+    const challengeId = event.params.challengeId;
 
+    // ---- 1. New acceptances ----
+    const newAccepters = [];
     if (after.participants) {
       for (const [uid, p] of Object.entries(after.participants)) {
         const prevStatus = before.participants?.[uid]?.status;
@@ -1648,47 +1653,128 @@ exports.onChallengeUpdated = onDocumentUpdated(
           newAccepters.push(uid);
         }
       }
-    } else {
-      // Legacy 1v1 path
-      if (before.friendStatus !== 'accepted' && after.friendStatus === 'accepted' && after.friendUid) {
-        newAccepters.push(after.friendUid);
+    } else if (before.friendStatus !== 'accepted' && after.friendStatus === 'accepted' && after.friendUid) {
+      newAccepters.push(after.friendUid);
+    }
+
+    if (newAccepters.length > 0) {
+      // Bump `accepted` counter — denominator for completion rate (wins / accepted).
+      // Only accepters score; challenger never gets credit for sending.
+      await Promise.all(newAccepters.map(uid =>
+        db.collection('users').doc(uid).set({
+          challengeStats: { accepted: FieldValue.increment(1) },
+        }, { merge: true }).catch(err =>
+          console.error(`[onChallengeUpdated] failed to bump accepted for ${uid}:`, err)
+        )
+      ));
+
+      const prefs = await getUserPreferences(challengerUid);
+      if (prefs.challengeAccepted) {
+        const windowH = after.windowHours || 24;
+        const isGroup = after.type === 'group';
+
+        await Promise.all(newAccepters.map(async (friendUid) => {
+          const friendName = await getUserDisplayName(friendUid);
+          await sendNotificationToUser(
+            challengerUid,
+            'Challenge Accepted! 🔥',
+            isGroup
+              ? `${friendName} joined the group challenge — ${windowH}h on the clock.`
+              : `${friendName} took the bait — ${windowH}h on the clock.`,
+            {
+              type: NotificationType.CHALLENGE_ACCEPTED,
+              fromUserId: friendUid,
+              challengeId,
+            }
+          );
+        }));
       }
     }
 
-    if (newAccepters.length === 0) return;
+    // ---- 2. Accept window expired (no one accepted in time) ----
+    if (before.status !== 'accept_expired' && after.status === 'accept_expired') {
+      const prefs = await getUserPreferences(challengerUid);
+      if (prefs.challengeAcceptExpired) {
+        const isGroupExpiry = after.type === 'group';
+        const recipientUid = after.friendUid || (after.participantUids || []).find(u => u !== challengerUid);
+        const recipientName = recipientUid ? await getUserDisplayName(recipientUid) : 'Your friend';
+        await sendNotificationToUser(
+          challengerUid,
+          'Challenge Expired ⌛',
+          isGroupExpiry
+            ? `Nobody accepted your group challenge in time.`
+            : `${recipientName} didn't accept your challenge in time.`,
+          {
+            type: NotificationType.CHALLENGE_ACCEPT_EXPIRED,
+            challengeId,
+          }
+        );
+      }
+    }
 
-    // Bump `accepted` counter for each newly-accepting user. This is the denominator
-    // for completion rate (wins / accepted). Only accepters score in this system —
-    // the challenger never gets credit for sending.
-    await Promise.all(newAccepters.map(uid =>
-      db.collection('users').doc(uid).set({
-        challengeStats: { accepted: FieldValue.increment(1) },
-      }, { merge: true }).catch(err =>
-        console.error(`[onChallengeUpdated] failed to bump accepted for ${uid}:`, err)
-      )
-    ));
+    // ---- 3. Cancel request flow (1v1 active only) ----
+    const beforeCR = before.cancelRequest || null;
+    const afterCR = after.cancelRequest || null;
+    const beforeHadOpenRequest = beforeCR && !beforeCR.response;
+    const afterHasOpenRequest = afterCR && !afterCR.response;
 
-    const prefs = await getUserPreferences(challengerUid);
-    if (!prefs.challengeAccepted) return;
-
-    const windowH = after.windowHours || 24;
-    const isGroup = after.type === 'group';
-
-    await Promise.all(newAccepters.map(async (friendUid) => {
-      const friendName = await getUserDisplayName(friendUid);
-      await sendNotificationToUser(
-        challengerUid,
-        'Challenge Accepted! 🔥',
-        isGroup
-          ? `${friendName} joined the group challenge — ${windowH}h on their clock.`
-          : `${friendName} took the bait — ${windowH}h on the clock.`,
-        {
-          type: NotificationType.CHALLENGE_ACCEPTED,
-          fromUserId: friendUid,
-          challengeId: event.params.challengeId,
+    // 3a. Sender just opened a cancel request → notify the accepter
+    if (!beforeHadOpenRequest && afterHasOpenRequest) {
+      const requesterUid = afterCR.requestedBy;
+      const accepterUid = (after.participantUids || []).find(u => u !== requesterUid)
+        || after.friendUid;
+      if (accepterUid && accepterUid !== requesterUid) {
+        const prefs = await getUserPreferences(accepterUid);
+        if (prefs.challengeCancelRequest) {
+          const requesterName = await getUserDisplayName(requesterUid);
+          await sendNotificationToUser(
+            accepterUid,
+            'Cancel Requested 🤝',
+            `${requesterName} wants to cancel your active challenge.`,
+            {
+              type: NotificationType.CHALLENGE_CANCEL_REQUESTED,
+              fromUserId: requesterUid,
+              challengeId,
+            }
+          );
         }
-      );
-    }));
+      }
+    }
+
+    // 3b. Accepter responded to an open request → notify the sender
+    const responseJustSet = beforeHadOpenRequest && afterCR?.response && !beforeCR?.response;
+    if (responseJustSet) {
+      const requesterUid = afterCR.requestedBy;
+      const responderUid = (after.participantUids || []).find(u => u !== requesterUid)
+        || after.friendUid;
+      const prefs = await getUserPreferences(requesterUid);
+      if (prefs.challengeCancelRequest) {
+        const responderName = responderUid ? await getUserDisplayName(responderUid) : 'Your friend';
+        if (afterCR.response === 'accepted') {
+          await sendNotificationToUser(
+            requesterUid,
+            'Challenge Cancelled ✅',
+            `${responderName} agreed to cancel.`,
+            {
+              type: NotificationType.CHALLENGE_CANCEL_ACCEPTED,
+              fromUserId: responderUid,
+              challengeId,
+            }
+          );
+        } else {
+          await sendNotificationToUser(
+            requesterUid,
+            'Cancel Declined',
+            `${responderName} wants to keep going — challenge continues.`,
+            {
+              type: NotificationType.CHALLENGE_CANCEL_DECLINED,
+              fromUserId: responderUid,
+              challengeId,
+            }
+          );
+        }
+      }
+    }
   }
 );
 
@@ -1910,10 +1996,10 @@ exports.onUserActivitiesUpdatedForChallenges = onDocumentUpdated(
  * Cron: every 5 minutes, expire challenges past their deadline.
  *
  * Rules:
- *  - 1v1 pending → cancelled (silent, no penalty)
- *  - 1v1 active → expired (loss to friend who accepted but didn't complete)
- *  - Group per-participant pending past overall expiry → cancelled for them (no penalty)
- *  - Group per-participant accepted past their personal expiry → expired (loss for them)
+ *  - 1v1 pending past respondByAt → accept_expired (no penalty, challenger gets a notification)
+ *  - 1v1 active past expiresAt → expired (loss to friend who accepted but didn't complete)
+ *  - Group per-participant pending past respondByAt → cancelled for them (no penalty)
+ *  - Group per-participant accepted past expiresAt → expired (loss for them)
  *  - Group overall flips to 'completed' (if any won) or 'expired' (none won) when all participants resolved
  */
 exports.expireChallenges = onSchedule(
@@ -1944,8 +2030,8 @@ exports.expireChallenges = onSchedule(
           const overallExpiredMs = data.expiresAt ? new Date(data.expiresAt).getTime() : 0;
           const overallExpired = overallExpiredMs && overallExpiredMs < nowMs;
 
-          // Pending challenges auto-cancel halfway through the window (respondByAt).
-          // Falls back to expiresAt for legacy Phase 1 challenges that don't have respondByAt.
+          // Pending challenges have a hard accept window (respondByAt = createdAt + 8h).
+          // Falls back to expiresAt for legacy challenges that don't have respondByAt.
           const respondByMs = data.respondByAt ? new Date(data.respondByAt).getTime() : overallExpiredMs;
           const respondByExpired = respondByMs && respondByMs < nowMs;
 
@@ -1954,9 +2040,10 @@ exports.expireChallenges = onSchedule(
             if (data.status === 'pending') {
               if (!respondByExpired) return;
               tx.update(doc.ref, {
-                status: 'cancelled',
+                status: 'accept_expired',
+                friendStatus: 'accept_expired',
                 resolvedAt: nowIso,
-                expiredReason: 'pending_timeout',
+                expiredReason: 'accept_window_timeout',
               });
             } else {
               if (!overallExpired) return;
@@ -1998,10 +2085,19 @@ exports.expireChallenges = onSchedule(
           }
           const stillOpen = Object.values(finalParticipantStatuses).some(s => s === 'pending' || s === 'accepted');
           const anyCompleted = Object.values(finalParticipantStatuses).some(s => s === 'completed');
+          const anyAccepted = Object.values(finalParticipantStatuses).some(s => s === 'accepted' || s === 'completed' || s === 'expired');
 
           if (!stillOpen) {
-            participantUpdates.status = anyCompleted ? 'completed' : 'expired';
+            // Distinguish "no one ever accepted" (accept_expired — silent for accepters,
+            // notify challenger) from "accepted but didn't finish" (expired — counts as loss).
+            participantUpdates.status = anyCompleted
+              ? 'completed'
+              : (anyAccepted ? 'expired' : 'accept_expired');
             participantUpdates.resolvedAt = nowIso;
+            // Mirror onto legacy friendStatus for 1v1 so client buckets reflect it.
+            if (data.friendUid && participantUpdates[`participants.${data.friendUid}.status`]) {
+              participantUpdates.friendStatus = participantUpdates[`participants.${data.friendUid}.status`];
+            }
           }
 
           if (Object.keys(participantUpdates).length === 0 && lossUpdates.length === 0) return;

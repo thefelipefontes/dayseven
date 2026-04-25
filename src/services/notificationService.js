@@ -61,6 +61,10 @@ export const NotificationType = {
   CHALLENGE_ACCEPTED: 'challenge_accepted',
   CHALLENGE_COMPLETED: 'challenge_completed',
   CHALLENGE_EXPIRING: 'challenge_expiring',
+  CHALLENGE_ACCEPT_EXPIRED: 'challenge_accept_expired',
+  CHALLENGE_CANCEL_REQUESTED: 'challenge_cancel_requested',
+  CHALLENGE_CANCEL_ACCEPTED: 'challenge_cancel_accepted',
+  CHALLENGE_CANCEL_DECLINED: 'challenge_cancel_declined',
 };
 
 /**
@@ -296,6 +300,8 @@ export const getDefaultPreferences = () => ({
   challengeAccepted: true,
   challengeCompleted: true,
   challengeExpiring: true,
+  challengeAcceptExpired: true,
+  challengeCancelRequest: true,
 
   // Quiet hours
   quietHoursEnabled: false,
@@ -363,6 +369,10 @@ export const shouldShowNotification = (notification, preferences) => {
     [NotificationType.CHALLENGE_ACCEPTED]: 'challengeAccepted',
     [NotificationType.CHALLENGE_COMPLETED]: 'challengeCompleted',
     [NotificationType.CHALLENGE_EXPIRING]: 'challengeExpiring',
+    [NotificationType.CHALLENGE_ACCEPT_EXPIRED]: 'challengeAcceptExpired',
+    [NotificationType.CHALLENGE_CANCEL_REQUESTED]: 'challengeCancelRequest',
+    [NotificationType.CHALLENGE_CANCEL_ACCEPTED]: 'challengeCancelRequest',
+    [NotificationType.CHALLENGE_CANCEL_DECLINED]: 'challengeCancelRequest',
   };
 
   const prefKey = prefMap[type];
@@ -504,12 +514,36 @@ export const handleNotificationNavigation = (notification, navigate, options = {
       navigate('home');
       break;
 
+    // Each challenge notif routes to the segment + perspective where the user can
+    // act on or see the thing the notification is about.
     case NotificationType.CHALLENGE_RECEIVED:
+      navigate('challenges', { challengesSegment: 'pending', challengesSubSegment: 'received' });
+      break;
     case NotificationType.CHALLENGE_ACCEPTED:
+      // Sender gets this when their challenge is accepted — show their active sent.
+      navigate('challenges', { challengesSegment: 'active', challengesSubSegment: 'sent' });
+      break;
     case NotificationType.CHALLENGE_COMPLETED:
+      // Sent to both sides when a challenge is matched. Land on Completed; leave
+      // sub-segment to the user's last choice (they'll see whichever side they were on).
+      navigate('challenges', { challengesSegment: 'completed' });
+      break;
     case NotificationType.CHALLENGE_EXPIRING:
-      // Challenges live on the home tab
-      navigate('home');
+      // Recipient warning ~1h before deadline — take them to their active received.
+      navigate('challenges', { challengesSegment: 'active', challengesSubSegment: 'received' });
+      break;
+    case NotificationType.CHALLENGE_ACCEPT_EXPIRED:
+      // Sender's pending challenge timed out unaccepted — show pending sent.
+      navigate('challenges', { challengesSegment: 'pending', challengesSubSegment: 'sent' });
+      break;
+    case NotificationType.CHALLENGE_CANCEL_REQUESTED:
+      // Accepter receives the cancel request — banner lives on their active received card.
+      navigate('challenges', { challengesSegment: 'active', challengesSubSegment: 'received' });
+      break;
+    case NotificationType.CHALLENGE_CANCEL_ACCEPTED:
+    case NotificationType.CHALLENGE_CANCEL_DECLINED:
+      // Sender gets a response to their cancel request — show their active sent.
+      navigate('challenges', { challengesSegment: 'active', challengesSubSegment: 'sent' });
       break;
 
     default:

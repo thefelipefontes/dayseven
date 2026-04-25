@@ -6,11 +6,12 @@ import Login from './Login';
 import UsernameSetup from './UsernameSetup';
 import Friends from './Friends';
 import ActivityFeed from './ActivityFeed';
-import { ChallengeFriendModal, ChallengesSection, ChallengeActivityPickerModal } from './Challenges';
+import { ChallengeFriendModal, ChallengesSection, ChallengeActivityPickerModal, ChallengeApplyPastActivityModal } from './Challenges';
 import ChallengesTab from './ChallengesTab';
 import SettingsPage from './Settings';
 import ProfilePage from './Profile';
-import { isChallengeable } from './services/challengeService';
+import { isChallengeable, getChallengesForUser, activityMatchesChallengeRule, describeMatchRule, evaluateActivityAgainstChallenge, applyOptimisticChallengeCompletions, applyChallengeIntent } from './services/challengeService';
+import ChallengeMatchChooser from './components/ChallengeMatchChooser';
 import { createUserProfile, getUserProfile, updateUserProfile, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, deleteActivityPhoto, saveUserGoals, getUserGoals, setOnboardingComplete, setTourComplete, savePersonalRecords, getPersonalRecords, saveDailyHealthData, getDailyHealthData, getDailyHealthHistory } from './services/userService';
 import { getFriends, getReactions, getFriendRequests, getComments, addReply, getReplies, deleteReply, addReaction, removeReaction, addComment, cleanupActivitySocialData } from './services/friendService';
 
@@ -7551,10 +7552,14 @@ const MinutesPicker = ({ value, onChange, label = 'min' }) => {
 };
 
 // Add Activity Modal
-const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, defaultDate = null, userData = null, onSaveCustomActivity = null, onSaveHKPreference = null, onStartWorkout = null, hasActiveWorkout = false, otherPendingWorkoutsCount = 0, onSeeOtherWorkouts = null, onBackToWorkoutPicker = null, dismissedWorkoutUUIDs = [], linkedWorkoutUUIDs = [], pendingWorkouts = [] }) => {
+const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, defaultDate = null, userData = null, onSaveCustomActivity = null, onSaveHKPreference = null, onStartWorkout = null, hasActiveWorkout = false, otherPendingWorkoutsCount = 0, onSeeOtherWorkouts = null, onBackToWorkoutPicker = null, dismissedWorkoutUUIDs = [], linkedWorkoutUUIDs = [], pendingWorkouts = [], activeChallenges = [], friendsByUid = {} }) => {
   // Mode: null = initial choice, 'start' = start new workout, 'completed' = log completed (existing flow)
   const [mode, setMode] = useState(null);
   const [activityType, setActivityType] = useState(null);
+  // Challenge fulfillment selection — null = user hasn't interacted (default-on for all matches);
+  // Set => explicit selection (user toggled at least one row, including "uncheck all").
+  // Sent to the cloud function as `intendedChallengeIds`. Empty array = "explicit none."
+  const [challengeFulfillSelection, setChallengeFulfillSelection] = useState(null);
   const [isFromNotification, setIsFromNotification] = useState(false); // Track if opened from notification
   const [isChangingActivityType, setIsChangingActivityType] = useState(false); // Track if user clicked "Change" on activity type
   const [subtype, setSubtype] = useState('');
@@ -7612,6 +7617,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   useEffect(() => {
     if (isOpen && !hasInitializedRef.current) {
       hasInitializedRef.current = true;
+      // Seed challenge-fulfill selection from preset intent (from "Start workout" CTA), else null
+      // (= default to all matching checked once matches resolve at render time).
+      const presetIntent = pendingActivity?.intendedChallengeIds;
+      setChallengeFulfillSelection(
+        Array.isArray(presetIntent) ? new Set(presetIntent.map(String)) : null
+      );
       // If there's a pending activity (from HealthKit or editing), go directly to completed flow
       // Otherwise show initial choice screen
       setMode(pendingActivity ? 'completed' : null);
@@ -7747,6 +7758,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       setContrastHotType('Sauna');
       setContrastColdMinutes(5);
       setContrastHotMinutes(10);
+      setChallengeFulfillSelection(null);
     }
   }, [isOpen, pendingActivity, defaultDate]);
 
@@ -7982,6 +7994,56 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   const showCustomActivityInput = activityType === 'Other' || isUncategorizedHKType;
   const showCountToward = activityType && activityType !== 'Other' && !isUncategorizedHKType;
   const isFromAppleHealth = !!pendingActivity?.fromAppleHealth;
+
+  // Evaluate each accepted active challenge against the in-progress activity. Recomputed as
+  // the user picks type / category / duration / distance. Splits into:
+  //  - matchingChallenges: meet the target (eligible for fulfillment)
+  //  - shortChallenges: right type but below the target (shown greyed-out with "X short" hint)
+  const { matchingChallenges, shortChallenges } = useMemo(() => {
+    if (!isOpen || !activeChallenges || activeChallenges.length === 0) {
+      return { matchingChallenges: [], shortChallenges: [] };
+    }
+    // Strength sub-types collapse to 'Strength Training' so getChallengeCategory works.
+    const normalizedType = ['Weightlifting', 'Bodyweight', 'Circuit'].includes(activityType)
+      ? 'Strength Training'
+      : activityType;
+    // Same duration math the save uses (Contrast = cold+hot, Chiropractic = none, default = h*60+m).
+    const computedDuration = activityType === 'Chiropractic'
+      ? 0
+      : activityType === 'Contrast Therapy'
+        ? (contrastColdMinutes + contrastHotMinutes)
+        : (durationHours * 60 + durationMinutes);
+    const proxyActivity = {
+      type: normalizedType,
+      subtype,
+      countToward,
+      customActivityCategory: showCustomActivityInput ? customActivityCategory : undefined,
+      distance: distance || 0,
+      duration: computedDuration,
+    };
+    const matching = [];
+    const short = [];
+    for (const c of activeChallenges) {
+      const result = evaluateActivityAgainstChallenge(proxyActivity, c.matchRule);
+      if (result.matches) matching.push(c);
+      else if (result.qualifies) short.push({ challenge: c, shortBy: result.shortBy });
+    }
+    return { matchingChallenges: matching, shortChallenges: short };
+  }, [isOpen, activeChallenges, activityType, subtype, countToward, customActivityCategory, showCustomActivityInput, distance, durationHours, durationMinutes, contrastColdMinutes, contrastHotMinutes]);
+
+  // Effective selection: explicit user choice if any, else "all matches selected" by default.
+  const effectiveChallengeSelection = useMemo(() => {
+    if (challengeFulfillSelection !== null) return challengeFulfillSelection;
+    return new Set(matchingChallenges.map(c => c.id));
+  }, [challengeFulfillSelection, matchingChallenges]);
+
+  const toggleChallengeFulfill = (id) => {
+    setChallengeFulfillSelection(prev => {
+      const base = prev !== null ? new Set(prev) : new Set(matchingChallenges.map(c => c.id));
+      if (base.has(id)) base.delete(id); else base.add(id);
+      return base;
+    });
+  };
 
   // Handle linking an Apple Health workout
   const handleLinkWorkout = (workout) => {
@@ -8355,7 +8417,14 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               // Photo data
               photoFile: activityPhoto,
               photoURL: !activityPhoto ? (pendingActivity?.photoURL || null) : undefined, // Preserve existing photo if not changing
-              isPhotoPrivate: isPhotoPrivate
+              isPhotoPrivate: isPhotoPrivate,
+              // Resolved challenge-fulfill intent: only set when there are matches the user could see
+              // in the modal. An empty array is meaningful (= explicit "don't apply to any").
+              intendedChallengeIds: matchingChallenges.length > 0
+                ? matchingChallenges
+                    .map(c => c.id)
+                    .filter(id => effectiveChallengeSelection.has(id))
+                : undefined,
             });
             handleClose();
           }}
@@ -9878,6 +9947,86 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               </div>
             </div>
 
+            {(matchingChallenges.length > 0 || shortChallenges.length > 0) && (
+              <div>
+                <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">
+                  {matchingChallenges.length > 0
+                    ? `Fulfilling ${matchingChallenges.length === 1 ? 'a challenge' : `${matchingChallenges.length} challenges`}`
+                    : 'Active challenges'}
+                </label>
+                <div className="space-y-2">
+                  {matchingChallenges.map(c => {
+                    const isSelected = effectiveChallengeSelection.has(c.id);
+                    const senderName = friendsByUid[c.challengerUid]?.displayName
+                      || friendsByUid[c.challengerUid]?.username
+                      || c.challengerName
+                      || 'Friend';
+                    const cat = c.matchRule?.category;
+                    const tint = cat === 'lifting' ? '#00FF94' : cat === 'cardio' ? '#FF9500' : cat === 'recovery' ? '#00D1FF' : '#FFD60A';
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => { triggerHaptic(ImpactStyle.Light); toggleChallengeFulfill(c.id); }}
+                        className="w-full flex items-center gap-3 p-3 rounded-xl text-left"
+                        style={{
+                          backgroundColor: isSelected ? `${tint}1A` : 'rgba(255,255,255,0.04)',
+                          border: `1px solid ${isSelected ? tint : 'rgba(255,255,255,0.08)'}`,
+                        }}
+                      >
+                        <div
+                          className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0"
+                          style={{
+                            backgroundColor: isSelected ? tint : 'transparent',
+                            border: `1.5px solid ${isSelected ? tint : 'rgba(255,255,255,0.3)'}`,
+                          }}
+                        >
+                          {isSelected && (
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                              <path d="M2 6.5L4.5 9L10 3" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white text-sm font-medium truncate">{senderName}'s challenge</p>
+                          <p className="text-gray-500 text-xs truncate">{describeMatchRule(c.matchRule)}{c.title ? ` · ${c.title}` : ''}{c.requirePhoto ? ' · 📸 photo required' : ''}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
+
+                  {shortChallenges.map(({ challenge: c, shortBy }) => {
+                    const senderName = friendsByUid[c.challengerUid]?.displayName
+                      || friendsByUid[c.challengerUid]?.username
+                      || c.challengerName
+                      || 'Friend';
+                    const shortLabel = shortBy?.distance
+                      ? `${parseFloat(shortBy.distance).toFixed(shortBy.distance % 1 === 0 ? 0 : 1)} mi short`
+                      : shortBy?.duration
+                        ? `${Math.ceil(shortBy.duration)} min short`
+                        : 'Below target';
+                    return (
+                      <div
+                        key={c.id}
+                        className="w-full flex items-center gap-3 p-3 rounded-xl"
+                        style={{
+                          backgroundColor: 'rgba(255,255,255,0.02)',
+                          border: '1px dashed rgba(255,255,255,0.12)',
+                          opacity: 0.6,
+                        }}
+                      >
+                        <div className="w-5 h-5 rounded-md flex-shrink-0" style={{ border: '1.5px dashed rgba(255,255,255,0.25)' }} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-gray-300 text-sm font-medium truncate">{senderName}'s challenge</p>
+                          <p className="text-gray-500 text-xs truncate">{describeMatchRule(c.matchRule)} · <span style={{ color: '#FF9F0A' }}>{shortLabel}</span></p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Notes (optional)</label>
               <textarea
@@ -10147,7 +10296,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
 
 // Home Tab - Simplified
 
-const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeCountsChange, onChallengeActivity, onNavigateToHistory, onNavigateToChallenges }) => {
+const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeCountsChange, onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, optimisticChallengeCompletions = new Map() }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
   const [dismissConfirmWorkouts, setDismissConfirmWorkouts] = useState(null); // Workouts pending dismiss confirmation
@@ -11760,7 +11909,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         {/* End of weeklyGoalsRef wrapper */}
       </div>
 
-      <ChallengesSection user={user} userProfile={userProfile} friends={friends} onChallengeCountsChange={onChallengeCountsChange} onSeeDetails={onNavigateToChallenges} />
+      <ChallengesSection user={user} userProfile={userProfile} friends={friends} onChallengeCountsChange={onChallengeCountsChange} onSeeDetails={onNavigateToChallenges} optimisticCompletions={optimisticChallengeCompletions} />
 
       {/* Section Divider */}
       <div className="mx-4 mb-4">
@@ -11906,6 +12055,20 @@ export default function DaySevenApp() {
   // Set when a challenge notification is tapped — tells ChallengesTab which segment/sub
   // to open. Includes a `nonce` so re-navigating to the same target still re-applies.
   const [challengesNavTarget, setChallengesNavTarget] = useState(null);
+  // Multi-match chooser state — shape: { activity, candidateChallenges } | null.
+  // Set when an activity matches 2+ challenges and the cloud function deferred fulfillment
+  // (push notification deep-link or anywhere we surface the modal).
+  const [challengeChooserState, setChallengeChooserState] = useState(null);
+  // Active accepted challenges for the current user — passed to AddActivityModal so it can
+  // show "this fulfills these challenges" with checkboxes. Refreshed each time the modal opens.
+  const [accepterActiveChallenges, setAccepterActiveChallenges] = useState([]);
+  // Optimistic completions: challengeId → { activityId, completedAt }. The cloud function
+  // takes a few seconds to actually flip status; this overlay flips it locally so the UI
+  // moves Active → Completed immediately. Auto-pruned per entry after 30s; the listener will
+  // have caught up by then and the overlay no-ops anyway.
+  const [optimisticChallengeCompletions, setOptimisticChallengeCompletions] = useState(new Map());
+  // Active challenge being applied to a past activity — drives the "Use past activity" picker modal.
+  const [applyPastActivityChallenge, setApplyPastActivityChallenge] = useState(null);
   const [challengePickerForFriend, setChallengePickerForFriend] = useState(null); // friend object when picking which past activity to challenge with
   const [preSelectedChallengeFriend, setPreSelectedChallengeFriend] = useState(null); // friend uid to pre-fill in ChallengeFriendModal
   const [showCelebration, setShowCelebration] = useState(false);
@@ -13324,6 +13487,9 @@ export default function DaySevenApp() {
                       });
                     }
                   }, {
+                    onShowChallengePicker: ({ activityId, challengeIds }) => {
+                      openChallengeChooser({ activityId, challengeIds });
+                    },
                     onShowSharePrompt: (summaryData) => {
                       // Clear pending flag since user tapped the notification directly
                       localStorage.removeItem('pendingSharePrompt');
@@ -14299,6 +14465,42 @@ export default function DaySevenApp() {
     setShowAddActivity(true);
   };
 
+  // Refresh active accepted challenges whenever the AddActivityModal opens — used to show
+  // the "fulfills these challenges" section with checkboxes. One-shot fetch (not a subscription)
+  // because the user's accepted challenges don't churn during a single workout-logging session.
+  useEffect(() => {
+    if (!showAddActivity || !user?.uid) return;
+    let cancelled = false;
+    getChallengesForUser(user.uid).then(all => {
+      if (cancelled) return;
+      const accepted = all.filter(c => {
+        if (c.status !== 'active') return false;
+        const myStatus = c.participants?.[user.uid]?.status
+          || (c.friendUid === user.uid ? c.friendStatus : null);
+        return myStatus === 'accepted';
+      });
+      setAccepterActiveChallenges(accepted);
+    });
+    return () => { cancelled = true; };
+  }, [showAddActivity, user?.uid]);
+
+  // Resolve activity + challenge IDs from a multi-match push payload, then open the chooser modal.
+  // Activity comes from local state; challenges come from a fresh fetch (so the chooser sees
+  // current rule + status even if the user just changed something).
+  const openChallengeChooser = useCallback(async ({ activityId, challengeIds }) => {
+    if (!activityId || !Array.isArray(challengeIds) || challengeIds.length === 0 || !user?.uid) return;
+    const activity = activities.find(a => String(a.id) === String(activityId));
+    if (!activity) {
+      console.warn('[openChallengeChooser] activity not found', activityId);
+      return;
+    }
+    const all = await getChallengesForUser(user.uid);
+    const wanted = new Set(challengeIds.map(String));
+    const candidates = all.filter(c => wanted.has(String(c.id)) && c.status === 'active');
+    if (candidates.length === 0) return;
+    setChallengeChooserState({ activity, candidateChallenges: candidates });
+  }, [user?.uid, activities]);
+
   const handleActivitySaved = async (activity) => {
     // Haptic feedback when saving activity
     triggerHaptic(ImpactStyle.Medium);
@@ -14406,6 +14608,53 @@ export default function DaySevenApp() {
       }).catch(err => {
         console.error('[handleActivitySaved] Direct save failed:', err);
       });
+    }
+
+    // Optimistic fulfillment — flip the UI to "completed" instantly for any challenge this
+    // activity will fulfill. Mirrors the cloud function's decision logic so we don't get out
+    // of sync. Cloud function still runs server-side for stats + push notifications.
+    if (!isEdit && user?.uid && Array.isArray(accepterActiveChallenges) && accepterActiveChallenges.length > 0) {
+      const intentIds = Array.isArray(newActivity.intendedChallengeIds)
+        ? newActivity.intendedChallengeIds.map(String)
+        : null;
+      // Per-challenge match check using the same client helper the modal uses.
+      const matched = accepterActiveChallenges.filter(c =>
+        evaluateActivityAgainstChallenge(newActivity, c.matchRule).matches
+      );
+      // Photo-required gate: skip if photo missing.
+      const eligible = matched.filter(c => !c.requirePhoto || newActivity.photoURL);
+      let willFulfill = [];
+      if (intentIds !== null) {
+        // Explicit intent (incl. empty): only fulfill listed.
+        const wanted = new Set(intentIds);
+        willFulfill = eligible.filter(c => wanted.has(String(c.id)));
+      } else if (eligible.length === 1) {
+        willFulfill = eligible;
+      }
+      // Multi-match without intent stays deferred (cloud function sends pick-which push).
+      if (willFulfill.length > 0) {
+        const completedAt = Date.now();
+        setOptimisticChallengeCompletions(prev => {
+          const next = new Map(prev);
+          for (const c of willFulfill) {
+            next.set(c.id, { activityId: newActivity.id, completedAt });
+            // Auto-prune after 30s — listener will have caught up by then.
+            setTimeout(() => {
+              setOptimisticChallengeCompletions(p => {
+                const m = new Map(p);
+                m.delete(c.id);
+                return m;
+              });
+            }, 30000);
+          }
+          return next;
+        });
+        // Instant feedback — don't wait for the cloud-function-issued push notification.
+        triggerHaptic(ImpactStyle.Medium);
+        setToastMessage(willFulfill.length === 1 ? 'Challenge complete! 🏆' : `${willFulfill.length} challenges complete! 🏆`);
+        setToastType('success');
+        setShowToast(true);
+      }
     }
 
     // If this was a HealthKit workout or linked to one, remove it from pending list
@@ -15563,6 +15812,7 @@ export default function DaySevenApp() {
                     }
                     switchTab('challenges');
                   }}
+                  optimisticChallengeCompletions={optimisticChallengeCompletions}
                   isPro={isPro}
                   onPresentPaywall={async () => {
                     const { purchased } = await presentPaywall();
@@ -15622,6 +15872,18 @@ export default function DaySevenApp() {
                   isPro={isPro}
                   onChallengeCountsChange={({ activeOutgoingCount }) => setActiveOutgoingChallengeCount(activeOutgoingCount)}
                   navTarget={challengesNavTarget}
+                  optimisticCompletions={optimisticChallengeCompletions}
+                  onStartChallengeWorkout={(challenge) => {
+                    // Pre-fill the activity logger from the challenge — type from match rule (or
+                    // challenger's activity), intent stamped so the cloud function fulfills this
+                    // specific challenge instead of triggering the multi-match deferral.
+                    const prefillType = challenge?.matchRule?.activityType || challenge?.challengerActivity?.type || null;
+                    handleAddActivity({
+                      type: prefillType,
+                      intendedChallengeIds: [challenge.id],
+                    });
+                  }}
+                  onApplyPastActivityToChallenge={(challenge) => setApplyPastActivityChallenge(challenge)}
                 />
               )}
               {activeTab === 'feed' && (
@@ -16139,6 +16401,8 @@ export default function DaySevenApp() {
           ...activities.filter(a => a.healthKitUUID).map(a => a.healthKitUUID)
         ]}
         pendingWorkouts={healthKitData.pendingWorkouts || []}
+        activeChallenges={accepterActiveChallenges}
+        friendsByUid={Object.fromEntries(friends.map(f => [f.uid, f]))}
       />
 
       <ChallengeFriendModal
@@ -16805,6 +17069,61 @@ export default function DaySevenApp() {
           setChallengePickerForFriend(null);
           setPreSelectedChallengeFriend(friend?.uid || null);
           setChallengeModalActivity(activity);
+        }}
+      />
+
+      {/* Pick a past activity to apply to an active challenge (from the "Use past activity" CTA) */}
+      <ChallengeApplyPastActivityModal
+        isOpen={!!applyPastActivityChallenge}
+        onClose={() => setApplyPastActivityChallenge(null)}
+        activities={activities}
+        challenge={applyPastActivityChallenge}
+        onPick={async (activity) => {
+          const challenge = applyPastActivityChallenge;
+          setApplyPastActivityChallenge(null);
+          if (!activity?.id || !challenge?.id) return;
+          // Optimistically flip the card immediately + show toast — the callable runs in background.
+          const completedAt = Date.now();
+          setOptimisticChallengeCompletions(prev => {
+            const next = new Map(prev);
+            next.set(challenge.id, { activityId: activity.id, completedAt });
+            setTimeout(() => {
+              setOptimisticChallengeCompletions(p => {
+                const m = new Map(p);
+                m.delete(challenge.id);
+                return m;
+              });
+            }, 30000);
+            return next;
+          });
+          triggerHaptic(ImpactStyle.Medium);
+          setToastMessage('Challenge complete! 🏆');
+          setToastType('success');
+          setShowToast(true);
+          const result = await applyChallengeIntent(activity.id, [challenge.id]);
+          const fulfilled = (result?.results || []).some(r => r.fulfilled);
+          if (!fulfilled) {
+            setToastMessage("Couldn't apply — challenge state may have changed.");
+            setToastType('error');
+            setShowToast(true);
+          }
+        }}
+      />
+
+      {/* Challenge match chooser — surfaced via push when an activity matched 2+ challenges */}
+      <ChallengeMatchChooser
+        isOpen={!!challengeChooserState}
+        onClose={() => setChallengeChooserState(null)}
+        activity={challengeChooserState?.activity}
+        candidateChallenges={challengeChooserState?.candidateChallenges || []}
+        friendsByUid={Object.fromEntries(friends.map(f => [f.uid, f]))}
+        onApplied={(result) => {
+          const fulfilledCount = (result?.results || []).filter(r => r.fulfilled).length;
+          setToastMessage(fulfilledCount > 0
+            ? `Applied to ${fulfilledCount} challenge${fulfilledCount === 1 ? '' : 's'} 🎯`
+            : `Couldn't apply — challenge state may have changed.`);
+          setToastType(fulfilledCount > 0 ? 'success' : 'error');
+          setShowToast(true);
         }}
       />
 

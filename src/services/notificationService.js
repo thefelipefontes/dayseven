@@ -65,6 +65,7 @@ export const NotificationType = {
   CHALLENGE_CANCEL_REQUESTED: 'challenge_cancel_requested',
   CHALLENGE_CANCEL_ACCEPTED: 'challenge_cancel_accepted',
   CHALLENGE_CANCEL_DECLINED: 'challenge_cancel_declined',
+  CHALLENGE_PICK_WHICH: 'challenge_pick_which',
 };
 
 /**
@@ -545,6 +546,16 @@ export const handleNotificationNavigation = (notification, navigate, options = {
       // Sender gets a response to their cancel request — show their active sent.
       navigate('challenges', { challengesSegment: 'active', challengesSubSegment: 'sent' });
       break;
+    case NotificationType.CHALLENGE_PICK_WHICH: {
+      // User logged an activity that matched 2+ active challenges; deferred fulfillment is waiting.
+      // Land on Active received and pop the chooser modal (data.challengeIds is comma-separated).
+      const challengeIds = String(data.challengeIds || '').split(',').filter(Boolean);
+      if (options.onShowChallengePicker && data.activityId && challengeIds.length > 0) {
+        options.onShowChallengePicker({ activityId: data.activityId, challengeIds });
+      }
+      navigate('challenges', { challengesSegment: 'active', challengesSubSegment: 'received' });
+      break;
+    }
 
     default:
       // Default to home

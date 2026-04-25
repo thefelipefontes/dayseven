@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, createContext, useContext } from 'react';
 import { getUserActivities, getPersonalRecords, getDailyHealthHistory, getUserProfile } from './services/userService';
 import { addReaction, getReactions, removeReaction, addComment, getComments, deleteComment, addReply, getReplies, deleteReply, getFriends } from './services/friendService';
+import { getCompletedChallengesByWinners } from './services/challengeService';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
@@ -552,6 +553,7 @@ const MemoizedActivityCard = React.memo(({
   comments,
   commentReplies,
   showComments,
+  challengeMeta,
   user,
   userProfile,
   onReaction,
@@ -643,7 +645,35 @@ const MemoizedActivityCard = React.memo(({
           {useEmoji ? <span className="text-2xl">{useEmoji}</span> : <ActivityIcon type={type} strengthType={strengthType} size={24} customIcon={customIcon} color={categoryIconColor} />}
         </div>
         <div className="flex-1">
-          <p className="text-white font-medium">{displayType}{displaySubtype ? ` ${type === 'Strength Training' ? '-' : '•'} ${displaySubtype}` : ''}</p>
+          <p className="text-white font-medium">
+            {displayType}{displaySubtype ? ` ${type === 'Strength Training' ? '-' : '•'} ${displaySubtype}` : ''}
+            {challengeMeta && (() => {
+              const handle = challengeMeta.challengerUsername;
+              const label = handle
+                ? `@${handle}`
+                : (challengeMeta.challengerName?.split(' ')[0] || 'friend');
+              const tappable = !!challengeMeta.challengerFriend;
+              return (
+                <span
+                  role={tappable ? 'button' : undefined}
+                  onClick={tappable ? (e) => {
+                    e.stopPropagation();
+                    triggerHaptic(ImpactStyle.Light);
+                    onSelectFriend(challengeMeta.challengerFriend);
+                  } : undefined}
+                  className={`ml-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium align-middle${tappable ? ' active:opacity-70' : ''}`}
+                  style={{
+                    backgroundColor: 'rgba(255, 214, 10, 0.12)',
+                    color: '#FFD60A',
+                    cursor: tappable ? 'pointer' : 'default',
+                  }}
+                >
+                  <span style={{ fontSize: 10 }}>⚡</span>
+                  {`Challenge: ${label}`}
+                </span>
+              );
+            })()}
+          </p>
           <div className="flex items-center gap-3 mt-1">
             {duration && <span className="text-gray-400 text-sm">⏱ {formatDuration(duration)}</span>}
             {calories && <span className="text-gray-400 text-sm">🔥 {calories} cal</span>}
@@ -951,6 +981,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   const [activityReactions, setActivityReactions] = useState({});
   const [activityComments, setActivityComments] = useState({});
   const [commentReplies, setCommentReplies] = useState({}); // { activityKey: { commentId: [replies] } }
+  const [activityChallengeMap, setActivityChallengeMap] = useState({}); // { "<friendUid>-<activityId>": { challengerUid, challengerName, ... } }
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeView, setActiveView] = useState('feed'); // 'feed' or 'leaderboard'
@@ -1296,6 +1327,54 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       // Limit to most recent 50 activities
       const limitedActivities = flatActivities.slice(0, 50);
       setFeedActivities(limitedActivities);
+
+      // Tag activities that fulfilled a challenge (for the "Completed challenge" pill).
+      // Single batched query against `challenges` filtered by winnerUids array-contains-any
+      // friend uids — friends are the only authors who appear in this feed.
+      try {
+        const friendUids = friends.map(f => f.uid).filter(Boolean);
+        if (friendUids.length > 0) {
+          const completedChallenges = await getCompletedChallengesByWinners(friendUids);
+          const friendsByUid = Object.fromEntries(friends.map(f => [f.uid, f]));
+          const challengeMap = {};
+          for (const c of completedChallenges) {
+            const isSelfChallenge = c.challengerUid === user?.uid;
+            const challengerFriend = !isSelfChallenge ? (friendsByUid[c.challengerUid] || null) : null;
+            const meta = {
+              challengeId: c.id,
+              challengerUid: c.challengerUid,
+              challengerName: c.challengerName || '',
+              // For tappable @handle: prefer username from friend record (or self), fall back to first name.
+              challengerUsername: isSelfChallenge
+                ? (userProfile?.username || '')
+                : (challengerFriend?.username || ''),
+              // Friend object for onSelectFriend tap target. Null when challenger is the viewer or
+              // not in the viewer's friends (then we render plain text without a click handler).
+              challengerFriend,
+              isSelfChallenge,
+              originatingActivityId: c.challengerActivity?.activityId || null,
+              requirePhoto: !!c.requirePhoto,
+            };
+            if (c.participants) {
+              for (const [uid, p] of Object.entries(c.participants)) {
+                if (p?.status === 'completed' && p?.fulfillingActivityId) {
+                  challengeMap[`${uid}-${p.fulfillingActivityId}`] = meta;
+                }
+              }
+            }
+            // Legacy 1v1 fields (pre-participants schema)
+            if (c.friendUid && c.friendStatus === 'completed' && c.fulfillingActivityId) {
+              const k = `${c.friendUid}-${c.fulfillingActivityId}`;
+              if (!challengeMap[k]) challengeMap[k] = meta;
+            }
+          }
+          setActivityChallengeMap(challengeMap);
+        } else {
+          setActivityChallengeMap({});
+        }
+      } catch (err) {
+        console.error('[ActivityFeed] challenge tagging failed:', err);
+      }
 
       // Only fetch reactions/comments for the first batch of visible activities
       // This reduces initial Firestore calls from 100+ to ~20
@@ -3341,6 +3420,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         >
         {feedActivities.map((activity, index) => {
           const key = `${activity.friend.uid}-${activity.id || index}`;
+          const challengeMeta = activity.id ? activityChallengeMap[`${activity.friend.uid}-${activity.id}`] : null;
           return (
             <MemoizedActivityCard
               key={key}
@@ -3350,6 +3430,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               comments={activityComments[key] || []}
               commentReplies={commentReplies[key] || {}}
               showComments={expandedComments[key] || false}
+              challengeMeta={challengeMeta}
               user={user}
               userProfile={userProfile}
               onReaction={handleReaction}

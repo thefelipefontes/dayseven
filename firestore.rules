@@ -62,11 +62,15 @@ service cloud.firestore {
     }
 
     // Friend challenges
-    // Read: any participant. Create: only the challenger. Update: only the friend (accept/decline)
-    // or the challenger (cancel while pending). Win/loss/score writes happen server-side via Admin SDK.
+    // Read: any participant for in-flight challenges; ANY authenticated user for completed
+    // challenges (so the friends activity feed can render the "Completed [sender]'s challenge"
+    // badge on a friend's activity even when the viewer wasn't a participant).
+    // Create: only the challenger. Update: only the friend (accept/decline) or the challenger
+    // (cancel while pending). Win/loss/score writes happen server-side via Admin SDK.
     match /challenges/{challengeId} {
       allow read: if request.auth != null
-        && request.auth.uid in resource.data.participantUids;
+        && (request.auth.uid in resource.data.participantUids
+            || resource.data.status == 'completed');
 
       allow create: if request.auth != null
         && request.auth.uid == request.resource.data.challengerUid

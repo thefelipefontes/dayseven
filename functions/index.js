@@ -305,6 +305,7 @@ const NotificationType = {
   CHALLENGE_CANCEL_REQUESTED: 'challenge_cancel_requested',
   CHALLENGE_CANCEL_ACCEPTED: 'challenge_cancel_accepted',
   CHALLENGE_CANCEL_DECLINED: 'challenge_cancel_declined',
+  CHALLENGE_PICK_WHICH: 'challenge_pick_which',
 };
 
 /**
@@ -1536,6 +1537,132 @@ exports.protectUserFields = onDocumentWritten(
  * Check whether a logged activity satisfies a challenge's match rule.
  * Mirrors buildMatchRule() in src/services/challengeService.js — keep them in sync.
  */
+/**
+ * Run the per-challenge fulfillment transaction + notifications for a single
+ * (userId, challenge, matched activity) trio. Used by both the activity trigger
+ * and the applyChallengeIntent callable.
+ *
+ * Returns:
+ *   { fulfilled: boolean, photoRequired: boolean, completedChallengeId: string|null }
+ *  - fulfilled=true when the user's status flipped to 'completed' inside this call.
+ *  - photoRequired=true when the challenge required a photo and the activity didn't have one.
+ */
+async function fulfillChallengeForUser({ userId, challengeDocRef, challenge, matched }) {
+  if (challenge.requirePhoto && !matched.photoURL) {
+    return { fulfilled: false, photoRequired: true, completedChallengeId: null };
+  }
+
+  let didFulfill = false;
+  await db.runTransaction(async (tx) => {
+    const friendRef = db.collection('users').doc(userId);
+    const [fresh, friendSnap] = await Promise.all([
+      tx.get(challengeDocRef),
+      tx.get(friendRef),
+    ]);
+    if (!fresh.exists) return;
+    const data = fresh.data();
+
+    const myStatusFresh = data.participants?.[userId]?.status
+      || (data.friendUid === userId ? data.friendStatus : null);
+    if (myStatusFresh !== 'accepted') return;
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const update = {};
+    if (data.participants) {
+      update[`participants.${userId}.status`] = 'completed';
+      update[`participants.${userId}.completedAt`] = nowIso;
+      update[`participants.${userId}.fulfillingActivityId`] = String(matched.id || '');
+    }
+    if (data.friendUid === userId) {
+      update.friendStatus = 'completed';
+      update.completedAt = nowIso;
+      update.fulfillingActivityId = String(matched.id || '');
+    }
+
+    let overallNowComplete = false;
+    if (data.type !== 'group') {
+      overallNowComplete = true;
+    } else {
+      const allParticipants = data.participants || {};
+      const stillOpen = Object.entries(allParticipants).some(([uid, p]) => {
+        if (uid === userId) return false;
+        return p.status === 'pending' || p.status === 'accepted';
+      });
+      overallNowComplete = !stillOpen;
+    }
+
+    if (overallNowComplete) {
+      update.status = 'completed';
+      update.completedAt = nowIso;
+      const completedUids = [userId];
+      if (data.participants) {
+        for (const [uid, p] of Object.entries(data.participants)) {
+          if (uid === userId) continue;
+          if (p.status === 'completed') completedUids.push(uid);
+        }
+      }
+      update.winnerUids = Array.from(new Set(completedUids));
+    }
+
+    const friendStats = (friendSnap.data()?.challengeStats) || {};
+    const friendNewStreak = (friendStats.currentWinStreak || 0) + 1;
+
+    tx.update(challengeDocRef, update);
+    tx.set(friendRef, {
+      challengeStats: {
+        wins: FieldValue.increment(1),
+        currentWinStreak: friendNewStreak,
+        longestWinStreak: Math.max(friendStats.longestWinStreak || 0, friendNewStreak),
+      },
+    }, { merge: true });
+
+    didFulfill = true;
+  });
+
+  if (didFulfill) {
+    try {
+      const [challengerPrefs, friendPrefs] = await Promise.all([
+        getUserPreferences(challenge.challengerUid),
+        getUserPreferences(userId),
+      ]);
+      const friendName = await getUserDisplayName(userId);
+      const isGroup = challenge.type === 'group';
+
+      if (challengerPrefs.challengeCompleted) {
+        await sendNotificationToUser(
+          challenge.challengerUid,
+          'Challenge Completed! 🎯',
+          isGroup
+            ? `${friendName} crushed your group challenge.`
+            : `${friendName} matched your challenge.`,
+          {
+            type: NotificationType.CHALLENGE_COMPLETED,
+            fromUserId: userId,
+            challengeId: challengeDocRef.id,
+          }
+        );
+      }
+      if (friendPrefs.challengeCompleted) {
+        await sendNotificationToUser(
+          userId,
+          'Challenge Complete! 🏆',
+          'You crushed it. Win logged.',
+          {
+            type: NotificationType.CHALLENGE_COMPLETED,
+            fromUserId: challenge.challengerUid,
+            challengeId: challengeDocRef.id,
+          }
+        );
+      }
+    } catch (err) {
+      console.error('[fulfillChallengeForUser] notify failed:', err);
+    }
+  }
+
+  return { fulfilled: didFulfill, photoRequired: false, completedChallengeId: didFulfill ? challengeDocRef.id : null };
+}
+
 function activityMatchesRule(activity, rule) {
   if (!activity || !rule) return false;
   const category = getActivityCategoryForGoals(activity);
@@ -1545,8 +1672,15 @@ function activityMatchesRule(activity, rule) {
 
   if (rule.distanceMin) {
     const distance = parseFloat(activity.distance) || 0;
-    if (distance < rule.distanceMin) return false;
-    return true;
+    return distance >= rule.distanceMin;
+  }
+
+  if (rule.paceMaxSecondsPerMile) {
+    const distance = parseFloat(activity.distance) || 0;
+    const duration = parseInt(activity.duration, 10) || 0;
+    if (distance <= 0 || duration <= 0) return false;
+    const pace = (duration * 60) / distance;
+    return pace <= rule.paceMaxSecondsPerMile;
   }
 
   const duration = parseInt(activity.duration, 10) || 0;
@@ -1813,41 +1947,99 @@ exports.onUserActivitiesUpdatedForChallenges = onDocumentUpdated(
 
     if (challengesSnap.empty) return;
 
-    const completions = [];
-    const photoNudges = [];
-
+    // Phase 1: collect all challenges where I'm an accepted participant.
+    const acceptedChallenges = [];
     for (const challengeDoc of challengesSnap.docs) {
       const challenge = challengeDoc.data();
-
-      // Determine my participant status — must be 'accepted' for me to complete.
       let myStatus;
       if (challenge.participants && challenge.participants[userId]) {
         myStatus = challenge.participants[userId].status;
       } else if (challenge.friendUid === userId) {
         myStatus = challenge.friendStatus;
       } else {
-        continue; // I'm not a recipient on this one
+        continue;
       }
       if (myStatus !== 'accepted') continue;
+      acceptedChallenges.push({ challengeDoc, challenge });
+    }
 
-      // Find the first new activity that matches (oldest first for determinism)
-      const sorted = newActivities.slice().sort((a, b) => {
-        const at = new Date(a.date || 0).getTime();
-        const bt = new Date(b.date || 0).getTime();
-        return at - bt;
-      });
-      const matched = sorted.find(a => activityMatchesRule(a, challenge.matchRule));
-      if (!matched) continue;
+    // Phase 2: per activity, decide what to fulfill.
+    //  - If the activity carries `intendedChallengeIds`, only those listed challenges fulfill.
+    //  - If exactly one accepted challenge matches and no intent is set, auto-fulfill it.
+    //  - If multiple match with no intent, defer and notify the user to pick — single activity
+    //    no longer silently fulfills every active challenge of the same category.
+    // Activities are processed oldest-first; once a challenge is claimed by an activity, subsequent
+    // activities in the same trigger payload won't claim it again (transaction would no-op anyway).
+    const completions = [];
+    const photoNudges = [];
+    const ambiguousByActivity = []; // { activity, candidates: [{ challengeDoc, challenge }] }
+    const claimedChallengeIds = new Set();
 
-      // Photo-required challenges only complete if the matching activity has a photo.
-      // Otherwise, surface a nudge so the accepter knows their workout didn't auto-complete.
-      if (challenge.requirePhoto && !matched.photoURL) {
-        photoNudges.push({ challengeDoc, challenge });
+    const sortedActivities = newActivities.slice().sort((a, b) => {
+      const at = new Date(a.date || 0).getTime();
+      const bt = new Date(b.date || 0).getTime();
+      return at - bt;
+    });
+
+    for (const activity of sortedActivities) {
+      const candidates = acceptedChallenges.filter(({ challengeDoc, challenge }) =>
+        !claimedChallengeIds.has(challengeDoc.id)
+        && activityMatchesRule(activity, challenge.matchRule)
+      );
+      if (candidates.length === 0) continue;
+
+      // `intendedChallengeIds` semantics:
+      //  - undefined / not an array  → "user didn't express intent" → auto-match (single) or defer (multi)
+      //  - explicit array (incl. empty) → "user did express intent" → only fulfill listed; never defer
+      // The "explicit empty" case is what the finish-workout modal sends when the user unchecks
+      // every match, i.e. "don't apply this workout to any challenge."
+      const hasIntent = Array.isArray(activity.intendedChallengeIds);
+      const intentIds = hasIntent
+        ? activity.intendedChallengeIds.map(String).filter(Boolean)
+        : [];
+
+      let toFulfill;
+      if (hasIntent) {
+        toFulfill = intentIds.length > 0
+          ? candidates.filter(({ challengeDoc }) => intentIds.includes(challengeDoc.id))
+          : [];
+      } else if (candidates.length === 1) {
+        toFulfill = candidates;
+      } else {
+        ambiguousByActivity.push({ activity, candidates });
         continue;
       }
 
-      completions.push({ challengeDoc, challenge, matched });
+      for (const { challengeDoc, challenge } of toFulfill) {
+        if (challenge.requirePhoto && !activity.photoURL) {
+          photoNudges.push({ challengeDoc, challenge });
+          continue;
+        }
+        completions.push({ challengeDoc, challenge, matched: activity });
+        claimedChallengeIds.add(challengeDoc.id);
+      }
     }
+
+    // Send "pick which challenge" notifications for ambiguous activities (one push per activity).
+    await Promise.all(ambiguousByActivity.map(async ({ activity, candidates }) => {
+      try {
+        const prefs = await getUserPreferences(userId);
+        if (!prefs.challengeCompleted) return;
+        const typeLabel = activity.type || 'workout';
+        await sendNotificationToUser(
+          userId,
+          'Pick a challenge to fulfill 🤔',
+          `Your ${typeLabel} matches ${candidates.length} active challenges — tap to choose.`,
+          {
+            type: NotificationType.CHALLENGE_PICK_WHICH,
+            activityId: String(activity.id || ''),
+            challengeIds: candidates.map(c => c.challengeDoc.id).join(','),
+          }
+        );
+      } catch (err) {
+        console.error('[onUserActivitiesUpdatedForChallenges] pick-which notify failed:', err);
+      }
+    }));
 
     // Send photo nudges (outside the completion loop — fire-and-forget notifications)
     await Promise.all(photoNudges.map(async ({ challengeDoc, challenge }) => {
@@ -1872,119 +2064,14 @@ exports.onUserActivitiesUpdatedForChallenges = onDocumentUpdated(
 
     if (completions.length === 0) return;
 
-    // For each completion: transactional write to flip THIS participant's status + bump counters
-    // on both this user and the challenger. Group challenges: overall status only flips to
-    // 'completed' once all participants are resolved (handled here on every completion just in case).
     await Promise.all(completions.map(async ({ challengeDoc, challenge, matched }) => {
       try {
-        await db.runTransaction(async (tx) => {
-          const fresh = await tx.get(challengeDoc.ref);
-          if (!fresh.exists) return;
-          const data = fresh.data();
-
-          // Re-check my status inside the transaction to avoid double-completion races.
-          const myStatusFresh = data.participants?.[userId]?.status
-            || (data.friendUid === userId ? data.friendStatus : null);
-          if (myStatusFresh !== 'accepted') return;
-
-          const now = new Date();
-          const nowIso = now.toISOString();
-
-          // Flip my participant state
-          const update = {};
-          if (data.participants) {
-            update[`participants.${userId}.status`] = 'completed';
-            update[`participants.${userId}.completedAt`] = nowIso;
-            update[`participants.${userId}.fulfillingActivityId`] = String(matched.id || '');
-          }
-          // Legacy 1v1 fields
-          if (data.friendUid === userId) {
-            update.friendStatus = 'completed';
-            update.completedAt = nowIso;
-            update.fulfillingActivityId = String(matched.id || '');
-          }
-
-          // Determine if the overall challenge is now done.
-          // For 1v1: any completion finishes it.
-          // For group: only finish overall when no participants are still pending or accepted.
-          let overallNowComplete = false;
-          if (data.type !== 'group') {
-            overallNowComplete = true;
-          } else {
-            const allParticipants = data.participants || {};
-            const stillOpen = Object.entries(allParticipants).some(([uid, p]) => {
-              if (uid === userId) return false; // we just completed this one
-              return p.status === 'pending' || p.status === 'accepted';
-            });
-            overallNowComplete = !stillOpen;
-          }
-
-          if (overallNowComplete) {
-            update.status = 'completed';
-            update.completedAt = nowIso;
-            // winnerUids = every participant who accepted & completed. Challenger never wins —
-            // only accepters score in this system.
-            const completedUids = [userId];
-            if (data.participants) {
-              for (const [uid, p] of Object.entries(data.participants)) {
-                if (uid === userId) continue;
-                if (p.status === 'completed') completedUids.push(uid);
-              }
-            }
-            update.winnerUids = Array.from(new Set(completedUids));
-          }
-
-          tx.update(challengeDoc.ref, update);
-
-          // Only the accepter (this user) scores. Challenger gets no counter bump.
-          const friendRef = db.collection('users').doc(userId);
-          const friendSnap = await tx.get(friendRef);
-          const friendStats = (friendSnap.data()?.challengeStats) || {};
-          const friendNewStreak = (friendStats.currentWinStreak || 0) + 1;
-
-          tx.set(friendRef, {
-            challengeStats: {
-              wins: FieldValue.increment(1),
-              currentWinStreak: friendNewStreak,
-              longestWinStreak: Math.max(friendStats.longestWinStreak || 0, friendNewStreak),
-            },
-          }, { merge: true });
+        await fulfillChallengeForUser({
+          userId,
+          challengeDocRef: challengeDoc.ref,
+          challenge,
+          matched,
         });
-
-        // Notify both parties (outside the transaction to avoid retries on push failure)
-        const [challengerPrefs, friendPrefs] = await Promise.all([
-          getUserPreferences(challenge.challengerUid),
-          getUserPreferences(userId),
-        ]);
-        const friendName = await getUserDisplayName(userId);
-        const isGroup = challenge.type === 'group';
-
-        if (challengerPrefs.challengeCompleted) {
-          await sendNotificationToUser(
-            challenge.challengerUid,
-            'Challenge Completed! 🎯',
-            isGroup
-              ? `${friendName} crushed your group challenge.`
-              : `${friendName} matched your challenge.`,
-            {
-              type: NotificationType.CHALLENGE_COMPLETED,
-              fromUserId: userId,
-              challengeId: challengeDoc.id,
-            }
-          );
-        }
-        if (friendPrefs.challengeCompleted) {
-          await sendNotificationToUser(
-            userId,
-            'Challenge Complete! 🏆',
-            'You crushed it. Win logged.',
-            {
-              type: NotificationType.CHALLENGE_COMPLETED,
-              fromUserId: challenge.challengerUid,
-              challengeId: challengeDoc.id,
-            }
-          );
-        }
       } catch (err) {
         console.error('[onUserActivitiesUpdatedForChallenges] completion failed:', err);
       }
@@ -2224,6 +2311,94 @@ exports.challengeExpiringSoon = onSchedule(
  * Gate: requires a Firebase Auth custom claim `admin: true` on the caller. Set via:
  *   admin.auth().setCustomUserClaims(<uid>, { admin: true })
  */
+/**
+ * Apply a user's choice of which challenge(s) to fulfill with a given activity.
+ * Used by the chooser modal that's surfaced when an activity matched multiple
+ * active challenges and the trigger deferred fulfillment.
+ *
+ * Validates that:
+ *  - Caller owns the activity (it lives in their users/{uid} doc).
+ *  - Each chosen challengeId is currently active and the caller's status is 'accepted'.
+ *  - The activity actually matches that challenge's matchRule.
+ *
+ * Stamps `intendedChallengeIds` onto the activity (so the cloud function record stays consistent
+ * for the badge/threading) and runs the same fulfillment transaction the trigger would have.
+ */
+exports.applyChallengeIntent = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Sign-in required.');
+  }
+  const userId = request.auth.uid;
+  const { activityId, challengeIds } = request.data || {};
+  if (!activityId || !Array.isArray(challengeIds) || challengeIds.length === 0) {
+    throw new HttpsError('invalid-argument', 'activityId and non-empty challengeIds required.');
+  }
+  const wantedIds = challengeIds.map(String);
+
+  const userRef = db.collection('users').doc(userId);
+  const userSnap = await userRef.get();
+  if (!userSnap.exists) {
+    throw new HttpsError('not-found', 'User doc missing.');
+  }
+  const activities = userSnap.data()?.activities || [];
+  const activity = activities.find(a => String(a.id) === String(activityId));
+  if (!activity) {
+    throw new HttpsError('not-found', 'Activity not found on this user.');
+  }
+
+  // Stamp intendedChallengeIds on the activity (additive — preserves any prior intent)
+  // so the friend feed badge logic and any future threading reads stay coherent.
+  const existingIntent = Array.isArray(activity.intendedChallengeIds)
+    ? activity.intendedChallengeIds.map(String)
+    : [];
+  const mergedIntent = Array.from(new Set([...existingIntent, ...wantedIds]));
+  const updatedActivities = activities.map(a => (
+    String(a.id) === String(activityId) ? { ...a, intendedChallengeIds: mergedIntent } : a
+  ));
+  await userRef.set({ activities: updatedActivities }, { merge: true });
+
+  // Run fulfillment per chosen challenge, validating eligibility along the way.
+  const results = [];
+  for (const challengeId of wantedIds) {
+    try {
+      const challengeRef = db.collection('challenges').doc(challengeId);
+      const challengeSnap = await challengeRef.get();
+      if (!challengeSnap.exists) {
+        results.push({ challengeId, fulfilled: false, reason: 'not_found' });
+        continue;
+      }
+      const challenge = challengeSnap.data();
+      if (challenge.status !== 'active') {
+        results.push({ challengeId, fulfilled: false, reason: 'not_active' });
+        continue;
+      }
+      const myStatus = challenge.participants?.[userId]?.status
+        || (challenge.friendUid === userId ? challenge.friendStatus : null);
+      if (myStatus !== 'accepted') {
+        results.push({ challengeId, fulfilled: false, reason: 'not_accepted' });
+        continue;
+      }
+      if (!activityMatchesRule(activity, challenge.matchRule)) {
+        results.push({ challengeId, fulfilled: false, reason: 'no_match' });
+        continue;
+      }
+
+      const outcome = await fulfillChallengeForUser({
+        userId,
+        challengeDocRef: challengeRef,
+        challenge,
+        matched: activity,
+      });
+      results.push({ challengeId, ...outcome });
+    } catch (err) {
+      console.error('[applyChallengeIntent] failed for', challengeId, err);
+      results.push({ challengeId, fulfilled: false, reason: 'error' });
+    }
+  }
+
+  return { results };
+});
+
 exports.backfillChallengeStats = onCall(async (request) => {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Sign-in required.');

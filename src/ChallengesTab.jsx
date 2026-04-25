@@ -9,6 +9,7 @@ import {
   requestCancelChallenge,
   respondToCancelRequest,
   countActiveOutgoing,
+  applyOptimisticChallengeCompletions,
 } from './services/challengeService';
 import { ChallengeCard } from './Challenges';
 import OwnProfileModal from './components/OwnProfileModal';
@@ -34,7 +35,7 @@ const SEGMENTS = [
   { key: 'completed', label: 'Completed' },
 ];
 
-export default function ChallengesTab({ user, userProfile, userData, activities = [], friends = [], isPro = false, onChallengeCountsChange, navTarget = null }) {
+export default function ChallengesTab({ user, userProfile, userData, activities = [], friends = [], isPro = false, onChallengeCountsChange, navTarget = null, onStartChallengeWorkout, onApplyPastActivityToChallenge, optimisticCompletions = new Map() }) {
   const [challenges, setChallenges] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [segment, setSegment] = useState('active');
@@ -74,10 +75,18 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
     return map;
   }, [friends]);
 
-  const enriched = useMemo(() => challenges.map(c => ({
+  // Optimistic overlay: flips Active → Completed instantly when an activity fulfills a challenge.
+  // The cloud function trigger writes the same fields a beat later; once the listener delivers
+  // the real status, the overlay no-ops.
+  const overlaidChallenges = useMemo(
+    () => applyOptimisticChallengeCompletions(challenges, optimisticCompletions, user?.uid),
+    [challenges, optimisticCompletions, user?.uid]
+  );
+
+  const enriched = useMemo(() => overlaidChallenges.map(c => ({
     ...c,
     friendName: friendsByUid[c.friendUid]?.displayName || friendsByUid[c.friendUid]?.username || c.friendName || '',
-  })), [challenges, friendsByUid]);
+  })), [overlaidChallenges, friendsByUid]);
 
   const buckets = useMemo(() => bucketChallenges(enriched, user?.uid), [enriched, user?.uid]);
 
@@ -274,6 +283,8 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
             emptyTitle: "Nothing for you to finish",
             emptySubtitle: "Challenges you've accepted and still need to complete will show up here.",
             onRespondCancel: handleRespondCancel,
+            onStartWorkout: onStartChallengeWorkout,
+            onApplyPastActivity: onApplyPastActivityToChallenge,
           },
           'active|sent': {
             list: splits.activeSent,
@@ -339,6 +350,8 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
                     onCancel={view.onCancel}
                     onRequestCancel={view.onRequestCancel}
                     onRespondCancel={view.onRespondCancel}
+                    onStartWorkout={view.onStartWorkout}
+                    onApplyPastActivity={view.onApplyPastActivity}
                   />
                 ))}
               </div>

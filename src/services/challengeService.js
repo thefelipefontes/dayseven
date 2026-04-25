@@ -25,6 +25,7 @@ import {
   onSnapshot,
   serverTimestamp
 } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../firebase';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseFirestore } from '@capacitor-firebase/firestore';
@@ -33,7 +34,9 @@ const isNative = Capacitor.isNativePlatform();
 
 // Free users can receive challenges but can't send any — sending is a Pro feature.
 // Pro users have no sent cap.
-export const FREE_ACTIVE_CHALLENGE_CAP = 0;
+// TEMP (testing): lifted from 0 to 999 to test the new fulfillment flows on a free account.
+// Revert to 0 before shipping to restore the Pro-only send gate.
+export const FREE_ACTIVE_CHALLENGE_CAP = 999;
 export const CHALLENGE_WINDOW_HOURS = [24, 48, 72];
 
 // Hard cap on how long a recipient has to accept a pending challenge.
@@ -72,6 +75,7 @@ export function isChallengeable(activity) {
  * getActivityCategoryForGoals in functions/index.js — keep them in sync.
  */
 export function getChallengeCategory(activity) {
+  if (!activity) return null;
   const ct = activity.countToward || '';
   if (ct === 'lifting' || ct === 'strength') return 'lifting';
   if (ct === 'cardio') return 'cardio';
@@ -93,51 +97,193 @@ export function getChallengeCategory(activity) {
 }
 
 /**
- * Build a match rule from the challenger's activity. Distance-bearing cardio types
- * lock to the same activityType (Running stays Running) so a "go run" challenge can't
- * be answered with a bike ride. All other activities just need to match category —
- * any duration/distance counts as a win. The challenger's stats are visible on the card
- * for context; volume parity is on the friend's honor.
+ * Whether an activity (in any state, including in-progress in the logger) matches a challenge's
+ * match rule. Mirrors the server-side `activityMatchesRule` in functions/index.js — keep in sync.
+ * Used by the finish-workout modal to surface "this fulfills these challenges" before save.
  */
-export function buildMatchRule(activity) {
+export function activityMatchesChallengeRule(activity, rule) {
+  if (!activity || !rule) return false;
+  const category = getChallengeCategory(activity);
+  if (category !== rule.category) return false;
+  if (rule.activityType && activity.type !== rule.activityType) return false;
+  if (rule.distanceMin) {
+    const distance = parseFloat(activity.distance) || 0;
+    return distance >= rule.distanceMin;
+  }
+  if (rule.durationMin) {
+    const duration = parseInt(activity.duration, 10) || 0;
+    return duration >= rule.durationMin;
+  }
+  if (rule.paceMaxSecondsPerMile) {
+    const distance = parseFloat(activity.distance) || 0;
+    const duration = parseInt(activity.duration, 10) || 0;
+    if (distance <= 0 || duration <= 0) return false;
+    const pace = (duration * 60) / distance; // seconds per mile
+    return pace <= rule.paceMaxSecondsPerMile;
+  }
+  return true;
+}
+
+/**
+ * Like activityMatchesChallengeRule but also returns near-miss info so the UI can show
+ * "you're 2mi short" affordances. Returns:
+ *   { matches: bool, qualifies: bool, shortBy: { distance?, duration? }|null }
+ *  - qualifies = passes category/type filters (but might fall short of target)
+ *  - matches   = qualifies AND meets the target threshold
+ */
+export function evaluateActivityAgainstChallenge(activity, rule) {
+  if (!activity || !rule) return { matches: false, qualifies: false, shortBy: null };
+  const category = getChallengeCategory(activity);
+  if (category !== rule.category) return { matches: false, qualifies: false, shortBy: null };
+  if (rule.activityType && activity.type !== rule.activityType) return { matches: false, qualifies: false, shortBy: null };
+
+  if (rule.distanceMin) {
+    const distance = parseFloat(activity.distance) || 0;
+    const matches = distance >= rule.distanceMin;
+    return {
+      matches,
+      qualifies: true,
+      shortBy: matches ? null : { distance: rule.distanceMin - distance },
+    };
+  }
+  if (rule.durationMin) {
+    const duration = parseInt(activity.duration, 10) || 0;
+    const matches = duration >= rule.durationMin;
+    return {
+      matches,
+      qualifies: true,
+      shortBy: matches ? null : { duration: rule.durationMin - duration },
+    };
+  }
+  if (rule.paceMaxSecondsPerMile) {
+    const distance = parseFloat(activity.distance) || 0;
+    const duration = parseInt(activity.duration, 10) || 0;
+    if (distance <= 0 || duration <= 0) {
+      // Can't compute pace yet — treat as below-target so user can keep typing.
+      return { matches: false, qualifies: true, shortBy: { paceSeconds: rule.paceMaxSecondsPerMile } };
+    }
+    const pace = (duration * 60) / distance;
+    const matches = pace <= rule.paceMaxSecondsPerMile;
+    return {
+      matches,
+      qualifies: true,
+      shortBy: matches ? null : { paceSeconds: pace - rule.paceMaxSecondsPerMile },
+    };
+  }
+  return { matches: true, qualifies: true, shortBy: null };
+}
+
+/**
+ * Available metrics for a given activity. Distance cardio with both distance + duration > 0
+ * gets all three; otherwise the picker collapses to the only meaningful option.
+ *  - 'distance': accepter must cover ≥ challenger's miles (any pace, any time)
+ *  - 'duration': accepter must move ≥ challenger's minutes (any distance)
+ *  - 'pace':     accepter must hit ≤ challenger's seconds-per-mile (any distance/time)
+ */
+export function availableChallengeMetrics(activity) {
+  const category = getChallengeCategory(activity);
+  if (!category || category === 'warmup') return [];
+  const isDistanceCardio = category === 'cardio' && DISTANCE_TYPES.includes(activity?.type);
+  const distance = parseFloat(activity?.distance);
+  const duration = parseInt(activity?.duration, 10);
+  const hasDistance = Number.isFinite(distance) && distance > 0;
+  const hasDuration = Number.isFinite(duration) && duration > 0;
+  if (!isDistanceCardio) {
+    return hasDuration ? ['duration'] : [];
+  }
+  const out = [];
+  if (hasDistance) out.push('distance');
+  if (hasDuration) out.push('duration');
+  if (hasDistance && hasDuration) out.push('pace');
+  return out;
+}
+
+/**
+ * Build a match rule from the challenger's activity. The accepter must hit the same target
+ * the challenger hit — no softer/harder adjustment: the challenger's stats ARE the bar.
+ *
+ * `metric` selects which dimension the accepter must match:
+ *  - 'distance' → distanceMin (challenger's miles)
+ *  - 'duration' → durationMin (challenger's minutes)
+ *  - 'pace'     → paceMaxSecondsPerMile (challenger's pace; lower = faster)
+ *  - 'auto' / undefined → distance for distance-cardio, duration for everything else (legacy default)
+ *
+ * activityType is still locked for distance cardio (Running stays Running) regardless of metric.
+ */
+export function buildMatchRule(activity, metric = 'auto') {
   const category = getChallengeCategory(activity);
   if (!category || category === 'warmup') return null;
 
   const rule = { category };
+  const isDistanceCardio = category === 'cardio' && DISTANCE_TYPES.includes(activity.type);
+  if (isDistanceCardio) rule.activityType = activity.type;
 
-  if (category === 'cardio' && DISTANCE_TYPES.includes(activity.type)) {
-    rule.activityType = activity.type;
+  const distance = parseFloat(activity.distance);
+  const duration = parseInt(activity.duration, 10);
+  const hasDistance = Number.isFinite(distance) && distance > 0;
+  const hasDuration = Number.isFinite(duration) && duration > 0;
+
+  const chosen = metric === 'auto'
+    ? (isDistanceCardio && hasDistance ? 'distance' : 'duration')
+    : metric;
+
+  if (chosen === 'distance' && hasDistance) {
+    rule.distanceMin = distance;
+  } else if (chosen === 'duration' && hasDuration) {
+    rule.durationMin = duration;
+  } else if (chosen === 'pace' && hasDistance && hasDuration) {
+    // Pace stored as max seconds per mile (faster = lower number). Round to whole seconds
+    // so the target reads cleanly as M:SS in the UI.
+    rule.paceMaxSecondsPerMile = Math.round((duration * 60) / distance);
+  } else if (hasDistance) {
+    // Fallback: caller asked for a metric we can't compute → use whatever is available.
+    rule.distanceMin = distance;
+  } else if (hasDuration) {
+    rule.durationMin = duration;
   }
 
   return rule;
 }
 
+/** Format seconds-per-mile as M:SS (e.g. 450 → "7:30"). */
+export function formatPace(secondsPerMile) {
+  const total = Math.max(0, Math.round(secondsPerMile || 0));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
 /**
- * Plain-English description of the match rule for UI.
- *  - "Go for a run"
- *  - "Do any strength workout"
- *  - "Do any recovery activity"
+ * Plain-English description of the match rule for UI. Targets ARE the rule —
+ * "Run 7 mi" is more honest about what fulfills than "Go for a run."
  */
 export function describeMatchRule(rule) {
   if (!rule) return 'Match the activity';
-  const { category, activityType } = rule;
+  const { category, activityType, distanceMin, durationMin, paceMaxSecondsPerMile } = rule;
+  const fmtMi = (mi) => `${parseFloat(mi).toFixed(parseFloat(mi) % 1 === 0 ? 0 : 1)} mi`;
+  const fmtMin = (min) => `${min} min`;
 
   if (activityType) {
     const verb = {
-      Running: 'Go for a run',
-      Cycle: 'Go for a ride',
-      Swimming: 'Go for a swim',
-      Rowing: 'Hit the rower',
-      Hiking: 'Go on a hike',
+      Running: 'Run',
+      Cycle: 'Ride',
+      Swimming: 'Swim',
+      Rowing: 'Row',
+      Hiking: 'Hike',
     }[activityType] || `Do a ${activityType.toLowerCase()}`;
-    return verb;
+    if (distanceMin) return `${verb} ${fmtMi(distanceMin)}`;
+    if (durationMin) return `${verb} for ${fmtMin(durationMin)}`;
+    if (paceMaxSecondsPerMile) return `${verb} at ${formatPace(paceMaxSecondsPerMile)} /mi or faster`;
+    return `Go for a ${verb.toLowerCase()}`;
   }
 
-  return {
-    lifting: 'Do any strength workout',
-    cardio: 'Do any cardio',
-    recovery: 'Do any recovery activity',
-  }[category] || 'Match the activity';
+  const noun = {
+    lifting: 'strength workout',
+    cardio: 'cardio',
+    recovery: 'recovery activity',
+  }[category] || 'workout';
+  if (durationMin) return `${fmtMin(durationMin)} ${noun}`;
+  return `Do any ${noun}`;
 }
 
 function buildActivitySnapshot(activity) {
@@ -160,7 +306,7 @@ function buildActivitySnapshot(activity) {
  *
  * Returns { challengeId } on success or { error } on failure.
  */
-export async function createChallenge({ challengerUid, challengerName, friendUid, friendUids, activity, windowHours, title, requirePhoto = false }) {
+export async function createChallenge({ challengerUid, challengerName, friendUid, friendUids, activity, windowHours, title, requirePhoto = false, metric = 'auto' }) {
   // Accept both shapes: friendUid (legacy single-friend caller) or friendUids (array).
   const targets = Array.from(new Set((friendUids && friendUids.length ? friendUids : (friendUid ? [friendUid] : []))));
   if (!challengerUid || targets.length === 0 || !activity) {
@@ -170,7 +316,7 @@ export async function createChallenge({ challengerUid, challengerName, friendUid
     return { error: 'invalid_window' };
   }
 
-  const matchRule = buildMatchRule(activity);
+  const matchRule = buildMatchRule(activity, metric);
   if (!matchRule) {
     return { error: 'unsupported_activity' };
   }
@@ -506,6 +652,143 @@ export async function getChallengesForUser(uid) {
     console.error('[challengeService] getChallengesForUser failed:', error);
     return [];
   }
+}
+
+/**
+ * Apply user's choice from the multi-match chooser modal — calls the `applyChallengeIntent`
+ * cloud function which validates eligibility and runs fulfillment for each chosen challenge.
+ * Returns the per-challenge results array.
+ */
+export async function applyChallengeIntent(activityId, challengeIds) {
+  if (!activityId || !Array.isArray(challengeIds) || challengeIds.length === 0) {
+    return { results: [] };
+  }
+  try {
+    const functions = getFunctions();
+    const callable = httpsCallable(functions, 'applyChallengeIntent');
+    const res = await callable({ activityId: String(activityId), challengeIds: challengeIds.map(String) });
+    return res.data || { results: [] };
+  } catch (err) {
+    console.error('[challengeService] applyChallengeIntent failed:', err);
+    return { results: [], error: err?.message || 'unknown' };
+  }
+}
+
+/**
+ * Read completed challenges where any of the given uids is a winner (accepter who
+ * completed). Used by the friends feed to tag activities that fulfilled a challenge.
+ * Firestore array-contains-any caps at 30 values; callers with larger lists should chunk.
+ */
+export async function getCompletedChallengesByWinners(uids) {
+  if (!uids || uids.length === 0) return [];
+  const slice = uids.slice(0, 30);
+
+  try {
+    if (isNative) {
+      // Chunk into one `array-contains` query per uid (the native plugin doesn't reliably
+      // handle `array-contains-any`). The `status == 'completed'` filter is REQUIRED at the
+      // query level — Firestore rules grant cross-user reads only on completed challenges,
+      // and rules verify queries by constraints, not by per-doc filtering.
+      const results = [];
+      await Promise.all(slice.map(async (uid) => {
+        try {
+          const { snapshots } = await FirebaseFirestore.getCollection({
+            reference: 'challenges',
+            compositeFilter: {
+              type: 'and',
+              queryConstraints: [
+                { type: 'where', fieldPath: 'status', opStr: '==', value: 'completed' },
+                { type: 'where', fieldPath: 'winnerUids', opStr: 'array-contains', value: uid },
+              ],
+            },
+          });
+          for (const s of (snapshots || [])) {
+            results.push({ id: s.id, ...s.data });
+          }
+        } catch (err) {
+          console.error('[getCompletedChallengesByWinners] uid query failed:', uid, err);
+        }
+      }));
+      // Dedupe by id (a challenge can include multiple winners — group challenges).
+      const dedup = new Map();
+      for (const c of results) if (c.id) dedup.set(c.id, c);
+      return Array.from(dedup.values());
+    }
+    const q = query(
+      collection(db, 'challenges'),
+      where('status', '==', 'completed'),
+      where('winnerUids', 'array-contains-any', slice),
+    );
+    const snap = await withTimeout(getDocs(q));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (error) {
+    console.error('[challengeService] getCompletedChallengesByWinners failed:', error);
+    return [];
+  }
+}
+
+/**
+ * Apply optimistic completions on top of the listener-delivered challenges so the UI flips
+ * Active → Completed instantly, without waiting for the cloud function + Firestore round trip.
+ *
+ *  - challenges: array from subscribeToChallenges (or any listener)
+ *  - optimisticCompletions: Map<challengeId, { activityId, completedAt }>
+ *  - currentUid: viewer's uid (used to write the per-participant flip)
+ *
+ * Returns a new array. Challenge docs in the map get their participant + (for 1v1) overall
+ * status flipped to 'completed'. The cloud function will eventually write the same fields;
+ * once the listener delivers them, the overlay is a no-op.
+ */
+export function applyOptimisticChallengeCompletions(challenges, optimisticCompletions, currentUid) {
+  if (!optimisticCompletions || optimisticCompletions.size === 0 || !currentUid) return challenges;
+  return challenges.map(c => {
+    const opt = optimisticCompletions.get(c.id);
+    if (!opt) return c;
+    // If the listener already delivered the real completion, skip the overlay.
+    const myStatusReal = c.participants?.[currentUid]?.status
+      || (c.friendUid === currentUid ? c.friendStatus : null);
+    if (myStatusReal === 'completed') return c;
+
+    const nowIso = new Date(opt.completedAt || Date.now()).toISOString();
+    const next = { ...c };
+    if (next.participants) {
+      next.participants = {
+        ...next.participants,
+        [currentUid]: {
+          ...(next.participants[currentUid] || {}),
+          status: 'completed',
+          completedAt: nowIso,
+          fulfillingActivityId: String(opt.activityId || ''),
+        },
+      };
+    }
+    if (next.friendUid === currentUid) {
+      next.friendStatus = 'completed';
+      next.fulfillingActivityId = String(opt.activityId || '');
+    }
+    // For 1v1, the challenge itself is now complete. For group, only flip overall when every
+    // other participant is already resolved (no pending or accepted).
+    let overallComplete = next.type !== 'group';
+    if (next.type === 'group' && next.participants) {
+      const stillOpen = Object.entries(next.participants).some(([uid, p]) => {
+        if (uid === currentUid) return false;
+        return p.status === 'pending' || p.status === 'accepted';
+      });
+      overallComplete = !stillOpen;
+    }
+    if (overallComplete) {
+      next.status = 'completed';
+      next.completedAt = nowIso;
+      const winners = new Set([...(next.winnerUids || []), currentUid]);
+      if (next.participants) {
+        for (const [uid, p] of Object.entries(next.participants)) {
+          if (p.status === 'completed') winners.add(uid);
+        }
+      }
+      next.winnerUids = Array.from(winners);
+    }
+    return next;
+  });
 }
 
 /**

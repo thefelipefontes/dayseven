@@ -10,6 +10,10 @@ import {
   isChallengeable,
   CHALLENGE_WINDOW_HOURS,
   FREE_ACTIVE_CHALLENGE_CAP,
+  applyOptimisticChallengeCompletions,
+  evaluateActivityAgainstChallenge,
+  availableChallengeMetrics,
+  formatPace,
 } from './services/challengeService';
 import { getFriends } from './services/friendService';
 
@@ -149,6 +153,108 @@ export function ChallengeActivityPickerModal({ isOpen, onClose, activities = [],
 }
 
 // =====================================================================
+// Modal: from an active challenge card, pick an already-logged activity to apply.
+// Filters to activities matching the challenge's rule (category + type + target threshold).
+// =====================================================================
+
+export function ChallengeApplyPastActivityModal({ isOpen, onClose, activities = [], challenge, onPick }) {
+  const [isClosing, setIsClosing] = useState(false);
+
+  useEffect(() => { if (isOpen) setIsClosing(false); }, [isOpen]);
+
+  if (!isOpen || !challenge) return null;
+
+  const handleClose = () => {
+    setIsClosing(true);
+    setTimeout(() => onClose(), 250);
+  };
+
+  // Show only activities that fully match the challenge rule (qualifying type AND target met).
+  // Cap to last 14 days so the list stays scannable.
+  const cutoffMs = Date.now() - 14 * 24 * 60 * 60 * 1000;
+  const eligible = (activities || []).filter(a => {
+    const at = new Date(a.date || 0).getTime();
+    if (!at || at < cutoffMs) return false;
+    return evaluateActivityAgainstChallenge(a, challenge.matchRule).matches;
+  });
+  // Newest first (date + small id tiebreak so multiple-on-same-day aren't shuffled).
+  eligible.sort((a, b) => {
+    const ta = new Date(a.date || 0).getTime() + (parseInt(a.id, 10) || 0) % 1000;
+    const tb = new Date(b.date || 0).getTime() + (parseInt(b.id, 10) || 0) % 1000;
+    return tb - ta;
+  });
+
+  const ruleLabel = describeMatchRule(challenge.matchRule);
+  const cat = challenge.matchRule?.category;
+  const color = CATEGORY_COLOR[cat] || '#888';
+
+  return (
+    <div
+      className={`fixed inset-0 z-[70] flex items-end justify-center transition-all duration-250 ${isClosing ? 'bg-black/0' : 'bg-black/80'}`}
+      onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
+    >
+      <div
+        className={`w-full bg-zinc-900 rounded-t-3xl flex flex-col ${isClosing ? 'animate-slide-down' : 'animate-slide-up'}`}
+        style={{ maxHeight: '80vh' }}
+      >
+        <div className="flex justify-center pt-3 pb-2">
+          <div className="w-10 h-1 bg-zinc-700 rounded-full" />
+        </div>
+
+        <div className="flex items-center justify-between px-4 pb-3">
+          <button onClick={handleClose} className="text-gray-400 text-sm font-medium">Cancel</button>
+          <h1 className="text-white text-base font-semibold">Pick an activity</h1>
+          <div className="w-12" />
+        </div>
+
+        <p className="text-xs px-4 pb-3" style={{ color }}>
+          Must match: {ruleLabel}
+        </p>
+
+        <div className="flex-1 overflow-y-auto pb-8 px-4">
+          {eligible.length === 0 ? (
+            <div className="py-12 text-center">
+              <p className="text-gray-400 mb-2">No matching activities yet.</p>
+              <p className="text-gray-500 text-sm">Log a workout that meets the target ({ruleLabel}) and it'll show up here.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {eligible.map(activity => (
+                <button
+                  key={activity.id}
+                  onClick={() => { triggerHaptic(ImpactStyle.Light); onPick?.(activity); }}
+                  className="w-full p-3 rounded-xl text-left transition-colors"
+                  style={{
+                    backgroundColor: 'rgba(255,255,255,0.04)',
+                    border: `1px solid ${color}25`,
+                  }}
+                >
+                  <div className="flex items-start gap-3">
+                    <div
+                      className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+                      style={{ backgroundColor: `${color}20` }}
+                    >
+                      <span style={{ color, fontSize: 16 }}>⚡</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-sm font-medium truncate">
+                        {activity.type === 'Other' ? (activity.subtype || 'Other') : activity.type}
+                        {activity.subtype && activity.type !== 'Other' && ` · ${activity.subtype}`}
+                      </p>
+                      <p className="text-gray-500 text-xs">{activity.date}{activity.duration ? ` · ${activity.duration} min` : ''}{activity.distance ? ` · ${parseFloat(activity.distance).toFixed(1)} mi` : ''}</p>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =====================================================================
 // Modal: shown right after a user logs an activity, lets them challenge a friend
 // =====================================================================
 
@@ -158,9 +264,14 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
   const [sendMode, setSendMode] = useState('group'); // 'group' or 'individual' — only relevant when 2+ selected
   const [title, setTitle] = useState('');
   const [requirePhoto, setRequirePhoto] = useState(false);
+  // Which dimension of the activity the recipient must match: 'distance', 'duration', or 'pace'.
+  // Only meaningful when 2+ metrics are available (distance cardio with both miles + minutes).
+  const [metric, setMetric] = useState('auto');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [isClosing, setIsClosing] = useState(false);
+
+  const metrics = React.useMemo(() => availableChallengeMetrics(activity), [activity]);
 
   useEffect(() => {
     if (isOpen) {
@@ -169,10 +280,12 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
       setSendMode('group');
       setTitle('');
       setRequirePhoto(false);
+      // Default metric: distance for distance-cardio (preserves prior behavior), else first available.
+      setMetric(metrics.includes('distance') ? 'distance' : (metrics[0] || 'auto'));
       setError(null);
       setIsClosing(false);
     }
-  }, [isOpen, preSelectedFriendUid]);
+  }, [isOpen, preSelectedFriendUid, metrics]);
 
   if (!isOpen) return null;
 
@@ -190,7 +303,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
     });
   };
 
-  const matchRule = activity ? buildMatchRule(activity) : null;
+  const matchRule = activity ? buildMatchRule(activity, metric) : null;
   const canChallenge = !!matchRule;
   const overCap = !isPro && activeOutgoingCount >= FREE_ACTIVE_CHALLENGE_CAP;
   const selectedCount = selectedFriendUids.size;
@@ -222,6 +335,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
           windowHours,
           title,
           requirePhoto,
+          metric,
         })
       ));
       allFailed = results.every(r => r.error);
@@ -235,6 +349,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
         windowHours,
         title,
         requirePhoto,
+        metric,
       });
       allFailed = !!result.error;
     }
@@ -290,6 +405,45 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
                 className="w-full mb-4 px-3 py-3 rounded-xl text-white placeholder-gray-600 text-sm focus:outline-none"
                 style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
               />
+
+              {/* Metric picker — only when 2+ are available (distance cardio with miles + minutes).
+                  Each segment shows the value the recipient must match, so the choice is concrete. */}
+              {metrics.length > 1 && (() => {
+                const distance = parseFloat(activity?.distance) || 0;
+                const duration = parseInt(activity?.duration, 10) || 0;
+                const labels = {
+                  distance: distance ? `${distance.toFixed(distance % 1 === 0 ? 0 : 1)} mi` : '—',
+                  duration: duration ? `${duration} min` : '—',
+                  pace: (distance && duration) ? `${formatPace(Math.round((duration * 60) / distance))} /mi` : '—',
+                };
+                const titles = { distance: 'Distance', duration: 'Time', pace: 'Pace' };
+                const ruleColor = CATEGORY_COLOR[matchRule.category] || '#888';
+                return (
+                  <>
+                    <p className="text-xs text-gray-400 mb-2">Match on</p>
+                    <div className="flex gap-2 mb-3">
+                      {metrics.map(m => {
+                        const isSelected = metric === m;
+                        return (
+                          <button
+                            key={m}
+                            onClick={() => { setMetric(m); triggerHaptic(ImpactStyle.Light); }}
+                            className="flex-1 py-2 rounded-xl text-xs font-medium transition-colors"
+                            style={{
+                              backgroundColor: isSelected ? `${ruleColor}1A` : 'rgba(255,255,255,0.04)',
+                              color: isSelected ? 'white' : 'rgba(255,255,255,0.6)',
+                              border: `1px solid ${isSelected ? ruleColor : 'transparent'}`,
+                            }}
+                          >
+                            <div className="font-semibold">{titles[m]}</div>
+                            <div className="text-[10px] mt-0.5 opacity-80">{labels[m]}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                );
+              })()}
 
               {/* Match rule preview */}
               <div
@@ -623,7 +777,7 @@ function PerspectivePill({ isChallenger }) {
   );
 }
 
-export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid = {}, compact = false, onSeeDetails, onAccept, onDecline, onCancel, onRequestCancel, onRespondCancel }) {
+export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid = {}, compact = false, onSeeDetails, onAccept, onDecline, onCancel, onRequestCancel, onRespondCancel, onStartWorkout, onApplyPastActivity }) {
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [confirmRequestCancel, setConfirmRequestCancel] = useState(false);
   const isChallenger = challenge.challengerUid === currentUid;
@@ -715,6 +869,10 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
   // In compact mode (Home tab), all action UI is hidden — users get a "See details ›"
   // link that hops them to the Challenges tab where the full action surface lives.
   const showAcceptDecline = !compact && !isChallenger && myStatus === 'pending';
+  // "Start workout" CTA: only for accepters on an active challenge. Stamps `intendedChallengeIds`
+  // on the resulting activity so the cloud function fulfills this specific challenge (instead of
+  // the multi-match deferral path).
+  const showStartWorkout = !compact && !isChallenger && myStatus === 'accepted' && challenge.status === 'active' && !cancelRequest;
   const showCancel = !compact && isChallenger && challenge.status === 'pending';
   // Sender can request cancel of an active 1v1 (group cancel unsupported in v1)
   const showRequestCancel = !compact && isChallenger && challenge.status === 'active' && !isGroup && !cancelRequest;
@@ -774,16 +932,21 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
       )}
 
       <div className="flex items-center gap-3" style={{ paddingRight: showCountdown ? 70 : 0 }}>
-        <ChallengeIcon
-          category={category}
-          color={color}
-          mePhotoURL={mePhotoURL}
-          meInitial={meInitial}
-          opponentPhotoURL={opponentPhotoURL}
-          opponentInitial={opponentInitial}
-          isGroup={isGroup}
-          groupCount={groupExtraCount}
-        />
+        {/* Avatar stack + perspective caption — left column treats "who and from whose side"
+            as a single unit, freeing the name row from competing with a Sent/Received chip. */}
+        <div className="flex flex-col items-center gap-1 flex-shrink-0">
+          <ChallengeIcon
+            category={category}
+            color={color}
+            mePhotoURL={mePhotoURL}
+            meInitial={meInitial}
+            opponentPhotoURL={opponentPhotoURL}
+            opponentInitial={opponentInitial}
+            isGroup={isGroup}
+            groupCount={groupExtraCount}
+          />
+          <PerspectivePill isChallenger={isChallenger} />
+        </div>
         <div className="flex-1 min-w-0">
           {/* Optional flavor title sits above the friend name as small italic text.
               Friend name is always the primary identifier — that's the unique "who am I betting against." */}
@@ -792,14 +955,11 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
               {challenge.title}
             </p>
           )}
-          <div className="flex items-center gap-1.5">
-            <p className="text-white text-sm font-semibold truncate">{primaryName}</p>
-            <PerspectivePill isChallenger={isChallenger} />
-          </div>
+          <p className="text-white text-sm font-semibold truncate">{primaryName}</p>
           {statusLabel && (
             <p className="text-gray-500 text-xs">{statusLabel}</p>
           )}
-          <p className="text-white text-sm mt-1">{ruleLine}</p>
+          <p className="text-white text-sm">{ruleLine}</p>
           {/* Bottom meta row: photo-required tag (left) + cancel link (right). Shares one
               row to save vertical space. Negative margin-right escapes the inner row's
               chip-clearance padding so the cancel link sits flush with the card's edge. */}
@@ -888,6 +1048,29 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
         </div>
       )}
 
+      {showStartWorkout && (
+        <div className="flex gap-2 mt-3">
+          <button
+            onClick={(e) => { e.stopPropagation(); triggerHaptic(ImpactStyle.Light); onApplyPastActivity?.(challenge); }}
+            className="flex-1 py-1.5 rounded-lg text-xs font-medium"
+            style={{
+              backgroundColor: 'transparent',
+              color: 'rgba(255,255,255,0.85)',
+              border: `1px solid ${color}55`,
+            }}
+          >
+            Use completed activity
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); triggerHaptic(ImpactStyle.Medium); onStartWorkout?.(challenge); }}
+            className="flex-1 py-1.5 rounded-lg text-xs font-semibold"
+            style={{ backgroundColor: color, color: 'black' }}
+          >
+            Start activity
+          </button>
+        </div>
+      )}
+
       {/* Cancel confirm rows — only render when user has tapped the inline cancel link.
           Idle state lives inline in the photo-required row above. */}
       {showCancel && confirmCancel && (
@@ -940,7 +1123,7 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
 // Section: rendered on the Home tab. Self-loads challenges + handles actions.
 // =====================================================================
 
-export function ChallengesSection({ user, userProfile, friends = [], onChallengeCountsChange, onSeeDetails }) {
+export function ChallengesSection({ user, userProfile, friends = [], onChallengeCountsChange, onSeeDetails, optimisticCompletions = new Map() }) {
   const [challenges, setChallenges] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   useTicker(60000);
@@ -964,10 +1147,17 @@ export function ChallengesSection({ user, userProfile, friends = [], onChallenge
     return map;
   }, [friends]);
 
-  const enriched = React.useMemo(() => challenges.map(c => ({
+  // Apply optimistic completion overlay before bucketing — flips Active → Completed instantly
+  // when the user logs a fulfilling activity, without waiting on the cloud function trigger.
+  const overlaidChallenges = React.useMemo(
+    () => applyOptimisticChallengeCompletions(challenges, optimisticCompletions, user?.uid),
+    [challenges, optimisticCompletions, user?.uid]
+  );
+
+  const enriched = React.useMemo(() => overlaidChallenges.map(c => ({
     ...c,
     friendName: friendsByUid[c.friendUid]?.displayName || friendsByUid[c.friendUid]?.username || c.friendName || '',
-  })), [challenges, friendsByUid]);
+  })), [overlaidChallenges, friendsByUid]);
 
   const buckets = React.useMemo(() => bucketChallenges(enriched, user?.uid), [enriched, user?.uid]);
 

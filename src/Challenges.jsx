@@ -800,10 +800,38 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
             <p className="text-gray-500 text-xs">{statusLabel}</p>
           )}
           <p className="text-white text-sm mt-1">{ruleLine}</p>
-          {challenge.requirePhoto && (
-            <p className="text-[11px] mt-0.5" style={{ color: '#FFD60A' }}>
-              📸 Photo required
-            </p>
+          {/* Bottom meta row: photo-required tag (left) + cancel link (right). Shares one
+              row to save vertical space. Negative margin-right escapes the inner row's
+              chip-clearance padding so the cancel link sits flush with the card's edge. */}
+          {(challenge.requirePhoto || ((showCancel && !confirmCancel) || (showRequestCancel && !confirmRequestCancel))) && (
+            <div
+              className="flex items-center justify-between gap-2 mt-0.5"
+              style={{ marginRight: showCountdown ? -70 : 0 }}
+            >
+              {challenge.requirePhoto ? (
+                <p className="text-[11px]" style={{ color: '#FFD60A' }}>
+                  📸 Photo required
+                </p>
+              ) : <span />}
+              {showCancel && !confirmCancel && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); triggerHaptic(ImpactStyle.Light); setConfirmCancel(true); }}
+                  className="text-[11px] font-medium px-1"
+                  style={{ color: '#FF453A' }}
+                >
+                  Cancel
+                </button>
+              )}
+              {showRequestCancel && !confirmRequestCancel && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); triggerHaptic(ImpactStyle.Light); setConfirmRequestCancel(true); }}
+                  className="text-[11px] font-medium px-1"
+                  style={{ color: '#FF453A' }}
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -860,67 +888,47 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
         </div>
       )}
 
-      {/* Compact cancel link (sender, pending). Tap → inline confirm row. */}
-      {showCancel && (
+      {/* Cancel confirm rows — only render when user has tapped the inline cancel link.
+          Idle state lives inline in the photo-required row above. */}
+      {showCancel && confirmCancel && (
         <div className="mt-2 flex justify-end">
-          {!confirmCancel ? (
+          <div className="flex items-center gap-3 text-xs">
+            <span className="text-gray-500">Cancel this challenge?</span>
             <button
-              onClick={() => { triggerHaptic(ImpactStyle.Light); setConfirmCancel(true); }}
-              className="text-xs font-medium px-1"
+              onClick={(e) => { e.stopPropagation(); triggerHaptic(ImpactStyle.Light); setConfirmCancel(false); }}
+              className="font-medium text-gray-300"
+            >
+              Keep
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); triggerHaptic(ImpactStyle.Medium); onCancel?.(challenge); }}
+              className="font-semibold"
               style={{ color: '#FF453A' }}
             >
-              Cancel challenge
+              Cancel
             </button>
-          ) : (
-            <div className="flex items-center gap-3 text-xs">
-              <span className="text-gray-500">Cancel this challenge?</span>
-              <button
-                onClick={() => { triggerHaptic(ImpactStyle.Light); setConfirmCancel(false); }}
-                className="font-medium text-gray-300"
-              >
-                Keep
-              </button>
-              <button
-                onClick={() => { triggerHaptic(ImpactStyle.Medium); onCancel?.(challenge); }}
-                className="font-semibold"
-                style={{ color: '#FF453A' }}
-              >
-                Cancel
-              </button>
-            </div>
-          )}
+          </div>
         </div>
       )}
 
-      {/* Compact request-cancel link (sender, active 1v1). Tap → inline confirm row. */}
-      {showRequestCancel && (
+      {showRequestCancel && confirmRequestCancel && (
         <div className="mt-2 flex justify-end">
-          {!confirmRequestCancel ? (
+          <div className="flex items-center gap-3 text-xs">
+            <span className="text-gray-500 truncate">Ask {opponentName.split(' ')[0]}?</span>
             <button
-              onClick={() => { triggerHaptic(ImpactStyle.Light); setConfirmRequestCancel(true); }}
-              className="text-xs font-medium px-1"
+              onClick={(e) => { e.stopPropagation(); triggerHaptic(ImpactStyle.Light); setConfirmRequestCancel(false); }}
+              className="font-medium text-gray-300"
+            >
+              Nevermind
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); triggerHaptic(ImpactStyle.Medium); setConfirmRequestCancel(false); onRequestCancel?.(challenge); }}
+              className="font-semibold"
               style={{ color: '#FF453A' }}
             >
-              Request cancel
+              Send
             </button>
-          ) : (
-            <div className="flex items-center gap-3 text-xs">
-              <span className="text-gray-500 truncate">Ask {opponentName.split(' ')[0]}?</span>
-              <button
-                onClick={() => { triggerHaptic(ImpactStyle.Light); setConfirmRequestCancel(false); }}
-                className="font-medium text-gray-300"
-              >
-                Nevermind
-              </button>
-              <button
-                onClick={() => { triggerHaptic(ImpactStyle.Medium); setConfirmRequestCancel(false); onRequestCancel?.(challenge); }}
-                className="font-semibold"
-                style={{ color: '#FF453A' }}
-              >
-                Send
-              </button>
-            </div>
-          )}
+          </div>
         </div>
       )}
 

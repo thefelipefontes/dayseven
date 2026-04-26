@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import {
   subscribeToChallenges,
@@ -48,6 +48,19 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
   // Lets users isolate just their wins or losses on either Sent or Received.
   const [resultFilter, setResultFilter] = useState('all');
   const [selectedFriend, setSelectedFriend] = useState(null);
+  // Measure the header so the scroll area can pad its top exactly enough — cards land
+  // flush below the header at rest, and scroll cleanly behind the blur when the user
+  // scrolls. Header height changes when ResultFilter shows/hides on the Completed segment.
+  const headerRef = useRef(null);
+  const [headerHeight, setHeaderHeight] = useState(0);
+  useLayoutEffect(() => {
+    if (!headerRef.current) return;
+    const measure = () => setHeaderHeight(headerRef.current.offsetHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(headerRef.current);
+    return () => ro.disconnect();
+  }, []);
 
   // Notification-tap navigation: when navTarget changes (parent bumps `nonce` per tap),
   // jump to the segment/sub-segment the notification is about.
@@ -158,8 +171,85 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
     setSegment(key);
   };
 
+  // Pick the list + empty copy for the current (segment, subSegment) combo.
+  // Lifted out of the JSX IIFE so the SubToggle / ResultFilter can render inside the
+  // sticky-top header (they need view counts) while the list itself stays below.
+  const views = {
+    'active|received': {
+      list: splits.activeReceived,
+      emptyTitle: "Nothing for you to finish",
+      emptySubtitle: "Challenges you've accepted and still need to complete will show up here.",
+      onRespondCancel: handleRespondCancel,
+      onStartWorkout: onStartChallengeWorkout,
+      onApplyPastActivity: onApplyPastActivityToChallenge,
+    },
+    'active|sent': {
+      list: splits.activeSent,
+      emptyTitle: "Nothing waiting on friends",
+      emptySubtitle: "Challenges you've sent that friends accepted will show up here until they finish.",
+      onRequestCancel: handleRequestCancel,
+      onRespondCancel: handleRespondCancel,
+    },
+    'pending|received': {
+      list: buckets.pendingReceived,
+      emptyTitle: "No received invites",
+      emptySubtitle: "Challenge requests from friends will show up here.",
+      onAccept: handleAccept,
+      onDecline: handleDecline,
+    },
+    'pending|sent': {
+      list: buckets.pendingSent,
+      emptyTitle: "No sent invites",
+      emptySubtitle: "Challenges you've sent waiting for a friend to accept will show up here.",
+      onCancel: handleCancel,
+    },
+    'completed|received': {
+      list: filterByResult(splits.completedReceived, resultFilter, user?.uid),
+      emptyTitle: emptyTitleForResult(resultFilter, "No completed challenges yet"),
+      emptySubtitle: emptySubtitleForResult(resultFilter, "Challenges you've accepted and finished will land here."),
+    },
+    'completed|sent': {
+      list: filterByResult(splits.completedSent, resultFilter, user?.uid),
+      emptyTitle: emptyTitleForResult(resultFilter, "No completed challenges yet"),
+      emptySubtitle: emptySubtitleForResult(resultFilter, "Challenges you sent that friends finished will land here."),
+    },
+  };
+  const subCounts = {
+    active: { received: splits.activeReceived.length, sent: splits.activeSent.length },
+    pending: { received: buckets.pendingReceived.length, sent: buckets.pendingSent.length },
+    completed: { received: splits.completedReceived.length, sent: splits.completedSent.length },
+  }[segment];
+  const view = views[`${segment}|${subSegment}`];
+
   return (
-    <div className="px-4 pb-32 min-h-screen">
+    // Layered layout: cards scroll the FULL height of the tab, with the header
+    // absolutely positioned on top using backdrop-blur so cards passing underneath
+    // appear as a soft frosted-glass effect rather than disappearing behind a hard
+    // opaque bar. ResizeObserver above measures the header height so we can pad the
+    // scroll area's top — cards land just below the header at rest, and scroll
+    // continuously behind it once the user starts moving. This integration relies on
+    // overlap (header sits over cards), which sticky/flex-col layouts can't provide.
+    <div
+      className="relative"
+      style={{ height: 'calc(100dvh - env(safe-area-inset-top, 0px) - 16px - 88px)' }}
+    >
+      {/* Header — vertical gradient that's solid black at the top (matches the App's
+          status-bar/spacer area above for a seamless join, no hard boundary line) and
+          transitions into a frosted-glass tint around the profile card. backdrop-blur is
+          applied uniformly to the whole element, but the opaque top half hides it; only
+          the lower half reveals the blurred backdrop. mask-image fades just the bottom
+          18px so cards dissolve into the header instead of meeting at a hard line. */}
+      <div
+        ref={headerRef}
+        className="absolute top-0 left-0 right-0 z-10 px-4 pb-2"
+        style={{
+          background: 'linear-gradient(to bottom, rgba(10, 10, 10, 1) 0%, rgba(10, 10, 10, 1) 15%, rgba(10, 10, 10, 0.65) 90%, rgba(10, 10, 10, 0.65) 100%)',
+          backdropFilter: 'blur(20px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+          maskImage: 'linear-gradient(to bottom, black calc(100% - 18px), transparent 100%)',
+          WebkitMaskImage: 'linear-gradient(to bottom, black calc(100% - 18px), transparent 100%)',
+        }}
+      >
       {/* Header */}
       <div className="pt-2 pb-4">
         <h1 className="text-xl font-bold text-white">Challenges</h1>
@@ -238,7 +328,7 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
 
       {/* Segmented control */}
       <div
-        className="relative flex items-center p-1 rounded-xl mb-4"
+        className="relative flex items-center p-1 rounded-xl mb-3"
         style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
       >
         <div
@@ -287,109 +377,71 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
         })}
       </div>
 
-      {/* Content */}
-      {isLoading ? (
-        <div className="py-10 flex justify-center">
-          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-        </div>
-      ) : (() => {
-        // Pick the list + empty copy for the current (segment, subSegment) combo.
-        // Only pending.received gets accept/decline; only pending.sent gets cancel.
-        const views = {
-          'active|received': {
-            list: splits.activeReceived,
-            emptyTitle: "Nothing for you to finish",
-            emptySubtitle: "Challenges you've accepted and still need to complete will show up here.",
-            onRespondCancel: handleRespondCancel,
-            onStartWorkout: onStartChallengeWorkout,
-            onApplyPastActivity: onApplyPastActivityToChallenge,
-          },
-          'active|sent': {
-            list: splits.activeSent,
-            emptyTitle: "Nothing waiting on friends",
-            emptySubtitle: "Challenges you've sent that friends accepted will show up here until they finish.",
-            onRequestCancel: handleRequestCancel,
-            onRespondCancel: handleRespondCancel,
-          },
-          'pending|received': {
-            list: buckets.pendingReceived,
-            emptyTitle: "No received invites",
-            emptySubtitle: "Challenge requests from friends will show up here.",
-            onAccept: handleAccept,
-            onDecline: handleDecline,
-          },
-          'pending|sent': {
-            list: buckets.pendingSent,
-            emptyTitle: "No sent invites",
-            emptySubtitle: "Challenges you've sent waiting for a friend to accept will show up here.",
-            onCancel: handleCancel,
-          },
-          'completed|received': {
-            list: filterByResult(splits.completedReceived, resultFilter, user?.uid),
-            emptyTitle: emptyTitleForResult(resultFilter, "No completed challenges yet"),
-            emptySubtitle: emptySubtitleForResult(resultFilter, "Challenges you've accepted and finished will land here."),
-          },
-          'completed|sent': {
-            list: filterByResult(splits.completedSent, resultFilter, user?.uid),
-            emptyTitle: emptyTitleForResult(resultFilter, "No completed challenges yet"),
-            emptySubtitle: emptySubtitleForResult(resultFilter, "Challenges you sent that friends finished will land here."),
-          },
-        };
+      {/* Sub-toggles live in the sticky header too — perspective + outcome filter follow
+          you as you scroll through cards. */}
+      {!isLoading && (
+        <SubToggle
+          value={subSegment}
+          onChange={(k) => { triggerHaptic(ImpactStyle.Light); setSubSegment(k); }}
+          receivedCount={subCounts.received}
+          sentCount={subCounts.sent}
+        />
+      )}
+      {!isLoading && segment === 'completed' && (
+        <ResultFilter
+          value={resultFilter}
+          onChange={(k) => { triggerHaptic(ImpactStyle.Light); setResultFilter(k); }}
+          allCount={completedCounts.all}
+          wonCount={completedCounts.won}
+          lostCount={completedCounts.lost}
+        />
+      )}
+      </div>
+      {/* /header overlay */}
 
-        const subCounts = {
-          active: { received: splits.activeReceived.length, sent: splits.activeSent.length },
-          pending: { received: buckets.pendingReceived.length, sent: buckets.pendingSent.length },
-          completed: { received: splits.completedReceived.length, sent: splits.completedSent.length },
-        }[segment];
-
-        const view = views[`${segment}|${subSegment}`];
-
-        return (
-          <>
-            <SubToggle
-              value={subSegment}
-              onChange={(k) => { triggerHaptic(ImpactStyle.Light); setSubSegment(k); }}
-              receivedCount={subCounts.received}
-              sentCount={subCounts.sent}
-            />
-            {segment === 'completed' && (
-              <ResultFilter
-                value={resultFilter}
-                onChange={(k) => { triggerHaptic(ImpactStyle.Light); setResultFilter(k); }}
-                allCount={completedCounts.all}
-                wonCount={completedCounts.won}
-                lostCount={completedCounts.lost}
+      {/* Scroll area — full height of the tab, sits BEHIND the header overlay. paddingTop
+          equals the measured header height so the first card lands flush with the bottom
+          of the header at rest. As the user scrolls, cards pass under the blurred header
+          and become softened glass-style instead of meeting a hard cutoff. */}
+      <div
+        className="absolute inset-0 overflow-y-auto px-4 pb-4"
+        style={{
+          paddingTop: headerHeight,
+          overscrollBehavior: 'contain',
+          WebkitOverflowScrolling: 'touch',
+        }}
+      >
+        {isLoading ? (
+          <div className="py-10 flex justify-center">
+            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : view.list.length === 0 ? (
+          <EmptyState title={view.emptyTitle} subtitle={view.emptySubtitle} />
+        ) : (
+          <div className="space-y-2 pt-1">
+            {view.list.map(c => (
+              <ChallengeCard
+                key={c.id}
+                challenge={c}
+                currentUid={user.uid}
+                userProfile={userProfile}
+                friendsByUid={friendsByUid}
+                onAccept={view.onAccept}
+                onDecline={view.onDecline}
+                onCancel={view.onCancel}
+                onRequestCancel={view.onRequestCancel}
+                onRespondCancel={view.onRespondCancel}
+                onStartWorkout={view.onStartWorkout}
+                onApplyPastActivity={view.onApplyPastActivity}
+                onOpenProfile={(uid) => {
+                  const f = friendsByUid[uid];
+                  if (f) setSelectedFriend(f);
+                }}
               />
-            )}
-            {view.list.length === 0 ? (
-              <EmptyState title={view.emptyTitle} subtitle={view.emptySubtitle} />
-            ) : (
-              <div className="space-y-2">
-                {view.list.map(c => (
-                  <ChallengeCard
-                    key={c.id}
-                    challenge={c}
-                    currentUid={user.uid}
-                    userProfile={userProfile}
-                    friendsByUid={friendsByUid}
-                    onAccept={view.onAccept}
-                    onDecline={view.onDecline}
-                    onCancel={view.onCancel}
-                    onRequestCancel={view.onRequestCancel}
-                    onRespondCancel={view.onRespondCancel}
-                    onStartWorkout={view.onStartWorkout}
-                    onApplyPastActivity={view.onApplyPastActivity}
-                    onOpenProfile={(uid) => {
-                      const f = friendsByUid[uid];
-                      if (f) setSelectedFriend(f);
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-          </>
-        );
-      })()}
+            ))}
+          </div>
+        )}
+      </div>
 
       {showSelfProfile && (
         <OwnProfileModal

@@ -13131,12 +13131,16 @@ export default function DaySevenApp() {
       longestMaster = Math.max(longestMaster, curMaster);
     });
 
+    // Also clamp to the user's current streaks — a longest-ever can't be lower than
+    // what's running right now. Defends against drift where streaks.X tracked beyond
+    // what the weekly recalc reconstructed (e.g., week-boundary mismatches).
+    const cur = existingRecords?._currentStreaks || {};
     return {
       ...newRecords,
-      longestMasterStreak: Math.max(longestMaster, existingRecords?.longestMasterStreak || 0),
-      longestStrengthStreak: Math.max(longestStrength, existingRecords?.longestStrengthStreak || 0),
-      longestCardioStreak: Math.max(longestCardio, existingRecords?.longestCardioStreak || 0),
-      longestRecoveryStreak: Math.max(longestRecovery, existingRecords?.longestRecoveryStreak || 0),
+      longestMasterStreak: Math.max(longestMaster, existingRecords?.longestMasterStreak || 0, cur.master || 0),
+      longestStrengthStreak: Math.max(longestStrength, existingRecords?.longestStrengthStreak || 0, cur.lifts || 0),
+      longestCardioStreak: Math.max(longestCardio, existingRecords?.longestCardioStreak || 0, cur.cardio || 0),
+      longestRecoveryStreak: Math.max(longestRecovery, existingRecords?.longestRecoveryStreak || 0, cur.recovery || 0),
     };
   };
 
@@ -13417,9 +13421,15 @@ export default function DaySevenApp() {
           const userWeeksWon = recordsResult?.weeksWon || 0;
 
           // Recalculate records from activities and health history to ensure they're accurate
-          // This fixes any corruption from race conditions or data issues
+          // This fixes any corruption from race conditions or data issues. Pass current
+          // streaks via `_currentStreaks` so the recalc clamps longest* to >= current
+          // (a "longest ever" can't be less than what's running right now).
           try {
-            const recalculatedRecords = recalculateAllRecordsFromActivities(userActivities || [], { ...userRecords, _goals: userGoals || {} }, healthHistoryData || []);
+            const recalculatedRecords = recalculateAllRecordsFromActivities(
+              userActivities || [],
+              { ...userRecords, _goals: userGoals || {}, _currentStreaks: recordsResult?.streaks || {} },
+              healthHistoryData || []
+            );
 
             setUserData(prev => ({
               ...prev,

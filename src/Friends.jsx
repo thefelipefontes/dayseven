@@ -10,7 +10,7 @@ import {
   getFriends,
   removeFriend
 } from './services/friendService';
-import { getUserProfile } from './services/userService';
+import FriendProfileCard from './components/FriendProfileCard';
 
 // Haptic helper
 const triggerHaptic = async (style = ImpactStyle.Medium) => {
@@ -37,37 +37,12 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
   const [justSent, setJustSent] = useState(new Set()); // Track recently sent requests for animation
   const [isClosing, setIsClosing] = useState(false); // Track closing animation
   const [selectedProfile, setSelectedProfile] = useState(null); // Track selected user profile to view
-  const [isProfileClosing, setIsProfileClosing] = useState(false); // Track profile card fade out
-  // Lazily-fetched full user doc for the selected profile — getFriends() returns lightweight
-  // records (no challengeStats / streaks), so we hydrate on open. Reset between selections.
-  const [selectedProfileFull, setSelectedProfileFull] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setSelectedProfileFull(null);
-    if (!selectedProfile?.uid) return;
-    (async () => {
-      try {
-        const p = await getUserProfile(selectedProfile.uid);
-        if (!cancelled) setSelectedProfileFull(p);
-      } catch {}
-    })();
-    return () => { cancelled = true; };
-  }, [selectedProfile?.uid]);
 
   const handleClose = () => {
     setIsClosing(true);
     setTimeout(() => {
       onClose();
     }, 250); // Match animation duration
-  };
-
-  const handleCloseProfile = () => {
-    setIsProfileClosing(true);
-    setTimeout(() => {
-      setSelectedProfile(null);
-      setIsProfileClosing(false);
-    }, 200);
   };
 
   // Load friends and requests on mount
@@ -701,210 +676,85 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
         `}</style>
       </div>
 
-      {/* Profile Card Modal */}
+      {/* Profile Card — shared component used across Friends, Activity Feed, and
+          Challenges tabs. Friendship-state-specific actions are passed in via the
+          `actions` prop so the component itself stays generic. */}
       {selectedProfile && (
-        <div
-          className={`fixed inset-0 z-[60] flex items-center justify-center px-6 ${isProfileClosing ? 'animate-fade-out' : 'animate-fade-in'}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            handleCloseProfile();
-          }}
-        >
-          {/* Backdrop */}
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-md" />
-
-          {/* Modal */}
-          <div
-            className={`relative w-full max-w-sm rounded-3xl overflow-hidden ${isProfileClosing ? 'animate-scale-fade-out' : 'animate-scale-fade-in'}`}
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              backgroundColor: '#1C1C1E',
-              border: '1px solid rgba(255,255,255,0.1)'
-            }}
-          >
-            {/* Header with profile photo */}
-            <div className="relative pt-8 pb-4 px-6">
-              {/* Background gradient */}
-              <div
-                className="absolute inset-0 opacity-30"
-                style={{
-                  background: 'linear-gradient(180deg, rgba(0,255,148,0.3) 0%, transparent 100%)'
-                }}
-              />
-
-              {/* Profile Photo */}
-              <div className="relative flex flex-col items-center">
-                <div className="w-24 h-24 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden border-4 border-zinc-800 mb-3">
-                  {selectedProfile.photoURL ? (
-                    <img src={selectedProfile.photoURL} alt={selectedProfile.displayName} className="w-full h-full object-cover" />
-                  ) : (
-                    <span className="text-3xl text-white">{selectedProfile.displayName?.[0]?.toUpperCase() || '?'}</span>
-                  )}
-                </div>
-                <h3 className="text-xl font-bold text-white">{selectedProfile.displayName || selectedProfile.username}</h3>
-                <p className="text-gray-400 text-sm">@{selectedProfile.username}</p>
-              </div>
-            </div>
-
-            {/* Stats */}
-            <div className="px-6 pb-4">
-              {(() => {
-                // Hydrated user doc fields take precedence; lightweight selectedProfile is the fallback.
-                const fullProfile = selectedProfileFull || {};
-                const challengeStats = fullProfile.challengeStats || selectedProfile.challengeStats || {};
-                const challengesWon = challengeStats.wins || 0;
-                const challengesLost = challengeStats.losses || 0;
-                const accepted = challengeStats.accepted || 0;
-                const completionRate = accepted > 0 ? Math.round((challengesWon / accepted) * 100) : null;
-                const masterStreak = fullProfile.streaks?.master ?? selectedProfile.masterStreak ?? 0;
-                const weeksWon = fullProfile.personalRecords?.weeksWon ?? selectedProfile.weeksWon ?? 0;
-                const strengthStreak = fullProfile.streaks?.lifts ?? selectedProfile.strengthStreak ?? 0;
-                const cardioStreak = fullProfile.streaks?.cardio ?? selectedProfile.cardioStreak ?? 0;
-                const recoveryStreak = fullProfile.streaks?.recovery ?? selectedProfile.recoveryStreak ?? 0;
-                return (
-                  <>
-                    <div className="grid grid-cols-3 gap-3 mb-4">
-                      <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                        <p className="text-2xl font-bold text-white">{masterStreak}</p>
-                        <p className="text-gray-500 text-xs">Hybrid Streak</p>
-                      </div>
-                      <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                        <p className="text-2xl font-bold text-white">{weeksWon}</p>
-                        <p className="text-gray-500 text-xs">Weeks Won</p>
-                      </div>
-                      <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.2)' }}>
-                        <p className="text-2xl font-bold">
-                          <span style={{ color: '#00FF94' }}>{challengesWon}</span>
-                          <span className="text-gray-600 mx-0.5">-</span>
-                          <span style={{ color: '#FF453A' }}>{challengesLost}</span>
-                        </p>
-                        <p className="text-gray-500 text-xs">Challenges W-L</p>
-                      </div>
-                    </div>
-
-                    {/* Streak breakdown */}
-                    <div className="space-y-2 mb-4">
-                      <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                        <span className="text-gray-400 flex items-center gap-2">
-                          <span style={{ color: '#00FF94' }}>💪</span> Strength Streak
-                        </span>
-                        <span className="text-white font-bold">{strengthStreak}</span>
-                      </div>
-                      <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                        <span className="text-gray-400 flex items-center gap-2">
-                          <span style={{ color: '#FF9500' }}>🏃</span> Cardio Streak
-                        </span>
-                        <span className="text-white font-bold">{cardioStreak}</span>
-                      </div>
-                      <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                        <span className="text-gray-400 flex items-center gap-2">
-                          <span style={{ color: '#00D1FF' }}>🧊</span> Recovery Streak
-                        </span>
-                        <span className="text-white font-bold">{recoveryStreak}</span>
-                      </div>
-                      {completionRate !== null && (
-                        <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: 'rgba(255,214,10,0.05)' }}>
-                          <span className="text-gray-400 flex items-center gap-2">
-                            <span style={{ color: '#FFD60A' }}>🎯</span> Challenge Completion
-                          </span>
-                          <span className="text-white font-bold">{completionRate}%</span>
-                        </div>
-                      )}
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
-
-            {/* Action buttons based on relationship */}
-            <div className="px-6 pb-6">
-              {isFriend(selectedProfile.uid) ? (
+        <FriendProfileCard
+          friend={selectedProfile}
+          onClose={() => setSelectedProfile(null)}
+          actions={(() => {
+            const closeAfter = (fn) => () => { fn?.(); setSelectedProfile(null); };
+            if (isFriend(selectedProfile.uid)) {
+              return (
                 <div className="space-y-2">
                   {onOpenChallenge && (
                     <button
-                      onClick={() => {
-                        triggerHaptic(ImpactStyle.Light);
-                        onOpenChallenge(selectedProfile);
-                        setSelectedProfile(null);
-                      }}
-                      className="w-full py-3 rounded-xl font-semibold transition-all duration-150 active:scale-98"
+                      onClick={closeAfter(() => { triggerHaptic(ImpactStyle.Light); onOpenChallenge(selectedProfile); })}
+                      className="w-full py-3 rounded-full font-semibold transition-all duration-150 active:scale-95"
                       style={{ backgroundColor: '#FFD60A', color: 'black' }}
                     >
                       ⚡ Challenge {selectedProfile.displayName?.split(' ')[0] || selectedProfile.username}
                     </button>
                   )}
                   <button
-                    onClick={() => {
-                      handleRemoveFriend(selectedProfile.uid);
-                      setSelectedProfile(null);
-                    }}
-                    className="w-full py-3 rounded-xl font-medium transition-all duration-150 active:scale-98 text-red-400"
+                    onClick={closeAfter(() => handleRemoveFriend(selectedProfile.uid))}
+                    className="w-full py-3 rounded-full font-medium transition-all duration-150 active:scale-95 text-red-400"
                     style={{ backgroundColor: 'rgba(255,69,58,0.1)' }}
                   >
                     Remove Friend
                   </button>
                 </div>
-              ) : hasSentRequest(selectedProfile.uid) ? (
+              );
+            }
+            if (hasSentRequest(selectedProfile.uid)) {
+              return (
                 <button
-                  className="w-full py-3 rounded-xl font-medium text-gray-400"
+                  className="w-full py-3 rounded-full font-medium text-gray-400"
                   style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
                   disabled
                 >
                   Request Pending
                 </button>
-              ) : hasReceivedRequest(selectedProfile.uid) ? (
+              );
+            }
+            if (hasReceivedRequest(selectedProfile.uid)) {
+              return (
                 <div className="flex gap-3">
                   <button
-                    onClick={() => {
+                    onClick={closeAfter(() => {
                       const request = requests.find(r => r.fromUid === selectedProfile.uid);
-                      if (request) {
-                        handleAcceptRequest(request);
-                        setSelectedProfile(null);
-                      }
-                    }}
-                    className="flex-1 py-3 rounded-xl font-semibold transition-all duration-150 active:scale-98"
+                      if (request) handleAcceptRequest(request);
+                    })}
+                    className="flex-1 py-3 rounded-full font-semibold transition-all duration-150 active:scale-95"
                     style={{ backgroundColor: '#00FF94', color: 'black' }}
                   >
                     Accept
                   </button>
                   <button
-                    onClick={() => {
+                    onClick={closeAfter(() => {
                       const request = requests.find(r => r.fromUid === selectedProfile.uid);
-                      if (request) {
-                        handleDeclineRequest(request.id);
-                        setSelectedProfile(null);
-                      }
-                    }}
-                    className="flex-1 py-3 rounded-xl font-medium text-white transition-all duration-150 active:scale-98"
+                      if (request) handleDeclineRequest(request.id);
+                    })}
+                    className="flex-1 py-3 rounded-full font-medium text-white transition-all duration-150 active:scale-95"
                     style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
                   >
                     Decline
                   </button>
                 </div>
-              ) : (
-                <button
-                  onClick={() => {
-                    handleSendRequest(selectedProfile.uid);
-                    setSelectedProfile(null);
-                  }}
-                  className="w-full py-3 rounded-xl font-semibold transition-all duration-150 active:scale-98"
-                  style={{ backgroundColor: '#00FF94', color: 'black' }}
-                >
-                  Add Friend
-                </button>
-              )}
-
-              {/* Close button */}
+              );
+            }
+            return (
               <button
-                onClick={handleCloseProfile}
-                className="w-full py-3 mt-2 rounded-xl text-gray-400 font-medium transition-all duration-150 active:scale-98"
-                style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
+                onClick={closeAfter(() => handleSendRequest(selectedProfile.uid))}
+                className="w-full py-3 rounded-full font-semibold transition-all duration-150 active:scale-95"
+                style={{ backgroundColor: '#00FF94', color: 'black' }}
               >
-                Close
+                Add Friend
               </button>
-            </div>
-          </div>
-        </div>
+            );
+          })()}
+        />
       )}
     </div>
   );

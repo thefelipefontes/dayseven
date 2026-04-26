@@ -6,6 +6,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import ActivityIcon from './components/ActivityIcon';
+import FriendProfileCard from './components/FriendProfileCard';
 import { isDemoAccount } from './demoData';
 
 // Convert a Date to YYYY-MM-DD string in local timezone (avoids UTC date shifting)
@@ -2543,186 +2544,36 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     );
   };
 
-  // Friend Profile Modal with animations
+  // Friend Profile Modal — thin wrapper over the shared FriendProfileCard. The leaderboard
+  // pre-hydrates `friend` with stats; the shared component lazy-fetches the user doc on
+  // open so personal records (longest run, top calorie workout, etc.) come through too.
   const FriendProfileModal = ({ friend, onClose }) => {
-    const [isAnimating, setIsAnimating] = useState(false);
-    const [isClosing, setIsClosing] = useState(false);
-    const [showFullPhoto, setShowFullPhoto] = useState(false);
-
-    useEffect(() => {
-      if (friend) {
-        setIsClosing(false);
-        setShowFullPhoto(false);
-        // Trigger animation after mount
-        setTimeout(() => setIsAnimating(true), 10);
-      } else {
-        setIsAnimating(false);
-      }
-    }, [friend]);
-
-    const handleClose = () => {
-      setIsAnimating(false);
-      setIsClosing(true);
-      setTimeout(() => {
-        setIsClosing(false);
-        onClose();
-      }, 300);
-    };
-
-    if (!friend && !isClosing) return null;
-
+    if (!friend) return null;
+    const isFriendOfMine = !!(friend?.uid && (friends || []).some(f => f.uid === friend.uid));
     return (
-      <>
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 transition-all duration-300"
-          style={{
-            backgroundColor: isAnimating ? 'rgba(0,0,0,0.8)' : 'rgba(0,0,0,0)'
-          }}
-          onClick={handleClose}
-          onTouchEnd={(e) => {
-            if (e.target === e.currentTarget) {
-              e.preventDefault();
-              handleClose();
-            }
-          }}
-        >
-          <div
-            className="w-full max-w-sm bg-zinc-900 rounded-2xl p-6 transition-all duration-300 ease-out"
-            style={{
-              transform: isAnimating ? 'scale(1) translateY(0)' : 'scale(0.95) translateY(20px)',
-              opacity: isAnimating ? 1 : 0
-            }}
-            onClick={e => e.stopPropagation()}
-            onTouchEnd={e => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="flex items-center gap-4 mb-6">
-              <TouchButton
-                onClick={() => friend?.photoURL && setShowFullPhoto(true)}
-                className={friend?.photoURL ? 'cursor-pointer' : ''}
+      <FriendProfileCard
+        friend={friend}
+        onClose={onClose}
+        actions={(
+          <div className="space-y-2">
+            {isFriendOfMine && onOpenChallenge && (
+              <button
+                onClick={() => { onOpenChallenge(friend); onClose?.(); }}
+                className="w-full py-3 rounded-full font-semibold transition-all duration-150 active:scale-95"
+                style={{ backgroundColor: '#FFD60A', color: 'black' }}
               >
-                <ProfilePhoto photoURL={friend?.photoURL} displayName={friend?.displayName} size={64} />
-              </TouchButton>
-              <div>
-                <p className="text-white font-bold text-lg">{friend?.displayName || friend?.username}</p>
-                <p className="text-gray-400">@{friend?.username}</p>
-              </div>
-            </div>
-
-          {/* Stats grid */}
-          {(() => {
-            const challengeStats = friend?.challengeStats || {};
-            const challengesWon = challengeStats.wins || 0;
-            const challengesLost = challengeStats.losses || 0;
-            const accepted = challengeStats.accepted || 0;
-            const completionRate = accepted > 0 ? Math.round((challengesWon / accepted) * 100) : null;
-            return (
-              <>
-                <div className="grid grid-cols-3 gap-3 mb-6">
-                  <div className="bg-zinc-800 rounded-xl p-3 text-center">
-                    <p className="text-2xl font-bold text-white">{friend?.masterStreak || 0}</p>
-                    <p className="text-gray-500 text-xs">Hybrid Streak</p>
-                  </div>
-                  <div className="bg-zinc-800 rounded-xl p-3 text-center">
-                    <p className="text-2xl font-bold text-white">{friend?.weeksWon || 0}</p>
-                    <p className="text-gray-500 text-xs">Weeks Won</p>
-                  </div>
-                  <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.2)' }}>
-                    <p className="text-2xl font-bold">
-                      <span style={{ color: '#00FF94' }}>{challengesWon}</span>
-                      <span className="text-gray-600 mx-0.5">-</span>
-                      <span style={{ color: '#FF453A' }}>{challengesLost}</span>
-                    </p>
-                    <p className="text-gray-500 text-xs">Challenges W-L</p>
-                  </div>
-                </div>
-
-                {/* Streak breakdown */}
-                <div className="space-y-2 mb-6">
-                  <div className="flex items-center justify-between bg-zinc-800 rounded-lg p-3">
-                    <span className="text-gray-400">💪 Strength Streak</span>
-                    <span className="text-white font-bold">{friend?.strengthStreak || 0}</span>
-                  </div>
-                  <div className="flex items-center justify-between bg-zinc-800 rounded-lg p-3">
-                    <span className="text-gray-400">🏃 Cardio Streak</span>
-                    <span className="text-white font-bold">{friend?.cardioStreak || 0}</span>
-                  </div>
-                  <div className="flex items-center justify-between bg-zinc-800 rounded-lg p-3">
-                    <span className="text-gray-400">🧘 Recovery Streak</span>
-                    <span className="text-white font-bold">{friend?.recoveryStreak || 0}</span>
-                  </div>
-                  {completionRate !== null && (
-                    <div className="flex items-center justify-between rounded-lg p-3" style={{ backgroundColor: 'rgba(255,214,10,0.05)' }}>
-                      <span className="text-gray-400">🎯 Challenge Completion</span>
-                      <span className="text-white font-bold">{completionRate}%</span>
-                    </div>
-                  )}
-                </div>
-              </>
-            );
-          })()}
-
-          {/* Action buttons */}
-          {(() => {
-            const isFriendOfMine = !!(friend?.uid && (friends || []).some(f => f.uid === friend.uid));
-            return (
-              <div className="space-y-2">
-                {isFriendOfMine && onOpenChallenge && (
-                  <TouchButton
-                    onClick={() => {
-                      onOpenChallenge(friend);
-                      handleClose();
-                    }}
-                    className="w-full py-3 rounded-full font-semibold transition-all duration-150 text-center"
-                    style={{ backgroundColor: '#FFD60A', color: 'black' }}
-                  >
-                    ⚡ Challenge {friend?.displayName?.split(' ')[0] || friend?.username}
-                  </TouchButton>
-                )}
-                <TouchButton
-                  onClick={handleClose}
-                  className="w-full py-3 rounded-full bg-zinc-800 text-white font-medium transition-all duration-150 text-center"
-                >
-                  Close
-                </TouchButton>
-              </div>
-            );
-          })()}
-        </div>
-      </div>
-
-      {/* Fullscreen Photo Overlay - always rendered but hidden to prevent flash */}
-      {friend?.photoURL && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black transition-opacity duration-150"
-          style={{
-            opacity: showFullPhoto ? 1 : 0,
-            pointerEvents: showFullPhoto ? 'auto' : 'none',
-            visibility: showFullPhoto ? 'visible' : 'hidden'
-          }}
-          onClick={() => setShowFullPhoto(false)}
-          onTouchStart={(e) => e.stopPropagation()}
-          onTouchMove={(e) => e.stopPropagation()}
-          onTouchEnd={(e) => e.stopPropagation()}
-        >
-          <div className="relative max-w-full max-h-full flex flex-col items-end" onClick={e => e.stopPropagation()}>
-            <TouchButton
-              onClick={() => setShowFullPhoto(false)}
-              className="mb-2 mr-1 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center"
+                ⚡ Challenge {friend?.displayName?.split(' ')[0] || friend?.username}
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="w-full py-3 rounded-full bg-zinc-800 text-white font-medium transition-all duration-150 active:scale-95"
             >
-              <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </TouchButton>
-            <img
-              src={friend.photoURL}
-              alt={friend.displayName}
-              className="max-w-[90vw] max-h-[85vh] rounded-2xl object-contain"
-            />
+              Close
+            </button>
           </div>
-        </div>
-      )}
-      </>
+        )}
+      />
     );
   };
 

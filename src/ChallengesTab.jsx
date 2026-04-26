@@ -12,9 +12,9 @@ import {
   applyOptimisticChallengeCompletions,
   getChallengeOutcome,
 } from './services/challengeService';
-import { getUserProfile } from './services/userService';
 import { ChallengeCard } from './Challenges';
 import OwnProfileModal from './components/OwnProfileModal';
+import FriendProfileCard from './components/FriendProfileCard';
 
 const triggerHaptic = async (style = ImpactStyle.Light) => {
   try { await Haptics.impact({ style }); } catch {
@@ -402,121 +402,11 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
       )}
 
       {selectedFriend && (
-        <FriendQuickProfileModal
+        <FriendProfileCard
           friend={selectedFriend}
           onClose={() => setSelectedFriend(null)}
         />
       )}
-    </div>
-  );
-}
-
-// Minimal friend profile card — opened by tapping an avatar on a challenge card.
-// Mirrors OwnProfileModal's layout. The friend object from `getFriends()` only carries
-// username/displayName/photoURL, so we lazily fetch the full user doc on mount to pull
-// the friend's challengeStats and streaks. Stats render as 0 until the fetch resolves.
-function FriendQuickProfileModal({ friend, onClose }) {
-  const [isAnimating, setIsAnimating] = useState(false);
-  const [profile, setProfile] = useState(null);
-
-  useEffect(() => {
-    const t = setTimeout(() => setIsAnimating(true), 10);
-    return () => clearTimeout(t);
-  }, []);
-
-  // Fetch the full user doc once when the modal opens. Cached by getUserProfile so
-  // a re-tap on the same friend returns instantly. Failure leaves stats at 0.
-  useEffect(() => {
-    let cancelled = false;
-    if (!friend?.uid) return;
-    (async () => {
-      try {
-        const p = await getUserProfile(friend.uid);
-        if (!cancelled) setProfile(p);
-      } catch {}
-    })();
-    return () => { cancelled = true; };
-  }, [friend?.uid]);
-
-  const handleClose = () => {
-    setIsAnimating(false);
-    setTimeout(onClose, 250);
-  };
-
-  const initial = (friend?.displayName?.[0] || friend?.username?.[0] || '?').toUpperCase();
-  const stats = profile?.challengeStats || {};
-  const wins = stats.wins || 0;
-  const losses = stats.losses || 0;
-  const accepted = stats.accepted || 0;
-  const completionRate = accepted > 0 ? Math.round((wins / accepted) * 100) : null;
-  // streaks lives at `streaks.{master, lifts, cardio, recovery}` on the user doc.
-  const masterStreak = profile?.streaks?.master || 0;
-  const weeksWon = profile?.personalRecords?.weeksWon || 0;
-
-  return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4 transition-all duration-300"
-      style={{ backgroundColor: isAnimating ? 'rgba(0,0,0,0.8)' : 'rgba(0,0,0,0)' }}
-      onClick={handleClose}
-    >
-      <div
-        className="w-full max-w-sm bg-zinc-900 rounded-2xl p-6 transition-all duration-300 ease-out"
-        style={{
-          transform: isAnimating ? 'scale(1) translateY(0)' : 'scale(0.95) translateY(20px)',
-          opacity: isAnimating ? 1 : 0,
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-4 mb-6">
-          <div
-            className="w-16 h-16 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0"
-            style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}
-          >
-            {friend?.photoURL ? (
-              <img src={friend.photoURL} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <span className="text-white text-2xl font-semibold">{initial}</span>
-            )}
-          </div>
-          <div className="min-w-0">
-            <p className="text-white font-bold text-lg truncate">{friend?.displayName || friend?.username || 'Friend'}</p>
-            {friend?.username && <p className="text-gray-400 truncate">@{friend.username}</p>}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-3 mb-6">
-          <div className="bg-zinc-800 rounded-xl p-3 text-center">
-            <p className="text-2xl font-bold text-white">{masterStreak}</p>
-            <p className="text-gray-500 text-xs">Hybrid Streak</p>
-          </div>
-          <div className="bg-zinc-800 rounded-xl p-3 text-center">
-            <p className="text-2xl font-bold text-white">{weeksWon}</p>
-            <p className="text-gray-500 text-xs">Weeks Won</p>
-          </div>
-          <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.2)' }}>
-            <p className="text-2xl font-bold">
-              <span style={{ color: '#00FF94' }}>{wins}</span>
-              <span className="text-gray-600 mx-0.5">-</span>
-              <span style={{ color: '#FF453A' }}>{losses}</span>
-            </p>
-            <p className="text-gray-500 text-xs">Challenges W-L</p>
-          </div>
-        </div>
-
-        {completionRate !== null && (
-          <div className="flex items-center justify-between rounded-lg p-3 mb-6" style={{ backgroundColor: 'rgba(255,214,10,0.05)' }}>
-            <span className="text-gray-400">🎯 Challenge Completion</span>
-            <span className="text-white font-bold">{completionRate}%</span>
-          </div>
-        )}
-
-        <button
-          onClick={handleClose}
-          className="w-full py-3 rounded-full bg-zinc-800 text-white font-medium transition-all duration-150 active:scale-95"
-        >
-          Close
-        </button>
-      </div>
     </div>
   );
 }

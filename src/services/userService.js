@@ -1,4 +1,4 @@
-import { doc, getDoc, getDocFromServer, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, getDocFromServer, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, writeBatch, onSnapshot } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { Capacitor } from '@capacitor/core';
@@ -226,6 +226,72 @@ export async function getUserProfile(uid, forceRefresh = false) {
     }
     return null;
   }
+}
+
+/**
+ * Real-time subscription to a user doc's `challengeStats` field. The cloud function
+ * increments wins/losses/accepted server-side; without a listener the local userProfile
+ * stays stuck on whatever was loaded at login (no auto-refresh). This keeps the
+ * Challenges-tab W-L pill, OwnProfileModal, and completion-rate computation in sync
+ * the moment the server resolves a challenge.
+ *
+ * Also invalidates the cached profile so any `getUserProfile(uid)` re-fetch returns fresh data.
+ */
+export function subscribeToUserChallengeStats(uid, onUpdate) {
+  if (!uid || typeof onUpdate !== 'function') return () => {};
+
+  const apply = (challengeStats) => {
+    // Refresh cached profile in place so other readers see the new counters.
+    if (cache.userProfiles.has(uid)) {
+      const cached = cache.userProfiles.get(uid);
+      cache.userProfiles.set(uid, { ...cached, challengeStats });
+    }
+    onUpdate(challengeStats);
+  };
+
+  if (isNative) {
+    const callbackIdRef = { current: null };
+    let cancelled = false;
+
+    FirebaseFirestore.addDocumentSnapshotListener(
+      { reference: `users/${uid}` },
+      (event, error) => {
+        if (error) {
+          console.error('[userService] subscribeToUserChallengeStats error:', error);
+          return;
+        }
+        const stats = event?.snapshot?.data?.challengeStats;
+        if (stats !== undefined) apply(stats);
+      }
+    ).then(callbackId => {
+      if (cancelled) {
+        FirebaseFirestore.removeSnapshotListener({ callbackId }).catch(() => {});
+      } else {
+        callbackIdRef.current = callbackId;
+      }
+    }).catch(err => {
+      console.error('[userService] subscribeToUserChallengeStats init failed:', err);
+    });
+
+    return () => {
+      cancelled = true;
+      if (callbackIdRef.current) {
+        FirebaseFirestore.removeSnapshotListener({ callbackId: callbackIdRef.current }).catch(() => {});
+        callbackIdRef.current = null;
+      }
+    };
+  }
+
+  const userRef = doc(db, 'users', uid);
+  const unsub = onSnapshot(
+    userRef,
+    (snap) => {
+      const stats = snap.data()?.challengeStats;
+      if (stats !== undefined) apply(stats);
+    },
+    (err) => console.error('[userService] subscribeToUserChallengeStats:', err)
+  );
+  return unsub;
 }
 
 // Parse Firestore REST API fields into plain JS objects

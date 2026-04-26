@@ -10,7 +10,9 @@ import {
   respondToCancelRequest,
   countActiveOutgoing,
   applyOptimisticChallengeCompletions,
+  getChallengeOutcome,
 } from './services/challengeService';
+import { getUserProfile } from './services/userService';
 import { ChallengeCard } from './Challenges';
 import OwnProfileModal from './components/OwnProfileModal';
 
@@ -42,6 +44,10 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
   // Shared across all three main segments — perspective (received/sent) is "sticky"
   // so switching from Pending→Active keeps you on the same side you were looking at.
   const [subSegment, setSubSegment] = useState('received');
+  // Outcome filter on the Completed segment — 'all' | 'won' | 'lost'.
+  // Lets users isolate just their wins or losses on either Sent or Received.
+  const [resultFilter, setResultFilter] = useState('all');
+  const [selectedFriend, setSelectedFriend] = useState(null);
 
   // Notification-tap navigation: when navTarget changes (parent bumps `nonce` per tap),
   // jump to the segment/sub-segment the notification is about.
@@ -98,6 +104,18 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
     const completedSent = buckets.completed.filter(c => c.challengerUid === user?.uid);
     return { activeReceived, activeSent, completedReceived, completedSent };
   }, [buckets.active, buckets.completed, user?.uid]);
+
+  // Won/lost counts within the current sub-segment (Received vs Sent), used to badge the filter chips.
+  const completedListForSub = subSegment === 'received' ? splits.completedReceived : splits.completedSent;
+  const completedCounts = useMemo(() => {
+    let won = 0, lost = 0;
+    for (const c of completedListForSub) {
+      const o = getChallengeOutcome(c, user?.uid);
+      if (o === 'won') won += 1;
+      else if (o === 'lost') lost += 1;
+    }
+    return { all: completedListForSub.length, won, lost };
+  }, [completedListForSub, user?.uid]);
 
   // Mirror the home section's badge/cap accounting so counts stay in sync when the user
   // lands here first without mounting HomeTab.
@@ -307,14 +325,14 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
             onCancel: handleCancel,
           },
           'completed|received': {
-            list: splits.completedReceived,
-            emptyTitle: "No completed challenges yet",
-            emptySubtitle: "Challenges you've accepted and finished will land here.",
+            list: filterByResult(splits.completedReceived, resultFilter, user?.uid),
+            emptyTitle: emptyTitleForResult(resultFilter, "No completed challenges yet"),
+            emptySubtitle: emptySubtitleForResult(resultFilter, "Challenges you've accepted and finished will land here."),
           },
           'completed|sent': {
-            list: splits.completedSent,
-            emptyTitle: "No completed challenges yet",
-            emptySubtitle: "Challenges you sent that friends finished will land here.",
+            list: filterByResult(splits.completedSent, resultFilter, user?.uid),
+            emptyTitle: emptyTitleForResult(resultFilter, "No completed challenges yet"),
+            emptySubtitle: emptySubtitleForResult(resultFilter, "Challenges you sent that friends finished will land here."),
           },
         };
 
@@ -334,6 +352,15 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
               receivedCount={subCounts.received}
               sentCount={subCounts.sent}
             />
+            {segment === 'completed' && (
+              <ResultFilter
+                value={resultFilter}
+                onChange={(k) => { triggerHaptic(ImpactStyle.Light); setResultFilter(k); }}
+                allCount={completedCounts.all}
+                wonCount={completedCounts.won}
+                lostCount={completedCounts.lost}
+              />
+            )}
             {view.list.length === 0 ? (
               <EmptyState title={view.emptyTitle} subtitle={view.emptySubtitle} />
             ) : (
@@ -352,6 +379,10 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
                     onRespondCancel={view.onRespondCancel}
                     onStartWorkout={view.onStartWorkout}
                     onApplyPastActivity={view.onApplyPastActivity}
+                    onOpenProfile={(uid) => {
+                      const f = friendsByUid[uid];
+                      if (f) setSelectedFriend(f);
+                    }}
                   />
                 ))}
               </div>
@@ -369,6 +400,123 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
           onClose={() => setShowSelfProfile(false)}
         />
       )}
+
+      {selectedFriend && (
+        <FriendQuickProfileModal
+          friend={selectedFriend}
+          onClose={() => setSelectedFriend(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Minimal friend profile card — opened by tapping an avatar on a challenge card.
+// Mirrors OwnProfileModal's layout. The friend object from `getFriends()` only carries
+// username/displayName/photoURL, so we lazily fetch the full user doc on mount to pull
+// the friend's challengeStats and streaks. Stats render as 0 until the fetch resolves.
+function FriendQuickProfileModal({ friend, onClose }) {
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [profile, setProfile] = useState(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => setIsAnimating(true), 10);
+    return () => clearTimeout(t);
+  }, []);
+
+  // Fetch the full user doc once when the modal opens. Cached by getUserProfile so
+  // a re-tap on the same friend returns instantly. Failure leaves stats at 0.
+  useEffect(() => {
+    let cancelled = false;
+    if (!friend?.uid) return;
+    (async () => {
+      try {
+        const p = await getUserProfile(friend.uid);
+        if (!cancelled) setProfile(p);
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [friend?.uid]);
+
+  const handleClose = () => {
+    setIsAnimating(false);
+    setTimeout(onClose, 250);
+  };
+
+  const initial = (friend?.displayName?.[0] || friend?.username?.[0] || '?').toUpperCase();
+  const stats = profile?.challengeStats || {};
+  const wins = stats.wins || 0;
+  const losses = stats.losses || 0;
+  const accepted = stats.accepted || 0;
+  const completionRate = accepted > 0 ? Math.round((wins / accepted) * 100) : null;
+  // streaks lives at `streaks.{master, lifts, cardio, recovery}` on the user doc.
+  const masterStreak = profile?.streaks?.master || 0;
+  const weeksWon = profile?.personalRecords?.weeksWon || 0;
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4 transition-all duration-300"
+      style={{ backgroundColor: isAnimating ? 'rgba(0,0,0,0.8)' : 'rgba(0,0,0,0)' }}
+      onClick={handleClose}
+    >
+      <div
+        className="w-full max-w-sm bg-zinc-900 rounded-2xl p-6 transition-all duration-300 ease-out"
+        style={{
+          transform: isAnimating ? 'scale(1) translateY(0)' : 'scale(0.95) translateY(20px)',
+          opacity: isAnimating ? 1 : 0,
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-4 mb-6">
+          <div
+            className="w-16 h-16 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0"
+            style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}
+          >
+            {friend?.photoURL ? (
+              <img src={friend.photoURL} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <span className="text-white text-2xl font-semibold">{initial}</span>
+            )}
+          </div>
+          <div className="min-w-0">
+            <p className="text-white font-bold text-lg truncate">{friend?.displayName || friend?.username || 'Friend'}</p>
+            {friend?.username && <p className="text-gray-400 truncate">@{friend.username}</p>}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3 mb-6">
+          <div className="bg-zinc-800 rounded-xl p-3 text-center">
+            <p className="text-2xl font-bold text-white">{masterStreak}</p>
+            <p className="text-gray-500 text-xs">Hybrid Streak</p>
+          </div>
+          <div className="bg-zinc-800 rounded-xl p-3 text-center">
+            <p className="text-2xl font-bold text-white">{weeksWon}</p>
+            <p className="text-gray-500 text-xs">Weeks Won</p>
+          </div>
+          <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.2)' }}>
+            <p className="text-2xl font-bold">
+              <span style={{ color: '#00FF94' }}>{wins}</span>
+              <span className="text-gray-600 mx-0.5">-</span>
+              <span style={{ color: '#FF453A' }}>{losses}</span>
+            </p>
+            <p className="text-gray-500 text-xs">Challenges W-L</p>
+          </div>
+        </div>
+
+        {completionRate !== null && (
+          <div className="flex items-center justify-between rounded-lg p-3 mb-6" style={{ backgroundColor: 'rgba(255,214,10,0.05)' }}>
+            <span className="text-gray-400">🎯 Challenge Completion</span>
+            <span className="text-white font-bold">{completionRate}%</span>
+          </div>
+        )}
+
+        <button
+          onClick={handleClose}
+          className="w-full py-3 rounded-full bg-zinc-800 text-white font-medium transition-all duration-150 active:scale-95"
+        >
+          Close
+        </button>
+      </div>
     </div>
   );
 }
@@ -387,6 +535,81 @@ function EmptyState({ title, subtitle }) {
     <div className="py-12 text-center">
       <p className="text-white text-sm font-medium">{title}</p>
       <p className="text-xs mt-1 px-8" style={{ color: 'rgba(255,255,255,0.5)' }}>{subtitle}</p>
+    </div>
+  );
+}
+
+// Apply the Won/Lost result filter to a list of completed challenges.
+function filterByResult(list, filter, uid) {
+  if (filter === 'all') return list;
+  return list.filter(c => getChallengeOutcome(c, uid) === filter);
+}
+
+function emptyTitleForResult(filter, fallback) {
+  if (filter === 'won') return 'No wins here yet';
+  if (filter === 'lost') return 'No losses here';
+  return fallback;
+}
+
+function emptySubtitleForResult(filter, fallback) {
+  if (filter === 'won') return 'Finished challenges that scored as wins will land here.';
+  if (filter === 'lost') return 'Challenges that timed out before finishing will land here.';
+  return fallback;
+}
+
+// Outcome filter — All / Won / Lost — rendered on the Completed segment to make it
+// easy to scan just one side of the record. Styled like SubToggle but tinted by outcome.
+function ResultFilter({ value, onChange, allCount, wonCount, lostCount }) {
+  const items = [
+    { key: 'all', label: 'All', count: allCount, accent: '#FFFFFF' },
+    { key: 'won', label: 'Won', count: wonCount, accent: '#00FF94' },
+    { key: 'lost', label: 'Lost', count: lostCount, accent: '#FF453A' },
+  ];
+  // Animated pill width: divide track into 3 equal slots
+  const pillLeft = value === 'all'
+    ? '4px'
+    : value === 'won'
+      ? 'calc(4px + (100% - 8px) / 3)'
+      : 'calc(4px + 2 * (100% - 8px) / 3)';
+  return (
+    <div
+      className="relative flex items-center p-1 rounded-lg mb-3 max-w-[300px] mx-auto"
+      style={{ backgroundColor: 'rgba(255,255,255,0.04)' }}
+    >
+      <div
+        className="absolute top-1 bottom-1 rounded-md transition-all duration-300 ease-out"
+        style={{
+          backgroundColor: 'rgba(255,255,255,0.08)',
+          width: 'calc((100% - 8px) / 3)',
+          left: pillLeft,
+        }}
+      />
+      {items.map(s => {
+        const selected = value === s.key;
+        return (
+          <button
+            key={s.key}
+            onClick={() => onChange(s.key)}
+            className="flex-1 py-1 rounded-md text-[11px] font-medium transition-colors duration-200 flex items-center justify-center gap-1.5 relative z-10"
+            style={{ color: selected ? s.accent : 'rgba(255,255,255,0.5)' }}
+          >
+            <span>{s.label}</span>
+            {s.count > 0 && (
+              <span
+                className="text-[9px] px-1.5 rounded-full font-semibold"
+                style={{
+                  backgroundColor: selected ? s.accent : 'rgba(255,255,255,0.1)',
+                  color: selected ? 'black' : 'rgba(255,255,255,0.6)',
+                  minWidth: 16,
+                  lineHeight: '14px',
+                }}
+              >
+                {s.count}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }

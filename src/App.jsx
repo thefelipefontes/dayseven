@@ -12,7 +12,7 @@ import SettingsPage from './Settings';
 import ProfilePage from './Profile';
 import { isChallengeable, getChallengesForUser, activityMatchesChallengeRule, describeMatchRule, evaluateActivityAgainstChallenge, applyOptimisticChallengeCompletions, applyChallengeIntent } from './services/challengeService';
 import ChallengeMatchChooser from './components/ChallengeMatchChooser';
-import { createUserProfile, getUserProfile, updateUserProfile, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, deleteActivityPhoto, saveUserGoals, getUserGoals, setOnboardingComplete, setTourComplete, savePersonalRecords, getPersonalRecords, saveDailyHealthData, getDailyHealthData, getDailyHealthHistory } from './services/userService';
+import { createUserProfile, getUserProfile, updateUserProfile, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, deleteActivityPhoto, saveUserGoals, getUserGoals, setOnboardingComplete, setTourComplete, savePersonalRecords, getPersonalRecords, saveDailyHealthData, getDailyHealthData, getDailyHealthHistory, subscribeToUserChallengeStats } from './services/userService';
 import { getFriends, getReactions, getFriendRequests, getComments, addReply, getReplies, deleteReply, addReaction, removeReaction, addComment, cleanupActivitySocialData } from './services/friendService';
 
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
@@ -12308,6 +12308,19 @@ export default function DaySevenApp() {
     backfillYesterday();
   }, [user?.uid]);
 
+  // Live-subscribe to the current user's challengeStats. The cloud function increments
+  // wins/losses/accepted server-side when challenges resolve; without this listener the
+  // local userProfile stays stuck on whatever was loaded at login, so the W-L pill on
+  // OwnProfileModal and the Challenges tab would only refresh on next app launch —
+  // confusing right after a friend's challenge expires or the user wins one.
+  useEffect(() => {
+    if (!user?.uid) return;
+    const unsub = subscribeToUserChallengeStats(user.uid, (challengeStats) => {
+      setUserProfile(prev => prev ? { ...prev, challengeStats } : prev);
+    });
+    return () => { try { unsub?.(); } catch {} };
+  }, [user?.uid]);
+
   // Load health data from Firestore on non-native platforms (desktop/web)
   useEffect(() => {
     if (!user?.uid || Capacitor.isNativePlatform()) return;
@@ -16961,7 +16974,10 @@ export default function DaySevenApp() {
       />
 
       <CelebrationOverlay
-        show={showCelebration}
+        // Hold off on celebrations while the Challenge a friend modal is up — playing them
+        // simultaneously buries the modal. Once the user dismisses the modal (or sends),
+        // `challengeModalActivity` flips to null and the overlay animates in.
+        show={showCelebration && !challengeModalActivity}
         message={celebrationMessage}
         type={celebrationType}
         onComplete={() => {
@@ -16979,7 +16995,7 @@ export default function DaySevenApp() {
       />
 
       <WeekStreakCelebration
-        show={showWeekStreakCelebration}
+        show={showWeekStreakCelebration && !challengeModalActivity}
         streakCount={userData?.streaks?.master || 1}
         goals={userData?.goals || {}}
         weekCounts={{
@@ -17020,7 +17036,9 @@ export default function DaySevenApp() {
       />
 
       <Toast
-        show={showToast}
+        // Same deferral as the celebration overlays — record toasts and any other queued
+        // success toast wait for the Challenge a friend modal to close before appearing.
+        show={showToast && !challengeModalActivity}
         message={toastMessage}
         onDismiss={() => setShowToast(false)}
         onTap={toastType === 'record' ? navigateToHallOfFame : null}

@@ -38,6 +38,7 @@ export default function OwnProfileModal({ user, userProfile, userData, onClose }
   const recoveryStreak = userData?.streaks?.recovery || 0;
   const weeksWon = userData?.personalRecords?.weeksWon || 0;
   const challengesWon = userProfile?.challengeStats?.wins || 0;
+  const challengesLost = userProfile?.challengeStats?.losses || 0;
   const challengesAccepted = userProfile?.challengeStats?.accepted || 0;
   const completionRate = challengesAccepted > 0 ? Math.round((challengesWon / challengesAccepted) * 100) : null;
 
@@ -86,8 +87,12 @@ export default function OwnProfileModal({ user, userProfile, userData, onClose }
               <p className="text-gray-500 text-xs">Weeks Won</p>
             </div>
             <div className="bg-zinc-800 rounded-xl p-3 text-center">
-              <p className="text-2xl font-bold text-white">{challengesWon}</p>
-              <p className="text-gray-500 text-xs">Challenges Won</p>
+              <p className="text-2xl font-bold">
+                <span style={{ color: '#00FF94' }}>{challengesWon}</span>
+                <span className="text-gray-600 mx-0.5">-</span>
+                <span style={{ color: '#FF453A' }}>{challengesLost}</span>
+              </p>
+              <p className="text-gray-500 text-xs">Challenges W-L</p>
             </div>
           </div>
 

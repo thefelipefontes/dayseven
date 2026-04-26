@@ -14,6 +14,7 @@ import {
   evaluateActivityAgainstChallenge,
   availableChallengeMetrics,
   formatPace,
+  getChallengeOutcome,
 } from './services/challengeService';
 import { getFriends } from './services/friendService';
 
@@ -379,7 +380,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
         </div>
 
         <div className="flex items-center justify-between px-4 pb-3">
-          <button onClick={handleClose} className="text-gray-400 text-sm font-medium">Skip</button>
+          <button onClick={handleClose} className="text-gray-400 text-sm font-medium transition-all duration-150 active:scale-90 active:opacity-70">Skip</button>
           <h1 className="text-white text-lg font-semibold">Challenge a friend</h1>
           <div className="w-10" />
         </div>
@@ -388,7 +389,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
           <div className="px-6 py-12 text-center">
             <p className="text-gray-400 mb-2">This activity can't be challenged.</p>
             <p className="text-gray-500 text-sm">Warmups and untracked activities aren't supported yet.</p>
-            <button onClick={handleClose} className="mt-6 px-6 py-3 rounded-xl bg-zinc-800 text-white font-medium">Close</button>
+            <button onClick={handleClose} className="mt-6 px-6 py-3 rounded-xl bg-zinc-800 text-white font-medium transition-all duration-150 active:scale-95">Close</button>
           </div>
         ) : (
           <>
@@ -428,7 +429,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
                           <button
                             key={m}
                             onClick={() => { setMetric(m); triggerHaptic(ImpactStyle.Light); }}
-                            className="flex-1 py-2 rounded-xl text-xs font-medium transition-colors"
+                            className="flex-1 py-2 rounded-xl text-xs font-medium transition-all duration-150 active:scale-95"
                             style={{
                               backgroundColor: isSelected ? `${ruleColor}1A` : 'rgba(255,255,255,0.04)',
                               color: isSelected ? 'white' : 'rgba(255,255,255,0.6)',
@@ -464,7 +465,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
                   <button
                     key={hrs}
                     onClick={() => { setWindowHours(hrs); triggerHaptic(ImpactStyle.Light); }}
-                    className="flex-1 py-3 rounded-xl text-sm font-medium transition-colors"
+                    className="flex-1 py-3 rounded-xl text-sm font-medium transition-all duration-150 active:scale-95"
                     style={{
                       backgroundColor: windowHours === hrs ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)',
                       color: windowHours === hrs ? 'white' : 'rgba(255,255,255,0.6)',
@@ -479,7 +480,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
               {/* Require-photo toggle */}
               <button
                 onClick={() => { setRequirePhoto(p => !p); triggerHaptic(ImpactStyle.Light); }}
-                className="w-full flex items-center justify-between p-3 rounded-xl mb-5 text-left"
+                className="w-full flex items-center justify-between p-3 rounded-xl mb-5 text-left transition-all duration-150 active:scale-[0.98]"
                 style={{
                   backgroundColor: requirePhoto ? 'rgba(255,214,10,0.08)' : 'rgba(255,255,255,0.04)',
                   border: `1px solid ${requirePhoto ? 'rgba(255,214,10,0.3)' : 'transparent'}`,
@@ -506,7 +507,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
               {overCap && (
                 <button
                   onClick={onPresentPaywall}
-                  className="w-full mb-4 p-3 rounded-xl text-left"
+                  className="w-full mb-4 p-3 rounded-xl text-left transition-all duration-150 active:scale-[0.98]"
                   style={{ backgroundColor: 'rgba(255,149,0,0.08)', border: '1px solid rgba(255,149,0,0.2)' }}
                 >
                   <p className="text-sm font-medium" style={{ color: '#FF9500' }}>
@@ -538,7 +539,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
                       <button
                         key={opt.key}
                         onClick={() => { setSendMode(opt.key); triggerHaptic(ImpactStyle.Light); }}
-                        className="flex-1 py-2 rounded-md text-center transition-colors"
+                        className="flex-1 py-2 rounded-md text-center transition-all duration-150 active:scale-95"
                         style={{
                           backgroundColor: active ? 'rgba(255,214,10,0.15)' : 'transparent',
                           color: active ? '#FFD60A' : 'rgba(255,255,255,0.5)',
@@ -565,7 +566,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
                       <button
                         key={f.uid}
                         onClick={() => toggleFriend(f.uid)}
-                        className="w-full flex items-center gap-3 p-3 rounded-xl transition-colors"
+                        className="w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-150 active:scale-[0.98]"
                         style={{
                           backgroundColor: selected ? 'rgba(255,255,255,0.08)' : 'transparent',
                           border: selected ? '1px solid rgba(255,255,255,0.15)' : '1px solid transparent'
@@ -613,7 +614,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
               <button
                 onClick={handleSend}
                 disabled={selectedCount === 0 || isSubmitting}
-                className="w-full py-3.5 rounded-xl font-semibold transition-opacity"
+                className="w-full py-3.5 rounded-xl font-semibold transition-all duration-150 active:scale-[0.98]"
                 style={{
                   backgroundColor: selectedCount > 0 ? '#FFD60A' : 'rgba(255,255,255,0.1)',
                   color: selectedCount > 0 ? 'black' : 'rgba(255,255,255,0.4)',
@@ -663,9 +664,18 @@ function ActivityGlyph({ category, size = 11, color = 'black' }) {
     );
   }
   if (category === 'recovery') {
+    // Snowflake — six-fold radial spokes with diagonal tick marks. Matches Recovery's
+    // "cold" identity (Cold Plunge / Sauna / Contrast Therapy live under this category).
     return (
       <svg width={size} height={size} viewBox="0 0 24 24" {...stroke}>
-        <path d="M12 3c4 4 4 10 0 14M12 3c-4 4-4 10 0 14M12 17v4" />
+        <path d="M12 2v20" />
+        <path d="M2 12h20" />
+        <path d="M5 5l14 14" />
+        <path d="M19 5L5 19" />
+        <path d="M9 4l3 2 3-2" />
+        <path d="M9 20l3-2 3 2" />
+        <path d="M4 9l2 3-2 3" />
+        <path d="M20 9l-2 3 2 3" />
       </svg>
     );
   }
@@ -697,6 +707,28 @@ function MiniAvatar({ photoURL, initial, size, borderColor }) {
   );
 }
 
+// Result pill shown on resolved challenges (Completed bucket). Win = green, Loss = red.
+// Sender's perspective shows their friend's outcome; recipient sees their own.
+function ResultPill({ outcome }) {
+  if (outcome !== 'won' && outcome !== 'lost') return null;
+  const isWin = outcome === 'won';
+  const color = isWin ? '#00FF94' : '#FF453A';
+  const label = isWin ? 'Won' : 'Lost';
+  return (
+    <span
+      className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0"
+      style={{
+        color,
+        backgroundColor: `${color}18`,
+        border: `1px solid ${color}40`,
+        lineHeight: '12px',
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
 /**
  * Visual identity of a challenge row: two overlapping avatars (you + opponent)
  * with the category-colored activity badge centered on top of the overlap zone
@@ -704,13 +736,29 @@ function MiniAvatar({ photoURL, initial, size, borderColor }) {
  * single small icon uses absolute positioning, which kept iOS WebKit happy where
  * an earlier all-absolute version did not.
  */
-function ChallengeIcon({ category, color, mePhotoURL, meInitial, opponentPhotoURL, opponentInitial, isGroup, groupCount }) {
+function ChallengeIcon({ category, color, mePhotoURL, meInitial, opponentPhotoURL, opponentInitial, isGroup, groupCount, onAvatarTap }) {
   const avatarSize = 40;
   const iconSize = 19;
   const overlap = 8;
   const cardBg = '#0d0d0e'; // matches the card background blend; used as avatar/badge border
+
+  // Tapping anywhere on the stacked-avatar cluster should always open the *other person*'s
+  // share card — never your own. The center activity badge sits on top of both avatars
+  // (z-10) but stays pointer-events-none so the tap target is the avatar pair below.
+  const tappable = !!onAvatarTap;
+  const handleTap = (e) => {
+    if (!tappable) return;
+    e.stopPropagation();
+    triggerHaptic(ImpactStyle.Light);
+    onAvatarTap();
+  };
+
   return (
-    <div className="relative flex items-center flex-shrink-0">
+    <div
+      role={tappable ? 'button' : undefined}
+      onClick={handleTap}
+      className={`relative flex items-center flex-shrink-0 ${tappable ? 'active:opacity-70 transition-opacity cursor-pointer' : ''}`}
+    >
       <MiniAvatar photoURL={mePhotoURL} initial={meInitial} size={avatarSize} borderColor={cardBg} />
       <div className="relative flex-shrink-0" style={{ marginLeft: -overlap, width: avatarSize, height: avatarSize }}>
         <MiniAvatar photoURL={opponentPhotoURL} initial={opponentInitial} size={avatarSize} borderColor={cardBg} />
@@ -777,7 +825,7 @@ function PerspectivePill({ isChallenger }) {
   );
 }
 
-export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid = {}, compact = false, onSeeDetails, onAccept, onDecline, onCancel, onRequestCancel, onRespondCancel, onStartWorkout, onApplyPastActivity }) {
+export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid = {}, compact = false, onSeeDetails, onAccept, onDecline, onCancel, onRequestCancel, onRespondCancel, onStartWorkout, onApplyPastActivity, onOpenProfile }) {
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [confirmRequestCancel, setConfirmRequestCancel] = useState(false);
   const isChallenger = challenge.challengerUid === currentUid;
@@ -855,14 +903,22 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
     if (challenge.status === 'pending') statusLabel = 'Waiting for response';
     else if (challenge.status === 'active' && isGroup) statusLabel = groupProgress;
     else if (challenge.status === 'completed') statusLabel = groupProgress || 'Completed';
+    else if (challenge.status === 'expired') statusLabel = isGroup ? 'No one finished in time' : "Didn't finish in time";
   } else {
     if (myStatus === 'pending') statusLabel = isGroup ? 'Group challenge for you' : 'Wants to challenge you';
     else if (myStatus === 'completed') statusLabel = 'You completed it';
+    else if (myStatus === 'expired') statusLabel = "You didn't finish in time";
     // accepted (active) recipient: drop "Your challenge" label — the rule line below carries the action.
   }
 
   // Mutual cancel state (1v1 active only). Open = request awaiting accepter response.
-  const cancelRequest = challenge.cancelRequest && !challenge.cancelRequest.response ? challenge.cancelRequest : null;
+  // Once the challenge has resolved (completed/expired) the request is moot — the outcome
+  // overrides any pending cancel, so suppress the banner to avoid stale "waiting" copy.
+  const cancelRequest = (
+    challenge.cancelRequest
+    && !challenge.cancelRequest.response
+    && challenge.status === 'active'
+  ) ? challenge.cancelRequest : null;
   const isCancelRequester = cancelRequest && cancelRequest.requestedBy === currentUid;
   const isCancelResponder = cancelRequest && !isCancelRequester && myStatus === 'accepted';
 
@@ -879,11 +935,15 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
   const showCancelBanner = !compact && cancelRequest;
   // Pending shows accept-window countdown (visible to both sides);
   // active shows workout countdown to challenger always, and accepter once they've accepted.
-  const showCountdown = isPendingPhase
+  // Resolved challenges (completed/expired) suppress the chip — the Won/Lost result pill
+  // already conveys the outcome, and "Expired" duplicates "Lost".
+  const isResolved = challenge.status === 'completed' || challenge.status === 'expired'
+    || myStatus === 'completed' || myStatus === 'expired';
+  const showCountdown = !isResolved && (isPendingPhase
     ? (isChallenger || myStatus === 'pending')
     : (isChallenger
         ? (challenge.status !== 'completed')
-        : (myStatus === 'accepted'));
+        : (myStatus === 'accepted')));
   const countdownPrefix = isPendingPhase ? 'to accept · ' : '';
 
   // Rule line: always shown — it's the action context ("Do any strength workout").
@@ -901,6 +961,16 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
   // on the active segment with the correct perspective for this card.
   const handleCardTap = compact && onSeeDetails
     ? () => { triggerHaptic(ImpactStyle.Light); onSeeDetails(challenge); }
+    : null;
+
+  // Resolved-outcome badge (Won / Lost). Sender's perspective shows their friend's outcome;
+  // recipient sees their own. Null while the challenge is still pending/active.
+  const outcome = getChallengeOutcome(challenge, currentUid);
+
+  // Tapping the avatar stack (single or crossover) opens the *other person*'s profile —
+  // never your own. The challenge avatars always reference the opponent in this app.
+  const handleOpenOpponentProfile = onOpenProfile && opponentUid
+    ? () => onOpenProfile(opponentUid)
     : null;
 
   return (
@@ -944,8 +1014,12 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
             opponentInitial={opponentInitial}
             isGroup={isGroup}
             groupCount={groupExtraCount}
+            onAvatarTap={handleOpenOpponentProfile}
           />
-          <PerspectivePill isChallenger={isChallenger} />
+          <div className="flex items-center gap-1">
+            <PerspectivePill isChallenger={isChallenger} />
+            {outcome && <ResultPill outcome={outcome} />}
+          </div>
         </div>
         <div className="flex-1 min-w-0">
           {/* Optional flavor title sits above the friend name as small italic text.

@@ -891,8 +891,13 @@ export function countActiveOutgoing(challenges, uid) {
  * For groups, my personal participant status drives bucketing:
  *  - my status 'pending'   → pendingReceived
  *  - my status 'accepted'  → active
- *  - my status 'completed' → completed
+ *  - my status 'completed' → completed (won)
+ *  - my status 'expired'   → completed (lost — accepted but didn't finish)
  * For 1v1 (legacy or new), falls back to overall status / friendUid.
+ *
+ * `completed` mixes wins and losses so users see one resolved-outcome list per perspective.
+ * Cards render a Win/Loss badge to disambiguate. `accept_expired` (no one ever accepted)
+ * stays out — that's silent by design (no stats impact, separate notification).
  */
 export function bucketChallenges(challenges, uid) {
   const pendingReceived = [];
@@ -905,19 +910,38 @@ export function bucketChallenges(challenges, uid) {
     const myStatus = getMyParticipantStatus(c, uid);
 
     if (isChallenger) {
-      // Bucket by overall challenge status
+      // Bucket by overall challenge status. Both 'completed' and 'expired'
+      // are terminal outcomes worth surfacing — sender sees their friends' results.
       if (c.status === 'pending') pendingSent.push(c);
       else if (c.status === 'active') active.push(c);
-      else if (c.status === 'completed') completed.push(c);
+      else if (c.status === 'completed' || c.status === 'expired') completed.push(c);
       continue;
     }
 
-    // Recipient bucket by personal status
+    // Recipient bucket by personal status. Expired = accepted but didn't finish in time → loss.
     if (myStatus === 'pending') pendingReceived.push(c);
     else if (myStatus === 'accepted') active.push(c);
-    else if (myStatus === 'completed') completed.push(c);
-    // declined/expired: not surfaced
+    else if (myStatus === 'completed' || myStatus === 'expired') completed.push(c);
+    // declined/cancelled/accept_expired: not surfaced
   }
 
   return { pendingReceived, active, pendingSent, completed };
+}
+
+/**
+ * Per-perspective outcome of a resolved challenge. Used by the card's Win/Loss badge.
+ * Returns 'won' | 'lost' | null. Null = inconclusive (group challenger with mixed results).
+ */
+export function getChallengeOutcome(challenge, uid) {
+  if (!challenge) return null;
+  const isChallenger = challenge.challengerUid === uid;
+  if (isChallenger) {
+    if (challenge.status === 'completed') return 'won';
+    if (challenge.status === 'expired') return 'lost';
+    return null;
+  }
+  const myStatus = getMyParticipantStatus(challenge, uid);
+  if (myStatus === 'completed') return 'won';
+  if (myStatus === 'expired') return 'lost';
+  return null;
 }

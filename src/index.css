@@ -131,3 +131,32 @@ select option {
     transform: translateY(0);
   }
 }
+
+/* Bottom-sheet slide-in / slide-out — used by ChallengeFriendModal,
+   ChallengeActivityPickerModal, ChallengeApplyPastActivityModal, RequestModal, etc.
+   Defined globally so any modal can use them without re-declaring keyframes. */
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-down {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out forwards;
+}
+
+.animate-slide-down {
+  animation: slide-down 0.25s ease-in forwards;
+}

@@ -639,6 +639,39 @@ const MemoizedActivityCard = React.memo(({
         <span className="text-gray-500 text-xs flex-shrink-0">{formatTimeAgo(date, time)}</span>
       </div>
 
+      {/* Challenge attribution pill — sits above the activity body so it reads as
+          context ("this activity fulfilled a challenge from X") rather than competing
+          with the activity title. Tappable when the challenger is one of the viewer's
+          friends — opens their profile card. */}
+      {challengeMeta && (() => {
+        const handle = challengeMeta.challengerUsername;
+        const label = handle
+          ? `@${handle}`
+          : (challengeMeta.challengerName?.split(' ')[0] || 'friend');
+        const tappable = !!challengeMeta.challengerFriend;
+        return (
+          <div className="mb-2">
+            <span
+              role={tappable ? 'button' : undefined}
+              onClick={tappable ? (e) => {
+                e.stopPropagation();
+                triggerHaptic(ImpactStyle.Light);
+                onSelectFriend(challengeMeta.challengerFriend);
+              } : undefined}
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium${tappable ? ' active:opacity-70' : ''}`}
+              style={{
+                backgroundColor: 'rgba(255, 214, 10, 0.12)',
+                color: '#FFD60A',
+                cursor: tappable ? 'pointer' : 'default',
+              }}
+            >
+              <span style={{ fontSize: 10 }}>⚡</span>
+              {`Challenge: ${label}`}
+            </span>
+          </div>
+        );
+      })()}
+
       {/* Activity details */}
       <div className="flex items-center gap-3">
         <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: categoryBg || 'rgb(39,39,42)' }}>
@@ -647,32 +680,6 @@ const MemoizedActivityCard = React.memo(({
         <div className="flex-1">
           <p className="text-white font-medium">
             {displayType}{displaySubtype ? ` ${type === 'Strength Training' ? '-' : '•'} ${displaySubtype}` : ''}
-            {challengeMeta && (() => {
-              const handle = challengeMeta.challengerUsername;
-              const label = handle
-                ? `@${handle}`
-                : (challengeMeta.challengerName?.split(' ')[0] || 'friend');
-              const tappable = !!challengeMeta.challengerFriend;
-              return (
-                <span
-                  role={tappable ? 'button' : undefined}
-                  onClick={tappable ? (e) => {
-                    e.stopPropagation();
-                    triggerHaptic(ImpactStyle.Light);
-                    onSelectFriend(challengeMeta.challengerFriend);
-                  } : undefined}
-                  className={`ml-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium align-middle${tappable ? ' active:opacity-70' : ''}`}
-                  style={{
-                    backgroundColor: 'rgba(255, 214, 10, 0.12)',
-                    color: '#FFD60A',
-                    cursor: tappable ? 'pointer' : 'default',
-                  }}
-                >
-                  <span style={{ fontSize: 10 }}>⚡</span>
-                  {`Challenge: ${label}`}
-                </span>
-              );
-            })()}
           </p>
           <div className="flex items-center gap-3 mt-1">
             {duration && <span className="text-gray-400 text-sm">⏱ {formatDuration(duration)}</span>}
@@ -2606,6 +2613,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           {(() => {
             const challengeStats = friend?.challengeStats || {};
             const challengesWon = challengeStats.wins || 0;
+            const challengesLost = challengeStats.losses || 0;
             const accepted = challengeStats.accepted || 0;
             const completionRate = accepted > 0 ? Math.round((challengesWon / accepted) * 100) : null;
             return (
@@ -2620,8 +2628,12 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                     <p className="text-gray-500 text-xs">Weeks Won</p>
                   </div>
                   <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.2)' }}>
-                    <p className="text-2xl font-bold" style={{ color: '#FFD60A' }}>{challengesWon}</p>
-                    <p className="text-gray-500 text-xs">Challenges Won</p>
+                    <p className="text-2xl font-bold">
+                      <span style={{ color: '#00FF94' }}>{challengesWon}</span>
+                      <span className="text-gray-600 mx-0.5">-</span>
+                      <span style={{ color: '#FF453A' }}>{challengesLost}</span>
+                    </p>
+                    <p className="text-gray-500 text-xs">Challenges W-L</p>
                   </div>
                 </div>
 

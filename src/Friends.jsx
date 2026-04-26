@@ -10,6 +10,7 @@ import {
   getFriends,
   removeFriend
 } from './services/friendService';
+import { getUserProfile } from './services/userService';
 
 // Haptic helper
 const triggerHaptic = async (style = ImpactStyle.Medium) => {
@@ -37,6 +38,22 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
   const [isClosing, setIsClosing] = useState(false); // Track closing animation
   const [selectedProfile, setSelectedProfile] = useState(null); // Track selected user profile to view
   const [isProfileClosing, setIsProfileClosing] = useState(false); // Track profile card fade out
+  // Lazily-fetched full user doc for the selected profile — getFriends() returns lightweight
+  // records (no challengeStats / streaks), so we hydrate on open. Reset between selections.
+  const [selectedProfileFull, setSelectedProfileFull] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSelectedProfileFull(null);
+    if (!selectedProfile?.uid) return;
+    (async () => {
+      try {
+        const p = await getUserProfile(selectedProfile.uid);
+        if (!cancelled) setSelectedProfileFull(p);
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [selectedProfile?.uid]);
 
   const handleClose = () => {
     setIsClosing(true);
@@ -732,24 +749,36 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
             {/* Stats */}
             <div className="px-6 pb-4">
               {(() => {
-                const challengeStats = selectedProfile.challengeStats || {};
+                // Hydrated user doc fields take precedence; lightweight selectedProfile is the fallback.
+                const fullProfile = selectedProfileFull || {};
+                const challengeStats = fullProfile.challengeStats || selectedProfile.challengeStats || {};
                 const challengesWon = challengeStats.wins || 0;
+                const challengesLost = challengeStats.losses || 0;
                 const accepted = challengeStats.accepted || 0;
                 const completionRate = accepted > 0 ? Math.round((challengesWon / accepted) * 100) : null;
+                const masterStreak = fullProfile.streaks?.master ?? selectedProfile.masterStreak ?? 0;
+                const weeksWon = fullProfile.personalRecords?.weeksWon ?? selectedProfile.weeksWon ?? 0;
+                const strengthStreak = fullProfile.streaks?.lifts ?? selectedProfile.strengthStreak ?? 0;
+                const cardioStreak = fullProfile.streaks?.cardio ?? selectedProfile.cardioStreak ?? 0;
+                const recoveryStreak = fullProfile.streaks?.recovery ?? selectedProfile.recoveryStreak ?? 0;
                 return (
                   <>
                     <div className="grid grid-cols-3 gap-3 mb-4">
                       <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                        <p className="text-2xl font-bold text-white">{selectedProfile.masterStreak || 0}</p>
+                        <p className="text-2xl font-bold text-white">{masterStreak}</p>
                         <p className="text-gray-500 text-xs">Hybrid Streak</p>
                       </div>
                       <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                        <p className="text-2xl font-bold text-white">{selectedProfile.weeksWon || 0}</p>
+                        <p className="text-2xl font-bold text-white">{weeksWon}</p>
                         <p className="text-gray-500 text-xs">Weeks Won</p>
                       </div>
                       <div className="rounded-xl p-3 text-center" style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.2)' }}>
-                        <p className="text-2xl font-bold" style={{ color: '#FFD60A' }}>{challengesWon}</p>
-                        <p className="text-gray-500 text-xs">Challenges Won</p>
+                        <p className="text-2xl font-bold">
+                          <span style={{ color: '#00FF94' }}>{challengesWon}</span>
+                          <span className="text-gray-600 mx-0.5">-</span>
+                          <span style={{ color: '#FF453A' }}>{challengesLost}</span>
+                        </p>
+                        <p className="text-gray-500 text-xs">Challenges W-L</p>
                       </div>
                     </div>
 
@@ -759,19 +788,19 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
                         <span className="text-gray-400 flex items-center gap-2">
                           <span style={{ color: '#00FF94' }}>💪</span> Strength Streak
                         </span>
-                        <span className="text-white font-bold">{selectedProfile.strengthStreak || 0}</span>
+                        <span className="text-white font-bold">{strengthStreak}</span>
                       </div>
                       <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                         <span className="text-gray-400 flex items-center gap-2">
                           <span style={{ color: '#FF9500' }}>🏃</span> Cardio Streak
                         </span>
-                        <span className="text-white font-bold">{selectedProfile.cardioStreak || 0}</span>
+                        <span className="text-white font-bold">{cardioStreak}</span>
                       </div>
                       <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                         <span className="text-gray-400 flex items-center gap-2">
                           <span style={{ color: '#00D1FF' }}>🧊</span> Recovery Streak
                         </span>
-                        <span className="text-white font-bold">{selectedProfile.recoveryStreak || 0}</span>
+                        <span className="text-white font-bold">{recoveryStreak}</span>
                       </div>
                       {completionRate !== null && (
                         <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: 'rgba(255,214,10,0.05)' }}>

@@ -881,7 +881,7 @@ export default function ProfilePage(props) {
             <span className="text-xs text-gray-500 uppercase tracking-wider">Active Streaks</span>
             <span>🔥</span>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 relative top-1">
             <div className="w-3.5 h-3.5 rounded-full flex items-center justify-center bg-gray-600">
               <span className="text-[8px] text-black font-bold leading-none">✓</span>
             </div>

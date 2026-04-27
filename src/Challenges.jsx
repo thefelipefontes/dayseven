@@ -4,12 +4,12 @@ import {
   createChallenge,
   subscribeToChallenges,
   bucketChallenges,
-  countActiveOutgoing,
+  countOutgoingThisMonth,
   describeMatchRule,
   buildMatchRule,
   isChallengeable,
   CHALLENGE_WINDOW_HOURS,
-  FREE_ACTIVE_CHALLENGE_CAP,
+  FREE_MONTHLY_CHALLENGE_CAP,
   applyOptimisticChallengeCompletions,
   evaluateActivityAgainstChallenge,
   availableChallengeMetrics,
@@ -259,7 +259,7 @@ export function ChallengeApplyPastActivityModal({ isOpen, onClose, activities = 
 // Modal: shown right after a user logs an activity, lets them challenge a friend
 // =====================================================================
 
-export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activity, friends = [], activeOutgoingCount = 0, isPro = false, onPresentPaywall, onCreated, preSelectedFriendUid = null }) {
+export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activity, friends = [], outgoingThisMonthCount = 0, isPro = false, onPresentPaywall, onCreated, preSelectedFriendUid = null }) {
   const [selectedFriendUids, setSelectedFriendUids] = useState(() => new Set());
   const [windowHours, setWindowHours] = useState(24);
   const [sendMode, setSendMode] = useState('group'); // 'group' or 'individual' — only relevant when 2+ selected
@@ -306,7 +306,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
 
   const matchRule = activity ? buildMatchRule(activity, metric) : null;
   const canChallenge = !!matchRule;
-  const overCap = !isPro && activeOutgoingCount >= FREE_ACTIVE_CHALLENGE_CAP;
+  const overCap = !isPro && outgoingThisMonthCount >= FREE_MONTHLY_CHALLENGE_CAP;
   const selectedCount = selectedFriendUids.size;
   const isGroup = selectedCount > 1;
 
@@ -503,7 +503,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
                 </div>
               </button>
 
-              {/* Free-tier gate: sending challenges is Pro-only */}
+              {/* Free-tier gate: 1 challenge per calendar month */}
               {overCap && (
                 <button
                   onClick={onPresentPaywall}
@@ -511,10 +511,10 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
                   style={{ backgroundColor: 'rgba(255,149,0,0.08)', border: '1px solid rgba(255,149,0,0.2)' }}
                 >
                   <p className="text-sm font-medium" style={{ color: '#FF9500' }}>
-                    Sending challenges is a Pro feature.
+                    You've used your free challenge this month.
                   </p>
                   <p className="text-xs mt-0.5" style={{ color: 'rgba(255,149,0,0.8)' }}>
-                    Upgrade to challenge your friends.
+                    Upgrade to Pro for unlimited challenges.
                   </p>
                 </button>
               )}
@@ -1239,7 +1239,7 @@ export function ChallengesSection({ user, userProfile, friends = [], onChallenge
   useEffect(() => {
     onChallengeCountsChange?.({
       pendingReceivedCount: buckets.pendingReceived.length,
-      activeOutgoingCount: countActiveOutgoing(enriched, user?.uid),
+      outgoingThisMonthCount: countOutgoingThisMonth(enriched, user?.uid),
     });
   }, [buckets.pendingReceived.length, enriched, user?.uid, onChallengeCountsChange]);
 

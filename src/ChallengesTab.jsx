@@ -8,7 +8,7 @@ import {
   cancelChallenge,
   requestCancelChallenge,
   respondToCancelRequest,
-  countActiveOutgoing,
+  countOutgoingThisMonth,
   applyOptimisticChallengeCompletions,
   getChallengeOutcome,
 } from './services/challengeService';
@@ -135,7 +135,7 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
   useEffect(() => {
     onChallengeCountsChange?.({
       pendingReceivedCount: buckets.pendingReceived.length,
-      activeOutgoingCount: countActiveOutgoing(enriched, user?.uid),
+      outgoingThisMonthCount: countOutgoingThisMonth(enriched, user?.uid),
     });
   }, [buckets.pendingReceived.length, enriched, user?.uid, onChallengeCountsChange]);
 
@@ -321,7 +321,17 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
           <div className="flex items-center gap-3 mt-1">
             <RecordPill label="Active" value={activeCount} color="#FFD60A" />
             <RecordPill label="Completed" value={completedCount} color="#00FF94" />
-            <RecordPill label="Pending" value={pendingCount} color="rgba(255,255,255,0.6)" />
+            {/* W-L instead of Pending — Pending is already shown in the segment toggle
+                below, and W-L is a more useful trophy-style stat for this row. Live-
+                subscribed via subscribeToUserChallengeStats so it ticks up immediately. */}
+            <div className="flex items-baseline gap-1">
+              <span className="text-sm font-bold leading-none">
+                <span style={{ color: '#00FF94' }}>{userProfile?.challengeStats?.wins || 0}</span>
+                <span className="mx-0.5" style={{ color: 'rgba(255,255,255,0.3)' }}>-</span>
+                <span style={{ color: '#FF453A' }}>{userProfile?.challengeStats?.losses || 0}</span>
+              </span>
+              <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.5)' }}>W-L</span>
+            </div>
           </div>
         </div>
       </div>

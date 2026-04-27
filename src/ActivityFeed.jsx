@@ -984,13 +984,20 @@ const MemoizedActivityCard = React.memo(({
   );
 });
 
-const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingRequestsCount = 0, onActiveViewChange, isPro = false, onPresentPaywall, onOpenChallenge }) => {
-  const [feedActivities, setFeedActivities] = useState([]);
-  const [activityReactions, setActivityReactions] = useState({});
-  const [activityComments, setActivityComments] = useState({});
-  const [commentReplies, setCommentReplies] = useState({}); // { activityKey: { commentId: [replies] } }
-  const [activityChallengeMap, setActivityChallengeMap] = useState({}); // { "<friendUid>-<activityId>": { challengerUid, challengerName, ... } }
-  const [isLoading, setIsLoading] = useState(true);
+const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingRequestsCount = 0, onActiveViewChange, feedCacheRef, isPro = false, onPresentPaywall, onOpenChallenge }) => {
+  // Hydrate from the parent-owned cache when re-mounting on tab switch — skips
+  // the spinner and renders the previously-loaded feed instantly. The background
+  // loadFeed call still runs to refresh data. Cache is uid-tagged so it isn't
+  // reused across user switches.
+  const cachedFeed = feedCacheRef?.current && feedCacheRef.current.uid === user?.uid
+    ? feedCacheRef.current
+    : null;
+  const [feedActivities, setFeedActivities] = useState(() => cachedFeed?.activities || []);
+  const [activityReactions, setActivityReactions] = useState(() => cachedFeed?.reactions || {});
+  const [activityComments, setActivityComments] = useState(() => cachedFeed?.comments || {});
+  const [commentReplies, setCommentReplies] = useState(() => cachedFeed?.replies || {}); // { activityKey: { commentId: [replies] } }
+  const [activityChallengeMap, setActivityChallengeMap] = useState(() => cachedFeed?.challengeMap || {}); // { "<friendUid>-<activityId>": { challengerUid, challengerName, ... } }
+  const [isLoading, setIsLoading] = useState(() => !cachedFeed);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeView, setActiveView] = useState('feed'); // 'feed' or 'leaderboard'
   const [leaderboardData, setLeaderboardData] = useState([]);
@@ -1045,6 +1052,21 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       onActiveViewChange(activeView);
     }
   }, [activeView, onActiveViewChange]);
+
+  // Mirror loaded feed state into the parent-owned cache so the next mount can
+  // hydrate from it. Only writes after the initial load resolves to avoid
+  // overwriting a populated cache with empty initial state.
+  useEffect(() => {
+    if (!feedCacheRef || !user?.uid || isLoading) return;
+    feedCacheRef.current = {
+      uid: user.uid,
+      activities: feedActivities,
+      reactions: activityReactions,
+      comments: activityComments,
+      replies: commentReplies,
+      challengeMap: activityChallengeMap,
+    };
+  }, [feedCacheRef, user?.uid, isLoading, feedActivities, activityReactions, activityComments, commentReplies, activityChallengeMap]);
 
   const reactionEmojis = ['💪', '🔥', '👏', '❤️'];
 
@@ -2328,60 +2350,64 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       }
     };
 
+    const barColor = getCategoryColor();
+
     return (
       <TouchButton
         onClick={() => !userData.isCurrentUser && onTap && onTap(userData)}
         disabled={userData.isCurrentUser}
-        className={`w-full flex items-center gap-3 p-3 rounded-xl mb-2 relative overflow-hidden transition-all duration-150 text-left ${
+        className={`w-full p-3 rounded-xl mb-2 relative text-left transition-all duration-150 ${
           userData.isCurrentUser ? 'bg-zinc-800 ring-1 ring-green-500/30' : 'bg-zinc-900 hover:bg-zinc-800/80'
         }`}
       >
-        {/* Progress bar background */}
-        <div
-          className="absolute inset-0 opacity-20 transition-all duration-500"
-          style={{
-            background: `linear-gradient(to right, ${getCategoryColor()} ${progressPercent}%, transparent ${progressPercent}%)`,
-            pointerEvents: 'none'
-          }}
-        />
-
-        {/* Rank badge */}
-        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold relative z-10 ${getRankStyle(rank)}`}>
-          {rank === 1 ? '👑' : rank}
-        </div>
-
-        {/* Profile photo */}
-        <div className="relative z-10">
-          <ProfilePhoto photoURL={userData.photoURL} displayName={userData.displayName} size={40} />
-        </div>
-
-        {/* Name and username */}
-        <div className="flex-1 min-w-0 relative z-10">
-          <div className="flex items-center gap-1">
-            <p className={`font-medium truncate ${userData.isCurrentUser ? 'text-green-400' : 'text-white'}`}>
-              {userData.isCurrentUser ? 'You' : (userData.displayName || userData.username)}
-            </p>
-            {/* Trend indicator */}
-            {trend === 'up' && <span className="text-green-400 text-xs">↑</span>}
-            {trend === 'down' && <span className="text-red-400 text-xs">↓</span>}
+        {/* Content row — full width, all info readable regardless of bar width */}
+        <div className="flex items-center gap-3">
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${getRankStyle(rank)}`}>
+            {rank === 1 ? '👑' : rank}
           </div>
-          {!userData.isCurrentUser && (
-            <p className="text-gray-500 text-xs truncate">@{userData.username}</p>
-          )}
-        </div>
 
-        {/* Score */}
-        <div className="text-right relative z-10">
-          <p className="text-white font-bold">{formatValue(value)}</p>
-          <div className="flex items-center justify-end gap-1">
-            <p className="text-gray-500 text-xs">{getUnit()}</p>
-            {/* Delta comparison for calories/steps */}
-            {delta !== null && delta !== 0 && (category === 'calories' || category === 'steps') && (
-              <span className={`text-xs ${delta > 0 ? 'text-green-400' : 'text-red-400'}`}>
-                {delta > 0 ? '+' : ''}{percentChange}%
-              </span>
+          <div className="flex-shrink-0">
+            <ProfilePhoto photoURL={userData.photoURL} displayName={userData.displayName} size={40} />
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1">
+              <p className={`font-medium truncate ${userData.isCurrentUser ? 'text-green-400' : 'text-white'}`}>
+                {userData.isCurrentUser ? 'You' : (userData.displayName || userData.username)}
+              </p>
+              {trend === 'up' && <span className="text-green-400 text-xs">↑</span>}
+              {trend === 'down' && <span className="text-red-400 text-xs">↓</span>}
+            </div>
+            {!userData.isCurrentUser && (
+              <p className="text-gray-500 text-xs truncate">@{userData.username}</p>
             )}
           </div>
+
+          <div className="text-right">
+            <p className="text-white font-bold">{formatValue(value)}</p>
+            <div className="flex items-center justify-end gap-1">
+              <p className="text-gray-500 text-xs">{getUnit()}</p>
+              {delta !== null && delta !== 0 && (category === 'calories' || category === 'steps') && (
+                <span className={`text-xs ${delta > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {delta > 0 ? '+' : ''}{percentChange}%
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Chart bar — thin variable-width stripe at the bottom of the row.
+            No track behind it; empty space stays empty so 0-value rows show no bar.
+            Width is strictly proportional to the leader's value. */}
+        <div className="mt-3 h-1 relative">
+          <div
+            className="absolute left-0 top-0 h-full rounded-full"
+            style={{
+              width: `${progressPercent}%`,
+              backgroundColor: barColor,
+              transition: 'width 500ms ease-out',
+            }}
+          />
         </div>
       </TouchButton>
     );

@@ -862,16 +862,10 @@ export default function ProfilePage(props) {
           }
           const shieldAvailable = isPro && !isShielded && !shieldOnCooldown;
 
-          const remainingText = [
-            liftsRemaining > 0 ? `${liftsRemaining} strength` : null,
-            cardioRemaining > 0 ? `${cardioRemaining} cardio` : null,
-            recoveryRemaining > 0 ? `${recoveryRemaining} recovery` : null,
-          ].filter(Boolean).join(', ');
-
           return (
             <div className="mt-3">
               <p className="text-[12px] leading-snug" style={{ color: 'rgba(255,255,255,0.45)' }}>
-                {remainingText} left this week
+                At risk of losing your streak? Protect it by tapping 🛡️ or 🌴 above.
               </p>
             </div>
           );

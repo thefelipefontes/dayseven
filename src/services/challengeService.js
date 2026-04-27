@@ -36,7 +36,7 @@ const isNative = Capacitor.isNativePlatform();
 // Pro users have no sent cap.
 // TEMP (testing): lifted from 0 to 999 to test the new fulfillment flows on a free account.
 // Revert to 0 before shipping to restore the Pro-only send gate.
-export const FREE_ACTIVE_CHALLENGE_CAP = 999;
+export const FREE_MONTHLY_CHALLENGE_CAP = 1;
 export const CHALLENGE_WINDOW_HOURS = [24, 48, 72];
 
 // Hard cap on how long a recipient has to accept a pending challenge.
@@ -875,14 +875,17 @@ export function subscribeToChallenges(uid, onUpdate) {
 }
 
 /**
- * Count active outgoing challenges for the free-tier cap.
- * "Active" = pending + active (not declined/cancelled/completed/expired).
+ * Count outgoing challenges sent in the current calendar month for the free-tier cap.
+ * Counts every send (regardless of status) — once the month rolls over, the count resets.
  */
-export function countActiveOutgoing(challenges, uid) {
-  return challenges.filter(c =>
-    c.challengerUid === uid &&
-    (c.status === 'pending' || c.status === 'active')
-  ).length;
+export function countOutgoingThisMonth(challenges, uid) {
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  return challenges.filter(c => {
+    if (c.challengerUid !== uid) return false;
+    const t = c.createdAt ? new Date(c.createdAt).getTime() : 0;
+    return t >= monthStart;
+  }).length;
 }
 
 /**

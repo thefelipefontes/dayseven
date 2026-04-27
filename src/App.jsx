@@ -7911,8 +7911,9 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   // SVG icons for activity categories
   const categoryIcons = {
     strength: (
+      // Dumbbell: weight rings on each end with a horizontal handle
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M6.5 6.5L17.5 17.5M6.5 17.5L17.5 6.5M2 12h4M18 12h4M12 2v4M12 18v4"/>
+        <path d="M6 4v16M18 4v16M2 9v6M22 9v6M6 12h12"/>
       </svg>
     ),
     cardio: (
@@ -7921,13 +7922,18 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       </svg>
     ),
     hybrid: (
+      // Wind / flow lines — suggests the gentle, flowing motion of yoga, pilates, walking
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+        <path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"/>
+        <path d="M9.6 4.6A2 2 0 1 1 11 8H2"/>
+        <path d="M12.6 19.4A2 2 0 1 0 14 16H2"/>
       </svg>
     ),
     recovery: (
+      // Snowflake — represents cold plunge / contrast therapy
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4 4v16M20 4v16M4 12h16M8 4v8M16 12v8"/>
+        <path d="M2 12h20M12 2v20"/>
+        <path d="m20 16-4-4 4-4M4 8l4 4-4 4M16 4l-4 4-4-4M8 20l4-4 4 4"/>
       </svg>
     ),
     other: (

@@ -6,6 +6,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "prebuild:mobile": "chmod -R u+w ios/App/App/public/assets 2>/dev/null; rm -rf ios/App/App/public/assets 'ios/App/App/public/assets 2'; rm -rf android/app/src/main/assets/public/assets 'android/app/src/main/assets/public/assets 2'; true",
     "build:mobile": "vite build && npx cap sync",
     "ios": "npx cap open ios",
     "android": "npx cap open android",

@@ -14,7 +14,6 @@ import { isChallengeable, getChallengesForUser, activityMatchesChallengeRule, de
 import ChallengeMatchChooser from './components/ChallengeMatchChooser';
 import { createUserProfile, getUserProfile, updateUserProfile, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, deleteActivityPhoto, saveUserGoals, getUserGoals, setOnboardingComplete, setTourComplete, savePersonalRecords, getPersonalRecords, saveDailyHealthData, getDailyHealthData, getDailyHealthHistory, subscribeToUserChallengeStats } from './services/userService';
 import { getFriends, getReactions, getFriendRequests, getComments, addReply, getReplies, deleteReply, addReaction, removeReaction, addComment, cleanupActivitySocialData } from './services/friendService';
-import { fetchFeedSnapshot } from './services/feedService';
 
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
@@ -12180,37 +12179,11 @@ export default function DaySevenApp() {
   // instead of flashing a spinner. Tagged with uid so a different signed-in user
   // doesn't see the previous user's cache.
   const feedCacheRef = useRef(null);
-  // Set once the App-level preload finishes for the current user, so the same
-  // user signing in and out doesn't fire it twice.
-  const feedPreloadedUidRef = useRef(null);
   const activitiesRef = useRef([]);
   // activitiesRef is synced after activities state is declared (see below)
   const lastFirestoreActivityCount = useRef(0); // Track last known Firestore activity count to prevent overwriting
   const activitiesFromFirestore = useRef(false); // Skip debounced save when activities came from Firestore or were saved directly
   const lastFirestoreSyncTime = useRef(0); // Timestamp of last Firestore sync/save — prevents stale saves for 10 seconds
-
-  // Preload Activity Feed data shortly after auth + friends settle, so the
-  // first tap on the Friends tab renders instantly. Skips when the cache is
-  // already populated for this user. Deferred ~1.5s so the home tab finishes
-  // its initial fetches first.
-  useEffect(() => {
-    if (!user?.uid) return;
-    if (feedPreloadedUidRef.current === user.uid) return;
-
-    let cancelled = false;
-    const timeoutId = setTimeout(async () => {
-      try {
-        const snapshot = await fetchFeedSnapshot({ user, userProfile, friends });
-        if (cancelled || !snapshot) return;
-        feedCacheRef.current = snapshot;
-        feedPreloadedUidRef.current = user.uid;
-      } catch (e) {
-        // Silently fail — ActivityFeed will fall back to its own load on tap
-      }
-    }, 1500);
-
-    return () => { cancelled = true; clearTimeout(timeoutId); };
-  }, [user?.uid, userProfile, friends]);
 
   // Auto-detect max heart rate from HealthKit + workout history when not set
   // NOTE: This useEffect is declared before activities state — uses activitiesRef to avoid TDZ

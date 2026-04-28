@@ -1300,7 +1300,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         ]
       };
 
-      setFeedActivities([]); // demo: temporarily empty so the no-activity state is visible
+      setFeedActivities(dummyActivities);
       setActivityReactions(dummyReactions);
       setActivityComments(dummyComments);
       setCommentReplies({});

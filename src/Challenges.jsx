@@ -17,6 +17,7 @@ import {
   getChallengeOutcome,
 } from './services/challengeService';
 import { getFriends } from './services/friendService';
+import { isDemoAccount, getDemoChallenges } from './demoData';
 
 const triggerHaptic = async (style = ImpactStyle.Light) => {
   try { await Haptics.impact({ style }); } catch {
@@ -1206,12 +1207,20 @@ export function ChallengesSection({ user, userProfile, friends = [], onChallenge
   // then pushes any update — create, accept, decline, complete, expire — within ms.
   useEffect(() => {
     if (!user?.uid) return;
+    // Demo mode: skip Firestore so the appreviewer Home card surfaces mock challenges
+    // (matches the same data the Challenges tab shows).
+    if (isDemoAccount(userProfile, user)) {
+      const name = userProfile?.displayName || userProfile?.username || 'You';
+      setChallenges(getDemoChallenges(user.uid, name));
+      setIsLoading(false);
+      return;
+    }
     const unsub = subscribeToChallenges(user.uid, (list) => {
       setChallenges(list);
       setIsLoading(false);
     });
     return () => { try { unsub?.(); } catch {} };
-  }, [user?.uid]);
+  }, [user?.uid, userProfile?.username, user?.email]);
 
   // Hydrate friend names onto challenges (challenger snapshot already has challengerName,
   // but for outgoing challenges we want to show the recipient's name)

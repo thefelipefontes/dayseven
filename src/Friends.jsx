@@ -11,6 +11,7 @@ import {
   removeFriend
 } from './services/friendService';
 import FriendProfileCard from './components/FriendProfileCard';
+import { isDemoAccount, getDemoFriends, getDemoFriendRequests, getDemoSentRequests } from './demoData';
 
 // Haptic helper
 const triggerHaptic = async (style = ImpactStyle.Medium) => {
@@ -52,6 +53,14 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
 
   const loadData = async () => {
     setIsLoading(true);
+    // Demo mode: skip Firestore so the appreviewer account shows a populated Friends modal.
+    if (isDemoAccount(userProfile, user)) {
+      setFriends(getDemoFriends());
+      setRequests(getDemoFriendRequests());
+      setSentRequests(getDemoSentRequests());
+      setIsLoading(false);
+      return;
+    }
     try {
       const [friendsList, requestsList, sentList] = await Promise.all([
         getFriends(user.uid),
@@ -353,8 +362,10 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
           ))}
         </div>
 
-        {/* Content */}
+        {/* Content — inner wrapper forces +1px overflow so iOS rubber-band engages even
+            when the active tab has short content (empty states, few friends). */}
         <div className="flex-1 overflow-y-auto pb-8">
+          <div style={{ minHeight: 'calc(100% + 1px)' }}>
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
               <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -599,6 +610,7 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
               )}
             </>
           )}
+          </div>
         </div>
 
         {/* Animation styles */}

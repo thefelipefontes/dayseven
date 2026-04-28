@@ -15,6 +15,7 @@ import {
 import { ChallengeCard } from './Challenges';
 import OwnProfileModal from './components/OwnProfileModal';
 import FriendProfileCard from './components/FriendProfileCard';
+import { isDemoAccount, getDemoChallenges } from './demoData';
 
 const triggerHaptic = async (style = ImpactStyle.Light) => {
   try { await Haptics.impact({ style }); } catch {
@@ -48,9 +49,19 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
   // Lets users isolate just their wins or losses on either Sent or Received.
   const [resultFilter, setResultFilter] = useState('all');
   const [selectedFriend, setSelectedFriend] = useState(null);
-  // Measure the header so the scroll area can pad its top exactly enough — cards land
-  // flush below the header at rest, and scroll cleanly behind the blur when the user
-  // scrolls. Header height changes when ResultFilter shows/hides on the Completed segment.
+  // Notification-tap navigation: when navTarget changes (parent bumps `nonce` per tap),
+  // jump to the segment/sub-segment the notification is about.
+  useEffect(() => {
+    if (!navTarget) return;
+    if (navTarget.segment) setSegment(navTarget.segment);
+    if (navTarget.subSegment) setSubSegment(navTarget.subSegment);
+  }, [navTarget]);
+
+  // Measure the sticky header so the cards container can size itself to JUST barely
+  // overflow the viewport — that's the minimum needed for iOS rubber-band to engage
+  // without adding ugly empty space below the cards. Header height changes with segment
+  // (Completed shows ResultFilter; non-loading shows SubToggle), so re-measure on every
+  // size change via ResizeObserver.
   const headerRef = useRef(null);
   const [headerHeight, setHeaderHeight] = useState(0);
   useLayoutEffect(() => {
@@ -61,14 +72,6 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
     ro.observe(headerRef.current);
     return () => ro.disconnect();
   }, []);
-
-  // Notification-tap navigation: when navTarget changes (parent bumps `nonce` per tap),
-  // jump to the segment/sub-segment the notification is about.
-  useEffect(() => {
-    if (!navTarget) return;
-    if (navTarget.segment) setSegment(navTarget.segment);
-    if (navTarget.subSegment) setSubSegment(navTarget.subSegment);
-  }, [navTarget]);
   const [showSelfProfile, setShowSelfProfile] = useState(false);
   const [introDismissed, setIntroDismissed] = useState(() => {
     try { return localStorage.getItem('dismissedChallengesIntro') === '1'; } catch { return false; }
@@ -81,12 +84,19 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
 
   useEffect(() => {
     if (!user?.uid) return;
+    // Demo mode: skip Firestore, use mock challenges so screen recordings show a populated tab.
+    if (isDemoAccount(userProfile, user)) {
+      const name = userProfile?.displayName || userProfile?.username || 'You';
+      setChallenges(getDemoChallenges(user.uid, name));
+      setIsLoading(false);
+      return;
+    }
     const unsub = subscribeToChallenges(user.uid, (list) => {
       setChallenges(list);
       setIsLoading(false);
     });
     return () => { try { unsub?.(); } catch {} };
-  }, [user?.uid]);
+  }, [user?.uid, userProfile?.username, user?.email]);
 
   const friendsByUid = useMemo(() => {
     const map = {};
@@ -222,17 +232,10 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
   const view = views[`${segment}|${subSegment}`];
 
   return (
-    // Layered layout: cards scroll the FULL height of the tab, with the header
-    // absolutely positioned on top using backdrop-blur so cards passing underneath
-    // appear as a soft frosted-glass effect rather than disappearing behind a hard
-    // opaque bar. ResizeObserver above measures the header height so we can pad the
-    // scroll area's top — cards land just below the header at rest, and scroll
-    // continuously behind it once the user starts moving. This integration relies on
-    // overlap (header sits over cards), which sticky/flex-col layouts can't provide.
-    <div
-      className="relative"
-      style={{ height: 'calc(100dvh - env(safe-area-inset-top, 0px) - 16px - 88px)' }}
-    >
+    // Fragment-style render: content lives in the App's outer body scroll so iOS
+    // rubber-band engages on overpull (WKWebView doesn't bounce inner scrollers).
+    // Sticky header keeps the frosted-glass-over-cards effect during regular scroll.
+    <>
       {/* Header — vertical gradient that's solid black at the top (matches the App's
           status-bar/spacer area above for a seamless join, no hard boundary line) and
           transitions into a frosted-glass tint around the profile card. backdrop-blur is
@@ -241,7 +244,7 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
           18px so cards dissolve into the header instead of meeting at a hard line. */}
       <div
         ref={headerRef}
-        className="absolute top-0 left-0 right-0 z-10 px-4 pb-2"
+        className="sticky top-0 z-10 px-4 pb-2"
         style={{
           background: 'linear-gradient(to bottom, rgba(10, 10, 10, 1) 0%, rgba(10, 10, 10, 1) 15%, rgba(10, 10, 10, 0.65) 90%, rgba(10, 10, 10, 0.65) 100%)',
           backdropFilter: 'blur(20px) saturate(180%)',
@@ -409,16 +412,16 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
       </div>
       {/* /header overlay */}
 
-      {/* Scroll area — full height of the tab, sits BEHIND the header overlay. paddingTop
-          equals the measured header height so the first card lands flush with the bottom
-          of the header at rest. As the user scrolls, cards pass under the blurred header
-          and become softened glass-style instead of meeting a hard cutoff. */}
+      {/* Card list — sits in normal flow underneath the sticky header. minHeight is
+          calibrated to be JUST tall enough that the body scroll overflows by ~1px so
+          iOS rubber-band engages on overpull, without adding visible empty space below
+          the cards. Math: visible scroll area = 100dvh - safe-area-top - 16px (the App
+          spacer above the tab content). Subtract the measured header height so the
+          cards container fills exactly the rest of the visible area, +1px overflow. */}
       <div
-        className="absolute inset-0 overflow-y-auto px-4 pb-4"
+        className="px-4 pb-32"
         style={{
-          paddingTop: headerHeight,
-          overscrollBehavior: 'contain',
-          WebkitOverflowScrolling: 'touch',
+          minHeight: `calc(100dvh - env(safe-area-inset-top, 0px) - 16px - ${headerHeight}px + 1px)`,
         }}
       >
         {isLoading ? (
@@ -469,7 +472,7 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
           onClose={() => setSelectedFriend(null)}
         />
       )}
-    </div>
+    </>
   );
 }
 

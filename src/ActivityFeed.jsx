@@ -1300,7 +1300,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         ]
       };
 
-      setFeedActivities(dummyActivities);
+      setFeedActivities([]); // demo: temporarily empty so the no-activity state is visible
       setActivityReactions(dummyReactions);
       setActivityComments(dummyComments);
       setCommentReplies({});
@@ -1521,6 +1521,10 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   // Touch handlers for local pull-to-refresh (window-level, but only active when touch starts in feed area)
   useEffect(() => {
     if (activeView !== 'feed') return;
+    // Skip registering when feed is empty: a non-passive touchmove listener disables iOS
+    // WKWebView's native rubber-band optimization, leaving the empty page feeling stuck.
+    // No content means nothing to translate or refresh anyway, so let iOS bounce instead.
+    if (feedActivities.length === 0) return;
 
     const getScrollTop = () => {
       const root = document.getElementById('root');
@@ -1594,7 +1598,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       window.removeEventListener('touchmove', handleTouchMove, { capture: true });
       window.removeEventListener('touchend', handleTouchEnd, { capture: true });
     };
-  }, [activeView, handleLocalRefresh]);
+  }, [activeView, handleLocalRefresh, feedActivities.length]);
 
   const loadLeaderboard = useCallback(async () => {
     if (!user) {
@@ -3240,7 +3244,10 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   // Feed View
   if (feedActivities.length === 0) {
     return (
-      <div>
+      // minHeight gives the page just enough overflow (+10px) for iOS rubber-band to
+      // engage on pull, with minimal visible header movement before bouncing back.
+      // (+1px is below iOS's rubber-band threshold and feels stuck; ~10px is above it.)
+      <div style={{ minHeight: 'calc(100dvh - env(safe-area-inset-top, 0px) - 16px + 10px)' }}>
         <FriendsHeaderTop />
         <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
         <div className="text-center py-12 px-6">
@@ -3253,7 +3260,13 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   }
 
   return (
-    <div>
+    // minHeight ensures the page overflows the App's outer scroll so iOS rubber-band
+    // engages even when the feed is empty. The +60px buffer is bigger than on Challenges
+    // because the custom pull-to-refresh listener on this view calls preventDefault on
+    // downward touchmove at the top, suppressing iOS bounce there — bottom-bounce is the
+    // only reliable rubber-band path for empty state, and it needs enough overflow that
+    // iOS actually engages (a 1px overflow doesn't reliably trigger rubber-band).
+    <div style={{ minHeight: 'calc(100dvh - env(safe-area-inset-top, 0px) - 16px + 60px)' }}>
       <FriendsHeaderTop />
       <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
 

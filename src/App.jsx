@@ -25,7 +25,7 @@ import { initializeRevenueCat, checkProStatus, addCustomerInfoListener, logoutRe
 import ActivityIcon, { ICON_PICKER_CATEGORIES, CATEGORY_COLORS as ICON_CATEGORY_COLORS } from './components/ActivityIcon';
 import RouteMapView, { ll2px, bestFit, makeTiles, RouteOverlay, TileLayer, TILE } from './components/RouteMapView';
 import MuscleBodyMap from './components/MuscleBodyMap';
-import { isDemoAccount, getDemoActivities, getDemoUserData, getDemoHealthKitData, getDemoCalendarData } from './demoData';
+import { isDemoAccount, getDemoActivities, getDemoUserData, getDemoHealthKitData, getDemoCalendarData, getDemoFriends } from './demoData';
 import { Dumbbell } from 'lucide-react';
 import { IconRun, IconSnowflake } from '@tabler/icons-react';
 import { triggerHaptic } from './utils/haptics';
@@ -13209,6 +13209,7 @@ export default function DaySevenApp() {
         setUserData(demoUserData);
         setCalendarData(getDemoCalendarData(demoActivities));
         setHealthKitData(prev => ({ ...prev, ...demoHealthKit }));
+        setFriends(getDemoFriends());
         setIsPro(true); // Show pro features in demo
         return;
       }

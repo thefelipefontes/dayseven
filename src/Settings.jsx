@@ -3,6 +3,7 @@ import { auth } from './firebase';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
+import { checkUsernameAvailable } from './services/userService';
 
 // Helper function for haptic feedback that works on iOS
 const triggerHaptic = async (style = ImpactStyle.Medium) => {
@@ -34,12 +35,125 @@ const getPreviousWeekKey = () => {
   return toLocalDateStr(sunday);
 };
 
-export default function SettingsPage({ user, userProfile, userData, onSignOut, onEditGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onUpdateMaxHeartRate, onChangePassword, onResetPassword, onDeleteAccount, onNotificationSettings, isPro, onPresentPaywall, onPresentCustomerCenter, onRestorePurchases, onToggleVacationMode, onUseStreakShield, onClose }) {
+export default function SettingsPage({ user, userProfile, userData, onSignOut, onEditGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onUpdateMaxHeartRate, onUpdateDisplayName, onUpdateUsername, onChangePassword, onResetPassword, onDeleteAccount, onNotificationSettings, isPro, onPresentPaywall, onPresentCustomerCenter, onRestorePurchases, onToggleVacationMode, onUseStreakShield, onClose }) {
   const [isEmailPasswordUser, setIsEmailPasswordUser] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [showVacationConfirm, setShowVacationConfirm] = useState(false);
   const [showVacationDeactivateConfirm, setShowVacationDeactivateConfirm] = useState(false);
   const [showShieldConfirmProfile, setShowShieldConfirmProfile] = useState(false);
+
+  // Profile field edit modal — used for both display name and username.
+  // editField is 'displayName' | 'username' | null.
+  const [editField, setEditField] = useState(null);
+  const [editValue, setEditValue] = useState('');
+  const [editError, setEditError] = useState('');
+  const [isCheckingUsername, setIsCheckingUsername] = useState(false);
+  const [usernameTaken, setUsernameTaken] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+
+  const openEditField = (field) => {
+    triggerHaptic(ImpactStyle.Light);
+    if (field === 'displayName') {
+      setEditValue(userProfile?.displayName || '');
+    } else if (field === 'username') {
+      setEditValue(userProfile?.username || '');
+    }
+    setEditError('');
+    setUsernameTaken(false);
+    setIsCheckingUsername(false);
+    setEditField(field);
+  };
+
+  const closeEditField = () => {
+    setEditField(null);
+    setEditValue('');
+    setEditError('');
+    setUsernameTaken(false);
+    setIsCheckingUsername(false);
+    setIsSavingProfile(false);
+  };
+
+  // Debounced username availability check while typing in the edit modal.
+  useEffect(() => {
+    if (editField !== 'username') return;
+    const lower = editValue.toLowerCase();
+    if (!lower || lower === (userProfile?.username || '').toLowerCase()) {
+      setUsernameTaken(false);
+      setIsCheckingUsername(false);
+      return;
+    }
+    if (!/^[a-z0-9_]{3,15}$/.test(lower)) {
+      setUsernameTaken(false);
+      setIsCheckingUsername(false);
+      return;
+    }
+    setIsCheckingUsername(true);
+    const t = setTimeout(async () => {
+      try {
+        const available = await checkUsernameAvailable(lower, user?.uid);
+        setUsernameTaken(!available);
+      } catch (e) {
+        setUsernameTaken(false);
+      }
+      setIsCheckingUsername(false);
+    }, 500);
+    return () => clearTimeout(t);
+  }, [editValue, editField, user?.uid, userProfile?.username]);
+
+  const usernameValidationMessage = (() => {
+    if (editField !== 'username') return null;
+    const lower = editValue.toLowerCase();
+    if (!lower) return null;
+    if (lower === (userProfile?.username || '').toLowerCase()) return null;
+    if (lower.length < 3) return { text: 'Must be at least 3 characters', isError: true };
+    if (lower.length > 15) return { text: 'Must be 15 characters or less', isError: true };
+    if (!/^[a-z0-9_]+$/.test(lower)) return { text: 'Letters, numbers, underscores only', isError: true };
+    if (isCheckingUsername) return { text: 'Checking availability…', isError: false };
+    if (usernameTaken) return { text: 'Username is already taken', isError: true };
+    return { text: 'Username is available', isError: false };
+  })();
+
+  const canSaveProfile = (() => {
+    if (isSavingProfile) return false;
+    if (editField === 'displayName') {
+      const trimmed = editValue.trim();
+      return trimmed.length > 0 && trimmed !== (userProfile?.displayName || '').trim();
+    }
+    if (editField === 'username') {
+      const lower = editValue.toLowerCase();
+      if (!lower || lower === (userProfile?.username || '').toLowerCase()) return false;
+      if (!/^[a-z0-9_]{3,15}$/.test(lower)) return false;
+      if (isCheckingUsername || usernameTaken) return false;
+      return true;
+    }
+    return false;
+  })();
+
+  const handleSaveProfileField = async () => {
+    if (!canSaveProfile) return;
+    setIsSavingProfile(true);
+    setEditError('');
+    try {
+      if (editField === 'displayName') {
+        await onUpdateDisplayName?.(editValue.trim());
+      } else if (editField === 'username') {
+        const lower = editValue.toLowerCase();
+        // Re-check right before save to close the race window.
+        const stillAvailable = await checkUsernameAvailable(lower, user?.uid);
+        if (!stillAvailable) {
+          setUsernameTaken(true);
+          setIsSavingProfile(false);
+          return;
+        }
+        await onUpdateUsername?.(lower);
+      }
+      triggerHaptic(ImpactStyle.Medium);
+      closeEditField();
+    } catch (e) {
+      setEditError(e?.message || 'Could not save. Try again.');
+      setIsSavingProfile(false);
+    }
+  };
 
   // Check if user signed in with email/password (not social login)
   useEffect(() => {
@@ -599,14 +713,36 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
 
             {/* Profile Details */}
             <div className="space-y-3">
+              <button
+                type="button"
+                onClick={() => openEditField('displayName')}
+                className="w-full flex items-center justify-between py-2 border-t border-zinc-700/50 active:opacity-60 transition-opacity"
+              >
+                <span className="text-sm text-gray-400">Display name</span>
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-sm text-white truncate">{userProfile?.displayName || 'Not set'}</span>
+                  <svg className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m9 5 7 7-7 7" />
+                  </svg>
+                </span>
+              </button>
               <div className="flex items-center justify-between py-2 border-t border-zinc-700/50">
                 <span className="text-sm text-gray-400">Email</span>
                 <span className="text-sm text-white">{user?.email || 'Not set'}</span>
               </div>
-              <div className="flex items-center justify-between py-2 border-t border-zinc-700/50">
+              <button
+                type="button"
+                onClick={() => openEditField('username')}
+                className="w-full flex items-center justify-between py-2 border-t border-zinc-700/50 active:opacity-60 transition-opacity"
+              >
                 <span className="text-sm text-gray-400">Username</span>
-                <span className="text-sm text-white">@{userProfile?.username || 'Not set'}</span>
-              </div>
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-sm text-white truncate">@{userProfile?.username || 'Not set'}</span>
+                  <svg className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m9 5 7 7-7 7" />
+                  </svg>
+                </span>
+              </button>
               <div className="flex items-center justify-between py-2 border-t border-zinc-700/50">
                 <span className="text-sm text-gray-400">Member since</span>
                 <span className="text-sm text-white">
@@ -1909,6 +2045,93 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                 style={{ backgroundColor: '#FF9500' }}
               >
                 Deactivate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit profile field modal — handles both display name and username. */}
+      {editField && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center px-6"
+          onClick={() => { if (!isSavingProfile) closeEditField(); }}
+        >
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div
+            className="relative w-full max-w-sm rounded-2xl p-6"
+            style={{ backgroundColor: '#1a1a1a' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-white font-semibold text-lg mb-1">
+              {editField === 'displayName' ? 'Edit display name' : 'Edit username'}
+            </h3>
+            <p className="text-gray-400 text-sm mb-4">
+              {editField === 'displayName'
+                ? 'This is the name your friends see.'
+                : 'Your unique handle. 3–15 chars, letters, numbers, underscores.'}
+            </p>
+
+            <div className="relative mb-2">
+              {editField === 'username' && (
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">@</span>
+              )}
+              <input
+                type="text"
+                value={editValue}
+                onChange={(e) => {
+                  if (editField === 'username') {
+                    setEditValue(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''));
+                  } else {
+                    setEditValue(e.target.value);
+                  }
+                  setEditError('');
+                }}
+                placeholder={editField === 'username' ? 'username' : 'Your name'}
+                maxLength={editField === 'username' ? 15 : 40}
+                autoFocus
+                autoCapitalize={editField === 'username' ? 'none' : 'words'}
+                autoCorrect="off"
+                spellCheck={false}
+                className={`w-full bg-zinc-900 text-white py-3 rounded-xl border border-zinc-800 focus:border-green-500 focus:outline-none transition-colors ${editField === 'username' ? 'pl-10 pr-4' : 'px-4'}`}
+              />
+            </div>
+
+            <div className="min-h-[20px] mb-4">
+              {usernameValidationMessage && (
+                <p className={`text-xs ${usernameValidationMessage.isError ? 'text-red-400' : 'text-green-400'}`}>
+                  {usernameValidationMessage.text}
+                </p>
+              )}
+              {editError && (
+                <p className="text-xs text-red-400">{editError}</p>
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={closeEditField}
+                disabled={isSavingProfile}
+                className="flex-1 py-3 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
+                style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveProfileField}
+                disabled={!canSaveProfile}
+                className={`flex-1 py-3 rounded-xl text-sm font-semibold transition-colors ${canSaveProfile ? 'bg-white text-black active:scale-95' : 'bg-zinc-800 text-zinc-500'}`}
+              >
+                {isSavingProfile ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <div className="w-4 h-4 border-2 border-zinc-500 border-t-transparent rounded-full animate-spin" />
+                    Saving…
+                  </span>
+                ) : (
+                  'Save'
+                )}
               </button>
             </div>
           </div>

@@ -581,6 +581,94 @@ export async function saveUsername(uid, username) {
   }
 }
 
+/**
+ * Rename the user's username. Claims the new /usernames/{new} reservation
+ * before releasing the old one — if the claim fails (race / taken), the old
+ * handle is still ours. Friends lists / feed / leaderboard re-resolve the
+ * handle live via getUserProfile, so no denormalization backfill needed.
+ */
+export async function updateUsername(uid, currentUsername, newUsername) {
+  const lowerNew = String(newUsername || '').toLowerCase();
+  const lowerOld = String(currentUsername || '').toLowerCase();
+  if (!uid) throw new Error('missing_uid');
+  if (!lowerNew) throw new Error('missing_username');
+  if (lowerNew === lowerOld) return;
+
+  // Claim new reservation first so we never lose the lock on our own handle.
+  if (isNative) {
+    await FirebaseFirestore.setDocument({
+      reference: `usernames/${lowerNew}`,
+      data: { uid }
+    });
+    await FirebaseFirestore.setDocument({
+      reference: `users/${uid}`,
+      data: { username: lowerNew },
+      merge: true
+    });
+    if (lowerOld && lowerOld !== lowerNew) {
+      try {
+        await FirebaseFirestore.deleteDocument({ reference: `usernames/${lowerOld}` });
+      } catch (e) {
+        // Old reservation may already be gone — non-fatal.
+      }
+    }
+  } else {
+    await setDoc(doc(db, 'usernames', lowerNew), { uid });
+    await setDoc(doc(db, 'users', uid), { username: lowerNew }, { merge: true });
+    if (lowerOld && lowerOld !== lowerNew) {
+      try {
+        await deleteDoc(doc(db, 'usernames', lowerOld));
+      } catch (e) {
+        // Old reservation may already be gone — non-fatal.
+      }
+    }
+  }
+
+  if (cache.userProfiles.has(uid)) {
+    cache.userProfiles.set(uid, { ...cache.userProfiles.get(uid), username: lowerNew });
+    cache.timestamps.set(`profile_${uid}`, Date.now());
+  }
+}
+
+/**
+ * Update the user's display name. Writes both Firestore (`users/{uid}.displayName`)
+ * and the Firebase Auth profile, since the rest of the app reads from either.
+ * Friends/feed/leaderboard re-resolve the name live via getUserProfile.
+ */
+export async function updateDisplayName(uid, displayName) {
+  if (!uid) throw new Error('missing_uid');
+  const trimmed = String(displayName || '').trim();
+  if (!trimmed) throw new Error('missing_displayName');
+
+  if (isNative) {
+    await FirebaseFirestore.setDocument({
+      reference: `users/${uid}`,
+      data: { displayName: trimmed },
+      merge: true
+    });
+    try {
+      const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+      await FirebaseAuthentication.updateProfile({ displayName: trimmed });
+    } catch (e) {
+      // Auth profile sync is best-effort — Firestore is the source of truth in-app.
+    }
+  } else {
+    await setDoc(doc(db, 'users', uid), { displayName: trimmed }, { merge: true });
+    try {
+      const { updateProfile } = await import('firebase/auth');
+      const { auth } = await import('../firebase');
+      if (auth.currentUser) await updateProfile(auth.currentUser, { displayName: trimmed });
+    } catch (e) {
+      // Best-effort.
+    }
+  }
+
+  if (cache.userProfiles.has(uid)) {
+    cache.userProfiles.set(uid, { ...cache.userProfiles.get(uid), displayName: trimmed });
+    cache.timestamps.set(`profile_${uid}`, Date.now());
+  }
+}
+
 export async function saveCustomActivities(uid, customActivities) {
   // Update cache immediately (optimistic update)
   cache.customActivities.set(uid, customActivities);

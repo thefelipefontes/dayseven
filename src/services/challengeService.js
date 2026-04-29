@@ -900,7 +900,8 @@ export function countOutgoingThisMonth(challenges, uid) {
  *
  * `completed` mixes wins and losses so users see one resolved-outcome list per perspective.
  * Cards render a Win/Loss badge to disambiguate. `accept_expired` (no one ever accepted)
- * stays out — that's silent by design (no stats impact, separate notification).
+ * and `cancelled` (mutual cancel of an active 1v1, or sender-cancelled pending) stay out —
+ * silent by design (no stats impact, no lingering "Cancelled/Expired" cards in Active).
  */
 export function bucketChallenges(challenges, uid) {
   const pendingReceived = [];
@@ -909,6 +910,11 @@ export function bucketChallenges(challenges, uid) {
   const completed = [];
 
   for (const c of challenges) {
+    // Cancelled is terminal for both sides regardless of personal status. Without this
+    // guard a mutually-cancelled active 1v1 would still surface in the recipient's Active
+    // bucket (their participant status remains 'accepted' even after cancel).
+    if (c.status === 'cancelled') continue;
+
     const isChallenger = c.challengerUid === uid;
     const myStatus = getMyParticipantStatus(c, uid);
 
@@ -925,7 +931,7 @@ export function bucketChallenges(challenges, uid) {
     if (myStatus === 'pending') pendingReceived.push(c);
     else if (myStatus === 'accepted') active.push(c);
     else if (myStatus === 'completed' || myStatus === 'expired') completed.push(c);
-    // declined/cancelled/accept_expired: not surfaced
+    // declined/accept_expired: not surfaced
   }
 
   return { pendingReceived, active, pendingSent, completed };

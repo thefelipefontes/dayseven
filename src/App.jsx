@@ -12,7 +12,7 @@ import SettingsPage from './Settings';
 import ProfilePage from './Profile';
 import { isChallengeable, getChallengesForUser, activityMatchesChallengeRule, describeMatchRule, evaluateActivityAgainstChallenge, applyOptimisticChallengeCompletions, applyChallengeIntent } from './services/challengeService';
 import ChallengeMatchChooser from './components/ChallengeMatchChooser';
-import { createUserProfile, getUserProfile, updateUserProfile, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, deleteActivityPhoto, saveUserGoals, getUserGoals, setOnboardingComplete, setTourComplete, savePersonalRecords, getPersonalRecords, saveDailyHealthData, getDailyHealthData, getDailyHealthHistory, subscribeToUserChallengeStats } from './services/userService';
+import { createUserProfile, getUserProfile, updateUserProfile, updateDisplayName, updateUsername, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, deleteActivityPhoto, saveUserGoals, getUserGoals, setOnboardingComplete, setTourComplete, savePersonalRecords, getPersonalRecords, saveDailyHealthData, getDailyHealthData, getDailyHealthHistory, subscribeToUserChallengeStats } from './services/userService';
 import { getFriends, getReactions, getFriendRequests, getComments, addReply, getReplies, deleteReply, addReaction, removeReaction, addComment, cleanupActivitySocialData } from './services/friendService';
 
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
@@ -12894,6 +12894,18 @@ export default function DaySevenApp() {
     }
   };
 
+  const handleUpdateDisplayName = async (displayName) => {
+    if (!user) return;
+    await updateDisplayName(user.uid, displayName);
+    setUserProfile(prev => prev ? { ...prev, displayName } : prev);
+  };
+
+  const handleUpdateUsername = async (newUsername) => {
+    if (!user) return;
+    await updateUsername(user.uid, userProfile?.username || '', newUsername);
+    setUserProfile(prev => prev ? { ...prev, username: newUsername } : prev);
+  };
+
   // Handle max heart rate update
   const handleUpdateMaxHeartRate = async (maxHeartRate) => {
     if (!user) return;
@@ -16118,6 +16130,8 @@ export default function DaySevenApp() {
               }}
               onUpdatePrivacy={handleUpdatePrivacy}
               onUpdateMaxHeartRate={handleUpdateMaxHeartRate}
+              onUpdateDisplayName={handleUpdateDisplayName}
+              onUpdateUsername={handleUpdateUsername}
               onChangePassword={() => setShowChangePassword(true)}
               onResetPassword={handleResetPassword}
               onDeleteAccount={() => setShowDeleteAccount(true)}

@@ -15,6 +15,7 @@ import {
 import { ChallengeCard } from './Challenges';
 import OwnProfileModal from './components/OwnProfileModal';
 import FriendProfileCard from './components/FriendProfileCard';
+import ChallengeDetailModal from './components/ChallengeDetailModal';
 import { isDemoAccount, getDemoChallenges } from './demoData';
 
 const triggerHaptic = async (style = ImpactStyle.Light) => {
@@ -49,6 +50,9 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
   // Lets users isolate just their wins or losses on either Sent or Received.
   const [resultFilter, setResultFilter] = useState('all');
   const [selectedFriend, setSelectedFriend] = useState(null);
+  // Card tap opens the detail modal; opponent panel inside the modal can then
+  // open the FriendProfileCard via the existing setSelectedFriend hook.
+  const [detailChallenge, setDetailChallenge] = useState(null);
   // Notification-tap navigation: when navTarget changes (parent bumps `nonce` per tap),
   // jump to the segment/sub-segment the notification is about.
   useEffect(() => {
@@ -450,6 +454,7 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
                   const f = friendsByUid[uid];
                   if (f) setSelectedFriend(f);
                 }}
+                onSeeDetails={(ch) => setDetailChallenge(ch)}
               />
             ))}
           </div>
@@ -470,6 +475,27 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
         <FriendProfileCard
           friend={selectedFriend}
           onClose={() => setSelectedFriend(null)}
+        />
+      )}
+
+      {detailChallenge && (
+        <ChallengeDetailModal
+          challenge={detailChallenge}
+          currentUid={user.uid}
+          userProfile={userProfile}
+          friendsByUid={friendsByUid}
+          onClose={() => setDetailChallenge(null)}
+          onOpenOpponentProfile={(uid) => {
+            const f = friendsByUid[uid];
+            if (f) setSelectedFriend(f);
+          }}
+          onAccept={handleAccept}
+          onDecline={handleDecline}
+          onCancel={handleCancel}
+          onRequestCancel={handleRequestCancel}
+          onRespondCancel={handleRespondCancel}
+          onStartWorkout={onStartChallengeWorkout}
+          onApplyPastActivity={onApplyPastActivityToChallenge}
         />
       )}
     </>

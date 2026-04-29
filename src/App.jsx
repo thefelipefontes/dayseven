@@ -25,7 +25,7 @@ import { initializeRevenueCat, checkProStatus, addCustomerInfoListener, logoutRe
 import ActivityIcon, { ICON_PICKER_CATEGORIES, CATEGORY_COLORS as ICON_CATEGORY_COLORS } from './components/ActivityIcon';
 import RouteMapView, { ll2px, bestFit, makeTiles, RouteOverlay, TileLayer, TILE } from './components/RouteMapView';
 import MuscleBodyMap from './components/MuscleBodyMap';
-import { isDemoAccount, getDemoActivities, getDemoUserData, getDemoHealthKitData, getDemoCalendarData, getDemoFriends } from './demoData';
+import { isDemoAccount, getDemoActivities, getDemoUserData, getDemoHealthKitData, getDemoCalendarData, getDemoFriends, getDemoChallengeStats } from './demoData';
 import { Dumbbell } from 'lucide-react';
 import { IconRun, IconSnowflake } from '@tabler/icons-react';
 import { triggerHaptic } from './utils/haptics';
@@ -7623,9 +7623,11 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       setChallengeFulfillSelection(
         Array.isArray(presetIntent) ? new Set(presetIntent.map(String)) : null
       );
-      // If there's a pending activity (from HealthKit or editing), go directly to completed flow
-      // Otherwise show initial choice screen
-      setMode(pendingActivity ? 'completed' : null);
+      // If there's a pending activity (from HealthKit or editing), go directly to completed flow.
+      // Otherwise show initial choice screen. The challenge "Start activity" CTA passes
+      // `mode: 'start'` on pendingActivity so we land on the live-timer flow with the
+      // category pre-selected — that button is a promise to start a workout, not log one.
+      setMode(pendingActivity?.mode === 'start' ? 'start' : (pendingActivity ? 'completed' : null));
       // When editing a 'Strength Training' activity, use the strengthType as the flattened activityType
       const editType = pendingActivity?.type === 'Strength Training' && pendingActivity?.strengthType
         ? pendingActivity.strengthType : (pendingActivity?.type || null);
@@ -10302,7 +10304,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
 
 // Home Tab - Simplified
 
-const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeCountsChange, onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, optimisticChallengeCompletions = new Map() }) => {
+const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeCountsChange, onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, optimisticChallengeCompletions = new Map(), onStartChallengeWorkout, onApplyPastActivityToChallenge }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
   const [dismissConfirmWorkouts, setDismissConfirmWorkouts] = useState(null); // Workouts pending dismiss confirmation
@@ -11922,7 +11924,16 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         {/* End of weeklyGoalsRef wrapper */}
       </div>
 
-      <ChallengesSection user={user} userProfile={userProfile} friends={friends} onChallengeCountsChange={onChallengeCountsChange} onSeeDetails={onNavigateToChallenges} optimisticCompletions={optimisticChallengeCompletions} />
+      <ChallengesSection
+        user={user}
+        userProfile={userProfile}
+        friends={friends}
+        onChallengeCountsChange={onChallengeCountsChange}
+        onSeeDetails={onNavigateToChallenges}
+        optimisticCompletions={optimisticChallengeCompletions}
+        onStartChallengeWorkout={onStartChallengeWorkout}
+        onApplyPastActivityToChallenge={onApplyPastActivityToChallenge}
+      />
 
       {/* Section Divider */}
       <div className="mx-4 mb-4">
@@ -12332,11 +12343,19 @@ export default function DaySevenApp() {
   // confusing right after a friend's challenge expires or the user wins one.
   useEffect(() => {
     if (!user?.uid) return;
+    // Demo accounts: their challenges don't live in Firestore, so the cloud
+    // function never writes challengeStats for them. Apply mock counters once
+    // and skip the subscription — otherwise the profile card reads 0-0 against
+    // 10 completed mock challenges, which looks broken in marketing screenshots.
+    if (isDemoAccount(userProfile, user)) {
+      setUserProfile(prev => prev ? { ...prev, challengeStats: getDemoChallengeStats() } : prev);
+      return;
+    }
     const unsub = subscribeToUserChallengeStats(user.uid, (challengeStats) => {
       setUserProfile(prev => prev ? { ...prev, challengeStats } : prev);
     });
     return () => { try { unsub?.(); } catch {} };
-  }, [user?.uid]);
+  }, [user?.uid, userProfile?.username, user?.email]);
 
   // Load health data from Firestore on non-native platforms (desktop/web)
   useEffect(() => {
@@ -15854,6 +15873,11 @@ export default function DaySevenApp() {
                     switchTab('challenges');
                   }}
                   optimisticChallengeCompletions={optimisticChallengeCompletions}
+                  onStartChallengeWorkout={(challenge) => {
+                    const prefillType = challenge?.matchRule?.activityType || challenge?.challengerActivity?.type || null;
+                    handleAddActivity({ type: prefillType, intendedChallengeIds: [challenge.id], mode: 'start' });
+                  }}
+                  onApplyPastActivityToChallenge={(challenge) => setApplyPastActivityChallenge(challenge)}
                   isPro={isPro}
                   onPresentPaywall={async () => {
                     const { purchased } = await presentPaywall();
@@ -15917,11 +15941,13 @@ export default function DaySevenApp() {
                   onStartChallengeWorkout={(challenge) => {
                     // Pre-fill the activity logger from the challenge — type from match rule (or
                     // challenger's activity), intent stamped so the cloud function fulfills this
-                    // specific challenge instead of triggering the multi-match deferral.
+                    // specific challenge instead of triggering the multi-match deferral. mode='start'
+                    // lands on the live-timer flow rather than the post-hoc log form.
                     const prefillType = challenge?.matchRule?.activityType || challenge?.challengerActivity?.type || null;
                     handleAddActivity({
                       type: prefillType,
                       intendedChallengeIds: [challenge.id],
+                      mode: 'start',
                     });
                   }}
                   onApplyPastActivityToChallenge={(challenge) => setApplyPastActivityChallenge(challenge)}

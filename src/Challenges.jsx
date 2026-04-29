@@ -15,9 +15,13 @@ import {
   availableChallengeMetrics,
   formatPace,
   getChallengeOutcome,
+  requestCancelChallenge,
+  respondToCancelRequest,
 } from './services/challengeService';
 import { getFriends } from './services/friendService';
 import { isDemoAccount, getDemoChallenges } from './demoData';
+import ChallengeDetailModal from './components/ChallengeDetailModal';
+import FriendProfileCard from './components/FriendProfileCard';
 
 const triggerHaptic = async (style = ImpactStyle.Light) => {
   try { await Haptics.impact({ style }); } catch {
@@ -171,12 +175,26 @@ export function ChallengeApplyPastActivityModal({ isOpen, onClose, activities = 
     setTimeout(() => onClose(), 250);
   };
 
-  // Show only activities that fully match the challenge rule (qualifying type AND target met).
-  // Cap to last 14 days so the list stays scannable.
-  const cutoffMs = Date.now() - 14 * 24 * 60 * 60 * 1000;
+  // Eligibility: only activities completed on or after the day the challenge was
+  // sent. Covers the "I worked out before I noticed the notification" gap — if
+  // a friend challenges you at 9am and you ran at 5pm before opening the app at
+  // 6pm, that 5pm run still counts. The cloud function doesn't enforce a time
+  // window, so this client filter is the sole gate. Compared as YYYY-MM-DD
+  // strings to dodge timezone drift between the ISO createdAt and activity.date.
+  const challengeSentRaw = challenge.createdAt || null;
+  const toLocalDay = (input) => {
+    if (!input) return '';
+    const d = new Date(input);
+    if (isNaN(d.getTime())) return '';
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+  const challengeSentDay = toLocalDay(challengeSentRaw);
   const eligible = (activities || []).filter(a => {
-    const at = new Date(a.date || 0).getTime();
-    if (!at || at < cutoffMs) return false;
+    if (!a.date) return false;
+    if (challengeSentDay && a.date < challengeSentDay) return false;
     return evaluateActivityAgainstChallenge(a, challenge.matchRule).matches;
   });
   // Newest first (date + small id tiebreak so multiple-on-same-day aren't shuffled).
@@ -808,6 +826,32 @@ function ChallengeIcon({ category, color, mePhotoURL, meInitial, opponentPhotoUR
 
 // Tiny pill shown next to the friend's name on a challenge card so you can tell
 // at a glance whether you're the challenger (Sent) or the recipient (Received).
+// Pill for resolved-without-winner states (cancelled / declined / accept_expired).
+// `won`/`lost` get the brighter ResultPill; this is the muted neutral fallback so
+// the card still tells you what happened when no one wins.
+function StatePill({ state }) {
+  const map = {
+    cancelled: { label: 'Cancelled', color: 'rgba(255,255,255,0.55)' },
+    declined: { label: 'Declined', color: 'rgba(255,255,255,0.55)' },
+    accept_expired: { label: 'Expired', color: 'rgba(255,255,255,0.55)' },
+  };
+  const cfg = map[state];
+  if (!cfg) return null;
+  return (
+    <span
+      className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0"
+      style={{
+        color: cfg.color,
+        backgroundColor: 'rgba(255,255,255,0.06)',
+        border: '1px solid rgba(255,255,255,0.12)',
+        lineHeight: '12px',
+      }}
+    >
+      {cfg.label}
+    </span>
+  );
+}
+
 function PerspectivePill({ isChallenger }) {
   const label = isChallenger ? 'Sent' : 'Received';
   const color = isChallenger ? '#FFD60A' : '#00D1FF';
@@ -958,9 +1002,12 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
   const chipColor = isExpired ? '#FF453A' : (isUrgent ? '#FF453A' : 'rgba(255,255,255,0.65)');
   const chipBg = (isExpired || isUrgent) ? 'rgba(255,69,58,0.12)' : 'rgba(255,255,255,0.06)';
 
-  // In compact mode (Home), the whole card is tappable — jumps to the Challenges tab
-  // on the active segment with the correct perspective for this card.
-  const handleCardTap = compact && onSeeDetails
+  // The entire card is tappable in both modes when onSeeDetails is wired —
+  // opens the ChallengeDetailModal. Inline action buttons (Accept/Decline/Cancel/
+  // Start workout) all stopPropagation so they don't double-fire the modal.
+  // The avatar stack already stopPropagation in ChallengeIcon, so avatar→profile
+  // still works as a shortcut without triggering the modal.
+  const handleCardTap = onSeeDetails
     ? () => { triggerHaptic(ImpactStyle.Light); onSeeDetails(challenge); }
     : null;
 
@@ -1019,7 +1066,11 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
           />
           <div className="flex items-center gap-1">
             <PerspectivePill isChallenger={isChallenger} />
-            {outcome && <ResultPill outcome={outcome} />}
+            {outcome ? (
+              <ResultPill outcome={outcome} />
+            ) : (
+              <StatePill state={challenge.status} />
+            )}
           </div>
         </div>
         <div className="flex-1 min-w-0">
@@ -1088,13 +1139,13 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
           {isCancelResponder && (
             <div className="flex gap-2 mt-2">
               <button
-                onClick={() => onRespondCancel?.(challenge, false)}
+                onClick={(e) => { e.stopPropagation(); onRespondCancel?.(challenge, false); }}
                 className="flex-1 py-1.5 rounded-md text-xs font-medium bg-zinc-800 text-gray-300"
               >
                 Keep going
               </button>
               <button
-                onClick={() => onRespondCancel?.(challenge, true)}
+                onClick={(e) => { e.stopPropagation(); onRespondCancel?.(challenge, true); }}
                 className="flex-1 py-1.5 rounded-md text-xs font-semibold"
                 style={{ backgroundColor: '#FFD60A', color: 'black' }}
               >
@@ -1108,13 +1159,13 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
       {showAcceptDecline && (
         <div className="flex gap-2 mt-3">
           <button
-            onClick={() => onDecline?.(challenge)}
+            onClick={(e) => { e.stopPropagation(); onDecline?.(challenge); }}
             className="flex-1 py-2 rounded-lg text-sm font-medium bg-zinc-800 text-gray-300"
           >
             Decline
           </button>
           <button
-            onClick={() => onAccept?.(challenge)}
+            onClick={(e) => { e.stopPropagation(); onAccept?.(challenge); }}
             className="flex-1 py-2 rounded-lg text-sm font-semibold"
             style={{ backgroundColor: color, color: 'black' }}
           >
@@ -1198,9 +1249,13 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
 // Section: rendered on the Home tab. Self-loads challenges + handles actions.
 // =====================================================================
 
-export function ChallengesSection({ user, userProfile, friends = [], onChallengeCountsChange, onSeeDetails, optimisticCompletions = new Map() }) {
+export function ChallengesSection({ user, userProfile, friends = [], onChallengeCountsChange, onSeeDetails, optimisticCompletions = new Map(), onStartChallengeWorkout, onApplyPastActivityToChallenge }) {
   const [challenges, setChallenges] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  // Card tap opens the detail modal in-place; the "See all ›" link still navigates
+  // to the Challenges tab via onSeeDetails (called with no arg).
+  const [detailChallenge, setDetailChallenge] = useState(null);
+  const [opponentFriend, setOpponentFriend] = useState(null);
   useTicker(60000);
 
   // Real-time subscription: fires immediately on mount with current state,
@@ -1294,10 +1349,38 @@ export function ChallengesSection({ user, userProfile, friends = [], onChallenge
               userProfile={userProfile}
               friendsByUid={friendsByUid}
               compact
-              onSeeDetails={onSeeDetails}
+              onSeeDetails={(ch) => setDetailChallenge(ch)}
             />
           ))}
         </div>
+      )}
+
+      {detailChallenge && (
+        <ChallengeDetailModal
+          challenge={detailChallenge}
+          currentUid={user.uid}
+          userProfile={userProfile}
+          friendsByUid={friendsByUid}
+          onClose={() => setDetailChallenge(null)}
+          onOpenOpponentProfile={(uid) => {
+            const f = friendsByUid[uid];
+            if (f) setOpponentFriend(f);
+          }}
+          onStartWorkout={onStartChallengeWorkout}
+          onApplyPastActivity={onApplyPastActivityToChallenge}
+          onRequestCancel={(c) => { triggerHaptic(ImpactStyle.Light); return requestCancelChallenge(c.id, user.uid); }}
+          onRespondCancel={(c, accept) => {
+            triggerHaptic(accept ? ImpactStyle.Medium : ImpactStyle.Light);
+            return respondToCancelRequest(c.id, user.uid, accept);
+          }}
+        />
+      )}
+
+      {opponentFriend && (
+        <FriendProfileCard
+          friend={opponentFriend}
+          onClose={() => setOpponentFriend(null)}
+        />
       )}
     </div>
   );

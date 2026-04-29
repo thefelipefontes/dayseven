@@ -514,7 +514,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
   };
 
   return (
-    <div className="pb-32 overflow-y-auto h-full" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
+    <div className="overflow-y-auto h-full" style={{ paddingTop: 'env(safe-area-inset-top, 0px)', paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)' }}>
       {/* Header */}
       <div className="px-4 pt-2 pb-4 flex items-start gap-3">
         {onClose && (
@@ -1505,7 +1505,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
 
         {/* Delete Account Button */}
         <button
-          className="w-full py-4 rounded-xl font-semibold text-gray-500 transition-all duration-150 mt-3 mb-8"
+          className="w-full py-4 rounded-xl font-semibold text-gray-500 transition-all duration-150 mt-3"
           style={{ backgroundColor: 'transparent', transform: 'scale(1)' }}
           onTouchStart={(e) => {
             e.currentTarget.style.transform = 'scale(0.98)';

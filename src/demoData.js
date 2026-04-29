@@ -22,6 +22,20 @@ export const isDemoAccount = (userProfile, user) => {
          email === 'reviewer@dayseven.app';
 };
 
+// Mock W-L counters for the demo account so the Challenges-tab profile card and
+// ChallengeDetailModal don't read 0-0 against the 10 completed mock challenges.
+// The cloud function never writes challengeStats for demo accounts (their
+// challenges aren't real Firestore docs), so this is the only sensible source.
+// Numbers chosen to read as a "good but not flawless" record — 7-3 with a current
+// 3-game streak — instead of a zero stat line that looks broken in screenshots.
+export const getDemoChallengeStats = () => ({
+  accepted: 10,
+  wins: 7,
+  losses: 3,
+  currentWinStreak: 3,
+  longestWinStreak: 5,
+});
+
 // Generate activities for the current week + historical data for heatmap
 export const getDemoActivities = () => {
   const today = new Date();

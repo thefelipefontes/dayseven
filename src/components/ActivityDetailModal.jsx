@@ -334,13 +334,16 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
             if (areas.length === 0 || activity.type !== 'Strength Training') return null;
             const muscleData = {};
             areas.forEach(a => { muscleData[a] = 1; });
+            // Bucket labels (Upper / Lower / Legs / Full Body) drive the heat map
+            // but should never render as pills — show the individual muscles instead.
+            const pillAreas = normalizeFocusAreas(areas);
             return (
               <div className="mb-4">
                 <div className="text-xs text-gray-500 mb-2">Muscles Worked</div>
                 <div className="p-4 rounded-xl flex flex-col items-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                   <MuscleBodyMap muscleData={muscleData} scale={0.62} hideLabels />
                   <div className="flex flex-wrap gap-1.5 mt-3 justify-center">
-                    {areas.map(a => (
+                    {pillAreas.map(a => (
                       <span key={a} className="px-2 py-0.5 rounded-full text-[10px] font-medium" style={{ backgroundColor: 'rgba(0,255,148,0.15)', color: '#00FF94' }}>{a}</span>
                     ))}
                   </div>

@@ -106,6 +106,25 @@ const StatusBarBlur = () => (
 // --- Smart Save: Zone calculation helpers (pure functions, no state) ---
 
 // Determine which HR zone an average heart rate falls into (1-5, or null)
+// The watch-started Live Activity stores `displayType` (strengthType OR
+// activityType — see the workoutStarted listener), so a strength workout
+// is stored as "Weightlifting" / "Bodyweight" / "Circuit". Map those back
+// to the canonical {type: "Strength Training", strengthType} pair the
+// Save Workout modal expects, otherwise the focus-area picker won't render
+// when we hydrate state from the Live Activity (cold launch or unlock-resume).
+const STRENGTH_VARIANTS = ['Weightlifting', 'Bodyweight', 'Circuit'];
+const activeWorkoutFromLiveActivity = (result) => {
+  const raw = result.activityType;
+  const isStrength = STRENGTH_VARIANTS.includes(raw) || raw === 'Strength Training';
+  return {
+    type: isStrength ? 'Strength Training' : raw,
+    strengthType: STRENGTH_VARIANTS.includes(raw) ? raw : null,
+    startTime: result.startTime,
+    source: 'watch',
+    icon: '⌚',
+  };
+};
+
 const getHRZone = (avgHR, maxHR) => {
   if (!avgHR || !maxHR || maxHR < 100) return null;
   const pct = avgHR / maxHR;
@@ -12432,12 +12451,7 @@ export default function DaySevenApp() {
         checkActiveLiveActivity().then(result => {
           if (result.isActive) {
             console.log('[LiveActivity] Found active Live Activity on mount, restoring state:', result.activityType);
-            setActiveWorkout({
-              type: result.activityType,
-              startTime: result.startTime,
-              source: 'watch',
-              icon: '⌚',
-            });
+            setActiveWorkout(activeWorkoutFromLiveActivity(result));
           }
         });
       }
@@ -12464,12 +12478,7 @@ export default function DaySevenApp() {
       if (result.isActive && !activeWorkout) {
         // Live Activity running but no in-app state — restore it
         console.log('[LiveActivity] Restored active workout on resume:', result.activityType);
-        setActiveWorkout({
-          type: result.activityType,
-          startTime: result.startTime,
-          source: 'watch',
-          icon: '⌚',
-        });
+        setActiveWorkout(activeWorkoutFromLiveActivity(result));
       } else if (!result.isActive && activeWorkout?.source === 'watch') {
         // Live Activity ended while backgrounded — clear in-app state
         console.log('[LiveActivity] Watch workout ended while backgrounded, clearing state');

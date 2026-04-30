@@ -654,12 +654,35 @@ export default function ProfilePage(props) {
     const cardioActs = filteredActivities.filter(a => getActivityCategory(a) === 'cardio');
     const recoveryActs = filteredActivities.filter(a => getActivityCategory(a) === 'recovery');
     
-    // Calculate breakdowns
-    const calcBreakdown = (acts) => {
+    // Cardio breakdown — bucket by activity type only. Indoor/Outdoor are
+    // location subtypes ("Running indoors" is still Running), not their own
+    // categories, so we deliberately ignore `subtype` here.
+    const calcCardioBreakdown = (acts) => {
       const breakdown = {};
       acts.forEach(a => {
-        const key = a.subtype || a.type;
+        const key = a.type;
+        if (!key) return;
         breakdown[key] = (breakdown[key] || 0) + 1;
+      });
+      return breakdown;
+    };
+
+    // Recovery breakdown — Contrast Therapy is a *session shape*, not its own
+    // recovery modality, so expand it into the cold + hot components the user
+    // actually did (e.g. Cold Plunge +1, Sauna +1).
+    const calcRecoveryBreakdown = (acts) => {
+      const breakdown = {};
+      const bump = (key) => {
+        if (!key) return;
+        breakdown[key] = (breakdown[key] || 0) + 1;
+      };
+      acts.forEach(a => {
+        if (a.type === 'Contrast Therapy') {
+          bump(a.coldType);
+          bump(a.hotType);
+          return;
+        }
+        bump(a.subtype || a.type);
       });
       return breakdown;
     };
@@ -691,8 +714,8 @@ export default function ProfilePage(props) {
       milesBiked,
       milesWalked,
       lifting: calcMuscleGroupBreakdown(lifts),
-      cardio: calcBreakdown(cardioActs),
-      recoveryBreakdown: calcBreakdown(recoveryActs)
+      cardio: calcCardioBreakdown(cardioActs),
+      recoveryBreakdown: calcRecoveryBreakdown(recoveryActs)
     };
   };
 

@@ -23,6 +23,11 @@ struct ActiveWorkoutView: View {
     /// Delayed flag — only true after isEnding has been true for 0.8s.
     /// Prevents a flash of "Saving..." when HealthKit finishes quickly.
     @State private var showSavingOverlay = false
+    /// Currently-displayed mile split overlay. Cleared after ~4s.
+    @State private var displayedSplit: WorkoutSplit?
+    /// Token for cancelling the in-flight auto-dismiss when a new split lands
+    /// before the previous one has cleared.
+    @State private var splitDismissToken: UUID?
     private var wm: WorkoutManager { workoutMgr }
 
     /// Whether the user selected "Indoor" for this workout
@@ -83,7 +88,14 @@ struct ActiveWorkoutView: View {
                 .frame(maxWidth: .infinity)
             } else if isStarted && wm.isActive {
                 // Workout actively running — show timer/controls
-                activeWorkoutContent
+                ZStack {
+                    activeWorkoutContent
+                    if let split = displayedSplit {
+                        SplitOverlayView(split: split)
+                            .transition(.opacity.combined(with: .scale(scale: 0.92)))
+                    }
+                }
+                .animation(.easeOut(duration: 0.25), value: displayedSplit)
             } else if isStarted && shouldShowSummary {
                 // Show black underneath the summary overlay to prevent
                 // any flash of the controls/timer during transition.
@@ -134,6 +146,18 @@ struct ActiveWorkoutView: View {
         .onChange(of: wm.lastResult) { _, result in
             if result != nil {
                 showSavingOverlay = false
+            }
+        }
+        .onChange(of: wm.latestSplit) { _, split in
+            guard let split else { return }
+            displayedSplit = split
+            let token = UUID()
+            splitDismissToken = token
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                // Only clear if no newer split has landed since we scheduled.
+                if splitDismissToken == token {
+                    displayedSplit = nil
+                }
             }
         }
     }
@@ -455,5 +479,48 @@ struct ActiveWorkoutView: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+}
+
+// MARK: - Split Overlay
+
+/// Brief Apple-style overlay shown for ~4s when the user crosses a whole-mile
+/// boundary during a distance workout. The accompanying haptic is fired by
+/// WorkoutManager when the split is published — this view is purely visual.
+private struct SplitOverlayView: View {
+    let split: WorkoutSplit
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Text("MILE \(split.mileNumber)")
+                .font(.system(size: 13, weight: .semibold))
+                .tracking(2)
+                .foregroundColor(.green)
+            Text(formatSplit(split.splitSeconds))
+                .font(.system(size: 36, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+                .monospacedDigit()
+            Text("\(formatPace(split.splitSeconds)) /mi")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.gray)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.opacity(0.92))
+    }
+
+    /// "8:32" — minutes:seconds, no leading zero on minutes.
+    private func formatSplit(_ seconds: TimeInterval) -> String {
+        let total = Int(seconds.rounded())
+        let m = total / 60
+        let s = total % 60
+        return String(format: "%d:%02d", m, s)
+    }
+
+    /// Same format as splitTime — for a per-mile split, pace == split duration,
+    /// but kept as a separate helper in case we ever subdivide (e.g. half-miles).
+    private func formatPace(_ secondsPerMile: TimeInterval) -> String {
+        formatSplit(secondsPerMile)
     }
 }

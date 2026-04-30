@@ -864,7 +864,7 @@ export default function ProfilePage(props) {
 
           return (
             <div className="mt-3">
-              <p className="text-[12px] leading-snug" style={{ color: 'rgba(255,255,255,0.45)' }}>
+              <p className="text-[11px] leading-snug text-center" style={{ color: 'rgba(255,255,255,0.45)' }}>
                 At risk of losing your streak? Protect it by tapping 🛡️ or 🌴 above.
               </p>
             </div>

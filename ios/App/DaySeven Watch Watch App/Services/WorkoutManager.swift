@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import HealthKit
 import CoreLocation
+import WatchKit
 
 // MARK: - Workout Result
 
@@ -15,6 +16,21 @@ struct WorkoutResult: Equatable {
     var maxHr: Int
     var distance: Double? // miles
 }
+
+// MARK: - Workout Split
+
+/// Per-mile split fired when the user crosses a whole-mile boundary during
+/// a distance workout. Mirrors Apple Workout's split notification.
+struct WorkoutSplit: Equatable, Identifiable {
+    let id = UUID()
+    var mileNumber: Int           // 1, 2, 3, ...
+    var splitSeconds: TimeInterval // time spent on this single mile (== pace per mile)
+    var firedAt: Date              // wall-clock when the split crossed; powers auto-dismiss
+
+    static func == (lhs: WorkoutSplit, rhs: WorkoutSplit) -> Bool { lhs.id == rhs.id }
+}
+
+private let metersPerMile: Double = 1609.34
 
 // MARK: - Workout Error
 
@@ -77,6 +93,16 @@ class WorkoutManager: NSObject, ObservableObject {
     @Published var currentZone: HeartRateZone = .recovery
     @Published var currentZoneSeconds: Int = 0
     var estimatedMaxHR: Double = 190.0
+
+    /// Last mile split that crossed during the active workout. ActiveWorkoutView
+    /// observes this and renders a brief overlay (Apple-style) before clearing.
+    @Published var latestSplit: WorkoutSplit?
+
+    // Mile-split bookkeeping. `lastMileAnnounced` is the highest whole mile we've
+    // already fired a split for; `lastMileElapsedAt` is the elapsed-time at which
+    // that mile was crossed, so the next split = currentElapsed - lastMileElapsedAt.
+    private var lastMileAnnounced: Int = 0
+    private var lastMileElapsedAt: TimeInterval = 0
 
     // Internal state
     private var session: HKWorkoutSession?
@@ -457,6 +483,43 @@ class WorkoutManager: NSObject, ObservableObject {
         accumulatedPauseTime = 0
         currentZone = .recovery
         currentZoneSeconds = 0
+        latestSplit = nil
+        lastMileAnnounced = 0
+        lastMileElapsedAt = 0
+    }
+
+    // MARK: - Mile Splits
+
+    /// Called whenever HealthKit reports a new cumulative distance value. If the
+    /// user has crossed one or more whole-mile boundaries since the last update,
+    /// fires a split (haptic + published WorkoutSplit) for the most recent one.
+    /// Multi-mile jumps in a single update are rare (only on long stat coalesces)
+    /// — we collapse them to the highest mile so we don't spam haptics.
+    private func checkMileSplit(distanceMeters: Double) {
+        let totalMiles = distanceMeters / metersPerMile
+        let crossedMile = Int(totalMiles.rounded(.down))
+        guard crossedMile > lastMileAnnounced else { return }
+
+        let splitSeconds = elapsedTime - lastMileElapsedAt
+        // Guard against zero/negative splits from clock drift or coalesced updates.
+        guard splitSeconds > 0 else {
+            lastMileAnnounced = crossedMile
+            lastMileElapsedAt = elapsedTime
+            return
+        }
+
+        let split = WorkoutSplit(
+            mileNumber: crossedMile,
+            splitSeconds: splitSeconds,
+            firedAt: Date()
+        )
+        latestSplit = split
+        lastMileAnnounced = crossedMile
+        lastMileElapsedAt = elapsedTime
+
+        // Apple's split haptic is a short distinct ping — `.notification` is the
+        // closest single-shot match in the WatchKit catalog.
+        WKInterfaceDevice.current().play(.notification)
     }
 }
 
@@ -522,8 +585,9 @@ extension WorkoutManager: HKLiveWorkoutBuilderDelegate {
                      HKQuantityType(.distanceCycling),
                      HKQuantityType(.distanceSwimming):
                     if let value = statistics?.sumQuantity()?.doubleValue(for: .meter()) {
-                        print("[WorkoutManager] Distance update: \(value)m (\(value / 1609.34) mi)")
+                        print("[WorkoutManager] Distance update: \(value)m (\(value / metersPerMile) mi)")
                         self.distance = value
+                        self.checkMileSplit(distanceMeters: value)
                     }
 
                 default:

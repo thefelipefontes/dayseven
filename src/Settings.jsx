@@ -65,6 +65,13 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
   };
 
   const closeEditField = () => {
+    // Blur the input before unmount so iOS dismisses the keyboard cleanly.
+    // Without this, the keyboard can stay momentarily wedged after the modal
+    // closes (especially when dismissing via backdrop tap), leaving the
+    // viewport in a state where Settings scroll feels locked.
+    if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     setEditField(null);
     setEditValue('');
     setEditError('');
@@ -629,20 +636,33 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
 
   return (
     <div className="overflow-y-auto h-full" style={{ paddingTop: 'env(safe-area-inset-top, 0px)', paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)' }}>
-      {/* Header */}
-      <div className="px-4 pt-2 pb-4 flex items-start gap-3">
-        {onClose && (
+      {/* Floating sticky back button — overlays the page and stays pinned at
+          top-left while the rest of the header scrolls away. Wrapper has
+          height:0 so it doesn't push content down; the button itself is
+          absolutely positioned and aligns with the spacer in the header below. */}
+      {onClose && (
+        <div className="sticky top-0 z-20" style={{ height: 0 }}>
           <button
             onClick={() => { triggerHaptic(ImpactStyle.Light); onClose(); }}
             aria-label="Close settings"
-            className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 active:scale-95 transition-transform"
-            style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}
+            className="absolute top-2 left-4 w-9 h-9 rounded-full flex items-center justify-center active:scale-95 transition-transform"
+            style={{
+              backgroundColor: 'rgba(20,20,20,0.75)',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+            }}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="15 18 9 12 15 6" />
             </svg>
           </button>
-        )}
+        </div>
+      )}
+
+      {/* Header — title + subtitle. Back-button slot is an empty spacer because
+          the sticky button above floats over this area on initial render. */}
+      <div className="px-4 pt-2 pb-4 flex items-start gap-3">
+        {onClose && <div className="w-9 h-9 flex-shrink-0" aria-hidden="true" />}
         <div className="flex-1 min-w-0">
           <h1 className="text-xl font-bold text-white">Settings</h1>
           <p className="text-sm text-gray-500">Set your standards. Earn your streaks.</p>

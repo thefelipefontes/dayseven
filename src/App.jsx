@@ -25,7 +25,7 @@ import { initializeRevenueCat, checkProStatus, addCustomerInfoListener, logoutRe
 import ActivityIcon, { ICON_PICKER_CATEGORIES, CATEGORY_COLORS as ICON_CATEGORY_COLORS } from './components/ActivityIcon';
 import RouteMapView, { ll2px, bestFit, makeTiles, RouteOverlay, TileLayer, TILE } from './components/RouteMapView';
 import MuscleBodyMap from './components/MuscleBodyMap';
-import { isDemoAccount, getDemoActivities, getDemoUserData, getDemoHealthKitData, getDemoCalendarData, getDemoFriends, getDemoChallengeStats } from './demoData';
+import { isDemoAccount, getDemoActivities, getDemoUserData, getDemoHealthKitData, getDemoHealthHistory, getDemoCalendarData, getDemoFriends, getDemoChallengeStats } from './demoData';
 import { Dumbbell } from 'lucide-react';
 import { IconRun, IconSnowflake } from '@tabler/icons-react';
 import { triggerHaptic } from './utils/haptics';
@@ -6348,19 +6348,26 @@ const DeleteAccountModal = ({ isOpen, onClose, user, userProfile, onDeleteComple
   // Detect provider reliably — on Capacitor, the web SDK's user.providerData may be empty,
   // so we use the Capacitor plugin's getCurrentUser() which has the correct providerData
   const [isEmailPasswordUser, setIsEmailPasswordUser] = useState(false);
+  const [isAppleUser, setIsAppleUser] = useState(false);
+  const [isGoogleUser, setIsGoogleUser] = useState(false);
 
   useEffect(() => {
     const detectProvider = async () => {
+      const setFromProviderData = (providerData) => {
+        setIsEmailPasswordUser(!!providerData?.some(p => p.providerId === 'password'));
+        setIsAppleUser(!!providerData?.some(p => p.providerId === 'apple.com'));
+        setIsGoogleUser(!!providerData?.some(p => p.providerId === 'google.com'));
+      };
       if (Capacitor.isNativePlatform()) {
         try {
           const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
           const { user: nativeUser } = await FirebaseAuthentication.getCurrentUser();
-          setIsEmailPasswordUser(!!nativeUser?.providerData?.some(p => p.providerId === 'password'));
+          setFromProviderData(nativeUser?.providerData);
         } catch {
-          setIsEmailPasswordUser(!!user?.providerData?.some(p => p.providerId === 'password'));
+          setFromProviderData(user?.providerData);
         }
       } else {
-        setIsEmailPasswordUser(!!user?.providerData?.some(p => p.providerId === 'password'));
+        setFromProviderData(user?.providerData);
       }
     };
     if (isOpen && user) detectProvider();
@@ -6433,9 +6440,6 @@ const DeleteAccountModal = ({ isOpen, onClose, user, userProfile, onDeleteComple
         const code = authErr.code || authErr.message || '';
         if (code.includes('requires-recent-login')) {
           // Re-authenticate with the correct provider, then retry
-          const isAppleUser = user?.providerData?.some(p => p.providerId === 'apple.com');
-          const isGoogleUser = user?.providerData?.some(p => p.providerId === 'google.com');
-
           if (Capacitor.isNativePlatform()) {
             const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
             if (isEmailPasswordUser && password) {
@@ -6471,6 +6475,26 @@ const DeleteAccountModal = ({ isOpen, onClose, user, userProfile, onDeleteComple
       triggerHaptic(ImpactStyle.Heavy);
       onDeleteComplete();
     } catch (err) {
+      // The Capacitor plugin sometimes rejects after the native delete has already
+      // completed (e.g. a residual auth listener firing on the now-gone user).
+      // If the auth account is actually gone, treat as success instead of stranding
+      // the user on an error screen with no account.
+      let stillSignedIn = !!auth.currentUser;
+      if (Capacitor.isNativePlatform()) {
+        try {
+          const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+          const { user: cur } = await FirebaseAuthentication.getCurrentUser();
+          stillSignedIn = !!cur;
+        } catch {
+          // If we can't even check, fall back to web SDK signal above
+        }
+      }
+      if (!stillSignedIn) {
+        triggerHaptic(ImpactStyle.Heavy);
+        onDeleteComplete();
+        return;
+      }
+
       const errorCode = err.code || err.message || '';
       if (errorCode.includes('wrong-password') || errorCode.includes('invalid-credential') || errorCode.includes('INVALID_LOGIN_CREDENTIALS')) {
         setError('Incorrect password. Please try again.');
@@ -12381,6 +12405,7 @@ export default function DaySevenApp() {
     if (!user?.uid || Capacitor.isNativePlatform()) return;
 
     const loadHealthDataFromFirestore = async () => {
+      if (isDemoAccount(userProfileRef.current, userRef.current)) return;
       // Get today's date in YYYY-MM-DD format
       const today = new Date();
       const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -12539,6 +12564,9 @@ export default function DaySevenApp() {
   useEffect(() => {
     const removeListener = addWatchActivitySavedListener(async () => {
       if (!user?.uid) return;
+      // Demo accounts: skip — the watch can't save real activities into the
+      // demo's in-memory state, and refetching from Firestore would clobber the mocks.
+      if (isDemoAccount(userProfileRef.current, userRef.current)) return;
 
       try {
         // Fetch fresh data directly from Firestore (bypass all caches)
@@ -13242,13 +13270,14 @@ export default function DaySevenApp() {
       // Demo mode: load mock data for appreview account (marketing screen recordings)
       if (isDemoAccount(profile, user)) {
         const demoActivities = getDemoActivities();
-        const demoUserData = getDemoUserData();
+        const demoUserData = getDemoUserData(profile?.username);
         const demoHealthKit = getDemoHealthKitData();
         setActivities(demoActivities);
         activitiesRef.current = demoActivities;
         setUserData(demoUserData);
         setCalendarData(getDemoCalendarData(demoActivities));
         setHealthKitData(prev => ({ ...prev, ...demoHealthKit }));
+        setHealthHistory(getDemoHealthHistory(365));
         setFriends(getDemoFriends());
         setIsPro(true); // Show pro features in demo
         return;
@@ -13440,7 +13469,7 @@ export default function DaySevenApp() {
 
           // Sync HealthKit AFTER activities are loaded so it can properly
           // detect already-saved/linked workouts via activitiesRef
-          if (Capacitor.isNativePlatform()) {
+          if (Capacitor.isNativePlatform() && !profile?.disableHealthKitSync) {
             syncHealthKit();
           }
 
@@ -13662,7 +13691,7 @@ export default function DaySevenApp() {
 
       // Refresh HealthKit data on pull-to-refresh (including workouts)
       // Use timeout so pull-to-refresh doesn't hang if HealthKit permission dialog is pending
-      if (Capacitor.isNativePlatform()) {
+      if (Capacitor.isNativePlatform() && !userProfileRef.current?.disableHealthKitSync && !isDemoAccount(userProfileRef.current, userRef.current)) {
         try {
           const healthKitPromise = syncHealthKitData();
           const timeoutPromise = new Promise((_, reject) =>
@@ -13709,6 +13738,8 @@ export default function DaySevenApp() {
   // Sync HealthKit data function
   const syncHealthKit = useCallback(async () => {
     if (!Capacitor.isNativePlatform()) return;
+    if (userProfileRef.current?.disableHealthKitSync) return;
+    if (isDemoAccount(userProfileRef.current, userRef.current)) return;
 
     try {
       const result = await syncHealthKitData();
@@ -13898,6 +13929,8 @@ export default function DaySevenApp() {
 
     // Function to refresh steps and calories from HealthKit
     const refreshHealthKitData = async () => {
+      if (userProfileRef.current?.disableHealthKitSync) return;
+      if (isDemoAccount(userProfileRef.current, userRef.current)) return;
       try {
         const [steps, calories] = await Promise.all([
           fetchTodaySteps(),
@@ -13927,8 +13960,10 @@ export default function DaySevenApp() {
         clearBadge();
         clearAllNotifications();
         refreshHealthKitData();
-        // Re-sync workouts when returning to foreground
-        if (user?.uid) {
+        // Re-sync workouts when returning to foreground.
+        // Demo accounts: skip — local mocks (and any newly-logged demo workouts)
+        // would otherwise be clobbered by Firestore on every foreground.
+        if (user?.uid && !isDemoAccount(userProfileRef.current, userRef.current)) {
           try {
             // Fetch fresh activities (force refresh to pick up watch workouts)
             const freshActivities = await getUserActivities(user.uid, true);
@@ -14222,7 +14257,9 @@ export default function DaySevenApp() {
       if (document.visibilityState === 'hidden') {
         return;
       }
-      // Check if Firestore has newer data and import it
+      // Check if Firestore has newer data and import it.
+      // Demo accounts: skip — mock activities live in-memory only.
+      if (isDemoAccount(userProfileRef.current, userRef.current)) return;
       try {
         const currentActivities = await getUserActivities(user.uid, true);
         if (currentActivities.length > activities.length) {
@@ -14433,6 +14470,11 @@ export default function DaySevenApp() {
   // Walks backwards week by week from the current week and counts consecutive completed weeks
   const recalculateStreaksFromHistory = (allActivities, goals) => {
     if (!goals || !allActivities || allActivities.length === 0) return null;
+    // Demo accounts: streak values are seeded per-persona in getDemoUserData() and
+    // must not be derived from the mock activity history. The mocks span only 12
+    // weeks of consistent training, so a recalc would clamp Jace down (14 → 12)
+    // and bump Mila up (8 → 12), erasing the persona differentiation.
+    if (isDemoAccount(userProfileRef.current, userRef.current)) return null;
 
     const today = new Date();
     const currentWeekStart = new Date(today);
@@ -14683,7 +14725,10 @@ export default function DaySevenApp() {
     lastFirestoreSyncTime.current = Date.now(); // 5-second protection window
     lastFirestoreActivityCount.current = updatedActivities.length;
     activitiesRef.current = updatedActivities;
-    if (user?.uid) {
+    // Demo accounts: keep all activity changes in-memory so marketing screen
+    // recordings don't pollute the real Firestore doc. Local state still
+    // updates above; just skip the remote write.
+    if (user?.uid && !isDemoAccount(userProfileRef.current, userRef.current)) {
       saveUserActivities(user.uid, updatedActivities).then(() => {
         notifyWatchDataChanged();
       }).catch(err => {
@@ -15134,21 +15179,28 @@ export default function DaySevenApp() {
       }, 500);
     }
 
-    // Persist weekCelebrations state (locally + Firestore)
+    // Persist weekCelebrations state (locally + Firestore).
+    // Demo accounts: keep the in-memory `setWeekCelebrations` so the same
+    // activity doesn't double-celebrate within a session, but skip
+    // localStorage + Firestore writes so each fresh launch starts clean
+    // (re-recordable takes) and the real user doc stays unpolluted.
     if (shouldCelebrateLifts || shouldCelebrateCardio || shouldCelebrateRecovery || willStreakWeek) {
       setWeekCelebrations(newWC);
-      localStorage.setItem('weekCelebrations', JSON.stringify(newWC));
+      const isDemo = isDemoAccount(userProfileRef.current, userRef.current);
+      if (!isDemo) {
+        localStorage.setItem('weekCelebrations', JSON.stringify(newWC));
 
-      // Persist streaks and celebration state to Firestore (single write for all changes)
-      if (user?.uid) {
-        setTimeout(() => {
-          const latestData = userDataRef.current;
-          updateUserProfile(user.uid, {
-            streaks: latestData.streaks,
-            weekCelebrations: newWC
-          }).catch(() => {});
-          savePersonalRecords(user.uid, latestData.personalRecords).catch(() => {});
-        }, 100);
+        // Persist streaks and celebration state to Firestore (single write for all changes)
+        if (user?.uid) {
+          setTimeout(() => {
+            const latestData = userDataRef.current;
+            updateUserProfile(user.uid, {
+              streaks: latestData.streaks,
+              weekCelebrations: newWC
+            }).catch(() => {});
+            savePersonalRecords(user.uid, latestData.personalRecords).catch(() => {});
+          }, 100);
+        }
       }
     }
 
@@ -15361,9 +15413,12 @@ export default function DaySevenApp() {
 
     if (wcChanged) {
       setWeekCelebrations(wc);
-      localStorage.setItem('weekCelebrations', JSON.stringify(wc));
-      // Clear phone celebration shown flag so re-completing shows the celebration again
-      localStorage.removeItem('phoneCelebrationShown');
+      // Demo accounts: skip localStorage so each fresh launch starts clean.
+      if (!isDemoAccount(userProfileRef.current, userRef.current)) {
+        localStorage.setItem('weekCelebrations', JSON.stringify(wc));
+        // Clear phone celebration shown flag so re-completing shows the celebration again
+        localStorage.removeItem('phoneCelebrationShown');
+      }
     }
 
     // Full streak recalculation from history (handles all edge cases including past week deletions)
@@ -15379,7 +15434,8 @@ export default function DaySevenApp() {
     }
 
     // Persist deletion to Firestore (direct save — no longer relies on debounced useEffect)
-    if (user?.uid) {
+    // Demo accounts skip the remote write so marketing recordings stay ephemeral.
+    if (user?.uid && !isDemoAccount(userProfileRef.current, userRef.current)) {
       saveUserActivities(user.uid, updatedActivities, { allowDecrease: true }).then(() => {
         notifyWatchDataChanged();
       }).catch(() => {});

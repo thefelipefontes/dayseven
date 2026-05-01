@@ -15,6 +15,7 @@ const daysAgo = (n) => {
 };
 
 export const isDemoAccount = (userProfile, user) => {
+  if (userProfile?.demoMode === true) return true;
   const username = userProfile?.username?.toLowerCase();
   const email = user?.email?.toLowerCase();
   return username === 'appreview' ||
@@ -94,8 +95,10 @@ export const getDemoActivities = () => {
     { type: 'Yoga', time: '7:00 AM', duration: 45, calories: 180 },
   ];
 
-  // Generate 3-6 activities per week for past 12 weeks (skip current week)
-  for (let week = 1; week <= 12; week++) {
+  // Generate 3-6 activities per week for past N weeks (skip current week).
+  // Set to 32 so personas can carry streaks up to ~32 weeks without the
+  // profile heatmap / past-N-months charts looking thin behind the streak number.
+  for (let week = 1; week <= 32; week++) {
     const weekStart = 7 * week + dayOfWeek; // days ago for Sunday of that week
     // Pick 4-5 activities per week for a consistent pattern
     const weekActivities = [0, 1, 2, 4, 7]; // chest, back, legs, run, cold plunge
@@ -119,87 +122,232 @@ export const getDemoActivities = () => {
   return [...thisWeek, ...historical];
 };
 
-export const getDemoUserData = () => ({
-  name: 'DaySeven',
-  goals: {
-    liftsPerWeek: 4,
-    cardioPerWeek: 2,
-    recoveryPerWeek: 2,
-    stepsPerDay: 10000,
-    caloriesPerDay: 500
+// Per-username deep overrides on top of the base demo profile. Use this to
+// give individual demo personas distinct goals/streaks/PRs without forking
+// getDemoUserData(). Only fields you specify get overridden; everything else
+// inherits from the base. Sub-objects (goals, streaks, personalRecords) merge
+// field-by-field — partial overrides are fine.
+const DEMO_USER_OVERRIDES = {
+  // Mila — consistent, balanced persona. Lower lifting volume, deeper
+  // cardio + recovery streaks. Realistic "well-rounded athlete" story.
+  milahart: {
+    goals: { liftsPerWeek: 3 },
+    streaks: { master: 8, lifts: 12, cardio: 9, recovery: 8 },
+    personalRecords: {
+      longestStrength: { value: 70, activityType: 'Strength Training' },
+      mostWorkoutsWeek: 7,
+      mostCaloriesWeek: 2900,
+      longestStrengthStreak: 14,
+      longestCardioStreak: 11,
+      longestRecoveryStreak: 8,
+    },
   },
-  streaks: {
-    master: 12,
-    lifts: 12,
-    cardio: 8,
-    recovery: 5,
-    stepsGoal: 3
+  // Jace — strength-focused, heavier persona. Higher lifting volume, stronger
+  // PRs, longer master+strength streaks but lighter cardio/recovery cadence.
+  jacemiller: {
+    goals: { liftsPerWeek: 4 },
+    streaks: { master: 14, lifts: 14, cardio: 6, recovery: 4 },
+    personalRecords: {
+      highestCalories: { value: 740, activityType: 'Running' },
+      longestStrength: { value: 105, activityType: 'Strength Training' },
+      mostWorkoutsWeek: 10,
+      mostCaloriesWeek: 3800,
+      mostMilesWeek: 18.5,
+      longestMasterStreak: 14,
+      longestStrengthStreak: 18,
+      longestCardioStreak: 7,
+      longestRecoveryStreak: 5,
+    },
   },
-  streakShield: {
-    lastUsedWeek: null,
-    shieldedWeeks: []
-  },
-  vacationMode: {
-    isActive: false,
-    startDate: null,
-    activationsThisYear: 0,
-    activationYear: null,
-    vacationWeeks: []
-  },
-  customActivities: [],
-  personalRecords: {
-    highestCalories: { value: 680, activityType: 'Running' },
-    longestStrength: { value: 85, activityType: 'Strength Training' },
-    longestCardio: { value: 62, activityType: 'Running' },
-    longestDistance: { value: 8.2, activityType: 'Running' },
-    fastestPace: { value: 7.15, activityType: 'Running' },
-    fastestCyclingPace: { value: 3.8, activityType: 'Cycle' },
-    mostWorkoutsWeek: 8,
-    mostCaloriesWeek: 3200,
-    mostMilesWeek: 22.5,
-    longestMasterStreak: 12,
-    longestStrengthStreak: 12,
-    longestCardioStreak: 10,
-    longestRecoveryStreak: 7
+};
+
+export const getDemoUserData = (username) => {
+  const base = {
+    name: 'DaySeven',
+    goals: {
+      liftsPerWeek: 4,
+      cardioPerWeek: 2,
+      recoveryPerWeek: 2,
+      stepsPerDay: 10000,
+      caloriesPerDay: 500
+    },
+    streaks: {
+      master: 12,
+      lifts: 12,
+      cardio: 8,
+      recovery: 5,
+      stepsGoal: 3
+    },
+    streakShield: {
+      lastUsedWeek: null,
+      shieldedWeeks: []
+    },
+    vacationMode: {
+      isActive: false,
+      startDate: null,
+      activationsThisYear: 0,
+      activationYear: null,
+      vacationWeeks: []
+    },
+    customActivities: [],
+    personalRecords: {
+      highestCalories: { value: 680, activityType: 'Running' },
+      longestStrength: { value: 85, activityType: 'Strength Training' },
+      longestCardio: { value: 62, activityType: 'Running' },
+      longestDistance: { value: 8.2, activityType: 'Running' },
+      fastestPace: { value: 7.15, activityType: 'Running' },
+      fastestCyclingPace: { value: 3.8, activityType: 'Cycle' },
+      mostWorkoutsWeek: 8,
+      mostCaloriesWeek: 3200,
+      mostMilesWeek: 22.5,
+      longestMasterStreak: 12,
+      longestStrengthStreak: 12,
+      longestCardioStreak: 10,
+      longestRecoveryStreak: 7
+    }
+  };
+
+  const override = DEMO_USER_OVERRIDES[(username || '').toLowerCase()];
+  if (!override) return base;
+
+  return {
+    ...base,
+    ...override,
+    goals: { ...base.goals, ...(override.goals || {}) },
+    streaks: { ...base.streaks, ...(override.streaks || {}) },
+    personalRecords: { ...base.personalRecords, ...(override.personalRecords || {}) },
+  };
+};
+
+// Deterministic per-day mock totals so demo HealthKit data shifts each calendar
+// day (and ramps up across the day) without any backend or Firestore writes.
+const seededDailyValue = (seed, min, max) => {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    h = Math.imul(h ^ seed.charCodeAt(i), 16777619);
   }
+  const norm = ((h >>> 0) % 1000) / 1000;
+  return min + norm * (max - min);
+};
+
+const seededDailyTotals = (dateStr) => ({
+  steps:    Math.round(seededDailyValue(dateStr + 's', 6500, 13500)),
+  calories: Math.round(seededDailyValue(dateStr + 'c', 380, 720)),
+  distance: +seededDailyValue(dateStr + 'd', 2.8, 7.8).toFixed(1),
+  flights:  Math.round(seededDailyValue(dateStr + 'f', 4, 18)),
 });
 
-export const getDemoHealthKitData = () => ({
-  isConnected: true,
-  todaySteps: 2367,
-  todayCalories: 441,
-  todayDistance: 3.8,
-  todayFlights: 6
-});
+export const getDemoHealthKitData = () => {
+  const now = new Date();
+  const dateStr = formatDate(now);
+  // Saturate around 10pm so late-evening opens still show "full day" totals.
+  const hourFrac = Math.min(1, (now.getHours() + now.getMinutes() / 60) / 22);
+  const t = seededDailyTotals(dateStr);
+
+  return {
+    isConnected: true,
+    todaySteps:    Math.round(t.steps * hourFrac),
+    todayCalories: Math.round(t.calories * hourFrac),
+    todayDistance: +(t.distance * hourFrac).toFixed(1),
+    todayFlights:  Math.round(t.flights * hourFrac),
+  };
+};
+
+// Past-N-days history with the same seeded totals, matching the Firestore
+// dailyHealth shape: { date, steps, calories, lastUpdated }. Skips today —
+// today's live values come from getDemoHealthKitData(). Sorted descending.
+export const getDemoHealthHistory = (days = 365) => {
+  const out = [];
+  for (let i = 1; i <= days; i++) {
+    const date = formatDate(daysAgo(i));
+    const t = seededDailyTotals(date);
+    out.push({
+      date,
+      steps: t.steps,
+      calories: t.calories,
+      lastUpdated: new Date().toISOString(),
+    });
+  }
+  return out;
+};
 
 // Friends list for demo mode. Uids/usernames intentionally match the dummyFriends
 // in ActivityFeed.jsx so the leaderboard and feed badges reference the same people.
-// Minimum shape needed by getFriends() consumers: uid, username, displayName, photoURL, addedAt.
+// Photos: randomuser.me/api/portraits/{men|women}/{0-99}.jpg — modern stable
+// portraits keyed per index, free to hotlink, no auth, no API limit.
+//
+// Each record carries top-level streak counts + challengeStats so when the
+// FriendProfileCard opens for a dummy uid (whose Firestore doc returns null),
+// the component's friend-level fallbacks render real numbers instead of zeros.
+// FriendProfileCard reads these as: friend?.masterStreak / strengthStreak /
+// cardioStreak / recoveryStreak / longestMasterStreak / challengeStats.
 export const getDemoFriends = () => {
   const addedAt = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   return [
-    { uid: 'dummy1', username: 'alex_fitness', displayName: 'Alex Thompson', photoURL: 'https://i.pravatar.cc/150?img=1', addedAt },
-    { uid: 'dummy2', username: 'sarah_runs', displayName: 'Sarah Chen', photoURL: 'https://i.pravatar.cc/150?img=5', addedAt },
-    { uid: 'dummy3', username: 'mike_lifts', displayName: 'Mike Johnson', photoURL: 'https://i.pravatar.cc/150?img=8', addedAt },
-    { uid: 'dummy4', username: 'emma_yoga', displayName: 'Emma Williams', photoURL: 'https://i.pravatar.cc/150?img=9', addedAt },
-    { uid: 'dummy5', username: 'jake_athlete', displayName: 'Jake Martinez', photoURL: 'https://i.pravatar.cc/150?img=12', addedAt },
-    { uid: 'dummy6', username: 'lisa_cardio', displayName: 'Lisa Park', photoURL: 'https://i.pravatar.cc/150?img=16', addedAt },
+    {
+      uid: 'dummy1', username: 'alex_fitness', displayName: 'Alex Thompson',
+      photoURL: 'https://randomuser.me/api/portraits/men/32.jpg', addedAt,
+      masterStreak: 8, strengthStreak: 8, cardioStreak: 6, recoveryStreak: 4, longestMasterStreak: 12,
+      challengeStats: { accepted: 16, wins: 12, losses: 4, currentWinStreak: 2, longestWinStreak: 5 },
+    },
+    {
+      uid: 'dummy2', username: 'sarah_runs', displayName: 'Sarah Chen',
+      photoURL: 'https://randomuser.me/api/portraits/women/44.jpg', addedAt,
+      masterStreak: 5, strengthStreak: 4, cardioStreak: 9, recoveryStreak: 3, longestMasterStreak: 7,
+      challengeStats: { accepted: 11, wins: 9, losses: 2, currentWinStreak: 4, longestWinStreak: 4 },
+    },
+    {
+      uid: 'dummy3', username: 'mike_lifts', displayName: 'Mike Johnson',
+      photoURL: 'https://randomuser.me/api/portraits/men/68.jpg', addedAt,
+      masterStreak: 14, strengthStreak: 14, cardioStreak: 5, recoveryStreak: 6, longestMasterStreak: 18,
+      challengeStats: { accepted: 22, wins: 15, losses: 7, currentWinStreak: 1, longestWinStreak: 6 },
+    },
+    {
+      uid: 'dummy4', username: 'emma_yoga', displayName: 'Emma Williams',
+      photoURL: 'https://randomuser.me/api/portraits/women/68.jpg', addedAt,
+      masterStreak: 3, strengthStreak: 2, cardioStreak: 5, recoveryStreak: 7, longestMasterStreak: 6,
+      challengeStats: { accepted: 9, wins: 6, losses: 3, currentWinStreak: 2, longestWinStreak: 3 },
+    },
+    {
+      uid: 'dummy5', username: 'jake_athlete', displayName: 'Jake Martinez',
+      photoURL: 'https://randomuser.me/api/portraits/men/53.jpg', addedAt,
+      masterStreak: 9, strengthStreak: 7, cardioStreak: 7, recoveryStreak: 5, longestMasterStreak: 11,
+      challengeStats: { accepted: 16, wins: 11, losses: 5, currentWinStreak: 3, longestWinStreak: 4 },
+    },
+    {
+      uid: 'dummy6', username: 'lisa_cardio', displayName: 'Lisa Park',
+      photoURL: 'https://randomuser.me/api/portraits/women/22.jpg', addedAt,
+      masterStreak: 6, strengthStreak: 5, cardioStreak: 11, recoveryStreak: 4, longestMasterStreak: 9,
+      challengeStats: { accepted: 12, wins: 8, losses: 4, currentWinStreak: 1, longestWinStreak: 4 },
+    },
   ];
 };
 
 // Mock incoming friend requests for the Friends modal. Same shape as getFriendRequests().
+// `fromUser` carries the same friend-level stat fields as getDemoFriends so a tap
+// on the request opens a populated FriendProfileCard, not a stat-zero one.
 export const getDemoFriendRequests = () => {
   const createdAt = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
   return [
     {
       id: 'demo-req-1',
       fromUid: 'dummy7', toUid: 'demo-uid', status: 'pending', createdAt,
-      fromUser: { uid: 'dummy7', username: 'noah_climbs', displayName: 'Noah Reyes', photoURL: 'https://i.pravatar.cc/150?img=14' },
+      fromUser: {
+        uid: 'dummy7', username: 'noah_climbs', displayName: 'Noah Reyes',
+        photoURL: 'https://randomuser.me/api/portraits/men/72.jpg',
+        masterStreak: 4, strengthStreak: 3, cardioStreak: 4, recoveryStreak: 2, longestMasterStreak: 5,
+        challengeStats: { accepted: 6, wins: 4, losses: 2, currentWinStreak: 2, longestWinStreak: 3 },
+      },
     },
     {
       id: 'demo-req-2',
       fromUid: 'dummy8', toUid: 'demo-uid', status: 'pending', createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-      fromUser: { uid: 'dummy8', username: 'maya_lifts', displayName: 'Maya Patel', photoURL: 'https://i.pravatar.cc/150?img=20' },
+      fromUser: {
+        uid: 'dummy8', username: 'maya_lifts', displayName: 'Maya Patel',
+        photoURL: 'https://randomuser.me/api/portraits/women/79.jpg',
+        masterStreak: 6, strengthStreak: 5, cardioStreak: 6, recoveryStreak: 3, longestMasterStreak: 8,
+        challengeStats: { accepted: 10, wins: 7, losses: 3, currentWinStreak: 1, longestWinStreak: 3 },
+      },
     },
   ];
 };
@@ -211,7 +359,12 @@ export const getDemoSentRequests = () => {
       id: 'demo-sent-1',
       fromUid: 'demo-uid', toUid: 'dummy9', status: 'pending',
       createdAt: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
-      toUser: { uid: 'dummy9', username: 'leo_runner', displayName: 'Leo Hernandez', photoURL: 'https://i.pravatar.cc/150?img=33' },
+      toUser: {
+        uid: 'dummy9', username: 'leo_runner', displayName: 'Leo Hernandez',
+        photoURL: 'https://randomuser.me/api/portraits/men/15.jpg',
+        masterStreak: 4, strengthStreak: 4, cardioStreak: 5, recoveryStreak: 2, longestMasterStreak: 6,
+        challengeStats: { accepted: 9, wins: 5, losses: 4, currentWinStreak: 1, longestWinStreak: 2 },
+      },
     },
   ];
 };

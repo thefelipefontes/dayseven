@@ -7,7 +7,7 @@ import { db } from './firebase';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import ActivityIcon from './components/ActivityIcon';
 import FriendProfileCard from './components/FriendProfileCard';
-import { isDemoAccount } from './demoData';
+import { isDemoAccount, getDemoLeaderboardFriends, getDemoActivities, getDemoHealthHistory, getDemoUserData, getDemoChallengeStats } from './demoData';
 
 // Convert a Date to YYYY-MM-DD string in local timezone (avoids UTC date shifting)
 const toLocalDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -1608,258 +1608,60 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     setLeaderboardLoading(true);
 
     try {
-      // Check if this is the appreview account
-      const isAppReviewAccount = userProfile?.username?.toLowerCase() === 'appreview' ||
-                                 user.email?.toLowerCase() === 'appreview@dayseven.app';
-
-      // Dummy data for appreview account (App Store demo)
-      const dummyFriends = [
-        {
-          uid: 'dummy1',
-          username: 'alex_fitness',
-          displayName: 'Alex Thompson',
-          photoURL: 'https://i.pravatar.cc/150?img=1',
-          masterStreak: 28,
-          strengthStreak: 15,
-          cardioStreak: 12,
-          recoveryStreak: 8,
-          weeksWon: 12,
-          totalWorkouts: 156,
-          stats: {
-            calories: { week: 4850, month: 18200, year: 198000, all: 485000 },
-            steps: { week: 68000, month: 285000, year: 3200000, all: 9500000 }
-          },
-          volume: {
-            runs: { week: 4, month: 16, year: 180, all: 420 },
-            miles: { week: 18.5, month: 72, year: 820, all: 1950 },
-            runMinutes: { week: 180, month: 720, year: 8200, all: 19500 },
-            strengthSessions: { week: 5, month: 20, year: 220, all: 520 },
-            liftingMinutes: { week: 300, month: 1200, year: 13200, all: 31200 },
-            recoverySessions: { week: 2, month: 8, year: 90, all: 210 },
-            coldPlunges: { week: 1, month: 4, year: 45, all: 108 },
-            saunaSessions: { week: 1, month: 3, year: 35, all: 84 },
-            yogaSessions: { week: 0, month: 1, year: 10, all: 18 },
-            rides: { week: 3, month: 12, year: 140, all: 336 },
-            cycleMiles: { week: 45, month: 180, year: 2100, all: 5040 },
-            cycleMinutes: { week: 150, month: 600, year: 7000, all: 16800 }
-          }
-        },
-        {
-          uid: 'dummy2',
-          username: 'sarah_runs',
-          displayName: 'Sarah Chen',
-          photoURL: 'https://i.pravatar.cc/150?img=5',
-          masterStreak: 45,
-          strengthStreak: 8,
-          cardioStreak: 32,
-          recoveryStreak: 14,
-          weeksWon: 18,
-          totalWorkouts: 234,
-          stats: {
-            calories: { week: 5200, month: 21500, year: 245000, all: 620000 },
-            steps: { week: 92000, month: 380000, year: 4100000, all: 12000000 }
-          },
-          volume: {
-            runs: { week: 6, month: 24, year: 280, all: 680 },
-            miles: { week: 32, month: 128, year: 1480, all: 3600 },
-            runMinutes: { week: 320, month: 1280, year: 14800, all: 36000 },
-            strengthSessions: { week: 2, month: 8, year: 96, all: 230 },
-            liftingMinutes: { week: 90, month: 360, year: 4320, all: 10350 },
-            recoverySessions: { week: 3, month: 12, year: 140, all: 340 },
-            coldPlunges: { week: 1, month: 4, year: 46, all: 112 },
-            saunaSessions: { week: 1, month: 4, year: 48, all: 116 },
-            yogaSessions: { week: 1, month: 4, year: 46, all: 112 },
-            rides: { week: 2, month: 8, year: 96, all: 230 },
-            cycleMiles: { week: 30, month: 120, year: 1440, all: 3450 },
-            cycleMinutes: { week: 100, month: 400, year: 4800, all: 11500 }
-          }
-        },
-        {
-          uid: 'dummy3',
-          username: 'mike_lifts',
-          displayName: 'Mike Johnson',
-          photoURL: 'https://i.pravatar.cc/150?img=8',
-          masterStreak: 21,
-          strengthStreak: 35,
-          cardioStreak: 5,
-          recoveryStreak: 18,
-          weeksWon: 8,
-          totalWorkouts: 189,
-          stats: {
-            calories: { week: 3800, month: 15600, year: 172000, all: 380000 },
-            steps: { week: 42000, month: 175000, year: 1900000, all: 5200000 }
-          },
-          volume: {
-            runs: { week: 1, month: 4, year: 48, all: 115 },
-            miles: { week: 3, month: 12, year: 144, all: 345 },
-            runMinutes: { week: 30, month: 120, year: 1440, all: 3450 },
-            strengthSessions: { week: 6, month: 24, year: 288, all: 690 },
-            liftingMinutes: { week: 420, month: 1680, year: 20160, all: 48300 },
-            recoverySessions: { week: 3, month: 12, year: 144, all: 345 },
-            coldPlunges: { week: 2, month: 8, year: 96, all: 230 },
-            saunaSessions: { week: 1, month: 4, year: 48, all: 115 },
-            yogaSessions: { week: 0, month: 0, year: 0, all: 0 },
-            rides: { week: 1, month: 4, year: 48, all: 115 },
-            cycleMiles: { week: 15, month: 60, year: 720, all: 1725 },
-            cycleMinutes: { week: 50, month: 200, year: 2400, all: 5750 }
-          }
-        },
-        {
-          uid: 'dummy4',
-          username: 'emma_yoga',
-          displayName: 'Emma Williams',
-          photoURL: 'https://i.pravatar.cc/150?img=9',
-          masterStreak: 62,
-          strengthStreak: 12,
-          cardioStreak: 18,
-          recoveryStreak: 45,
-          weeksWon: 24,
-          totalWorkouts: 312,
-          stats: {
-            calories: { week: 2900, month: 12400, year: 142000, all: 340000 },
-            steps: { week: 55000, month: 230000, year: 2600000, all: 7800000 }
-          },
-          volume: {
-            runs: { week: 3, month: 12, year: 140, all: 336 },
-            miles: { week: 12, month: 48, year: 560, all: 1344 },
-            runMinutes: { week: 120, month: 480, year: 5600, all: 13440 },
-            strengthSessions: { week: 3, month: 12, year: 144, all: 345 },
-            liftingMinutes: { week: 135, month: 540, year: 6480, all: 15525 },
-            recoverySessions: { week: 7, month: 28, year: 336, all: 806 },
-            coldPlunges: { week: 1, month: 4, year: 48, all: 115 },
-            saunaSessions: { week: 1, month: 4, year: 48, all: 115 },
-            yogaSessions: { week: 5, month: 20, year: 240, all: 576 },
-            rides: { week: 4, month: 16, year: 192, all: 460 },
-            cycleMiles: { week: 60, month: 240, year: 2880, all: 6900 },
-            cycleMinutes: { week: 200, month: 800, year: 9600, all: 23000 }
-          }
-        },
-        {
-          uid: 'dummy5',
-          username: 'jake_athlete',
-          displayName: 'Jake Martinez',
-          photoURL: 'https://i.pravatar.cc/150?img=12',
-          masterStreak: 35,
-          strengthStreak: 22,
-          cardioStreak: 28,
-          recoveryStreak: 10,
-          weeksWon: 15,
-          totalWorkouts: 267,
-          stats: {
-            calories: { week: 6100, month: 24800, year: 285000, all: 720000 },
-            steps: { week: 78000, month: 320000, year: 3600000, all: 10500000 }
-          },
-          volume: {
-            runs: { week: 5, month: 20, year: 240, all: 576 },
-            miles: { week: 28, month: 112, year: 1344, all: 3225 },
-            runMinutes: { week: 280, month: 1120, year: 13440, all: 32250 },
-            strengthSessions: { week: 5, month: 20, year: 240, all: 576 },
-            liftingMinutes: { week: 350, month: 1400, year: 16800, all: 40320 },
-            recoverySessions: { week: 2, month: 8, year: 96, all: 230 },
-            coldPlunges: { week: 1, month: 4, year: 48, all: 115 },
-            saunaSessions: { week: 1, month: 4, year: 48, all: 115 },
-            yogaSessions: { week: 0, month: 0, year: 0, all: 0 },
-            rides: { week: 5, month: 20, year: 240, all: 576 },
-            cycleMiles: { week: 75, month: 300, year: 3600, all: 8640 },
-            cycleMinutes: { week: 250, month: 1000, year: 12000, all: 28800 }
-          }
-        },
-        {
-          uid: 'dummy6',
-          username: 'lisa_cardio',
-          displayName: 'Lisa Park',
-          photoURL: 'https://i.pravatar.cc/150?img=16',
-          masterStreak: 18,
-          strengthStreak: 6,
-          cardioStreak: 42,
-          recoveryStreak: 8,
-          weeksWon: 9,
-          totalWorkouts: 198,
-          stats: {
-            calories: { week: 4200, month: 17500, year: 195000, all: 465000 },
-            steps: { week: 105000, month: 420000, year: 4800000, all: 14000000 }
-          },
-          volume: {
-            runs: { week: 7, month: 28, year: 336, all: 806 },
-            miles: { week: 35, month: 140, year: 1680, all: 4032 },
-            runMinutes: { week: 350, month: 1400, year: 16800, all: 40320 },
-            strengthSessions: { week: 1, month: 4, year: 48, all: 115 },
-            liftingMinutes: { week: 45, month: 180, year: 2160, all: 5175 },
-            recoverySessions: { week: 2, month: 8, year: 96, all: 230 },
-            coldPlunges: { week: 0, month: 2, year: 24, all: 58 },
-            saunaSessions: { week: 1, month: 4, year: 48, all: 115 },
-            yogaSessions: { week: 1, month: 2, year: 24, all: 57 },
-            rides: { week: 6, month: 24, year: 288, all: 690 },
-            cycleMiles: { week: 90, month: 360, year: 4320, all: 10350 },
-            cycleMinutes: { week: 300, month: 1200, year: 14400, all: 34500 }
-          }
-        }
-      ];
-
-      // Fetch current user's real data
-      const [userActivities, userRecords, userHealthHistory] = await Promise.all([
-        getUserActivities(user.uid),
-        getPersonalRecords(user.uid),
-        getDailyHealthHistory(user.uid, 365) // Get full year of health data
-      ]);
-
-      // Calculate current user's stats from real data
-      const currentUserStats = calculateLeaderboardStats(
-        userActivities || [],
-        userHealthHistory || [],
-        userRecords
-      );
-
-      // Build current user entry with real stats
-      const currentUserEntry = {
-        uid: user.uid,
-        username: userProfile?.username || 'You',
-        displayName: userProfile?.displayName || 'You',
-        photoURL: userProfile?.photoURL,
-        ...currentUserStats,
-        challengeStats: userProfile?.challengeStats || null,
-        isCurrentUser: true
-      };
+      const isDemo = isDemoAccount(userProfile, user);
 
       let allUsers = [];
 
-      if (isAppReviewAccount) {
-        // For appreview account, use dummy friends + current user with dummy stats
-        allUsers = [
-          ...dummyFriends,
-          {
-            uid: user.uid,
-            username: userProfile?.username || 'You',
-            displayName: userProfile?.displayName || 'You',
-            photoURL: userProfile?.photoURL,
-            masterStreak: 24,
-            strengthStreak: 18,
-            cardioStreak: 14,
-            recoveryStreak: 9,
-            weeksWon: 10,
-            totalWorkouts: 145,
-            stats: {
-              calories: { week: 3800, month: 16200, year: 185000, all: 420000 },
-              steps: { week: 58000, month: 245000, year: 2800000, all: 8500000 }
-            },
-            volume: {
-              runs: { week: 4, month: 15, year: 175, all: 420 },
-              miles: { week: 20, month: 78, year: 910, all: 2184 },
-              runMinutes: { week: 200, month: 780, year: 9100, all: 21840 },
-              strengthSessions: { week: 4, month: 16, year: 192, all: 460 },
-              liftingMinutes: { week: 240, month: 960, year: 11520, all: 27600 },
-              recoverySessions: { week: 2, month: 9, year: 105, all: 252 },
-              coldPlunges: { week: 1, month: 3, year: 35, all: 84 },
-              saunaSessions: { week: 1, month: 4, year: 45, all: 108 },
-              yogaSessions: { week: 0, month: 2, year: 25, all: 60 },
-              rides: { week: 3, month: 11, year: 130, all: 312 },
-              cycleMiles: { week: 40, month: 150, year: 1750, all: 4200 },
-              cycleMinutes: { week: 130, month: 500, year: 5800, all: 13900 }
-            },
-            isCurrentUser: true
-          }
-        ];
+      if (isDemo) {
+        // Demo accounts: skip Firestore entirely. Friends come from the shared
+        // demo profile bank; the user's own row is computed from the same
+        // seeded activity/health history the rest of the app uses, so per-persona
+        // overrides (milahart vs jacemiller) flow through into ranking.
+        const demoFriends = getDemoLeaderboardFriends();
+        const demoActivities = getDemoActivities();
+        const demoHealthHistory = getDemoHealthHistory(365);
+        const demoUserData = getDemoUserData(userProfile?.username);
+        const demoUserStats = calculateLeaderboardStats(
+          demoActivities,
+          demoHealthHistory,
+          { personalRecords: demoUserData.personalRecords, streaks: demoUserData.streaks, weeksWon: demoUserData.personalRecords?.longestMasterStreak || 0 }
+        );
+        const demoUserEntry = {
+          uid: user.uid,
+          username: userProfile?.username || 'You',
+          displayName: userProfile?.displayName || 'You',
+          photoURL: userProfile?.photoURL,
+          ...demoUserStats,
+          challengeStats: getDemoChallengeStats(),
+          isCurrentUser: true,
+        };
+        allUsers = [...demoFriends, demoUserEntry];
       } else {
+        // Fetch current user's real data
+        const [userActivities, userRecords, userHealthHistory] = await Promise.all([
+          getUserActivities(user.uid),
+          getPersonalRecords(user.uid),
+          getDailyHealthHistory(user.uid, 365) // Get full year of health data
+        ]);
+
+        // Calculate current user's stats from real data
+        const currentUserStats = calculateLeaderboardStats(
+          userActivities || [],
+          userHealthHistory || [],
+          userRecords
+        );
+
+        // Build current user entry with real stats
+        const currentUserEntry = {
+          uid: user.uid,
+          username: userProfile?.username || 'You',
+          displayName: userProfile?.displayName || 'You',
+          photoURL: userProfile?.photoURL,
+          ...currentUserStats,
+          challengeStats: userProfile?.challengeStats || null,
+          isCurrentUser: true
+        };
+
         // For regular users, fetch real friends and their data
         const friends = await getFriends(user.uid);
 

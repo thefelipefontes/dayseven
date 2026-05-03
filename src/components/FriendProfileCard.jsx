@@ -220,7 +220,7 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
               className="rounded-xl p-2.5 mb-3 grid grid-cols-4 gap-1"
               style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
             >
-              <StreakPill value={bestMaster} label="Master" color="#FFD60A" />
+              <StreakPill value={bestMaster} label="Hybrid" color="#FFD60A" />
               <StreakPill value={bestStrength} label="Strength" color="#00FF94" />
               <StreakPill value={bestCardio} label="Cardio" color="#FF9500" />
               <StreakPill value={bestRecovery} label="Recovery" color="#00D1FF" />

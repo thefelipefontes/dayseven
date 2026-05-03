@@ -143,10 +143,11 @@ const DEMO_USER_OVERRIDES = {
     },
   },
   // Jace — strength-focused, heavier persona. Higher lifting volume, stronger
-  // PRs, longer master+strength streaks but lighter cardio/recovery cadence.
+  // PRs. Component streaks must all be ≥ master (14) since hybrid streak only
+  // increments on weeks where lifts + cardio + recovery goals are all met.
   jacemiller: {
     goals: { liftsPerWeek: 4 },
-    streaks: { master: 14, lifts: 14, cardio: 6, recovery: 4 },
+    streaks: { master: 14, lifts: 14, cardio: 14, recovery: 14 },
     personalRecords: {
       highestCalories: { value: 740, activityType: 'Running' },
       longestStrength: { value: 105, activityType: 'Strength Training' },
@@ -155,8 +156,8 @@ const DEMO_USER_OVERRIDES = {
       mostMilesWeek: 18.5,
       longestMasterStreak: 14,
       longestStrengthStreak: 18,
-      longestCardioStreak: 7,
-      longestRecoveryStreak: 5,
+      longestCardioStreak: 14,
+      longestRecoveryStreak: 14,
     },
   },
 };
@@ -271,80 +272,188 @@ export const getDemoHealthHistory = (days = 365) => {
   return out;
 };
 
-// Friends list for demo mode. Uids/usernames intentionally match the dummyFriends
-// in ActivityFeed.jsx so the leaderboard and feed badges reference the same people.
-// Photos: randomuser.me/api/portraits/{men|women}/{0-99}.jpg — modern stable
-// portraits keyed per index, free to hotlink, no auth, no API limit.
+// Friends + leaderboard data share a single source so a tap on a leaderboard
+// row resolves cleanly to the same person in the friends modal / FriendProfileCard.
+// Each persona is tuned so DIFFERENT friends top DIFFERENT categories — runner #1
+// in miles, lifter #1 in strengthSessions, yogi #1 in master streak, etc. — so
+// marketing screenshots show a rich, varied leaderboard regardless of which tab
+// is selected.
 //
-// Each record carries top-level streak counts + challengeStats so when the
-// FriendProfileCard opens for a dummy uid (whose Firestore doc returns null),
-// the component's friend-level fallbacks render real numbers instead of zeros.
-// FriendProfileCard reads these as: friend?.masterStreak / strengthStreak /
-// cardioStreak / recoveryStreak / longestMasterStreak / challengeStats.
+// `weekly` is per-week activity volume; period totals (week/month/year/all) are
+// expanded by simple multipliers below. Streaks/challenge stats are shown as-is.
+//
+// Photos: randomuser.me/api/portraits/{men|women}/{N}.jpg — stable, free to hotlink.
+const DEMO_FRIEND_PROFILES = [
+  // 1) Alex — balanced hybrid, mid-pack across the board.
+  { uid: 'dummy1', username: 'alex_fitness', displayName: 'Alex Thompson',
+    photoURL: 'https://randomuser.me/api/portraits/men/32.jpg',
+    streaks: { master: 8, strength: 10, cardio: 6, recovery: 5, longestMaster: 12 },
+    challengeStats: { accepted: 16, wins: 12, losses: 4, currentWinStreak: 2, longestWinStreak: 5 },
+    weeksWon: 6,
+    weekly: { calories: 4500, steps: 65000, runs: 3, miles: 14, runMinutes: 140, strengthSessions: 4, liftingMinutes: 240, recoverySessions: 2, coldPlunges: 1, saunaSessions: 1, yogaSessions: 0, rides: 3, cycleMiles: 45, cycleMinutes: 150 } },
+
+  // 2) Sarah — runner + challenge winner. #1 in challenge wins / longest win streak.
+  { uid: 'dummy2', username: 'sarah_runs', displayName: 'Sarah Chen',
+    photoURL: 'https://randomuser.me/api/portraits/women/44.jpg',
+    streaks: { master: 24, strength: 6, cardio: 28, recovery: 9, longestMaster: 30 },
+    challengeStats: { accepted: 22, wins: 15, losses: 7, currentWinStreak: 4, longestWinStreak: 8 },
+    weeksWon: 14,
+    weekly: { calories: 5200, steps: 92000, runs: 6, miles: 32, runMinutes: 320, strengthSessions: 2, liftingMinutes: 90, recoverySessions: 3, coldPlunges: 1, saunaSessions: 1, yogaSessions: 1, rides: 2, cycleMiles: 30, cycleMinutes: 100 } },
+
+  // 3) Mike — lifter. #1 in strengthSessions / liftingMinutes.
+  { uid: 'dummy3', username: 'mike_lifts', displayName: 'Mike Johnson',
+    photoURL: 'https://randomuser.me/api/portraits/men/68.jpg',
+    streaks: { master: 14, strength: 22, cardio: 4, recovery: 8, longestMaster: 18 },
+    challengeStats: { accepted: 20, wins: 14, losses: 6, currentWinStreak: 3, longestWinStreak: 6 },
+    weeksWon: 9,
+    weekly: { calories: 3700, steps: 38000, runs: 1, miles: 3, runMinutes: 30, strengthSessions: 6, liftingMinutes: 420, recoverySessions: 3, coldPlunges: 2, saunaSessions: 1, yogaSessions: 0, rides: 1, cycleMiles: 15, cycleMinutes: 50 } },
+
+  // 4) Emma — yogi. #1 in master streak / yogaSessions.
+  { uid: 'dummy4', username: 'emma_yoga', displayName: 'Emma Williams',
+    photoURL: 'https://randomuser.me/api/portraits/women/68.jpg',
+    streaks: { master: 32, strength: 8, cardio: 14, recovery: 28, longestMaster: 35 },
+    challengeStats: { accepted: 14, wins: 9, losses: 5, currentWinStreak: 1, longestWinStreak: 4 },
+    weeksWon: 18,
+    weekly: { calories: 2800, steps: 50000, runs: 2, miles: 8, runMinutes: 80, strengthSessions: 3, liftingMinutes: 135, recoverySessions: 6, coldPlunges: 1, saunaSessions: 1, yogaSessions: 5, rides: 4, cycleMiles: 60, cycleMinutes: 200 } },
+
+  // 5) Jake — overall powerhouse. #1 in calories.
+  { uid: 'dummy5', username: 'jake_athlete', displayName: 'Jake Martinez',
+    photoURL: 'https://randomuser.me/api/portraits/men/53.jpg',
+    streaks: { master: 18, strength: 16, cardio: 18, recovery: 6, longestMaster: 22 },
+    challengeStats: { accepted: 24, wins: 16, losses: 8, currentWinStreak: 2, longestWinStreak: 7 },
+    weeksWon: 11,
+    weekly: { calories: 6100, steps: 78000, runs: 5, miles: 28, runMinutes: 280, strengthSessions: 5, liftingMinutes: 350, recoverySessions: 2, coldPlunges: 1, saunaSessions: 1, yogaSessions: 0, rides: 5, cycleMiles: 75, cycleMinutes: 250 } },
+
+  // 6) Lisa — runner + step queen. #1 in steps / runs / miles / cardioStreak.
+  { uid: 'dummy6', username: 'lisa_cardio', displayName: 'Lisa Park',
+    photoURL: 'https://randomuser.me/api/portraits/women/22.jpg',
+    streaks: { master: 20, strength: 4, cardio: 32, recovery: 5, longestMaster: 24 },
+    challengeStats: { accepted: 14, wins: 10, losses: 4, currentWinStreak: 1, longestWinStreak: 5 },
+    weeksWon: 10,
+    weekly: { calories: 4400, steps: 105000, runs: 7, miles: 38, runMinutes: 380, strengthSessions: 1, liftingMinutes: 45, recoverySessions: 2, coldPlunges: 0, saunaSessions: 1, yogaSessions: 1, rides: 6, cycleMiles: 90, cycleMinutes: 300 } },
+
+  // 7) Noah — recovery specialist. #1 in recoverySessions / coldPlunges / saunaSessions.
+  { uid: 'dummy7', username: 'noah_climbs', displayName: 'Noah Reyes',
+    photoURL: 'https://randomuser.me/api/portraits/men/72.jpg',
+    streaks: { master: 11, strength: 12, cardio: 9, recovery: 18, longestMaster: 14 },
+    challengeStats: { accepted: 12, wins: 8, losses: 4, currentWinStreak: 0, longestWinStreak: 3 },
+    weeksWon: 5,
+    weekly: { calories: 3200, steps: 45000, runs: 2, miles: 7, runMinutes: 70, strengthSessions: 3, liftingMinutes: 180, recoverySessions: 8, coldPlunges: 4, saunaSessions: 4, yogaSessions: 0, rides: 1, cycleMiles: 12, cycleMinutes: 40 } },
+
+  // 8) Maya — strength runner-up. Tied for #1 currentWinStreak.
+  { uid: 'dummy8', username: 'maya_lifts', displayName: 'Maya Patel',
+    photoURL: 'https://randomuser.me/api/portraits/women/79.jpg',
+    streaks: { master: 12, strength: 18, cardio: 7, recovery: 12, longestMaster: 14 },
+    challengeStats: { accepted: 18, wins: 12, losses: 6, currentWinStreak: 5, longestWinStreak: 6 },
+    weeksWon: 8,
+    weekly: { calories: 4100, steps: 55000, runs: 2, miles: 9, runMinutes: 90, strengthSessions: 5, liftingMinutes: 360, recoverySessions: 3, coldPlunges: 1, saunaSessions: 1, yogaSessions: 3, rides: 2, cycleMiles: 25, cycleMinutes: 80 } },
+
+  // 9) Leo — cyclist. #1 in rides / cycleMiles / cycleMinutes. Tied for #1 currentWinStreak.
+  { uid: 'dummy9', username: 'leo_runner', displayName: 'Leo Hernandez',
+    photoURL: 'https://randomuser.me/api/portraits/men/15.jpg',
+    streaks: { master: 16, strength: 5, cardio: 22, recovery: 7, longestMaster: 19 },
+    challengeStats: { accepted: 19, wins: 11, losses: 8, currentWinStreak: 5, longestWinStreak: 4 },
+    weeksWon: 7,
+    weekly: { calories: 4900, steps: 60000, runs: 4, miles: 18, runMinutes: 180, strengthSessions: 1, liftingMinutes: 50, recoverySessions: 1, coldPlunges: 0, saunaSessions: 1, yogaSessions: 0, rides: 8, cycleMiles: 130, cycleMinutes: 430 } },
+
+  // 10) Kai — well-rounded #2 across multiple. High master streak.
+  { uid: 'dummy10', username: 'kai_movement', displayName: 'Kai Nguyen',
+    photoURL: 'https://randomuser.me/api/portraits/men/85.jpg',
+    streaks: { master: 22, strength: 10, cardio: 12, recovery: 14, longestMaster: 26 },
+    challengeStats: { accepted: 16, wins: 10, losses: 6, currentWinStreak: 3, longestWinStreak: 4 },
+    weeksWon: 12,
+    weekly: { calories: 3900, steps: 70000, runs: 3, miles: 12, runMinutes: 120, strengthSessions: 4, liftingMinutes: 220, recoverySessions: 4, coldPlunges: 1, saunaSessions: 2, yogaSessions: 2, rides: 3, cycleMiles: 40, cycleMinutes: 130 } },
+];
+
+// Period multipliers: weekly numbers expanded into month/year/all totals so the
+// leaderboard time-range dropdown shows plausible scaling without recomputing.
+const PERIOD_MULTIPLIERS = { week: 1, month: 4, year: 50, all: 120 };
+
+const expandToPeriods = (weeklyValue) => {
+  const out = {};
+  for (const [period, m] of Object.entries(PERIOD_MULTIPLIERS)) {
+    out[period] = +(weeklyValue * m).toFixed(weeklyValue % 1 === 0 ? 0 : 1);
+  }
+  return out;
+};
+
+// Friends list (Friends modal, FriendProfileCard fallback). Trimmed to the
+// fields those surfaces actually read.
 export const getDemoFriends = () => {
   const addedAt = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-  return [
-    {
-      uid: 'dummy1', username: 'alex_fitness', displayName: 'Alex Thompson',
-      photoURL: 'https://randomuser.me/api/portraits/men/32.jpg', addedAt,
-      masterStreak: 8, strengthStreak: 8, cardioStreak: 6, recoveryStreak: 4, longestMasterStreak: 12,
-      challengeStats: { accepted: 16, wins: 12, losses: 4, currentWinStreak: 2, longestWinStreak: 5 },
-    },
-    {
-      uid: 'dummy2', username: 'sarah_runs', displayName: 'Sarah Chen',
-      photoURL: 'https://randomuser.me/api/portraits/women/44.jpg', addedAt,
-      masterStreak: 5, strengthStreak: 4, cardioStreak: 9, recoveryStreak: 3, longestMasterStreak: 7,
-      challengeStats: { accepted: 11, wins: 9, losses: 2, currentWinStreak: 4, longestWinStreak: 4 },
-    },
-    {
-      uid: 'dummy3', username: 'mike_lifts', displayName: 'Mike Johnson',
-      photoURL: 'https://randomuser.me/api/portraits/men/68.jpg', addedAt,
-      masterStreak: 14, strengthStreak: 14, cardioStreak: 5, recoveryStreak: 6, longestMasterStreak: 18,
-      challengeStats: { accepted: 22, wins: 15, losses: 7, currentWinStreak: 1, longestWinStreak: 6 },
-    },
-    {
-      uid: 'dummy4', username: 'emma_yoga', displayName: 'Emma Williams',
-      photoURL: 'https://randomuser.me/api/portraits/women/68.jpg', addedAt,
-      masterStreak: 3, strengthStreak: 2, cardioStreak: 5, recoveryStreak: 7, longestMasterStreak: 6,
-      challengeStats: { accepted: 9, wins: 6, losses: 3, currentWinStreak: 2, longestWinStreak: 3 },
-    },
-    {
-      uid: 'dummy5', username: 'jake_athlete', displayName: 'Jake Martinez',
-      photoURL: 'https://randomuser.me/api/portraits/men/53.jpg', addedAt,
-      masterStreak: 9, strengthStreak: 7, cardioStreak: 7, recoveryStreak: 5, longestMasterStreak: 11,
-      challengeStats: { accepted: 16, wins: 11, losses: 5, currentWinStreak: 3, longestWinStreak: 4 },
-    },
-    {
-      uid: 'dummy6', username: 'lisa_cardio', displayName: 'Lisa Park',
-      photoURL: 'https://randomuser.me/api/portraits/women/22.jpg', addedAt,
-      masterStreak: 6, strengthStreak: 5, cardioStreak: 11, recoveryStreak: 4, longestMasterStreak: 9,
-      challengeStats: { accepted: 12, wins: 8, losses: 4, currentWinStreak: 1, longestWinStreak: 4 },
-    },
-  ];
+  return DEMO_FRIEND_PROFILES.map(p => ({
+    uid: p.uid, username: p.username, displayName: p.displayName,
+    photoURL: p.photoURL, addedAt,
+    masterStreak: p.streaks.master,
+    strengthStreak: p.streaks.strength,
+    cardioStreak: p.streaks.cardio,
+    recoveryStreak: p.streaks.recovery,
+    longestMasterStreak: p.streaks.longestMaster,
+    challengeStats: p.challengeStats,
+  }));
+};
+
+// Leaderboard rows for demo accounts. Same identity as getDemoFriends + the
+// per-period stats/volume shape that ActivityFeed.loadLeaderboard expects.
+export const getDemoLeaderboardFriends = () => {
+  return DEMO_FRIEND_PROFILES.map(p => {
+    const w = p.weekly;
+    const totalWorkoutsWeek = w.runs + w.strengthSessions + w.recoverySessions + w.rides;
+    return {
+      uid: p.uid, username: p.username, displayName: p.displayName, photoURL: p.photoURL,
+      masterStreak: p.streaks.master,
+      strengthStreak: p.streaks.strength,
+      cardioStreak: p.streaks.cardio,
+      recoveryStreak: p.streaks.recovery,
+      longestMasterStreak: p.streaks.longestMaster,
+      weeksWon: p.weeksWon,
+      totalWorkouts: totalWorkoutsWeek * PERIOD_MULTIPLIERS.all,
+      challengeStats: p.challengeStats,
+      stats: {
+        calories: expandToPeriods(w.calories),
+        steps: expandToPeriods(w.steps),
+      },
+      volume: {
+        runs: expandToPeriods(w.runs),
+        miles: expandToPeriods(w.miles),
+        runMinutes: expandToPeriods(w.runMinutes),
+        strengthSessions: expandToPeriods(w.strengthSessions),
+        liftingMinutes: expandToPeriods(w.liftingMinutes),
+        recoverySessions: expandToPeriods(w.recoverySessions),
+        coldPlunges: expandToPeriods(w.coldPlunges),
+        saunaSessions: expandToPeriods(w.saunaSessions),
+        yogaSessions: expandToPeriods(w.yogaSessions),
+        rides: expandToPeriods(w.rides),
+        cycleMiles: expandToPeriods(w.cycleMiles),
+        cycleMinutes: expandToPeriods(w.cycleMinutes),
+      },
+    };
+  });
 };
 
 // Mock incoming friend requests for the Friends modal. Same shape as getFriendRequests().
 // `fromUser` carries the same friend-level stat fields as getDemoFriends so a tap
 // on the request opens a populated FriendProfileCard, not a stat-zero one.
+// Uids start at dummy11 since dummy1-10 are accepted friends in getDemoFriends.
 export const getDemoFriendRequests = () => {
   const createdAt = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
   return [
     {
       id: 'demo-req-1',
-      fromUid: 'dummy7', toUid: 'demo-uid', status: 'pending', createdAt,
+      fromUid: 'dummy11', toUid: 'demo-uid', status: 'pending', createdAt,
       fromUser: {
-        uid: 'dummy7', username: 'noah_climbs', displayName: 'Noah Reyes',
-        photoURL: 'https://randomuser.me/api/portraits/men/72.jpg',
+        uid: 'dummy11', username: 'ryan_lifts', displayName: 'Ryan Cooper',
+        photoURL: 'https://randomuser.me/api/portraits/men/41.jpg',
         masterStreak: 4, strengthStreak: 3, cardioStreak: 4, recoveryStreak: 2, longestMasterStreak: 5,
         challengeStats: { accepted: 6, wins: 4, losses: 2, currentWinStreak: 2, longestWinStreak: 3 },
       },
     },
     {
       id: 'demo-req-2',
-      fromUid: 'dummy8', toUid: 'demo-uid', status: 'pending', createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+      fromUid: 'dummy12', toUid: 'demo-uid', status: 'pending', createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
       fromUser: {
-        uid: 'dummy8', username: 'maya_lifts', displayName: 'Maya Patel',
-        photoURL: 'https://randomuser.me/api/portraits/women/79.jpg',
+        uid: 'dummy12', username: 'olivia_runs', displayName: 'Olivia Brooks',
+        photoURL: 'https://randomuser.me/api/portraits/women/65.jpg',
         masterStreak: 6, strengthStreak: 5, cardioStreak: 6, recoveryStreak: 3, longestMasterStreak: 8,
         challengeStats: { accepted: 10, wins: 7, losses: 3, currentWinStreak: 1, longestWinStreak: 3 },
       },
@@ -357,11 +466,11 @@ export const getDemoSentRequests = () => {
   return [
     {
       id: 'demo-sent-1',
-      fromUid: 'demo-uid', toUid: 'dummy9', status: 'pending',
+      fromUid: 'demo-uid', toUid: 'dummy13', status: 'pending',
       createdAt: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
       toUser: {
-        uid: 'dummy9', username: 'leo_runner', displayName: 'Leo Hernandez',
-        photoURL: 'https://randomuser.me/api/portraits/men/15.jpg',
+        uid: 'dummy13', username: 'theo_athlete', displayName: 'Theo Walker',
+        photoURL: 'https://randomuser.me/api/portraits/men/26.jpg',
         masterStreak: 4, strengthStreak: 4, cardioStreak: 5, recoveryStreak: 2, longestMasterStreak: 6,
         challengeStats: { accepted: 9, wins: 5, losses: 4, currentWinStreak: 1, longestWinStreak: 2 },
       },

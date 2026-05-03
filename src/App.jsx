@@ -4292,17 +4292,20 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
     const lowerBody = new Set(FOCUS_AREA_GROUPS['Lower Body']);
     activities.forEach(a => {
       const cat = getEffectiveCategory(a);
-      if (cat === 'lifting') {
+      // 'lifting+cardio' counts toward BOTH (matches streak/share dual-count rule).
+      if (cat === 'lifting' || cat === 'lifting+cardio') {
         const name = a.strengthType || a.subtype || 'Strength Training';
         strengthCounts[name] = (strengthCounts[name] || 0) + 1;
         workoutCounts[a.type] = (workoutCounts[a.type] || 0) + 1;
         // Count muscle groups for top focus areas
         const areas = normalizeFocusAreas(a.focusAreas || (a.focusArea ? [a.focusArea] : []));
         if (areas) areas.forEach(mg => { muscleGroupCounts[mg] = (muscleGroupCounts[mg] || 0) + 1; });
-      } else if (cat === 'cardio') {
+      }
+      if (cat === 'cardio' || cat === 'lifting+cardio') {
         cardioCounts[a.type] = (cardioCounts[a.type] || 0) + 1;
         workoutCounts[a.type] = (workoutCounts[a.type] || 0) + 1;
-      } else if (cat === 'recovery') {
+      }
+      if (cat === 'recovery') {
         recoveryCounts[a.type] = (recoveryCounts[a.type] || 0) + 1;
       }
     });
@@ -4341,7 +4344,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
     , null);
 
     // Days worked out (only count days with strength/cardio activities)
-    const workoutActivities = activities.filter(a => { const cat = getEffectiveCategory(a); return cat === 'lifting' || cat === 'cardio'; });
+    const workoutActivities = activities.filter(a => { const cat = getEffectiveCategory(a); return cat === 'lifting' || cat === 'cardio' || cat === 'lifting+cardio'; });
     const uniqueDays = new Set(workoutActivities.map(a => a.date)).size;
 
     // Total duration
@@ -4363,7 +4366,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
       totalMinutes,
       totalCalories,
       totalDistance,
-      totalWorkouts: activities.filter(a => { const cat = getEffectiveCategory(a); return cat === 'lifting' || cat === 'cardio'; }).length,
+      totalWorkouts: activities.filter(a => { const cat = getEffectiveCategory(a); return cat === 'lifting' || cat === 'cardio' || cat === 'lifting+cardio'; }).length,
       topStrength: topMuscles.slice(0, 2),
       topCardio: Object.entries(cardioCounts).sort((a, b) => b[1] - a[1]).slice(0, 2),
       topRecovery: Object.entries(recoveryCounts).sort((a, b) => b[1] - a[1]).slice(0, 2),
@@ -12235,6 +12238,20 @@ export default function DaySevenApp() {
   useEffect(() => { userProfileRef.current = userProfile; }, [userProfile]);
   const userRef = useRef(user);
   useEffect(() => { userRef.current = user; }, [user]);
+
+  // Force Pro for accounts whose Firestore doc has `forceProTier: true` (comped
+  // friends, marketing partners). OR'd with the live RevenueCat result so a real
+  // subscription still wins if both are present. Use this everywhere we'd
+  // otherwise call setIsPro(rcStatus) directly.
+  const applyProStatus = useCallback((rcStatus) => {
+    const override = userProfileRef.current?.forceProTier === true;
+    setIsPro(rcStatus || override);
+  }, []);
+  // Re-apply when the profile flips on/off so existing sessions pick up the override
+  // without a sign-out (e.g. after running setProOverride.js while signed in).
+  useEffect(() => {
+    if (userProfile?.forceProTier === true) setIsPro(true);
+  }, [userProfile?.forceProTier]);
   // Persists Activity Feed data across tab switches so re-mounts hydrate instantly
   // instead of flashing a spinner. Tagged with uid so a different signed-in user
   // doesn't see the previous user's cache.
@@ -13312,9 +13329,9 @@ export default function DaySevenApp() {
               const rcInitialized = await initializeRevenueCat(user.uid);
               if (rcInitialized) {
                 const proStatus = await checkProStatus();
-                setIsPro(proStatus);
+                applyProStatus(proStatus);
                 addCustomerInfoListener(({ isPro: newIsPro }) => {
-                  setIsPro(newIsPro);
+                  applyProStatus(newIsPro);
                 });
               }
             } catch (rcError) {
@@ -15585,7 +15602,7 @@ export default function DaySevenApp() {
             const { purchased } = await presentPaywall({ offeringIdentifier: 'Welcome Offer' });
             if (purchased) {
               const proStatus = await checkProStatus();
-              setIsPro(proStatus);
+              applyProStatus(proStatus);
             }
           } catch (e) {
             console.error('[App] Post-onboarding paywall error:', e);
@@ -15960,7 +15977,7 @@ export default function DaySevenApp() {
                     const { purchased } = await presentPaywall();
                     if (purchased) {
                       const proStatus = await checkProStatus();
-                      setIsPro(proStatus);
+                      applyProStatus(proStatus);
                     }
                   }}
                   onUseStreakShield={(weekKey) => {
@@ -16045,7 +16062,7 @@ export default function DaySevenApp() {
                     const { purchased } = await presentPaywall();
                     if (purchased) {
                       const proStatus = await checkProStatus();
-                      setIsPro(proStatus);
+                      applyProStatus(proStatus);
                     }
                   }}
                 />
@@ -16092,7 +16109,7 @@ export default function DaySevenApp() {
                     const { purchased } = await presentPaywall();
                     if (purchased) {
                       const proStatus = await checkProStatus();
-                      setIsPro(proStatus);
+                      applyProStatus(proStatus);
                     }
                   }}
                   onShareStamp={(activity, routeCoords) => {
@@ -16206,13 +16223,13 @@ export default function DaySevenApp() {
                 const { purchased } = await presentPaywall();
                 if (purchased) {
                   const proStatus = await checkProStatus();
-                  setIsPro(proStatus);
+                  applyProStatus(proStatus);
                 }
               }}
               onPresentCustomerCenter={presentCustomerCenter}
               onRestorePurchases={async () => {
                 const { isPro: restoredPro } = await restorePurchases();
-                setIsPro(restoredPro);
+                applyProStatus(restoredPro);
               }}
               onToggleVacationMode={() => {
                 const vm = userData.vacationMode || {};
@@ -16569,7 +16586,7 @@ export default function DaySevenApp() {
           const { purchased } = await presentPaywall();
           if (purchased) {
             const proStatus = await checkProStatus();
-            setIsPro(proStatus);
+            applyProStatus(proStatus);
           }
         }}
         onCreated={() => {
@@ -16680,13 +16697,16 @@ export default function DaySevenApp() {
           const { purchased } = await presentPaywall();
           if (purchased) {
             const proStatus = await checkProStatus();
-            setIsPro(proStatus);
+            applyProStatus(proStatus);
           }
         }}
         onWeekChange={(range) => setShareWeekRange(range)}
         onMonthChange={(range) => setShareMonthRange(range)}
         stats={(() => {
-          // Determine which week to use for stats
+          // Determine which week to use for stats. Default mirrors the ShareModal's
+          // smart default (Sun–Wed → last week, Thu–Sat → this week) so the very first
+          // render matches the dropdown label — without this the modal flashed all
+          // zeros on open until ShareModal's useEffect set shareWeekRange.
           const getWeekRange = () => {
             if (shareWeekRange?.startDate && shareWeekRange?.endDate) {
               // Convert Date objects to strings if needed
@@ -16701,10 +16721,13 @@ export default function DaySevenApp() {
                 endStr: formatDateStr(shareWeekRange.endDate)
               };
             }
-            // Default to current week (Sunday - Saturday)
             const today = new Date();
             const weekStart = new Date(today);
-            weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+            weekStart.setDate(weekStart.getDate() - weekStart.getDay()); // this Sunday
+            // Sun (0) – Wed (3): default to LAST week (matches ShareModal smart default)
+            if (today.getDay() <= 3) {
+              weekStart.setDate(weekStart.getDate() - 7);
+            }
             const weekEnd = new Date(weekStart);
             weekEnd.setDate(weekStart.getDate() + 6);
             return {
@@ -16715,7 +16738,9 @@ export default function DaySevenApp() {
           const weekRange = getWeekRange();
           const weekActivitiesForShare = activities.filter(a => a.date >= weekRange.startStr && a.date <= weekRange.endStr);
 
-          // Helper to determine effective category respecting countToward
+          // Helper to determine effective category respecting countToward.
+          // Mirrors the canonical getActivityCategory at the top of App so dual-count
+          // (Circuit + manually-tagged 'lifting+cardio') flows through to the loops below.
           const getShareCategory = (a) => {
             if (a.countToward) {
               if (a.countToward === 'strength') return 'lifting';
@@ -16730,8 +16755,21 @@ export default function DaySevenApp() {
             if (['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
             return 'other';
           };
+          // 'lifting+cardio' counts toward BOTH categories — same dual-count rule as
+          // recalculateStreaksFromHistory. Without this the share modal undercounts
+          // weeks where the user hit lifting/cardio goals via Circuit-style workouts,
+          // breaking active streaks + weeksWon (issue: hybrid streak read 1 instead of 7).
+          const countsLifts = (a) => { const c = getShareCategory(a); return c === 'lifting' || c === 'lifting+cardio'; };
+          const countsCardio = (a) => { const c = getShareCategory(a); return c === 'cardio' || c === 'lifting+cardio'; };
+          const countsRecovery = (a) => getShareCategory(a) === 'recovery';
 
-          // Calculate historical streaks at the time of the selected week
+          // Calculate historical streaks at the time of the selected week.
+          // Mirrors recalculateStreaksFromHistory: respects streak shields (count as
+          // goal-met) and vacation weeks (skipped — neither break nor extend). Without
+          // these the share card disagreed with the live UI for any user who'd ever
+          // shielded or vacationed (e.g. live=7 / share=1 if a shield landed mid-streak).
+          const shieldedWeeks = userData?.streakShield?.shieldedWeeks || [];
+          const vacationWeeks = userData?.vacationMode?.vacationWeeks || [];
           const calculateHistoricalStreaks = () => {
             const goals = userData.goals;
 
@@ -16750,10 +16788,9 @@ export default function DaySevenApp() {
                 weekMap[weekKey] = { lifts: 0, cardio: 0, recovery: 0 };
               }
 
-              const cat = getShareCategory(a);
-              if (cat === 'lifting') weekMap[weekKey].lifts++;
-              else if (cat === 'cardio') weekMap[weekKey].cardio++;
-              else if (cat === 'recovery') weekMap[weekKey].recovery++;
+              if (countsLifts(a)) weekMap[weekKey].lifts++;
+              if (countsCardio(a)) weekMap[weekKey].cardio++;
+              if (countsRecovery(a)) weekMap[weekKey].recovery++;
             });
 
             // Calculate streaks going backwards from the week BEFORE the selected week
@@ -16770,11 +16807,20 @@ export default function DaySevenApp() {
             // Check consecutive weeks going backwards from the week before the selected week
             for (let i = 0; i < 200; i++) {
               const weekKey = `${previousWeekDate.getFullYear()}-${String(previousWeekDate.getMonth() + 1).padStart(2, '0')}-${String(previousWeekDate.getDate()).padStart(2, '0')}`;
+              const isShielded = shieldedWeeks.includes(weekKey);
+              const isVacation = vacationWeeks.includes(weekKey);
+
+              // Vacation: streak stays alive but doesn't increment — skip
+              if (isVacation) {
+                previousWeekDate.setDate(previousWeekDate.getDate() - 7);
+                continue;
+              }
+
               const weekData = weekMap[weekKey] || { lifts: 0, cardio: 0, recovery: 0 };
 
-              const liftsGoalMet = weekData.lifts >= goals.liftsPerWeek;
-              const cardioGoalMet = weekData.cardio >= goals.cardioPerWeek;
-              const recoveryGoalMet = weekData.recovery >= goals.recoveryPerWeek;
+              const liftsGoalMet = isShielded || weekData.lifts >= goals.liftsPerWeek;
+              const cardioGoalMet = isShielded || weekData.cardio >= goals.cardioPerWeek;
+              const recoveryGoalMet = isShielded || weekData.recovery >= goals.recoveryPerWeek;
 
               if (liftsAlive && liftsGoalMet) strengthStreak++;
               else liftsAlive = false;
@@ -16800,19 +16846,31 @@ export default function DaySevenApp() {
               return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
             })();
             const selectedWeekData = weekMap[selectedWeekKey] || { lifts: 0, cardio: 0, recovery: 0 };
+            const selectedShielded = shieldedWeeks.includes(selectedWeekKey);
+            const selectedVacation = vacationWeeks.includes(selectedWeekKey);
 
-            if (selectedWeekData.lifts >= goals.liftsPerWeek) {
-              strengthStreak = liftsAlive ? strengthStreak + 1 : 1;
-            }
-            if (selectedWeekData.cardio >= goals.cardioPerWeek) {
-              cardioStreak = cardioAlive ? cardioStreak + 1 : 1;
-            }
-            if (selectedWeekData.recovery >= goals.recoveryPerWeek) {
-              recoveryStreak = recoveryAlive ? recoveryStreak + 1 : 1;
-            }
-            const allSelectedMet = selectedWeekData.lifts >= goals.liftsPerWeek && selectedWeekData.cardio >= goals.cardioPerWeek && selectedWeekData.recovery >= goals.recoveryPerWeek;
-            if (allSelectedMet) {
-              masterStreak = (liftsAlive && cardioAlive && recoveryAlive) ? masterStreak + 1 : 1;
+            // Vacation weeks freeze (don't add to streak but don't reset).
+            // Use `> 0` (truthy on count), NOT the alive flag — alive flips false the
+            // instant the backwards loop hits any broken week, even after a long
+            // intact recent chain. Live recalc uses the same count-truthy check.
+            if (!selectedVacation) {
+              if (selectedShielded || selectedWeekData.lifts >= goals.liftsPerWeek) {
+                strengthStreak = strengthStreak > 0 ? strengthStreak + 1 : 1;
+              }
+              if (selectedShielded || selectedWeekData.cardio >= goals.cardioPerWeek) {
+                cardioStreak = cardioStreak > 0 ? cardioStreak + 1 : 1;
+              }
+              if (selectedShielded || selectedWeekData.recovery >= goals.recoveryPerWeek) {
+                recoveryStreak = recoveryStreak > 0 ? recoveryStreak + 1 : 1;
+              }
+              const allSelectedMet = selectedShielded || (
+                selectedWeekData.lifts >= goals.liftsPerWeek &&
+                selectedWeekData.cardio >= goals.cardioPerWeek &&
+                selectedWeekData.recovery >= goals.recoveryPerWeek
+              );
+              if (allSelectedMet) {
+                masterStreak = masterStreak > 0 ? masterStreak + 1 : 1;
+              }
             }
 
             return { masterStreak, strengthStreak, cardioStreak, recoveryStreak };
@@ -16846,17 +16904,28 @@ export default function DaySevenApp() {
               const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
               const weekEndStr = `${weekEnd.getFullYear()}-${String(weekEnd.getMonth() + 1).padStart(2, '0')}-${String(weekEnd.getDate()).padStart(2, '0')}`;
 
+              const isShielded = shieldedWeeks.includes(weekStartStr);
+              const isVacation = vacationWeeks.includes(weekStartStr);
+              if (isVacation) {
+                weeks.push(true); // vacation freezes — render as won so the strip doesn't read as a miss
+                continue;
+              }
               const weekActivities = activities.filter(a => a.date >= weekStartStr && a.date <= weekEndStr);
-              const lifts = weekActivities.filter(a => getShareCategory(a) === 'lifting').length;
-              const cardio = weekActivities.filter(a => getShareCategory(a) === 'cardio').length;
-              const recovery = weekActivities.filter(a => getShareCategory(a) === 'recovery').length;
+              const lifts = weekActivities.filter(countsLifts).length;
+              const cardio = weekActivities.filter(countsCardio).length;
+              const recovery = weekActivities.filter(countsRecovery).length;
 
-              const won = lifts >= goals.liftsPerWeek && cardio >= goals.cardioPerWeek && recovery >= goals.recoveryPerWeek;
+              const won = isShielded || (
+                lifts >= goals.liftsPerWeek &&
+                cardio >= goals.cardioPerWeek &&
+                recovery >= goals.recoveryPerWeek
+              );
               weeks.push(won);
             }
             return weeks.reverse(); // oldest to newest
           })(),
-          // Total weeks won (up to and including selected week)
+          // Total weeks won (up to and including selected week). Shielded weeks
+          // count as won; vacation weeks are excluded from the count entirely.
           weeksWon: (() => {
             const goals = userData.goals;
             const weekMap = {};
@@ -16875,23 +16944,31 @@ export default function DaySevenApp() {
                 weekMap[weekKey] = { lifts: 0, cardio: 0, recovery: 0 };
               }
 
-              const cat = getShareCategory(a);
-              if (cat === 'lifting') weekMap[weekKey].lifts++;
-              else if (cat === 'cardio') weekMap[weekKey].cardio++;
-              else if (cat === 'recovery') weekMap[weekKey].recovery++;
+              if (countsLifts(a)) weekMap[weekKey].lifts++;
+              if (countsCardio(a)) weekMap[weekKey].cardio++;
+              if (countsRecovery(a)) weekMap[weekKey].recovery++;
             });
 
-            // Count weeks where all goals were met
-            return Object.values(weekMap).filter(w =>
-              w.lifts >= goals.liftsPerWeek &&
-              w.cardio >= goals.cardioPerWeek &&
-              w.recovery >= goals.recoveryPerWeek
-            ).length;
+            // Union: weeks with activity OR shielded weeks (shielded weeks may have no activity)
+            const allWeekKeys = new Set([...Object.keys(weekMap), ...shieldedWeeks]);
+            let count = 0;
+            allWeekKeys.forEach(weekKey => {
+              if (vacationWeeks.includes(weekKey)) return; // vacation weeks excluded
+              if (weekKey > weekRange.endStr) return; // never count weeks past selected
+              if (shieldedWeeks.includes(weekKey)) { count++; return; }
+              const w = weekMap[weekKey] || { lifts: 0, cardio: 0, recovery: 0 };
+              if (
+                w.lifts >= goals.liftsPerWeek &&
+                w.cardio >= goals.cardioPerWeek &&
+                w.recovery >= goals.recoveryPerWeek
+              ) count++;
+            });
+            return count;
           })(),
           // Weekly stats - use selected week or current week
-          weeklyLifts: weekActivitiesForShare.filter(a => getShareCategory(a) === 'lifting').length,
-          weeklyCardio: weekActivitiesForShare.filter(a => getShareCategory(a) === 'cardio').length,
-          weeklyRecovery: weekActivitiesForShare.filter(a => getShareCategory(a) === 'recovery').length,
+          weeklyLifts: weekActivitiesForShare.filter(countsLifts).length,
+          weeklyCardio: weekActivitiesForShare.filter(countsCardio).length,
+          weeklyRecovery: weekActivitiesForShare.filter(countsRecovery).length,
           liftsGoal: userData.goals.liftsPerWeek,
           cardioGoal: userData.goals.cardioPerWeek,
           recoveryGoal: userData.goals.recoveryPerWeek,
@@ -16938,9 +17015,9 @@ export default function DaySevenApp() {
             const monthlyActivities = activities.filter(a => a.date >= monthStart && a.date <= monthEnd);
 
             // Calculate monthly session counts
-            const monthlyLifts = monthlyActivities.filter(a => getShareCategory(a) === 'lifting').length;
-            const monthlyCardio = monthlyActivities.filter(a => getShareCategory(a) === 'cardio').length;
-            const monthlyRecovery = monthlyActivities.filter(a => getShareCategory(a) === 'recovery').length;
+            const monthlyLifts = monthlyActivities.filter(countsLifts).length;
+            const monthlyCardio = monthlyActivities.filter(countsCardio).length;
+            const monthlyRecovery = monthlyActivities.filter(countsRecovery).length;
 
             // Calculate days active (unique days with activities)
             const monthlyDaysActive = new Set(monthlyActivities.map(a => a.date)).size;
@@ -16996,9 +17073,9 @@ export default function DaySevenApp() {
 
             weeksInMonth.forEach(week => {
               const weekActivities = activities.filter(a => a.date >= week.startStr && a.date <= week.endStr);
-              const lifts = weekActivities.filter(a => getShareCategory(a) === 'lifting').length;
-              const cardio = weekActivities.filter(a => getShareCategory(a) === 'cardio').length;
-              const recovery = weekActivities.filter(a => getShareCategory(a) === 'recovery').length;
+              const lifts = weekActivities.filter(countsLifts).length;
+              const cardio = weekActivities.filter(countsCardio).length;
+              const recovery = weekActivities.filter(countsRecovery).length;
 
               if (lifts >= goals.liftsPerWeek) liftWeeksHit++;
               if (cardio >= goals.cardioPerWeek) cardioWeeksHit++;
@@ -17199,7 +17276,7 @@ export default function DaySevenApp() {
             const { purchased } = await presentPaywall();
             if (purchased) {
               const proStatus = await checkProStatus();
-              setIsPro(proStatus);
+              applyProStatus(proStatus);
             }
           }}
           onOpenChallenge={(friend) => {

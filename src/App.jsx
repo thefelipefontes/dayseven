@@ -12889,6 +12889,17 @@ export default function DaySevenApp() {
     setUnreadFeedCount(0);
     setIsPro(false);
     setDevAuthEmail(null);
+    // Close any open modals + reset to home tab so the next sign-in lands on a
+    // clean Home, not the Settings overlay (which would render on top of Home
+    // and leak Home's pull-to-refresh through the modal).
+    setShowSettings(false);
+    setShowShare(false);
+    setShowEditGoals(false);
+    setShowChangePassword(false);
+    setShowDeleteAccount(false);
+    setShowAddActivity(false);
+    setShowTour(false);
+    setActiveTab('home');
 
     // Then attempt actual sign out in background (don't block UI)
     (async () => {

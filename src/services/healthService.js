@@ -639,7 +639,10 @@ export async function fetchWorkoutRoute(healthKitUUID, startDate) {
       15000,
       'Route query timed out'
     );
-    // Validate coordinates — filter out any with invalid lat/lng
+    // Validate coordinates — filter out any with invalid lat/lng. Outlier
+    // handling lives at the rendering layer (StaticRouteMap) so the polyline
+    // can still draw every recorded point while the map's zoom box focuses
+    // on the dense cluster.
     const coords = (result.coordinates || []).filter(c =>
       c && typeof c.lat === 'number' && typeof c.lng === 'number' &&
       isFinite(c.lat) && isFinite(c.lng)

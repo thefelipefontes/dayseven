@@ -5396,10 +5396,13 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
     );
   };
 
-  // Static route map for stamp
+  // Static route map for stamp — same primitives RouteMapView's preview uses.
+  // Kept deliberately simple: anything fancier (onError fallbacks, underlays,
+  // pre-fetched blobs) has so far broken html-to-image's canvas capture in
+  // WKWebView. Match RouteMapView byte-for-byte to keep behavior consistent.
   const StaticRouteMap = ({ coords, width, height, color, transparent }) => {
     if (!coords || coords.length < 2) return null;
-    const fit = bestFit(coords, width, height, 20);
+    const fit = bestFit(coords, width, height);
     const { tiles, pts } = makeTiles(coords, width, height, fit.z, fit.cp, true, 0);
 
     return (
@@ -5820,7 +5823,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
                 <StaticRouteMap
                   coords={routeCoords}
                   width={230}
-                  height={140}
+                  height={200}
                   color={categoryColor}
                   transparent={isTransparent}
                 />

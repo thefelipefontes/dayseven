@@ -7,7 +7,7 @@ import { db } from './firebase';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import ActivityIcon from './components/ActivityIcon';
 import FriendProfileCard from './components/FriendProfileCard';
-import { isDemoAccount, getDemoLeaderboardFriends, getDemoActivities, getDemoHealthHistory, getDemoUserData, getDemoChallengeStats } from './demoData';
+import { isDemoAccount, getDemoLeaderboardFriends, getDemoActivities, getDemoHealthHistory, getDemoUserData, getDemoChallengeStats, getDemoUserLeaderboardOverride } from './demoData';
 
 // Convert a Date to YYYY-MM-DD string in local timezone (avoids UTC date shifting)
 const toLocalDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -1614,9 +1614,10 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
 
       if (isDemo) {
         // Demo accounts: skip Firestore entirely. Friends come from the shared
-        // demo profile bank; the user's own row is computed from the same
-        // seeded activity/health history the rest of the app uses, so per-persona
-        // overrides (milahart vs jacemiller) flow through into ranking.
+        // demo profile bank; the user's own row starts with stats computed from
+        // the seeded activity/health history (per-persona streak overrides flow
+        // through), then optionally gets overridden by getDemoUserLeaderboardOverride
+        // for marketing personas (Mila, Jace) so they top nearly every category.
         const demoFriends = getDemoLeaderboardFriends();
         const demoActivities = getDemoActivities();
         const demoHealthHistory = getDemoHealthHistory(365);
@@ -1626,13 +1627,15 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           demoHealthHistory,
           { personalRecords: demoUserData.personalRecords, streaks: demoUserData.streaks, weeksWon: demoUserData.personalRecords?.longestMasterStreak || 0 }
         );
+        const leaderboardOverride = getDemoUserLeaderboardOverride(userProfile?.username);
         const demoUserEntry = {
           uid: user.uid,
           username: userProfile?.username || 'You',
           displayName: userProfile?.displayName || 'You',
           photoURL: userProfile?.photoURL,
           ...demoUserStats,
-          challengeStats: getDemoChallengeStats(),
+          ...(leaderboardOverride || {}),
+          challengeStats: leaderboardOverride?.challengeStats ?? getDemoChallengeStats(),
           isCurrentUser: true,
         };
         allUsers = [...demoFriends, demoUserEntry];

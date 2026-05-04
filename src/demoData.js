@@ -96,9 +96,9 @@ export const getDemoActivities = () => {
   ];
 
   // Generate 3-6 activities per week for past N weeks (skip current week).
-  // Set to 32 so personas can carry streaks up to ~32 weeks without the
-  // profile heatmap / past-N-months charts looking thin behind the streak number.
-  for (let week = 1; week <= 32; week++) {
+  // Bumped to 50 so Mila/Jace marketing personas (40-week strength streaks)
+  // have heatmap + past-N-months chart coverage backing the streak number.
+  for (let week = 1; week <= 50; week++) {
     const weekStart = 7 * week + dayOfWeek; // days ago for Sunday of that week
     // Pick 4-5 activities per week for a consistent pattern
     const weekActivities = [0, 1, 2, 4, 7]; // chest, back, legs, run, cold plunge
@@ -128,36 +128,56 @@ export const getDemoActivities = () => {
 // inherits from the base. Sub-objects (goals, streaks, personalRecords) merge
 // field-by-field — partial overrides are fine.
 const DEMO_USER_OVERRIDES = {
-  // Mila — consistent, balanced persona. Lower lifting volume, deeper
-  // cardio + recovery streaks. Realistic "well-rounded athlete" story.
+  // Mila — marketing hero persona. Tuned to top 11 of 13 leaderboard categories
+  // (every Activity + Streak + Challenges metric except recoverySessions/week,
+  // where Noah keeps his identity as the recovery specialist). Streaks are 33+
+  // weeks so the live profile reads as a long-tenured "well-rounded athlete"
+  // story; leaderboardBoost overrides the per-week computed totals so volume
+  // categories (calories/steps/lifting/cycling/yoga/etc.) also show her #1.
+  // Component streaks must all be ≥ master since hybrid only increments on
+  // weeks where all three goals are met.
   milahart: {
     goals: { liftsPerWeek: 3 },
-    streaks: { master: 8, lifts: 12, cardio: 9, recovery: 8 },
+    streaks: { master: 33, lifts: 35, cardio: 34, recovery: 35 },
     personalRecords: {
-      longestStrength: { value: 70, activityType: 'Strength Training' },
-      mostWorkoutsWeek: 7,
-      mostCaloriesWeek: 2900,
-      longestStrengthStreak: 14,
-      longestCardioStreak: 11,
-      longestRecoveryStreak: 8,
+      longestStrength: { value: 90, activityType: 'Strength Training' },
+      mostWorkoutsWeek: 12,
+      mostCaloriesWeek: 6500,
+      mostMilesWeek: 42,
+      longestMasterStreak: 33,
+      longestStrengthStreak: 35,
+      longestCardioStreak: 34,
+      longestRecoveryStreak: 35,
+    },
+    leaderboardBoost: {
+      // Per-week totals — exceed every dummy friend except recoverySessions
+      // (set to 7, below Noah's 8). Period totals are auto-expanded ×1/×4/×50/×120.
+      weekly: { calories: 6500, steps: 110000, runs: 8, miles: 40, runMinutes: 400, strengthSessions: 7, liftingMinutes: 450, recoverySessions: 7, coldPlunges: 5, saunaSessions: 5, yogaSessions: 6, rides: 9, cycleMiles: 135, cycleMinutes: 450 },
+      weeksWon: 24,
+      challengeStats: { accepted: 28, wins: 17, losses: 11, currentWinStreak: 6, longestWinStreak: 9 },
     },
   },
-  // Jace — strength-focused, heavier persona. Higher lifting volume, stronger
-  // PRs. Component streaks must all be ≥ master (14) since hybrid streak only
-  // increments on weeks where lifts + cardio + recovery goals are all met.
+  // Jace — second marketing hero, strength-leaning variant. Same top-11 / 13
+  // pattern as Mila with slightly different weights so side-by-side material
+  // feels distinct (heavier lifting, slightly higher mileage).
   jacemiller: {
     goals: { liftsPerWeek: 4 },
-    streaks: { master: 14, lifts: 14, cardio: 14, recovery: 14 },
+    streaks: { master: 33, lifts: 40, cardio: 35, recovery: 33 },
     personalRecords: {
       highestCalories: { value: 740, activityType: 'Running' },
       longestStrength: { value: 105, activityType: 'Strength Training' },
-      mostWorkoutsWeek: 10,
-      mostCaloriesWeek: 3800,
-      mostMilesWeek: 18.5,
-      longestMasterStreak: 14,
-      longestStrengthStreak: 18,
-      longestCardioStreak: 14,
-      longestRecoveryStreak: 14,
+      mostWorkoutsWeek: 12,
+      mostCaloriesWeek: 6700,
+      mostMilesWeek: 42,
+      longestMasterStreak: 33,
+      longestStrengthStreak: 40,
+      longestCardioStreak: 35,
+      longestRecoveryStreak: 33,
+    },
+    leaderboardBoost: {
+      weekly: { calories: 6700, steps: 108000, runs: 8, miles: 42, runMinutes: 420, strengthSessions: 8, liftingMinutes: 480, recoverySessions: 6, coldPlunges: 5, saunaSessions: 5, yogaSessions: 5, rides: 9, cycleMiles: 140, cycleMinutes: 470 },
+      weeksWon: 25,
+      challengeStats: { accepted: 32, wins: 19, losses: 13, currentWinStreak: 7, longestWinStreak: 10 },
     },
   },
 };
@@ -429,6 +449,41 @@ export const getDemoLeaderboardFriends = () => {
       },
     };
   });
+};
+
+// Returns the per-period stats/volume + challengeStats override for marketing
+// personas (Mila, Jace), or null for personas without leaderboardBoost.
+// ActivityFeed's loadLeaderboard merges this on top of the user's row so they
+// rank #1 in nearly every category for screenshots/recordings.
+export const getDemoUserLeaderboardOverride = (username) => {
+  const override = DEMO_USER_OVERRIDES[(username || '').toLowerCase()];
+  const boost = override?.leaderboardBoost;
+  if (!boost) return null;
+  const w = boost.weekly;
+  const totalWorkoutsWeek = w.runs + w.strengthSessions + w.recoverySessions + w.rides;
+  return {
+    weeksWon: boost.weeksWon,
+    totalWorkouts: totalWorkoutsWeek * PERIOD_MULTIPLIERS.all,
+    challengeStats: boost.challengeStats,
+    stats: {
+      calories: expandToPeriods(w.calories),
+      steps: expandToPeriods(w.steps),
+    },
+    volume: {
+      runs: expandToPeriods(w.runs),
+      miles: expandToPeriods(w.miles),
+      runMinutes: expandToPeriods(w.runMinutes),
+      strengthSessions: expandToPeriods(w.strengthSessions),
+      liftingMinutes: expandToPeriods(w.liftingMinutes),
+      recoverySessions: expandToPeriods(w.recoverySessions),
+      coldPlunges: expandToPeriods(w.coldPlunges),
+      saunaSessions: expandToPeriods(w.saunaSessions),
+      yogaSessions: expandToPeriods(w.yogaSessions),
+      rides: expandToPeriods(w.rides),
+      cycleMiles: expandToPeriods(w.cycleMiles),
+      cycleMinutes: expandToPeriods(w.cycleMinutes),
+    },
+  };
 };
 
 // Mock incoming friend requests for the Friends modal. Same shape as getFriendRequests().

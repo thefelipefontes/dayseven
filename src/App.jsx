@@ -5701,7 +5701,9 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
                     {activity.calories > 0 && <span style={{ margin: '0 6px', opacity: 0.4 }}>·</span>}
                   </>
                 )}
-                {/* Lifting: duration + muscle groups as secondary (calories is hero) */}
+                {/* Lifting: duration + muscle groups as secondary (calories is hero).
+                    normalizeFocusAreas expands the watch's 'Upper'/'Lower'/'Full Body'
+                    placeholders into individual muscles to match the Dark stamp variant. */}
                 {category === 'lifting' ? (
                   <>
                     <span>{durationStr}</span>
@@ -5709,7 +5711,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
                       <>
                         <span style={{ margin: '0 6px', opacity: 0.5 }}>·</span>
                         <span style={{ color: '#fff' }}>
-                          {(activity.focusAreas || [activity.focusArea]).join(' · ')}
+                          {normalizeFocusAreas(activity.focusAreas || [activity.focusArea]).join(' · ')}
                         </span>
                       </>
                     )}
@@ -8002,17 +8004,40 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 
   const toggleFocusGroup = (groupName) => {
     const members = FOCUS_AREA_GROUPS[groupName];
-    const allSelected = members.every(m => focusAreas.includes(m));
-    if (allSelected) {
-      setFocusAreas(prev => prev.filter(a => !members.includes(a)));
-    } else {
-      setFocusAreas(prev => [...new Set([...prev, ...members])]);
-    }
+    setFocusAreas(prev => {
+      const allSelected = members.every(m => prev.includes(m));
+      return allSelected
+        ? prev.filter(a => !members.includes(a))
+        : [...new Set([...prev, ...members])];
+    });
   };
 
   const toggleFocusArea = (area) => {
     setFocusAreas(prev => prev.includes(area) ? prev.filter(a => a !== area) : [...prev, area]);
   };
+
+  // iOS WKWebView still occasionally fires a delayed synthetic click on the
+  // PREVIOUS button after the user has already moved on to tap another one —
+  // e.g. tap Chest, then quickly tap Shoulders, and a stray Chest click lands
+  // 50–200ms later, undoing the first selection. Even with `touch-action:
+  // manipulation` and `pan-y` removed, this leaks under layout/animation load.
+  // Dedupe via a single shared timestamp ref: any tap (any area, any group)
+  // that fires within 120ms of the previous one is treated as the phantom and
+  // dropped. Real human taps are >150ms apart even at "rapid-fire" speed.
+  const lastTapRef = useRef(0);
+  const isPhantomTap = () => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 120) return true;
+    lastTapRef.current = now;
+    return false;
+  };
+
+  // Call from both onTouchEnd (preferred — fires before the click event)
+  // and onClick (mouse fallback for desktop). preventDefault on touchend
+  // suppresses the synthetic click that would otherwise arrive ~300ms later
+  // and double-fire the handler.
+  const handlePillTouchEnd = (e, fn) => { e.preventDefault(); if (!isPhantomTap()) fn(); };
+  const handlePillClick = (fn) => { if (!isPhantomTap()) fn(); };
 
   // Uses shared getDefaultCountToward() defined above
 
@@ -9073,23 +9098,33 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     const someSelected = members.some(m => focusAreas.includes(m));
                     return (
                       <div key={groupName} className="flex flex-col gap-1.5">
-                        {/* Group header — select/deselect all */}
+                        {/* Group header — toggles select-all for the group. Styled as
+                            a label-style "select all" control (dashed border, smaller
+                            uppercase text, checkbox glyph) so it doesn't read as just
+                            another muscle pill — that confused users into thinking
+                            other pills were unselecting "randomly" when they tapped
+                            here while all members were already selected. */}
                         <button
-                          onClick={() => toggleFocusGroup(groupName)}
-                          className="px-2 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 text-center"
+                          type="button"
+                          onTouchEnd={(e) => handlePillTouchEnd(e, () => toggleFocusGroup(groupName))}
+                          onClick={() => handlePillClick(() => toggleFocusGroup(groupName))}
+                          className="px-1.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-200 flex items-center justify-center gap-1"
                           style={{
-                            backgroundColor: allSelected ? 'rgba(0,255,148,0.25)' : someSelected ? 'rgba(0,255,148,0.1)' : 'rgba(255,255,255,0.08)',
-                            border: allSelected ? '1px solid #00FF94' : someSelected ? '1px solid rgba(0,255,148,0.4)' : '1px solid rgba(255,255,255,0.15)',
-                            color: allSelected || someSelected ? '#00FF94' : 'rgba(255,255,255,0.7)'
+                            backgroundColor: 'transparent',
+                            border: allSelected ? '1px dashed #00FF94' : someSelected ? '1px dashed rgba(0,255,148,0.5)' : '1px dashed rgba(255,255,255,0.18)',
+                            color: allSelected ? '#00FF94' : someSelected ? 'rgba(0,255,148,0.7)' : 'rgba(255,255,255,0.45)'
                           }}
                         >
-                          {groupName}
+                          <span style={{ fontSize: 11, lineHeight: 1 }}>{allSelected ? '☑' : '☐'}</span>
+                          <span>{groupName}</span>
                         </button>
                         {/* Individual muscles */}
                         {members.map((area) => (
                           <button
                             key={area}
-                            onClick={() => toggleFocusArea(area)}
+                            type="button"
+                            onTouchEnd={(e) => handlePillTouchEnd(e, () => toggleFocusArea(area))}
+                            onClick={() => handlePillClick(() => toggleFocusArea(area))}
                             className="px-2 py-1.5 rounded-lg text-xs transition-all duration-200 text-center"
                             style={{
                               backgroundColor: focusAreas.includes(area) ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',

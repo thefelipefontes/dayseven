@@ -53,8 +53,14 @@ html {
   touch-action: manipulation;
 }
 
+/* `manipulation` allows pan-x, pan-y, and pinch-zoom (so vertical scrolling +
+   pull-to-refresh still pass through buttons) BUT disables iOS's double-tap-zoom
+   detection. The double-tap detection used to introduce a 300ms click delay and,
+   on rapid back-to-back taps on different buttons, occasionally fired a synthetic
+   click on the FIRST button after the second tap — read as "I tapped Shoulders
+   but Chest unselected." `pan-y` (the previous value) didn't suppress double-tap.*/
 button, a, [role="button"], input, select, textarea {
-  touch-action: pan-y !important;
+  touch-action: manipulation !important;
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;

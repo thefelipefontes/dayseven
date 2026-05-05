@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, createContext, useContext, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, createContext, useContext, useCallback } from 'react';
 import * as Sentry from '@sentry/react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth, EmailAuthProvider, reauthenticateWithCredential, updatePassword, sendPasswordResetEmail } from './firebase';
@@ -5280,14 +5280,134 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
   );
 };
 
+// Static route map for share stamp. Composites tiles onto a single canvas
+// instead of laying out multiple <img>s — WKWebView intermittently leaves a
+// vertical dark band at the tile seam under retina scaling, regardless of
+// CORS or positioning rounding. A canvas sidesteps the seam entirely;
+// html-to-image captures it via toDataURL (CORS-clean since tiles are loaded
+// with crossOrigin and CartoDB returns Access-Control-Allow-Origin: *).
+//
+// MUST live at module scope. As a nested component inside ActivityStampModal,
+// every parent re-render gives it a new function identity → React remounts it
+// → canvas blanks. html-to-image could then capture a blank map.
+const StaticRouteMap = ({ coords, width, height, color, transparent }) => {
+  const canvasRef = useRef(null);
+  const tileSig = useMemo(() => {
+    if (!coords || coords.length < 2) return null;
+    const fit = bestFit(coords, width, height);
+    const { tiles, pts } = makeTiles(coords, width, height, fit.z, fit.cp, true, 0);
+    return { tiles, pts, urls: tiles.map(t => t.url).join('|') };
+  }, [coords, width, height]);
+
+  useEffect(() => {
+    if (transparent || !tileSig || !canvasRef.current) return;
+    const canvas = canvasRef.current;
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, width, height);
+
+    let cancelled = false;
+    const { tiles } = tileSig;
+    // Static query suffix keeps these URLs distinct from RouteMapView's
+    // preview tile URLs underneath. Without that, a CORS Image() request
+    // to a URL WebKit already cached as non-CORS (from the preview render)
+    // can fail to populate, leaving a tile gap on the canvas.
+    Promise.all(tiles.map(t => new Promise(resolve => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = `${t.url}?cors=1`;
+    }))).then(loaded => {
+      if (cancelled) return;
+      loaded.forEach((img, i) => {
+        if (!img) return;
+        const t = tiles[i];
+        ctx.drawImage(img, t.left, t.top, TILE, TILE);
+      });
+    });
+    return () => { cancelled = true; };
+  }, [transparent, tileSig?.urls, width, height]);
+
+  if (!tileSig) return null;
+  const { pts } = tileSig;
+
+  return (
+    <div style={{ position: 'relative', width, height, overflow: 'hidden', borderRadius: 8 }}>
+      {!transparent && (
+        <canvas ref={canvasRef}
+          style={{ position: 'absolute', top: 0, left: 0, width, height, pointerEvents: 'none' }} />
+      )}
+      {pts && pts.length >= 2 && (() => {
+        const s = pts[0], e = pts[pts.length - 1];
+        const d = pts.map(p => `${p.x},${p.y}`).join(' ');
+        return (
+          <svg width={width} height={height} style={{ position: 'absolute', top: 0, left: 0 }}>
+            <polyline points={d} fill="none" stroke={transparent ? 'rgba(255,255,255,0.2)' : color}
+              strokeWidth={transparent ? 4 : 6} strokeOpacity={transparent ? 1 : 0.35}
+              strokeLinecap="round" strokeLinejoin="round" />
+            <polyline points={d} fill="none" stroke={transparent ? 'rgba(255,255,255,0.8)' : color}
+              strokeWidth={transparent ? 2 : 3} strokeLinecap="round" strokeLinejoin="round"
+              style={transparent ? { filter: 'drop-shadow(0 0 4px rgba(255,255,255,0.4))' } : {}} />
+            <circle cx={s.x} cy={s.y} r={4} fill="#00FF94" stroke="#fff" strokeWidth={1.5} />
+            <circle cx={e.x} cy={e.y} r={4} fill={transparent ? '#fff' : color} stroke="#fff" strokeWidth={1.5} />
+          </svg>
+        );
+      })()}
+    </div>
+  );
+};
+
+// Shape-only route trace for the overlay-mode share stamp (Strava-style: no
+// tiles, no start/end dots, just a stylized polyline). The SVG is sized
+// tightly to the polyline's bbox (with just enough padding for the stroke
+// halo), so its left edge IS the route's left edge — this lets the trace
+// align flush with the stat-stack column rather than floating right of it.
+// `maxWidth`/`maxHeight` cap the trace; the actual SVG can be smaller.
+const RouteShape = ({ maxWidth, maxHeight, coords }) => {
+  const data = useMemo(() => {
+    if (!coords || coords.length < 2) return null;
+    const fit = bestFit(coords, maxWidth, maxHeight, 8);
+    const raw = coords.map(c => ll2px(c.lat, c.lng, fit.z));
+    const xs = raw.map(p => p.x), ys = raw.map(p => p.y);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const pad = 4;
+    const w = maxX - minX + pad * 2;
+    const h = maxY - minY + pad * 2;
+    const pts = raw.map(p => ({ x: p.x - minX + pad, y: p.y - minY + pad }));
+    return { pts, w, h };
+  }, [coords, maxWidth, maxHeight]);
+
+  if (!data) return null;
+  const { pts, w, h } = data;
+  const d = pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+  return (
+    <svg width={w} height={h} style={{ display: 'block', overflow: 'visible' }}>
+      <polyline points={d} fill="none" stroke="rgba(0,0,0,0.45)"
+        strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" />
+      <polyline points={d} fill="none" stroke="#fff"
+        strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+};
+
 // ─── Activity Stamp Modal ─────────────────────────────────────────────────────
 const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCoords = [], getActivityCategory }) => {
   const cardRef = useRef(null);
+  const nameTextRef = useRef(null);
   const [stampMode, setStampMode] = useState('dark'); // 'dark' or 'transparent'
   const [isSharing, setIsSharing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+  // Measured center of the activity name text within the card (overlay mode),
+  // used to horizontally center the route trace directly above it.
+  const [nameCenterX, setNameCenterX] = useState(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -5297,6 +5417,17 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
       setIsAnimating(false);
     }
   }, [isOpen]);
+
+  // Measure the activity-name text's horizontal center (relative to the card
+  // content area's left edge) so the route trace can be absolutely positioned
+  // directly above it. Re-measures whenever the inputs that change layout do.
+  useLayoutEffect(() => {
+    if (!isOpen || !nameTextRef.current || !cardRef.current) return;
+    const cardRect = cardRef.current.getBoundingClientRect();
+    const nameRect = nameTextRef.current.getBoundingClientRect();
+    const cardLeftPad = 16;
+    setNameCenterX((nameRect.left + nameRect.width / 2) - cardRect.left - cardLeftPad);
+  }, [isOpen, activity?.id, activity?.type, stampMode]);
 
   const handleClose = () => {
     setIsClosing(true);
@@ -5393,41 +5524,6 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
           );
         })}
       </svg>
-    );
-  };
-
-  // Static route map for stamp — same primitives RouteMapView's preview uses.
-  // Kept deliberately simple: anything fancier (onError fallbacks, underlays,
-  // pre-fetched blobs) has so far broken html-to-image's canvas capture in
-  // WKWebView. Match RouteMapView byte-for-byte to keep behavior consistent.
-  const StaticRouteMap = ({ coords, width, height, color, transparent }) => {
-    if (!coords || coords.length < 2) return null;
-    const fit = bestFit(coords, width, height);
-    const { tiles, pts } = makeTiles(coords, width, height, fit.z, fit.cp, true, 0);
-
-    return (
-      <div style={{ position: 'relative', width, height, overflow: 'hidden', borderRadius: 8 }}>
-        {!transparent && tiles.map(t => (
-          <img key={t.key} src={t.url} alt="" crossOrigin="anonymous" draggable={false}
-            style={{ position: 'absolute', left: t.left, top: t.top, width: TILE, height: TILE, pointerEvents: 'none' }} />
-        ))}
-        {pts && pts.length >= 2 && (() => {
-          const s = pts[0], e = pts[pts.length - 1];
-          const d = pts.map(p => `${p.x},${p.y}`).join(' ');
-          return (
-            <svg width={width} height={height} style={{ position: 'absolute', top: 0, left: 0 }}>
-              <polyline points={d} fill="none" stroke={transparent ? 'rgba(255,255,255,0.2)' : color}
-                strokeWidth={transparent ? 4 : 6} strokeOpacity={transparent ? 1 : 0.35}
-                strokeLinecap="round" strokeLinejoin="round" />
-              <polyline points={d} fill="none" stroke={transparent ? 'rgba(255,255,255,0.8)' : color}
-                strokeWidth={transparent ? 2 : 3} strokeLinecap="round" strokeLinejoin="round"
-                style={transparent ? { filter: 'drop-shadow(0 0 4px rgba(255,255,255,0.4))' } : {}} />
-              <circle cx={s.x} cy={s.y} r={4} fill="#00FF94" stroke="#fff" strokeWidth={1.5} />
-              <circle cx={e.x} cy={e.y} r={4} fill={transparent ? '#fff' : color} stroke="#fff" strokeWidth={1.5} />
-            </svg>
-          );
-        })()}
-      </div>
     );
   };
 
@@ -5614,6 +5710,25 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
           {isTransparent ? (
             /* ─── OVERLAY MODE: Strava-style minimal stats ─── */
             <>
+              {/* Route trace (shape-only, Strava-style) — absolutely centered
+                  over the activity-name text below using the measured
+                  nameCenterX (icon width varies the offset, so we anchor
+                  to the text itself, not the row). */}
+              {category === 'cardio' && routeCoords.length >= 2 && (
+                <div style={{ position: 'relative', height: 76, marginBottom: 6 }}>
+                  {nameCenterX != null && (
+                    <div style={{
+                      position: 'absolute',
+                      left: nameCenterX,
+                      bottom: 0,
+                      transform: 'translateX(-50%)',
+                    }}>
+                      <RouteShape coords={routeCoords} maxWidth={120} maxHeight={70} />
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Activity name with icon */}
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 5,
@@ -5629,7 +5744,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
                    category === 'cardio' ? <IconRun size={11} color="#FF9500" strokeWidth={2.5} /> :
                    <IconSnowflake size={11} color="#00D1FF" strokeWidth={2.5} />}
                 </div>
-                {activityName}
+                <span ref={nameTextRef}>{activityName}</span>
               </div>
 
               {/* Hero stat */}
@@ -5823,7 +5938,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
                 <StaticRouteMap
                   coords={routeCoords}
                   width={230}
-                  height={200}
+                  height={140}
                   color={categoryColor}
                   transparent={isTransparent}
                 />

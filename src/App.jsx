@@ -13693,8 +13693,11 @@ export default function DaySevenApp() {
           }
 
           // Sync HealthKit AFTER activities are loaded so it can properly
-          // detect already-saved/linked workouts via activitiesRef
-          if (Capacitor.isNativePlatform() && !profile?.disableHealthKitSync) {
+          // detect already-saved/linked workouts via activitiesRef. Deferred for
+          // first-time users — the onboarding survey runs HK + push setup in
+          // sequence on completion so the system dialogs don't pop up before
+          // the user has filled out the survey.
+          if (Capacitor.isNativePlatform() && !profile?.disableHealthKitSync && hasCompletedOnboarding) {
             syncHealthKit();
           }
 
@@ -13765,93 +13768,12 @@ export default function DaySevenApp() {
           // Mark records as loaded (even if null - means user has no records yet)
           setRecordsLoaded(true);
 
-          // Initialize push notifications on native platforms
-          if (Capacitor.isNativePlatform()) {
-            try {
-              // Clear badge on app open and reset Firestore counter
-              clearBadge();
-              updateUserProfile(user.uid, { unreadBadgeCount: 0 });
-
-              const { cleanup, token } = await initializePushNotifications(
-                user.uid,
-                async (notification) => {
-                  // Handle foreground notification — check preferences and show in-app toast
-                  const prefs = userProfileRef.current?.notificationPreferences;
-                  if (prefs && !shouldShowNotification(notification, prefs)) return;
-
-                  const title = notification?.notification?.title || notification?.title;
-                  const body = notification?.notification?.body || notification?.body;
-                  if (title || body) {
-                    setToastMessage(body || title);
-                    setToastType('success');
-                    setShowToast(true);
-                  }
-                  // Increment badge for foreground notifications
-                  incrementBadge();
-
-                  // Track unread feed notifications locally (for red dot on Friends tab)
-                  // notificationReceived wraps data at notification.notification.data or notification.data
-                  const notifType = notification?.notification?.data?.type || notification?.data?.type;
-                  const socialTypes = ['reaction', 'comment', 'reply', 'friend_request', 'friend_accepted', 'friend_workout'];
-                  if (socialTypes.includes(notifType) && activeTabRef.current !== 'feed') {
-                    setUnreadFeedCount(prev => prev + 1);
-                  }
-
-                  // If weekly/monthly summary arrived in foreground, persist share prompt for next app open
-                  const showPrompt = notification?.notification?.data?.showSharePrompt || notification?.data?.showSharePrompt;
-                  if ((notifType === 'weekly_summary' || notifType === 'monthly_summary') && showPrompt === 'true') {
-                    localStorage.setItem('pendingSharePrompt', JSON.stringify({
-                      type: notifType === 'weekly_summary' ? 'weekly' : 'monthly',
-                      sentAt: new Date().toISOString()
-                    }));
-                  }
-                },
-                (notification, actionId) => {
-                  // Handle notification tap - navigate to appropriate screen
-                  clearBadge();
-                  clearAllNotifications();
-                  handleNotificationNavigation(notification, (tab, opts) => {
-                    setActiveTab(tab);
-                    // Challenge notifs hint at which segment/sub-segment to open.
-                    if (tab === 'challenges' && (opts?.challengesSegment || opts?.challengesSubSegment)) {
-                      setChallengesNavTarget({
-                        segment: opts.challengesSegment || null,
-                        subSegment: opts.challengesSubSegment || null,
-                        // identity bump so ChallengesTab re-applies even if values match a prior nav
-                        nonce: Date.now(),
-                      });
-                    }
-                  }, {
-                    onShowChallengePicker: ({ activityId, challengeIds }) => {
-                      openChallengeChooser({ activityId, challengeIds });
-                    },
-                    onShowSharePrompt: (summaryData) => {
-                      // Clear pending flag since user tapped the notification directly
-                      localStorage.removeItem('pendingSharePrompt');
-                      if (user?.uid) {
-                        updateUserProfile(user.uid, { pendingSharePrompt: null }).catch(() => {});
-                      }
-                      // Calculate last week's date range (Sunday to Saturday)
-                      const today = new Date();
-                      const lastSunday = new Date(today);
-                      lastSunday.setDate(today.getDate() - today.getDay() - 7);
-                      const lastSaturday = new Date(lastSunday);
-                      lastSaturday.setDate(lastSunday.getDate() + 6);
-                      // Open share card for last week after a brief delay to let home tab render
-                      setTimeout(() => {
-                        setShareWeekRange({ startDate: lastSunday, endDate: lastSaturday });
-                        setShowShare(true);
-                      }, 500);
-                    },
-                  });
-                }
-              );
-              // Store cleanup and token for logout
-              notificationCleanupRef.current = cleanup;
-              fcmTokenRef.current = token;
-            } catch (notifError) {
-              console.error('[App] Push notification init error:', notifError);
-            }
+          // Initialize push notifications on native platforms. Skipped for
+          // first-time users — the onboarding completion handler runs this
+          // after the HealthKit permission flow so the two system dialogs
+          // don't both fire before the user has answered any questions.
+          if (hasCompletedOnboarding) {
+            await setupPushNotifications(user.uid);
           }
         } catch (error) {
           // Still mark as loaded on error so we don't block record checking forever
@@ -13959,6 +13881,85 @@ export default function DaySevenApp() {
     } catch (error) {
     }
   }, [user?.uid]);
+
+  // Push setup is deferred until after onboarding for first-time users so the
+  // system permission dialog doesn't fire before the user has answered any
+  // questions. Existing users hit this during the regular post-auth data load.
+  const setupPushNotifications = useCallback(async (uid) => {
+    if (!Capacitor.isNativePlatform() || !uid) return;
+    try {
+      clearBadge();
+      updateUserProfile(uid, { unreadBadgeCount: 0 });
+
+      const { cleanup, token } = await initializePushNotifications(
+        uid,
+        async (notification) => {
+          const prefs = userProfileRef.current?.notificationPreferences;
+          if (prefs && !shouldShowNotification(notification, prefs)) return;
+
+          const title = notification?.notification?.title || notification?.title;
+          const body = notification?.notification?.body || notification?.body;
+          if (title || body) {
+            setToastMessage(body || title);
+            setToastType('success');
+            setShowToast(true);
+          }
+          incrementBadge();
+
+          const notifType = notification?.notification?.data?.type || notification?.data?.type;
+          const socialTypes = ['reaction', 'comment', 'reply', 'friend_request', 'friend_accepted', 'friend_workout'];
+          if (socialTypes.includes(notifType) && activeTabRef.current !== 'feed') {
+            setUnreadFeedCount(prev => prev + 1);
+          }
+
+          const showPrompt = notification?.notification?.data?.showSharePrompt || notification?.data?.showSharePrompt;
+          if ((notifType === 'weekly_summary' || notifType === 'monthly_summary') && showPrompt === 'true') {
+            localStorage.setItem('pendingSharePrompt', JSON.stringify({
+              type: notifType === 'weekly_summary' ? 'weekly' : 'monthly',
+              sentAt: new Date().toISOString()
+            }));
+          }
+        },
+        (notification, actionId) => {
+          clearBadge();
+          clearAllNotifications();
+          handleNotificationNavigation(notification, (tab, opts) => {
+            setActiveTab(tab);
+            if (tab === 'challenges' && (opts?.challengesSegment || opts?.challengesSubSegment)) {
+              setChallengesNavTarget({
+                segment: opts.challengesSegment || null,
+                subSegment: opts.challengesSubSegment || null,
+                nonce: Date.now(),
+              });
+            }
+          }, {
+            onShowChallengePicker: ({ activityId, challengeIds }) => {
+              openChallengeChooser({ activityId, challengeIds });
+            },
+            onShowSharePrompt: (summaryData) => {
+              localStorage.removeItem('pendingSharePrompt');
+              if (uid) {
+                updateUserProfile(uid, { pendingSharePrompt: null }).catch(() => {});
+              }
+              const today = new Date();
+              const lastSunday = new Date(today);
+              lastSunday.setDate(today.getDate() - today.getDay() - 7);
+              const lastSaturday = new Date(lastSunday);
+              lastSaturday.setDate(lastSunday.getDate() + 6);
+              setTimeout(() => {
+                setShareWeekRange({ startDate: lastSunday, endDate: lastSaturday });
+                setShowShare(true);
+              }, 500);
+            },
+          });
+        }
+      );
+      notificationCleanupRef.current = cleanup;
+      fcmTokenRef.current = token;
+    } catch (notifError) {
+      console.error('[App] Push notification init error:', notifError);
+    }
+  }, []);
 
   // Sync HealthKit data function
   const syncHealthKit = useCallback(async () => {
@@ -15821,6 +15822,25 @@ export default function DaySevenApp() {
         justOnboardedRef.current = true; // Suppress Smart Save modal on first HealthKit sync
         setIsOnboarded(true);
         setActiveTab('home');
+
+        // Permission dialogs run AFTER onboarding so the first-launch flow
+        // is "answer questions → grant Health → allow notifications". Both
+        // were previously fired during the auth data-load and showed up
+        // before the survey, which felt invasive.
+        if (Capacitor.isNativePlatform()) {
+          try {
+            if (!userProfileRef.current?.disableHealthKitSync) {
+              await syncHealthKit();
+            }
+          } catch (e) {
+            console.error('[App] Post-onboarding HealthKit prompt failed:', e);
+          }
+          try {
+            await setupPushNotifications(user.uid);
+          } catch (e) {
+            console.error('[App] Post-onboarding push prompt failed:', e);
+          }
+        }
       }}
     />;
   }

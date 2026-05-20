@@ -13794,11 +13794,11 @@ export default function DaySevenApp() {
           }
 
           // Sync HealthKit AFTER activities are loaded so it can properly
-          // detect already-saved/linked workouts via activitiesRef. Deferred for
-          // first-time users — the onboarding survey runs HK + push setup in
-          // sequence on completion so the system dialogs don't pop up before
-          // the user has filled out the survey.
-          if (Capacitor.isNativePlatform() && !profile?.disableHealthKitSync && hasCompletedOnboarding) {
+          // detect already-saved/linked workouts via activitiesRef. Deferred
+          // until the user has BOTH completed onboarding AND set a username —
+          // otherwise the system permission dialog would stack on top of
+          // either the onboarding survey or the username setup screen.
+          if (Capacitor.isNativePlatform() && !profile?.disableHealthKitSync && hasCompletedOnboarding && profile?.username) {
             syncHealthKit();
           }
 
@@ -13869,11 +13869,11 @@ export default function DaySevenApp() {
           // Mark records as loaded (even if null - means user has no records yet)
           setRecordsLoaded(true);
 
-          // Initialize push notifications on native platforms. Skipped for
-          // first-time users — the onboarding completion handler runs this
-          // after the HealthKit permission flow so the two system dialogs
-          // don't both fire before the user has answered any questions.
-          if (hasCompletedOnboarding) {
+          // Initialize push notifications on native platforms. Gated on both
+          // hasCompletedOnboarding AND username so first-launch dialogs don't
+          // overlay the survey or the username setup screen. UsernameSetup's
+          // completion handler fires this for users who hit it post-onboarding.
+          if (hasCompletedOnboarding && profile?.username) {
             await setupPushNotifications(user.uid);
           }
         } catch (error) {
@@ -14308,10 +14308,11 @@ export default function DaySevenApp() {
     setIsOnboarded(true);
     setActiveTab('home');
 
-    // Permission prompts: Health first, then Push. syncHealthKit handles the
-    // auto-import of HK workouts (gated by justOnboardedRef) so the user's
-    // historical workouts land in the feed on first launch.
-    if (Capacitor.isNativePlatform()) {
+    // Permission prompts: Health first, then Push. Skipped if the user
+    // hasn't set a username yet — UsernameSetup's onComplete handler fires
+    // them once they're past that gate. Avoids stacking native dialogs on
+    // top of the username screen.
+    if (Capacitor.isNativePlatform() && userProfileRef.current?.username) {
       try {
         await syncHealthKit();
       } catch (e) {
@@ -15957,20 +15958,31 @@ export default function DaySevenApp() {
 
   // Show login if no user or no userData (signed out)
   if (!user || !userData || !userProfile) {
-    // If the user reached Login via the welcome screen's "I already have an
-    // account" skip, give them a way back. Signed-out existing users don't
-    // get a back button — there's no welcome to return to.
+    // Detect which path led the user to Login so we can tailor the UI:
+    // - skipped: came via "I already have an account" → show back button
+    // - completed survey: came via "Get Started" + finished onboarding → show
+    //   signup-only options (no sign-in switch links). They've invested in
+    //   the survey; pushing them toward sign-up matches their intent.
     let cameFromSkip = false;
+    let cameFromCompletedSurvey = false;
     try {
       const raw = localStorage.getItem('preSignupOnboarding');
-      cameFromSkip = raw ? !!JSON.parse(raw)?.skipped : false;
+      const parsed = raw ? JSON.parse(raw) : null;
+      cameFromSkip = !!parsed?.skipped;
+      cameFromCompletedSurvey = parsed?.done === true && !!parsed?.goals;
     } catch {}
     const handleBackToWelcome = cameFromSkip ? () => {
       try { localStorage.removeItem('preSignupOnboarding'); } catch {}
       setPreSignupDone(false);
       setPreSignupWelcomeSeen(false);
     } : null;
-    return <Login onLogin={handleUserAuth} onBack={handleBackToWelcome} />;
+    return (
+      <Login
+        onLogin={handleUserAuth}
+        onBack={handleBackToWelcome}
+        signupOnly={cameFromCompletedSurvey}
+      />
+    );
   }
 
   // Show username setup if user doesn't have a username
@@ -15978,7 +15990,24 @@ export default function DaySevenApp() {
     return (
       <UsernameSetup
         user={user}
-        onComplete={(username) => setUserProfile(prev => ({ ...prev, username }))}
+        onComplete={async (username) => {
+          setUserProfile(prev => ({ ...prev, username }));
+          // Fire permission prompts that were deferred while the username
+          // gate was still up. Only when the user is already onboarded —
+          // otherwise the in-app survey runs next and handles them itself.
+          if (isOnboarded && Capacitor.isNativePlatform()) {
+            try {
+              await syncHealthKit();
+            } catch (e) {
+              console.error('[App] Post-username HealthKit prompt failed:', e);
+            }
+            try {
+              await setupPushNotifications(user.uid);
+            } catch (e) {
+              console.error('[App] Post-username push prompt failed:', e);
+            }
+          }
+        }}
       />
     );
   }

@@ -6833,6 +6833,36 @@ const SmartSaveExplainModal = ({ onClose, onDisable }) => {
   );
 };
 
+// Brand welcome shown before the pre-signup onboarding questions so the first
+// question isn't the very first thing a brand-new user sees. Matches the Login
+// screen's wordmark + slogan treatment for continuity.
+const PreSignupWelcome = ({ onGetStarted }) => (
+  <div className="min-h-screen bg-black flex flex-col">
+    <div className="flex-1 flex items-center justify-center px-6">
+      <div className="text-center">
+        <img src="/wordmark.png" alt="Day Seven" className="h-12 mx-auto mb-6" />
+        <p className="text-gray-400 text-xl leading-relaxed">
+          Set Your Standards.<br />Earn Your Streaks.
+        </p>
+      </div>
+    </div>
+    <div className="fixed bottom-0 left-0 right-0 p-6 pb-12" style={{ background: 'linear-gradient(to top, #000 80%, transparent)' }}>
+      <button
+        onClick={onGetStarted}
+        className="w-full py-4 rounded-xl font-bold text-lg transition-all duration-150"
+        style={{ backgroundColor: '#00FF94', color: 'black' }}
+        onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.97)'; e.currentTarget.style.backgroundColor = '#00CC77'; }}
+        onTouchEnd={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.backgroundColor = '#00FF94'; }}
+        onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.97)'; e.currentTarget.style.backgroundColor = '#00CC77'; }}
+        onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.backgroundColor = '#00FF94'; }}
+        onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.backgroundColor = '#00FF94'; }}
+      >
+        Get Started
+      </button>
+    </div>
+  </div>
+);
+
 // Onboarding Survey — Multi-step flow
 // `preSignup` flips the final button to "Continue to Sign Up" — answers are
 // collected, persisted to localStorage by the wrapper, and applied to the
@@ -12297,6 +12327,10 @@ export default function DaySevenApp() {
       return false;
     }
   });
+  // Welcome screen shown once before the survey starts. In-memory only — if
+  // the user kills the app mid-flow, they see the brand intro again, which
+  // is preferable to defaulting them into questions cold.
+  const [preSignupWelcomeSeen, setPreSignupWelcomeSeen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('home');
   const [showSettings, setShowSettings] = useState(false);
@@ -15872,6 +15906,9 @@ export default function DaySevenApp() {
   // the gate to a wall of permission prompts + a survey. Answers persist in
   // localStorage and get applied to the new user's profile by handleUserAuth.
   if (!user && !preSignupDone) {
+    if (!preSignupWelcomeSeen) {
+      return <PreSignupWelcome onGetStarted={() => setPreSignupWelcomeSeen(true)} />;
+    }
     return <OnboardingSurvey
       currentGoals={null}
       onCancel={null}

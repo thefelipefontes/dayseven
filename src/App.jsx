@@ -6835,8 +6835,9 @@ const SmartSaveExplainModal = ({ onClose, onDisable }) => {
 
 // Brand welcome shown before the pre-signup onboarding questions so the first
 // question isn't the very first thing a brand-new user sees. Matches the Login
-// screen's wordmark + slogan treatment for continuity.
-const PreSignupWelcome = ({ onGetStarted }) => (
+// screen's wordmark + slogan treatment for continuity. Existing users tap
+// "I already have an account" to skip the survey and go straight to Login.
+const PreSignupWelcome = ({ onGetStarted, onSignIn }) => (
   <div className="min-h-screen bg-black flex flex-col">
     <div className="flex-1 flex items-center justify-center px-6">
       <div className="text-center">
@@ -6858,6 +6859,12 @@ const PreSignupWelcome = ({ onGetStarted }) => (
         onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.backgroundColor = '#00FF94'; }}
       >
         Get Started
+      </button>
+      <button
+        onClick={onSignIn}
+        className="w-full mt-3 py-3 text-gray-400 text-sm font-medium"
+      >
+        I already have an account
       </button>
     </div>
   </div>
@@ -12322,7 +12329,10 @@ export default function DaySevenApp() {
   const [preSignupDone, setPreSignupDone] = useState(() => {
     try {
       const raw = localStorage.getItem('preSignupOnboarding');
-      return raw ? !!JSON.parse(raw)?.done : false;
+      const parsed = raw ? JSON.parse(raw) : null;
+      // "done" = survey completed; "skipped" = user picked "I already have an
+      // account". Either means we should not re-show the welcome/survey.
+      return !!(parsed?.done || parsed?.skipped);
     } catch {
       return false;
     }
@@ -13527,7 +13537,10 @@ export default function DaySevenApp() {
       } catch {
         preSignup = null;
       }
-      const shouldApplyPreSignup = preSignup?.done === true && !hasCompletedOnboarding;
+      // `goals` check is the discriminator between a completed survey and a
+      // "skipped" entry written by the welcome screen's "I already have an
+      // account" path — the latter has no answers to apply.
+      const shouldApplyPreSignup = preSignup?.done === true && preSignup?.goals && !hasCompletedOnboarding;
 
       // Set user and profile together to avoid intermediate render states
       setUser(user);
@@ -15907,7 +15920,18 @@ export default function DaySevenApp() {
   // localStorage and get applied to the new user's profile by handleUserAuth.
   if (!user && !preSignupDone) {
     if (!preSignupWelcomeSeen) {
-      return <PreSignupWelcome onGetStarted={() => setPreSignupWelcomeSeen(true)} />;
+      return <PreSignupWelcome
+        onGetStarted={() => setPreSignupWelcomeSeen(true)}
+        onSignIn={() => {
+          // Persist the skip so reopens don't re-show the welcome before
+          // the user has actually signed in. handleUserAuth ignores entries
+          // without `goals` so this doesn't trigger the apply path.
+          try {
+            localStorage.setItem('preSignupOnboarding', JSON.stringify({ skipped: true }));
+          } catch {}
+          setPreSignupDone(true);
+        }}
+      />;
     }
     return <OnboardingSurvey
       currentGoals={null}

@@ -1310,15 +1310,35 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     }
 
     // Regular flow for non-appreview accounts
-    if (!friends || friends.length === 0) {
+    const friendList = (friends || []).filter(f => f?.uid && f.uid !== user?.uid);
+    if (!user?.uid && friendList.length === 0) {
       setFeedActivities([]);
       setIsLoading(false);
       return;
     }
 
     try {
+      // Self's own activities feed in alongside friends so the user can see
+      // (and react/comment on) their own posts. `friend.uid === user.uid` is the
+      // sentinel the card uses to gate post-owner actions like "Reply".
+      const selfFriend = user?.uid ? {
+        uid: user.uid,
+        username: userProfile?.username || '',
+        displayName: userProfile?.displayName || userProfile?.username || 'You',
+        photoURL: userProfile?.photoURL || null,
+      } : null;
+
+      // forceRefresh=true for self because the in-memory cache can lag right after
+      // a workout save (REST write bypasses Capacitor cache); without it, the feed
+      // can show zero self activities even though the user has them.
+      const selfActivitiesPromise = selfFriend
+        ? getUserActivities(user.uid, true).then(acts =>
+            acts.map(activity => ({ ...activity, friend: selfFriend }))
+          )
+        : Promise.resolve([]);
+
       // Fetch activities from all friends in parallel
-      const activityPromises = friends.map(async (friend) => {
+      const activityPromises = friendList.map(async (friend) => {
         const activities = await getUserActivities(friend.uid);
         // Add friend info to each activity
         return activities.map(activity => ({
@@ -1332,8 +1352,11 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         }));
       });
 
-      const allActivities = await Promise.all(activityPromises);
-      const flatActivities = allActivities.flat();
+      const [selfActivities, ...allActivities] = await Promise.all([
+        selfActivitiesPromise,
+        ...activityPromises,
+      ]);
+      const flatActivities = [selfActivities, ...allActivities].flat();
 
       // Sort by activity date (most recent first), not when it was logged
       const parseActivityTime = (timeStr) => {
@@ -1360,12 +1383,15 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
 
       // Tag activities that fulfilled a challenge (for the "Completed challenge" pill).
       // Single batched query against `challenges` filtered by winnerUids array-contains-any
-      // friend uids — friends are the only authors who appear in this feed.
+      // the post authors in this feed — self + friends.
       try {
-        const friendUids = friends.map(f => f.uid).filter(Boolean);
-        if (friendUids.length > 0) {
-          const completedChallenges = await getCompletedChallengesByWinners(friendUids);
-          const friendsByUid = Object.fromEntries(friends.map(f => [f.uid, f]));
+        const winnerUids = Array.from(new Set([
+          user?.uid,
+          ...friendList.map(f => f.uid),
+        ].filter(Boolean)));
+        if (winnerUids.length > 0) {
+          const completedChallenges = await getCompletedChallengesByWinners(winnerUids);
+          const friendsByUid = Object.fromEntries(friendList.map(f => [f.uid, f]));
           const challengeMap = {};
           for (const c of completedChallenges) {
             const isSelfChallenge = c.challengerUid === user?.uid;
@@ -3058,7 +3084,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         <div className="text-center py-12 px-6">
           <div className="text-5xl mb-4">📭</div>
           <p className="text-white font-medium mb-2">No activity yet</p>
-          <p className="text-gray-500 text-sm">Your friends haven't logged any workouts</p>
+          <p className="text-gray-500 text-sm">Log a workout or add friends to see activity here</p>
         </div>
       </div>
     );
@@ -3083,7 +3109,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             <SectionIcon type="feed" />
             <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Feed</span>
           </div>
-          <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Recent activity from friends</p>
+          <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Your recent activity and friends'</p>
         </div>
 
         {/* Pull-to-refresh indicator - positioned below headline, uses local state */}

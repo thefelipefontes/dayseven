@@ -4,7 +4,7 @@ import { auth, googleProvider, appleProvider } from './firebase';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 
-const Login = ({ onLogin }) => {
+const Login = ({ onLogin, onBack = null }) => {
   const [authMode, setAuthMode] = useState('main'); // 'main', 'email-signin', 'email-signup', 'forgot-password'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -223,7 +223,23 @@ const Login = ({ onLogin }) => {
   // Main login screen with social buttons
   if (authMode === 'main') {
     return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center px-6">
+      <div className="min-h-screen bg-black flex flex-col items-center justify-center px-6 pt-safe">
+        {/* Back button — only rendered when the parent reached Login via the
+            welcome screen's "I already have an account" skip path, so users
+            who tap it by mistake can return to onboarding. */}
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="absolute left-6 text-gray-400 hover:text-white transition-colors flex items-center gap-2"
+            style={{ top: 'max(env(safe-area-inset-top, 20px), 50px)' }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M19 12H5M12 19l-7-7 7-7" />
+            </svg>
+            Back
+          </button>
+        )}
+
         {/* Logo/Wordmark */}
         <div className="mb-12 text-center">
           <img

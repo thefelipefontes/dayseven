@@ -13141,6 +13141,12 @@ export default function DaySevenApp() {
     setShowAddActivity(false);
     setShowTour(false);
     setActiveTab('home');
+    // Reset pre-signup gate state so signing out drops the user on the
+    // welcome screen, not whatever survey step they last completed before
+    // signup. Clears any stale localStorage flags from a prior pre-signup.
+    try { localStorage.removeItem('preSignupOnboarding'); } catch {}
+    setPreSignupDone(false);
+    setPreSignupWelcomeSeen(false);
 
     // Then attempt actual sign out in background (don't block UI)
     (async () => {

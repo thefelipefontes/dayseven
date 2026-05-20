@@ -13,7 +13,7 @@ import ProfilePage from './Profile';
 import { isChallengeable, getChallengesForUser, activityMatchesChallengeRule, describeMatchRule, evaluateActivityAgainstChallenge, applyOptimisticChallengeCompletions, applyChallengeIntent } from './services/challengeService';
 import ChallengeMatchChooser from './components/ChallengeMatchChooser';
 import { createUserProfile, getUserProfile, updateUserProfile, updateDisplayName, updateUsername, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, deleteActivityPhoto, saveUserGoals, getUserGoals, savePendingGoals, clearPendingGoals, setOnboardingComplete, setTourComplete, savePersonalRecords, getPersonalRecords, saveDailyHealthData, getDailyHealthData, getDailyHealthHistory, subscribeToUserChallengeStats } from './services/userService';
-import { isSundayToday, nextSundayDateStr, isPendingDue } from './utils/goalsSchedule';
+import { isSundayToday, nextSundayDateStr, isPendingDue, formatApplyOn } from './utils/goalsSchedule';
 import { getFriends, getReactions, getFriendRequests, getComments, addReply, getReplies, deleteReply, addReaction, removeReaction, addComment, cleanupActivitySocialData } from './services/friendService';
 
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
@@ -7219,7 +7219,21 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
                 Suggested based on your goal — adjust anytime
               </p>
             )}
-            {(isEditing || !fitnessGoal || goalsManuallySet.current) && <div className="mb-4" />}
+            {isEditing && !isSundayToday() && (
+              <div
+                className="rounded-xl p-3 mb-4 flex items-start gap-2"
+                style={{ backgroundColor: 'rgba(0,209,255,0.08)', border: '1px solid rgba(0,209,255,0.25)' }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00D1FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginTop: 1, flexShrink: 0 }}>
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+                <div className="text-[12px] leading-snug" style={{ color: '#E0F7FF' }}>
+                  Goals are locked mid-week to keep streaks honest. Your changes will queue and take effect <span className="font-semibold">{formatApplyOn(nextSundayDateStr())}</span>.
+                </div>
+              </div>
+            )}
+            {((isEditing && isSundayToday()) || (!isEditing && (!fitnessGoal || goalsManuallySet.current))) && <div className="mb-4" />}
             <GoalSelector
               label="Strength"
               subtitle="Weightlifting, calisthenics, resistance training"
@@ -7256,7 +7270,21 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
                 Suggested based on your goal — adjust anytime
               </p>
             )}
-            {(isEditing || !fitnessGoal || goalsManuallySet.current) && <div className="mb-4" />}
+            {isEditing && !isSundayToday() && (
+              <div
+                className="rounded-xl p-3 mb-4 flex items-start gap-2"
+                style={{ backgroundColor: 'rgba(0,209,255,0.08)', border: '1px solid rgba(0,209,255,0.25)' }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00D1FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginTop: 1, flexShrink: 0 }}>
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+                <div className="text-[12px] leading-snug" style={{ color: '#E0F7FF' }}>
+                  Goals are locked mid-week to keep streaks honest. Your changes will queue and take effect <span className="font-semibold">{formatApplyOn(nextSundayDateStr())}</span>.
+                </div>
+              </div>
+            )}
+            {((isEditing && isSundayToday()) || (!isEditing && (!fitnessGoal || goalsManuallySet.current))) && <div className="mb-4" />}
             <GoalSelector
               label="Daily Steps"
               subtitle="Recommended: 10k+ for general health"

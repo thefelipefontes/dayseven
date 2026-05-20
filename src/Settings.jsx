@@ -4,6 +4,7 @@ import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
 import { checkUsernameAvailable } from './services/userService';
+import { isSundayToday, formatApplyOn } from './utils/goalsSchedule';
 
 // Helper function for haptic feedback that works on iOS
 const triggerHaptic = async (style = ImpactStyle.Medium) => {
@@ -35,7 +36,7 @@ const getPreviousWeekKey = () => {
   return toLocalDateStr(sunday);
 };
 
-export default function SettingsPage({ user, userProfile, userData, onSignOut, onEditGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onUpdateMaxHeartRate, onUpdateDisplayName, onUpdateUsername, onChangePassword, onResetPassword, onDeleteAccount, onNotificationSettings, isPro, onPresentPaywall, onPresentCustomerCenter, onRestorePurchases, onToggleVacationMode, onUseStreakShield, onClose }) {
+export default function SettingsPage({ user, userProfile, userData, onSignOut, onEditGoals, onCancelPendingGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onUpdateMaxHeartRate, onUpdateDisplayName, onUpdateUsername, onChangePassword, onResetPassword, onDeleteAccount, onNotificationSettings, isPro, onPresentPaywall, onPresentCustomerCenter, onRestorePurchases, onToggleVacationMode, onUseStreakShield, onClose }) {
   const [isEmailPasswordUser, setIsEmailPasswordUser] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [showVacationConfirm, setShowVacationConfirm] = useState(false);
@@ -247,9 +248,10 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
     stepsPerDay: { label: 'Steps', icon: '👟', suffix: '/day', format: (v) => `${(v/1000).toFixed(0)}k` }
   };
 
-  // Check if today is Sunday (0 = Sunday) - first day of the week
-  const isSunday = new Date().getDay() === 0;
-  const canEditGoals = isSunday;
+  // Sunday = immediate save. Other days = queue into pendingGoals, applied on
+  // the next Sunday (or whenever the user next opens the app after that).
+  const isSunday = isSundayToday();
+  const pendingGoals = userData?.pendingGoals || null;
 
   // Detect if user is on mobile device
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -892,62 +894,89 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
         <div className="mb-6">
           <div className="flex items-center justify-between mb-1">
             <h3 className="text-sm font-semibold text-gray-400">WEEKLY GOALS</h3>
-            {canEditGoals ? (
-              <button
-                onClick={onEditGoals}
-                className="text-sm font-medium px-3 py-1 rounded-full transition-all duration-150"
-                style={{ color: '#00FF94', backgroundColor: 'rgba(0,255,148,0.1)', transform: 'scale(1)' }}
-                onTouchStart={(e) => {
-                  e.currentTarget.style.transform = 'scale(0.92)';
-                  e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
-                }}
-                onTouchEnd={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
-                }}
-                onMouseDown={(e) => {
-                  e.currentTarget.style.transform = 'scale(0.92)';
-                  e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
-                }}
-                onMouseUp={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
-                }}
-              >
-                Edit
-              </button>
-            ) : (
-              <span
-                className="text-xs font-medium px-3 py-1 rounded-full flex items-center gap-1"
-                style={{ color: 'rgba(255,255,255,0.4)', backgroundColor: 'rgba(255,255,255,0.05)' }}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                </svg>
-                Sundays only
-              </span>
-            )}
+            <button
+              onClick={onEditGoals}
+              className="text-sm font-medium px-3 py-1 rounded-full transition-all duration-150"
+              style={{ color: '#00FF94', backgroundColor: 'rgba(0,255,148,0.1)', transform: 'scale(1)' }}
+              onTouchStart={(e) => {
+                e.currentTarget.style.transform = 'scale(0.92)';
+                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+              }}
+              onTouchEnd={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+              }}
+              onMouseDown={(e) => {
+                e.currentTarget.style.transform = 'scale(0.92)';
+                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+              }}
+              onMouseUp={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+              }}
+            >
+              {pendingGoals ? 'Edit queued' : 'Edit'}
+            </button>
           </div>
-          <p className="text-[11px] text-gray-500 mb-3">Goals can only be edited on Sundays to keep your streaks honest</p>
+          <p className="text-[11px] text-gray-500 mb-3">
+            {isSunday
+              ? 'Changes save instantly today (Sunday).'
+              : 'Goals are locked mid-week to keep streaks honest — edits queue and apply next Sunday.'}
+          </p>
+          {pendingGoals && (
+            <div
+              className="rounded-xl p-3 mb-3 flex items-center justify-between gap-2"
+              style={{ backgroundColor: 'rgba(0,209,255,0.08)', border: '1px solid rgba(0,209,255,0.25)' }}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00D1FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+                <span className="text-[12px] text-white truncate">
+                  Queued · applies {formatApplyOn(pendingGoals.applyOn)}
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  triggerHaptic(ImpactStyle.Light);
+                  onCancelPendingGoals?.();
+                }}
+                className="text-[12px] font-medium px-2 py-0.5 rounded-full flex-shrink-0"
+                style={{ color: '#FF6B6B', backgroundColor: 'rgba(255,107,107,0.1)' }}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
           <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
             <div className="grid grid-cols-2 gap-3">
-              {Object.entries(goalLabels).map(([key, { label, icon, suffix, format }]) => (
-                <div key={key} className="bg-zinc-700/30 rounded-xl p-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span>{icon}</span>
-                    <span className="text-xs text-gray-400">{label}</span>
+              {Object.entries(goalLabels).map(([key, { label, icon, suffix, format }]) => {
+                const current = userData?.goals?.[key] || 0;
+                const queued = pendingGoals?.[key];
+                const hasChange = pendingGoals && queued !== undefined && queued !== current;
+                return (
+                  <div key={key} className="bg-zinc-700/30 rounded-xl p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span>{icon}</span>
+                      <span className="text-xs text-gray-400">{label}</span>
+                    </div>
+                    <div className="text-lg font-bold text-white">
+                      {format ? format(current) : current}
+                      <span className="text-xs text-gray-500 font-normal ml-1">{suffix}</span>
+                    </div>
+                    {hasChange && (
+                      <div className="text-[10px] mt-0.5" style={{ color: '#00D1FF' }}>
+                        → {format ? format(queued) : queued}{suffix}
+                      </div>
+                    )}
                   </div>
-                  <div className="text-lg font-bold text-white">
-                    {format ? format(userData?.goals?.[key] || 0) : userData?.goals?.[key] || 0}
-                    <span className="text-xs text-gray-500 font-normal ml-1">{suffix}</span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>

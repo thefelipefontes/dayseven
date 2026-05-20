@@ -12,7 +12,8 @@ import SettingsPage from './Settings';
 import ProfilePage from './Profile';
 import { isChallengeable, getChallengesForUser, activityMatchesChallengeRule, describeMatchRule, evaluateActivityAgainstChallenge, applyOptimisticChallengeCompletions, applyChallengeIntent } from './services/challengeService';
 import ChallengeMatchChooser from './components/ChallengeMatchChooser';
-import { createUserProfile, getUserProfile, updateUserProfile, updateDisplayName, updateUsername, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, deleteActivityPhoto, saveUserGoals, getUserGoals, setOnboardingComplete, setTourComplete, savePersonalRecords, getPersonalRecords, saveDailyHealthData, getDailyHealthData, getDailyHealthHistory, subscribeToUserChallengeStats } from './services/userService';
+import { createUserProfile, getUserProfile, updateUserProfile, updateDisplayName, updateUsername, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, deleteActivityPhoto, saveUserGoals, getUserGoals, savePendingGoals, clearPendingGoals, setOnboardingComplete, setTourComplete, savePersonalRecords, getPersonalRecords, saveDailyHealthData, getDailyHealthData, getDailyHealthHistory, subscribeToUserChallengeStats } from './services/userService';
+import { isSundayToday, nextSundayDateStr, isPendingDue } from './utils/goalsSchedule';
 import { getFriends, getReactions, getFriendRequests, getComments, addReply, getReplies, deleteReply, addReaction, removeReaction, addComment, cleanupActivitySocialData } from './services/friendService';
 
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
@@ -13567,6 +13568,21 @@ export default function DaySevenApp() {
             }
           }
 
+          // Goals can only be edited on Sunday. Non-Sunday edits queue into
+          // `pendingGoals` and land here when the user next opens the app on/after
+          // their target Sunday.
+          const pending = profileForStreaks?.pendingGoals;
+          if (pending) {
+            if (isPendingDue(pending)) {
+              const { applyOn: _a, queuedAt: _q, ...goalFields } = pending;
+              setUserData(prev => ({ ...prev, goals: goalFields, pendingGoals: null }));
+              saveUserGoals(user.uid, goalFields).catch(() => {});
+              clearPendingGoals(user.uid).catch(() => {});
+            } else {
+              setUserData(prev => ({ ...prev, pendingGoals: pending }));
+            }
+          }
+
           // Load user's activities from Firestore (force refresh to pick up watch-saved activities)
           const userActivities = await getUserActivities(user.uid, true);
           lastFirestoreActivityCount.current = userActivities.length;
@@ -16367,6 +16383,10 @@ export default function DaySevenApp() {
               userData={userData}
               onSignOut={handleSignOut}
               onEditGoals={() => setShowEditGoals(true)}
+              onCancelPendingGoals={() => {
+                setUserData(prev => ({ ...prev, pendingGoals: null }));
+                clearPendingGoals(user.uid).catch(() => {});
+              }}
               onUpdatePhoto={handleUpdatePhoto}
               onShare={() => setShowShare(true)}
               onStartTour={() => {
@@ -17532,7 +17552,15 @@ export default function DaySevenApp() {
       {showEditGoals && (
         <div className="fixed inset-0 z-50 bg-black">
           <OnboardingSurvey
-            currentGoals={userData.goals}
+            currentGoals={userData.pendingGoals
+              ? {
+                  liftsPerWeek: userData.pendingGoals.liftsPerWeek,
+                  cardioPerWeek: userData.pendingGoals.cardioPerWeek,
+                  recoveryPerWeek: userData.pendingGoals.recoveryPerWeek,
+                  stepsPerDay: userData.pendingGoals.stepsPerDay,
+                  caloriesPerDay: userData.pendingGoals.caloriesPerDay,
+                }
+              : userData.goals}
             onCancel={() => setShowEditGoals(false)}
             onComplete={async (goals) => {
               const goalsToSave = {
@@ -17543,21 +17571,35 @@ export default function DaySevenApp() {
                 caloriesPerDay: goals.caloriesPerDay
               };
 
-              // Save goals to Firestore
-              await saveUserGoals(user.uid, goalsToSave);
+              if (isSundayToday()) {
+                // Sunday: apply immediately, drop any earlier queued change.
+                await saveUserGoals(user.uid, goalsToSave);
+                clearPendingGoals(user.uid).catch(() => {});
 
-              setUserData(prev => ({
-                ...prev,
-                goals: goalsToSave
-              }));
-              setWeeklyProgress(prev => ({
-                ...prev,
-                lifts: { ...prev.lifts, goal: goals.liftsPerWeek },
-                cardio: { ...prev.cardio, goal: goals.cardioPerWeek },
-                recovery: { ...prev.recovery, goal: goals.recoveryPerWeek },
-                steps: { ...prev.steps, goal: goals.stepsPerDay },
-                calories: { ...prev.calories, goal: goals.caloriesPerDay }
-              }));
+                setUserData(prev => ({
+                  ...prev,
+                  goals: goalsToSave,
+                  pendingGoals: null,
+                }));
+                setWeeklyProgress(prev => ({
+                  ...prev,
+                  lifts: { ...prev.lifts, goal: goals.liftsPerWeek },
+                  cardio: { ...prev.cardio, goal: goals.cardioPerWeek },
+                  recovery: { ...prev.recovery, goal: goals.recoveryPerWeek },
+                  steps: { ...prev.steps, goal: goals.stepsPerDay },
+                  calories: { ...prev.calories, goal: goals.caloriesPerDay }
+                }));
+              } else {
+                // Non-Sunday: queue for next Sunday so mid-week streak math
+                // stays anchored to the goals the user actually committed to.
+                const pending = {
+                  ...goalsToSave,
+                  applyOn: nextSundayDateStr(),
+                  queuedAt: new Date().toISOString(),
+                };
+                await savePendingGoals(user.uid, pending);
+                setUserData(prev => ({ ...prev, pendingGoals: pending }));
+              }
               setShowEditGoals(false);
             }}
           />

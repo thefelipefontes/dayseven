@@ -4,7 +4,7 @@ import { auth, googleProvider, appleProvider } from './firebase';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 
-const Login = ({ onLogin, onBack = null }) => {
+const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
   const [authMode, setAuthMode] = useState('main'); // 'main', 'email-signin', 'email-signup', 'forgot-password'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -298,9 +298,11 @@ const Login = ({ onLogin, onBack = null }) => {
             <div className="flex-1 h-px bg-gray-700" />
           </div>
 
-          {/* Email Sign In */}
+          {/* Email Sign In/Up — signupOnly routes directly to the create
+              account form since the user just finished onboarding and is
+              committing to a new account. */}
           <button
-            onClick={() => { resetForm(); setAuthMode('email-signin'); }}
+            onClick={() => { resetForm(); setAuthMode(signupOnly ? 'email-signup' : 'email-signin'); }}
             disabled={isLoading}
             className="w-full flex items-center justify-center gap-3 bg-zinc-800 text-white font-semibold py-3 px-6 rounded-full hover:bg-zinc-700 active:scale-95 transition-all duration-200 disabled:opacity-50"
           >
@@ -311,16 +313,19 @@ const Login = ({ onLogin, onBack = null }) => {
             Continue with Email
           </button>
 
-          {/* Create Account Link */}
-          <p className="text-center text-gray-500 text-sm pt-2">
-            Don't have an account?{' '}
-            <button
-              onClick={() => { resetForm(); setAuthMode('email-signup'); }}
-              className="text-green-400 font-medium hover:underline"
-            >
-              Sign up
-            </button>
-          </p>
+          {/* Create Account Link — hidden in signupOnly mode (we're already
+              steering toward signup; sign-in entry point would be confusing). */}
+          {!signupOnly && (
+            <p className="text-center text-gray-500 text-sm pt-2">
+              Don't have an account?{' '}
+              <button
+                onClick={() => { resetForm(); setAuthMode('email-signup'); }}
+                className="text-green-400 font-medium hover:underline"
+              >
+                Sign up
+              </button>
+            </p>
+          )}
         </div>
 
         {/* Error message */}
@@ -506,16 +511,18 @@ const Login = ({ onLogin, onBack = null }) => {
             {isLoading ? 'Creating account...' : 'Create Account'}
           </button>
 
-          <p className="text-center text-gray-500 text-sm pt-2">
-            Already have an account?{' '}
-            <button
-              type="button"
-              onClick={() => { resetForm(); setAuthMode('email-signin'); }}
-              className="text-green-400 font-medium hover:underline"
-            >
-              Sign in
-            </button>
-          </p>
+          {!signupOnly && (
+            <p className="text-center text-gray-500 text-sm pt-2">
+              Already have an account?{' '}
+              <button
+                type="button"
+                onClick={() => { resetForm(); setAuthMode('email-signin'); }}
+                className="text-green-400 font-medium hover:underline"
+              >
+                Sign in
+              </button>
+            </p>
+          )}
         </form>
       </div>
     );

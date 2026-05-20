@@ -6841,7 +6841,8 @@ const PreSignupWelcome = ({ onGetStarted, onSignIn }) => (
   <div className="min-h-screen bg-black flex flex-col">
     <div className="flex-1 flex items-center justify-center px-6">
       <div className="text-center">
-        <img src="/wordmark.png" alt="Day Seven" className="h-12 mx-auto mb-6" />
+        <img src="/icon-transparent.png" alt="" className="h-20 mx-auto mb-2" />
+        <img src="/wordmark.png" alt="Day Seven" className="h-12 mx-auto mb-2" />
         <p className="text-gray-400 text-xl leading-relaxed">
           Set Your Standards.<br />Earn Your Streaks.
         </p>

@@ -14290,9 +14290,15 @@ export default function DaySevenApp() {
       calories: { ...prev.calories, goal: goals.caloriesPerDay },
     }));
 
-    // Welcome paywall — keeps the onboarding black screen behind the native
-    // paywall so users can't interact with the main app through the overlay.
-    if (Capacitor.isNativePlatform()) {
+    justOnboardedRef.current = true;
+    setIsOnboarded(true);
+    setActiveTab('home');
+
+    // Paywall + permission prompts only fire here when the user has already
+    // set a username (the in-app survey fallback path). For the pre-signup
+    // flow, the user hits username setup AFTER this runs — UsernameSetup's
+    // onComplete handler owns the paywall → HK → push sequence in that case.
+    if (Capacitor.isNativePlatform() && userProfileRef.current?.username) {
       try {
         const { purchased } = await presentPaywall({ offeringIdentifier: 'Welcome Offer' });
         if (purchased) {
@@ -14302,17 +14308,6 @@ export default function DaySevenApp() {
       } catch (e) {
         console.error('[App] Post-onboarding paywall error:', e);
       }
-    }
-
-    justOnboardedRef.current = true;
-    setIsOnboarded(true);
-    setActiveTab('home');
-
-    // Permission prompts: Health first, then Push. Skipped if the user
-    // hasn't set a username yet — UsernameSetup's onComplete handler fires
-    // them once they're past that gate. Avoids stacking native dialogs on
-    // top of the username screen.
-    if (Capacitor.isNativePlatform() && userProfileRef.current?.username) {
       try {
         await syncHealthKit();
       } catch (e) {
@@ -15992,10 +15987,20 @@ export default function DaySevenApp() {
         user={user}
         onComplete={async (username) => {
           setUserProfile(prev => ({ ...prev, username }));
-          // Fire permission prompts that were deferred while the username
-          // gate was still up. Only when the user is already onboarded —
-          // otherwise the in-app survey runs next and handles them itself.
+          // Fire the post-onboarding sequence that was deferred while the
+          // username gate was up: paywall → HealthKit → push. Only when
+          // already onboarded — the in-app survey fallback path handles
+          // its own paywall/permissions after the survey completes.
           if (isOnboarded && Capacitor.isNativePlatform()) {
+            try {
+              const { purchased } = await presentPaywall({ offeringIdentifier: 'Welcome Offer' });
+              if (purchased) {
+                const proStatus = await checkProStatus();
+                applyProStatus(proStatus);
+              }
+            } catch (e) {
+              console.error('[App] Post-username paywall error:', e);
+            }
             try {
               await syncHealthKit();
             } catch (e) {

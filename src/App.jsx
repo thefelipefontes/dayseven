@@ -6834,7 +6834,10 @@ const SmartSaveExplainModal = ({ onClose, onDisable }) => {
 };
 
 // Onboarding Survey — Multi-step flow
-const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, currentPrivacy = null }) => {
+// `preSignup` flips the final button to "Continue to Sign Up" — answers are
+// collected, persisted to localStorage by the wrapper, and applied to the
+// user's profile after they create an account.
+const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, currentPrivacy = null, preSignup = false }) => {
   const isEditing = currentGoals !== null;
   const startStep = isEditing ? 5 : 1;
   const endStep = isEditing ? 6 : 7;
@@ -7490,7 +7493,7 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
             }
           }}
         >
-          {isLastStep ? (isEditing ? 'Save Goals' : 'Get Started') : 'Continue'}
+          {isLastStep ? (isEditing ? 'Save Goals' : (preSignup ? 'Continue to Sign Up' : 'Get Started')) : 'Continue'}
         </button>
       </div>
     </div>
@@ -12283,6 +12286,17 @@ export default function DaySevenApp() {
   const [userProfile, setUserProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [isOnboarded, setIsOnboarded] = useState(null); // null = loading, true = onboarded, false = needs onboarding
+  // Pre-signup onboarding: collected answers live in localStorage until the
+  // user creates an account, at which point handleUserAuth applies them.
+  // Read once on mount so the first paint already routes to Login vs survey.
+  const [preSignupDone, setPreSignupDone] = useState(() => {
+    try {
+      const raw = localStorage.getItem('preSignupOnboarding');
+      return raw ? !!JSON.parse(raw)?.done : false;
+    } catch {
+      return false;
+    }
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('home');
   const [showSettings, setShowSettings] = useState(false);
@@ -13469,13 +13483,52 @@ export default function DaySevenApp() {
         setOnboardingComplete(user.uid).catch(() => {});
       }
 
+      // Read pre-signup answers (if user went through the pre-signup gate).
+      // We apply them only for genuinely new accounts; existing users keep
+      // whatever was already on their profile and the stray answers get dropped.
+      let preSignup = null;
+      try {
+        const raw = localStorage.getItem('preSignupOnboarding');
+        preSignup = raw ? JSON.parse(raw) : null;
+      } catch {
+        preSignup = null;
+      }
+      const shouldApplyPreSignup = preSignup?.done === true && !hasCompletedOnboarding;
+
       // Set user and profile together to avoid intermediate render states
       setUser(user);
       setUserProfile(profile);
       setUnreadFeedCount(profile?.unreadFeedCount || 0);
-      setIsOnboarded(hasCompletedOnboarding);
+      // For pre-signup applies, leave isOnboarded as is (null/false) until
+      // finalizeOnboardingFlow sets it true — avoids a flash of the in-app
+      // survey while the data is being written.
+      if (!shouldApplyPreSignup) {
+        setIsOnboarded(hasCompletedOnboarding);
+      }
       setActiveTab('home'); // Always go to home screen after login
       setAuthLoading(false);
+
+      // Existing users — drop any stray pre-signup data so we don't replay it.
+      if (preSignup && !shouldApplyPreSignup) {
+        localStorage.removeItem('preSignupOnboarding');
+        setPreSignupDone(false);
+      }
+
+      // Apply pre-signup answers in the background. We don't await so the rest
+      // of handleUserAuth (background IIFE) can run in parallel.
+      if (shouldApplyPreSignup) {
+        finalizeOnboardingFlow(user.uid, preSignup)
+          .then(() => {
+            localStorage.removeItem('preSignupOnboarding');
+            setPreSignupDone(false);
+          })
+          .catch(err => {
+            console.error('[App] Pre-signup application failed; falling back to in-app survey:', err);
+            localStorage.removeItem('preSignupOnboarding');
+            setPreSignupDone(false);
+            setIsOnboarded(false);
+          });
+      }
 
       // Demo mode: load mock data for appreview account (marketing screen recordings)
       if (isDemoAccount(profile, user)) {
@@ -14146,6 +14199,83 @@ export default function DaySevenApp() {
     } catch (error) {
     }
   }, []);
+
+  // Single first-launch finalizer shared by both paths that promote a brand
+  // new user to fully onboarded: the pre-signup wrapper (answers from
+  // localStorage applied after auth) and the in-app survey (fallback when no
+  // pre-signup data is present). Order: write profile → paywall → mark
+  // onboarded → Health prompt → Push prompt.
+  const finalizeOnboardingFlow = useCallback(async (uid, { goals, privacy, extra }) => {
+    const goalsToSave = {
+      liftsPerWeek: goals.liftsPerWeek,
+      cardioPerWeek: goals.cardioPerWeek,
+      recoveryPerWeek: goals.recoveryPerWeek,
+      stepsPerDay: goals.stepsPerDay,
+      caloriesPerDay: goals.caloriesPerDay,
+    };
+    await saveUserGoals(uid, goalsToSave);
+
+    if (privacy) {
+      await updateUserProfile(uid, { privacySettings: privacy });
+      setUserProfile(prev => prev ? { ...prev, privacySettings: privacy } : prev);
+    }
+    if (extra) {
+      const extraFields = {};
+      if (extra.fitnessGoal) extraFields.fitnessGoal = extra.fitnessGoal;
+      if (extra.fitnessLevel) extraFields.fitnessLevel = extra.fitnessLevel;
+      if (extra.favoriteRecovery) extraFields.favoriteRecovery = extra.favoriteRecovery;
+      if (extra.wearable) extraFields.wearable = extra.wearable;
+      if (Object.keys(extraFields).length > 0) {
+        await updateUserProfile(uid, extraFields);
+      }
+    }
+
+    await setOnboardingComplete(uid);
+
+    setUserData(prev => ({ ...prev, goals: goalsToSave }));
+    setWeeklyProgress(prev => ({
+      ...prev,
+      lifts: { ...prev.lifts, goal: goals.liftsPerWeek },
+      cardio: { ...prev.cardio, goal: goals.cardioPerWeek },
+      recovery: { ...prev.recovery, goal: goals.recoveryPerWeek },
+      steps: { ...prev.steps, goal: goals.stepsPerDay },
+      calories: { ...prev.calories, goal: goals.caloriesPerDay },
+    }));
+
+    // Welcome paywall — keeps the onboarding black screen behind the native
+    // paywall so users can't interact with the main app through the overlay.
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const { purchased } = await presentPaywall({ offeringIdentifier: 'Welcome Offer' });
+        if (purchased) {
+          const proStatus = await checkProStatus();
+          applyProStatus(proStatus);
+        }
+      } catch (e) {
+        console.error('[App] Post-onboarding paywall error:', e);
+      }
+    }
+
+    justOnboardedRef.current = true;
+    setIsOnboarded(true);
+    setActiveTab('home');
+
+    // Permission prompts: Health first, then Push. syncHealthKit handles the
+    // auto-import of HK workouts (gated by justOnboardedRef) so the user's
+    // historical workouts land in the feed on first launch.
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await syncHealthKit();
+      } catch (e) {
+        console.error('[App] Post-onboarding HealthKit prompt failed:', e);
+      }
+      try {
+        await setupPushNotifications(uid);
+      } catch (e) {
+        console.error('[App] Post-onboarding push prompt failed:', e);
+      }
+    }
+  }, [syncHealthKit, setupPushNotifications]);
 
   // Periodically refresh HealthKit steps/calories and re-sync workouts on foreground
   // NOTE: Initial syncHealthKit() is called in the data loading block above AFTER
@@ -15737,6 +15867,32 @@ export default function DaySevenApp() {
     );
   }
 
+  // Pre-signup onboarding: ask the questions BEFORE the user creates an
+  // account so the signup form feels like the natural next step instead of
+  // the gate to a wall of permission prompts + a survey. Answers persist in
+  // localStorage and get applied to the new user's profile by handleUserAuth.
+  if (!user && !preSignupDone) {
+    return <OnboardingSurvey
+      currentGoals={null}
+      onCancel={null}
+      preSignup={true}
+      onComplete={(goals, privacySettings, extraData) => {
+        try {
+          localStorage.setItem('preSignupOnboarding', JSON.stringify({
+            goals,
+            privacy: privacySettings,
+            extra: extraData,
+            done: true,
+            savedAt: new Date().toISOString(),
+          }));
+        } catch (e) {
+          console.error('[App] Failed to persist pre-signup answers:', e);
+        }
+        setPreSignupDone(true);
+      }}
+    />;
+  }
+
   // Show login if no user or no userData (signed out)
   if (!user || !userData || !userProfile) {
     return <Login onLogin={handleUserAuth} />;
@@ -15753,94 +15909,18 @@ export default function DaySevenApp() {
   }
 
   if (isOnboarded === false) {
+    // Fallback in-app onboarding for users who reached here without going
+    // through pre-signup (edge case — e.g. profile partial wipe, or signed
+    // in via flow that bypassed the pre-signup gate).
     return <OnboardingSurvey
       currentGoals={null}
       onCancel={null}
       onComplete={async (goals, privacySettings, extraData) => {
-        const goalsToSave = {
-          liftsPerWeek: goals.liftsPerWeek,
-          cardioPerWeek: goals.cardioPerWeek,
-          recoveryPerWeek: goals.recoveryPerWeek,
-          stepsPerDay: goals.stepsPerDay,
-          caloriesPerDay: goals.caloriesPerDay
-        };
-
-        // Save goals to Firestore
-        await saveUserGoals(user.uid, goalsToSave);
-
-        // Save privacy settings to Firestore
-        if (privacySettings) {
-          await updateUserProfile(user.uid, { privacySettings });
-          setUserProfile(prev => ({ ...prev, privacySettings }));
-        }
-
-        // Save new onboarding fields to Firestore
-        if (extraData) {
-          const extraFields = {};
-          if (extraData.fitnessGoal) extraFields.fitnessGoal = extraData.fitnessGoal;
-          if (extraData.fitnessLevel) extraFields.fitnessLevel = extraData.fitnessLevel;
-          if (extraData.favoriteRecovery) extraFields.favoriteRecovery = extraData.favoriteRecovery;
-          if (extraData.wearable) extraFields.wearable = extraData.wearable;
-          if (Object.keys(extraFields).length > 0) {
-            await updateUserProfile(user.uid, extraFields);
-          }
-        }
-
-        // Mark onboarding as complete
-        await setOnboardingComplete(user.uid);
-
-        // Update userData with user's chosen goals
-        setUserData(prev => ({
-          ...prev,
-          goals: goalsToSave
-        }));
-        // Recalculate weekly progress with new goals
-        setWeeklyProgress(prev => ({
-          ...prev,
-          lifts: { ...prev.lifts, goal: goals.liftsPerWeek },
-          cardio: { ...prev.cardio, goal: goals.cardioPerWeek },
-          recovery: { ...prev.recovery, goal: goals.recoveryPerWeek },
-          steps: { ...prev.steps, goal: goals.stepsPerDay },
-          calories: { ...prev.calories, goal: goals.caloriesPerDay }
-        }));
-        // Present welcome offer paywall BEFORE setting isOnboarded to true
-        // This keeps the onboarding black screen behind the native paywall
-        // so users can't interact with the main app through the paywall overlay
-        if (Capacitor.isNativePlatform()) {
-          try {
-            const { purchased } = await presentPaywall({ offeringIdentifier: 'Welcome Offer' });
-            if (purchased) {
-              const proStatus = await checkProStatus();
-              applyProStatus(proStatus);
-            }
-          } catch (e) {
-            console.error('[App] Post-onboarding paywall error:', e);
-          }
-        }
-
-        // NOW show the main app (after paywall is dismissed)
-        justOnboardedRef.current = true; // Suppress Smart Save modal on first HealthKit sync
-        setIsOnboarded(true);
-        setActiveTab('home');
-
-        // Permission dialogs run AFTER onboarding so the first-launch flow
-        // is "answer questions → grant Health → allow notifications". Both
-        // were previously fired during the auth data-load and showed up
-        // before the survey, which felt invasive.
-        if (Capacitor.isNativePlatform()) {
-          try {
-            if (!userProfileRef.current?.disableHealthKitSync) {
-              await syncHealthKit();
-            }
-          } catch (e) {
-            console.error('[App] Post-onboarding HealthKit prompt failed:', e);
-          }
-          try {
-            await setupPushNotifications(user.uid);
-          } catch (e) {
-            console.error('[App] Post-onboarding push prompt failed:', e);
-          }
-        }
+        await finalizeOnboardingFlow(user.uid, {
+          goals,
+          privacy: privacySettings,
+          extra: extraData,
+        });
       }}
     />;
   }

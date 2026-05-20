@@ -4,6 +4,7 @@ import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
 import { checkUsernameAvailable } from './services/userService';
+import { useModalAnimation } from './hooks/useModalAnimation';
 
 // Helper function for haptic feedback that works on iOS
 const triggerHaptic = async (style = ImpactStyle.Medium) => {
@@ -41,6 +42,12 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
   const [showVacationConfirm, setShowVacationConfirm] = useState(false);
   const [showVacationDeactivateConfirm, setShowVacationDeactivateConfirm] = useState(false);
   const [showShieldConfirmProfile, setShowShieldConfirmProfile] = useState(false);
+
+  // Unified open/close animation for the confirm modals on this page. Each helper drives
+  // a fade-and-scale on whichever close trigger fires (backdrop, Cancel, action button).
+  const vacActivateAnim = useModalAnimation(showVacationConfirm, setShowVacationConfirm);
+  const vacDeactivateAnim = useModalAnimation(showVacationDeactivateConfirm, setShowVacationDeactivateConfirm);
+  const shieldConfirmAnim = useModalAnimation(showShieldConfirmProfile, setShowShieldConfirmProfile);
 
   // Profile field edit modal — used for both display name and username.
   // editField is 'displayName' | 'username' | null.
@@ -192,6 +199,9 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
   }, [user]);
   const [showPhotoOptions, setShowPhotoOptions] = useState(false);
   const [showPhotoPreview, setShowPhotoPreview] = useState(false);
+  // Fullscreen photo-preview uses the same fade-out as the other dialogs so closing
+  // (X button, Choose Another, Use Photo) doesn't pop the screen out abruptly.
+  const photoPreviewAnim = useModalAnimation(showPhotoPreview, setShowPhotoPreview);
   const [previewImage, setPreviewImage] = useState(null);
   const [capturedFile, setCapturedFile] = useState(null);
   const [imagePosition, setImagePosition] = useState({ x: 0, y: 0 });
@@ -362,20 +372,26 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
     }, 100);
   };
 
+  // Close-then-cleanup helper. The animation hook plays the fade-out (setting `show*`
+  // to false at the end), and the callback fires *after* so the image stays visible
+  // through the fade rather than disappearing mid-animation.
+  const closePhotoPreview = (afterClose) => {
+    photoPreviewAnim.close(() => {
+      if (previewImage) URL.revokeObjectURL(previewImage);
+      setPreviewImage(null);
+      setCapturedFile(null);
+      setImagePosition({ x: 0, y: 0 });
+      setImageScale(1);
+      if (typeof afterClose === 'function') afterClose();
+    });
+  };
+
   const handleChooseAnother = async () => {
-    // Clean up preview URL
-    if (previewImage) {
-      URL.revokeObjectURL(previewImage);
-    }
-    setPreviewImage(null);
-    setCapturedFile(null);
-    setShowPhotoPreview(false);
-    setImagePosition({ x: 0, y: 0 });
-    setImageScale(1);
-    // Open photo library
-    setTimeout(() => {
-      handleChooseFromLibrary();
-    }, 100);
+    closePhotoPreview(() => {
+      setTimeout(() => {
+        handleChooseFromLibrary();
+      }, 100);
+    });
   };
 
   const handleSavePhoto = async () => {
@@ -383,18 +399,9 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
 
     setIsUploadingPhoto(true);
     try {
-      // Crop the image based on user's position/zoom
       const croppedFile = await cropImage();
       await onUpdatePhoto(croppedFile);
-      // Clean up
-      if (previewImage) {
-        URL.revokeObjectURL(previewImage);
-      }
-      setPreviewImage(null);
-      setCapturedFile(null);
-      setShowPhotoPreview(false);
-      setImagePosition({ x: 0, y: 0 });
-      setImageScale(1);
+      closePhotoPreview();
     } catch (error) {
       alert('Failed to upload photo. Please try again.');
     }
@@ -402,15 +409,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
   };
 
   const handleCancelPreview = () => {
-    // Clean up preview URL
-    if (previewImage) {
-      URL.revokeObjectURL(previewImage);
-    }
-    setPreviewImage(null);
-    setCapturedFile(null);
-    setShowPhotoPreview(false);
-    setImagePosition({ x: 0, y: 0 });
-    setImageScale(1);
+    closePhotoPreview();
   };
 
   // Refs for gesture tracking (more responsive than state)
@@ -1228,11 +1227,22 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
         {showShieldConfirmProfile && (() => {
           const currentWeek = getCurrentWeekKey();
           return (
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setShowShieldConfirmProfile(false)}>
-              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+            <div
+              className="fixed inset-0 z-[9999] flex items-center justify-center transition-all duration-300"
+              style={{ backgroundColor: shieldConfirmAnim.isAnimating ? 'rgba(0,0,0,0.6)' : 'rgba(0,0,0,0)' }}
+              onClick={() => shieldConfirmAnim.close()}
+            >
               <div
-                className="relative w-[85%] max-w-sm rounded-2xl p-6"
-                style={{ backgroundColor: '#1a1a1a' }}
+                className="absolute inset-0 backdrop-blur-sm transition-opacity duration-300"
+                style={{ opacity: shieldConfirmAnim.isAnimating ? 1 : 0 }}
+              />
+              <div
+                className="relative w-[85%] max-w-sm rounded-2xl p-6 transition-all duration-300 ease-out"
+                style={{
+                  backgroundColor: '#1a1a1a',
+                  transform: shieldConfirmAnim.isAnimating ? 'scale(1) translateY(0)' : 'scale(0.95) translateY(20px)',
+                  opacity: shieldConfirmAnim.isAnimating ? 1 : 0,
+                }}
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex flex-col items-center text-center mb-5">
@@ -1258,7 +1268,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
 
                 <div className="flex gap-3">
                   <button
-                    onClick={() => setShowShieldConfirmProfile(false)}
+                    onClick={() => shieldConfirmAnim.close()}
                     className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
                     style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
                   >
@@ -1266,9 +1276,8 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                   </button>
                   <button
                     onClick={() => {
-                      setShowShieldConfirmProfile(false);
                       triggerHaptic(ImpactStyle.Heavy);
-                      onUseStreakShield?.(currentWeek);
+                      shieldConfirmAnim.close(() => onUseStreakShield?.(currentWeek));
                     }}
                     className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
                     style={{ backgroundColor: '#00D1FF' }}
@@ -1849,7 +1858,10 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
 
       {/* Photo Preview Modal */}
       {showPhotoPreview && previewImage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black transition-opacity duration-300"
+          style={{ opacity: photoPreviewAnim.isAnimating ? 1 : 0 }}
+        >
           {/* Preview Image */}
           <div className="relative w-full h-full flex flex-col">
             {/* Header - pushed down to avoid Dynamic Island */}
@@ -1953,11 +1965,22 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
 
       {/* Vacation Mode Confirmation Modal */}
       {showVacationConfirm && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setShowVacationConfirm(false)}>
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center transition-all duration-300"
+          style={{ backgroundColor: vacActivateAnim.isAnimating ? 'rgba(0,0,0,0.6)' : 'rgba(0,0,0,0)' }}
+          onClick={() => vacActivateAnim.close()}
+        >
           <div
-            className="relative w-[85%] max-w-sm rounded-2xl p-6"
-            style={{ backgroundColor: '#1a1a1a' }}
+            className="absolute inset-0 backdrop-blur-sm transition-opacity duration-300"
+            style={{ opacity: vacActivateAnim.isAnimating ? 1 : 0 }}
+          />
+          <div
+            className="relative w-[85%] max-w-sm rounded-2xl p-6 transition-all duration-300 ease-out"
+            style={{
+              backgroundColor: '#1a1a1a',
+              transform: vacActivateAnim.isAnimating ? 'scale(1) translateY(0)' : 'scale(0.95) translateY(20px)',
+              opacity: vacActivateAnim.isAnimating ? 1 : 0,
+            }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex flex-col items-center text-center mb-5">
@@ -1995,7 +2018,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
 
             <div className="flex gap-3">
               <button
-                onClick={() => setShowVacationConfirm(false)}
+                onClick={() => vacActivateAnim.close()}
                 className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
                 style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
               >
@@ -2003,9 +2026,8 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
               </button>
               <button
                 onClick={() => {
-                  setShowVacationConfirm(false);
                   triggerHaptic(ImpactStyle.Heavy);
-                  onToggleVacationMode?.();
+                  vacActivateAnim.close(() => onToggleVacationMode?.());
                 }}
                 className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
                 style={{ backgroundColor: '#00D1FF' }}
@@ -2018,12 +2040,34 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
       )}
 
       {/* Vacation Mode Deactivation Confirmation Modal */}
-      {showVacationDeactivateConfirm && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setShowVacationDeactivateConfirm(false)}>
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      {showVacationDeactivateConfirm && (() => {
+        // If the current week was marked as a vacation week, give the user a choice:
+        // keep this week protected (streak stays safe), or treat the rest of the week
+        // as normal (streak counts again — they get credit if they hit goals, or lose
+        // it if they miss). When the current week isn't protected, the choice doesn't
+        // apply and we fall back to the original single Deactivate button.
+        const _t = new Date();
+        const _sun = new Date(_t);
+        _sun.setDate(_t.getDate() - _t.getDay());
+        const _cwKey = `${_sun.getFullYear()}-${String(_sun.getMonth() + 1).padStart(2, '0')}-${String(_sun.getDate()).padStart(2, '0')}`;
+        const currentWeekProtected = (userData?.vacationMode?.vacationWeeks || []).includes(_cwKey);
+        return (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center transition-all duration-300"
+          style={{ backgroundColor: vacDeactivateAnim.isAnimating ? 'rgba(0,0,0,0.6)' : 'rgba(0,0,0,0)' }}
+          onClick={() => vacDeactivateAnim.close()}
+        >
           <div
-            className="relative w-[85%] max-w-sm rounded-2xl p-6"
-            style={{ backgroundColor: '#1a1a1a' }}
+            className="absolute inset-0 backdrop-blur-sm transition-opacity duration-300"
+            style={{ opacity: vacDeactivateAnim.isAnimating ? 1 : 0 }}
+          />
+          <div
+            className="relative w-[85%] max-w-sm rounded-2xl p-6 transition-all duration-300 ease-out"
+            style={{
+              backgroundColor: '#1a1a1a',
+              transform: vacDeactivateAnim.isAnimating ? 'scale(1) translateY(0)' : 'scale(0.95) translateY(20px)',
+              opacity: vacDeactivateAnim.isAnimating ? 1 : 0,
+            }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex flex-col items-center text-center mb-5">
@@ -2032,7 +2076,9 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
               </div>
               <h3 className="text-white font-semibold text-lg">Deactivate Vacation Mode?</h3>
               <p className="text-gray-400 text-sm mt-2 leading-relaxed">
-                Your streaks will no longer be frozen. You'll need to complete your weekly goals to keep them going.
+                {currentWeekProtected
+                  ? "You're partway through a vacation week. How should the rest of this week be handled?"
+                  : "Your streaks will no longer be frozen. You'll need to complete your weekly goals to keep them going."}
               </p>
             </div>
 
@@ -2047,29 +2093,61 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
               </div>
             </div>
 
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowVacationDeactivateConfirm(false)}
-                className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
-                style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
-              >
-                Keep Active
-              </button>
-              <button
-                onClick={() => {
-                  setShowVacationDeactivateConfirm(false);
-                  triggerHaptic(ImpactStyle.Medium);
-                  onToggleVacationMode?.();
-                }}
-                className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
-                style={{ backgroundColor: '#FF9500' }}
-              >
-                Deactivate
-              </button>
-            </div>
+            {currentWeekProtected ? (
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={() => {
+                    triggerHaptic(ImpactStyle.Medium);
+                    vacDeactivateAnim.close(() => onToggleVacationMode?.());
+                  }}
+                  className="w-full py-3 rounded-xl text-sm font-semibold"
+                  style={{ backgroundColor: '#00D1FF', color: 'black' }}
+                >
+                  🌴 Keep this week protected
+                </button>
+                <button
+                  onClick={() => {
+                    triggerHaptic(ImpactStyle.Medium);
+                    vacDeactivateAnim.close(() => onToggleVacationMode?.({ removeCurrentWeek: true }));
+                  }}
+                  className="w-full py-3 rounded-xl text-sm font-semibold text-white"
+                  style={{ backgroundColor: '#FF9500' }}
+                >
+                  Count this week as normal
+                </button>
+                <button
+                  onClick={() => vacDeactivateAnim.close()}
+                  className="w-full py-3 rounded-xl text-sm font-semibold text-white"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-3">
+                <button
+                  onClick={() => vacDeactivateAnim.close()}
+                  className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+                >
+                  Keep Active
+                </button>
+                <button
+                  onClick={() => {
+                    triggerHaptic(ImpactStyle.Medium);
+                    vacDeactivateAnim.close(() => onToggleVacationMode?.());
+                  }}
+                  className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+                  style={{ backgroundColor: '#FF9500' }}
+                >
+                  Deactivate
+                </button>
+              </div>
+            )}
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Edit profile field modal — handles both display name and username. */}
       {editField && (

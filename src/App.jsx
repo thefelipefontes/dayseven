@@ -39,6 +39,7 @@ import WeekStatsModal from './components/WeekStatsModal';
 import MonthStatsModal from './components/MonthStatsModal';
 import ActivityDetailModal from './components/ActivityDetailModal';
 import TrendsView from './components/TrendsView';
+import { useModalAnimation } from './hooks/useModalAnimation';
 
 // Flag to suppress foreground refresh while photo picker is open
 // (prevents re-render glitch when returning from iOS photo picker)
@@ -10508,6 +10509,9 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
   const [dismissConfirmWorkouts, setDismissConfirmWorkouts] = useState(null); // Workouts pending dismiss confirmation
   const [showVacationDeactivateConfirm, setShowVacationDeactivateConfirm] = useState(false);
+  // Unified open/close animation — same fade-and-scale on backdrop tap, Cancel, or any
+  // action button.
+  const vacDeactAnim = useModalAnimation(showVacationDeactivateConfirm, setShowVacationDeactivateConfirm);
   const [showWorkoutPicker, setShowWorkoutPicker] = useState(false);
   const [workoutPickerDragY, setWorkoutPickerDragY] = useState(0);
   const [workoutPickerTouchStart, setWorkoutPickerTouchStart] = useState(null);
@@ -11874,13 +11878,34 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
           );
         })()}
 
-        {/* Vacation Mode Deactivation Confirmation Modal */}
-        {showVacationDeactivateConfirm && (
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setShowVacationDeactivateConfirm(false)}>
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+        {/* Vacation Mode Deactivation Confirmation Modal — gives the user a choice when
+            the current week is still inside the protected list: keep it protected (streak
+            stays safe) or let it count as a normal week (Mon–Sat workouts now contribute
+            to / break the streak). Unified fade-and-scale close animation regardless of
+            trigger (backdrop tap, Cancel, action buttons). */}
+        {showVacationDeactivateConfirm && (() => {
+          const _t = new Date();
+          const _sun = new Date(_t);
+          _sun.setDate(_t.getDate() - _t.getDay());
+          const _cwKey = `${_sun.getFullYear()}-${String(_sun.getMonth() + 1).padStart(2, '0')}-${String(_sun.getDate()).padStart(2, '0')}`;
+          const currentWeekProtected = (userData?.vacationMode?.vacationWeeks || []).includes(_cwKey);
+          return (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center transition-all duration-300"
+            style={{ backgroundColor: vacDeactAnim.isAnimating ? 'rgba(0,0,0,0.6)' : 'rgba(0,0,0,0)' }}
+            onClick={() => vacDeactAnim.close()}
+          >
             <div
-              className="relative w-[85%] max-w-sm rounded-2xl p-6"
-              style={{ backgroundColor: '#1a1a1a' }}
+              className="absolute inset-0 backdrop-blur-sm transition-opacity duration-300"
+              style={{ opacity: vacDeactAnim.isAnimating ? 1 : 0 }}
+            />
+            <div
+              className="relative w-[85%] max-w-sm rounded-2xl p-6 transition-all duration-300 ease-out"
+              style={{
+                backgroundColor: '#1a1a1a',
+                transform: vacDeactAnim.isAnimating ? 'scale(1) translateY(0)' : 'scale(0.95) translateY(20px)',
+                opacity: vacDeactAnim.isAnimating ? 1 : 0,
+              }}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex flex-col items-center text-center mb-5">
@@ -11889,7 +11914,9 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                 </div>
                 <h3 className="text-white font-semibold text-lg">Deactivate Vacation Mode?</h3>
                 <p className="text-gray-400 text-sm mt-2 leading-relaxed">
-                  Your streaks will no longer be frozen. You'll need to complete your weekly goals to keep them going.
+                  {currentWeekProtected
+                    ? "You're partway through a vacation week. How should the rest of this week be handled?"
+                    : "Your streaks will no longer be frozen. You'll need to complete your weekly goals to keep them going."}
                 </p>
               </div>
 
@@ -11904,29 +11931,61 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                 </div>
               </div>
 
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowVacationDeactivateConfirm(false)}
-                  className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
-                  style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
-                >
-                  Keep Active
-                </button>
-                <button
-                  onClick={() => {
-                    setShowVacationDeactivateConfirm(false);
-                    triggerHaptic(ImpactStyle.Medium);
-                    onDeactivateVacation?.();
-                  }}
-                  className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
-                  style={{ backgroundColor: '#FF9500' }}
-                >
-                  Deactivate
-                </button>
-              </div>
+              {currentWeekProtected ? (
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={() => {
+                      triggerHaptic(ImpactStyle.Medium);
+                      vacDeactAnim.close(() => onDeactivateVacation?.());
+                    }}
+                    className="w-full py-3 rounded-xl text-sm font-semibold"
+                    style={{ backgroundColor: '#00D1FF', color: 'black' }}
+                  >
+                    🌴 Keep this week protected
+                  </button>
+                  <button
+                    onClick={() => {
+                      triggerHaptic(ImpactStyle.Medium);
+                      vacDeactAnim.close(() => onDeactivateVacation?.({ removeCurrentWeek: true }));
+                    }}
+                    className="w-full py-3 rounded-xl text-sm font-semibold text-white"
+                    style={{ backgroundColor: '#FF9500' }}
+                  >
+                    Count this week as normal
+                  </button>
+                  <button
+                    onClick={() => vacDeactAnim.close()}
+                    className="w-full py-3 rounded-xl text-sm font-semibold text-white"
+                    style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => vacDeactAnim.close()}
+                    className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+                    style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+                  >
+                    Keep Active
+                  </button>
+                  <button
+                    onClick={() => {
+                      triggerHaptic(ImpactStyle.Medium);
+                      vacDeactAnim.close(() => onDeactivateVacation?.());
+                    }}
+                    className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+                    style={{ backgroundColor: '#FF9500' }}
+                  >
+                    Deactivate
+                  </button>
+                </div>
+              )}
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* Weekly Goals - tour highlight wraps header + card */}
         <div ref={weeklyGoalsRef}>
@@ -16169,8 +16228,14 @@ export default function DaySevenApp() {
                       return updated;
                     });
                   }}
-                  onDeactivateVacation={() => {
-                    const updated = { ...userData.vacationMode, isActive: false };
+                  onDeactivateVacation={(opts) => {
+                    const vm = userData.vacationMode || {};
+                    let nextWeeks = vm.vacationWeeks || [];
+                    if (opts?.removeCurrentWeek) {
+                      const cw = getCurrentWeekKey();
+                      nextWeeks = nextWeeks.filter(w => w !== cw);
+                    }
+                    const updated = { ...vm, isActive: false, vacationWeeks: nextWeeks };
                     setUserData(prev => ({ ...prev, vacationMode: updated }));
                     if (user?.uid) {
                       updateUserProfile(user.uid, { vacationMode: updated }).catch(() => {});
@@ -16307,10 +16372,18 @@ export default function DaySevenApp() {
                       return updated;
                     });
                   }}
-                  onToggleVacationMode={() => {
+                  onToggleVacationMode={(opts) => {
                     const vm = userData.vacationMode || {};
                     if (vm.isActive) {
-                      const updated = { ...vm, isActive: false };
+                      // `removeCurrentWeek` lets the user "un-protect" the current week when
+                      // turning vacation off mid-week — they want to grind the rest of the
+                      // week normally and have it count toward the streak.
+                      let nextWeeks = vm.vacationWeeks || [];
+                      if (opts?.removeCurrentWeek) {
+                        const cw = getCurrentWeekKey();
+                        nextWeeks = nextWeeks.filter(w => w !== cw);
+                      }
+                      const updated = { ...vm, isActive: false, vacationWeeks: nextWeeks };
                       setUserData(prev => ({ ...prev, vacationMode: updated }));
                       if (user?.uid) {
                         updateUserProfile(user.uid, { vacationMode: updated }).catch(() => {});
@@ -16395,11 +16468,17 @@ export default function DaySevenApp() {
                 const { isPro: restoredPro } = await restorePurchases();
                 applyProStatus(restoredPro);
               }}
-              onToggleVacationMode={() => {
+              onToggleVacationMode={(opts) => {
                 const vm = userData.vacationMode || {};
                 if (vm.isActive) {
-                  // Deactivate
-                  const updated = { ...vm, isActive: false };
+                  // Deactivate — `removeCurrentWeek` opts the user into letting this week
+                  // count toward the streak (strips currentWeek from vacationWeeks).
+                  let nextWeeks = vm.vacationWeeks || [];
+                  if (opts?.removeCurrentWeek) {
+                    const cw = getCurrentWeekKey();
+                    nextWeeks = nextWeeks.filter(w => w !== cw);
+                  }
+                  const updated = { ...vm, isActive: false, vacationWeeks: nextWeeks };
                   setUserData(prev => ({ ...prev, vacationMode: updated }));
                   if (user?.uid) {
                     updateUserProfile(user.uid, { vacationMode: updated }).catch(() => {});

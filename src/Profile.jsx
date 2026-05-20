@@ -39,6 +39,10 @@ export default function ProfilePage(props) {
   const [showSelfProfile, setShowSelfProfile] = useState(false);
   const [quickActionModal, setQuickActionModal] = useState(null); // 'shield' | 'vacation' | null
   const [quickActionAnimating, setQuickActionAnimating] = useState(false);
+  // Sub-state for the vacation quick-action modal: when the user taps Deactivate AND
+  // the current week is still protected, flip the action row into a 3-choice picker
+  // (keep this week protected / count this week / cancel) instead of toggling immediately.
+  const [vacationDeactivateChoice, setVacationDeactivateChoice] = useState(false);
 
   // Drive open/close animation for the quick-action modal — matches the
   // FriendProfileModal / OwnProfileModal timing so transitions feel consistent.
@@ -48,10 +52,12 @@ export default function ProfilePage(props) {
       return () => clearTimeout(t);
     }
     setQuickActionAnimating(false);
+    setVacationDeactivateChoice(false);
   }, [quickActionModal]);
 
   const closeQuickAction = () => {
     setQuickActionAnimating(false);
+    setVacationDeactivateChoice(false);
     setTimeout(() => setQuickActionModal(null), 250);
   };
 
@@ -1124,13 +1130,28 @@ export default function ProfilePage(props) {
           <div className="space-y-0.5">
             {weeks.map((week) => (
               <div key={week.id} className="flex gap-0.5">
-                {/* Week stats button - shows checkmark if all goals met */}
+                {/* Week stats button - shows checkmark if goals met, palm/shield if the
+                    week was on vacation or saved by a streak shield, else chart icon. */}
                 {(() => {
                   const goalsHit = weekGoalsMet[week.id];
                   const weekEndDate = week.days[6]?.date || week.days[week.days.length - 1]?.date;
                   const isWeekLocked = !!(historyCutoffDate && weekEndDate < historyCutoffDate);
-                  const bgDefault = goalsHit ? 'rgba(0,255,148,0.15)' : 'rgba(255,255,255,0.05)';
-                  const bgPressed = goalsHit ? 'rgba(0,255,148,0.25)' : 'rgba(255,255,255,0.1)';
+                  // shieldedWeeks/vacationWeeks store Sunday dates in YYYY-MM-DD; week.days[0]
+                  // is always Sunday so it lines up directly.
+                  const weekSundayStr = week.days[0]?.date;
+                  const isVacation = (userData?.vacationMode?.vacationWeeks || []).includes(weekSundayStr);
+                  const isShielded = (userData?.streakShield?.shieldedWeeks || []).includes(weekSundayStr);
+                  const isProtected = isVacation || isShielded;
+                  const bgDefault = goalsHit
+                    ? 'rgba(0,255,148,0.15)'
+                    : isProtected
+                      ? 'rgba(255,214,10,0.10)'
+                      : 'rgba(255,255,255,0.05)';
+                  const bgPressed = goalsHit
+                    ? 'rgba(0,255,148,0.25)'
+                    : isProtected
+                      ? 'rgba(255,214,10,0.20)'
+                      : 'rgba(255,255,255,0.1)';
                   return (
                     <button
                       onClick={() => {
@@ -1168,6 +1189,10 @@ export default function ProfilePage(props) {
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00FF94" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                           <polyline points="20 6 9 17 4 12" />
                         </svg>
+                      ) : isVacation ? (
+                        <span className="text-[13px] leading-none">🌴</span>
+                      ) : isShielded ? (
+                        <span className="text-[13px] leading-none">🛡️</span>
                       ) : (
                         <SectionIcon type="chart" size={12} />
                       )}
@@ -3260,6 +3285,13 @@ export default function ProfilePage(props) {
             weekSteps += healthData?.steps || 0;
           });
 
+          // shieldedWeeks/vacationWeeks store Sunday "YYYY-MM-DD". selectedWeek.startDate
+          // is a Date for the Sunday — format it the same way for the lookup.
+          const sd = selectedWeek.startDate;
+          const sundayKey = `${sd.getFullYear()}-${String(sd.getMonth() + 1).padStart(2, '0')}-${String(sd.getDate()).padStart(2, '0')}`;
+          const isVacation = (userData?.vacationMode?.vacationWeeks || []).includes(sundayKey);
+          const isShielded = (userData?.streakShield?.shieldedWeeks || []).includes(sundayKey);
+
           return {
             lifts: lifts.length,
             cardio: cardioArr.length,
@@ -3268,7 +3300,9 @@ export default function ProfilePage(props) {
             steps: weekSteps,
             miles: miles,
             activities: weekActivities,
-            goalsMet: lifts.length >= goals.liftsPerWeek && cardioArr.length >= goals.cardioPerWeek && recoveryArr.length >= goals.recoveryPerWeek
+            goalsMet: lifts.length >= goals.liftsPerWeek && cardioArr.length >= goals.cardioPerWeek && recoveryArr.length >= goals.recoveryPerWeek,
+            isVacation,
+            isShielded
           };
         })() : null}
         weekLabel={selectedWeek?.label || ''}
@@ -3460,7 +3494,18 @@ export default function ProfilePage(props) {
         } else if (vacationActive) {
           actionLabel = 'Deactivate';
           actionColor = '#FF9500';
-          onAction = () => { triggerHaptic(ImpactStyle.Medium); onToggleVacationMode?.(); closeQuickAction(); };
+          onAction = () => {
+            triggerHaptic(ImpactStyle.Medium);
+            // If the current week is in vacationWeeks, ask whether to keep it protected
+            // or let it count normally. Otherwise just deactivate.
+            const _vw = userData?.vacationMode?.vacationWeeks || [];
+            if (_vw.includes(currentWeek)) {
+              setVacationDeactivateChoice(true);
+            } else {
+              onToggleVacationMode?.();
+              closeQuickAction();
+            }
+          };
         } else if (vacationsLeft > 0) {
           actionLabel = 'Activate';
           actionColor = '#FF9500';
@@ -3519,28 +3564,62 @@ export default function ProfilePage(props) {
               ))}
             </div>
 
-            {/* Actions */}
-            <div className="flex gap-2">
-              <button
-                onClick={closeQuickAction}
-                onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.96)'; }}
-                onTouchEnd={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
-                className="flex-1 py-3 rounded-full bg-zinc-800 text-white text-sm font-medium transition-transform"
-              >
-                {actionLabel ? 'Cancel' : 'Close'}
-              </button>
-              {actionLabel && onAction && (
+            {/* Actions — when the user is mid-deactivate on a vacation week, swap the
+                two-button row for a vertical 3-choice picker so they can decide what to
+                do with the rest of this week. */}
+            {vacationDeactivateChoice ? (
+              <div className="flex flex-col gap-2">
+                <p className="text-xs text-gray-400 text-center mb-1">You're partway through a vacation week — how should the rest of this week count?</p>
                 <button
-                  onClick={onAction}
+                  onClick={() => { triggerHaptic(ImpactStyle.Medium); onToggleVacationMode?.(); closeQuickAction(); }}
                   onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.96)'; }}
                   onTouchEnd={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
-                  className="flex-1 py-3 rounded-full text-sm font-semibold transition-transform"
-                  style={{ backgroundColor: actionColor, color: 'black' }}
+                  className="w-full py-3 rounded-full text-sm font-semibold transition-transform"
+                  style={{ backgroundColor: '#00D1FF', color: 'black' }}
                 >
-                  {actionLabel}
+                  🌴 Keep this week protected
                 </button>
-              )}
-            </div>
+                <button
+                  onClick={() => { triggerHaptic(ImpactStyle.Medium); onToggleVacationMode?.({ removeCurrentWeek: true }); closeQuickAction(); }}
+                  onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.96)'; }}
+                  onTouchEnd={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+                  className="w-full py-3 rounded-full text-sm font-semibold transition-transform"
+                  style={{ backgroundColor: '#FF9500', color: 'black' }}
+                >
+                  Count this week as normal
+                </button>
+                <button
+                  onClick={() => setVacationDeactivateChoice(false)}
+                  onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.96)'; }}
+                  onTouchEnd={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+                  className="w-full py-3 rounded-full bg-zinc-800 text-white text-sm font-medium transition-transform"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <button
+                  onClick={closeQuickAction}
+                  onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.96)'; }}
+                  onTouchEnd={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+                  className="flex-1 py-3 rounded-full bg-zinc-800 text-white text-sm font-medium transition-transform"
+                >
+                  {actionLabel ? 'Cancel' : 'Close'}
+                </button>
+                {actionLabel && onAction && (
+                  <button
+                    onClick={onAction}
+                    onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.96)'; }}
+                    onTouchEnd={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+                    className="flex-1 py-3 rounded-full text-sm font-semibold transition-transform"
+                    style={{ backgroundColor: actionColor, color: 'black' }}
+                  >
+                    {actionLabel}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       );

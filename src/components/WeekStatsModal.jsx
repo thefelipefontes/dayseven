@@ -146,16 +146,108 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
           </div>
         </div>
 
-        {/* Goals Status */}
-        <div className="p-3 rounded-xl mb-4 flex items-center justify-between" style={{ 
-          backgroundColor: weekData?.goalsMet ? 'rgba(0,255,148,0.1)' : 'rgba(255,69,58,0.1)',
-          border: `1px solid ${weekData?.goalsMet ? 'rgba(0,255,148,0.3)' : 'rgba(255,69,58,0.3)'}`
-        }}>
-          <span className="text-sm">Week Goals</span>
-          <span className="font-bold" style={{ color: weekData?.goalsMet ? '#00FF94' : '#FF453A' }}>
-            {weekData?.goalsMet ? '✓ Completed' : '✗ Incomplete'}
-          </span>
-        </div>
+        {/* Goals Status — vacation/shield take precedence over the red Incomplete badge.
+            Goal: surface why this week is "protected" so the user doesn't read it as a
+            failed week. Vacation wins over shield (vacation excludes the week entirely;
+            shield just saves a missed week). */}
+        {(() => {
+          if (weekData?.isVacation) {
+            return (
+              <div className="p-3 rounded-xl mb-4 flex items-center justify-between" style={{
+                backgroundColor: 'rgba(255,214,10,0.10)',
+                border: '1px solid rgba(255,214,10,0.30)'
+              }}>
+                <span className="text-sm">🌴 Vacation Week</span>
+                <span className="font-bold" style={{ color: '#FFD60A' }}>Streak safe</span>
+              </div>
+            );
+          }
+          if (weekData?.isShielded) {
+            return (
+              <div className="p-3 rounded-xl mb-4 flex items-center justify-between" style={{
+                backgroundColor: 'rgba(255,214,10,0.10)',
+                border: '1px solid rgba(255,214,10,0.30)'
+              }}>
+                <span className="text-sm">🛡️ Streak Shield Used</span>
+                <span className="font-bold" style={{ color: '#FFD60A' }}>Streak safe</span>
+              </div>
+            );
+          }
+          return (
+            <div className="p-3 rounded-xl mb-4 flex items-center justify-between" style={{
+              backgroundColor: weekData?.goalsMet ? 'rgba(0,255,148,0.1)' : 'rgba(255,69,58,0.1)',
+              border: `1px solid ${weekData?.goalsMet ? 'rgba(0,255,148,0.3)' : 'rgba(255,69,58,0.3)'}`
+            }}>
+              <span className="text-sm">Week Goals</span>
+              <span className="font-bold" style={{ color: weekData?.goalsMet ? '#00FF94' : '#FF453A' }}>
+                {weekData?.goalsMet ? '✓ Completed' : '✗ Incomplete'}
+              </span>
+            </div>
+          );
+        })()}
+
+        {/* Streaks Maintained — sits right under the goal-status badge so the per-category
+            verdict reads as a continuation of the same story. On vacation/shielded weeks,
+            unhit categories swap the red ✗ for 🌴/🛡️ in gold so the rows don't feel like
+            failure right under a "Streak safe" badge. */}
+        {(() => {
+          const protectIcon = weekData?.isVacation ? '🌴' : weekData?.isShielded ? '🛡️' : null;
+          const renderMark = (met, metColor) => {
+            if (met) return <span className="text-xs font-bold" style={{ color: metColor }}>✓</span>;
+            if (protectIcon) return <span className="text-xs" aria-label="Protected">{protectIcon}</span>;
+            return <span className="text-xs font-bold" style={{ color: '#FF453A' }}>✗</span>;
+          };
+          return (
+            <div className="mb-6">
+              <div className="flex items-center gap-2 mb-3">
+                <SectionIcon type="streak" />
+                <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Streaks Maintained</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="p-3 rounded-xl flex items-center justify-between" style={{
+                  backgroundColor: liftsGoalMet ? 'rgba(0,255,148,0.1)' : 'rgba(255,255,255,0.05)',
+                  border: liftsGoalMet ? '1px solid rgba(0,255,148,0.2)' : 'none'
+                }}>
+                  <div>
+                    <span className="text-xs">💪 Strength</span>
+                    <div className="text-[10px] text-gray-500">{goals.liftsPerWeek}+ per week</div>
+                  </div>
+                  {renderMark(liftsGoalMet, '#00FF94')}
+                </div>
+                <div className="p-3 rounded-xl flex items-center justify-between" style={{
+                  backgroundColor: cardioGoalMet ? 'rgba(255,149,0,0.1)' : 'rgba(255,255,255,0.05)',
+                  border: cardioGoalMet ? '1px solid rgba(255,149,0,0.2)' : 'none'
+                }}>
+                  <div>
+                    <span className="text-xs">❤️‍🔥 Cardio</span>
+                    <div className="text-[10px] text-gray-500">{goals.cardioPerWeek}+ per week</div>
+                  </div>
+                  {renderMark(cardioGoalMet, '#FF9500')}
+                </div>
+                <div className="p-3 rounded-xl flex items-center justify-between" style={{
+                  backgroundColor: recoveryGoalMet ? 'rgba(0,209,255,0.1)' : 'rgba(255,255,255,0.05)',
+                  border: recoveryGoalMet ? '1px solid rgba(0,209,255,0.2)' : 'none'
+                }}>
+                  <div>
+                    <span className="text-xs">🧊 Recovery</span>
+                    <div className="text-[10px] text-gray-500">{goals.recoveryPerWeek}+ per week</div>
+                  </div>
+                  {renderMark(recoveryGoalMet, '#00D1FF')}
+                </div>
+                <div className="p-3 rounded-xl flex items-center justify-between" style={{
+                  backgroundColor: weekData?.goalsMet ? 'rgba(255,215,0,0.1)' : 'rgba(255,255,255,0.05)',
+                  border: weekData?.goalsMet ? '1px solid rgba(255,215,0,0.2)' : 'none'
+                }}>
+                  <div>
+                    <span className="text-xs">🏆 Master</span>
+                    <div className="text-[10px] text-gray-500">All goals hit</div>
+                  </div>
+                  {renderMark(weekData?.goalsMet, '#FFD700')}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Week Totals */}
         <div className="mb-4">
@@ -181,64 +273,6 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
             <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
               <div className="text-lg font-black">{(weekData?.activities?.length || 0)}</div>
               <div className="text-[10px] text-gray-400">Total Sessions</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Streaks Maintained */}
-        <div className="mb-6">
-          <div className="flex items-center gap-2 mb-3">
-            <SectionIcon type="streak" />
-            <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Streaks Maintained</span>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="p-3 rounded-xl flex items-center justify-between" style={{ 
-              backgroundColor: liftsGoalMet ? 'rgba(0,255,148,0.1)' : 'rgba(255,255,255,0.05)',
-              border: liftsGoalMet ? '1px solid rgba(0,255,148,0.2)' : 'none'
-            }}>
-              <div>
-                <span className="text-xs">💪 Strength</span>
-                <div className="text-[10px] text-gray-500">{goals.liftsPerWeek}+ per week</div>
-              </div>
-              <span className="text-xs font-bold" style={{ color: liftsGoalMet ? '#00FF94' : '#FF453A' }}>
-                {liftsGoalMet ? '✓' : '✗'}
-              </span>
-            </div>
-            <div className="p-3 rounded-xl flex items-center justify-between" style={{ 
-              backgroundColor: cardioGoalMet ? 'rgba(255,149,0,0.1)' : 'rgba(255,255,255,0.05)',
-              border: cardioGoalMet ? '1px solid rgba(255,149,0,0.2)' : 'none'
-            }}>
-              <div>
-                <span className="text-xs">❤️‍🔥 Cardio</span>
-                <div className="text-[10px] text-gray-500">{goals.cardioPerWeek}+ per week</div>
-              </div>
-              <span className="text-xs font-bold" style={{ color: cardioGoalMet ? '#FF9500' : '#FF453A' }}>
-                {cardioGoalMet ? '✓' : '✗'}
-              </span>
-            </div>
-            <div className="p-3 rounded-xl flex items-center justify-between" style={{ 
-              backgroundColor: recoveryGoalMet ? 'rgba(0,209,255,0.1)' : 'rgba(255,255,255,0.05)',
-              border: recoveryGoalMet ? '1px solid rgba(0,209,255,0.2)' : 'none'
-            }}>
-              <div>
-                <span className="text-xs">🧊 Recovery</span>
-                <div className="text-[10px] text-gray-500">{goals.recoveryPerWeek}+ per week</div>
-              </div>
-              <span className="text-xs font-bold" style={{ color: recoveryGoalMet ? '#00D1FF' : '#FF453A' }}>
-                {recoveryGoalMet ? '✓' : '✗'}
-              </span>
-            </div>
-            <div className="p-3 rounded-xl flex items-center justify-between" style={{ 
-              backgroundColor: weekData?.goalsMet ? 'rgba(255,215,0,0.1)' : 'rgba(255,255,255,0.05)',
-              border: weekData?.goalsMet ? '1px solid rgba(255,215,0,0.2)' : 'none'
-            }}>
-              <div>
-                <span className="text-xs">🏆 Master</span>
-                <div className="text-[10px] text-gray-500">All goals hit</div>
-              </div>
-              <span className="text-xs font-bold" style={{ color: weekData?.goalsMet ? '#FFD700' : '#FF453A' }}>
-                {weekData?.goalsMet ? '✓' : '✗'}
-              </span>
             </div>
           </div>
         </div>

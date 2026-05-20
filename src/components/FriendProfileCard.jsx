@@ -93,6 +93,15 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
   const cardioStreak = streaks.cardio ?? friend?.cardioStreak ?? 0;
   const recoveryStreak = streaks.recovery ?? friend?.recoveryStreak ?? 0;
 
+  // "Currently using" = vacation isActive, or this week's Sunday is in shieldedWeeks.
+  // Lets friends see at a glance that this user is on vacation or shielded right now.
+  const isVacationActive = !!profile?.vacationMode?.isActive;
+  const _today = new Date();
+  const _sunday = new Date(_today);
+  _sunday.setDate(_today.getDate() - _today.getDay());
+  const currentWeekKey = `${_sunday.getFullYear()}-${String(_sunday.getMonth() + 1).padStart(2, '0')}-${String(_sunday.getDate()).padStart(2, '0')}`;
+  const isShieldActive = (profile?.streakShield?.shieldedWeeks || []).includes(currentWeekKey);
+
   // Records should never read lower than the current streak — that's a data invariant
   // (a "longest ever" can't be less than what's happening right now). Clamp on display
   // to defend against any stored-record drift; the recalc on login also fixes the data.
@@ -187,6 +196,12 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
                 )}
                 {masterStreak > 0 && (
                   <span style={{ color: '#FFD60A' }}>· {masterStreak}🔥</span>
+                )}
+                {isVacationActive && (
+                  <span aria-label="On vacation">🌴</span>
+                )}
+                {!isVacationActive && isShieldActive && (
+                  <span aria-label="Streak shield active">🛡️</span>
                 )}
               </div>
             </div>

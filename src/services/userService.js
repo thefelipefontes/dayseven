@@ -752,6 +752,45 @@ export async function saveUserGoals(uid, goals) {
   }
 }
 
+// Queued goals change. Non-Sunday edits write here instead of `goals` so the
+// streak/progress math doesn't shift mid-week. `pending` shape mirrors `goals`
+// plus an `applyOn: YYYY-MM-DD` field for the next Sunday.
+export async function savePendingGoals(uid, pending) {
+  const path = `users/${uid}`;
+  try {
+    if (isNative) {
+      await FirebaseFirestore.setDocument({
+        reference: path,
+        data: { pendingGoals: pending },
+        merge: true
+      });
+    } else {
+      const userRef = doc(db, 'users', uid);
+      await withTimeout(setDoc(userRef, { pendingGoals: pending }, { merge: true }));
+    }
+  } catch (error) {
+    // Best-effort; caller has already updated local state.
+  }
+}
+
+export async function clearPendingGoals(uid) {
+  const path = `users/${uid}`;
+  try {
+    if (isNative) {
+      await FirebaseFirestore.setDocument({
+        reference: path,
+        data: { pendingGoals: null },
+        merge: true
+      });
+    } else {
+      const userRef = doc(db, 'users', uid);
+      await withTimeout(setDoc(userRef, { pendingGoals: null }, { merge: true }));
+    }
+  } catch (error) {
+    // Best-effort
+  }
+}
+
 export async function getUserGoals(uid, forceRefresh = false) {
   // Check cache first
   if (!forceRefresh && cache.userGoals.has(uid) && isCacheValid(`goals_${uid}`)) {

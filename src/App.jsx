@@ -15957,7 +15957,20 @@ export default function DaySevenApp() {
 
   // Show login if no user or no userData (signed out)
   if (!user || !userData || !userProfile) {
-    return <Login onLogin={handleUserAuth} />;
+    // If the user reached Login via the welcome screen's "I already have an
+    // account" skip, give them a way back. Signed-out existing users don't
+    // get a back button — there's no welcome to return to.
+    let cameFromSkip = false;
+    try {
+      const raw = localStorage.getItem('preSignupOnboarding');
+      cameFromSkip = raw ? !!JSON.parse(raw)?.skipped : false;
+    } catch {}
+    const handleBackToWelcome = cameFromSkip ? () => {
+      try { localStorage.removeItem('preSignupOnboarding'); } catch {}
+      setPreSignupDone(false);
+      setPreSignupWelcomeSeen(false);
+    } : null;
+    return <Login onLogin={handleUserAuth} onBack={handleBackToWelcome} />;
   }
 
   // Show username setup if user doesn't have a username

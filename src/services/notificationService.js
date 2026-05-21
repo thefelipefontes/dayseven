@@ -11,6 +11,7 @@
 
 import { FirebaseMessaging } from '@capacitor-firebase/messaging';
 import { FirebaseFirestore } from '@capacitor-firebase/firestore';
+import { LocalNotifications } from '@capacitor/local-notifications';
 import { Capacitor } from '@capacitor/core';
 import { doc, setDoc, updateDoc, arrayUnion, arrayRemove, getDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -66,6 +67,11 @@ export const NotificationType = {
   CHALLENGE_CANCEL_ACCEPTED: 'challenge_cancel_accepted',
   CHALLENGE_CANCEL_DECLINED: 'challenge_cancel_declined',
   CHALLENGE_PICK_WHICH: 'challenge_pick_which',
+
+  // Local-only — fired client-side after an auto-saved strength workout from
+  // Apple Health is missing focus areas. Tapping deep-links to the activity
+  // detail modal so the user can add muscle groups.
+  ADD_STRENGTH_DETAILS: 'add_strength_details',
 };
 
 /**
@@ -440,6 +446,29 @@ export const initializePushNotifications = async (userId, onNotificationReceived
     });
     listeners.push(tapListener);
 
+    // Local notifications use a separate event stream. Normalize the payload
+    // so the existing FCM tap handler can route it through
+    // handleNotificationNavigation unchanged.
+    try {
+      const localTapListener = await LocalNotifications.addListener('localNotificationActionPerformed', (event) => {
+        clearBadge();
+        if (onNotificationTapped) {
+          const ln = event?.notification || {};
+          onNotificationTapped(
+            {
+              title: ln.title,
+              body: ln.body,
+              data: ln.extra || {},
+            },
+            event?.actionId
+          );
+        }
+      });
+      listeners.push(localTapListener);
+    } catch (e) {
+      // Plugin may not be available on web — fall back silently.
+    }
+
     // Return cleanup function and token
     return {
       token: currentToken,
@@ -454,6 +483,51 @@ export const initializePushNotifications = async (userId, onNotificationReceived
   } catch (error) {
     console.error('[Notifications] Initialization failed:', error);
     return { cleanup: () => {}, token: null };
+  }
+};
+
+/**
+ * Schedule a local notification asking the user to add muscle groups to an
+ * auto-saved strength workout. The tap is handled by the local-notification
+ * listener wired in initializePushNotifications.
+ * @param {Object} activity - The saved activity (must have id + duration)
+ */
+export const scheduleAddDetailsNotification = async (activity) => {
+  if (!isNotificationSupported() || !activity?.id) return;
+  try {
+    const { display } = await LocalNotifications.checkPermissions();
+    if (display !== 'granted') {
+      const req = await LocalNotifications.requestPermissions();
+      if (req?.display !== 'granted') return;
+    }
+
+    const durationLabel = activity.duration
+      ? (activity.duration >= 60
+          ? `${Math.floor(activity.duration / 60)}h ${activity.duration % 60}m`
+          : `${activity.duration} min`)
+      : '';
+    const detail = [activity.strengthType || activity.subtype, durationLabel].filter(Boolean).join(' · ');
+
+    // LocalNotifications.schedule requires a 32-bit int id. Generate one
+    // deterministically from the activity id so a repeat schedule overwrites.
+    const idStr = String(activity.id);
+    let notifId = 0;
+    for (let i = 0; i < idStr.length; i++) notifId = ((notifId * 31) + idStr.charCodeAt(i)) | 0;
+    notifId = Math.abs(notifId) || 1;
+
+    await LocalNotifications.schedule({
+      notifications: [{
+        id: notifId,
+        title: 'Strength workout saved',
+        body: detail ? `${detail} · Tap to add muscle groups` : 'Tap to add muscle groups',
+        extra: {
+          type: NotificationType.ADD_STRENGTH_DETAILS,
+          activityId: idStr,
+        },
+      }],
+    });
+  } catch (error) {
+    console.warn('[Notifications] Failed to schedule add-details notification:', error);
   }
 };
 
@@ -513,6 +587,16 @@ export const handleNotificationNavigation = (notification, navigate, options = {
         options.onShowPendingWorkouts(data.workoutId);
       }
       navigate('home');
+      break;
+
+    case NotificationType.ADD_STRENGTH_DETAILS:
+      // Deep-link straight to the activity detail modal so the user can add
+      // muscle groups. We navigate home first, then HomeTab opens the modal
+      // when it sees pendingOpenActivityId change.
+      navigate('home');
+      if (options.onOpenActivity && data.activityId) {
+        options.onOpenActivity(String(data.activityId));
+      }
       break;
 
     // Each challenge notif routes to the segment + perspective where the user can

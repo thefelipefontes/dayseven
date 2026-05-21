@@ -206,6 +206,9 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
   const showInActivityFeed = userProfile?.privacySettings?.showInActivityFeed !== false;
   const showOnLeaderboard = userProfile?.privacySettings?.showOnLeaderboard !== false;
   const smartSaveWalks = userProfile?.privacySettings?.smartSaveWalks !== false; // default true
+  const autoLogStrength = userProfile?.privacySettings?.autoLogStrength !== false;
+  const autoLogCardio = userProfile?.privacySettings?.autoLogCardio !== false;
+  const autoLogRecovery = userProfile?.privacySettings?.autoLogRecovery !== false;
   const [showSmartSaveInfo, setShowSmartSaveInfo] = useState(false);
 
   const handlePrivacyToggle = (setting, value) => {
@@ -1526,6 +1529,89 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                 )}
               </div>
             )}
+
+            {/* Auto-log from Apple Health — per-category */}
+            <div className="border-t border-zinc-700/50 mt-2 pt-3">
+              <p className="text-[11px] text-gray-500 mb-2 px-1">Auto-save from Apple Health</p>
+
+              {/* Strength */}
+              <div className="flex items-center justify-between py-1.5">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
+                    <span className="text-sm">🏋️</span>
+                  </div>
+                  <div>
+                    <span className="text-sm text-white">Strength workouts</span>
+                    <p className="text-[11px] text-gray-500">We'll ask you to add muscle groups</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    triggerHaptic(ImpactStyle.Light);
+                    handlePrivacyToggle('autoLogStrength', !autoLogStrength);
+                  }}
+                  className="w-12 h-7 rounded-full transition-all duration-200 relative flex-shrink-0"
+                  style={{ backgroundColor: autoLogStrength ? '#00FF94' : 'rgba(255,255,255,0.2)' }}
+                >
+                  <div
+                    className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-200"
+                    style={{ left: autoLogStrength ? '26px' : '4px' }}
+                  />
+                </button>
+              </div>
+
+              {/* Cardio */}
+              <div className="flex items-center justify-between py-1.5">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
+                    <span className="text-sm">🏃</span>
+                  </div>
+                  <div>
+                    <span className="text-sm text-white">Cardio workouts</span>
+                    <p className="text-[11px] text-gray-500">Run, cycle, row, hike, swim, etc.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    triggerHaptic(ImpactStyle.Light);
+                    handlePrivacyToggle('autoLogCardio', !autoLogCardio);
+                  }}
+                  className="w-12 h-7 rounded-full transition-all duration-200 relative flex-shrink-0"
+                  style={{ backgroundColor: autoLogCardio ? '#FF9500' : 'rgba(255,255,255,0.2)' }}
+                >
+                  <div
+                    className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-200"
+                    style={{ left: autoLogCardio ? '26px' : '4px' }}
+                  />
+                </button>
+              </div>
+
+              {/* Recovery */}
+              <div className="flex items-center justify-between py-1.5">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
+                    <span className="text-sm">🧘</span>
+                  </div>
+                  <div>
+                    <span className="text-sm text-white">Recovery workouts</span>
+                    <p className="text-[11px] text-gray-500">Yoga, pilates, cooldown, tai chi</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    triggerHaptic(ImpactStyle.Light);
+                    handlePrivacyToggle('autoLogRecovery', !autoLogRecovery);
+                  }}
+                  className="w-12 h-7 rounded-full transition-all duration-200 relative flex-shrink-0"
+                  style={{ backgroundColor: autoLogRecovery ? '#00D1FF' : 'rgba(255,255,255,0.2)' }}
+                >
+                  <div
+                    className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-200"
+                    style={{ left: autoLogRecovery ? '26px' : '4px' }}
+                  />
+                </button>
+              </div>
+            </div>
 
             {/* Max Heart Rate */}
             <div className="flex items-center justify-between py-2 border-t border-zinc-700/50 mt-2 pt-4">

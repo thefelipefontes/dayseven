@@ -156,6 +156,107 @@ const shouldSmartSaveWalk = (workout, maxHR, smartSaveEnabled) => {
   return false;
 };
 
+// Workout types we'll auto-save from Apple Health with high confidence.
+// HIIT / crossTraining intentionally excluded — they map to Strength Training
+// in healthService but are often actually cardio; let them stay in the
+// notification queue so the user categorizes them.
+const AUTO_LOG_CARDIO_TYPES = new Set([
+  'Running', 'Cycle', 'Rowing', 'Elliptical', 'Stair Climbing', 'Hiking', 'Swimming'
+]);
+const AUTO_LOG_RECOVERY_TYPES = new Set([
+  'Yoga', 'Pilates', 'Cooldown', 'Tai Chi'
+]);
+
+const shouldAutoLogWorkout = (workout, profile) => {
+  if (!workout || (workout.duration ?? 0) < 5) return false;
+  const ps = profile?.privacySettings || {};
+  if (workout.type === 'Strength Training') {
+    // Skip the Circuit subtype — that's the HIIT/crossTraining fallback and
+    // is the ambiguous bucket we want users to confirm.
+    if (workout.subtype === 'Circuit') return false;
+    return ps.autoLogStrength !== false;
+  }
+  if (AUTO_LOG_CARDIO_TYPES.has(workout.type)) return ps.autoLogCardio !== false;
+  if (AUTO_LOG_RECOVERY_TYPES.has(workout.type)) return ps.autoLogRecovery !== false;
+  return false;
+};
+
+// Cross-source duplicate detection. Same underlying workout exported to
+// HealthKit via two paths (e.g., Apple Watch + Strava + Garmin Connect) shows
+// up as separate entries with different UUIDs. We collapse them by comparing
+// the populated metrics: start time, duration, calories, HR signature, and
+// distance. Real duplicates align on all fields; genuine back-to-back
+// sessions diverge on calories and HR even when timing/duration are close.
+const _category = (w) => {
+  if (w.type === 'Strength Training') return 'strength';
+  if (w.type === 'Walking') return 'walking'; // keep walking isolated — smart-save logic gates it
+  if (AUTO_LOG_CARDIO_TYPES.has(w.type)) return 'cardio';
+  if (AUTO_LOG_RECOVERY_TYPES.has(w.type)) return 'recovery';
+  return w.type || 'other';
+};
+const _populated = (w) => {
+  let n = 0;
+  if (w.duration) n++;
+  if (w.calories) n++;
+  if (w.avgHr) n++;
+  if (w.maxHr) n++;
+  if (w.distance) n++;
+  if (w.healthKitStartDate) n++;
+  return n;
+};
+const _isSameUnderlyingWorkout = (a, b) => {
+  if (a.date !== b.date) return false;
+  if (_category(a) !== _category(b)) return false;
+
+  // Start time within ±60s. If healthKitStartDate is missing on either,
+  // we can't confidently call them duplicates — bail.
+  const ta = a.healthKitStartDate ? new Date(a.healthKitStartDate).getTime() : NaN;
+  const tb = b.healthKitStartDate ? new Date(b.healthKitStartDate).getTime() : NaN;
+  if (!Number.isFinite(ta) || !Number.isFinite(tb)) return false;
+  if (Math.abs(ta - tb) > 60_000) return false;
+
+  // Duration within ±30s (durations are in minutes, so 0.5).
+  if (Math.abs((a.duration || 0) - (b.duration || 0)) > 0.5) return false;
+
+  // Calories within ±15% if both have them. Calorie algos differ across
+  // sources so we allow a band; back-to-back sessions blow past this.
+  if (a.calories && b.calories) {
+    const avg = (a.calories + b.calories) / 2;
+    if (Math.abs(a.calories - b.calories) / avg > 0.15) return false;
+  }
+
+  // HR signature within ±5 bpm avg if both report it.
+  if (a.avgHr && b.avgHr && Math.abs(a.avgHr - b.avgHr) > 5) return false;
+
+  // Distance within ±5% if both have it (GPS-based workouts).
+  if (a.distance && b.distance) {
+    const avg = (a.distance + b.distance) / 2;
+    if (avg > 0 && Math.abs(a.distance - b.distance) / avg > 0.05) return false;
+  }
+
+  return true;
+};
+const dedupeCrossSource = (workouts) => {
+  if (!Array.isArray(workouts) || workouts.length < 2) return workouts || [];
+  const groups = []; // array of arrays; each inner is one duplicate group
+  for (const w of workouts) {
+    const match = groups.find(g => _isSameUnderlyingWorkout(g[0], w));
+    if (match) match.push(w);
+    else groups.push([w]);
+  }
+  // Pick the data-richest entry per group; Apple Watch wins on ties.
+  return groups.map(group => {
+    if (group.length === 1) return group[0];
+    return [...group].sort((a, b) => {
+      const popDiff = _populated(b) - _populated(a);
+      if (popDiff !== 0) return popDiff;
+      const aWatch = /apple watch/i.test(a.sourceDevice || a.sourceName || '') ? 1 : 0;
+      const bWatch = /apple watch/i.test(b.sourceDevice || b.sourceName || '') ? 1 : 0;
+      return bWatch - aWatch;
+    })[0];
+  });
+};
+
 // Get current week key (Sunday start date as "YYYY-MM-DD") for celebration tracking
 const getCurrentWeekKey = () => {
   const today = new Date();
@@ -10548,7 +10649,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
 
 // Home Tab - Simplified
 
-const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeCountsChange, onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, optimisticChallengeCompletions = new Map(), onStartChallengeWorkout, onApplyPastActivityToChallenge }) => {
+const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeCountsChange, onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, optimisticChallengeCompletions = new Map(), onStartChallengeWorkout, onApplyPastActivityToChallenge, openActivityTarget = null }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
   const [dismissConfirmWorkouts, setDismissConfirmWorkouts] = useState(null); // Workouts pending dismiss confirmation
@@ -10742,6 +10843,16 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
   const [showCardioBreakdown, setShowCardioBreakdown] = useState(false);
   const [showRecoveryBreakdown, setShowRecoveryBreakdown] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState(null);
+  const [needsDetailsExpanded, setNeedsDetailsExpanded] = useState(false);
+
+  // Deep-link from "add muscle groups" notification: when DaySevenApp updates
+  // openActivityTarget, find the activity and open its detail modal. The
+  // nonce makes repeated taps for the same activity re-open the modal.
+  useEffect(() => {
+    if (!openActivityTarget?.activityId) return;
+    const found = activities.find(a => String(a.id) === String(openActivityTarget.activityId));
+    if (found) setSelectedActivity(found);
+  }, [openActivityTarget?.activityId, openActivityTarget?.nonce, activities]);
 
   // Helper to convert time string (e.g., "1:55 PM") to minutes since midnight for proper sorting
   const parseTimeToMinutes = (timeStr) => {
@@ -11614,6 +11725,138 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
           </div>
         )}
 
+        {/* Incomplete-strength banner — single parent that expands to reveal
+            individual workouts when there are multiple. Keeps the home screen
+            uncluttered while still surfacing each entry for editing. */}
+        {(() => {
+          const needsDetailsList = (activities || []).filter(a => a.needsDetails);
+          if (needsDetailsList.length === 0) return null;
+          const sorted = [...needsDetailsList].sort((a, b) => {
+            const d = (b.date || '').localeCompare(a.date || '');
+            if (d !== 0) return d;
+            return (b.time || '').localeCompare(a.time || '');
+          });
+
+          const formatRow = (item) => {
+            const durationLabel = item.duration
+              ? (item.duration >= 60
+                  ? `${Math.floor(item.duration / 60)}h ${item.duration % 60}m`
+                  : `${item.duration} min`)
+              : null;
+            return [item.strengthType || item.subtype, durationLabel, item.time]
+              .filter(Boolean)
+              .join(' · ');
+          };
+
+          // Single entry — render the specific row directly, no expand toggle.
+          if (sorted.length === 1) {
+            const head = sorted[0];
+            return (
+              <button
+                onClick={() => {
+                  triggerHaptic(ImpactStyle.Light);
+                  setSelectedActivity(head);
+                }}
+                className="relative w-full p-3 rounded-xl mb-3 flex items-center gap-3 text-left"
+                style={{
+                  backgroundColor: 'rgba(0,209,255,0.10)',
+                  border: '1px solid rgba(0,209,255,0.3)'
+                }}
+              >
+                <span className="text-xl">💪</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-semibold" style={{ color: '#00D1FF' }}>
+                    Add muscle groups to your strength workout
+                  </div>
+                  <div className="text-[10px] text-gray-400 mt-0.5 truncate">
+                    {formatRow(head)}
+                  </div>
+                </div>
+                <svg className="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                </svg>
+              </button>
+            );
+          }
+
+          // Multi entry — parent banner that toggles to reveal the rows.
+          return (
+            <div className="mb-3">
+              <button
+                onClick={() => {
+                  triggerHaptic(ImpactStyle.Light);
+                  setNeedsDetailsExpanded(prev => !prev);
+                }}
+                className="relative w-full p-3 rounded-xl flex items-center gap-3 text-left"
+                style={{
+                  backgroundColor: 'rgba(0,209,255,0.10)',
+                  border: '1px solid rgba(0,209,255,0.3)',
+                  borderBottomLeftRadius: needsDetailsExpanded ? 0 : 12,
+                  borderBottomRightRadius: needsDetailsExpanded ? 0 : 12,
+                }}
+              >
+                <span className="text-xl">💪</span>
+                <div className="flex-1">
+                  <div className="text-xs font-semibold" style={{ color: '#00D1FF' }}>
+                    {sorted.length} strength workouts need details
+                  </div>
+                  <div className="text-[10px] text-gray-400 mt-0.5">
+                    Tap to {needsDetailsExpanded ? 'hide' : 'pick which to edit'}
+                  </div>
+                </div>
+                <svg
+                  className="w-4 h-4 text-gray-500 flex-shrink-0 transition-transform duration-200"
+                  style={{ transform: needsDetailsExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                  fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                </svg>
+              </button>
+              {needsDetailsExpanded && (
+                <div
+                  className="rounded-b-xl overflow-hidden"
+                  style={{
+                    backgroundColor: 'rgba(0,209,255,0.05)',
+                    border: '1px solid rgba(0,209,255,0.3)',
+                    borderTop: 'none',
+                  }}
+                >
+                  {sorted.map((item, idx) => (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        triggerHaptic(ImpactStyle.Light);
+                        setSelectedActivity(item);
+                      }}
+                      className="w-full px-3 py-2.5 flex items-center gap-3 text-left"
+                      style={{
+                        borderTop: idx === 0 ? '1px solid rgba(0,209,255,0.15)' : '1px solid rgba(0,209,255,0.1)',
+                      }}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs text-white truncate">
+                          {item.strengthType || item.subtype || 'Strength Training'}
+                        </div>
+                        <div className="text-[10px] text-gray-500 mt-0.5 truncate">
+                          {[
+                            item.duration ? (item.duration >= 60
+                              ? `${Math.floor(item.duration / 60)}h ${item.duration % 60}m`
+                              : `${item.duration} min`) : null,
+                            item.time
+                          ].filter(Boolean).join(' · ')}
+                        </div>
+                      </div>
+                      <svg className="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                      </svg>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
         {/* Streak at Risk Warning - hidden during vacation */}
         {!userData.vacationMode?.isActive && !streakWarningDismissed && daysLeft <= 3 && (liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0) && (
           <div
@@ -12337,6 +12580,9 @@ export default function DaySevenApp() {
   // Set when a challenge notification is tapped — tells ChallengesTab which segment/sub
   // to open. Includes a `nonce` so re-navigating to the same target still re-applies.
   const [challengesNavTarget, setChallengesNavTarget] = useState(null);
+  // Set when an "add muscle groups" notification is tapped — HomeTab reads this
+  // and opens the matching activity's detail modal. Shape: { activityId, nonce }.
+  const [homeOpenActivityTarget, setHomeOpenActivityTarget] = useState(null);
   // Multi-match chooser state — shape: { activity, candidateChallenges } | null.
   // Set when an activity matches 2+ challenges and the cloud function deferred fulfillment
   // (push notification deep-link or anywhere we surface the modal).
@@ -14013,6 +14259,9 @@ export default function DaySevenApp() {
               });
             }
           }, {
+            onOpenActivity: (activityId) => {
+              setHomeOpenActivityTarget({ activityId: String(activityId), nonce: Date.now() });
+            },
             onShowChallengePicker: ({ activityId, challengeIds }) => {
               openChallengeChooser({ activityId, challengeIds });
             },
@@ -14069,12 +14318,15 @@ export default function DaySevenApp() {
 
         // Filter workouts - exclude already saved, linked, and dismissed activities
         const dismissedSet = new Set(dismissedWorkoutUUIDsRef.current);
-        const newWorkouts = result.workouts.filter(
+        const newWorkoutsRaw = result.workouts.filter(
           w => w.healthKitUUID &&
                !existingUUIDs.has(w.healthKitUUID) &&
                !linkedUUIDs.has(w.healthKitUUID) &&
                !dismissedSet.has(w.healthKitUUID)
         );
+        // Collapse cross-source duplicates (same workout written to HealthKit
+        // by Apple Watch + Strava + Garmin Connect, etc.).
+        const newWorkouts = dedupeCrossSource(newWorkoutsRaw);
 
         // --- Post-onboarding: auto-import ALL workouts silently ---
         if (justOnboardedRef.current && newWorkouts.length > 0) {
@@ -14140,7 +14392,7 @@ export default function DaySevenApp() {
 
           justOnboardedRef.current = false;
         } else {
-          // --- Normal flow: Smart Save walks, notify for others ---
+          // --- Normal flow: Smart Save walks, auto-log known types, notify for the rest ---
           const profile = userProfileRef.current;
           const maxHR = profile?.maxHeartRate;
           const smartSaveEnabled = profile?.privacySettings?.smartSaveWalks !== false;
@@ -14148,30 +14400,47 @@ export default function DaySevenApp() {
 
           const workoutsForNotification = [];
           const walksToSmartSave = [];
+          const workoutsToAutoLog = [];
 
           for (const workout of newWorkouts) {
             if (shouldSmartSaveWalk(workout, maxHR, smartSaveEnabled)) {
               walksToSmartSave.push(workout);
+            } else if (shouldAutoLogWorkout(workout, profile)) {
+              workoutsToAutoLog.push(workout);
             } else {
               workoutsForNotification.push(workout);
             }
           }
 
-          // Auto-save qualifying walks inline
-          if (walksToSmartSave.length > 0) {
-            const smartSavedActivities = walksToSmartSave.map((walk, i) => ({
+          // Build the unified set of activities we'll persist this sync.
+          // Walks keep smartSaved: true for backwards-compat with existing
+          // surfaces; the new auto-log path uses autoLoggedFromHealthKit and,
+          // for strength without focus areas, needsDetails so the home banner
+          // and notification know to ask for muscle groups.
+          const newActivities = [
+            ...walksToSmartSave.map((walk, i) => ({
               ...walk,
               id: Date.now() + i,
               time: walk.time || new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
               smartSaved: true,
               source: 'healthkit',
-            }));
+            })),
+            ...workoutsToAutoLog.map((workout, i) => ({
+              ...workout,
+              id: Date.now() + walksToSmartSave.length + i,
+              time: workout.time || new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+              autoLoggedFromHealthKit: true,
+              needsDetails: workout.type === 'Strength Training' && !(workout.focusAreas?.length),
+              source: 'healthkit',
+            })),
+          ];
 
+          if (newActivities.length > 0) {
             const uid = userRef.current?.uid;
             if (uid) {
               try {
                 const freshActivities = await getUserActivities(uid, true);
-                const merged = [...smartSavedActivities, ...freshActivities];
+                const merged = [...newActivities, ...freshActivities];
                 lastFirestoreActivityCount.current = merged.length;
                 activitiesRef.current = merged;
                 activitiesFromFirestore.current = true; // Prevent debounced save — saving directly
@@ -14180,36 +14449,49 @@ export default function DaySevenApp() {
                 saveUserActivities(uid, merged).catch(() => {});
               } catch (e) {
                 setActivities(prev => {
-                  const updated = [...smartSavedActivities, ...prev];
+                  const updated = [...newActivities, ...prev];
                   saveUserActivities(uid, updated).catch(() => {});
                   return updated;
                 });
               }
             } else {
-              setActivities(prev => [...smartSavedActivities, ...prev]);
+              setActivities(prev => [...newActivities, ...prev]);
             }
 
             setCalendarData(prev => {
               const updated = { ...prev };
-              for (const walk of walksToSmartSave) {
-                const dateKey = walk.date;
+              for (const w of [...walksToSmartSave, ...workoutsToAutoLog]) {
+                const dateKey = w.date;
                 if (!updated[dateKey]) updated[dateKey] = [];
                 updated[dateKey] = [...updated[dateKey], {
-                  type: walk.type,
-                  subtype: walk.subtype,
-                  duration: walk.duration,
-                  distance: walk.distance,
-                  calories: walk.calories,
-                  avgHr: walk.avgHr,
-                  maxHr: walk.maxHr
+                  type: w.type,
+                  subtype: w.subtype,
+                  duration: w.duration,
+                  distance: w.distance,
+                  calories: w.calories,
+                  avgHr: w.avgHr,
+                  maxHr: w.maxHr
                 }];
               }
               return updated;
             });
 
             // Show explanation modal on first smart-save
-            if (!smartSaveExplained) {
+            if (walksToSmartSave.length > 0 && !smartSaveExplained) {
               setShowSmartSaveExplainModal(true);
+            }
+
+            // Fire a local notification for each strength workout that landed
+            // without focus areas, so the user can deep-link straight to the
+            // detail modal and add muscle groups. Other auto-logged categories
+            // don't need follow-up.
+            const incompleteStrength = newActivities.filter(a => a.needsDetails);
+            if (incompleteStrength.length > 0) {
+              import('./services/notificationService').then(({ scheduleAddDetailsNotification }) => {
+                incompleteStrength.forEach(a => {
+                  scheduleAddDetailsNotification?.(a).catch(() => {});
+                });
+              }).catch(() => {});
             }
           }
 
@@ -16367,6 +16649,7 @@ export default function DaySevenApp() {
                   healthKitData={healthKitData}
                   onDismissWorkout={handleDismissWorkout}
                   onWorkoutPickerChange={setIsHomeWorkoutPickerOpen}
+                  openActivityTarget={homeOpenActivityTarget}
                   friends={friends}
                   onChallengeCountsChange={({ outgoingThisMonthCount }) => setOutgoingThisMonthChallengeCount(outgoingThisMonthCount)}
                   onChallengeActivity={(activity) => setChallengeModalActivity(activity)}

@@ -77,28 +77,50 @@ const Q5_RECOVERY = [
 // Goal computation (spec formula)
 // ============================================================================
 
+// Product spec:
+//   - No plan ever exceeds 4 strength / 3 cardio / 2 recovery.
+//   - Per-origin default (assumes Q3 = 3–4 days):
+//       starting_from_scratch → 3 / 1 / 2  (beginner — less cardio so steps
+//                                            and walks naturally fill the gap)
+//       everything else       → 3 / 2 / 2  (the optimum for most people)
+//   - Only `already_hybrid` + 5+ days/week gets the +1 strength bump to 4/2/2.
+//   - Low-volume users (Q3 = 1–2 or barely_any) drop strength and cardio by 1
+//     to floor; barely_any also drops recovery to 1 so week one is achievable.
+//   - Q2 (obstacle) and Q4 (physique/performance/both) are collected for
+//     analytics + future personalization but don't influence the recommendation
+//     today — Q1 + Q3 are the only signals that meaningfully change the plan.
+//   - Q5 (recovery routine) drives credit-card labels and copy elsewhere; the
+//     recovery goal itself is capped at 2 regardless of answers.
 export function computeWeeklyGoals({ origin = null, daysPerWeek, recovery = [] } = {}) {
-  let strength = 3;
-  let cardio = 2;
-  let recoveryGoal = 2;
+  // Per-origin defaults (the 3–4 days case).
+  let strength, cardio, recoveryGoal;
+  if (origin === 'starting_from_scratch') {
+    strength = 3; cardio = 1; recoveryGoal = 2;
+  } else {
+    // lifter_adding_cardio, runner_adding_muscle, already_hybrid, or unknown
+    strength = 3; cardio = 2; recoveryGoal = 2;
+  }
 
-  // Q1 — Origin (single-select: one identity per user)
-  if (origin === 'lifter_adding_cardio') cardio += 1;
-  if (origin === 'runner_adding_muscle') strength += 1;
-  if (origin === 'starting_from_scratch') { strength -= 1; cardio -= 1; }
+  // Q3 — Days per week
+  if (daysPerWeek === '5_plus' && origin === 'already_hybrid') {
+    // The only segment that earns the bump: someone who self-identifies as
+    // hybrid AND trains 5+ days/week already.
+    strength = 4;
+  }
+  if (daysPerWeek === '1_2' || daysPerWeek === 'barely_any') {
+    strength = Math.max(2, strength - 1);
+    cardio = Math.max(1, cardio - 1);
+  }
+  if (daysPerWeek === 'barely_any') {
+    // Truly low-activity start — let recovery start at 1 so they can build
+    // momentum without immediately failing the recovery goal.
+    recoveryGoal = Math.max(1, recoveryGoal - 1);
+  }
 
-  // Q3 — Days per week (single)
-  if (daysPerWeek === '1_2' || daysPerWeek === 'barely_any') { strength -= 1; cardio -= 1; }
-  if (daysPerWeek === '5_plus') strength += 1;
-
-  // Q5 — Recovery (multi-select). Base is 2; we cap at 2 regardless of
-  // answers — going beyond two recovery sessions a week starts to compete
-  // with strength + cardio progress for most people.
-
-  // Floors / ceilings
-  strength = Math.max(2, Math.min(5, strength));
-  cardio = Math.max(1, Math.min(4, cardio));
-  recoveryGoal = Math.max(1, Math.min(2, recoveryGoal));
+  // Hard product caps — never exceed these regardless of answers.
+  strength = Math.min(4, strength);
+  cardio = Math.min(3, cardio);
+  recoveryGoal = Math.min(2, recoveryGoal);
 
   return { strength, cardio, recovery: recoveryGoal };
 }

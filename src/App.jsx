@@ -2497,6 +2497,12 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
       if (isRefreshingRef.current) return;
       if (!e.touches || e.touches.length === 0) return;
 
+      // If the gesture starts inside any modal/sheet overlay, let the overlay
+      // own it — don't engage the page-level pull-to-refresh.
+      if (e.target && e.target.closest && e.target.closest('[data-modal-overlay]')) {
+        return;
+      }
+
       const touch = e.touches[0];
       const now = Date.now();
       const timeSinceLastTouch = now - lastTouchTime.current;
@@ -2534,6 +2540,12 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
     const handleTouchMove = (e) => {
       if (isRefreshingRef.current) return;
       if (!e.touches || e.touches.length === 0) return;
+
+      // Same as touchstart — if the move is inside a modal, the page-level
+      // pull-to-refresh has no business observing it.
+      if (e.target && e.target.closest && e.target.closest('[data-modal-overlay]')) {
+        return;
+      }
 
       // Find our tracked touch
       let touch = null;

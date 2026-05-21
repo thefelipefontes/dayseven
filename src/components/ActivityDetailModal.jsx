@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ActivityIcon from './ActivityIcon';
 import RouteMapView from './RouteMapView';
 import MuscleBodyMap from './MuscleBodyMap';
@@ -26,6 +26,14 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
   const [routeCoords, setRouteCoords] = useState([]);
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeChecked, setRouteChecked] = useState(false);
+
+  // Drag-to-dismiss state — only engages when the content is scrolled to the top.
+  // Native iOS elastic overscroll has to be killed via preventDefault on a
+  // non-passive touchmove listener — `overscroll-behavior: contain` doesn't
+  // stop the bounce within the scroll element itself.
+  const scrollRef = useRef(null);
+  const [dragY, setDragY] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
 
   const reactionEmojis = ['🔥', '💪', '👏', '❤️', '🎉'];
 
@@ -156,6 +164,78 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
     }, 300);
   };
 
+  // Keep a stable ref so the touch effect doesn't re-bind every render.
+  const handleCloseRef = useRef(handleClose);
+  useEffect(() => { handleCloseRef.current = handleClose; });
+
+  // Drag-to-dismiss: when the scroll content is at the top and the user pulls
+  // down, translate the whole sheet and dismiss past a threshold. preventDefault
+  // on touchmove kills iOS's elastic bounce inside the scroll element — without
+  // it the content double-displaces from the sheet drag.
+  useEffect(() => {
+    if (!isOpen) return;
+    const scrollEl = scrollRef.current;
+    if (!scrollEl) return;
+
+    let startY = 0;
+    let dragging = false;
+    let dy = 0;
+
+    const onTouchStart = (e) => {
+      if (scrollEl.scrollTop > 0 || !e.touches[0]) {
+        dragging = false;
+        return;
+      }
+      startY = e.touches[0].clientY;
+      dragging = true;
+      dy = 0;
+    };
+
+    const onTouchMove = (e) => {
+      if (!dragging || !e.touches[0]) return;
+      if (scrollEl.scrollTop > 0) {
+        dragging = false;
+        setIsDragging(false);
+        setDragY(0);
+        dy = 0;
+        return;
+      }
+      const delta = e.touches[0].clientY - startY;
+      if (delta > 0) {
+        e.preventDefault();
+        dy = delta;
+        setIsDragging(true);
+        setDragY(delta);
+      } else if (dy !== 0) {
+        dy = 0;
+        setDragY(0);
+      }
+    };
+
+    const onTouchEnd = () => {
+      if (!dragging) return;
+      dragging = false;
+      setIsDragging(false);
+      if (dy > 120) {
+        handleCloseRef.current();
+      }
+      setDragY(0);
+      dy = 0;
+    };
+
+    scrollEl.addEventListener('touchstart', onTouchStart, { passive: true });
+    scrollEl.addEventListener('touchmove', onTouchMove, { passive: false });
+    scrollEl.addEventListener('touchend', onTouchEnd, { passive: true });
+    scrollEl.addEventListener('touchcancel', onTouchEnd, { passive: true });
+
+    return () => {
+      scrollEl.removeEventListener('touchstart', onTouchStart);
+      scrollEl.removeEventListener('touchmove', onTouchMove);
+      scrollEl.removeEventListener('touchend', onTouchEnd);
+      scrollEl.removeEventListener('touchcancel', onTouchEnd);
+    };
+  }, [isOpen]);
+
   const handleDelete = () => {
     onDelete(activity.id);
     handleClose();
@@ -173,16 +253,18 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
   const color = getActivityColor(activity.type);
   
   return (
-    <div 
+    <div
+      data-modal-overlay="true"
       className="fixed inset-0 z-50 flex items-end justify-center transition-all duration-300"
       style={{ backgroundColor: isAnimating ? 'rgba(0,0,0,0.9)' : 'rgba(0,0,0,0)' }}
       onClick={(e) => e.target === e.currentTarget && handleClose()}
     >
       <div
-        className="w-full max-w-lg rounded-t-3xl transition-all duration-300 ease-out overflow-hidden flex flex-col"
+        className="w-full max-w-lg rounded-t-3xl overflow-hidden flex flex-col"
         style={{
           backgroundColor: '#0A0A0A',
-          transform: isAnimating ? 'translateY(0)' : 'translateY(100%)',
+          transform: !isAnimating ? 'translateY(100%)' : `translateY(${dragY}px)`,
+          transition: isDragging ? 'none' : 'transform 300ms ease-out',
           maxHeight: '85vh'
         }}
       >
@@ -219,7 +301,11 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
         </div>
 
         {/* Content */}
-        <div className="p-5 overflow-y-auto flex-1">
+        <div
+          ref={scrollRef}
+          className="p-5 overflow-y-auto flex-1"
+          style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}
+        >
           {/* Activity Type Header */}
           <div className="flex items-center gap-4 mb-6">
             <div

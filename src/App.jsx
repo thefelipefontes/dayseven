@@ -11771,6 +11771,24 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                   <div className="text-[10px] text-gray-400 mt-0.5 truncate">
                     {formatRow(head)}
                   </div>
+                  {(head.calories || head.avgHr || head.maxHr) && (
+                    <div className="flex items-center gap-2 text-[10px] text-gray-400 mt-1">
+                      {head.calories && (
+                        <span className="flex items-center gap-1">
+                          <span className="text-orange-400">🔥</span>
+                          <span>{head.calories} cal</span>
+                        </span>
+                      )}
+                      {(head.avgHr || head.maxHr) && (
+                        <span className="flex items-center gap-1">
+                          <span className="text-red-400">♥</span>
+                          {head.avgHr && <span>{head.avgHr} avg</span>}
+                          {head.avgHr && head.maxHr && <span className="text-gray-600">•</span>}
+                          {head.maxHr && <span>{head.maxHr} max</span>}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <svg className="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
@@ -11821,36 +11839,56 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                     borderTop: 'none',
                   }}
                 >
-                  {sorted.map((item, idx) => (
-                    <button
-                      key={item.id}
-                      onClick={() => {
-                        triggerHaptic(ImpactStyle.Light);
-                        setSelectedActivity(item);
-                      }}
-                      className="w-full px-3 py-2.5 flex items-center gap-3 text-left"
-                      style={{
-                        borderTop: idx === 0 ? '1px solid rgba(0,209,255,0.15)' : '1px solid rgba(0,209,255,0.1)',
-                      }}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs text-white truncate">
-                          {item.strengthType || item.subtype || 'Strength Training'}
+                  {sorted.map((item, idx) => {
+                    const durationLabel = item.duration
+                      ? (item.duration >= 60
+                          ? `${Math.floor(item.duration / 60)}h ${item.duration % 60}m`
+                          : `${item.duration} min`)
+                      : null;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          triggerHaptic(ImpactStyle.Light);
+                          setSelectedActivity(item);
+                        }}
+                        className="w-full px-3 py-2.5 flex items-center gap-3 text-left"
+                        style={{
+                          borderTop: idx === 0 ? '1px solid rgba(0,209,255,0.15)' : '1px solid rgba(0,209,255,0.1)',
+                        }}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs text-white truncate">
+                            {item.strengthType || item.subtype || 'Strength Training'}
+                          </div>
+                          <div className="text-[10px] text-gray-500 mt-0.5 truncate">
+                            {[durationLabel, item.time].filter(Boolean).join(' · ')}
+                          </div>
+                          {(item.calories || item.avgHr || item.maxHr) && (
+                            <div className="flex items-center gap-2 text-[10px] text-gray-400 mt-1">
+                              {item.calories && (
+                                <span className="flex items-center gap-1">
+                                  <span className="text-orange-400">🔥</span>
+                                  <span>{item.calories} cal</span>
+                                </span>
+                              )}
+                              {(item.avgHr || item.maxHr) && (
+                                <span className="flex items-center gap-1">
+                                  <span className="text-red-400">♥</span>
+                                  {item.avgHr && <span>{item.avgHr} avg</span>}
+                                  {item.avgHr && item.maxHr && <span className="text-gray-600">•</span>}
+                                  {item.maxHr && <span>{item.maxHr} max</span>}
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
-                        <div className="text-[10px] text-gray-500 mt-0.5 truncate">
-                          {[
-                            item.duration ? (item.duration >= 60
-                              ? `${Math.floor(item.duration / 60)}h ${item.duration % 60}m`
-                              : `${item.duration} min`) : null,
-                            item.time
-                          ].filter(Boolean).join(' · ')}
-                        </div>
-                      </div>
-                      <svg className="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-                      </svg>
-                    </button>
-                  ))}
+                        <svg className="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                        </svg>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>

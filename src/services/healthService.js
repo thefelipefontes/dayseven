@@ -42,9 +42,12 @@ export async function isHealthKitAvailable() {
 let healthKitAuthorized = false;
 try { healthKitAuthorized = localStorage.getItem('hk_read_authorized') === '1'; } catch {}
 
-export async function requestHealthKitAuthorization() {
+export async function requestHealthKitAuthorization(force = false) {
   if (!Capacitor.isNativePlatform()) return false;
-  if (healthKitAuthorized) return true;
+  // Skip the cache short-circuit when callers explicitly want the native call
+  // to run (e.g. the onboarding HK pre-screen needs the system dialog to fire
+  // even if a stale localStorage flag persisted from a prior install).
+  if (!force && healthKitAuthorized) return true;
 
   try {
     // Use native plugin — it calls HKHealthStore.requestAuthorization directly

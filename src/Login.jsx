@@ -223,7 +223,10 @@ const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
   // Main login screen with social buttons
   if (authMode === 'main') {
     return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center px-6 pt-safe">
+      <div
+        className="min-h-screen bg-black flex flex-col items-center justify-center px-6 pt-safe"
+        style={signupOnly ? { animation: 'slideInRight 0.3s ease-out' } : undefined}
+      >
         {/* Back button — only rendered when the parent reached Login via the
             welcome screen's "I already have an account" skip path, so users
             who tap it by mistake can return to onboarding. */}
@@ -240,15 +243,33 @@ const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
           </button>
         )}
 
-        {/* Logo/Wordmark */}
-        <div className="mb-12 text-center">
-          <img
-            src="/wordmark.png"
-            alt="Day Seven"
-            className="h-10 mx-auto mb-4"
-          />
-          <p className="text-gray-400 text-lg">Set Your Standards. Earn Your Streaks.</p>
-        </div>
+        {/* Header — generic wordmark for returning users; "Save your progress"
+            framing for users arriving from the pre-signup onboarding flow so
+            the leap from rings-at-50% to a signup form has clear stakes. */}
+        {signupOnly ? (
+          <div className="mb-10 text-center max-w-sm">
+            <img
+              src="/icon-transparent.png"
+              alt=""
+              className="h-12 mx-auto mb-5"
+            />
+            <h1 className="text-[28px] font-bold text-white mb-3 leading-tight">
+              Save your progress.
+            </h1>
+            <p className="text-gray-400 text-[15px] leading-relaxed">
+              Your rings are ready. Create an account so your first week is never lost.
+            </p>
+          </div>
+        ) : (
+          <div className="mb-12 text-center">
+            <img
+              src="/wordmark.png"
+              alt="Day Seven"
+              className="h-10 mx-auto mb-4"
+            />
+            <p className="text-gray-400 text-lg">Set Your Standards. Earn Your Streaks.</p>
+          </div>
+        )}
 
         {/* Sign in buttons */}
         <div className="w-full max-w-sm space-y-3">

@@ -39,7 +39,10 @@ const getActivityCategory = (activity) => {
 };
 
 // Helper to calculate leaderboard stats from activities and health data
-const calculateLeaderboardStats = (activities, healthHistory, recordsData) => {
+const calculateLeaderboardStats = (rawActivities, healthHistory, recordsData) => {
+  // Onboarding credits are synthetic ring-fillers granted during signup —
+  // they count toward weekly rings but never toward stats/leaderboards.
+  const activities = (rawActivities || []).filter(a => a.source !== 'onboarding_credit');
   // Support both old format (just personalRecords) and new format ({ personalRecords, streaks, weeksWon })
   const personalRecords = recordsData?.personalRecords ?? recordsData;
   const activeStreaks = recordsData?.streaks || null;
@@ -1356,7 +1359,9 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         selfActivitiesPromise,
         ...activityPromises,
       ]);
-      const flatActivities = [selfActivities, ...allActivities].flat();
+      // Onboarding credits are private ring-fillers — never expose in the feed.
+      const flatActivities = [selfActivities, ...allActivities].flat()
+        .filter(a => a.source !== 'onboarding_credit');
 
       // Sort by activity date (most recent first), not when it was logged
       const parseActivityTime = (timeStr) => {

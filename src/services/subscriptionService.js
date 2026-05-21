@@ -68,15 +68,38 @@ const loadSDK = async () => {
   }
 };
 
+// Track whether Purchases.configure() has already been called in this app
+// session. RevenueCat only allows a single configure() per launch; subsequent
+// user changes must go through logIn() / logOut().
+let _configured = false;
+
 /**
- * Initialize RevenueCat with the user's Firebase UID.
- * Should be called once after Firebase auth resolves.
+ * Initialize RevenueCat. Call once at app start.
  *
- * @param {string} userId - Firebase UID
- * @returns {Promise<boolean>} true if initialized successfully
+ * Pass `userId` = a Firebase UID to start identified, or `null` (recommended
+ * for the pre-signup onboarding flow) to start anonymous. RevenueCat will
+ * assign an anonymous appUserID (prefixed with `$RCAnonymousID:`) tied to the
+ * device; once the user signs up, call `loginRevenueCat(uid)` to alias the
+ * anonymous subscription to their Firebase UID.
+ *
+ * Safe to call multiple times — subsequent calls are no-ops after the first
+ * successful configure.
+ *
+ * @param {string|null} userId - Firebase UID, or null/undefined for anonymous
+ * @returns {Promise<boolean>} true if initialized (or already was)
  */
 export const initializeRevenueCat = async (userId) => {
   if (!isNative) return false;
+  if (_configured) {
+    // Already configured. If a userId is now available, alias the anonymous
+    // session to it via logIn — otherwise just no-op.
+    if (userId) {
+      try { await Purchases.logIn({ appUserID: userId }); } catch (e) {
+        debugLog('LOGIN AFTER INIT FAILED', e?.message);
+      }
+    }
+    return true;
+  }
 
   try {
     const loaded = await loadSDK();
@@ -87,23 +110,42 @@ export const initializeRevenueCat = async (userId) => {
 
     await Purchases.setLogLevel({ level: LOG_LEVEL.INFO });
 
-    if (Capacitor.getPlatform() === 'ios') {
-      await Purchases.configure({
-        apiKey: REVENUECAT_API_KEY,
-        appUserID: userId,
-      });
-    } else if (Capacitor.getPlatform() === 'android') {
-      // Android API key would go here when ready
-      await Purchases.configure({
-        apiKey: REVENUECAT_API_KEY,
-        appUserID: userId,
-      });
-    }
+    // userId may be null → RC creates an anonymous appUserID for this device.
+    // The `appUserID` field is optional; omit it for the anonymous case so
+    // the SDK doesn't try to identify with `null` as a literal string.
+    const configureOpts = { apiKey: REVENUECAT_API_KEY };
+    if (userId) configureOpts.appUserID = userId;
+    await Purchases.configure(configureOpts);
+    _configured = true;
 
-    console.log('[SubscriptionService] RevenueCat initialized for user:', userId);
+    console.log('[SubscriptionService] RevenueCat initialized for user:', userId || '(anonymous)');
     return true;
   } catch (error) {
     debugLog('INIT ERROR', error.message);
+    return false;
+  }
+};
+
+/**
+ * Transfer the current (anonymous) RevenueCat session to an authenticated
+ * Firebase UID. Used after signup completes so any pre-signup purchase made
+ * under the anonymous appUserID becomes tied to the authenticated user.
+ *
+ * @param {string} userId - Firebase UID
+ * @returns {Promise<boolean>}
+ */
+export const loginRevenueCat = async (userId) => {
+  if (!isNative || !userId) return false;
+  if (!_configured) {
+    // Defensive: if init wasn't called yet, configure with the uid directly.
+    return initializeRevenueCat(userId);
+  }
+  try {
+    await Purchases.logIn({ appUserID: userId });
+    console.log('[SubscriptionService] RevenueCat aliased to user:', userId);
+    return true;
+  } catch (error) {
+    debugLog('LOGIN ERROR', error?.message);
     return false;
   }
 };

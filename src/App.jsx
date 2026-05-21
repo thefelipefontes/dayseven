@@ -4,6 +4,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth, EmailAuthProvider, reauthenticateWithCredential, updatePassword, sendPasswordResetEmail } from './firebase';
 import Login from './Login';
 import UsernameSetup from './UsernameSetup';
+import OnboardingFlow from './Onboarding';
 import Friends from './Friends';
 import ActivityFeed from './ActivityFeed';
 import { ChallengeFriendModal, ChallengesSection, ChallengeActivityPickerModal, ChallengeApplyPastActivityModal } from './Challenges';
@@ -22,7 +23,7 @@ import { Capacitor } from '@capacitor/core';
 import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, fetchHealthDataForDate, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, fetchWorkoutRoute, updateWidgetData, updateLiveActivityState, startWatchWorkoutLiveActivity, endAllLiveActivities, checkActiveLiveActivity } from './services/healthService';
 import NotificationSettings from './NotificationSettings';
 import { initializePushNotifications, handleNotificationNavigation, removeFCMToken, clearBadge, clearAllNotifications, incrementBadge, shouldShowNotification, getNotificationPreferences } from './services/notificationService';
-import { initializeRevenueCat, checkProStatus, addCustomerInfoListener, logoutRevenueCat, presentPaywall, presentCustomerCenter, restorePurchases, setDevAuthEmail } from './services/subscriptionService';
+import { initializeRevenueCat, loginRevenueCat, checkProStatus, addCustomerInfoListener, logoutRevenueCat, presentPaywall, presentCustomerCenter, restorePurchases, setDevAuthEmail, getOfferings } from './services/subscriptionService';
 import ActivityIcon, { ICON_PICKER_CATEGORIES, CATEGORY_COLORS as ICON_CATEGORY_COLORS } from './components/ActivityIcon';
 import RouteMapView, { ll2px, bestFit, makeTiles, RouteOverlay, TileLayer, TILE } from './components/RouteMapView';
 import MuscleBodyMap from './components/MuscleBodyMap';
@@ -6833,44 +6834,6 @@ const SmartSaveExplainModal = ({ onClose, onDisable }) => {
   );
 };
 
-// Brand welcome shown before the pre-signup onboarding questions so the first
-// question isn't the very first thing a brand-new user sees. Matches the Login
-// screen's wordmark + slogan treatment for continuity. Existing users tap
-// "I already have an account" to skip the survey and go straight to Login.
-const PreSignupWelcome = ({ onGetStarted, onSignIn }) => (
-  <div className="min-h-screen bg-black flex flex-col">
-    <div className="flex-1 flex items-center justify-center px-6">
-      <div className="text-center">
-        <img src="/icon-transparent.png" alt="" className="h-20 mx-auto mb-2" />
-        <img src="/wordmark.png" alt="Day Seven" className="h-12 mx-auto mb-2" />
-        <p className="text-gray-400 text-xl leading-relaxed">
-          Set Your Standards.<br />Earn Your Streaks.
-        </p>
-      </div>
-    </div>
-    <div className="fixed bottom-0 left-0 right-0 p-6 pb-12" style={{ background: 'linear-gradient(to top, #000 80%, transparent)' }}>
-      <button
-        onClick={onGetStarted}
-        className="w-full py-4 rounded-xl font-bold text-lg transition-all duration-150"
-        style={{ backgroundColor: '#00FF94', color: 'black' }}
-        onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.97)'; e.currentTarget.style.backgroundColor = '#00CC77'; }}
-        onTouchEnd={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.backgroundColor = '#00FF94'; }}
-        onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.97)'; e.currentTarget.style.backgroundColor = '#00CC77'; }}
-        onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.backgroundColor = '#00FF94'; }}
-        onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.backgroundColor = '#00FF94'; }}
-      >
-        Get Started
-      </button>
-      <button
-        onClick={onSignIn}
-        className="w-full mt-3 py-3 text-gray-400 text-sm font-medium"
-      >
-        I already have an account
-      </button>
-    </div>
-  </div>
-);
-
 // Onboarding Survey — Multi-step flow
 // `preSignup` flips the final button to "Continue to Sign Up" — answers are
 // collected, persisted to localStorage by the wrapper, and applied to the
@@ -12338,10 +12301,6 @@ export default function DaySevenApp() {
       return false;
     }
   });
-  // Welcome screen shown once before the survey starts. In-memory only — if
-  // the user kills the app mid-flow, they see the brand intro again, which
-  // is preferable to defaulting them into questions cold.
-  const [preSignupWelcomeSeen, setPreSignupWelcomeSeen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('home');
   const [showSettings, setShowSettings] = useState(false);
@@ -13146,7 +13105,6 @@ export default function DaySevenApp() {
     // signup. Clears any stale localStorage flags from a prior pre-signup.
     try { localStorage.removeItem('preSignupOnboarding'); } catch {}
     setPreSignupDone(false);
-    setPreSignupWelcomeSeen(false);
 
     // Then attempt actual sign out in background (don't block UI)
     (async () => {
@@ -13622,11 +13580,14 @@ export default function DaySevenApp() {
             }
           }
 
-          // Initialize RevenueCat with Firebase UID
+          // Alias the anonymous RevenueCat user (from app start) to this
+          // Firebase UID so any pre-signup purchase carries over to the
+          // authenticated account. Falls back to identified-init if anon
+          // configure failed.
           if (Capacitor.isNativePlatform()) {
             try {
               setDevAuthEmail(user.email);
-              const rcInitialized = await initializeRevenueCat(user.uid);
+              const rcInitialized = await loginRevenueCat(user.uid);
               if (rcInitialized) {
                 const proStatus = await checkProStatus();
                 applyProStatus(proStatus);
@@ -14257,9 +14218,11 @@ export default function DaySevenApp() {
   // Single first-launch finalizer shared by both paths that promote a brand
   // new user to fully onboarded: the pre-signup wrapper (answers from
   // localStorage applied after auth) and the in-app survey (fallback when no
-  // pre-signup data is present). Order: write profile → paywall → mark
-  // onboarded → Health prompt → Push prompt.
-  const finalizeOnboardingFlow = useCallback(async (uid, { goals, privacy, extra }) => {
+  // pre-signup data is present). Order: write profile + activities + goals →
+  // mark onboarded. The paywall fires *after* username is set (post-signup)
+  // and HK/push permissions were already requested in the pre-signup
+  // pre-screens so we don't re-prompt here.
+  const finalizeOnboardingFlow = useCallback(async (uid, { goals, privacy, extra, linkedWorkouts, onboardingCredits }) => {
     const goalsToSave = {
       liftsPerWeek: goals.liftsPerWeek,
       cardioPerWeek: goals.cardioPerWeek,
@@ -14274,13 +14237,53 @@ export default function DaySevenApp() {
       setUserProfile(prev => prev ? { ...prev, privacySettings: privacy } : prev);
     }
     if (extra) {
+      // New 5-question survey: persist origin/obstacle/daysPerWeek/goal/recovery
+      // for future personalization. Old fitnessGoal/fitnessLevel/wearable keys
+      // are kept for backward-compat with users who onboarded before this flow.
       const extraFields = {};
+      if (extra.origin) extraFields.surveyOrigin = extra.origin;
+      if (extra.obstacle) extraFields.surveyObstacle = extra.obstacle;
+      if (extra.daysPerWeek) extraFields.surveyDaysPerWeek = extra.daysPerWeek;
+      if (extra.goal) extraFields.surveyGoal = extra.goal;
+      if (extra.recovery) extraFields.surveyRecovery = extra.recovery;
+      // legacy fields (kept for the in-app fallback path that still uses the
+      // old OnboardingSurvey component)
       if (extra.fitnessGoal) extraFields.fitnessGoal = extra.fitnessGoal;
       if (extra.fitnessLevel) extraFields.fitnessLevel = extra.fitnessLevel;
       if (extra.favoriteRecovery) extraFields.favoriteRecovery = extra.favoriteRecovery;
       if (extra.wearable) extraFields.wearable = extra.wearable;
       if (Object.keys(extraFields).length > 0) {
         await updateUserProfile(uid, extraFields);
+      }
+    }
+
+    // Onboarding activities (linked HK workouts + starting credits) — write
+    // them to the user's activities so weeklyProgress reflects "rings already
+    // at 50%" on the paywall. Credits carry source:'onboarding_credit' so
+    // they're filtered out of stats/history/leaderboards downstream.
+    const newActivities = [
+      ...(linkedWorkouts || []),
+      ...(onboardingCredits || []),
+    ];
+    if (newActivities.length > 0) {
+      try {
+        const existing = await getUserActivities(uid, true).catch(() => []);
+        const existingIds = new Set((existing || []).map(a => a.id));
+        const existingHKUUIDs = new Set((existing || []).filter(a => a.healthKitUUID).map(a => a.healthKitUUID));
+        const deduped = newActivities.filter(a => {
+          if (a.id && existingIds.has(a.id)) return false;
+          if (a.healthKitUUID && existingHKUUIDs.has(a.healthKitUUID)) return false;
+          return true;
+        });
+        const merged = [...deduped, ...(existing || [])];
+        activitiesRef.current = merged;
+        activitiesFromFirestore.current = true;
+        lastFirestoreActivityCount.current = merged.length;
+        lastFirestoreSyncTime.current = Date.now();
+        setActivities(merged);
+        await saveUserActivities(uid, merged);
+      } catch (e) {
+        console.error('[App] Failed to write onboarding activities:', e);
       }
     }
 
@@ -14300,30 +14303,12 @@ export default function DaySevenApp() {
     setIsOnboarded(true);
     setActiveTab('home');
 
-    // Paywall + permission prompts only fire here when the user has already
-    // set a username (the in-app survey fallback path). For the pre-signup
-    // flow, the user hits username setup AFTER this runs — UsernameSetup's
-    // onComplete handler owns the paywall → HK → push sequence in that case.
+    // Paywall is now fired pre-signup (Celebrate → Notif transition in
+    // OnboardingFlow), so it does NOT fire here. We still kick off HK sync
+    // + FCM token registration once we have a uid + username.
     if (Capacitor.isNativePlatform() && userProfileRef.current?.username) {
-      try {
-        const { purchased } = await presentPaywall({ offeringIdentifier: 'Welcome Offer' });
-        if (purchased) {
-          const proStatus = await checkProStatus();
-          applyProStatus(proStatus);
-        }
-      } catch (e) {
-        console.error('[App] Post-onboarding paywall error:', e);
-      }
-      try {
-        await syncHealthKit();
-      } catch (e) {
-        console.error('[App] Post-onboarding HealthKit prompt failed:', e);
-      }
-      try {
-        await setupPushNotifications(uid);
-      } catch (e) {
-        console.error('[App] Post-onboarding push prompt failed:', e);
-      }
+      try { await syncHealthKit(); } catch (e) { console.error('[App] Post-onboarding HK sync failed:', e); }
+      try { await setupPushNotifications(uid); } catch (e) { console.error('[App] Post-onboarding push setup failed:', e); }
     }
   }, [syncHealthKit, setupPushNotifications]);
 
@@ -14570,6 +14555,38 @@ export default function DaySevenApp() {
     return () => clearTimeout(timer);
   }, []);
 
+  // RevenueCat init runs once at startup. On native we read the cached
+  // Firebase user via the Capacitor plugin (the JS SDK's onAuthStateChanged
+  // doesn't fire on native — auth lives in the native plugin's process).
+  // Configure with the cached UID for returning users so existing sandbox
+  // receipts attribute correctly; otherwise init anonymously and rely on
+  // loginRevenueCat(uid) inside handleUserAuth to alias once signup happens.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    let cancelled = false;
+    (async () => {
+      let userId = null;
+      try {
+        const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+        const { user } = await FirebaseAuthentication.getCurrentUser();
+        if (cancelled) return;
+        userId = user?.uid || null;
+      } catch {
+        // Fall through to anonymous configure if the plugin lookup fails.
+      }
+      if (cancelled) return;
+      const ok = await initializeRevenueCat(userId);
+      if (cancelled || !ok) return;
+      // Pre-warm offerings so the App Store handshake (and any iOS sandbox
+      // / Apple ID sign-in sheet) fires now at launch — not at the moment
+      // the user taps Continue on the Celebrate screen. Without this, the
+      // first StoreKit round-trip happens during presentPaywall and iOS
+      // pops a system sheet right before the paywall renders.
+      try { await getOfferings(); } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   // Check if tour should be shown for new/returning users who haven't seen it yet
   const tourShownRef = useRef(false);
   useEffect(() => {
@@ -14587,6 +14604,13 @@ export default function DaySevenApp() {
   // Real state management
   const [activities, setActivities] = useState(initialActivities);
   useEffect(() => { activitiesRef.current = activities; }, [activities]);
+  // Onboarding credits (source:'onboarding_credit') count toward ring fill but
+  // must never appear in user-visible activity lists, leaderboards, stats, or
+  // challenge pickers. Use this everywhere a real activity list is rendered.
+  const displayActivities = useMemo(
+    () => activities.filter(a => a.source !== 'onboarding_credit'),
+    [activities]
+  );
   const [calendarData, setCalendarData] = useState(initialCalendarData);
   const [healthHistory, setHealthHistory] = useState([]);
   const [weeklyProgress, setWeeklyProgress] = useState(initialWeeklyProgress);
@@ -15917,41 +15941,24 @@ export default function DaySevenApp() {
     );
   }
 
-  // Pre-signup onboarding: ask the questions BEFORE the user creates an
-  // account so the signup form feels like the natural next step instead of
-  // the gate to a wall of permission prompts + a survey. Answers persist in
-  // localStorage and get applied to the new user's profile by handleUserAuth.
+  // Pre-signup onboarding: survey → results → HK pre-screen → workout linking →
+  // notif pre-screen. Permission prompts fire here (pre-signup) so they're the
+  // emotional payoff to a CTA, not a wall after signup. The flow persists all
+  // state to localStorage and applies it in handleUserAuth after signup.
   if (!user && !preSignupDone) {
-    if (!preSignupWelcomeSeen) {
-      return <PreSignupWelcome
-        onGetStarted={() => setPreSignupWelcomeSeen(true)}
-        onSignIn={() => {
-          // Persist the skip so reopens don't re-show the welcome before
-          // the user has actually signed in. handleUserAuth ignores entries
-          // without `goals` so this doesn't trigger the apply path.
-          try {
-            localStorage.setItem('preSignupOnboarding', JSON.stringify({ skipped: true }));
-          } catch {}
-          setPreSignupDone(true);
-        }}
-      />;
-    }
-    return <OnboardingSurvey
-      currentGoals={null}
-      onCancel={null}
-      preSignup={true}
-      onComplete={(goals, privacySettings, extraData) => {
+    return <OnboardingFlow
+      onSignIn={() => {
+        // "I already have an account" path — persist a skip marker so reopens
+        // don't restart the survey, then drop into Login.
         try {
-          localStorage.setItem('preSignupOnboarding', JSON.stringify({
-            goals,
-            privacy: privacySettings,
-            extra: extraData,
-            done: true,
-            savedAt: new Date().toISOString(),
-          }));
-        } catch (e) {
-          console.error('[App] Failed to persist pre-signup answers:', e);
-        }
+          localStorage.setItem('preSignupOnboarding', JSON.stringify({ skipped: true }));
+        } catch {}
+        setPreSignupDone(true);
+      }}
+      onComplete={() => {
+        // OnboardingFlow already wrote the full payload to localStorage with
+        // done:true; we just flip the gate so the next render falls through
+        // to the Login screen.
         setPreSignupDone(true);
       }}
     />;
@@ -15975,7 +15982,6 @@ export default function DaySevenApp() {
     const handleBackToWelcome = cameFromSkip ? () => {
       try { localStorage.removeItem('preSignupOnboarding'); } catch {}
       setPreSignupDone(false);
-      setPreSignupWelcomeSeen(false);
     } : null;
     return (
       <Login
@@ -15993,30 +15999,13 @@ export default function DaySevenApp() {
         user={user}
         onComplete={async (username) => {
           setUserProfile(prev => ({ ...prev, username }));
-          // Fire the post-onboarding sequence that was deferred while the
-          // username gate was up: paywall → HealthKit → push. Only when
-          // already onboarded — the in-app survey fallback path handles
-          // its own paywall/permissions after the survey completes.
+          // Paywall + permissions were both handled pre-signup (paywall on
+          // the Celebrate→Notif transition under the anonymous RC user; HK +
+          // push prompts in their respective pre-screens). After username we
+          // only need to kick off silent HK sync and FCM token registration.
           if (isOnboarded && Capacitor.isNativePlatform()) {
-            try {
-              const { purchased } = await presentPaywall({ offeringIdentifier: 'Welcome Offer' });
-              if (purchased) {
-                const proStatus = await checkProStatus();
-                applyProStatus(proStatus);
-              }
-            } catch (e) {
-              console.error('[App] Post-username paywall error:', e);
-            }
-            try {
-              await syncHealthKit();
-            } catch (e) {
-              console.error('[App] Post-username HealthKit prompt failed:', e);
-            }
-            try {
-              await setupPushNotifications(user.uid);
-            } catch (e) {
-              console.error('[App] Post-username push prompt failed:', e);
-            }
+            try { await syncHealthKit(); } catch (e) { console.error('[App] Post-username HK sync failed:', e); }
+            try { await setupPushNotifications(user.uid); } catch (e) { console.error('[App] Post-username push setup failed:', e); }
           }
         }}
       />
@@ -16347,7 +16336,7 @@ export default function DaySevenApp() {
                     });
                     return !isAlreadySaved;
                   })}
-                  activities={activities}
+                  activities={displayActivities}
                   weeklyProgress={weeklyProgress}
                   userData={userData}
                   userProfile={userProfile}
@@ -16449,7 +16438,7 @@ export default function DaySevenApp() {
                   user={user}
                   userProfile={userProfile}
                   userData={userData}
-                  activities={activities}
+                  activities={displayActivities}
                   friends={friends}
                   isPro={isPro}
                   onChallengeCountsChange={({ outgoingThisMonthCount }) => setOutgoingThisMonthChallengeCount(outgoingThisMonthCount)}
@@ -16506,7 +16495,7 @@ export default function DaySevenApp() {
                     }
                     setShowShare(true);
                   }}
-                  activities={activities}
+                  activities={displayActivities}
                   calendarData={calendarData}
                   healthHistory={healthHistory}
                   healthKitData={healthKitData}
@@ -17718,7 +17707,7 @@ export default function DaySevenApp() {
       <ChallengeActivityPickerModal
         isOpen={!!challengePickerForFriend}
         onClose={() => setChallengePickerForFriend(null)}
-        activities={activities}
+        activities={displayActivities}
         friend={challengePickerForFriend}
         onPick={(activity) => {
           const friend = challengePickerForFriend;
@@ -17732,7 +17721,7 @@ export default function DaySevenApp() {
       <ChallengeApplyPastActivityModal
         isOpen={!!applyPastActivityChallenge}
         onClose={() => setApplyPastActivityChallenge(null)}
-        activities={activities}
+        activities={displayActivities}
         challenge={applyPastActivityChallenge}
         onPick={async (activity) => {
           const challenge = applyPastActivityChallenge;

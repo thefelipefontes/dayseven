@@ -10649,7 +10649,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
 
 // Home Tab - Simplified
 
-const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeCountsChange, onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, optimisticChallengeCompletions = new Map(), onStartChallengeWorkout, onApplyPastActivityToChallenge, openActivityTarget = null }) => {
+const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeCountsChange, onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, optimisticChallengeCompletions = new Map(), onStartChallengeWorkout, onApplyPastActivityToChallenge, openActivityTarget = null, showHkEmptyHint = false, onDismissHkEmptyHint = () => {} }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
   const [dismissConfirmWorkouts, setDismissConfirmWorkouts] = useState(null); // Workouts pending dismiss confirmation
@@ -11725,6 +11725,39 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
           </div>
         )}
 
+        {/* Apple Health empty-state hint — surfaces once for users who granted
+            HK permission but have nothing flowing in (typical Garmin/Whoop/
+            Polar setup gap). Dismissible; persisted on the profile so we don't
+            re-nag. */}
+        {showHkEmptyHint && (
+          <div
+            className="relative p-3 rounded-xl mb-3 flex items-start gap-3"
+            style={{
+              backgroundColor: 'rgba(0,209,255,0.08)',
+              border: '1px solid rgba(0,209,255,0.25)'
+            }}
+          >
+            <span className="text-xl">🩺</span>
+            <div className="flex-1 pr-6">
+              <div className="text-xs font-semibold" style={{ color: '#00D1FF' }}>
+                No workouts found in Apple Health
+              </div>
+              <div className="text-[10px] text-gray-400 mt-0.5 leading-snug">
+                If you use Garmin, Whoop, or Polar, enable Apple Health sync inside their companion app and your workouts will start flowing in.
+              </div>
+            </div>
+            <button
+              onClick={onDismissHkEmptyHint}
+              className="absolute flex items-center justify-center"
+              style={{ top: 4, right: 4, width: 44, height: 44, color: 'rgba(0,209,255,0.6)' }}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M3 3L11 11M11 3L3 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+              </svg>
+            </button>
+          </div>
+        )}
+
         {/* Incomplete-strength banner — single parent that expands to reveal
             individual workouts when there are multiple. Keeps the home screen
             uncluttered while still surfacing each entry for editing. */}
@@ -12621,6 +12654,11 @@ export default function DaySevenApp() {
   // Set when an "add muscle groups" notification is tapped — HomeTab reads this
   // and opens the matching activity's detail modal. Shape: { activityId, nonce }.
   const [homeOpenActivityTarget, setHomeOpenActivityTarget] = useState(null);
+  // Empty-state hint for third-party-wearable users (Garmin/Whoop/Polar/etc.)
+  // who granted HK permission but haven't enabled write-to-HealthKit inside
+  // their device's companion app. We surface a one-time, dismissible tip on
+  // Home rather than ask about wearables in onboarding.
+  const [showHkEmptyHint, setShowHkEmptyHint] = useState(false);
   // Multi-match chooser state — shape: { activity, candidateChallenges } | null.
   // Set when an activity matches 2+ challenges and the cloud function deferred fulfillment
   // (push notification deep-link or anywhere we surface the modal).
@@ -12708,6 +12746,15 @@ export default function DaySevenApp() {
   useEffect(() => { dismissedWorkoutUUIDsRef.current = dismissedWorkoutUUIDs; }, [dismissedWorkoutUUIDs]);
 
   // Handler to dismiss a workout from notifications
+  const handleDismissHkEmptyHint = () => {
+    setShowHkEmptyHint(false);
+    const uid = userRef.current?.uid;
+    if (uid) {
+      updateUserProfile(uid, { hkEmptyHintDismissed: true }).catch(() => {});
+      setUserProfile(prev => prev ? { ...prev, hkEmptyHintDismissed: true } : prev);
+    }
+  };
+
   const handleDismissWorkout = (workout) => {
     const uuid = workout.healthKitUUID || workout.id;
     if (uuid) {
@@ -14339,6 +14386,19 @@ export default function DaySevenApp() {
       if (result.success) {
         // Use ref to get current activities without needing as dependency
         const currentActivities = activitiesRef.current || [];
+
+        // HK permission is granted (result.success === true) but the user has
+        // never had any HealthKit-sourced activity AND this sync returned no
+        // workouts at all. Classic third-party-wearable signal — Garmin/Whoop/
+        // Polar users typically need to enable "Write to Apple Health" inside
+        // their device's companion app before workouts flow into HK.
+        if (
+          (result.workouts || []).length === 0 &&
+          !userProfileRef.current?.hkEmptyHintDismissed &&
+          !currentActivities.some(a => a.healthKitUUID || a.linkedHealthKitUUID || a.source === 'healthkit')
+        ) {
+          setShowHkEmptyHint(true);
+        }
 
         // Find workouts that aren't already in activities (by healthKitUUID) and not dismissed
         const existingUUIDs = new Set(
@@ -16688,6 +16748,8 @@ export default function DaySevenApp() {
                   onDismissWorkout={handleDismissWorkout}
                   onWorkoutPickerChange={setIsHomeWorkoutPickerOpen}
                   openActivityTarget={homeOpenActivityTarget}
+                  showHkEmptyHint={showHkEmptyHint}
+                  onDismissHkEmptyHint={handleDismissHkEmptyHint}
                   friends={friends}
                   onChallengeCountsChange={({ outgoingThisMonthCount }) => setOutgoingThisMonthChallengeCount(outgoingThisMonthCount)}
                   onChallengeActivity={(activity) => setChallengeModalActivity(activity)}

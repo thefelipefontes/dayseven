@@ -149,6 +149,35 @@ class WorkoutManager: NSObject, ObservableObject {
         }
     }
 
+    // MARK: - Summary Fallback Mapping
+
+    /// Map an HK activity type to a canonical phone-side activity name. Used as
+    /// a last-resort default for summaryActivityType when an entry path forgot
+    /// to populate it. Names match keys in the phone's ICON_MAP so the saved
+    /// Activity renders with the right icon and title.
+    static func summaryFallbackName(for activityType: HKWorkoutActivityType) -> String {
+        switch activityType {
+        case .traditionalStrengthTraining, .functionalStrengthTraining: return "Strength Training"
+        case .coreTraining: return "Strength Training"
+        case .crossTraining, .highIntensityIntervalTraining: return "Strength Training"
+        case .running: return "Running"
+        case .cycling: return "Cycle"
+        case .walking: return "Walking"
+        case .hiking: return "Hiking"
+        case .swimming: return "Swimming"
+        case .rowing: return "Rowing"
+        case .elliptical: return "Elliptical"
+        case .stairClimbing, .stepTraining: return "Stair Climbing"
+        case .yoga: return "Yoga"
+        case .pilates: return "Pilates"
+        case .flexibility: return "Yoga"
+        case .cooldown: return "Cooldown"
+        case .mindAndBody: return "Yoga"
+        case .preparationAndRecovery: return "Cold Plunge"
+        default: return "Other"
+        }
+    }
+
     // MARK: - Start Workout
 
     func startWorkout(activityType: HKWorkoutActivityType, isIndoor: Bool = false) async throws {
@@ -158,6 +187,18 @@ class WorkoutManager: NSObject, ObservableObject {
         }
         guard !isActive else { throw WorkoutError.alreadyActive }
         guard HKHealthStore.isHealthDataAvailable() else { throw WorkoutError.healthKitNotAvailable }
+
+        // Set a fallback summary type from the HK activity type. Entry paths that
+        // know more (ActiveWorkoutView, PhoneConnectivityService, etc.) can
+        // overwrite right after this — but if WorkoutSummaryView ever appears
+        // without those richer paths firing, autoSaveWorkout still has a
+        // non-empty type to persist instead of saving a blank Activity.
+        if summaryActivityType.isEmpty {
+            summaryActivityType = WorkoutManager.summaryFallbackName(for: activityType)
+            if summaryActivityType == "Strength Training" && summaryStrengthType == nil {
+                summaryStrengthType = activityType == .functionalStrengthTraining ? "Bodyweight" : "Weightlifting"
+            }
+        }
 
         let config = HKWorkoutConfiguration()
         config.activityType = activityType

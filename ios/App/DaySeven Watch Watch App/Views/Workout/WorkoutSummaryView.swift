@@ -394,10 +394,16 @@ struct WorkoutSummaryView: View {
         isAutoSaving = true
         defer { isAutoSaving = false }
 
-        let countToward = ActivityTypes.getDefaultCountToward(type: activityType, subtype: selectedSubtype, countToward: selectedCountToward)
+        // Defensive guard — if every upstream entry path forgot to populate
+        // the workout's activity type, never save with type: "". Fall back to
+        // "Other" so the entry at least renders and the user can edit it on
+        // the phone instead of seeing a blank row with a heartbeat icon.
+        let resolvedType = activityType.isEmpty ? "Other" : activityType
+
+        let countToward = ActivityTypes.getDefaultCountToward(type: resolvedType, subtype: selectedSubtype, countToward: selectedCountToward)
 
         let activity = Activity.create(
-            type: activityType,
+            type: resolvedType,
             subtype: selectedSubtype,
             date: result.startDate,
             duration: result.duration,

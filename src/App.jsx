@@ -4,6 +4,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth, EmailAuthProvider, reauthenticateWithCredential, updatePassword, sendPasswordResetEmail } from './firebase';
 import Login from './Login';
 import UsernameSetup from './UsernameSetup';
+import DiscordInvite from './DiscordInvite';
 import OnboardingFlow from './Onboarding';
 import Friends from './Friends';
 import ActivityFeed from './ActivityFeed';
@@ -12632,6 +12633,10 @@ export default function DaySevenApp() {
   const [userProfile, setUserProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [isOnboarded, setIsOnboarded] = useState(null); // null = loading, true = onboarded, false = needs onboarding
+  // Final step after signup: invite to private Discord. Local state only —
+  // flipped on by UsernameSetup completion, off by user dismissing the screen.
+  // Returning users skip this entirely because they already have a username.
+  const [showDiscordInvite, setShowDiscordInvite] = useState(false);
   // Pre-signup onboarding: collected answers live in localStorage until the
   // user creates an account, at which point handleUserAuth applies them.
   // Read once on mount so the first paint already routes to Login vs survey.
@@ -16410,6 +16415,8 @@ export default function DaySevenApp() {
         user={user}
         onComplete={async (username) => {
           setUserProfile(prev => ({ ...prev, username }));
+          // Last screen of the post-signup flow: invite to the private Discord.
+          setShowDiscordInvite(true);
           // Paywall + permissions were both handled pre-signup (paywall on
           // the Celebrate→Notif transition under the anonymous RC user; HK +
           // push prompts in their respective pre-screens). After username we
@@ -16421,6 +16428,12 @@ export default function DaySevenApp() {
         }}
       />
     );
+  }
+
+  // Final post-signup step: private Discord invite. Local-state gated so it
+  // only fires for fresh signups (set in UsernameSetup's onComplete above).
+  if (showDiscordInvite) {
+    return <DiscordInvite onDone={() => setShowDiscordInvite(false)} />;
   }
 
   if (isOnboarded === false) {

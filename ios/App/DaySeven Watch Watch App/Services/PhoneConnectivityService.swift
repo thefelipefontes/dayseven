@@ -350,6 +350,30 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
                 self.remoteWorkoutEnded = true
                 print("[PhoneConnect] Pending cancelWorkout: workout cancelled via context")
             }
+        case "pauseWorkout":
+            // The phone fires this when the user taps "End" on the phone — we pause
+            // the watch so the user can review the summary, then end on Save.
+            // Without this context-fallback path, the pause silently drops when the
+            // watch is asleep and the watch keeps recording until the eventual end.
+            guard let wm = workoutManager else { return }
+            Task { @MainActor in
+                guard wm.isActive, !wm.isPaused else {
+                    print("[PhoneConnect] Pending pauseWorkout: workout not active or already paused")
+                    return
+                }
+                wm.pause()
+                print("[PhoneConnect] Pending pauseWorkout: workout paused via context")
+            }
+        case "resumeWorkout":
+            guard let wm = workoutManager else { return }
+            Task { @MainActor in
+                guard wm.isActive, wm.isPaused else {
+                    print("[PhoneConnect] Pending resumeWorkout: workout not active or not paused")
+                    return
+                }
+                wm.resume()
+                print("[PhoneConnect] Pending resumeWorkout: workout resumed via context")
+            }
         case "dataChanged":
             print("[PhoneConnect] Pending dataChanged: flagging for reload")
             DispatchQueue.main.async {

@@ -1661,29 +1661,40 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
         try {
           let hasData = false;
 
+          // Helper: apply a watch metrics payload to the form fields.
+          // Used both for the pre-fetched snapshot (captured before pause, when
+          // reachability is best) and for the live re-fetch below.
+          const applyWatchMetrics = (m) => {
+            if (!m) return false;
+            let any = false;
+            if (m.calories > 0) { setCalories(m.calories.toString()); any = true; }
+            if (m.avgHeartRate > 0) { setAvgHr(m.avgHeartRate.toString()); any = true; }
+            if (m.maxHeartRate > 0) { setMaxHr(m.maxHeartRate.toString()); any = true; }
+            // Distance comes in meters from watch — convert to miles
+            if (m.distance > 0) {
+              setDistance((m.distance / 1609.34).toFixed(2));
+              any = true;
+            }
+            return any;
+          };
+
           // Try watch metrics first if this is a watch workout
           if (workout.source === 'watch') {
+            // Seed from the snapshot taken before pause (most reliable — watch
+            // was guaranteed reachable + active at that moment).
+            if (workout.prefetchedWatchMetrics && applyWatchMetrics(workout.prefetchedWatchMetrics)) {
+              hasData = true;
+            }
+
+            // Live refresh — overwrites with current values if the watch responds.
+            // Don't gate on isActive: if any field came back > 0 the data is real
+            // and worth showing, even in edge cases where isActive flips.
             try {
               const watchMetrics = await getWatchWorkoutMetrics();
-              if (watchMetrics.isActive) {
-                if (watchMetrics.calories > 0) {
-                  setCalories(watchMetrics.calories.toString());
-                  hasData = true;
-                }
-                if (watchMetrics.avgHeartRate > 0) {
-                  setAvgHr(watchMetrics.avgHeartRate.toString());
-                  hasData = true;
-                }
-                if (watchMetrics.maxHeartRate > 0) {
-                  setMaxHr(watchMetrics.maxHeartRate.toString());
-                  hasData = true;
-                }
-                // Distance comes in meters from watch — convert to miles
-                if (watchMetrics.distance > 0) {
-                  const distanceMiles = (watchMetrics.distance / 1609.34).toFixed(2);
-                  setDistance(distanceMiles);
-                  hasData = true;
-                }
+              if (applyWatchMetrics(watchMetrics)) {
+                hasData = true;
+              } else if (!hasData) {
+                console.log('[FinishModal] Watch metrics empty:', JSON.stringify(watchMetrics));
               }
             } catch (e) {
               console.log('[FinishModal] Watch metrics error:', e.message);
@@ -10831,6 +10842,11 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
   const warningKey = new Date().toDateString();
   const streakWarningDismissed = dismissedWarningKey === warningKey;
 
+  // Suppress the streak warning on the user's signup day so day-one feels celebratory, not pressured
+  const joinedToday = userProfile?.createdAt
+    ? new Date(userProfile.createdAt).toDateString() === warningKey
+    : false;
+
   // Calculate overall weekly progress (cap each category at its goal - extra doesn't count toward Week Progress)
   const totalGoals = weekProgress.lifts.goal + (weekProgress.cardio?.goal || 0) + (weekProgress.recovery?.goal || 0);
   const totalCompleted = Math.min(weekProgress.lifts.completed, weekProgress.lifts.goal) + 
@@ -11929,7 +11945,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         })()}
 
         {/* Streak at Risk Warning - hidden during vacation */}
-        {!userData.vacationMode?.isActive && !streakWarningDismissed && daysLeft <= 3 && (liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0) && (
+        {!userData.vacationMode?.isActive && !streakWarningDismissed && !joinedToday && daysLeft <= 3 && (liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0) && (
           <div
             className="relative p-3 rounded-xl mb-3 flex items-center gap-3"
             style={{
@@ -16456,8 +16472,20 @@ export default function DaySevenApp() {
         activeTab={activeTab}
         isFinishing={showFinishWorkout}
         onFinish={async () => {
-          // Pause the watch workout when opening the end workout screen
+          // For watch workouts: pre-fetch metrics BEFORE pausing. The watch is
+          // guaranteed reachable + active at this exact moment; after pause there
+          // can be a brief reachability gap that leaves the modal blank.
+          // We stash the snapshot on activeWorkout so the modal seeds its fields
+          // immediately, even if the live re-fetch inside the modal fails.
           if (activeWorkout?.source === 'watch') {
+            try {
+              const snapshot = await getWatchWorkoutMetrics();
+              if (snapshot?.isActive) {
+                setActiveWorkout(prev => prev ? { ...prev, prefetchedWatchMetrics: snapshot } : prev);
+              }
+            } catch (e) {
+              console.log('[FinishWorkout] Pre-fetch watch metrics failed:', e.message);
+            }
             try {
               await pauseWatchWorkout();
             } catch (e) {

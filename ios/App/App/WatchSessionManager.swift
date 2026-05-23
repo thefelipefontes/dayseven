@@ -59,9 +59,12 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         session.sendMessage(message, replyHandler: replyHandler) { [weak self] error in
             print("[WatchSession] Send failed: \(error.localizedDescription)")
 
-            // For critical workout commands, queue via applicationContext as fallback
-            // so the command is delivered when the watch wakes up
-            if action == "endWorkout" || action == "cancelWorkout" {
+            // For workout state-changing commands, queue via applicationContext
+            // as a fallback so the command is delivered when the watch wakes up.
+            // Without this, e.g., a pause from the phone gets silently dropped
+            // when the watch is asleep — the watch keeps recording.
+            if action == "endWorkout" || action == "cancelWorkout"
+                || action == "pauseWorkout" || action == "resumeWorkout" {
                 self?.queueCommandViaContext(action: action)
             }
 

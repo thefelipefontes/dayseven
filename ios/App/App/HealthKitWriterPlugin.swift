@@ -1616,8 +1616,9 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func pauseWatchWorkout(_ call: CAPPluginCall) {
+        let message: [String: Any] = ["action": "pauseWorkout"]
         WatchSessionManager.shared.sendToWatch(
-            message: ["action": "pauseWorkout"],
+            message: message,
             replyHandler: { reply in
                 DispatchQueue.main.async {
                     if let error = reply["error"] as? String {
@@ -1628,16 +1629,47 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
             },
             errorHandler: { error in
-                DispatchQueue.main.async {
-                    call.reject(error.localizedDescription)
+                // First attempt failed — retry once after 1 second. The watch
+                // is frequently briefly unreachable when the phone fires pause
+                // (user just opened the phone, watch hasn't woken yet).
+                // sendToWatch will also queue via applicationContext as a
+                // separate fallback path for when the watch wakes later.
+                print("[HealthKitWriter] pauseWatchWorkout first attempt failed, retrying in 1s: \(error.localizedDescription)")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    WatchSessionManager.shared.sendToWatch(
+                        message: message,
+                        replyHandler: { reply in
+                            DispatchQueue.main.async {
+                                if let error = reply["error"] as? String {
+                                    call.reject(error)
+                                } else {
+                                    call.resolve(reply)
+                                }
+                            }
+                        },
+                        errorHandler: { retryError in
+                            print("[HealthKitWriter] pauseWatchWorkout retry also failed: \(retryError.localizedDescription)")
+                            DispatchQueue.main.async {
+                                // Resolve (not reject) so JS proceeds to open the modal —
+                                // the applicationContext fallback will deliver pause
+                                // when the watch wakes up.
+                                call.resolve([
+                                    "success": true,
+                                    "queued": true,
+                                    "message": "Pause queued — watch will pause when it wakes up."
+                                ])
+                            }
+                        }
+                    )
                 }
             }
         )
     }
 
     @objc func resumeWatchWorkout(_ call: CAPPluginCall) {
+        let message: [String: Any] = ["action": "resumeWorkout"]
         WatchSessionManager.shared.sendToWatch(
-            message: ["action": "resumeWorkout"],
+            message: message,
             replyHandler: { reply in
                 DispatchQueue.main.async {
                     if let error = reply["error"] as? String {
@@ -1648,8 +1680,31 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
             },
             errorHandler: { error in
-                DispatchQueue.main.async {
-                    call.reject(error.localizedDescription)
+                // Same retry pattern as pauseWatchWorkout.
+                print("[HealthKitWriter] resumeWatchWorkout first attempt failed, retrying in 1s: \(error.localizedDescription)")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    WatchSessionManager.shared.sendToWatch(
+                        message: message,
+                        replyHandler: { reply in
+                            DispatchQueue.main.async {
+                                if let error = reply["error"] as? String {
+                                    call.reject(error)
+                                } else {
+                                    call.resolve(reply)
+                                }
+                            }
+                        },
+                        errorHandler: { retryError in
+                            print("[HealthKitWriter] resumeWatchWorkout retry also failed: \(retryError.localizedDescription)")
+                            DispatchQueue.main.async {
+                                call.resolve([
+                                    "success": true,
+                                    "queued": true,
+                                    "message": "Resume queued — watch will resume when it wakes up."
+                                ])
+                            }
+                        }
+                    )
                 }
             }
         )
@@ -1664,16 +1719,36 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
+        let message: [String: Any] = ["action": "getMetrics"]
+
         WatchSessionManager.shared.sendToWatch(
-            message: ["action": "getMetrics"],
+            message: message,
             replyHandler: { reply in
                 DispatchQueue.main.async {
                     call.resolve(reply)
                 }
             },
             errorHandler: { error in
-                DispatchQueue.main.async {
-                    call.resolve(["isActive": false, "error": error.localizedDescription])
+                // First attempt failed — retry once after 1 second.
+                // The watch can briefly drop reachability right after pause/resume,
+                // which is exactly when the phone's end-workout modal asks for metrics.
+                // Without this retry the modal renders with all fields blank.
+                print("[HealthKitWriter] getWatchWorkoutMetrics first attempt failed, retrying in 1s: \(error.localizedDescription)")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    WatchSessionManager.shared.sendToWatch(
+                        message: message,
+                        replyHandler: { reply in
+                            DispatchQueue.main.async {
+                                call.resolve(reply)
+                            }
+                        },
+                        errorHandler: { retryError in
+                            print("[HealthKitWriter] getWatchWorkoutMetrics retry also failed: \(retryError.localizedDescription)")
+                            DispatchQueue.main.async {
+                                call.resolve(["isActive": false, "error": retryError.localizedDescription])
+                            }
+                        }
+                    )
                 }
             }
         )

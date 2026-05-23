@@ -20,7 +20,7 @@ import { getFriends, getReactions, getFriendRequests, getComments, addReply, get
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
-import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, fetchHealthDataForDate, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, fetchWorkoutRoute, updateWidgetData, updateLiveActivityState, startWatchWorkoutLiveActivity, endAllLiveActivities, checkActiveLiveActivity } from './services/healthService';
+import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, fetchHealthDataForDate, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, fetchWorkoutRoute, updateWidgetData, updateLiveActivityState, startWatchWorkoutLiveActivity, endAllLiveActivities, checkActiveLiveActivity, showLocationDeniedDialog } from './services/healthService';
 import NotificationSettings from './NotificationSettings';
 import { initializePushNotifications, handleNotificationNavigation, removeFCMToken, clearBadge, clearAllNotifications, incrementBadge, shouldShowNotification, getNotificationPreferences } from './services/notificationService';
 import { initializeRevenueCat, loginRevenueCat, checkProStatus, addCustomerInfoListener, logoutRevenueCat, presentPaywall, presentCustomerCenter, restorePurchases, setDevAuthEmail, getOfferings } from './services/subscriptionService';
@@ -1526,6 +1526,7 @@ const getDefaultCountToward = (type, sub) => {
   if (type === 'Elliptical') return 'cardio';
   if (type === 'Rowing') return 'cardio';
   if (type === 'Ski Trainer') return 'cardio';
+  if (type === 'Swimming') return 'cardio';
   // Team / competitive sports
   if (['Basketball', 'Soccer', 'Football', 'Tennis', 'Golf', 'Badminton', 'Boxing', 'Martial Arts',
     'Baseball', 'Volleyball', 'Hockey', 'Lacrosse', 'Rugby', 'Softball', 'Squash', 'Table Tennis',
@@ -1585,6 +1586,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
     'Yoga': ['Vinyasa', 'Power', 'Hot', 'Yin', 'Restorative'],
     'Pilates': ['Mat', 'Reformer', 'Tower', 'Chair'],
     'Stair Climbing': ['StairMaster', 'Stair Stepper', 'Outdoor Stairs'],
+    'Swimming': ['Pool', 'Open Water'],
     'Sports': [
       { name: 'Basketball', icon: '🏀' },
       { name: 'Soccer', icon: '⚽' },
@@ -4402,7 +4404,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
         return a.customActivityCategory;
       }
       if (a.type === 'Strength Training') return 'lifting';
-      if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(a.type)) return 'cardio';
+      if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Swimming'].includes(a.type)) return 'cardio';
       if (a.type === 'Walking') return 'other';
       if (['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
       return 'other';
@@ -7964,7 +7966,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       setSaveCustomSport(false);
       // For "Other" activities OR uncategorized Apple Health types, load custom fields
       const isUncatType = pendingActivity?.type && !['Strength Training', 'Weightlifting', 'Bodyweight', 'Circuit',
-        'Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Walking',
+        'Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Swimming', 'Walking',
         'Yoga', 'Pilates', 'Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Other'].includes(pendingActivity.type);
       const loadCustomFields = pendingActivity?.type === 'Other' || isUncatType;
       setCustomActivityName(loadCustomFields
@@ -8220,6 +8222,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
     ], category: 'cardio' },
     { name: 'Stair Climbing', subtypes: [], category: 'cardio' },
     { name: 'Elliptical', subtypes: [], category: 'cardio' },
+    { name: 'Swimming', subtypes: ['Pool', 'Open Water'], category: 'cardio' },
     { name: 'Rowing', subtypes: [], category: 'cardio' },
     { name: 'Ski Trainer', subtypes: [], category: 'cardio' },
     { name: 'Yoga', subtypes: ['Vinyasa', 'Power', 'Hot', 'Yin', 'Restorative'], category: 'hybrid' },
@@ -8337,7 +8340,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   const showCustomSportInput = activityType === 'Sports' && subtype === 'Other';
   // Standard types that have built-in category mapping and icon
   const STANDARD_ACTIVITY_TYPES = ['Strength Training', 'Weightlifting', 'Bodyweight', 'Circuit',
-    'Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Rowing', 'Ski Trainer', 'Walking',
+    'Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Swimming', 'Rowing', 'Ski Trainer', 'Walking',
     'Yoga', 'Pilates', 'Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Other',
     'Track & Field', 'Jump Rope', 'Downhill Skiing', 'Cross Country Skiing', 'Snowboarding', 'Skating', 'Surfing', 'Water Polo', 'Paddle Sports',
     'Basketball', 'Soccer', 'Football', 'Tennis', 'Golf', 'Badminton', 'Boxing', 'Martial Arts',
@@ -10735,7 +10738,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
     const getCategory = (activity) => {
       if (activity.countToward) return activity.countToward;
       if (activity.type === 'Strength Training') return 'lifting';
-      if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(activity.type)) return 'cardio';
+      if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Swimming'].includes(activity.type)) return 'cardio';
       if (['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
       return 'other';
     };
@@ -11388,7 +11391,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         if (visiblePendingSync.length === 0 || !showWorkoutNotification) return null;
 
         // Types that auto-categorize into strength/cardio/recovery goals
-        const KNOWN_CATEGORY_TYPES = ['Strength Training', 'Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Rowing', 'Ski Trainer', 'Yoga', 'Pilates', 'Cold Plunge', 'Sauna', 'Contrast Therapy',
+        const KNOWN_CATEGORY_TYPES = ['Strength Training', 'Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Swimming', 'Rowing', 'Ski Trainer', 'Yoga', 'Pilates', 'Cold Plunge', 'Sauna', 'Contrast Therapy',
           'Track & Field', 'Jump Rope', 'Downhill Skiing', 'Cross Country Skiing', 'Snowboarding', 'Skating', 'Surfing', 'Water Polo', 'Paddle Sports',
           'Basketball', 'Soccer', 'Football', 'Tennis', 'Golf', 'Badminton', 'Boxing', 'Martial Arts',
           'Baseball', 'Volleyball', 'Hockey', 'Lacrosse', 'Rugby', 'Softball', 'Squash', 'Table Tennis',
@@ -13628,7 +13631,7 @@ export default function DaySevenApp() {
         (!activity.countToward || activity.countToward === 'recovery');
       const isRecovery = recoveryTypes.includes(activity.type) || yogaPilatesAsRecovery;
       const isStrength = activity.type === 'Strength Training' || activity.countToward === 'strength';
-      const isCardio = ['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(activity.type) || activity.countToward === 'cardio';
+      const isCardio = ['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Swimming'].includes(activity.type) || activity.countToward === 'cardio';
 
       // Highest calories (all activities except warmup)
       if (activity.calories && activity.calories > (newRecords.highestCalories.value || 0)) {
@@ -13718,7 +13721,7 @@ export default function DaySevenApp() {
         return a.customActivityCategory;
       }
       if (a.type === 'Strength Training') return 'lifting';
-      if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(a.type)) return 'cardio';
+      if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Swimming'].includes(a.type)) return 'cardio';
       if (['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
       return 'other';
     };
@@ -15173,7 +15176,7 @@ export default function DaySevenApp() {
     }
     // Default categorization
     if (activity.type === 'Strength Training') return 'lifting';
-    if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(activity.type)) return 'cardio';
+    if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Swimming'].includes(activity.type)) return 'cardio';
     if (['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
     return 'other';
   };
@@ -15684,7 +15687,7 @@ export default function DaySevenApp() {
       const yogaPilatesAsRecovery = ['Yoga', 'Pilates'].includes(activity.type) && (!activity.countToward || activity.countToward === 'recovery');
       const isRecovery = recoveryTypes.includes(activity.type) || yogaPilatesAsRecovery;
       const isStrength = activity.type === 'Strength Training' || activity.countToward === 'strength';
-      const isCardio = ['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(activity.type) || activity.countToward === 'cardio';
+      const isCardio = ['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Swimming'].includes(activity.type) || activity.countToward === 'cardio';
 
       // Helper to get current record value (handles both old number format and new object format)
       // Check updatedRecords first in case we updated it earlier in this function
@@ -16139,7 +16142,7 @@ export default function DaySevenApp() {
           (!activity.countToward || activity.countToward === 'recovery');
         const isRecovery = recoveryTypes.includes(activity.type) || yogaPilatesAsRecovery;
         const isStrength = activity.type === 'Strength Training' || activity.countToward === 'strength';
-        const isCardio = ['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(activity.type) || activity.countToward === 'cardio';
+        const isCardio = ['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Swimming'].includes(activity.type) || activity.countToward === 'cardio';
 
         // Highest calories (all activities except warmup)
         if (activity.calories && activity.calories > (newRecords.highestCalories.value || 0)) {
@@ -17308,7 +17311,23 @@ export default function DaySevenApp() {
             const subtype = workoutData.subtype || null;
             const focusAreas = workoutData.focusAreas || (workoutData.focusArea ? [workoutData.focusArea] : null);
             console.log('[StartWorkout] Sending to watch:', activityType, ', subtype:', subtype);
-            await startWatchWorkout(activityType, strengthType, subtype, focusAreas);
+            const watchReply = await startWatchWorkout(activityType, strengthType, subtype, focusAreas);
+
+            // Watch may report that its location auth is denied for a workout
+            // that needs GPS. Show a native 3-button alert: Cancel, Open Watch
+            // App (deep-links via x-apple-watch://), or Start Anyway. On Start
+            // Anyway, re-send with forceStart so the watch skips the check.
+            if (watchReply?.needsLocationConfirm) {
+              const { action } = await showLocationDeniedDialog(watchReply.message);
+              if (action !== 'startAnyway') {
+                // 'cancel' → user backed out. 'openWatch' → user is fixing
+                // permissions in the Watch app; they'll start again after.
+                console.log(`[StartWorkout] User chose '${action}' at location-denied prompt`);
+                return; // Workout not started, no active state set
+              }
+              await startWatchWorkout(activityType, strengthType, subtype, focusAreas, true);
+            }
+
             console.log('[StartWorkout] Watch workout started via sendMessage');
             setActiveWorkout({ ...workoutData, source: 'watch', startTime: new Date().toISOString() });
             return;
@@ -17590,7 +17609,7 @@ export default function DaySevenApp() {
               return a.customActivityCategory;
             }
             if (a.type === 'Strength Training') return 'lifting';
-            if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(a.type)) return 'cardio';
+            if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Swimming'].includes(a.type)) return 'cardio';
             if (['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
             return 'other';
           };

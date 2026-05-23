@@ -246,7 +246,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
 
   const getActivityColor = (type) => {
     if (type === 'Strength Training') return '#00FF94';
-    if (type === 'Running' || type === 'Cycle' || type === 'Sports' || type === 'Stair Climbing' || type === 'Elliptical') return '#FF9500';
+    if (type === 'Running' || type === 'Cycle' || type === 'Sports' || type === 'Stair Climbing' || type === 'Elliptical' || type === 'Swimming') return '#FF9500';
     return '#00D1FF';
   };
 

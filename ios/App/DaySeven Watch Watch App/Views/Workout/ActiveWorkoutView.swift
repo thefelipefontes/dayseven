@@ -28,6 +28,10 @@ struct ActiveWorkoutView: View {
     /// Token for cancelling the in-flight auto-dismiss when a new split lands
     /// before the previous one has cleared.
     @State private var splitDismissToken: UUID?
+    /// True when we caught a denied/restricted location auth in the start-workout
+    /// pre-flight for a distance activity. Drives the alert that lets the user
+    /// either Cancel or Start Anyway (silent GPS, distance entered manually).
+    @State private var showLocationDeniedAlert = false
     private var wm: WorkoutManager { workoutMgr }
 
     /// Whether the user selected "Indoor" for this workout
@@ -129,6 +133,19 @@ struct ActiveWorkoutView: View {
             }
         }
         .navigationBarBackButtonHidden(isStarted || shouldShowSummary)
+        .alert("Location is off", isPresented: $showLocationDeniedAlert) {
+            Button("Start Anyway") {
+                Task {
+                    let hkType = ActivityTypes.mapToHKActivityType(activityType, subtype: preSelectedSubtype)
+                    await proceedToStartWorkout(hkType: hkType)
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                navigationPath = NavigationPath()
+            }
+        } message: {
+            Text("Distance won't track for this workout. To enable: Settings → Privacy → Location Services → DaySeven.")
+        }
         .task {
             await startWorkout()
         }
@@ -453,8 +470,27 @@ struct ActiveWorkoutView: View {
         }
 
         let hkType = ActivityTypes.mapToHKActivityType(activityType, subtype: preSelectedSubtype)
+
+        // Pre-flight: if this workout relies on GPS for distance and the user
+        // has denied or restricted location auth, warn before starting. Silent
+        // GPS would leave them with a 0-distance run they can't recover.
+        // .notDetermined slips through — startLocationCollection() inside
+        // startWorkout will trigger the system prompt naturally for first runs.
+        if WorkoutManager.needsLocationForDistance(activityType: hkType, isIndoor: isIndoor, subtype: preSelectedSubtype),
+           WorkoutManager.isLocationAuthDenied() {
+            showLocationDeniedAlert = true
+            return
+        }
+
+        await proceedToStartWorkout(hkType: hkType)
+    }
+
+    /// Actually kick off the workout. Split out from startWorkout() so the
+    /// location-denied alert's "Start Anyway" button can call it directly
+    /// without re-running the pre-flight check.
+    private func proceedToStartWorkout(hkType: HKWorkoutActivityType) async {
         do {
-            try await wm.startWorkout(activityType: hkType, isIndoor: isIndoor)
+            try await wm.startWorkout(activityType: hkType, isIndoor: isIndoor, subtype: preSelectedSubtype)
             wm.workoutPageIndex = 1  // Ensure timer page before TabView renders
             isStarted = true
             // Notify the phone so it shows the active workout indicator

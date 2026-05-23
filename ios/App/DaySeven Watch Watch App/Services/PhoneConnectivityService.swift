@@ -453,8 +453,11 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
         let subtype = message["subtype"] as? String
         let focusAreas = message["focusAreas"] as? [String] ?? (message["focusArea"] as? String).map { [$0] }
         let isIndoor = subtype?.lowercased() == "indoor"
+        // Set when the phone has already shown the location-denied confirm and
+        // the user opted to start anyway. Skips the pre-flight check below.
+        let forceStart = message["forceStart"] as? Bool ?? false
 
-        print("[PhoneConnect] Starting workout: \(activityTypeString), subtype: \(subtype ?? "none"), focusAreas: \(focusAreas?.joined(separator: ", ") ?? "none"), isIndoor: \(isIndoor)")
+        print("[PhoneConnect] Starting workout: \(activityTypeString), subtype: \(subtype ?? "none"), focusAreas: \(focusAreas?.joined(separator: ", ") ?? "none"), isIndoor: \(isIndoor), forceStart: \(forceStart)")
 
         Task { @MainActor in
             // Check if already active
@@ -467,8 +470,23 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
             let hkType = ActivityTypes.mapToHKActivityType(activityTypeString, subtype: subtype)
             print("[PhoneConnect] Mapped to HK type: \(hkType.rawValue)")
 
+            // Pre-flight: if this workout relies on GPS for distance and the
+            // watch's location auth is denied, surface a confirm to the phone
+            // instead of silently starting a no-GPS workout. The phone shows
+            // the dialog and (if user accepts) re-sends with forceStart=true.
+            if !forceStart,
+               WorkoutManager.needsLocationForDistance(activityType: hkType, isIndoor: isIndoor, subtype: subtype),
+               WorkoutManager.isLocationAuthDenied() {
+                print("[PhoneConnect] startWorkout pre-flight: location denied for \(activityTypeString) — asking phone to confirm")
+                replyHandler([
+                    "needsLocationConfirm": true,
+                    "message": "Location is off on Apple Watch. Distance won't track for this workout."
+                ])
+                return
+            }
+
             do {
-                try await wm.startWorkout(activityType: hkType, isIndoor: isIndoor)
+                try await wm.startWorkout(activityType: hkType, isIndoor: isIndoor, subtype: subtype)
                 print("[PhoneConnect] HK workout started successfully")
 
                 // Publish remote workout request so the watch UI navigates

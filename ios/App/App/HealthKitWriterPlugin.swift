@@ -43,7 +43,8 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "updateLiveActivityState", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startWatchWorkoutLiveActivity", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "endAllLiveActivities", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "checkActiveLiveActivity", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "checkActiveLiveActivity", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "showLocationDeniedDialog", returnType: CAPPluginReturnPromise)
     ]
 
     private let healthStore = HKHealthStore()
@@ -1488,6 +1489,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         let subtype = call.getString("subtype")
         let focusArea = call.getString("focusArea")
         let focusAreas = call.getArray("focusAreas") as? [String]
+        let forceStart = call.getBool("forceStart") ?? false
 
         var message: [String: Any] = [
             "action": "startWorkout",
@@ -1504,6 +1506,9 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             message["focusArea"] = areas[0]
         } else if let fa = focusArea {
             message["focusArea"] = fa
+        }
+        if forceStart {
+            message["forceStart"] = true
         }
 
         WatchSessionManager.shared.sendToWatch(
@@ -1530,6 +1535,53 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                 self?.attemptWatchAppLaunch(activityType: activityType, subtype: subtype)
             }
         )
+    }
+
+    /// Show a native iOS alert when the watch's location auth is denied for a
+    /// GPS workout the user just tried to start from the phone. Three actions:
+    ///   - "Open Watch App" deep-links to the Apple Watch companion app via
+    ///     x-apple-watch:// so the user can navigate to Privacy → Location
+    ///     Services. Button is omitted if the URL scheme isn't openable on
+    ///     this device, so we degrade gracefully.
+    ///   - "Start Anyway" lets JS retry the start with forceStart=true.
+    ///   - "Cancel" returns to the picker without starting.
+    /// Resolves with `{ action: "cancel" | "openWatch" | "startAnyway" }`.
+    @objc func showLocationDeniedDialog(_ call: CAPPluginCall) {
+        let message = call.getString("message")
+            ?? "Location is off on your Apple Watch. Distance won't track for this workout."
+
+        DispatchQueue.main.async {
+            guard let vc = self.bridge?.viewController else {
+                call.resolve(["action": "cancel"])
+                return
+            }
+
+            let alert = UIAlertController(
+                title: "Location is off",
+                message: "\(message)\n\nTo enable, open the Apple Watch app → My Watch → Privacy → Location Services → DaySeven.",
+                preferredStyle: .alert
+            )
+
+            // Add Open Watch App only if the URL scheme actually opens on
+            // this device — protects against future Apple changes.
+            let watchURL = URL(string: "x-apple-watch://")
+            if let url = watchURL, UIApplication.shared.canOpenURL(url) {
+                alert.addAction(UIAlertAction(title: "Open Watch App", style: .default) { _ in
+                    UIApplication.shared.open(url, options: [:]) { _ in }
+                    call.resolve(["action": "openWatch"])
+                })
+            }
+
+            alert.addAction(UIAlertAction(title: "Start Anyway", style: .default) { _ in
+                call.resolve(["action": "startAnyway"])
+            })
+
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+                call.resolve(["action": "cancel"])
+            })
+
+            vc.present(alert, animated: true)
+        }
     }
 
     /// Fire-and-forget attempt to launch the watch app via HealthKit.

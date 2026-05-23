@@ -163,7 +163,7 @@ const ICON_MAP = {
   'Massage':             { Icon: IconMassage, category: 'recovery' },
   'Chiropractic':        { Icon: IconBone, category: 'recovery' },
   // Uncategorized (from Apple Health — user needs to assign a goal category)
-  'Swimming':            { Icon: IconSwimming, category: 'other' },
+  'Swimming':            { Icon: IconSwimming, category: 'cardio' },
   'Hiking':              { Icon: IconMountain, category: 'other' },
   'Dance':               { Icon: IconMusic, category: 'other' },
   'Rowing':              { Icon: IconKayak, category: 'cardio' },

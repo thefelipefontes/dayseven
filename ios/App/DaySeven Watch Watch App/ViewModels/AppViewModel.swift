@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import CoreLocation
 import FirebaseAuth
 import WatchConnectivity
 import WidgetKit
@@ -672,6 +673,21 @@ class AppViewModel: ObservableObject {
         } catch {
             errorMessage = "HealthKit: \(error.localizedDescription)"
         }
+    }
+
+    // MARK: - Request Location Permission (for GPS-tracked workouts)
+
+    /// Held as a property so the prompt's delegate callback can fire — a
+    /// short-lived stack instance would be deallocated before the user taps.
+    /// Only `.notDetermined` triggers the system prompt; previously-granted
+    /// and previously-denied users are silently skipped (the call is a no-op
+    /// after the first decision, and there's no way to re-prompt without
+    /// sending the user to Settings).
+    private let onboardingLocationManager = CLLocationManager()
+
+    func requestLocationPermissionIfNeeded() {
+        guard onboardingLocationManager.authorizationStatus == .notDetermined else { return }
+        onboardingLocationManager.requestWhenInUseAuthorization()
     }
 
     // MARK: - Push Data to Widget Complication

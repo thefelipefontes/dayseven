@@ -90,6 +90,10 @@ struct RootView: View {
             if signedIn {
                 Task {
                     await appVM.requestHealthKitPermissions()
+                    // Also queue the location prompt now so distance workouts
+                    // have GPS ready on first use — avoids the mid-workout
+                    // "Location is off" alert. No-op if already decided.
+                    appVM.requestLocationPermissionIfNeeded()
                     await appVM.loadUserData()
                 }
             }

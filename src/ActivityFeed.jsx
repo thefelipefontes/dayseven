@@ -33,7 +33,7 @@ const getActivityCategory = (activity) => {
     return activity.customActivityCategory;
   }
   if (activity.type === 'Strength Training') return 'lifting';
-  if (['Running', 'Cycle', 'Sports'].includes(activity.type)) return 'cardio';
+  if (['Running', 'Cycle', 'Sports', 'Swimming'].includes(activity.type)) return 'cardio';
   if (['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
   return 'other';
 };

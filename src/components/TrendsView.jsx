@@ -119,7 +119,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
       return activity.customActivityCategory;
     }
     if (activity.type === 'Strength Training') return 'lifting';
-    if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(activity.type)) return 'cardio';
+    if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Swimming'].includes(activity.type)) return 'cardio';
     if (['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
     return 'other';
   };

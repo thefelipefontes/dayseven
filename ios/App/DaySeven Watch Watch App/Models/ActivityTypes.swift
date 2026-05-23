@@ -109,6 +109,13 @@ struct ActivityTypes {
             category: .cardio
         ),
         ActivityTypeDefinition(
+            name: "Swimming",
+            emoji: "\u{1F3CA}",
+            sfSymbol: "figure.pool.swim",
+            subtypes: ["Pool", "Open Water"],
+            category: .cardio
+        ),
+        ActivityTypeDefinition(
             name: "Walking",
             emoji: "\u{1F6B6}",
             sfSymbol: "figure.walk",
@@ -179,7 +186,7 @@ struct ActivityTypes {
             return "lifting"
         case "Circuit":
             return "lifting+cardio"
-        case "Running", "Cycle", "Sports", "Stair Climbing", "Elliptical":
+        case "Running", "Cycle", "Sports", "Stair Climbing", "Elliptical", "Swimming":
             return "cardio"
         case "Cold Plunge", "Sauna", "Contrast Therapy", "Yoga", "Pilates":
             return "recovery"

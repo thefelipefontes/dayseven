@@ -1284,8 +1284,24 @@ export async function isWatchReachable() {
   }
 }
 
-// Start a workout on the Apple Watch
-export async function startWatchWorkout(activityType, strengthType = null, subtype = null, focusAreas = null) {
+// Show a native iOS 3-button alert when the watch's location auth is denied
+// for a GPS workout. Returns `{ action: "cancel" | "openWatch" | "startAnyway" }`.
+// "openWatch" opens the Apple Watch companion app via x-apple-watch:// so the
+// user can navigate to Privacy → Location Services → DaySeven themselves.
+export async function showLocationDeniedDialog(message = null) {
+  if (!Capacitor.isNativePlatform()) {
+    return { action: 'cancel' };
+  }
+  const params = {};
+  if (message) params.message = message;
+  return await HealthKitWriter.showLocationDeniedDialog(params);
+}
+
+// Start a workout on the Apple Watch.
+// Returns the watch's reply object. If the watch has denied location auth and
+// the activity needs GPS, the reply contains `needsLocationConfirm: true` — the
+// caller should show a confirm and (if accepted) re-call with forceStart=true.
+export async function startWatchWorkout(activityType, strengthType = null, subtype = null, focusAreas = null, forceStart = false) {
   if (!Capacitor.isNativePlatform()) {
     throw new Error('Not available on web');
   }
@@ -1295,6 +1311,7 @@ export async function startWatchWorkout(activityType, strengthType = null, subty
   if (focusAreas) params.focusAreas = focusAreas;
   // Also send first element as focusArea for backward compat
   if (focusAreas && focusAreas.length > 0) params.focusArea = focusAreas[0];
+  if (forceStart) params.forceStart = true;
   return await HealthKitWriter.startWatchWorkout(params);
 }
 

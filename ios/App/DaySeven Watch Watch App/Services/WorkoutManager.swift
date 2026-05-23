@@ -180,7 +180,7 @@ class WorkoutManager: NSObject, ObservableObject {
 
     // MARK: - Start Workout
 
-    func startWorkout(activityType: HKWorkoutActivityType, isIndoor: Bool = false) async throws {
+    func startWorkout(activityType: HKWorkoutActivityType, isIndoor: Bool = false, subtype: String? = nil) async throws {
         // If there's a stale session lingering, clean it up before starting
         if session != nil && !isActive {
             cancelWorkout()
@@ -204,10 +204,20 @@ class WorkoutManager: NSObject, ObservableObject {
         config.activityType = activityType
         config.locationType = isIndoor ? .indoor : WorkoutManager.locationType(for: activityType)
 
-        // For swimming, set a default lap length
+        // Swimming: branch on subtype.
+        // Pool → indoor + .pool + 25-yd lap length so the watch can auto-count strokes/laps.
+        // Open Water → outdoor + .openWater + no lap length; GPS route is started below.
+        // Overrides the generic locationType set above.
         if activityType == .swimming {
-            config.swimmingLocationType = .pool
-            config.lapLength = HKQuantity(unit: .yard(), doubleValue: 25)
+            let isOpenWater = subtype?.lowercased() == "open water"
+            if isOpenWater {
+                config.swimmingLocationType = .openWater
+                config.locationType = .outdoor
+            } else {
+                config.swimmingLocationType = .pool
+                config.locationType = .indoor
+                config.lapLength = HKQuantity(unit: .yard(), doubleValue: 25)
+            }
         }
 
         do {
@@ -282,8 +292,11 @@ class WorkoutManager: NSObject, ObservableObject {
         // Log what the data source is actually collecting
         print("[WorkoutManager] typesToCollect: \(dataSource.typesToCollect.map { $0.identifier })")
 
-        // Start GPS route collection for outdoor workouts
-        let isOutdoor = !isIndoor && WorkoutManager.isOutdoorActivityType(activityType)
+        // Start GPS route collection for outdoor workouts.
+        // Swimming is a special case: GPS only for Open Water (pool swims have no GPS need
+        // and the watch is underwater anyway).
+        let isOpenWaterSwim = activityType == .swimming && subtype?.lowercased() == "open water"
+        let isOutdoor = !isIndoor && (WorkoutManager.isOutdoorActivityType(activityType) || isOpenWaterSwim)
         isOutdoorWorkout = isOutdoor
         if isOutdoor {
             routeBuilder = HKWorkoutRouteBuilder(healthStore: healthStore, device: .local())
@@ -499,6 +512,26 @@ class WorkoutManager: NSObject, ObservableObject {
         default:
             return false
         }
+    }
+
+    /// Whether this activity relies on GPS to record distance. Used by the
+    /// start-workout pre-flight check on the watch so we can warn the user if
+    /// they've denied location auth — distance would silently be 0 otherwise.
+    /// Mirrors the isOutdoor logic in startWorkout but exposed for callers.
+    static func needsLocationForDistance(activityType: HKWorkoutActivityType, isIndoor: Bool, subtype: String?) -> Bool {
+        if activityType == .swimming {
+            return subtype?.lowercased() == "open water"
+        }
+        return !isIndoor && isOutdoorActivityType(activityType)
+    }
+
+    /// Whether the user has explicitly denied or had location restricted for
+    /// the watch app. Returns false for .notDetermined (the system prompt will
+    /// fire naturally when startLocationCollection() runs) and for granted
+    /// statuses.
+    static func isLocationAuthDenied() -> Bool {
+        let status = CLLocationManager().authorizationStatus
+        return status == .denied || status == .restricted
     }
 
     private func startLocationCollection() {

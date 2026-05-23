@@ -52,8 +52,13 @@ class ExtensionDelegate: NSObject, WKExtensionDelegate {
                 print("[ExtDelegate] remoteWorkoutRequest already pending, skipping")
                 return
             }
+            // For swimming, surface the swimmingLocationType the launcher set
+            // (defaults to Pool when unspecified) so HK metadata stays correct.
+            let externalSwimSubtype: String? = workoutConfiguration.activityType == .swimming
+                ? (workoutConfiguration.swimmingLocationType == .openWater ? "Open Water" : "Pool")
+                : nil
             do {
-                try await wm.startWorkout(activityType: workoutConfiguration.activityType, isIndoor: isIndoor)
+                try await wm.startWorkout(activityType: workoutConfiguration.activityType, isIndoor: isIndoor, subtype: externalSwimSubtype)
                 phoneService.remoteWorkoutRequest = PhoneConnectivityService.RemoteWorkoutRequest(
                     activityType: activityType,
                     strengthType: nil,

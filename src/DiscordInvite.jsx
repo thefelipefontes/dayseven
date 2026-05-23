@@ -13,7 +13,7 @@ const ctaPressProps = (enabled, base = DISCORD_PURPLE, pressed = DISCORD_PURPLE_
   onMouseLeave: (e) => { if (enabled) { e.currentTarget.style.transform = 'scale(1)';    e.currentTarget.style.backgroundColor = base; } },
 });
 
-const DiscordLogo = ({ size = 72 }) => (
+const DiscordLogo = ({ size = 72, color = DISCORD_PURPLE }) => (
   <svg
     width={size}
     height={size * (96.36 / 127.14)}
@@ -22,11 +22,62 @@ const DiscordLogo = ({ size = 72 }) => (
     aria-hidden="true"
   >
     <path
-      fill={DISCORD_PURPLE}
+      fill={color}
       d="M107.7,8.07A105.15,105.15,0,0,0,81.47,0a72.06,72.06,0,0,0-3.36,6.83A97.68,97.68,0,0,0,49,6.83,72.37,72.37,0,0,0,45.64,0,105.89,105.89,0,0,0,19.39,8.09C2.79,32.65-1.71,56.6.54,80.21h0A105.73,105.73,0,0,0,32.71,96.36,77.7,77.7,0,0,0,39.6,85.25a68.42,68.42,0,0,1-10.85-5.18c.91-.66,1.8-1.34,2.66-2a75.57,75.57,0,0,0,64.32,0c.87.71,1.76,1.39,2.66,2a68.68,68.68,0,0,1-10.87,5.19,77,77,0,0,0,6.89,11.1A105.25,105.25,0,0,0,126.6,80.22h0C129.24,52.84,122.09,29.11,107.7,8.07ZM42.45,65.69C36.18,65.69,31,60,31,53s5-12.74,11.43-12.74S54,46,53.89,53,48.84,65.69,42.45,65.69Zm42.24,0C78.41,65.69,73.25,60,73.25,53s5-12.74,11.44-12.74S96.23,46,96.12,53,91.08,65.69,84.69,65.69Z"
     />
   </svg>
 );
+
+// Hero composition: DaySeven app icon as the centerpiece, with the founder
+// photo and Discord badge overlapping its bottom corners. Mirrors the
+// "X + Y" integration-card pattern (Linear/Notion/etc) — visually frames
+// the invite as "DaySeven × Felipe × Discord".
+const HeroComposition = () => {
+  const ICON_SIZE = 160;
+  const BADGE_SIZE = 60;
+  const BADGE_BORDER = 4;
+  return (
+    <div className="relative" style={{ width: ICON_SIZE, height: ICON_SIZE }}>
+      {/* DaySeven app icon */}
+      <img
+        src="/icon-512.png"
+        alt="DaySeven"
+        className="w-full h-full rounded-[28px]"
+        style={{ boxShadow: '0 12px 32px rgba(0,0,0,0.5)' }}
+      />
+
+      {/* Founder photo — circular, bottom-left, overlaps the icon edge */}
+      <img
+        src="/founder.jpg"
+        alt="Felipe Fontes, founder"
+        className="absolute rounded-full object-cover"
+        style={{
+          width: BADGE_SIZE,
+          height: BADGE_SIZE,
+          left: -BADGE_SIZE * 0.35,
+          bottom: -BADGE_SIZE * 0.25,
+          border: `${BADGE_BORDER}px solid #000`,
+          objectPosition: 'center 23%',
+        }}
+      />
+
+      {/* Discord badge — circle, bottom-right, overlaps the icon edge */}
+      <div
+        className="absolute flex items-center justify-center rounded-full"
+        style={{
+          width: BADGE_SIZE,
+          height: BADGE_SIZE,
+          right: -BADGE_SIZE * 0.35,
+          bottom: -BADGE_SIZE * 0.25,
+          backgroundColor: DISCORD_PURPLE,
+          border: `${BADGE_BORDER}px solid #000`,
+        }}
+      >
+        <DiscordLogo size={32} color="white" />
+      </div>
+    </div>
+  );
+};
 
 const DiscordInvite = ({ onDone }) => {
   const [opening, setOpening] = useState(false);
@@ -76,8 +127,8 @@ const DiscordInvite = ({ onDone }) => {
     >
       <div className="flex-1 flex items-center justify-center px-6">
         <div className="max-w-md w-full text-center">
-          <div className="flex justify-center mb-8">
-            <DiscordLogo size={72} />
+          <div className="flex justify-center mb-10">
+            <HeroComposition />
           </div>
 
           <h2 className="text-[26px] font-bold mb-4 leading-tight">Build with us.</h2>

@@ -14907,11 +14907,20 @@ export default function DaySevenApp() {
 
   // Pull-to-refresh hook (enabled on home tab only - feed tab has its own local pull-to-refresh)
   // Threshold of 80 matches native iOS UIRefreshControl feel
-  // Disabled when modals are open to prevent accidental refresh
+  // Disabled when modals are open OR when post-auth overlays (UsernameSetup,
+  // DiscordInvite) cover the app — those listeners are window-level/capture
+  // so they fire on touches over any overlay otherwise, refreshing home
+  // invisibly and producing a phantom haptic.
   const { pullDistance, isRefreshing } = usePullToRefresh(refreshData, {
     threshold: 80,
     resistance: 0.5,
-    enabled: isOnboarded === true && !showAddActivity && !isHomeWorkoutPickerOpen && !showFinishWorkout && activeTab === 'home'
+    enabled: isOnboarded === true
+      && !showAddActivity
+      && !isHomeWorkoutPickerOpen
+      && !showFinishWorkout
+      && activeTab === 'home'
+      && !!userProfile?.username
+      && !showDiscordInvite
   });
 
   // Listen to auth state

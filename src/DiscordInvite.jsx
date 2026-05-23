@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 const DISCORD_URL = 'https://discord.gg/2gZdMU7WWA';
 const DISCORD_PURPLE = '#5865F2';
@@ -30,22 +31,24 @@ const DiscordLogo = ({ size = 72 }) => (
 const DiscordInvite = ({ onDone }) => {
   const [opening, setOpening] = useState(false);
 
-  // Lock the app-wide #root scroll while this screen is mounted. #root has
-  // overflow-y:scroll globally for normal app scrolling; because #root is
-  // position:fixed, our fixed-inset-0 container is positioned relative to it,
-  // and any pull on #root rubber-bands the whole screen. Hiding overflow
-  // removes the scroll surface entirely so nothing can bounce.
+  // Hide #root entirely while this screen is mounted, and render the screen
+  // via a portal directly to <body>. Two reasons:
+  //   1. #root has overflow-y:scroll globally — any fixed child of #root
+  //      rubber-bands when #root bounces. Rendering as a body child takes us
+  //      out of that scroll surface entirely.
+  //   2. With #root display:none there is literally nothing else painted, so
+  //      a pull gesture has no "background page" to reveal.
+  // Also swallow touchmove as belt-and-suspenders.
   useEffect(() => {
     const root = document.getElementById('root');
-    if (!root) return undefined;
-    const prevOverflow = root.style.overflow;
-    root.style.overflow = 'hidden';
+    const prevDisplay = root?.style.display;
+    if (root) root.style.display = 'none';
 
     const prevent = (e) => e.preventDefault();
     document.addEventListener('touchmove', prevent, { passive: false });
 
     return () => {
-      root.style.overflow = prevOverflow;
+      if (root) root.style.display = prevDisplay || '';
       document.removeEventListener('touchmove', prevent);
     };
   }, []);
@@ -66,7 +69,7 @@ const DiscordInvite = ({ onDone }) => {
     onDone();
   };
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 bg-black text-white flex flex-col overflow-hidden"
       style={{ overscrollBehavior: 'none', touchAction: 'manipulation' }}
@@ -128,7 +131,8 @@ const DiscordInvite = ({ onDone }) => {
           Maybe later
         </button>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

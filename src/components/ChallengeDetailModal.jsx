@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { describeMatchRule, getChallengeOutcome } from '../services/challengeService';
 import { getUserProfile } from '../services/userService';
 import ActivityIcon from './ActivityIcon';
+import ZoomablePhoto from './ZoomablePhoto';
 
 const CATEGORY_COLOR = {
   lifting: '#00FF94',
@@ -612,19 +613,18 @@ export default function ChallengeDetailModal({
         </div>
       </div>
 
-      {/* Proof-photo lightbox. Tap anywhere to close. Sits above the modal (z-[70]) so
-          it dims everything including the trophy panel. */}
+      {/* Proof-photo lightbox. Pinch to zoom, drag to pan when zoomed, double-tap
+          to toggle 1×/2.5×, single tap at 1× to close. */}
       {lightboxURL && (
         <div
           className="fixed inset-0 z-[70] flex items-center justify-center p-4"
           style={{ backgroundColor: 'rgba(0,0,0,0.92)' }}
-          onClick={(e) => { e.stopPropagation(); setLightboxURL(null); }}
+          onClick={(e) => e.stopPropagation()}
         >
-          <img
+          <ZoomablePhoto
             src={lightboxURL}
-            alt=""
-            className="max-w-full max-h-full rounded-2xl object-contain"
-            style={{ boxShadow: '0 12px 60px rgba(0,0,0,0.6)' }}
+            className="w-full h-full flex items-center justify-center"
+            onSingleTap={() => setLightboxURL(null)}
           />
         </div>
       )}

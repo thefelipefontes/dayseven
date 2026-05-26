@@ -7,6 +7,7 @@ import { db } from './firebase';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import ActivityIcon from './components/ActivityIcon';
 import FriendProfileCard from './components/FriendProfileCard';
+import ZoomablePhoto from './components/ZoomablePhoto';
 import { isDemoAccount, getDemoLeaderboardFriends, getDemoActivities, getDemoHealthHistory, getDemoUserData, getDemoChallengeStats, getDemoUserLeaderboardOverride } from './demoData';
 
 // Convert a Date to YYYY-MM-DD string in local timezone (avoids UTC date shifting)
@@ -712,27 +713,36 @@ const MemoizedActivityCard = React.memo(({
               </div>
             )}
           </TouchButton>
-          {/* Fullscreen modal - always rendered but hidden to prevent flash */}
+          {/* Fullscreen modal — pinch to zoom, drag to pan when zoomed, double-tap to
+              toggle 1×/2.5×, single tap at 1× to close. Kept always-rendered to avoid
+              a flash on open. */}
           <div
             className="fixed inset-0 z-[100] bg-black flex items-center justify-center transition-opacity duration-150"
             style={{
               opacity: showFullscreenPhoto ? 1 : 0,
               pointerEvents: showFullscreenPhoto ? 'auto' : 'none',
-              visibility: showFullscreenPhoto ? 'visible' : 'hidden'
+              visibility: showFullscreenPhoto ? 'visible' : 'hidden',
             }}
-            onClick={() => setShowFullscreenPhoto(false)}
             onTouchStart={(e) => e.stopPropagation()}
             onTouchMove={(e) => e.stopPropagation()}
             onTouchEnd={(e) => e.stopPropagation()}
           >
-            <div className="relative max-w-full max-h-full flex flex-col items-end" onClick={(e) => e.stopPropagation()}>
-              <TouchButton onClick={() => setShowFullscreenPhoto(false)} className="mb-2 mr-1 w-10 h-10 bg-white/10 rounded-full flex items-center justify-center shrink-0">
-                <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </TouchButton>
-              <img src={activity.photoURL} alt="Activity fullscreen" className="max-w-full max-h-[85vh] object-contain" />
-            </div>
+            <TouchButton
+              onClick={(e) => { e.stopPropagation(); setShowFullscreenPhoto(false); }}
+              className="absolute top-3 right-3 z-10 w-10 h-10 bg-white/10 rounded-full flex items-center justify-center shrink-0"
+            >
+              <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </TouchButton>
+            {showFullscreenPhoto && (
+              <ZoomablePhoto
+                src={activity.photoURL}
+                alt="Activity fullscreen"
+                className="w-full h-full flex items-center justify-center"
+                onSingleTap={() => setShowFullscreenPhoto(false)}
+              />
+            )}
           </div>
         </>
         );

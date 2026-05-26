@@ -18394,21 +18394,7 @@ export default function DaySevenApp() {
           setToastMessage('Challenge complete! 🏆');
           setToastType('success');
           setShowToast(true);
-          // Race the callable against a hard 10s timeout so a hanging Firebase callable
-          // (CORS, token, network) doesn't silently leave the user with only the optimistic toast.
-          // TEMP diagnostic: alert() the full result/error so it's unmissable.
-          const timeoutMs = 10000;
-          const apply = applyChallengeIntent(activity.id, [challenge.id]);
-          const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error(`apply_timeout_${timeoutMs}ms`)), timeoutMs));
-          let result;
-          try {
-            result = await Promise.race([apply, timeout]);
-          } catch (err) {
-            console.error('[ApplyChallenge] threw:', err);
-            alert(`Apply challenge failed: ${err?.message || err}`);
-            return;
-          }
-          alert(`Apply challenge result:\n${JSON.stringify(result, null, 2)}`);
+          const result = await applyChallengeIntent(activity.id, [challenge.id]);
           const fulfilled = (result?.results || []).some(r => r.fulfilled);
           if (!fulfilled) {
             const first = (result?.results || [])[0];

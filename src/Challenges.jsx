@@ -163,12 +163,17 @@ export function ChallengeActivityPickerModal({ isOpen, onClose, activities = [],
 // Filters to activities matching the challenge's rule (category + type + target threshold).
 // =====================================================================
 
-export function ChallengeApplyPastActivityModal({ isOpen, onClose, activities = [], challenge, onPick }) {
+export function ChallengeApplyPastActivityModal({ isOpen, onClose, activities = [], challenge, onPick, onEditActivity }) {
   const [isClosing, setIsClosing] = useState(false);
 
   useEffect(() => { if (isOpen) setIsClosing(false); }, [isOpen]);
 
   if (!isOpen || !challenge) return null;
+
+  // Photo-required challenges only fulfill on the server when the picked activity has a photoURL.
+  // Surface that constraint inline so the user never lands in the "tapped, looked done, didn't count" trap.
+  const requiresPhoto = !!challenge.requirePhoto;
+  const isPhotoBlocked = (a) => requiresPhoto && !a.photoURL;
 
   const handleClose = () => {
     setIsClosing(true);
@@ -239,33 +244,61 @@ export function ChallengeApplyPastActivityModal({ isOpen, onClose, activities = 
             </div>
           ) : (
             <div className="space-y-2">
-              {eligible.map(activity => (
-                <button
-                  key={activity.id}
-                  onClick={() => { triggerHaptic(ImpactStyle.Light); onPick?.(activity); }}
-                  className="w-full p-3 rounded-xl text-left transition-colors"
-                  style={{
-                    backgroundColor: 'rgba(255,255,255,0.04)',
-                    border: `1px solid ${color}25`,
-                  }}
+              {requiresPhoto && (
+                <div
+                  className="mb-2 p-3 rounded-xl"
+                  style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.35)' }}
                 >
-                  <div className="flex items-start gap-3">
-                    <div
-                      className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
-                      style={{ backgroundColor: `${color}20` }}
-                    >
-                      <span style={{ color, fontSize: 16 }}>⚡</span>
+                  <p className="text-xs" style={{ color: '#FFD60A' }}>
+                    📸 This challenge requires a photo. Activities without one can't be applied — tap them to add a photo.
+                  </p>
+                </div>
+              )}
+              {eligible.map(activity => {
+                const photoBlocked = isPhotoBlocked(activity);
+                return (
+                  <button
+                    key={activity.id}
+                    onClick={() => {
+                      triggerHaptic(ImpactStyle.Light);
+                      if (photoBlocked) {
+                        // Photo-required + no photo: route to edit so the user can attach one,
+                        // instead of optimistically "completing" what the server will refuse.
+                        onEditActivity?.(activity);
+                        return;
+                      }
+                      onPick?.(activity);
+                    }}
+                    className="w-full p-3 rounded-xl text-left transition-colors"
+                    style={{
+                      backgroundColor: photoBlocked ? 'rgba(255,214,10,0.04)' : 'rgba(255,255,255,0.04)',
+                      border: `1px solid ${photoBlocked ? 'rgba(255,214,10,0.25)' : `${color}25`}`,
+                      opacity: photoBlocked ? 0.75 : 1,
+                    }}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div
+                        className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+                        style={{ backgroundColor: `${color}20` }}
+                      >
+                        <span style={{ color, fontSize: 16 }}>⚡</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white text-sm font-medium truncate">
+                          {activity.type === 'Other' ? (activity.subtype || 'Other') : activity.type}
+                          {activity.subtype && activity.type !== 'Other' && ` · ${activity.subtype}`}
+                        </p>
+                        <p className="text-gray-500 text-xs">{activity.date}{activity.duration ? ` · ${activity.duration} min` : ''}{activity.distance ? ` · ${parseFloat(activity.distance).toFixed(1)} mi` : ''}</p>
+                        {photoBlocked && (
+                          <p className="text-[11px] mt-1 font-semibold" style={{ color: '#FFD60A' }}>
+                            📸 Add a photo to apply
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white text-sm font-medium truncate">
-                        {activity.type === 'Other' ? (activity.subtype || 'Other') : activity.type}
-                        {activity.subtype && activity.type !== 'Other' && ` · ${activity.subtype}`}
-                      </p>
-                      <p className="text-gray-500 text-xs">{activity.date}{activity.duration ? ` · ${activity.duration} min` : ''}{activity.distance ? ` · ${parseFloat(activity.distance).toFixed(1)} mi` : ''}</p>
-                    </div>
-                  </div>
-                </button>
-              ))}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>

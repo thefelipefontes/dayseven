@@ -18265,10 +18265,30 @@ export default function DaySevenApp() {
         onClose={() => setApplyPastActivityChallenge(null)}
         activities={displayActivities}
         challenge={applyPastActivityChallenge}
+        onEditActivity={(activity) => {
+          // Route the user into the activity editor so they can attach the required photo,
+          // then come back to this picker to apply it.
+          setApplyPastActivityChallenge(null);
+          setPendingActivity({
+            ...activity,
+            durationHours: Math.floor((activity.duration || 0) / 60),
+            durationMinutes: (activity.duration || 0) % 60,
+          });
+          setShowAddActivity(true);
+        }}
         onPick={async (activity) => {
           const challenge = applyPastActivityChallenge;
           setApplyPastActivityChallenge(null);
           if (!activity?.id || !challenge?.id) return;
+          // Defense in depth: the server's fulfillChallengeForUser refuses photo-required
+          // challenges without a photoURL. Skip the optimistic "complete" toast in that case
+          // so the user doesn't see success then a delayed "couldn't apply" reversal.
+          if (challenge.requirePhoto && !activity.photoURL) {
+            setToastMessage('Add a photo to this activity first — challenge requires proof.');
+            setToastType('error');
+            setShowToast(true);
+            return;
+          }
           // Optimistically flip the card immediately + show toast — the callable runs in background.
           const completedAt = Date.now();
           setOptimisticChallengeCompletions(prev => {

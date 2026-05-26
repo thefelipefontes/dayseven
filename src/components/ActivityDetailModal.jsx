@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import ActivityIcon from './ActivityIcon';
 import RouteMapView from './RouteMapView';
 import MuscleBodyMap from './MuscleBodyMap';
@@ -624,9 +625,13 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
             </div>
           )}
 
-          {/* Fullscreen Photo Modal — pinch to zoom, drag to pan when zoomed,
-              double-tap to toggle, single tap at 1× to close. */}
-          {showFullscreenPhoto && activity.photoURL && (
+          {/* Fullscreen Photo Modal — portaled to document.body because this modal's
+              wrapper has a translateY transform, which creates a new stacking context.
+              Without the portal, "fixed inset-0" anchors to the sheet's bounding box
+              (top-aligned around y=15vh) instead of the viewport, so the photo viewer
+              wouldn't actually cover the modal header. Pinch / pan / double-tap stay
+              the same; single tap at 1× closes. */}
+          {showFullscreenPhoto && activity.photoURL && createPortal(
             <div
               className="fixed inset-0 z-[100] bg-black flex items-center justify-center"
               onClick={(e) => e.stopPropagation()}
@@ -646,7 +651,8 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
                 className="w-full h-full flex items-center justify-center"
                 onSingleTap={() => setShowFullscreenPhoto(false)}
               />
-            </div>
+            </div>,
+            document.body
           )}
 
           {/* Source indicator */}

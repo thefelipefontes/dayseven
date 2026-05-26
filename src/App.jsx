@@ -1550,7 +1550,7 @@ const getDefaultCountToward = (type, sub) => {
 };
 
 // Finish Workout Modal - Shown when user taps "Finish Timer"
-const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linkedWorkoutUUIDs = [] }) => {
+const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linkedWorkoutUUIDs = [], activeChallenges = [], friendsByUid = {} }) => {
   const [notes, setNotes] = useState('');
   const [calories, setCalories] = useState('');
   const [avgHr, setAvgHr] = useState('');
@@ -1988,6 +1988,26 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
     ? effectiveFocusAreas.join(', ')
     : (finishSubtype || workout.subtype || '');
 
+  // Photo-required active challenges that this workout would match — block save without a photo.
+  // Mirrors the cloud function's gate so the user can't silently lose a win by skipping the photo.
+  const photoRequiredMatches = (() => {
+    if (!activeChallenges?.length) return [];
+    const proxyActivity = {
+      type: workout.type,
+      subtype: finishSubtype || workout.subtype,
+      countToward: finishCountToward !== undefined ? finishCountToward : workout.countToward,
+      strengthType: finishStrengthType || workout.strengthType,
+      distance: linkedWorkout?.distance || (distance ? parseFloat(distance) : (workout.distance || 0)),
+      duration: linkedWorkout?.duration || duration,
+    };
+    return activeChallenges.filter(c => {
+      if (!c.requirePhoto) return false;
+      try { return evaluateActivityAgainstChallenge(proxyActivity, c.matchRule).matches; }
+      catch { return false; }
+    });
+  })();
+  const photoMissingForChallenge = photoRequiredMatches.length > 0 && !activityPhoto && !workout?.photoURL;
+
   const handleSave = () => {
     const endTime = new Date().toISOString();
     const today = new Date();
@@ -2058,8 +2078,9 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
           <h2 className="font-bold text-white">Save Workout</h2>
           <button
             onClick={handleSave}
+            disabled={photoMissingForChallenge}
             className="font-bold px-2 py-1"
-            style={{ color: '#00FF94' }}
+            style={{ color: photoMissingForChallenge ? 'rgba(0,255,148,0.3)' : '#00FF94' }}
           >
             Save
           </button>
@@ -2437,7 +2458,30 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
 
             {/* Photo Upload Section */}
             <div className="mt-4">
-              <label className="text-xs text-gray-500 block mb-2">Photo (optional)</label>
+              {photoMissingForChallenge && (
+                <div
+                  className="mb-3 p-3 rounded-xl"
+                  style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.35)' }}
+                >
+                  <p className="text-xs font-semibold" style={{ color: '#FFD60A' }}>
+                    📸 Photo required to fulfill {photoRequiredMatches.length === 1
+                      ? `${friendsByUid[photoRequiredMatches[0].challengerUid]?.displayName
+                          || friendsByUid[photoRequiredMatches[0].challengerUid]?.username
+                          || photoRequiredMatches[0].challengerName
+                          || 'this'}'s challenge`
+                      : `${photoRequiredMatches.length} challenges`}
+                  </p>
+                  <p className="text-[11px] mt-1" style={{ color: 'rgba(255,255,255,0.7)' }}>
+                    Add a photo below to claim the win — without it, the challenge stays open.
+                  </p>
+                </div>
+              )}
+              <label
+                className="text-xs block mb-2"
+                style={{ color: photoMissingForChallenge ? '#FFD60A' : 'rgb(107, 114, 128)' }}
+              >
+                Photo {photoMissingForChallenge ? '(required for challenge)' : '(optional)'}
+              </label>
 
               {/* Hidden file input for web fallback */}
               <input
@@ -8395,6 +8439,14 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
     return new Set(matchingChallenges.map(c => c.id));
   }, [challengeFulfillSelection, matchingChallenges]);
 
+  // Photo-required challenges in the effective selection — server refuses to fulfill these without
+  // a photo, so block save here instead of silently saving an activity that won't credit the win.
+  const photoRequiredSelected = useMemo(() => (
+    matchingChallenges.filter(c => c.requirePhoto && effectiveChallengeSelection.has(c.id))
+  ), [matchingChallenges, effectiveChallengeSelection]);
+  const hasPhotoAttached = !!activityPhoto || !!pendingActivity?.photoURL;
+  const photoMissingForChallenge = photoRequiredSelected.length > 0 && !hasPhotoAttached;
+
   const toggleChallengeFulfill = (id) => {
     setChallengeFulfillSelection(prev => {
       const base = prev !== null ? new Set(prev) : new Set(matchingChallenges.map(c => c.id));
@@ -8787,8 +8839,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             handleClose();
           }}
           className="font-bold transition-all duration-150 px-2 py-1 rounded-lg"
-          style={{ color: !activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0) ? 'rgba(0,255,148,0.3)' : '#00FF94' }}
-          disabled={!activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0)}
+          style={{ color: !activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0) || (mode === 'completed' && photoMissingForChallenge) ? 'rgba(0,255,148,0.3)' : '#00FF94' }}
+          disabled={!activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0) || (mode === 'completed' && photoMissingForChallenge)}
           onTouchStart={(e) => {
             if (!e.currentTarget.disabled) {
               e.currentTarget.style.transform = 'scale(0.9)';
@@ -10363,6 +10415,25 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     );
                   })}
 
+                  {photoMissingForChallenge && (
+                    <div
+                      className="mt-2 p-3 rounded-xl"
+                      style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.35)' }}
+                    >
+                      <p className="text-xs font-semibold" style={{ color: '#FFD60A' }}>
+                        📸 Photo required to fulfill {photoRequiredSelected.length === 1
+                          ? `${friendsByUid[photoRequiredSelected[0].challengerUid]?.displayName
+                              || friendsByUid[photoRequiredSelected[0].challengerUid]?.username
+                              || photoRequiredSelected[0].challengerName
+                              || 'this'}'s challenge`
+                          : `${photoRequiredSelected.length} challenges`}
+                      </p>
+                      <p className="text-[11px] mt-1" style={{ color: 'rgba(255,255,255,0.7)' }}>
+                        Add a photo below, or uncheck {photoRequiredSelected.length === 1 ? 'the challenge' : 'the challenges'} above to save without claiming the win.
+                      </p>
+                    </div>
+                  )}
+
                   {shortChallenges.map(({ challenge: c, shortBy }) => {
                     const senderName = friendsByUid[c.challengerUid]?.displayName
                       || friendsByUid[c.challengerUid]?.username
@@ -10408,7 +10479,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 
             {/* Photo Upload Section */}
             <div>
-              <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Photo (optional)</label>
+              <label
+                className="text-xs uppercase tracking-wider mb-2 block"
+                style={{ color: photoMissingForChallenge ? '#FFD60A' : 'rgb(107, 114, 128)' }}
+              >
+                Photo {photoMissingForChallenge ? '(required for challenge)' : '(optional)'}
+              </label>
 
               {/* Hidden file input for web fallback */}
               <input
@@ -15443,11 +15519,11 @@ export default function DaySevenApp() {
     setShowAddActivity(true);
   };
 
-  // Refresh active accepted challenges whenever the AddActivityModal opens — used to show
-  // the "fulfills these challenges" section with checkboxes. One-shot fetch (not a subscription)
-  // because the user's accepted challenges don't churn during a single workout-logging session.
+  // Refresh active accepted challenges whenever the AddActivityModal or FinishWorkoutModal opens —
+  // both modals need this list to enforce photo-required challenges at save. One-shot fetch (not
+  // a subscription) because the user's accepted challenges don't churn during a single save session.
   useEffect(() => {
-    if (!showAddActivity || !user?.uid) return;
+    if ((!showAddActivity && !showFinishWorkout) || !user?.uid) return;
     let cancelled = false;
     getChallengesForUser(user.uid).then(all => {
       if (cancelled) return;
@@ -15460,7 +15536,7 @@ export default function DaySevenApp() {
       setAccepterActiveChallenges(accepted);
     });
     return () => { cancelled = true; };
-  }, [showAddActivity, user?.uid]);
+  }, [showAddActivity, showFinishWorkout, user?.uid]);
 
   // Resolve activity + challenge IDs from a multi-match push payload, then open the chooser modal.
   // Activity comes from local state; challenges come from a fresh fetch (so the chooser sees
@@ -16573,6 +16649,8 @@ export default function DaySevenApp() {
           ...activities.filter(a => a.linkedHealthKitUUID).map(a => a.linkedHealthKitUUID),
           ...activities.filter(a => a.healthKitUUID).map(a => a.healthKitUUID)
         ]}
+        activeChallenges={accepterActiveChallenges}
+        friendsByUid={Object.fromEntries(friends.map(f => [f.uid, f]))}
         onSave={async (finishedWorkout) => {
           // If user linked to an Apple Health workout, don't create a duplicate in HealthKit
           const shouldSkipHealthKitWrite = !!finishedWorkout.linkedHealthKitUUID;

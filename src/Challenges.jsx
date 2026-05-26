@@ -165,10 +165,16 @@ export function ChallengeActivityPickerModal({ isOpen, onClose, activities = [],
 
 export function ChallengeApplyPastActivityModal({ isOpen, onClose, activities = [], challenge, onPick, onAttachPhotoAndApply }) {
   const [isClosing, setIsClosing] = useState(false);
+  // Optional message the accepter sends with the win — shows up in the challenger's push.
+  // 140 chars to stay readable on a lock screen and force brevity (trash talk should be punchy).
+  const [completionMessage, setCompletionMessage] = useState('');
 
-  useEffect(() => { if (isOpen) setIsClosing(false); }, [isOpen]);
+  useEffect(() => { if (isOpen) { setIsClosing(false); setCompletionMessage(''); } }, [isOpen]);
 
   if (!isOpen || !challenge) return null;
+
+  const trimmedMessage = completionMessage.trim();
+  const messageOrUndefined = trimmedMessage.length > 0 ? trimmedMessage : undefined;
 
   // Photo-required challenges only fulfill on the server when the picked activity has a photoURL.
   // Surface that constraint inline so the user never lands in the "tapped, looked done, didn't count" trap.
@@ -244,6 +250,20 @@ export function ChallengeApplyPastActivityModal({ isOpen, onClose, activities = 
             </div>
           ) : (
             <div className="space-y-2">
+              <div className="mb-2 p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <label className="text-[11px] uppercase tracking-wider text-gray-500 block mb-1.5">
+                  💬 Add a message with the win
+                </label>
+                <textarea
+                  value={completionMessage}
+                  onChange={(e) => setCompletionMessage(e.target.value.slice(0, 140))}
+                  rows={2}
+                  placeholder="Easy peasy 💪"
+                  className="w-full bg-transparent text-white text-sm placeholder-gray-600 resize-none focus:outline-none"
+                  maxLength={140}
+                />
+                <div className="text-right text-[10px] text-gray-500">{completionMessage.length} / 140</div>
+              </div>
               {requiresPhoto && (
                 <div
                   className="mb-2 p-3 rounded-xl"
@@ -264,10 +284,10 @@ export function ChallengeApplyPastActivityModal({ isOpen, onClose, activities = 
                       if (photoBlocked) {
                         // Photo-required + no photo: let the parent run the capture-upload-apply
                         // flow so the user never lands on a save that the server will reject.
-                        onAttachPhotoAndApply?.(activity);
+                        onAttachPhotoAndApply?.(activity, messageOrUndefined);
                         return;
                       }
-                      onPick?.(activity);
+                      onPick?.(activity, messageOrUndefined);
                     }}
                     className="w-full p-3 rounded-xl text-left transition-colors"
                     style={{
@@ -1281,12 +1301,17 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
 // Section: rendered on the Home tab. Self-loads challenges + handles actions.
 // =====================================================================
 
-export function ChallengesSection({ user, userProfile, friends = [], onChallengeCountsChange, onSeeDetails, optimisticCompletions = new Map(), onStartChallengeWorkout, onApplyPastActivityToChallenge }) {
+export function ChallengesSection({ user, userProfile, friends = [], onChallengeCountsChange, onSeeDetails, optimisticCompletions = new Map(), onStartChallengeWorkout, onApplyPastActivityToChallenge, onDetailOpenChange }) {
   const [challenges, setChallenges] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   // Card tap opens the detail modal in-place; the "See all ›" link still navigates
   // to the Challenges tab via onSeeDetails (called with no arg).
   const [detailChallenge, setDetailChallenge] = useState(null);
+  // Mirror open state to the parent so the page-level pull-to-refresh (which has
+  // window/capture listeners that ignore the React subtree) can disable itself.
+  useEffect(() => {
+    onDetailOpenChange?.(!!detailChallenge);
+  }, [detailChallenge, onDetailOpenChange]);
   const [opponentFriend, setOpponentFriend] = useState(null);
   useTicker(60000);
 

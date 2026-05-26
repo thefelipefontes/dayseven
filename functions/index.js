@@ -1547,7 +1547,11 @@ exports.protectUserFields = onDocumentWritten(
  *  - fulfilled=true when the user's status flipped to 'completed' inside this call.
  *  - photoRequired=true when the challenge required a photo and the activity didn't have one.
  */
-async function fulfillChallengeForUser({ userId, challengeDocRef, challenge, matched }) {
+async function fulfillChallengeForUser({ userId, challengeDocRef, challenge, matched, message }) {
+  // Trim + cap the optional accepter message to a lock-screen-friendly size.
+  const cleanMessage = (typeof message === 'string' && message.trim())
+    ? message.trim().slice(0, 140)
+    : null;
   // Fast pre-bail using the caller's view — avoids opening a transaction when the photo is
   // obviously missing. The authoritative gate runs inside the transaction below, against
   // fresh challenge + activity state, so a stale caller object cannot bypass enforcement.
@@ -1590,11 +1594,17 @@ async function fulfillChallengeForUser({ userId, challengeDocRef, challenge, mat
       update[`participants.${userId}.status`] = 'completed';
       update[`participants.${userId}.completedAt`] = nowIso;
       update[`participants.${userId}.fulfillingActivityId`] = String(matched.id || '');
+      if (cleanMessage) {
+        update[`participants.${userId}.completionMessage`] = cleanMessage;
+      }
     }
     if (data.friendUid === userId) {
       update.friendStatus = 'completed';
       update.completedAt = nowIso;
       update.fulfillingActivityId = String(matched.id || '');
+      if (cleanMessage) {
+        update.completionMessage = cleanMessage;
+      }
     }
 
     let overallNowComplete = false;
@@ -1647,12 +1657,16 @@ async function fulfillChallengeForUser({ userId, challengeDocRef, challenge, mat
       const isGroup = challenge.type === 'group';
 
       if (challengerPrefs.challengeCompleted) {
+        const baseBody = isGroup
+          ? `${friendName} crushed your group challenge.`
+          : `${friendName} matched your challenge.`;
+        const body = cleanMessage
+          ? `${baseBody}\n💬 "${cleanMessage}"`
+          : baseBody;
         await sendNotificationToUser(
           challenge.challengerUid,
           'Challenge Completed! 🎯',
-          isGroup
-            ? `${friendName} crushed your group challenge.`
-            : `${friendName} matched your challenge.`,
+          body,
           {
             type: NotificationType.CHALLENGE_COMPLETED,
             fromUserId: userId,
@@ -2088,6 +2102,10 @@ exports.onUserActivitiesUpdatedForChallenges = onDocumentUpdated(
           challengeDocRef: challengeDoc.ref,
           challenge,
           matched,
+          // Accepter's optional trash-talk message — written into the saved activity by the
+          // log-completed / finish-workout modal, read here so the trigger path surfaces it
+          // in the challenger's push too (same field used by applyChallengeIntent).
+          message: matched.challengeMessage || null,
         });
       } catch (err) {
         console.error('[onUserActivitiesUpdatedForChallenges] completion failed:', err);
@@ -2346,11 +2364,15 @@ exports.applyChallengeIntent = onCall(async (request) => {
     throw new HttpsError('unauthenticated', 'Sign-in required.');
   }
   const userId = request.auth.uid;
-  const { activityId, challengeIds } = request.data || {};
+  const { activityId, challengeIds, message } = request.data || {};
   if (!activityId || !Array.isArray(challengeIds) || challengeIds.length === 0) {
     throw new HttpsError('invalid-argument', 'activityId and non-empty challengeIds required.');
   }
   const wantedIds = challengeIds.map(String);
+  // Caller's optional message (trimmed + capped by fulfillChallengeForUser too — belt + suspenders).
+  const callerMessage = (typeof message === 'string' && message.trim())
+    ? message.trim().slice(0, 140)
+    : null;
 
   const userRef = db.collection('users').doc(userId);
   const userSnap = await userRef.get();
@@ -2425,6 +2447,7 @@ exports.applyChallengeIntent = onCall(async (request) => {
         challengeDocRef: challengeRef,
         challenge,
         matched: activity,
+        message: callerMessage || activity.challengeMessage || null,
       });
       console.log('[applyChallengeIntent] outcome', { challengeId, outcome });
       results.push({ challengeId, ...outcome });

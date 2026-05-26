@@ -659,11 +659,16 @@ export async function getChallengesForUser(uid) {
  * cloud function which validates eligibility and runs fulfillment for each chosen challenge.
  * Returns the per-challenge results array.
  */
-export async function applyChallengeIntent(activityId, challengeIds) {
+export async function applyChallengeIntent(activityId, challengeIds, message) {
   if (!activityId || !Array.isArray(challengeIds) || challengeIds.length === 0) {
     return { results: [] };
   }
-  const payload = { activityId: String(activityId), challengeIds: challengeIds.map(String) };
+  const trimmedMessage = typeof message === 'string' ? message.trim().slice(0, 140) : '';
+  const payload = {
+    activityId: String(activityId),
+    challengeIds: challengeIds.map(String),
+    ...(trimmedMessage ? { message: trimmedMessage } : {}),
+  };
 
   // On native, the web Firebase Auth SDK's currentUser is null (auth lives in the
   // @capacitor-firebase/authentication plugin), so httpsCallable hangs forever trying

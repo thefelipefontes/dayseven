@@ -987,7 +987,7 @@ const MemoizedActivityCard = React.memo(({
   );
 });
 
-const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingRequestsCount = 0, onActiveViewChange, feedCacheRef, isPro = false, onPresentPaywall, onOpenChallenge }) => {
+const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingRequestsCount = 0, onActiveViewChange, feedCacheRef, isPro = false, onPresentPaywall, onOpenChallenge, suppressPullToRefresh = false }) => {
   // Hydrate from the parent-owned cache when re-mounting on tab switch — skips
   // the spinner and renders the previously-loaded feed instantly. The background
   // loadFeed call still runs to refresh data. Cache is uid-tagged so it isn't
@@ -1556,6 +1556,9 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     // WKWebView's native rubber-band optimization, leaving the empty page feeling stuck.
     // No content means nothing to translate or refresh anyway, so let iOS bounce instead.
     if (feedActivities.length === 0) return;
+    // Skip while an overlay is up (challenge modal, friend picker). Window/capture
+    // listeners fire even on touches inside overlays — see project_pull_to_refresh_overlay_leak.
+    if (suppressPullToRefresh) return;
 
     const getScrollTop = () => {
       const root = document.getElementById('root');
@@ -1629,7 +1632,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       window.removeEventListener('touchmove', handleTouchMove, { capture: true });
       window.removeEventListener('touchend', handleTouchEnd, { capture: true });
     };
-  }, [activeView, handleLocalRefresh, feedActivities.length]);
+  }, [activeView, handleLocalRefresh, feedActivities.length, suppressPullToRefresh]);
 
   const loadLeaderboard = useCallback(async () => {
     if (!user) {

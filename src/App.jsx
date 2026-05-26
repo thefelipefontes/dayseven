@@ -7930,6 +7930,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   // Set => explicit selection (user toggled at least one row, including "uncheck all").
   // Sent to the cloud function as `intendedChallengeIds`. Empty array = "explicit none."
   const [challengeFulfillSelection, setChallengeFulfillSelection] = useState(null);
+  // Optional 140-char message the accepter sends with the win — surfaces in challenger's push.
+  const [challengeMessage, setChallengeMessage] = useState('');
   const [isFromNotification, setIsFromNotification] = useState(false); // Track if opened from notification
   const [isChangingActivityType, setIsChangingActivityType] = useState(false); // Track if user clicked "Change" on activity type
   const [subtype, setSubtype] = useState('');
@@ -7993,6 +7995,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       setChallengeFulfillSelection(
         Array.isArray(presetIntent) ? new Set(presetIntent.map(String)) : null
       );
+      setChallengeMessage('');
       // If there's a pending activity (from HealthKit or editing), go directly to completed flow.
       // Otherwise show initial choice screen. The challenge "Start activity" CTA passes
       // `mode: 'start'` on pendingActivity so we land on the live-timer flow with the
@@ -8834,6 +8837,11 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 ? matchingChallenges
                     .map(c => c.id)
                     .filter(id => effectiveChallengeSelection.has(id))
+                : undefined,
+              // Optional accepter message — surfaces in challenger's push when fulfillment fires.
+              // Only forwarded if there's at least one selected challenge AND user typed something.
+              challengeMessage: (effectiveChallengeSelection.size > 0 && challengeMessage.trim())
+                ? challengeMessage.trim().slice(0, 140)
                 : undefined,
             });
             handleClose();
@@ -10415,6 +10423,23 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     );
                   })}
 
+                  {effectiveChallengeSelection.size > 0 && (
+                    <div className="mt-2 p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                      <label className="text-[11px] uppercase tracking-wider text-gray-500 block mb-1.5">
+                        💬 Add a message with the win
+                      </label>
+                      <textarea
+                        value={challengeMessage}
+                        onChange={(e) => setChallengeMessage(e.target.value.slice(0, 140))}
+                        rows={2}
+                        placeholder="Easy peasy 💪"
+                        className="w-full bg-transparent text-white text-sm placeholder-gray-600 resize-none focus:outline-none"
+                        maxLength={140}
+                      />
+                      <div className="text-right text-[10px] text-gray-500">{challengeMessage.length} / 140</div>
+                    </div>
+                  )}
+
                   {photoMissingForChallenge && (
                     <div
                       className="mt-2 p-3 rounded-xl"
@@ -10740,7 +10765,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
 
 // Home Tab - Simplified
 
-const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeCountsChange, onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, optimisticChallengeCompletions = new Map(), onStartChallengeWorkout, onApplyPastActivityToChallenge, openActivityTarget = null, showHkEmptyHint = false, onDismissHkEmptyHint = () => {} }) => {
+const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeCountsChange, onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, optimisticChallengeCompletions = new Map(), onStartChallengeWorkout, onApplyPastActivityToChallenge, onChallengeDetailOpenChange, openActivityTarget = null, showHkEmptyHint = false, onDismissHkEmptyHint = () => {} }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
   const [dismissConfirmWorkouts, setDismissConfirmWorkouts] = useState(null); // Workouts pending dismiss confirmation
@@ -12587,6 +12612,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         optimisticCompletions={optimisticChallengeCompletions}
         onStartChallengeWorkout={onStartChallengeWorkout}
         onApplyPastActivityToChallenge={onApplyPastActivityToChallenge}
+        onDetailOpenChange={onChallengeDetailOpenChange}
       />
 
       {/* Section Divider */}
@@ -12775,6 +12801,10 @@ export default function DaySevenApp() {
   const [applyPastActivityChallenge, setApplyPastActivityChallenge] = useState(null);
   const [challengePickerForFriend, setChallengePickerForFriend] = useState(null); // friend object when picking which past activity to challenge with
   const [preSelectedChallengeFriend, setPreSelectedChallengeFriend] = useState(null); // friend uid to pre-fill in ChallengeFriendModal
+  // Lifted from ChallengesSection so the page-level usePullToRefresh can disable itself while the
+  // ChallengeDetailModal is up. Window-level capture listeners don't see the React subtree
+  // (see project_pull_to_refresh_overlay_leak in memory) — they fire on any touch unless gated.
+  const [isChallengeDetailOpen, setIsChallengeDetailOpen] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
   const [celebrationMessage, setCelebrationMessage] = useState('');
   const [celebrationType, setCelebrationType] = useState('weekly'); // 'weekly', 'daily-steps', 'daily-calories'
@@ -14997,6 +15027,10 @@ export default function DaySevenApp() {
       && activeTab === 'home'
       && !!userProfile?.username
       && !showDiscordInvite
+      && !challengeModalActivity
+      && !challengeChooserState
+      && !applyPastActivityChallenge
+      && !isChallengeDetailOpen
   });
 
   // Listen to auth state
@@ -16910,6 +16944,7 @@ export default function DaySevenApp() {
                     handleAddActivity({ type: prefillType, intendedChallengeIds: [challenge.id], mode: 'start' });
                   }}
                   onApplyPastActivityToChallenge={(challenge) => setApplyPastActivityChallenge(challenge)}
+                  onChallengeDetailOpenChange={setIsChallengeDetailOpen}
                   isPro={isPro}
                   onPresentPaywall={async () => {
                     const { purchased } = await presentPaywall();
@@ -16983,6 +17018,7 @@ export default function DaySevenApp() {
                     });
                   }}
                   onApplyPastActivityToChallenge={(challenge) => setApplyPastActivityChallenge(challenge)}
+                  onDetailOpenChange={setIsChallengeDetailOpen}
                 />
               )}
               {activeTab === 'feed' && (
@@ -16995,6 +17031,7 @@ export default function DaySevenApp() {
                   onActiveViewChange={setFeedActiveView}
                   onOpenChallenge={(friend) => setChallengePickerForFriend(friend)}
                   feedCacheRef={feedCacheRef}
+                  suppressPullToRefresh={!!challengeModalActivity || !!challengeChooserState || !!applyPastActivityChallenge || !!challengePickerForFriend}
                   isPro={isPro}
                   onPresentPaywall={async () => {
                     const { purchased } = await presentPaywall();
@@ -18265,7 +18302,7 @@ export default function DaySevenApp() {
         onClose={() => setApplyPastActivityChallenge(null)}
         activities={displayActivities}
         challenge={applyPastActivityChallenge}
-        onAttachPhotoAndApply={async (activity) => {
+        onAttachPhotoAndApply={async (activity, message) => {
           // Photo-required challenge + activity without a photo: prompt the user to capture/pick
           // a photo right here, upload it onto the activity, then run the same apply flow.
           // Spares a roundtrip through the activity editor.
@@ -18352,7 +18389,7 @@ export default function DaySevenApp() {
           setToastType('success');
           setShowToast(true);
 
-          const result = await applyChallengeIntent(activity.id, [challenge.id]);
+          const result = await applyChallengeIntent(activity.id, [challenge.id], message);
           const fulfilled = (result?.results || []).some(r => r.fulfilled);
           if (!fulfilled) {
             const first = (result?.results || [])[0];
@@ -18363,7 +18400,7 @@ export default function DaySevenApp() {
             setShowToast(true);
           }
         }}
-        onPick={async (activity) => {
+        onPick={async (activity, message) => {
           const challenge = applyPastActivityChallenge;
           setApplyPastActivityChallenge(null);
           if (!activity?.id || !challenge?.id) return;
@@ -18394,7 +18431,7 @@ export default function DaySevenApp() {
           setToastMessage('Challenge complete! 🏆');
           setToastType('success');
           setShowToast(true);
-          const result = await applyChallengeIntent(activity.id, [challenge.id]);
+          const result = await applyChallengeIntent(activity.id, [challenge.id], message);
           const fulfilled = (result?.results || []).some(r => r.fulfilled);
           if (!fulfilled) {
             const first = (result?.results || [])[0];

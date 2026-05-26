@@ -280,7 +280,7 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
           onClick={(e) => e.stopPropagation()}
         >
           <button
-            onClick={(e) => { e.stopPropagation(); setShowFullPhoto(false); }}
+            onClick={(e) => { e?.stopPropagation?.(); setShowFullPhoto(false); }}
             className="absolute right-3 z-10 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center"
             style={{ top: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
           >

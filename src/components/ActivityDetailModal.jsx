@@ -632,7 +632,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
               onClick={(e) => e.stopPropagation()}
             >
               <button
-                onClick={(e) => { e.stopPropagation(); setShowFullscreenPhoto(false); }}
+                onClick={(e) => { e?.stopPropagation?.(); setShowFullscreenPhoto(false); }}
                 className="absolute right-3 z-10 w-10 h-10 bg-white/10 rounded-full flex items-center justify-center shrink-0"
                 style={{ top: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
               >

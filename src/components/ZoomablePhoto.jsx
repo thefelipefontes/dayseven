@@ -69,6 +69,7 @@ export default function ZoomablePhoto({ src, alt = '', className = '', style = {
         s.didMove = true;
         setTransform((t) => ({ ...t, scale: next }));
       } else if (e.touches.length === 1 && transformRef.current.scale > 1.02 && s.panStartX !== null) {
+        // Pan-while-zoomed.
         e.preventDefault();
         const t = e.touches[0];
         s.didMove = true;
@@ -77,6 +78,16 @@ export default function ZoomablePhoto({ src, alt = '', className = '', style = {
           tx: s.panOriginTx + (t.clientX - s.panStartX),
           ty: s.panOriginTy + (t.clientY - s.panStartY),
         }));
+      } else if (e.touches.length === 1 && s.panStartX !== null) {
+        // At 1× we don't pan, but we still need to consume the touch so vertical swipes
+        // don't (a) accidentally fire onSingleTap on release and (b) bubble out to the
+        // WebView's rubber-band scroll. preventDefault + mark didMove if the move was
+        // meaningful (>10px in either axis — same threshold TouchButton uses).
+        e.preventDefault();
+        const t = e.touches[0];
+        const dx = Math.abs(t.clientX - s.panStartX);
+        const dy = Math.abs(t.clientY - s.panStartY);
+        if (dx > 10 || dy > 10) s.didMove = true;
       }
     };
 

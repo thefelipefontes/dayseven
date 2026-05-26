@@ -281,7 +281,8 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
         >
           <button
             onClick={(e) => { e.stopPropagation(); setShowFullPhoto(false); }}
-            className="absolute top-3 right-3 z-10 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center"
+            className="absolute right-3 z-10 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center"
+            style={{ top: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
           >
             <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

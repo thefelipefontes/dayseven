@@ -163,7 +163,7 @@ export function ChallengeActivityPickerModal({ isOpen, onClose, activities = [],
 // Filters to activities matching the challenge's rule (category + type + target threshold).
 // =====================================================================
 
-export function ChallengeApplyPastActivityModal({ isOpen, onClose, activities = [], challenge, onPick, onEditActivity }) {
+export function ChallengeApplyPastActivityModal({ isOpen, onClose, activities = [], challenge, onPick, onAttachPhotoAndApply }) {
   const [isClosing, setIsClosing] = useState(false);
 
   useEffect(() => { if (isOpen) setIsClosing(false); }, [isOpen]);
@@ -250,7 +250,7 @@ export function ChallengeApplyPastActivityModal({ isOpen, onClose, activities = 
                   style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.35)' }}
                 >
                   <p className="text-xs" style={{ color: '#FFD60A' }}>
-                    📸 This challenge requires a photo. Activities without one can't be applied — tap them to add a photo.
+                    📸 This challenge requires a photo. Tap any activity below — we'll prompt for a photo if it's missing one.
                   </p>
                 </div>
               )}
@@ -262,9 +262,9 @@ export function ChallengeApplyPastActivityModal({ isOpen, onClose, activities = 
                     onClick={() => {
                       triggerHaptic(ImpactStyle.Light);
                       if (photoBlocked) {
-                        // Photo-required + no photo: route to edit so the user can attach one,
-                        // instead of optimistically "completing" what the server will refuse.
-                        onEditActivity?.(activity);
+                        // Photo-required + no photo: let the parent run the capture-upload-apply
+                        // flow so the user never lands on a save that the server will reject.
+                        onAttachPhotoAndApply?.(activity);
                         return;
                       }
                       onPick?.(activity);
@@ -273,7 +273,6 @@ export function ChallengeApplyPastActivityModal({ isOpen, onClose, activities = 
                     style={{
                       backgroundColor: photoBlocked ? 'rgba(255,214,10,0.04)' : 'rgba(255,255,255,0.04)',
                       border: `1px solid ${photoBlocked ? 'rgba(255,214,10,0.25)' : `${color}25`}`,
-                      opacity: photoBlocked ? 0.75 : 1,
                     }}
                   >
                     <div className="flex items-start gap-3">
@@ -291,7 +290,7 @@ export function ChallengeApplyPastActivityModal({ isOpen, onClose, activities = 
                         <p className="text-gray-500 text-xs">{activity.date}{activity.duration ? ` · ${activity.duration} min` : ''}{activity.distance ? ` · ${parseFloat(activity.distance).toFixed(1)} mi` : ''}</p>
                         {photoBlocked && (
                           <p className="text-[11px] mt-1 font-semibold" style={{ color: '#FFD60A' }}>
-                            📸 Add a photo to apply
+                            📸 Tap to add a photo and apply
                           </p>
                         )}
                       </div>

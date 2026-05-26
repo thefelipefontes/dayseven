@@ -18265,16 +18265,100 @@ export default function DaySevenApp() {
         onClose={() => setApplyPastActivityChallenge(null)}
         activities={displayActivities}
         challenge={applyPastActivityChallenge}
-        onEditActivity={(activity) => {
-          // Route the user into the activity editor so they can attach the required photo,
-          // then come back to this picker to apply it.
+        onAttachPhotoAndApply={async (activity) => {
+          // Photo-required challenge + activity without a photo: prompt the user to capture/pick
+          // a photo right here, upload it onto the activity, then run the same apply flow.
+          // Spares a roundtrip through the activity editor.
+          const challenge = applyPastActivityChallenge;
+          if (!user?.uid || !activity?.id || !challenge?.id) return;
+
+          let file;
+          try {
+            const image = await Camera.getPhoto({
+              quality: 80,
+              allowEditing: false,
+              resultType: CameraResultType.Uri,
+              source: CameraSource.Prompt,
+              promptLabelHeader: 'Add Photo',
+              promptLabelPhoto: 'Choose from Library',
+              promptLabelPicture: 'Take Photo',
+            });
+            if (!image?.path) return;
+            const webPath = Capacitor.convertFileSrc(image.path);
+            const response = await fetch(webPath);
+            const blob = await response.blob();
+            if (blob.size < 100) {
+              alert("Could not load this photo. If it's stored in iCloud, make sure it's downloaded to your device first.");
+              return;
+            }
+            file = new File([blob], 'photo.jpg', { type: blob.type || 'image/jpeg' });
+          } catch (e) {
+            if (e?.message && e.message !== 'User cancelled photos app') {
+              alert('Could not load photo. Please try again.');
+            }
+            return;
+          }
+
+          // Close the picker only after we've successfully captured — bails leave it open.
           setApplyPastActivityChallenge(null);
-          setPendingActivity({
-            ...activity,
-            durationHours: Math.floor((activity.duration || 0) / 60),
-            durationMinutes: (activity.duration || 0) % 60,
+
+          let photoURL;
+          try {
+            photoURL = await uploadActivityPhoto(user.uid, activity.id, file);
+          } catch (err) {
+            console.error('[ApplyPastActivity] photo upload failed:', err);
+            setToastMessage('Photo upload failed. Try again.');
+            setToastType('error');
+            setShowToast(true);
+            return;
+          }
+
+          // Persist the photoURL onto the activity so server-side fulfillChallengeForUser
+          // (reads matched.photoURL) accepts it. Update local state + Firestore in lockstep.
+          const updatedActivities = (activitiesRef.current || activities).map(a =>
+            String(a.id) === String(activity.id) ? { ...a, photoURL } : a
+          );
+          activitiesRef.current = updatedActivities;
+          setActivities(updatedActivities);
+          activitiesFromFirestore.current = true;
+          lastFirestoreSyncTime.current = Date.now();
+          lastFirestoreActivityCount.current = updatedActivities.length;
+          try {
+            await saveUserActivities(user.uid, updatedActivities);
+          } catch (err) {
+            console.error('[ApplyPastActivity] failed to persist photoURL:', err);
+            setToastMessage("Photo saved but couldn't update activity. Try again.");
+            setToastType('error');
+            setShowToast(true);
+            return;
+          }
+
+          // Optimistic completion + apply intent (mirrors the no-photo branch below).
+          const completedAt = Date.now();
+          setOptimisticChallengeCompletions(prev => {
+            const next = new Map(prev);
+            next.set(challenge.id, { activityId: activity.id, completedAt });
+            setTimeout(() => {
+              setOptimisticChallengeCompletions(p => {
+                const m = new Map(p);
+                m.delete(challenge.id);
+                return m;
+              });
+            }, 30000);
+            return next;
           });
-          setShowAddActivity(true);
+          triggerHaptic(ImpactStyle.Medium);
+          setToastMessage('Challenge complete! 🏆');
+          setToastType('success');
+          setShowToast(true);
+
+          const result = await applyChallengeIntent(activity.id, [challenge.id]);
+          const fulfilled = (result?.results || []).some(r => r.fulfilled);
+          if (!fulfilled) {
+            setToastMessage("Couldn't apply — challenge state may have changed.");
+            setToastType('error');
+            setShowToast(true);
+          }
         }}
         onPick={async (activity) => {
           const challenge = applyPastActivityChallenge;

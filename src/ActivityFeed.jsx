@@ -575,9 +575,17 @@ const MemoizedActivityCard = React.memo(({
   reactionEmojis,
   isPro,
   onPresentPaywall,
+  onPhotoFullscreenChange,
 }) => {
   const { friend, type, duration, calories, distance, date, time, id, customEmoji, customIcon, sportEmoji, strengthType, focusAreas, focusArea } = activity;
   const [showFullscreenPhoto, setShowFullscreenPhoto] = useState(false);
+  // Bubble open/close up so ActivityFeed can pause its window-level pull-to-refresh
+  // listener — otherwise pulling down on the fullscreen photo refreshes the feed
+  // (and closes the photo) underneath. Same overlay-leak class as project_pull_to_refresh_overlay_leak.
+  useEffect(() => {
+    onPhotoFullscreenChange?.(showFullscreenPhoto);
+    return () => { if (showFullscreenPhoto) onPhotoFullscreenChange?.(false); };
+  }, [showFullscreenPhoto, onPhotoFullscreenChange]);
   const [openCommentId, setOpenCommentId] = useState(null);
   const [replyingTo, setReplyingTo] = useState(null); // { commentId, commenterName }
   const [expandedReplies, setExpandedReplies] = useState({});
@@ -1011,6 +1019,21 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   const [activityComments, setActivityComments] = useState(() => cachedFeed?.comments || {});
   const [commentReplies, setCommentReplies] = useState(() => cachedFeed?.replies || {}); // { activityKey: { commentId: [replies] } }
   const [activityChallengeMap, setActivityChallengeMap] = useState(() => cachedFeed?.challengeMap || {}); // { "<friendUid>-<activityId>": { challengerUid, challengerName, ... } }
+  // Set of activity-card keys that currently have their fullscreen photo open.
+  // Window-level pull-to-refresh below needs to disable while any of them is open,
+  // otherwise pulling down on the photo overlay invisibly refreshes the feed and
+  // wipes the card's local state (closing the photo as a side effect).
+  const [openPhotoLightboxes, setOpenPhotoLightboxes] = useState(() => new Set());
+  const isAnyPhotoLightboxOpen = openPhotoLightboxes.size > 0;
+  const handlePhotoFullscreenChange = useCallback((activityKey, isOpen) => {
+    setOpenPhotoLightboxes(prev => {
+      const has = prev.has(activityKey);
+      if (isOpen === has) return prev;
+      const next = new Set(prev);
+      if (isOpen) next.add(activityKey); else next.delete(activityKey);
+      return next;
+    });
+  }, []);
   const [isLoading, setIsLoading] = useState(() => !cachedFeed);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeView, setActiveView] = useState('feed'); // 'feed' or 'leaderboard'
@@ -1567,9 +1590,10 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     // WKWebView's native rubber-band optimization, leaving the empty page feeling stuck.
     // No content means nothing to translate or refresh anyway, so let iOS bounce instead.
     if (feedActivities.length === 0) return;
-    // Skip while an overlay is up (challenge modal, friend picker). Window/capture
-    // listeners fire even on touches inside overlays — see project_pull_to_refresh_overlay_leak.
-    if (suppressPullToRefresh) return;
+    // Skip while an overlay is up (challenge modal, friend picker, fullscreen photo).
+    // Window/capture listeners fire even on touches inside overlays — see
+    // project_pull_to_refresh_overlay_leak.
+    if (suppressPullToRefresh || isAnyPhotoLightboxOpen) return;
 
     const getScrollTop = () => {
       const root = document.getElementById('root');
@@ -1643,7 +1667,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       window.removeEventListener('touchmove', handleTouchMove, { capture: true });
       window.removeEventListener('touchend', handleTouchEnd, { capture: true });
     };
-  }, [activeView, handleLocalRefresh, feedActivities.length, suppressPullToRefresh]);
+  }, [activeView, handleLocalRefresh, feedActivities.length, suppressPullToRefresh, isAnyPhotoLightboxOpen]);
 
   const loadLeaderboard = useCallback(async () => {
     if (!user) {
@@ -3178,6 +3202,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               key={key}
               activity={activity}
               activityKey={key}
+              onPhotoFullscreenChange={(isOpen) => handlePhotoFullscreenChange(key, isOpen)}
               reactions={activityReactions[key] || []}
               comments={activityComments[key] || []}
               commentReplies={commentReplies[key] || {}}

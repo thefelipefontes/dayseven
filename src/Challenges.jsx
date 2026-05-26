@@ -380,11 +380,25 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
   const overCap = !isPro && outgoingThisMonthCount >= FREE_MONTHLY_CHALLENGE_CAP;
   const selectedCount = selectedFriendUids.size;
   const isGroup = selectedCount > 1;
+  // Reciprocal proof rule: you can only ask the opponent for a photo if you brought one
+  // yourself. Toggle stays visible (so the user understands the feature exists) but is
+  // disabled + auto-resets if they haven't attached a photo to their seed activity.
+  const hasOwnPhoto = !!activity?.photoURL;
+  const canRequirePhoto = hasOwnPhoto;
+  useEffect(() => {
+    if (!canRequirePhoto && requirePhoto) setRequirePhoto(false);
+  }, [canRequirePhoto, requirePhoto]);
 
   const handleSend = async () => {
     if (selectedCount === 0 || !user?.uid) return;
     if (overCap) {
       onPresentPaywall?.();
+      return;
+    }
+    // Belt + suspenders: the toggle's onClick already gates this, but block one more time
+    // in case state got out of sync (race, future "fan-out" code path that bypasses the UI).
+    if (requirePhoto && !hasOwnPhoto) {
+      setError('Add a photo to your activity first — you need proof to require proof.');
       return;
     }
 
@@ -548,19 +562,32 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
                 ))}
               </div>
 
-              {/* Require-photo toggle */}
+              {/* Require-photo toggle. Disabled if you didn't attach a photo yourself —
+                  if you want proof, you bring proof. */}
               <button
-                onClick={() => { setRequirePhoto(p => !p); triggerHaptic(ImpactStyle.Light); }}
+                onClick={() => {
+                  if (!canRequirePhoto) {
+                    triggerHaptic(ImpactStyle.Light);
+                    setError('Add a photo to your activity first — you need proof to require proof.');
+                    return;
+                  }
+                  setError(null);
+                  setRequirePhoto(p => !p);
+                  triggerHaptic(ImpactStyle.Light);
+                }}
                 className="w-full flex items-center justify-between p-3 rounded-xl mb-5 text-left transition-all duration-150 active:scale-[0.98]"
                 style={{
                   backgroundColor: requirePhoto ? 'rgba(255,214,10,0.08)' : 'rgba(255,255,255,0.04)',
                   border: `1px solid ${requirePhoto ? 'rgba(255,214,10,0.3)' : 'transparent'}`,
+                  opacity: canRequirePhoto ? 1 : 0.55,
                 }}
               >
                 <div>
                   <p className="text-sm font-medium text-white">📸 Require photo proof</p>
                   <p className="text-[11px] mt-0.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
-                    They must attach a photo to their workout for it to count.
+                    {canRequirePhoto
+                      ? 'They must attach a photo to their workout for it to count.'
+                      : 'Add a photo to your own activity first to require one from them.'}
                   </p>
                 </div>
                 <div

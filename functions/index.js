@@ -1594,6 +1594,11 @@ async function fulfillChallengeForUser({ userId, challengeDocRef, challenge, mat
       update[`participants.${userId}.status`] = 'completed';
       update[`participants.${userId}.completedAt`] = nowIso;
       update[`participants.${userId}.fulfillingActivityId`] = String(matched.id || '');
+      if (matched.photoURL) {
+        // Denormalize the proof photo onto the challenge doc so the detail modal can
+        // render it without a separate fetch into the accepter's activities array.
+        update[`participants.${userId}.fulfillingPhotoURL`] = matched.photoURL;
+      }
       if (cleanMessage) {
         update[`participants.${userId}.completionMessage`] = cleanMessage;
       }
@@ -1602,6 +1607,9 @@ async function fulfillChallengeForUser({ userId, challengeDocRef, challenge, mat
       update.friendStatus = 'completed';
       update.completedAt = nowIso;
       update.fulfillingActivityId = String(matched.id || '');
+      if (matched.photoURL) {
+        update.fulfillingPhotoURL = matched.photoURL;
+      }
       if (cleanMessage) {
         update.completionMessage = cleanMessage;
       }

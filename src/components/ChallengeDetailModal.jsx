@@ -99,6 +99,8 @@ export default function ChallengeDetailModal({
   // doesn't fit the modal's visual style.
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [confirmRequestCancel, setConfirmRequestCancel] = useState(false);
+  // Lightbox for tapping a proof photo. Holds the URL of the currently-zoomed image.
+  const [lightboxURL, setLightboxURL] = useState(null);
 
   useEffect(() => {
     const t = setTimeout(() => setIsAnimating(true), 10);
@@ -202,6 +204,19 @@ export default function ChallengeDetailModal({
 
   const ca = challenge.challengerActivity;
   const matchRuleLabel = describeMatchRule(challenge.matchRule);
+
+  // Proof photos: challenger's seed photo lives on challengerActivity; accepter's
+  // fulfilling photo is denormalized onto the challenge doc by fulfillChallengeForUser
+  // (only present for challenges completed after that change shipped).
+  const challengerPhotoURL = ca?.photoURL || null;
+  const accepterUid = isChallenger
+    ? opponentUid
+    : currentUid;
+  const accepterFulfillingPhotoURL = accepterUid
+    ? (challenge.participants?.[accepterUid]?.fulfillingPhotoURL
+        || (challenge.friendUid === accepterUid ? challenge.fulfillingPhotoURL : null)
+        || null)
+    : null;
 
   // Winner highlighting on the panel border. Only fires when challenge.status === 'completed'.
   const meIsWinner = challenge.status === 'completed' && outcome === 'won';
@@ -359,7 +374,8 @@ export default function ChallengeDetailModal({
             </div>
           </div>
 
-          {/* The bet — the workout the challenger logged */}
+          {/* The bet — the workout the challenger logged. Proof photo replaces the
+              icon slot when present; tap to lightbox for the full shot. */}
           {ca && (
             <div className="px-4 pb-3">
               <SectionHeader emoji="🎯" label="The Bet" />
@@ -370,19 +386,21 @@ export default function ChallengeDetailModal({
                   border: `1px solid ${color}1A`,
                 }}
               >
-                <div
-                  className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
-                  style={{ backgroundColor: `${color}20` }}
-                >
-                  <ActivityIcon
-                    type={ca.type}
-                    subtype={ca.subtype}
-                    size={22}
-                    sportEmoji={ca.sportEmoji}
-                    customEmoji={ca.customEmoji}
-                    customIcon={ca.customIcon}
-                  />
-                </div>
+                <ProofThumb
+                  photoURL={challengerPhotoURL}
+                  fallbackIcon={
+                    <ActivityIcon
+                      type={ca.type}
+                      subtype={ca.subtype}
+                      size={22}
+                      sportEmoji={ca.sportEmoji}
+                      customEmoji={ca.customEmoji}
+                      customIcon={ca.customIcon}
+                    />
+                  }
+                  tint={color}
+                  onTap={challengerPhotoURL ? () => setLightboxURL(challengerPhotoURL) : null}
+                />
                 <div className="flex-1 min-w-0">
                   <p className="text-[11px] text-gray-500 mb-0.5">
                     {challenge.challengerName || 'Challenger'} completed
@@ -393,11 +411,13 @@ export default function ChallengeDetailModal({
             </div>
           )}
 
-          {/* Match this — the rule that fulfills. Icon mirrors the bet's activity
-              type when available (matchRule.activityType) so the rule reads as a
-              direct counterpart to The Bet above. */}
+          {/* Match this — the rule that fulfills. After completion, swap the icon
+              for the accepter's proof photo so the modal turns into a trophy view. */}
           <div className="px-4 pb-3">
-            <SectionHeader emoji="⚡" label="Match This" />
+            <SectionHeader
+              emoji={accepterFulfillingPhotoURL ? '🏆' : '⚡'}
+              label={accepterFulfillingPhotoURL ? 'The Proof' : 'Match This'}
+            />
             <div
               className="rounded-xl p-3 flex items-center gap-3"
               style={{
@@ -405,19 +425,21 @@ export default function ChallengeDetailModal({
                 border: `1px solid ${color}1A`,
               }}
             >
-              <div
-                className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
-                style={{ backgroundColor: `${color}20` }}
-              >
-                <ActivityIcon
-                  type={challenge.matchRule?.activityType || ca?.type}
-                  subtype={ca?.subtype}
-                  size={22}
-                />
-              </div>
+              <ProofThumb
+                photoURL={accepterFulfillingPhotoURL}
+                fallbackIcon={
+                  <ActivityIcon
+                    type={challenge.matchRule?.activityType || ca?.type}
+                    subtype={ca?.subtype}
+                    size={22}
+                  />
+                }
+                tint={color}
+                onTap={accepterFulfillingPhotoURL ? () => setLightboxURL(accepterFulfillingPhotoURL) : null}
+              />
               <div className="flex-1 min-w-0">
                 <p className="text-white text-sm font-semibold">{matchRuleLabel}</p>
-                {challenge.requirePhoto && (
+                {challenge.requirePhoto && !accepterFulfillingPhotoURL && (
                   <p className="text-[11px] mt-1" style={{ color: '#FFD60A' }}>
                     📸 Photo required
                   </p>
@@ -589,6 +611,23 @@ export default function ChallengeDetailModal({
           </div>
         </div>
       </div>
+
+      {/* Proof-photo lightbox. Tap anywhere to close. Sits above the modal (z-[70]) so
+          it dims everything including the trophy panel. */}
+      {lightboxURL && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.92)' }}
+          onClick={(e) => { e.stopPropagation(); setLightboxURL(null); }}
+        >
+          <img
+            src={lightboxURL}
+            alt=""
+            className="max-w-full max-h-full rounded-2xl object-contain"
+            style={{ boxShadow: '0 12px 60px rgba(0,0,0,0.6)' }}
+          />
+        </div>
+      )}
     </div>,
     document.body
   );
@@ -637,6 +676,31 @@ function CompetitorPanel({ name, photoURL, initial, streak, wins, losses, isWinn
         </span>
       </div>
     </Tag>
+  );
+}
+
+// 40x40 slot that swaps an icon for a rounded photo thumbnail when one's available.
+// Tap-to-zoom is gated on having a photo + an onTap handler — pure-icon fallback is inert.
+function ProofThumb({ photoURL, fallbackIcon, tint, onTap }) {
+  if (photoURL) {
+    return (
+      <button
+        type="button"
+        onClick={onTap || undefined}
+        className="w-10 h-10 rounded-xl overflow-hidden flex-shrink-0 active:opacity-80 transition-opacity"
+        style={{ border: `1px solid ${tint}40` }}
+      >
+        <img src={photoURL} alt="" className="w-full h-full object-cover" />
+      </button>
+    );
+  }
+  return (
+    <div
+      className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
+      style={{ backgroundColor: `${tint}20` }}
+    >
+      {fallbackIcon}
+    </div>
   );
 }
 

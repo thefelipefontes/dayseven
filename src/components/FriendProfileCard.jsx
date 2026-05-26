@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getUserProfile } from '../services/userService';
+import ZoomablePhoto from './ZoomablePhoto';
 
 /**
  * Shared friend profile card — opens as a centered-card modal from the Challenges tab,
@@ -276,23 +277,22 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
             pointerEvents: showFullPhoto ? 'auto' : 'none',
             visibility: showFullPhoto ? 'visible' : 'hidden',
           }}
-          onClick={() => setShowFullPhoto(false)}
+          onClick={(e) => e.stopPropagation()}
         >
-          <div className="relative max-w-full max-h-full flex flex-col items-end" onClick={(e) => e.stopPropagation()}>
-            <button
-              onClick={() => setShowFullPhoto(false)}
-              className="mb-2 mr-1 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center"
-            >
-              <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-            <img
-              src={friend.photoURL}
-              alt={friend?.displayName || ''}
-              className="max-w-[90vw] max-h-[85vh] rounded-2xl object-contain"
-            />
-          </div>
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowFullPhoto(false); }}
+            className="absolute top-3 right-3 z-10 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center"
+          >
+            <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <ZoomablePhoto
+            src={friend.photoURL}
+            alt={friend?.displayName || ''}
+            className="w-full h-full flex items-center justify-center"
+            onSingleTap={() => setShowFullPhoto(false)}
+          />
         </div>
       )}
     </>,

@@ -663,10 +663,47 @@ export async function applyChallengeIntent(activityId, challengeIds) {
   if (!activityId || !Array.isArray(challengeIds) || challengeIds.length === 0) {
     return { results: [] };
   }
+  const payload = { activityId: String(activityId), challengeIds: challengeIds.map(String) };
+
+  // On native, the web Firebase Auth SDK's currentUser is null (auth lives in the
+  // @capacitor-firebase/authentication plugin), so httpsCallable hangs forever trying
+  // to fetch an ID token. There's no @capacitor-firebase/functions counterpart, so we
+  // grab the token from the plugin and POST to the function's HTTPS endpoint directly.
+  if (isNative) {
+    try {
+      const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+      const { token } = await FirebaseAuthentication.getIdToken();
+      if (!token) {
+        return { results: [], error: 'no_auth_token' };
+      }
+      const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+      const url = `https://us-central1-${projectId}.cloudfunctions.net/applyChallengeIntent`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ data: payload }),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        console.error('[challengeService] applyChallengeIntent http error:', res.status, text);
+        return { results: [], error: `http_${res.status}` };
+      }
+      const json = await res.json();
+      // Cloud Functions v2 callable response shape: { result: <fn return value> }
+      return json?.result || { results: [] };
+    } catch (err) {
+      console.error('[challengeService] applyChallengeIntent native failed:', err);
+      return { results: [], error: err?.message || 'unknown' };
+    }
+  }
+
   try {
     const functions = getFunctions();
     const callable = httpsCallable(functions, 'applyChallengeIntent');
-    const res = await callable({ activityId: String(activityId), challengeIds: challengeIds.map(String) });
+    const res = await callable(payload);
     return res.data || { results: [] };
   } catch (err) {
     console.error('[challengeService] applyChallengeIntent failed:', err);

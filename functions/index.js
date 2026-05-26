@@ -1548,11 +1548,15 @@ exports.protectUserFields = onDocumentWritten(
  *  - photoRequired=true when the challenge required a photo and the activity didn't have one.
  */
 async function fulfillChallengeForUser({ userId, challengeDocRef, challenge, matched }) {
+  // Fast pre-bail using the caller's view — avoids opening a transaction when the photo is
+  // obviously missing. The authoritative gate runs inside the transaction below, against
+  // fresh challenge + activity state, so a stale caller object cannot bypass enforcement.
   if (challenge.requirePhoto && !matched.photoURL) {
     return { fulfilled: false, photoRequired: true, completedChallengeId: null };
   }
 
   let didFulfill = false;
+  let photoRequired = false;
   await db.runTransaction(async (tx) => {
     const friendRef = db.collection('users').doc(userId);
     const [fresh, friendSnap] = await Promise.all([
@@ -1565,6 +1569,19 @@ async function fulfillChallengeForUser({ userId, challengeDocRef, challenge, mat
     const myStatusFresh = data.participants?.[userId]?.status
       || (data.friendUid === userId ? data.friendStatus : null);
     if (myStatusFresh !== 'accepted') return;
+
+    // Authoritative photo gate: re-check against the fresh challenge doc and the user's
+    // current activity (reread inside the transaction). This is the bulletproof point —
+    // a stale `challenge` arg or a race where photoURL was removed cannot get past here.
+    if (data.requirePhoto) {
+      const freshActivities = friendSnap.data()?.activities || [];
+      const freshActivity = freshActivities.find(a => String(a.id) === String(matched.id));
+      const photoURL = freshActivity?.photoURL || matched.photoURL;
+      if (!photoURL) {
+        photoRequired = true;
+        return;
+      }
+    }
 
     const now = new Date();
     const nowIso = now.toISOString();
@@ -1660,7 +1677,7 @@ async function fulfillChallengeForUser({ userId, challengeDocRef, challenge, mat
     }
   }
 
-  return { fulfilled: didFulfill, photoRequired: false, completedChallengeId: didFulfill ? challengeDocRef.id : null };
+  return { fulfilled: didFulfill, photoRequired, completedChallengeId: didFulfill ? challengeDocRef.id : null };
 }
 
 function activityMatchesRule(activity, rule) {

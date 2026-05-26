@@ -670,7 +670,7 @@ const MemoizedActivityCard = React.memo(({
               }}
             >
               <span style={{ fontSize: 10 }}>⚡</span>
-              {`Challenge: ${label}`}
+              {`Completed challenge: ${label}`}
             </span>
           </div>
         );

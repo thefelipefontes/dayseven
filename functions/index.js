@@ -2374,6 +2374,15 @@ exports.applyChallengeIntent = onCall(async (request) => {
   ));
   await userRef.set({ activities: updatedActivities }, { merge: true });
 
+  console.log('[applyChallengeIntent] start', {
+    userId,
+    activityId: String(activityId),
+    activityType: activity.type,
+    activityCategory: getActivityCategoryForGoals(activity),
+    activityHasPhoto: !!activity.photoURL,
+    challengeIds: wantedIds,
+  });
+
   // Run fulfillment per chosen challenge, validating eligibility along the way.
   const results = [];
   for (const challengeId of wantedIds) {
@@ -2381,21 +2390,32 @@ exports.applyChallengeIntent = onCall(async (request) => {
       const challengeRef = db.collection('challenges').doc(challengeId);
       const challengeSnap = await challengeRef.get();
       if (!challengeSnap.exists) {
+        console.warn('[applyChallengeIntent] not_found', { challengeId });
         results.push({ challengeId, fulfilled: false, reason: 'not_found' });
         continue;
       }
       const challenge = challengeSnap.data();
       if (challenge.status !== 'active') {
+        console.warn('[applyChallengeIntent] not_active', { challengeId, status: challenge.status });
         results.push({ challengeId, fulfilled: false, reason: 'not_active' });
         continue;
       }
       const myStatus = challenge.participants?.[userId]?.status
         || (challenge.friendUid === userId ? challenge.friendStatus : null);
       if (myStatus !== 'accepted') {
+        console.warn('[applyChallengeIntent] not_accepted', { challengeId, myStatus });
         results.push({ challengeId, fulfilled: false, reason: 'not_accepted' });
         continue;
       }
       if (!activityMatchesRule(activity, challenge.matchRule)) {
+        console.warn('[applyChallengeIntent] no_match', {
+          challengeId,
+          matchRule: challenge.matchRule,
+          activityCategory: getActivityCategoryForGoals(activity),
+          activityType: activity.type,
+          activityDuration: activity.duration,
+          activityDistance: activity.distance,
+        });
         results.push({ challengeId, fulfilled: false, reason: 'no_match' });
         continue;
       }
@@ -2406,6 +2426,7 @@ exports.applyChallengeIntent = onCall(async (request) => {
         challenge,
         matched: activity,
       });
+      console.log('[applyChallengeIntent] outcome', { challengeId, outcome });
       results.push({ challengeId, ...outcome });
     } catch (err) {
       console.error('[applyChallengeIntent] failed for', challengeId, err);

@@ -18355,7 +18355,10 @@ export default function DaySevenApp() {
           const result = await applyChallengeIntent(activity.id, [challenge.id]);
           const fulfilled = (result?.results || []).some(r => r.fulfilled);
           if (!fulfilled) {
-            setToastMessage("Couldn't apply — challenge state may have changed.");
+            const first = (result?.results || [])[0];
+            const reason = first?.reason || result?.error || 'unknown';
+            console.warn('[ApplyChallenge inline] not fulfilled:', { result, activityId: activity.id, challengeId: challenge.id });
+            setToastMessage(`Couldn't apply (${reason}). Try again.`);
             setToastType('error');
             setShowToast(true);
           }
@@ -18394,7 +18397,12 @@ export default function DaySevenApp() {
           const result = await applyChallengeIntent(activity.id, [challenge.id]);
           const fulfilled = (result?.results || []).some(r => r.fulfilled);
           if (!fulfilled) {
-            setToastMessage("Couldn't apply — challenge state may have changed.");
+            // Surface the *reason* so debugging in the field isn't a black box. The result shape
+            // is { results: [{ challengeId, fulfilled, reason, photoRequired }], error? }.
+            const first = (result?.results || [])[0];
+            const reason = first?.reason || result?.error || 'unknown';
+            console.warn('[ApplyChallenge] not fulfilled:', { result, activityId: activity.id, challengeId: challenge.id });
+            setToastMessage(`Couldn't apply (${reason}). Try again.`);
             setToastType('error');
             setShowToast(true);
           }

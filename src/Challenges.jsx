@@ -359,6 +359,15 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
     }
   }, [isOpen, preSelectedFriendUid, metrics]);
 
+  // Reciprocal proof rule: you can only ask the opponent for a photo if you brought one
+  // yourself. If the seed activity has no photo and the toggle is somehow on, clear it.
+  // Must live above the `isOpen` early-return so hook order stays stable across opens.
+  const hasOwnPhoto = !!activity?.photoURL;
+  const canRequirePhoto = hasOwnPhoto;
+  useEffect(() => {
+    if (!canRequirePhoto && requirePhoto) setRequirePhoto(false);
+  }, [canRequirePhoto, requirePhoto]);
+
   if (!isOpen) return null;
 
   const handleClose = () => {
@@ -380,14 +389,6 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
   const overCap = !isPro && outgoingThisMonthCount >= FREE_MONTHLY_CHALLENGE_CAP;
   const selectedCount = selectedFriendUids.size;
   const isGroup = selectedCount > 1;
-  // Reciprocal proof rule: you can only ask the opponent for a photo if you brought one
-  // yourself. Toggle stays visible (so the user understands the feature exists) but is
-  // disabled + auto-resets if they haven't attached a photo to their seed activity.
-  const hasOwnPhoto = !!activity?.photoURL;
-  const canRequirePhoto = hasOwnPhoto;
-  useEffect(() => {
-    if (!canRequirePhoto && requirePhoto) setRequirePhoto(false);
-  }, [canRequirePhoto, requirePhoto]);
 
   const handleSend = async () => {
     if (selectedCount === 0 || !user?.uid) return;

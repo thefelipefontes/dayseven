@@ -10,6 +10,7 @@ import { normalizeFocusAreas } from '../utils/focusAreas';
 import { fetchWorkoutRoute } from '../services/healthService';
 import { getReactions, addReaction, removeReaction, getComments, addComment } from '../services/friendService';
 import { isChallengeable } from '../services/challengeService';
+import { resolveUnit, unitLabel, formatDistanceValue, formatPaceFromMinutesAndMiles } from '../utils/distance';
 
 const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user, userProfile, onShareStamp, isPro, onPresentPaywall, onChallenge, friends = [] }) => {
   const [isAnimating, setIsAnimating] = useState(false);
@@ -366,31 +367,30 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
                 </div>
               </div>
             )}
-            {activity.distance && (
-              <div className="p-4 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                <div className="text-xs text-gray-500 mb-1">Distance</div>
-                <div className="text-lg font-bold">{parseFloat(activity.distance).toFixed(2)} mi</div>
-              </div>
-            )}
+            {activity.distance && (() => {
+              const u = resolveUnit(userProfile);
+              return (
+                <div className="p-4 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  <div className="text-xs text-gray-500 mb-1">Distance</div>
+                  <div className="text-lg font-bold">{formatDistanceValue(activity.distance, u, 2)} {unitLabel(u)}</div>
+                </div>
+              );
+            })()}
             {activity.calories && (
               <div className="p-4 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                 <div className="text-xs text-gray-500 mb-1">Calories</div>
                 <div className="text-lg font-bold">{activity.calories} cal</div>
               </div>
             )}
-            {parseFloat(activity.distance) > 0 && activity.duration && (
-              <div className="p-4 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                <div className="text-xs text-gray-500 mb-1">Pace</div>
-                <div className="text-lg font-bold">
-                  {(() => {
-                    const pace = activity.duration / parseFloat(activity.distance);
-                    const paceMin = Math.floor(pace);
-                    const paceSec = Math.round((pace - paceMin) * 60);
-                    return `${paceMin}:${paceSec.toString().padStart(2, '0')}/mi`;
-                  })()}
+            {parseFloat(activity.distance) > 0 && activity.duration && (() => {
+              const u = resolveUnit(userProfile);
+              return (
+                <div className="p-4 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  <div className="text-xs text-gray-500 mb-1">Pace</div>
+                  <div className="text-lg font-bold">{formatPaceFromMinutesAndMiles(activity.duration, activity.distance, u)}</div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
 
           {/* Route Map */}

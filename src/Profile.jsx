@@ -18,6 +18,7 @@ import MonthStatsModal from './components/MonthStatsModal';
 import ActivityDetailModal from './components/ActivityDetailModal';
 import TrendsView from './components/TrendsView';
 import OwnProfileModal from './components/OwnProfileModal';
+import { resolveUnit, unitLabel, formatDistanceValue, milesToDisplay, formatPace } from './utils/distance';
 
 
 
@@ -26,6 +27,8 @@ import OwnProfileModal from './components/OwnProfileModal';
 export default function ProfilePage(props) {
   const { user, userProfile, onOpenSettings } = props;
   const initial = (userProfile?.displayName?.[0] || userProfile?.username?.[0] || '?').toUpperCase();
+  const distanceUnit = resolveUnit(userProfile);
+  const distanceUnitText = unitLabel(distanceUnit);
 
   // Pull HistoryTab props out of props so we can rename/pass them through.
   const {
@@ -1319,8 +1322,8 @@ export default function ProfilePage(props) {
                   })()}
                 </div>
                 <div>
-                  <div className="text-lg font-black text-white">{currentWeekStats.miles.toFixed(1)}</div>
-                  <div className="text-[10px] text-gray-400 whitespace-nowrap">📍 Miles</div>
+                  <div className="text-lg font-black text-white">{milesToDisplay(currentWeekStats.miles, distanceUnit).toFixed(1)}</div>
+                  <div className="text-[10px] text-gray-400 whitespace-nowrap">📍 {distanceUnit === 'km' ? 'KM' : 'Miles'}</div>
                   {(() => {
                     const compare = compareWeek === 'average' ? weeklyStats['average']?.miles || 0 : weeklyStats['week-2']?.miles || 0;
                     if (currentWeekStats.miles > compare) return <div className="text-[10px] mt-1" style={{ color: '#00FF94' }}>↑</div>;
@@ -1358,8 +1361,8 @@ export default function ProfilePage(props) {
                   <div className="text-[10px] mt-1 opacity-0">-</div>
                 </div>
                 <div>
-                  <div className="text-lg font-black">{(compareWeek === 'average' ? weeklyStats['average']?.miles || 0 : weeklyStats['week-2']?.miles || 0).toFixed(1)}</div>
-                  <div className="text-[10px] text-gray-400 whitespace-nowrap">📍 Miles</div>
+                  <div className="text-lg font-black">{milesToDisplay(compareWeek === 'average' ? weeklyStats['average']?.miles || 0 : weeklyStats['week-2']?.miles || 0, distanceUnit).toFixed(1)}</div>
+                  <div className="text-[10px] text-gray-400 whitespace-nowrap">📍 {distanceUnit === 'km' ? 'KM' : 'Miles'}</div>
                   <div className="text-[10px] mt-1 opacity-0">-</div>
                 </div>
               </div>
@@ -1570,7 +1573,7 @@ export default function ProfilePage(props) {
                     <div className="text-[10px] text-gray-400">Steps</div>
                   </div>
                   <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                    <div className="text-lg font-black">{dayMiles ? parseFloat(dayMiles).toFixed(1) : 0} mi</div>
+                    <div className="text-lg font-black">{dayMiles ? formatDistanceValue(dayMiles, distanceUnit, 1) : 0} {distanceUnitText}</div>
                     <div className="text-[10px] text-gray-400">Distance Traveled</div>
                   </div>
                   <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
@@ -1664,7 +1667,7 @@ export default function ProfilePage(props) {
                             <span className="text-gray-500 text-xs">›</span>
                           </div>
                           <div className="flex gap-4 text-xs text-gray-400">
-                            {activity.distance && <span>{parseFloat(activity.distance).toFixed(2)} mi</span>}
+                            {activity.distance && <span>{formatDistanceValue(activity.distance, distanceUnit, 2)} {distanceUnitText}</span>}
                             {activity.duration && <span>{activity.duration} min</span>}
                             {activity.calories && <span>{activity.calories} cal</span>}
                             {(activity.healthKitUUID || activity.linkedHealthKitUUID || activity.source === 'healthkit' || activity.fromAppleHealth) && (
@@ -1755,7 +1758,7 @@ export default function ProfilePage(props) {
                             <span className="text-gray-500 text-xs">›</span>
                           </div>
                           <div className="flex gap-4 text-xs text-gray-400">
-                            {activity.distance && <span>{parseFloat(activity.distance).toFixed(2)} mi</span>}
+                            {activity.distance && <span>{formatDistanceValue(activity.distance, distanceUnit, 2)} {distanceUnitText}</span>}
                             {activity.duration && <span>{activity.duration} min</span>}
                             {activity.calories && <span>{activity.calories} cal</span>}
                             {(activity.healthKitUUID || activity.linkedHealthKitUUID || activity.source === 'healthkit' || activity.fromAppleHealth) && (
@@ -1928,29 +1931,29 @@ export default function ProfilePage(props) {
               <div className="grid grid-cols-2 gap-2.5 mb-4">
                 {/* Total Distance with breakdown */}
                 <div className="p-3.5 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(255, 87, 87, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
-                  <div className="text-2xl font-black" style={{ color: '#FF5757' }}>{totalsData.miles.toFixed(1)}</div>
+                  <div className="text-2xl font-black" style={{ color: '#FF5757' }}>{milesToDisplay(totalsData.miles, distanceUnit).toFixed(1)}</div>
                   <div className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
                     <span>📍</span>
-                    <span>Total Miles</span>
+                    <span>Total {distanceUnit === 'km' ? 'KMs' : 'Miles'}</span>
                   </div>
                   {totalsData.miles > 0 && (
                     <div className="mt-2 pt-2 space-y-1" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
                       {totalsData.milesRan > 0 && (
                         <div className="flex items-center justify-between text-[10px]">
                           <span className="text-gray-500">🏃 Ran</span>
-                          <span className="text-gray-400 font-medium">{totalsData.milesRan.toFixed(1)} mi</span>
+                          <span className="text-gray-400 font-medium">{formatDistanceValue(totalsData.milesRan, distanceUnit, 1)} {distanceUnitText}</span>
                         </div>
                       )}
                       {totalsData.milesBiked > 0 && (
                         <div className="flex items-center justify-between text-[10px]">
                           <span className="text-gray-500">🚴 Biked</span>
-                          <span className="text-gray-400 font-medium">{totalsData.milesBiked.toFixed(1)} mi</span>
+                          <span className="text-gray-400 font-medium">{formatDistanceValue(totalsData.milesBiked, distanceUnit, 1)} {distanceUnitText}</span>
                         </div>
                       )}
                       {totalsData.milesWalked > 0 && (
                         <div className="flex items-center justify-between text-[10px]">
                           <span className="text-gray-500">🚶 Walked</span>
-                          <span className="text-gray-400 font-medium">{totalsData.milesWalked.toFixed(1)} mi</span>
+                          <span className="text-gray-400 font-medium">{formatDistanceValue(totalsData.milesWalked, distanceUnit, 1)} {distanceUnitText}</span>
                         </div>
                       )}
                     </div>
@@ -2011,7 +2014,7 @@ export default function ProfilePage(props) {
                           <div className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
                             <div className="flex items-center justify-between text-[10px]">
                               <span className="text-gray-500">📍 Est. distance</span>
-                              <span className="text-gray-400 font-medium">{estMiles.toFixed(1)} mi</span>
+                              <span className="text-gray-400 font-medium">{formatDistanceValue(estMiles, distanceUnit, 1)} {distanceUnitText}</span>
                             </div>
                           </div>
                         )}
@@ -2217,7 +2220,7 @@ export default function ProfilePage(props) {
                       <div className="text-xs text-gray-500">Furthest Run</div>
                     </div>
                     <div className="text-base font-bold text-white">
-                      {getRecordValue(records.longestRun) ? `${parseFloat(getRecordValue(records.longestRun)).toFixed(1)} mi` : '—'}
+                      {getRecordValue(records.longestRun) ? `${formatDistanceValue(getRecordValue(records.longestRun), distanceUnit, 1)} ${distanceUnitText}` : '—'}
                     </div>
                   </div>
 
@@ -2230,7 +2233,7 @@ export default function ProfilePage(props) {
                       <div className="text-xs text-gray-500">Furthest Cycle</div>
                     </div>
                     <div className="text-base font-bold text-white">
-                      {getRecordValue(records.longestCycle) ? `${parseFloat(getRecordValue(records.longestCycle)).toFixed(1)} mi` : '—'}
+                      {getRecordValue(records.longestCycle) ? `${formatDistanceValue(getRecordValue(records.longestCycle), distanceUnit, 1)} ${distanceUnitText}` : '—'}
                     </div>
                   </div>
 
@@ -2243,7 +2246,7 @@ export default function ProfilePage(props) {
                       <div className="text-xs text-gray-500">Furthest Walk</div>
                     </div>
                     <div className="text-base font-bold text-white">
-                      {getRecordValue(records.longestWalk) ? `${parseFloat(getRecordValue(records.longestWalk)).toFixed(1)} mi` : '—'}
+                      {getRecordValue(records.longestWalk) ? `${formatDistanceValue(getRecordValue(records.longestWalk), distanceUnit, 1)} ${distanceUnitText}` : '—'}
                     </div>
                   </div>
 
@@ -2258,10 +2261,10 @@ export default function ProfilePage(props) {
                     <div className="text-right">
                       <div className="text-base font-bold text-white">
                         {getRecordValue(records.fastestPace) ? (() => {
-                          const pace = getRecordValue(records.fastestPace);
-                          const paceMin = Math.floor(pace);
-                          const paceSec = Math.round((pace - paceMin) * 60);
-                          return `${paceMin}:${paceSec.toString().padStart(2, '0')}/mi`;
+                          // records.fastestPace is min/mile (decimal). Convert to seconds-per-mile,
+                          // then let formatPace handle unit conversion.
+                          const minPerMile = getRecordValue(records.fastestPace);
+                          return formatPace(minPerMile * 60, distanceUnit);
                         })() : '—'}
                       </div>
                     </div>
@@ -2277,10 +2280,8 @@ export default function ProfilePage(props) {
                     </div>
                     <div className="text-base font-bold text-white">
                       {getRecordValue(records.fastestCyclingPace) ? (() => {
-                        const pace = getRecordValue(records.fastestCyclingPace);
-                        const paceMin = Math.floor(pace);
-                        const paceSec = Math.round((pace - paceMin) * 60);
-                        return `${paceMin}:${paceSec.toString().padStart(2, '0')}/mi`;
+                        const minPerMile = getRecordValue(records.fastestCyclingPace);
+                        return formatPace(minPerMile * 60, distanceUnit);
                       })() : '—'}
                     </div>
                   </div>
@@ -2317,14 +2318,14 @@ export default function ProfilePage(props) {
 
                   <div className="border-t border-white/5" />
 
-                  {/* Most Miles */}
+                  {/* Most Distance */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <span className="text-sm">📍</span>
-                      <div className="text-xs text-gray-500">Most Miles</div>
+                      <div className="text-xs text-gray-500">Most {distanceUnit === 'km' ? 'KMs' : 'Miles'}</div>
                     </div>
                     <div className="text-base font-bold text-white">
-                      {records.mostMilesWeek ? `${parseFloat(records.mostMilesWeek).toFixed(1)} mi` : '—'}
+                      {records.mostMilesWeek ? `${formatDistanceValue(records.mostMilesWeek, distanceUnit, 1)} ${distanceUnitText}` : '—'}
                     </div>
                   </div>
                 </div>

@@ -1,6 +1,11 @@
 // Initial user data - zeroed out
 export const initialUserData = {
   name: '',
+  // 'mi' (miles, default) | 'km'. Stored at the user-doc top level, not under
+  // goals — it's a display preference, not a target. All `activity.distance`
+  // values are stored in miles regardless; convert at the display layer with
+  // utils/distance.js.
+  distanceUnit: 'mi',
   goals: {
     liftsPerWeek: 4,
     cardioPerWeek: 3,

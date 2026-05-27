@@ -152,7 +152,11 @@ struct DashboardView: View {
                     Image(systemName: "figure.run")
                         .font(.system(size: 10))
                         .foregroundColor(.blue)
-                    Text(String(format: "%.1f mi", appVM.todayDistance))
+                    Text(String(
+                        format: "%.1f %@",
+                        appVM.distanceUnit == "km" ? appVM.todayDistance * 1.60934 : appVM.todayDistance,
+                        appVM.distanceUnit == "km" ? "km" : "mi"
+                    ))
                         .font(.system(size: 11, weight: .medium, design: .rounded))
                         .foregroundColor(.white)
                 }

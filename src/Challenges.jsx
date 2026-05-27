@@ -18,6 +18,7 @@ import {
   requestCancelChallenge,
   respondToCancelRequest,
 } from './services/challengeService';
+import { resolveUnit, unitLabel, formatDistanceValue, milesToDisplay, paceLabel, formatPace as formatPaceWithUnit } from './utils/distance';
 import { getFriends } from './services/friendService';
 import { isDemoAccount, getDemoChallenges } from './demoData';
 import ChallengeDetailModal from './components/ChallengeDetailModal';
@@ -66,7 +67,7 @@ function useTicker(intervalMs = 60000) {
 // Modal: pick which past activity to challenge with (opened from friend profile)
 // =====================================================================
 
-export function ChallengeActivityPickerModal({ isOpen, onClose, activities = [], friend, onPick }) {
+export function ChallengeActivityPickerModal({ isOpen, onClose, activities = [], friend, onPick, userProfile }) {
   const [isClosing, setIsClosing] = useState(false);
 
   useEffect(() => { if (isOpen) setIsClosing(false); }, [isOpen]);
@@ -78,6 +79,7 @@ export function ChallengeActivityPickerModal({ isOpen, onClose, activities = [],
     setTimeout(() => onClose(), 250);
   };
 
+  const viewerUnit = resolveUnit(userProfile);
   // Filter to challengeable activities (same day only, non-warmup, has matchable category)
   const eligible = (activities || []).filter(isChallengeable);
   // Sort newest first
@@ -143,8 +145,8 @@ export function ChallengeActivityPickerModal({ isOpen, onClose, activities = [],
                           {activity.type === 'Other' ? (activity.subtype || 'Other') : activity.type}
                           {activity.subtype && activity.type !== 'Other' && ` · ${activity.subtype}`}
                         </p>
-                        <p className="text-gray-500 text-xs">{activity.date} · {activity.duration || 0} min{activity.distance ? ` · ${activity.distance} mi` : ''}</p>
-                        <p className="text-xs mt-1" style={{ color }}>Match: {describeMatchRule(rule)}</p>
+                        <p className="text-gray-500 text-xs">{activity.date} · {activity.duration || 0} min{activity.distance ? ` · ${formatDistanceValue(activity.distance, viewerUnit, 1)} ${unitLabel(viewerUnit)}` : ''}</p>
+                        <p className="text-xs mt-1" style={{ color }}>Match: {describeMatchRule(rule, viewerUnit)}</p>
                       </div>
                     </div>
                   </button>
@@ -163,7 +165,7 @@ export function ChallengeActivityPickerModal({ isOpen, onClose, activities = [],
 // Filters to activities matching the challenge's rule (category + type + target threshold).
 // =====================================================================
 
-export function ChallengeApplyPastActivityModal({ isOpen, onClose, activities = [], challenge, onPick, onAttachPhotoAndApply }) {
+export function ChallengeApplyPastActivityModal({ isOpen, onClose, activities = [], challenge, onPick, onAttachPhotoAndApply, userProfile }) {
   const [isClosing, setIsClosing] = useState(false);
   // Optional message the accepter sends with the win — shows up in the challenger's push.
   // 140 chars to stay readable on a lock screen and force brevity (trash talk should be punchy).
@@ -215,7 +217,7 @@ export function ChallengeApplyPastActivityModal({ isOpen, onClose, activities = 
     return tb - ta;
   });
 
-  const ruleLabel = describeMatchRule(challenge.matchRule);
+  const ruleLabel = describeMatchRule(challenge.matchRule, resolveUnit(userProfile));
   const cat = challenge.matchRule?.category;
   const color = CATEGORY_COLOR[cat] || '#888';
 
@@ -307,7 +309,7 @@ export function ChallengeApplyPastActivityModal({ isOpen, onClose, activities = 
                           {activity.type === 'Other' ? (activity.subtype || 'Other') : activity.type}
                           {activity.subtype && activity.type !== 'Other' && ` · ${activity.subtype}`}
                         </p>
-                        <p className="text-gray-500 text-xs">{activity.date}{activity.duration ? ` · ${activity.duration} min` : ''}{activity.distance ? ` · ${parseFloat(activity.distance).toFixed(1)} mi` : ''}</p>
+                        <p className="text-gray-500 text-xs">{activity.date}{activity.duration ? ` · ${activity.duration} min` : ''}{activity.distance ? ` · ${formatDistanceValue(activity.distance, resolveUnit(userProfile), 1)} ${unitLabel(resolveUnit(userProfile))}` : ''}</p>
                         {photoBlocked && (
                           <p className="text-[11px] mt-1 font-semibold" style={{ color: '#FFD60A' }}>
                             📸 Tap to add a photo and apply
@@ -498,10 +500,11 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
               {metrics.length > 1 && (() => {
                 const distance = parseFloat(activity?.distance) || 0;
                 const duration = parseInt(activity?.duration, 10) || 0;
+                const u = resolveUnit(userProfile);
                 const labels = {
-                  distance: distance ? `${distance.toFixed(distance % 1 === 0 ? 0 : 1)} mi` : '—',
+                  distance: distance ? `${formatDistanceValue(distance, u, distance % 1 === 0 ? 0 : 1)} ${unitLabel(u)}` : '—',
                   duration: duration ? `${duration} min` : '—',
-                  pace: (distance && duration) ? `${formatPace(Math.round((duration * 60) / distance))} /mi` : '—',
+                  pace: (distance && duration) ? `${formatPaceWithUnit(Math.round((duration * 60) / distance), u)}` : '—',
                 };
                 const titles = { distance: 'Distance', duration: 'Time', pace: 'Pace' };
                 const ruleColor = CATEGORY_COLOR[matchRule.category] || '#888';
@@ -541,7 +544,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
                 }}
               >
                 <p className="text-xs text-gray-400 mb-0.5">They'll need to:</p>
-                <p className="text-white font-medium">{describeMatchRule(matchRule)}</p>
+                <p className="text-white font-medium">{describeMatchRule(matchRule, resolveUnit(userProfile))}</p>
               </div>
 
               {/* Window picker */}

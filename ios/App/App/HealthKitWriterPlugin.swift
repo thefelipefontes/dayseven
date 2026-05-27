@@ -30,6 +30,8 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "isWatchReachable", returnType: CAPPluginReturnPromise),
         // Notify watch to refresh data (e.g., after phone deletes an activity)
         CAPPluginMethod(name: "notifyWatchDataChanged", returnType: CAPPluginReturnPromise),
+        // Push the user's distance-unit preference to the paired Apple Watch
+        CAPPluginMethod(name: "pushDistanceUnit", returnType: CAPPluginReturnPromise),
         // Legacy observer methods (keeping for backward compatibility)
         CAPPluginMethod(name: "startObservingMetrics", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopObservingMetrics", returnType: CAPPluginReturnPromise),
@@ -1855,6 +1857,36 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
             }
         )
+    }
+
+    // MARK: - Push Distance Unit
+
+    /// Pushes the user's distance-unit preference ('mi' | 'km') to the watch via
+    /// updateApplicationContext so its UI flips immediately on toggle. The watch
+    /// also re-reads `distanceUnit` from Firestore on next load as the slow-path
+    /// source of truth.
+    @objc func pushDistanceUnit(_ call: CAPPluginCall) {
+        let raw = call.getString("unit") ?? "mi"
+        let unit = (raw == "km") ? "km" : "mi"
+        let session = WCSession.default
+
+        guard session.activationState == .activated else {
+            print("[HealthKitWriter] pushDistanceUnit: session not activated")
+            call.resolve(["sent": false, "reason": "not_activated"])
+            return
+        }
+
+        do {
+            var context = session.applicationContext
+            context["distanceUnit"] = unit
+            context["distanceUnitTimestamp"] = Date().timeIntervalSince1970
+            try session.updateApplicationContext(context)
+            print("[HealthKitWriter] pushDistanceUnit: queued '\(unit)' via applicationContext")
+            call.resolve(["sent": true, "unit": unit])
+        } catch {
+            print("[HealthKitWriter] pushDistanceUnit failed: \(error.localizedDescription)")
+            call.resolve(["sent": false, "reason": "context_failed"])
+        }
     }
 
     // MARK: - Notify Watch Data Changed

@@ -27,6 +27,12 @@ class AppViewModel: ObservableObject {
     @Published var weeklyProgress: WeeklyProgress = .empty
     @Published var weeklyStats: WeeklyStats = WeeklyStats(totalWorkouts: 0, totalCalories: 0, totalMiles: 0, strengthCount: 0, cardioCount: 0, recoveryCount: 0)
 
+    /// User's distance-unit preference ('mi' | 'km'). Seeded from SharedDefaults
+    /// so cold launches start with the last known unit before Firestore returns.
+    /// Updated by loadUserData() (slow path) and PhoneConnectivityService's
+    /// applicationContext listener (fast path).
+    @Published var distanceUnit: String = SharedDefaults.readDistanceUnit()
+
     // Health data
     @Published var todaySteps: Int = 0
     @Published var todayCalories: Int = 0
@@ -58,6 +64,19 @@ class AppViewModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+
+        // Mirror phone-pushed distance-unit changes onto our @Published so views
+        // observing AppViewModel.distanceUnit flip immediately.
+        phoneService.$distanceUnit
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] unit in
+                guard let self = self else { return }
+                if self.distanceUnit != unit {
+                    self.distanceUnit = unit
+                    SharedDefaults.writeDistanceUnit(unit)
+                }
             }
             .store(in: &cancellables)
 
@@ -171,6 +190,8 @@ class AppViewModel: ObservableObject {
             goals = userData.goals
             streaks = userData.streaks
             personalRecords = userData.personalRecords
+            distanceUnit = userData.distanceUnit
+            SharedDefaults.writeDistanceUnit(userData.distanceUnit)
             lastKnownActivityCount = activities.count
 
             // Calculate progress

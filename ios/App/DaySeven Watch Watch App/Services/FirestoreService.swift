@@ -20,8 +20,16 @@ class FirestoreService {
 
     // MARK: - Fetch User Data
 
-    func getUserData(uid: String) async throws -> (goals: UserGoals, streaks: UserStreaks, activities: [Activity], personalRecords: PersonalRecords) {
+    func getUserData(uid: String) async throws -> (goals: UserGoals, streaks: UserStreaks, activities: [Activity], personalRecords: PersonalRecords, distanceUnit: String) {
         let data = try await getDocument("users/\(uid)")
+
+        // Distance unit ('mi' default | 'km')
+        let distanceUnit: String = {
+            if let raw = stringFromFirestore(data["distanceUnit"]) {
+                return raw == "km" ? "km" : "mi"
+            }
+            return "mi"
+        }()
 
         // Parse goals
         let goals: UserGoals
@@ -84,7 +92,7 @@ class FirestoreService {
             personalRecords = .defaults
         }
 
-        return (goals, streaks, activities, personalRecords)
+        return (goals, streaks, activities, personalRecords, distanceUnit)
     }
 
     // MARK: - Save Activities

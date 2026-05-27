@@ -51,6 +51,20 @@ struct ActiveWorkoutView: View {
         return paceTypes.contains(activityType.lowercased())
     }
 
+    // MARK: - Unit helpers
+    /// Meters per the user's preferred display unit (1000 for km, 1609.34 for mi).
+    private var metersPerUnit: Double {
+        appVM.distanceUnit == "km" ? 1000.0 : 1609.34
+    }
+    /// Two-letter unit label ("MI" | "KM") for inline labels.
+    private var distanceUnitLabel: String {
+        appVM.distanceUnit == "km" ? "KM" : "MI"
+    }
+    /// Lowercase suffix label ("/mi" | "/km") for pace lines.
+    private var paceUnitSuffix: String {
+        appVM.distanceUnit == "km" ? "km" : "mi"
+    }
+
     /// Whether this is a recovery timer activity (Sauna, Cold Plunge) — simplified UI
     private var isRecoveryTimer: Bool {
         let recoveryTypes = ["sauna", "cold plunge", "contrast therapy"]
@@ -273,7 +287,7 @@ struct ActiveWorkoutView: View {
 
                     // Distance
                     VStack(spacing: 0) {
-                        Text(wm.distance > 10 ? String(format: "%.2f", wm.distance / 1609.34) : "0.00")
+                        Text(wm.distance > 10 ? String(format: "%.2f", wm.distance / metersPerUnit) : "0.00")
                             .font(.system(size: 24, weight: .bold, design: .rounded))
                             .foregroundColor(.blue)
                         if wm.distance <= 10 && wm.elapsedTime > 60 {
@@ -281,7 +295,7 @@ struct ActiveWorkoutView: View {
                                 .font(.system(size: 8, weight: .medium))
                                 .foregroundColor(.orange)
                         } else {
-                            Text("MI")
+                            Text(distanceUnitLabel)
                                 .font(.system(size: 9, weight: .medium))
                                 .foregroundColor(.gray)
                         }
@@ -401,14 +415,14 @@ struct ActiveWorkoutView: View {
         }
     }
 
-    // MARK: - Pace Calculation (min:sec per mile)
+    // MARK: - Pace Calculation (min:sec per unit — mile or km)
 
     private func currentPace(elapsedTime: TimeInterval, distanceMeters: Double) -> String {
-        let miles = distanceMeters / 1609.34
-        guard miles > 0.01 else { return "--:--" }
-        let paceSecondsPerMile = elapsedTime / miles
-        let mins = Int(paceSecondsPerMile) / 60
-        let secs = Int(paceSecondsPerMile) % 60
+        let units = distanceMeters / metersPerUnit
+        guard units > 0.01 else { return "--:--" }
+        let paceSecondsPerUnit = elapsedTime / units
+        let mins = Int(paceSecondsPerUnit) / 60
+        let secs = Int(paceSecondsPerUnit) % 60
         return "\(mins):\(String(format: "%02d", secs))"
     }
 
@@ -520,24 +534,37 @@ struct ActiveWorkoutView: View {
 
 // MARK: - Split Overlay
 
-/// Brief Apple-style overlay shown for ~4s when the user crosses a whole-mile
-/// boundary during a distance workout. The accompanying haptic is fired by
-/// WorkoutManager when the split is published — this view is purely visual.
+/// Brief Apple-style overlay shown for ~4s when the user crosses a whole-unit
+/// boundary (mile or km, per user preference) during a distance workout. The
+/// haptic is fired by WorkoutManager when the split is published — this view is
+/// purely visual.
+///
+/// Layout: header ("MILE 3" / "KM 5"), then big = pace for THIS split (so you
+/// know if you sped up or slowed down right now), small underneath = overall
+/// pace for the whole workout so far (so you know if you're trending faster or
+/// slower vs your average).
 private struct SplitOverlayView: View {
     let split: WorkoutSplit
 
+    private var unitLabel: String { split.unit == "km" ? "KM" : "MILE" }
+    private var paceSuffix: String { split.unit == "km" ? "/km" : "/mi" }
+
     var body: some View {
-        VStack(spacing: 6) {
-            Text("MILE \(split.mileNumber)")
+        VStack(spacing: 4) {
+            Text("\(unitLabel) \(split.splitNumber)")
                 .font(.system(size: 13, weight: .semibold))
                 .tracking(2)
                 .foregroundColor(.green)
-            Text(formatSplit(split.splitSeconds))
-                .font(.system(size: 36, weight: .bold, design: .rounded))
+            // Big: pace for the mile/km just completed — "how fast right now"
+            Text("\(formatPace(split.splitSecondsPerUnit)) \(paceSuffix)")
+                .font(.system(size: 32, weight: .bold, design: .rounded))
                 .foregroundColor(.white)
                 .monospacedDigit()
-            Text("\(formatPace(split.splitSeconds)) /mi")
-                .font(.system(size: 12, weight: .medium))
+                .minimumScaleFactor(0.6)
+                .lineLimit(1)
+            // Small: overall pace so far — "trending vs my average"
+            Text("\(formatPace(split.overallSecondsPerUnit)) avg \(paceSuffix)")
+                .font(.system(size: 11, weight: .medium))
                 .foregroundColor(.gray)
         }
         .padding(.horizontal, 14)
@@ -547,16 +574,10 @@ private struct SplitOverlayView: View {
     }
 
     /// "8:32" — minutes:seconds, no leading zero on minutes.
-    private func formatSplit(_ seconds: TimeInterval) -> String {
-        let total = Int(seconds.rounded())
+    private func formatPace(_ secondsPerUnit: TimeInterval) -> String {
+        let total = Int(secondsPerUnit.rounded())
         let m = total / 60
         let s = total % 60
         return String(format: "%d:%02d", m, s)
-    }
-
-    /// Same format as splitTime — for a per-mile split, pace == split duration,
-    /// but kept as a separate helper in case we ever subdivide (e.g. half-miles).
-    private func formatPace(_ secondsPerMile: TimeInterval) -> String {
-        formatSplit(secondsPerMile)
     }
 }

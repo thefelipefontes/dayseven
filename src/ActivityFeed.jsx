@@ -9,6 +9,7 @@ import ActivityIcon from './components/ActivityIcon';
 import FriendProfileCard from './components/FriendProfileCard';
 import ZoomablePhoto from './components/ZoomablePhoto';
 import { isDemoAccount, getDemoLeaderboardFriends, getDemoActivities, getDemoHealthHistory, getDemoUserData, getDemoChallengeStats, getDemoUserLeaderboardOverride } from './demoData';
+import { resolveUnit, unitLabel, formatDistanceValue, milesToDisplay } from './utils/distance';
 
 // Convert a Date to YYYY-MM-DD string in local timezone (avoids UTC date shifting)
 const toLocalDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -578,6 +579,7 @@ const MemoizedActivityCard = React.memo(({
   onPhotoFullscreenChange,
 }) => {
   const { friend, type, duration, calories, distance, date, time, id, customEmoji, customIcon, sportEmoji, strengthType, focusAreas, focusArea } = activity;
+  const viewerUnit = resolveUnit(userProfile);
   const [showFullscreenPhoto, setShowFullscreenPhoto] = useState(false);
   // Bubble open/close up so ActivityFeed can pause its window-level pull-to-refresh
   // listener — otherwise pulling down on the fullscreen photo refreshes the feed
@@ -697,7 +699,7 @@ const MemoizedActivityCard = React.memo(({
           <div className="flex items-center gap-3 mt-1">
             {duration && <span className="text-gray-400 text-sm">⏱ {formatDuration(duration)}</span>}
             {calories && <span className="text-gray-400 text-sm">🔥 {calories} cal</span>}
-            {distance && <span className="text-gray-400 text-sm">📍 {parseFloat(distance).toFixed(1)} mi</span>}
+            {distance && <span className="text-gray-400 text-sm">📍 {formatDistanceValue(distance, viewerUnit, 1)} {unitLabel(viewerUnit)}</span>}
           </div>
         </div>
       </div>
@@ -2913,20 +2915,27 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                         ))}
                     </div>
 
-                    {/* Most Miles */}
+                    {/* Most Distance */}
                     <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(78, 205, 196, 0.1)' }}>
-                      <div className="text-[10px] text-gray-500 uppercase mb-1">Most Miles</div>
-                      {[...sortedLeaderboard]
-                        .sort((a, b) => (b.volume?.miles?.[leaderboardTimeRange] || 0) - (a.volume?.miles?.[leaderboardTimeRange] || 0))
-                        .slice(0, 3)
-                        .map((user, i) => (
-                          <div key={user.uid} className="flex items-center gap-1.5 mb-1">
-                            <span className="text-[10px] text-gray-500">{i + 1}.</span>
-                            <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
-                            <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
-                            <span className="text-[11px] font-bold" style={{ color: '#FF9500' }}>{user.volume?.miles?.[leaderboardTimeRange]?.toFixed(0) || 0}</span>
-                          </div>
-                        ))}
+                      {(() => {
+                        const u = resolveUnit(userProfile);
+                        return (
+                          <>
+                            <div className="text-[10px] text-gray-500 uppercase mb-1">Most {u === 'km' ? 'KMs' : 'Miles'}</div>
+                            {[...sortedLeaderboard]
+                              .sort((a, b) => (b.volume?.miles?.[leaderboardTimeRange] || 0) - (a.volume?.miles?.[leaderboardTimeRange] || 0))
+                              .slice(0, 3)
+                              .map((user, i) => (
+                                <div key={user.uid} className="flex items-center gap-1.5 mb-1">
+                                  <span className="text-[10px] text-gray-500">{i + 1}.</span>
+                                  <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
+                                  <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
+                                  <span className="text-[11px] font-bold" style={{ color: '#FF9500' }}>{milesToDisplay(user.volume?.miles?.[leaderboardTimeRange] || 0, u).toFixed(0)}</span>
+                                </div>
+                              ))}
+                          </>
+                        );
+                      })()}
                     </div>
 
                     {/* Most Time */}

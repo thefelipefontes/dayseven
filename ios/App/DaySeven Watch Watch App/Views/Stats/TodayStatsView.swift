@@ -33,7 +33,11 @@ struct TodayStatsView: View {
                     icon: "figure.run",
                     iconColor: .blue,
                     title: "Distance",
-                    value: String(format: "%.1f mi", appVM.todayDistance),
+                    value: String(
+                        format: "%.1f %@",
+                        appVM.distanceUnit == "km" ? appVM.todayDistance * 1.60934 : appVM.todayDistance,
+                        appVM.distanceUnit == "km" ? "km" : "mi"
+                    ),
                     goal: nil,
                     progress: nil
                 )

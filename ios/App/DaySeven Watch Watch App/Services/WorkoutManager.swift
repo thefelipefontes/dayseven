@@ -19,18 +19,30 @@ struct WorkoutResult: Equatable {
 
 // MARK: - Workout Split
 
-/// Per-mile split fired when the user crosses a whole-mile boundary during
-/// a distance workout. Mirrors Apple Workout's split notification.
+/// Per-unit split fired when the user crosses a whole-unit boundary (mile or km)
+/// during a distance workout. Mirrors Apple Workout's split notification.
+///
+/// - `splitNumber`: 1, 2, 3, ... — index of the unit just completed.
+/// - `unit`: "mi" or "km" so the overlay can render the right label without
+///   re-reading the live preference (avoids label flicker if the user toggles
+///   mid-workout, though that's not exposed).
+/// - `splitSecondsPerUnit`: time spent on this single split (== pace per unit
+///   for THIS split alone).
+/// - `overallSecondsPerUnit`: pace per unit averaged across the whole workout
+///   up to the moment the split fired. Lets the overlay show "right now" + "so far".
 struct WorkoutSplit: Equatable, Identifiable {
     let id = UUID()
-    var mileNumber: Int           // 1, 2, 3, ...
-    var splitSeconds: TimeInterval // time spent on this single mile (== pace per mile)
-    var firedAt: Date              // wall-clock when the split crossed; powers auto-dismiss
+    var splitNumber: Int
+    var unit: String
+    var splitSecondsPerUnit: TimeInterval
+    var overallSecondsPerUnit: TimeInterval
+    var firedAt: Date
 
     static func == (lhs: WorkoutSplit, rhs: WorkoutSplit) -> Bool { lhs.id == rhs.id }
 }
 
 private let metersPerMile: Double = 1609.34
+private let metersPerKm: Double = 1000.0
 
 // MARK: - Workout Error
 
@@ -98,11 +110,15 @@ class WorkoutManager: NSObject, ObservableObject {
     /// observes this and renders a brief overlay (Apple-style) before clearing.
     @Published var latestSplit: WorkoutSplit?
 
-    // Mile-split bookkeeping. `lastMileAnnounced` is the highest whole mile we've
-    // already fired a split for; `lastMileElapsedAt` is the elapsed-time at which
-    // that mile was crossed, so the next split = currentElapsed - lastMileElapsedAt.
-    private var lastMileAnnounced: Int = 0
-    private var lastMileElapsedAt: TimeInterval = 0
+    // Distance-split bookkeeping. `lastSplitAnnounced` is the highest whole unit
+    // (mile or km, depending on user pref) we've already fired a split for;
+    // `lastSplitElapsedAt` is the elapsed-time at which that unit was crossed,
+    // so the next split = currentElapsed - lastSplitElapsedAt.
+    private var lastSplitAnnounced: Int = 0
+    private var lastSplitElapsedAt: TimeInterval = 0
+    /// Snapshotted at workout start from SharedDefaults so splits stay consistent
+    /// for the duration even if the user toggles unit mid-workout.
+    private var workoutDistanceUnit: String = "mi"
 
     // Internal state
     private var session: HKWorkoutSession?
@@ -558,38 +574,50 @@ class WorkoutManager: NSObject, ObservableObject {
         currentZone = .recovery
         currentZoneSeconds = 0
         latestSplit = nil
-        lastMileAnnounced = 0
-        lastMileElapsedAt = 0
+        lastSplitAnnounced = 0
+        lastSplitElapsedAt = 0
+        // Snapshot the user's preferred unit so splits stay consistent for the
+        // life of this workout even if the phone toggles km mid-run.
+        workoutDistanceUnit = SharedDefaults.readDistanceUnit()
     }
 
-    // MARK: - Mile Splits
+    // MARK: - Distance Splits
 
     /// Called whenever HealthKit reports a new cumulative distance value. If the
-    /// user has crossed one or more whole-mile boundaries since the last update,
-    /// fires a split (haptic + published WorkoutSplit) for the most recent one.
-    /// Multi-mile jumps in a single update are rare (only on long stat coalesces)
-    /// — we collapse them to the highest mile so we don't spam haptics.
+    /// user has crossed one or more whole-unit boundaries (mile or km, per their
+    /// preference) since the last update, fires a split for the most recent one.
+    /// Multi-unit jumps in a single update are rare (only on long stat coalesces)
+    /// — we collapse them to the highest unit so we don't spam haptics.
     private func checkMileSplit(distanceMeters: Double) {
-        let totalMiles = distanceMeters / metersPerMile
-        let crossedMile = Int(totalMiles.rounded(.down))
-        guard crossedMile > lastMileAnnounced else { return }
+        let unit = workoutDistanceUnit
+        let metersPerUnit = unit == "km" ? metersPerKm : metersPerMile
+        let totalUnits = distanceMeters / metersPerUnit
+        let crossed = Int(totalUnits.rounded(.down))
+        guard crossed > lastSplitAnnounced else { return }
 
-        let splitSeconds = elapsedTime - lastMileElapsedAt
+        let splitSeconds = elapsedTime - lastSplitElapsedAt
         // Guard against zero/negative splits from clock drift or coalesced updates.
         guard splitSeconds > 0 else {
-            lastMileAnnounced = crossedMile
-            lastMileElapsedAt = elapsedTime
+            lastSplitAnnounced = crossed
+            lastSplitElapsedAt = elapsedTime
             return
         }
 
+        // Overall pace at this moment: total elapsed / total units covered.
+        // Falls back to the split pace itself if we're somehow at zero units
+        // (shouldn't happen because crossed >= 1 by the guard above).
+        let overallSecondsPerUnit = totalUnits > 0 ? elapsedTime / totalUnits : splitSeconds
+
         let split = WorkoutSplit(
-            mileNumber: crossedMile,
-            splitSeconds: splitSeconds,
+            splitNumber: crossed,
+            unit: unit,
+            splitSecondsPerUnit: splitSeconds, // one-unit split: split time == pace per unit
+            overallSecondsPerUnit: overallSecondsPerUnit,
             firedAt: Date()
         )
         latestSplit = split
-        lastMileAnnounced = crossedMile
-        lastMileElapsedAt = elapsedTime
+        lastSplitAnnounced = crossed
+        lastSplitElapsedAt = elapsedTime
 
         // Apple's split haptic is a short distinct ping — `.notification` is the
         // closest single-shot match in the WatchKit catalog.

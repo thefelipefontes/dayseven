@@ -256,12 +256,25 @@ export function formatPace(secondsPerMile) {
 /**
  * Plain-English description of the match rule for UI. Targets ARE the rule —
  * "Run 7 mi" is more honest about what fulfills than "Go for a run."
+ *
+ * `unit` is the *viewer's* preferred unit ('mi' | 'km'). Rules are stored in
+ * miles + seconds-per-mile; we convert at the edge so a km user sees "Run 11.3 km".
  */
-export function describeMatchRule(rule) {
+export function describeMatchRule(rule, unit = 'mi') {
   if (!rule) return 'Match the activity';
   const { category, activityType, distanceMin, durationMin, paceMaxSecondsPerMile } = rule;
-  const fmtMi = (mi) => `${parseFloat(mi).toFixed(parseFloat(mi) % 1 === 0 ? 0 : 1)} mi`;
+  const KM_PER_MILE = 1.60934;
+  const isKm = unit === 'km';
+  const fmtDist = (mi) => {
+    const v = isKm ? parseFloat(mi) * KM_PER_MILE : parseFloat(mi);
+    const decimals = v % 1 === 0 ? 0 : 1;
+    return `${v.toFixed(decimals)} ${isKm ? 'km' : 'mi'}`;
+  };
   const fmtMin = (min) => `${min} min`;
+  const fmtPaceWithUnit = (secondsPerMile) => {
+    const secPerUnit = isKm ? secondsPerMile / KM_PER_MILE : secondsPerMile;
+    return `${formatPace(secPerUnit)} /${isKm ? 'km' : 'mi'}`;
+  };
 
   if (activityType) {
     const verb = {
@@ -271,9 +284,9 @@ export function describeMatchRule(rule) {
       Rowing: 'Row',
       Hiking: 'Hike',
     }[activityType] || `Do a ${activityType.toLowerCase()}`;
-    if (distanceMin) return `${verb} ${fmtMi(distanceMin)}`;
+    if (distanceMin) return `${verb} ${fmtDist(distanceMin)}`;
     if (durationMin) return `${verb} for ${fmtMin(durationMin)}`;
-    if (paceMaxSecondsPerMile) return `${verb} at ${formatPace(paceMaxSecondsPerMile)} /mi or faster`;
+    if (paceMaxSecondsPerMile) return `${verb} at ${fmtPaceWithUnit(paceMaxSecondsPerMile)} or faster`;
     return `Go for a ${verb.toLowerCase()}`;
   }
 

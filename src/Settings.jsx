@@ -36,7 +36,7 @@ const getPreviousWeekKey = () => {
   return toLocalDateStr(sunday);
 };
 
-export default function SettingsPage({ user, userProfile, userData, onSignOut, onEditGoals, onCancelPendingGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onUpdateMaxHeartRate, onUpdateDisplayName, onUpdateUsername, onChangePassword, onResetPassword, onDeleteAccount, onNotificationSettings, isPro, onPresentPaywall, onPresentCustomerCenter, onRestorePurchases, onToggleVacationMode, onUseStreakShield, onClose }) {
+export default function SettingsPage({ user, userProfile, userData, onSignOut, onEditGoals, onCancelPendingGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onUpdateDistanceUnit, onUpdateMaxHeartRate, onUpdateDisplayName, onUpdateUsername, onChangePassword, onResetPassword, onDeleteAccount, onNotificationSettings, isPro, onPresentPaywall, onPresentCustomerCenter, onRestorePurchases, onToggleVacationMode, onUseStreakShield, onClose }) {
   const [isEmailPasswordUser, setIsEmailPasswordUser] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [showVacationConfirm, setShowVacationConfirm] = useState(false);
@@ -1046,6 +1046,56 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                   </div>
                 );
               })}
+            </div>
+          </div>
+        </div>
+
+        {/* Preferences Section */}
+        <div className="mb-6">
+          <h3 className="text-sm font-semibold text-gray-400 mb-3">PREFERENCES</h3>
+          <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(0,255,148,0.12)' }}>
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="#00FF94" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 6h18M6 12h12M10 18h4" />
+                  </svg>
+                </div>
+                <div className="min-w-0">
+                  <span className="text-sm text-white">Distance unit</span>
+                  <p className="text-[11px] text-gray-500">Used for distance + pace everywhere.</p>
+                </div>
+              </div>
+              <div
+                className="flex rounded-full p-0.5 flex-shrink-0"
+                style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+              >
+                {[
+                  { value: 'mi', label: 'mi' },
+                  { value: 'km', label: 'km' },
+                ].map((opt) => {
+                  const current = userProfile?.distanceUnit === 'km' ? 'km' : 'mi';
+                  const active = current === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      onClick={() => {
+                        if (active) return;
+                        triggerHaptic(ImpactStyle.Light);
+                        onUpdateDistanceUnit?.(opt.value);
+                      }}
+                      className="px-3 py-1 rounded-full text-[12px] font-semibold transition-all duration-150"
+                      style={{
+                        backgroundColor: active ? '#00FF94' : 'transparent',
+                        color: active ? 'black' : '#9CA3AF',
+                        minWidth: 40,
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>

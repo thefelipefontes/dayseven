@@ -21,7 +21,7 @@ import { getFriends, getReactions, getFriendRequests, getComments, addReply, get
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
-import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, fetchHealthDataForDate, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, fetchWorkoutRoute, updateWidgetData, updateLiveActivityState, startWatchWorkoutLiveActivity, endAllLiveActivities, checkActiveLiveActivity, showLocationDeniedDialog } from './services/healthService';
+import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, fetchHealthDataForDate, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, pushDistanceUnitToWatch, fetchWorkoutRoute, updateWidgetData, updateLiveActivityState, startWatchWorkoutLiveActivity, endAllLiveActivities, checkActiveLiveActivity, showLocationDeniedDialog } from './services/healthService';
 import NotificationSettings from './NotificationSettings';
 import { initializePushNotifications, handleNotificationNavigation, removeFCMToken, clearBadge, clearAllNotifications, incrementBadge, shouldShowNotification, getNotificationPreferences } from './services/notificationService';
 import { initializeRevenueCat, loginRevenueCat, checkProStatus, addCustomerInfoListener, logoutRevenueCat, presentPaywall, presentCustomerCenter, restorePurchases, setDevAuthEmail, getOfferings } from './services/subscriptionService';
@@ -1164,7 +1164,9 @@ const OfflineIndicator = () => {
 };
 
 // Active Workout Indicator Component - Shows when a workout is in progress
-const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFinishing, onResumedFromWatch }) => {
+const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFinishing, onResumedFromWatch, distanceUnit = 'mi' }) => {
+  const _metersPerUnit = distanceUnit === 'km' ? 1000 : 1609.34;
+  const _unitLabel = distanceUnit === 'km' ? 'KM' : 'MI';
   const [elapsed, setElapsed] = useState(0);
   const [frozenElapsed, setFrozenElapsed] = useState(null); // Stores elapsed time when finishing
   const [isExpanded, setIsExpanded] = useState(false);
@@ -1483,9 +1485,9 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
             </div>
             <div className="py-2 px-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
               <div className="text-lg font-bold" style={{ color: '#5AC8FA' }}>
-                {liveMetrics.distance > 10 ? (liveMetrics.distance / 1609.34).toFixed(2) : '0.00'}
+                {liveMetrics.distance > 10 ? (liveMetrics.distance / _metersPerUnit).toFixed(2) : '0.00'}
               </div>
-              <div className="text-[10px] text-gray-500">MI</div>
+              <div className="text-[10px] text-gray-500">{_unitLabel}</div>
             </div>
           </div>
         ) : (
@@ -4040,7 +4042,10 @@ const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1, goals 
 };
 
 // Share Modal
-const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChange, onMonthChange, isPro, onPresentPaywall }) => {
+const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChange, onMonthChange, isPro, onPresentPaywall, distanceUnit = 'mi' }) => {
+  const _shareKmPerMile = 1.60934;
+  const _shareMilesToUnit = (mi) => (distanceUnit === 'km' ? parseFloat(mi) * _shareKmPerMile : parseFloat(mi));
+  const _shareUnitLabel = distanceUnit === 'km' ? 'km' : 'mi';
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [cardType, setCardType] = useState('weekly');
@@ -4733,7 +4738,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
         if (stats?.streak >= 2) achievements.push({ emoji: '🔥', text: `${stats.streak} week hybrid streak!` });
         // Show total distance if > 0
         if (weeklyAnalysis?.totalDistance > 0) {
-          achievements.push({ emoji: '🏃', text: `${parseFloat(weeklyAnalysis.totalDistance).toFixed(1)}mi run` });
+          achievements.push({ emoji: '🏃', text: `${_shareMilesToUnit(weeklyAnalysis.totalDistance).toFixed(1)}${_shareUnitLabel} run` });
         }
         // Show total calories if > 0
         if (weeklyAnalysis?.totalCalories > 0) {
@@ -4953,10 +4958,10 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                 }
                 if (weeklyAnalysis?.longestDistance &&
                     parseFloat(weeklyAnalysis.longestDistance.distance) === getRecordVal(records.longestDistance)) {
-                  weeklyPRs.push({ label: 'Longest Distance', value: `${parseFloat(weeklyAnalysis.longestDistance.distance).toFixed(2)}mi`, priority: 4 });
+                  weeklyPRs.push({ label: 'Longest Distance', value: `${_shareMilesToUnit(weeklyAnalysis.longestDistance.distance).toFixed(2)}${_shareUnitLabel}`, priority: 4 });
                 }
                 if ((stats?.weeklyMiles || 0) === getRecordVal(records.mostMilesWeek) && (stats?.weeklyMiles || 0) > 0) {
-                  weeklyPRs.push({ label: 'Most Miles/Week', value: `${(stats?.weeklyMiles || 0).toFixed(1)}mi`, priority: 3 });
+                  weeklyPRs.push({ label: `Most ${_shareUnitLabel === 'km' ? 'KMs' : 'Miles'}/Week`, value: `${_shareMilesToUnit(stats?.weeklyMiles || 0).toFixed(1)}${_shareUnitLabel}`, priority: 3 });
                 }
                 if ((weeklyAnalysis?.totalWorkouts || 0) === getRecordVal(records.mostWorkoutsWeek) && (weeklyAnalysis?.totalWorkouts || 0) > 0) {
                   weeklyPRs.push({ label: 'Most Workouts/Week', value: weeklyAnalysis.totalWorkouts, priority: 2 });
@@ -5097,7 +5102,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                     🔥 {(stats?.monthlyCalories || 0).toLocaleString()} cal
                   </span>
                   <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>
-                    🏃 {(stats?.monthlyMiles || 0).toFixed(1)} mi
+                    🏃 {_shareMilesToUnit(stats?.monthlyMiles || 0).toFixed(1)} {_shareUnitLabel}
                   </span>
                   <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>
                     👟 {((stats?.monthlySteps || 0) / 1000).toFixed(0)}k steps
@@ -5168,8 +5173,8 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                   <div className={`${isPostFormat ? 'p-1' : 'p-1.5'} rounded-xl text-center`} style={{ backgroundColor: 'rgba(50,205,50,0.08)' }}>
                     <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500 uppercase`}>Furthest</div>
                     <div className={`${isPostFormat ? 'text-xs' : 'text-sm'} flex justify-center`}>{getActivityEmoji(stats?.monthlyFurthestDistance?.type, 14)}</div>
-                    <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} font-black`} style={{ color: '#32CD32' }}>{(stats?.monthlyFurthestDistance?.distance || 0).toFixed(1)}</div>
-                    <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500`}>mi</div>
+                    <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} font-black`} style={{ color: '#32CD32' }}>{_shareMilesToUnit(stats?.monthlyFurthestDistance?.distance || 0).toFixed(1)}</div>
+                    <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500`}>{_shareUnitLabel}</div>
                   </div>
                 </div>
 
@@ -5570,7 +5575,7 @@ const RouteShape = ({ maxWidth, maxHeight, coords }) => {
 };
 
 // ─── Activity Stamp Modal ─────────────────────────────────────────────────────
-const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCoords = [], getActivityCategory }) => {
+const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCoords = [], getActivityCategory, userProfile }) => {
   const cardRef = useRef(null);
   const nameTextRef = useRef(null);
   const [stampMode, setStampMode] = useState('dark'); // 'dark' or 'transparent'
@@ -5624,13 +5629,20 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
     ? `${Math.floor(duration / 60)}h ${duration % 60}m`
     : `${duration}m`;
 
-  // Format distance
-  const distance = parseFloat(activity.distance) || 0;
-  const hasDistance = distance > 0;
-  const distanceStr = distance >= 10 ? distance.toFixed(1) : distance.toFixed(2);
+  // Format distance — `distance` always stored in miles canonically; display
+  // in the viewer's preferred unit. Pace is min-per-stored-mile, which we also
+  // convert to min-per-display-unit so a km user sees a /km pace.
+  const distanceMiles = parseFloat(activity.distance) || 0;
+  const hasDistance = distanceMiles > 0;
+  const _unit = userProfile?.distanceUnit === 'km' ? 'km' : 'mi';
+  const _kmPerMile = 1.60934;
+  const distanceInUnit = _unit === 'km' ? distanceMiles * _kmPerMile : distanceMiles;
+  const distanceStr = distanceInUnit >= 10 ? distanceInUnit.toFixed(1) : distanceInUnit.toFixed(2);
+  const distanceUnitLabel = _unit === 'km' ? 'km' : 'mi';
+  const distanceUnitWord = _unit === 'km' ? 'kilometers' : 'miles';
 
-  // Calculate pace (min/mi)
-  const pace = hasDistance && duration > 0 ? duration / distance : 0;
+  // Pace per display unit: duration / distanceInUnit gives min per unit.
+  const pace = hasDistance && duration > 0 ? duration / distanceInUnit : 0;
   const paceMin = Math.floor(pace);
   const paceSec = Math.round((pace - paceMin) * 60);
   const paceStr = `${paceMin}:${String(paceSec).padStart(2, '0')}`;
@@ -5933,7 +5945,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
                     fontSize: 11, fontWeight: 600, color: '#fff',
                     textShadow: tShadow, letterSpacing: '1.5px', textTransform: 'uppercase', marginTop: 1,
                   }}>
-                    miles
+                    {distanceUnitWord}
                   </div>
                 </div>
               ) : category === 'lifting' && activity.calories > 0 ? (
@@ -5982,7 +5994,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
               }}>
                 {category === 'cardio' && hasDistance && pace > 0 && (
                   <>
-                    <span>{paceStr} /mi</span>
+                    <span>{paceStr} /{distanceUnitLabel}</span>
                     <span style={{ margin: '0 6px', opacity: 0.4 }}>·</span>
                   </>
                 )}
@@ -6131,7 +6143,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
                   fontSize: 14, fontWeight: 600, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.4)',
                   textShadow: tShadow, letterSpacing: '1px', textTransform: 'uppercase',
                 }}>
-                  miles
+                  {distanceUnitWord}
                 </div>
               </div>
             )}
@@ -6148,7 +6160,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
                       fontSize: 10, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
                       textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px',
                     }}>
-                      /mi pace
+                      /{distanceUnitLabel} pace
                     </div>
                   </div>
                 )}
@@ -7922,7 +7934,18 @@ const MinutesPicker = ({ value, onChange, label = 'min' }) => {
 };
 
 // Add Activity Modal
-const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, defaultDate = null, userData = null, onSaveCustomActivity = null, onSaveHKPreference = null, onStartWorkout = null, hasActiveWorkout = false, otherPendingWorkoutsCount = 0, onSeeOtherWorkouts = null, onBackToWorkoutPicker = null, dismissedWorkoutUUIDs = [], linkedWorkoutUUIDs = [], pendingWorkouts = [], activeChallenges = [], friendsByUid = {} }) => {
+const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, defaultDate = null, userData = null, userProfile = null, onSaveCustomActivity = null, onSaveHKPreference = null, onStartWorkout = null, hasActiveWorkout = false, otherPendingWorkoutsCount = 0, onSeeOtherWorkouts = null, onBackToWorkoutPicker = null, dismissedWorkoutUUIDs = [], linkedWorkoutUUIDs = [], pendingWorkouts = [], activeChallenges = [], friendsByUid = {} }) => {
+  // `distance` state is canonically miles. The displayed input value is in the
+  // user's preferred unit; convert at the input boundary only.
+  const _distanceUnit = userProfile?.distanceUnit === 'km' ? 'km' : 'mi';
+  const _kmPerMile = 1.60934;
+  const _milesToDisplay = (mi) => mi ? (parseFloat(mi) * (_distanceUnit === 'km' ? _kmPerMile : 1)) : 0;
+  const _displayToMiles = (v) => {
+    const n = parseFloat(v);
+    if (!Number.isFinite(n)) return '';
+    return String(_distanceUnit === 'km' ? n / _kmPerMile : n);
+  };
+  const _distanceUnitLabel = _distanceUnit === 'km' ? 'km' : 'mi';
   // Mode: null = initial choice, 'start' = start new workout, 'completed' = log completed (existing flow)
   const [mode, setMode] = useState(null);
   const [activityType, setActivityType] = useState(null);
@@ -9110,7 +9133,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                               {(workout.calories || workout.distance) && (
                                 <div className="flex gap-2 mt-1 text-xs text-gray-500">
                                   {workout.calories && <span>🔥 {workout.calories} cal</span>}
-                                  {workout.distance && <span>📍 {parseFloat(workout.distance).toFixed(2)} mi</span>}
+                                  {workout.distance && <span>📍 {_milesToDisplay(workout.distance).toFixed(2)} {_distanceUnitLabel}</span>}
                                 </div>
                               )}
                             </div>
@@ -9860,11 +9883,11 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 
             {mode !== 'start' && (activityType === 'Running' || activityType === 'Cycle' || activityType === 'Walking') && (
               <div>
-                <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Distance (mi)</label>
+                <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Distance ({_distanceUnitLabel})</label>
                 <input
                   type="number"
-                  value={distance}
-                  onChange={(e) => setDistance(e.target.value)}
+                  value={distance ? _milesToDisplay(distance) : ''}
+                  onChange={(e) => setDistance(_displayToMiles(e.target.value))}
                   className="w-full p-3 rounded-xl bg-white/5 border border-white/10 text-white"
                   placeholder="0.0"
                   step="0.1"
@@ -10215,7 +10238,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                                 <span>❤️ {linkedWorkout.avgHr} bpm avg</span>
                               )}
                               {linkedWorkout.distance && (
-                                <span>📍 {parseFloat(linkedWorkout.distance).toFixed(2)} mi</span>
+                                <span>📍 {_milesToDisplay(linkedWorkout.distance).toFixed(2)} {_distanceUnitLabel}</span>
                               )}
                             </div>
                           )}
@@ -10277,7 +10300,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                                     <span>❤️ {workout.avgHr} bpm avg</span>
                                   )}
                                   {workout.distance && (
-                                    <span>📍 {parseFloat(workout.distance).toFixed(2)} mi</span>
+                                    <span>📍 {_milesToDisplay(workout.distance).toFixed(2)} {_distanceUnitLabel}</span>
                                   )}
                                 </div>
                               )}
@@ -10313,7 +10336,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                                   <span>🔥 {linkedWorkout.calories} cal</span>
                                 )}
                                 {linkedWorkout.distance && (
-                                  <span>📍 {parseFloat(linkedWorkout.distance).toFixed(2)} mi</span>
+                                  <span>📍 {_milesToDisplay(linkedWorkout.distance).toFixed(2)} {_distanceUnitLabel}</span>
                                 )}
                               </div>
                             )}
@@ -10465,7 +10488,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                       || c.challengerName
                       || 'Friend';
                     const shortLabel = shortBy?.distance
-                      ? `${parseFloat(shortBy.distance).toFixed(shortBy.distance % 1 === 0 ? 0 : 1)} mi short`
+                      ? `${_milesToDisplay(shortBy.distance).toFixed(parseFloat(shortBy.distance) % 1 === 0 ? 0 : 1)} ${_distanceUnitLabel} short`
                       : shortBy?.duration
                         ? `${Math.ceil(shortBy.duration)} min short`
                         : 'Below target';
@@ -10597,7 +10620,10 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 };
 
 // Swipeable Workout Item for workout picker (swipe left to delete, like activity items)
-const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
+const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss, distanceUnit = 'mi' }) => {
+  const _itemKmPerMile = 1.60934;
+  const _itemUnitLabel = distanceUnit === 'km' ? 'km' : 'mi';
+  const _itemMilesToUnit = (mi) => parseFloat(mi) * (distanceUnit === 'km' ? _itemKmPerMile : 1);
   const [swipeX, setSwipeX] = useState(0);
   const [touchStart, setTouchStart] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -10720,7 +10746,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss }) => {
               {(workout.calories || workout.distance || workout.avgHr) && (
                 <div className="flex gap-3 mt-1.5 text-xs text-gray-500">
                   {workout.calories && <span>🔥 {workout.calories} cal</span>}
-                  {workout.distance && <span>📍 {parseFloat(workout.distance).toFixed(2)} mi</span>}
+                  {workout.distance && <span>📍 {_itemMilesToUnit(workout.distance).toFixed(2)} {_itemUnitLabel}</span>}
                   {workout.avgHr && <span>♥ {workout.avgHr} bpm</span>}
                 </div>
               )}
@@ -11746,6 +11772,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
                 <SwipeableWorkoutItem
                   key={workout.healthKitUUID || workout.id}
                   workout={workout}
+                  distanceUnit={userProfile?.distanceUnit === 'km' ? 'km' : 'mi'}
                   onSelect={() => {
                     setShowWorkoutPicker(false);
                     onAddActivity(workout);
@@ -13637,6 +13664,22 @@ export default function DaySevenApp() {
     }
   };
 
+  const handleUpdateDistanceUnit = async (rawUnit) => {
+    if (!user) return;
+    const unit = rawUnit === 'km' ? 'km' : 'mi';
+    // Optimistic local update so every component re-renders with the new unit
+    // immediately — the Firestore write happens in the background.
+    setUserProfile(prev => prev ? { ...prev, distanceUnit: unit } : prev);
+    try {
+      await updateUserProfile(user.uid, { distanceUnit: unit });
+    } catch (e) {
+      console.error('[App] Failed to save distanceUnit:', e);
+    }
+    // Fast-path push to watch so its UI flips without waiting for the next
+    // Firestore reload. Watch also re-reads on its own loadUserData().
+    pushDistanceUnitToWatch(unit).catch(() => {});
+  };
+
   const handleUpdateDisplayName = async (displayName) => {
     if (!user) return;
     await updateDisplayName(user.uid, displayName);
@@ -14744,7 +14787,7 @@ export default function DaySevenApp() {
   // mark onboarded. The paywall fires *after* username is set (post-signup)
   // and HK/push permissions were already requested in the pre-signup
   // pre-screens so we don't re-prompt here.
-  const finalizeOnboardingFlow = useCallback(async (uid, { goals, privacy, extra, linkedWorkouts, onboardingCredits }) => {
+  const finalizeOnboardingFlow = useCallback(async (uid, { goals, privacy, extra, linkedWorkouts, onboardingCredits, distanceUnit }) => {
     const goalsToSave = {
       liftsPerWeek: goals.liftsPerWeek,
       cardioPerWeek: goals.cardioPerWeek,
@@ -14753,6 +14796,10 @@ export default function DaySevenApp() {
       caloriesPerDay: goals.caloriesPerDay,
     };
     await saveUserGoals(uid, goalsToSave);
+
+    const unitToSave = distanceUnit === 'km' ? 'km' : 'mi';
+    await updateUserProfile(uid, { distanceUnit: unitToSave });
+    setUserProfile(prev => prev ? { ...prev, distanceUnit: unitToSave } : prev);
 
     if (privacy) {
       await updateUserProfile(uid, { privacySettings: privacy });
@@ -15851,7 +15898,10 @@ export default function DaySevenApp() {
         // Longest distance
         if (activity.distance && activity.distance > getRecordValue('longestDistance')) {
           updatedRecords.longestDistance = { value: activity.distance, activityType: activity.type };
-          recordsBroken.push(`${parseFloat(activity.distance).toFixed(2)} mi (${activity.type === 'Other' ? (activity.subtype || 'Other') : activity.type}) ❤️‍🔥`);
+          const _u = userProfile?.distanceUnit === 'km' ? 'km' : 'mi';
+          const _kpm = 1.60934;
+          const _v = (_u === 'km' ? parseFloat(activity.distance) * _kpm : parseFloat(activity.distance)).toFixed(2);
+          recordsBroken.push(`${_v} ${_u} (${activity.type === 'Other' ? (activity.subtype || 'Other') : activity.type}) ❤️‍🔥`);
         }
         
         // Fastest pace (for runs with distance and duration)
@@ -15865,9 +15915,11 @@ export default function DaySevenApp() {
             const currentFastest = currentRecord?.value ?? null;
             if (currentFastest === null || pace < currentFastest) {
               updatedRecords.fastestPace = { value: pace, activityType: 'Running' };
-              const paceMin = Math.floor(pace);
-              const paceSec = Math.round((pace - paceMin) * 60);
-              recordsBroken.push(`${paceMin}:${paceSec.toString().padStart(2, '0')}/mi run pace ⚡`);
+              const _u = userProfile?.distanceUnit === 'km' ? 'km' : 'mi';
+              const paceInUnit = _u === 'km' ? pace / 1.60934 : pace;
+              const paceMin = Math.floor(paceInUnit);
+              const paceSec = Math.round((paceInUnit - paceMin) * 60);
+              recordsBroken.push(`${paceMin}:${paceSec.toString().padStart(2, '0')}/${_u} run pace ⚡`);
             }
           }
         }
@@ -15882,9 +15934,11 @@ export default function DaySevenApp() {
             const currentFastest = currentRecord?.value ?? null;
             if (currentFastest === null || pace < currentFastest) {
               updatedRecords.fastestCyclingPace = { value: pace, activityType: 'Cycle' };
-              const paceMin = Math.floor(pace);
-              const paceSec = Math.round((pace - paceMin) * 60);
-              recordsBroken.push(`${paceMin}:${paceSec.toString().padStart(2, '0')}/mi cycle pace 🚴`);
+              const _u = userProfile?.distanceUnit === 'km' ? 'km' : 'mi';
+              const paceInUnit = _u === 'km' ? pace / 1.60934 : pace;
+              const paceMin = Math.floor(paceInUnit);
+              const paceSec = Math.round((paceInUnit - paceMin) * 60);
+              recordsBroken.push(`${paceMin}:${paceSec.toString().padStart(2, '0')}/${_u} cycle pace 🚴`);
             }
           }
         }
@@ -15954,7 +16008,9 @@ export default function DaySevenApp() {
         updatedRecords.mostMilesWeek = weeklyMiles;
         // Celebrate milestone miles (10, 20, 30, etc)
         if (weeklyMiles >= 10 && Math.floor(weeklyMiles / 10) > Math.floor(currentMostMiles / 10)) {
-          recordsBroken.push(`${Math.floor(weeklyMiles)} mi this week 🏆`);
+          const _u = userProfile?.distanceUnit === 'km' ? 'km' : 'mi';
+          const _v = Math.floor(_u === 'km' ? weeklyMiles * 1.60934 : weeklyMiles);
+          recordsBroken.push(`${_v} ${_u} this week 🏆`);
         }
       }
 
@@ -16606,6 +16662,7 @@ export default function DaySevenApp() {
         workout={activeWorkout}
         activeTab={activeTab}
         isFinishing={showFinishWorkout}
+        distanceUnit={userProfile?.distanceUnit === 'km' ? 'km' : 'mi'}
         onFinish={async () => {
           // For watch workouts: pre-fetch metrics BEFORE pausing. The watch is
           // guaranteed reachable + active at this exact moment; after pause there
@@ -17190,6 +17247,7 @@ export default function DaySevenApp() {
                 setShowTour(true);
               }}
               onUpdatePrivacy={handleUpdatePrivacy}
+              onUpdateDistanceUnit={handleUpdateDistanceUnit}
               onUpdateMaxHeartRate={handleUpdateMaxHeartRate}
               onUpdateDisplayName={handleUpdateDisplayName}
               onUpdateUsername={handleUpdateUsername}
@@ -17433,6 +17491,7 @@ export default function DaySevenApp() {
         pendingActivity={pendingActivity}
         defaultDate={defaultActivityDate}
         userData={userData}
+        userProfile={userProfile}
         hasActiveWorkout={!!activeWorkout}
         onStartWorkout={async (workoutData) => {
           triggerHaptic(ImpactStyle.Heavy);
@@ -17634,6 +17693,7 @@ export default function DaySevenApp() {
                 <SwipeableWorkoutItem
                   key={workout.healthKitUUID || workout.id}
                   workout={workout}
+                  distanceUnit={userProfile?.distanceUnit === 'km' ? 'km' : 'mi'}
                   onSelect={() => {
                     setShowWorkoutPicker(false);
                     handleAddActivity(workout);
@@ -17688,6 +17748,7 @@ export default function DaySevenApp() {
         weekRange={shareWeekRange}
         monthRange={shareMonthRange}
         isPro={isPro}
+        distanceUnit={userProfile?.distanceUnit === 'km' ? 'km' : 'mi'}
         onPresentPaywall={async () => {
           const { purchased } = await presentPaywall();
           if (purchased) {
@@ -18239,6 +18300,7 @@ export default function DaySevenApp() {
         weeklyProgress={showStampModal ? calculateWeeklyProgress(activities) : weeklyProgress}
         routeCoords={stampRouteCoords}
         getActivityCategory={getActivityCategory}
+        userProfile={userProfile}
       />
 
       <Toast

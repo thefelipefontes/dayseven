@@ -682,8 +682,9 @@ function CustomizeWeekScreen({ weeklyGoals, onUpdateGoals, onBack, onContinue })
 // Daily Targets screen — steps + calories baselines (don't affect rings)
 // ============================================================================
 
-function DailyTargetsScreen({ weeklyGoals, onUpdateGoals, onContinue, onBack }) {
+function DailyTargetsScreen({ weeklyGoals, onUpdateGoals, distanceUnit, onUpdateDistanceUnit, onContinue, onBack }) {
   const setField = (key, value) => onUpdateGoals({ ...weeklyGoals, [key]: value });
+  const unit = distanceUnit === 'km' ? 'km' : 'mi';
   return (
     <div className="fixed inset-0 z-50 bg-black text-white flex flex-col overflow-hidden">
       <div className="flex-shrink-0 px-6 pb-2" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)' }}>
@@ -731,7 +732,7 @@ function DailyTargetsScreen({ weeklyGoals, onUpdateGoals, onContinue, onBack }) 
             />
           </div>
 
-          <div className="mb-6">
+          <div className="mb-7">
             <div className="flex items-center gap-2 mb-2">
               <div className="w-2 h-2 rounded-full" style={{ backgroundColor: RING_COLORS.cardio }} />
               <label className="text-[14px] font-semibold">Active calories / day</label>
@@ -743,6 +744,37 @@ function DailyTargetsScreen({ weeklyGoals, onUpdateGoals, onContinue, onBack }) 
               options={CALORIES_OPTIONS}
               onChange={(v) => setField('caloriesPerDay', v)}
             />
+          </div>
+
+          <div className="mb-6">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#FFFFFF' }} />
+              <label className="text-[14px] font-semibold">Distance unit</label>
+            </div>
+            <p className="text-xs text-gray-500 mb-3 ml-4">Used for runs, rides, and any activity with distance.</p>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { value: 'mi', label: 'Miles', sub: 'mi' },
+                { value: 'km', label: 'Kilometers', sub: 'km' },
+              ].map((opt) => {
+                const active = unit === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() => onUpdateDistanceUnit?.(opt.value)}
+                    className="py-3 px-3 rounded-xl text-left transition-all duration-150"
+                    style={{
+                      backgroundColor: active ? 'rgba(0,255,148,0.14)' : 'rgba(255,255,255,0.05)',
+                      border: active ? '1px solid rgba(0,255,148,0.55)' : '1px solid transparent',
+                    }}
+                    {...pressProps}
+                  >
+                    <div className="text-[14px] font-semibold" style={{ color: active ? '#00FF94' : 'white' }}>{opt.label}</div>
+                    <div className="text-[11px] text-gray-500 mt-0.5">{opt.sub}</div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>
@@ -1363,6 +1395,7 @@ export default function OnboardingFlow({ onComplete, onSignIn }) {
   // cardio/recovery) + daily targets (stepsPerDay/caloriesPerDay). null until
   // the survey completes.
   const [weeklyGoals, setWeeklyGoals] = useState(null);
+  const [distanceUnit, setDistanceUnit] = useState('mi');
   const [hkAuthorized, setHkAuthorized] = useState(false);
   const [linkedWorkouts, setLinkedWorkouts] = useState([]);
   const [onboardingCredits, setOnboardingCredits] = useState([]);
@@ -1392,6 +1425,9 @@ export default function OnboardingFlow({ onComplete, onSignIn }) {
             caloriesPerDay: parsed.goals.caloriesPerDay ?? DEFAULT_CALORIES,
           });
         }
+        if (parsed?.distanceUnit === 'km' || parsed?.distanceUnit === 'mi') {
+          setDistanceUnit(parsed.distanceUnit);
+        }
       }
     } catch {}
   }, []);
@@ -1420,6 +1456,7 @@ export default function OnboardingFlow({ onComplete, onSignIn }) {
     const payload = {
       goals: goalsForSave,
       extra: answers,
+      distanceUnit,
       linkedWorkouts: overrides.linkedWorkouts ?? linkedWorkouts,
       onboardingCredits: overrides.onboardingCredits ?? onboardingCredits,
       done: true,
@@ -1500,9 +1537,15 @@ export default function OnboardingFlow({ onComplete, onSignIn }) {
         <DailyTargetsScreen
           weeklyGoals={weeklyGoals}
           onUpdateGoals={persistGoals}
+          distanceUnit={distanceUnit}
+          onUpdateDistanceUnit={(unit) => {
+            const next = unit === 'km' ? 'km' : 'mi';
+            setDistanceUnit(next);
+            persistInProgress({ distanceUnit: next });
+          }}
           onBack={() => goBack('customize')}
           onContinue={() => {
-            persistInProgress({ goals: goalsForSave });
+            persistInProgress({ goals: goalsForSave, distanceUnit });
             goForward('hk');
           }}
         />

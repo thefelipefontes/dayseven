@@ -55,13 +55,26 @@ struct WorkoutSummaryView: View {
         ["sauna", "cold plunge", "contrast therapy"].contains(activityType.lowercased())
     }
 
-    /// Average pace formatted as M:SS /mi (only meaningful for distance activities)
+    /// Average pace formatted as M:SS /unit. result.distance is canonically MILES,
+    /// so we convert to the user's display unit then derive pace.
     private var averagePace: String {
-        guard let dist = result.distance, dist > 0.01 else { return "--:-- /mi" }
-        let paceSeconds = result.durationSeconds / dist  // seconds per mile
+        let unit = appVM.distanceUnit
+        let suffix = unit == "km" ? "/km" : "/mi"
+        guard let distMiles = result.distance, distMiles > 0.01 else { return "--:-- \(suffix)" }
+        let distInUnit = unit == "km" ? distMiles * 1.60934 : distMiles
+        let paceSeconds = result.durationSeconds / distInUnit
         let mins = Int(paceSeconds) / 60
         let secs = Int(paceSeconds) % 60
-        return "\(mins):\(String(format: "%02d", secs)) /mi"
+        return "\(mins):\(String(format: "%02d", secs)) \(suffix)"
+    }
+
+    /// Distance formatted with unit (e.g. "3.21 mi" / "5.17 km"). result.distance
+    /// is in miles canonically.
+    private var distanceDisplay: String {
+        guard let distMiles = result.distance else { return "" }
+        let unit = appVM.distanceUnit
+        let value = unit == "km" ? distMiles * 1.60934 : distMiles
+        return String(format: "%.2f %@", value, unit == "km" ? "km" : "mi")
     }
 
     /// Display name for the header — shows base type only (details are in pickers below)
@@ -245,7 +258,7 @@ struct WorkoutSummaryView: View {
 
             // Distance & Pace (if applicable)
             if hasDistanceData {
-                statRow(icon: "figure.run", label: "DISTANCE", value: String(format: "%.2f mi", result.distance!), color: .blue)
+                statRow(icon: "figure.run", label: "DISTANCE", value: distanceDisplay, color: .blue)
                 Divider().overlay(Color.gray.opacity(0.3))
 
                 statRow(icon: "figure.run.circle", label: "AVG PACE", value: averagePace, color: .cyan)

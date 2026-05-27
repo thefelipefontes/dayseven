@@ -41,7 +41,11 @@ struct DailyDetailView: View {
                     Image(systemName: "figure.run")
                         .font(.system(size: 11))
                         .foregroundColor(.blue)
-                    Text(String(format: "%.1f mi", appVM.todayDistance))
+                    Text(String(
+                        format: "%.1f %@",
+                        appVM.distanceUnit == "km" ? appVM.todayDistance * 1.60934 : appVM.todayDistance,
+                        appVM.distanceUnit == "km" ? "km" : "mi"
+                    ))
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
                         .foregroundColor(.white)
                     Text("today")
@@ -163,7 +167,11 @@ struct DailyDetailView: View {
                         .foregroundColor(.gray)
                 }
                 if let dist = activity.distance, dist > 0.01 {
-                    Text(String(format: "%.1f mi", dist))
+                    Text(String(
+                        format: "%.1f %@",
+                        appVM.distanceUnit == "km" ? dist * 1.60934 : dist,
+                        appVM.distanceUnit == "km" ? "km" : "mi"
+                    ))
                         .font(.system(size: 10, design: .rounded))
                         .foregroundColor(.gray)
                 }

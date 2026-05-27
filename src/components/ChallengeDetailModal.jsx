@@ -4,6 +4,7 @@ import { describeMatchRule, getChallengeOutcome } from '../services/challengeSer
 import { getUserProfile } from '../services/userService';
 import ActivityIcon from './ActivityIcon';
 import ZoomablePhoto from './ZoomablePhoto';
+import { resolveUnit, unitLabel, formatDistanceValue } from '../utils/distance';
 
 const CATEGORY_COLOR = {
   lifting: '#00FF94',
@@ -58,11 +59,14 @@ function formatRemaining(expiresAt) {
   return remHours > 0 ? `${days}d ${remHours}h` : `${days}d`;
 }
 
-function formatActivity(ca) {
+function formatActivity(ca, unit = 'mi') {
   if (!ca) return '—';
   const label = ca.subtype || ca.type || 'Activity';
   const bits = [];
-  if (ca.distance) bits.push(`${ca.distance.toFixed(ca.distance % 1 === 0 ? 0 : 1)} mi`);
+  if (ca.distance) {
+    const decimals = ca.distance % 1 === 0 ? 0 : 1;
+    bits.push(`${formatDistanceValue(ca.distance, unit, decimals)} ${unitLabel(unit)}`);
+  }
   if (ca.duration) bits.push(`${ca.duration} min`);
   if (ca.calories && !ca.distance) bits.push(`${ca.calories} cal`);
   return bits.length ? `${label} · ${bits.join(' · ')}` : label;
@@ -204,7 +208,8 @@ export default function ChallengeDetailModal({
   const countdownSuffix = isPendingPhase ? 'to accept' : 'left';
 
   const ca = challenge.challengerActivity;
-  const matchRuleLabel = describeMatchRule(challenge.matchRule);
+  const viewerUnit = resolveUnit(userProfile);
+  const matchRuleLabel = describeMatchRule(challenge.matchRule, viewerUnit);
 
   // Proof photos: challenger's seed photo lives on challengerActivity; accepter's
   // fulfilling photo is denormalized onto the challenge doc by fulfillChallengeForUser
@@ -406,7 +411,7 @@ export default function ChallengeDetailModal({
                   <p className="text-[11px] text-gray-500 mb-0.5">
                     {challenge.challengerName || 'Challenger'} completed
                   </p>
-                  <p className="text-white text-sm font-semibold">{formatActivity(ca)}</p>
+                  <p className="text-white text-sm font-semibold">{formatActivity(ca, viewerUnit)}</p>
                 </div>
               </div>
             </div>

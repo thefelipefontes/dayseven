@@ -21,12 +21,30 @@ struct SharedDefaults {
     static let todayCaloriesKey = "todayCalories"
     static let lastUpdatedKey = "lastUpdated"
 
+    // Distance unit preference ('mi' | 'km'). Mirrored from the phone via WCSession
+    // applicationContext + watch-side Firestore load. Widgets can read for distance
+    // display when they eventually surface it.
+    static let distanceUnitKey = "distanceUnit"
+
     // Celebration tracking keys (used by CelebrationManager)
     static let dailyGoalsCelebratedKey = "dailyGoalsCelebrated"
     static let weekCategoryCelebratedKey = "weekCategoryCelebrated"
 
     static var shared: UserDefaults? {
         UserDefaults(suiteName: suiteName)
+    }
+
+    /// Read the user's distance-unit preference. Defaults to "mi" if not set.
+    static func readDistanceUnit() -> String {
+        guard let defaults = shared else { return "mi" }
+        let raw = defaults.string(forKey: distanceUnitKey)
+        return raw == "km" ? "km" : "mi"
+    }
+
+    /// Persist the user's distance-unit preference.
+    static func writeDistanceUnit(_ unit: String) {
+        guard let defaults = shared else { return }
+        defaults.set(unit == "km" ? "km" : "mi", forKey: distanceUnitKey)
     }
 
     // MARK: - Write (called from watch app after data loads / activity saves)

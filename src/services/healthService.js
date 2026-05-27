@@ -1398,6 +1398,18 @@ export async function notifyWatchDataChanged() {
   }
 }
 
+// Push the user's distance-unit preference to the paired Apple Watch.
+// Fast path so the watch UI reflects the toggle immediately; the watch's own
+// Firestore reload is the slow-path source of truth.
+export async function pushDistanceUnitToWatch(unit) {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    await HealthKitWriter.pushDistanceUnit({ unit: unit === 'km' ? 'km' : 'mi' });
+  } catch (e) {
+    // Non-critical — watch picks up the new unit on next Firestore load.
+  }
+}
+
 // Update iPhone home screen widget data via App Group
 export async function updateWidgetData(data) {
   if (!Capacitor.isNativePlatform()) return;

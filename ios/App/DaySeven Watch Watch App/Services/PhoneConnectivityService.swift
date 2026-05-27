@@ -29,6 +29,12 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
     /// The watch should reload data from Firestore when this fires
     @Published var dataChangedFlag = false
 
+    /// User's distance-unit preference ('mi' | 'km'). Updated when the phone pushes
+    /// via applicationContext OR when AppViewModel loads from Firestore. Persisted
+    /// to SharedDefaults so cold-launch reads the last known value before Firestore
+    /// returns.
+    @Published var distanceUnit: String = SharedDefaults.shared?.string(forKey: SharedDefaults.distanceUnitKey) ?? "mi"
+
     private var wcSession: WCSession?
 
     /// Reference to the workout manager — set by the app on launch
@@ -312,6 +318,17 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
     /// Process pending workout commands that were queued via applicationContext
     /// (sent by the phone when sendMessage fails because watch screen was off)
     private func checkPendingContextCommands(_ context: [String: Any]) {
+        // Distance-unit push lives alongside (or instead of) workout commands —
+        // pick it up first so the UI flips even if there's no pending action.
+        if let unit = context["distanceUnit"] as? String {
+            let normalized = unit == "km" ? "km" : "mi"
+            DispatchQueue.main.async {
+                self.distanceUnit = normalized
+            }
+            SharedDefaults.writeDistanceUnit(normalized)
+            print("[PhoneConnect] distanceUnit from context: \(normalized)")
+        }
+
         guard let action = context["pendingAction"] as? String else { return }
         let timestamp = context["pendingActionTimestamp"] as? TimeInterval ?? 0
 

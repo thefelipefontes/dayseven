@@ -58,7 +58,11 @@ struct WeekStatsView: View {
                     Spacer()
                     weekStatItem(
                         icon: "figure.run",
-                        value: String(format: "%.1f mi", appVM.weeklyStats.totalMiles),
+                        value: String(
+                            format: "%.1f %@",
+                            appVM.distanceUnit == "km" ? appVM.weeklyStats.totalMiles * 1.60934 : appVM.weeklyStats.totalMiles,
+                            appVM.distanceUnit == "km" ? "km" : "mi"
+                        ),
                         label: "Distance",
                         color: .blue
                     )

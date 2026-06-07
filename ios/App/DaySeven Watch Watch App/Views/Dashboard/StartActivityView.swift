@@ -15,8 +15,13 @@ struct StartActivityView: View {
     @EnvironmentObject var appVM: AppViewModel
     @Binding var path: NavigationPath
 
+    @State private var showAllCardio = false
+    @State private var showAllRecovery = false
+
+    private static let defaultVisibleCount = 4
+
     private let strengthTypes = ActivityTypes.forCategory(.strength)
-    private let cardioTypes = ActivityTypes.forCategory(.cardio)
+    private let cardioTypes = ActivityTypes.all.filter { $0.category == .cardio && !$0.isHybrid }
     private let hybridTypes = ActivityTypes.all.filter { $0.isHybrid }
     private let recoveryTypes = ActivityTypes.all.filter { $0.category == .recovery && !$0.isHybrid }
 
@@ -40,7 +45,8 @@ struct StartActivityView: View {
 
             // MARK: Cardio
             Section {
-                ForEach(cardioTypes) { activityType in
+                let visibleCardio = showAllCardio ? cardioTypes : Array(cardioTypes.prefix(Self.defaultVisibleCount))
+                ForEach(visibleCardio) { activityType in
                     activityRowWithPlay(
                         symbol: activityType.sfSymbol,
                         name: activityType.displayName,
@@ -50,26 +56,46 @@ struct StartActivityView: View {
                         hasDetails: !activityType.subtypes.isEmpty
                     )
                 }
+                if !showAllCardio && cardioTypes.count > Self.defaultVisibleCount {
+                    seeMoreButton(
+                        count: cardioTypes.count - Self.defaultVisibleCount,
+                        color: AppColors.cardio
+                    ) {
+                        showAllCardio = true
+                    }
+                }
             } header: {
                 sectionHeader("Cardio", symbol: "figure.run", color: AppColors.cardio)
             }
 
-            // MARK: Mind & Body (Hybrid — counts toward cardio, strength, or recovery)
+            // MARK: Hybrid (Yoga/Pilates pick counts-toward; Walking picks indoor/outdoor)
             Section {
                 ForEach(hybridTypes) { activityType in
-                    hybridActivityRow(
-                        symbol: activityType.sfSymbol,
-                        name: activityType.displayName,
-                        activityType: activityType.name
-                    )
+                    if activityType.subtypes.isEmpty {
+                        hybridActivityRow(
+                            symbol: activityType.sfSymbol,
+                            name: activityType.displayName,
+                            activityType: activityType.name
+                        )
+                    } else {
+                        activityRowWithPlay(
+                            symbol: activityType.sfSymbol,
+                            name: activityType.displayName,
+                            color: .purple,
+                            activityType: activityType.name,
+                            strengthType: nil,
+                            hasDetails: true
+                        )
+                    }
                 }
             } header: {
-                sectionHeader("Mind & Body", symbol: "figure.yoga", color: .purple)
+                sectionHeader("Hybrid", symbol: "wind", color: .purple)
             }
 
             // MARK: Recovery
             Section {
-                ForEach(recoveryTypes) { activityType in
+                let visibleRecovery = showAllRecovery ? recoveryTypes : Array(recoveryTypes.prefix(Self.defaultVisibleCount))
+                ForEach(visibleRecovery) { activityType in
                     activityRowWithPlay(
                         symbol: activityType.sfSymbol,
                         name: activityType.displayName,
@@ -78,6 +104,14 @@ struct StartActivityView: View {
                         strengthType: nil,
                         hasDetails: !activityType.subtypes.isEmpty
                     )
+                }
+                if !showAllRecovery && recoveryTypes.count > Self.defaultVisibleCount {
+                    seeMoreButton(
+                        count: recoveryTypes.count - Self.defaultVisibleCount,
+                        color: AppColors.recovery
+                    ) {
+                        showAllRecovery = true
+                    }
                 }
             } header: {
                 sectionHeader("Recovery", symbol: "figure.cooldown", color: AppColors.recovery)
@@ -224,6 +258,25 @@ struct StartActivityView: View {
             .disabled(isWorkoutActive)
         }
         .padding(.vertical, 6)
+    }
+
+    // MARK: - See More Button
+
+    private func seeMoreButton(count: Int, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(color)
+                Text("See \(count) more")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(color)
+                Spacer()
+            }
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Section Header

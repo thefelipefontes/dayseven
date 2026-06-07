@@ -116,11 +116,26 @@ struct ActivityTypes {
             category: .cardio
         ),
         ActivityTypeDefinition(
+            name: "Rowing",
+            emoji: "\u{1F6A3}",
+            sfSymbol: "figure.rower",
+            subtypes: [],
+            category: .cardio
+        ),
+        ActivityTypeDefinition(
+            name: "Ski Trainer",
+            emoji: "\u{26F7}\u{FE0F}",
+            sfSymbol: "figure.skiing.crosscountry",
+            subtypes: [],
+            category: .cardio
+        ),
+        ActivityTypeDefinition(
             name: "Walking",
             emoji: "\u{1F6B6}",
             sfSymbol: "figure.walk",
             subtypes: ["Outdoor", "Indoor"],
-            category: .cardio
+            category: .cardio,
+            isHybrid: true
         ),
 
         // Recovery
@@ -161,6 +176,20 @@ struct ActivityTypes {
             subtypes: [],
             category: .recovery
         ),
+        ActivityTypeDefinition(
+            name: "Massage",
+            emoji: "\u{1F486}",
+            sfSymbol: "figure.mind.and.body",
+            subtypes: [],
+            category: .recovery
+        ),
+        ActivityTypeDefinition(
+            name: "Chiropractic",
+            emoji: "\u{1F9B4}",
+            sfSymbol: "figure.flexibility",
+            subtypes: [],
+            category: .recovery
+        ),
     ]
 
     static func forCategory(_ category: ActivityCategoryType) -> [ActivityTypeDefinition] {
@@ -186,9 +215,9 @@ struct ActivityTypes {
             return "lifting"
         case "Circuit":
             return "lifting+cardio"
-        case "Running", "Cycle", "Sports", "Stair Climbing", "Elliptical", "Swimming":
+        case "Running", "Cycle", "Sports", "Stair Climbing", "Elliptical", "Swimming", "Rowing", "Ski Trainer":
             return "cardio"
-        case "Cold Plunge", "Sauna", "Contrast Therapy", "Yoga", "Pilates":
+        case "Cold Plunge", "Sauna", "Contrast Therapy", "Massage", "Chiropractic", "Yoga", "Pilates":
             return "recovery"
         default:
             return "other"
@@ -256,6 +285,10 @@ struct ActivityTypes {
             return .elliptical
         case "stair climbing", "stairclimbing":
             return .stairClimbing
+        case "rowing":
+            return .rowing
+        case "ski trainer":
+            return .crossCountrySkiing
 
         // Strength
         case "strength training", "weightlifting", "lifting", "bodyweight", "circuit":
@@ -272,7 +305,7 @@ struct ActivityTypes {
             return .yoga
         case "pilates":
             return .pilates
-        case "cold plunge", "sauna", "contrast therapy":
+        case "cold plunge", "sauna", "contrast therapy", "massage", "chiropractic":
             return .preparationAndRecovery
 
         // Sports

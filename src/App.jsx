@@ -15710,11 +15710,20 @@ export default function DaySevenApp() {
     let updatedActivities;
 
     if (isEdit) {
-      // Update existing activity
+      // Update existing activity. The edit modal rebuilds a curated activity
+      // object that omits the HealthKit identity fields, so carry them over from
+      // the existing record. Otherwise editing an auto-logged workout (e.g.
+      // adding muscle groups from the "needs details" banner) strips its
+      // healthKitUUID, and the next HK sync no longer recognizes the workout and
+      // re-imports it as a duplicate needs-details entry.
+      const existingActivity = activities.find(a => a.id === activityData.id);
       newActivity = {
         ...activityData,
         photoURL,
-        time: activityData.time || new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+        time: activityData.time || new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+        healthKitUUID: activityData.healthKitUUID ?? existingActivity?.healthKitUUID,
+        healthKitStartDate: activityData.healthKitStartDate ?? existingActivity?.healthKitStartDate,
+        source: activityData.source ?? existingActivity?.source,
       };
       updatedActivities = activities.map(a => a.id === activityData.id ? newActivity : a);
       

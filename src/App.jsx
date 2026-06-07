@@ -258,6 +258,22 @@ const dedupeCrossSource = (workouts) => {
   });
 };
 
+// Final idempotency guard for HealthKit auto-import: drop any to-be-saved
+// workout whose UUID is already present in `existing`. The start-of-sync UUID
+// filter keys off a snapshot of activitiesRef; if a prior (or overlapping) sync
+// saved a workout that hasn't reached that snapshot yet, the workout slips
+// through and gets appended a second time. Re-checking against the freshest read
+// right before the merge makes the save idempotent regardless of run ordering.
+const dropAlreadySaved = (candidates, existing) => {
+  if (!Array.isArray(candidates) || candidates.length === 0) return candidates || [];
+  const seen = new Set();
+  for (const a of existing || []) {
+    if (a?.healthKitUUID) seen.add(a.healthKitUUID);
+    if (a?.linkedHealthKitUUID) seen.add(a.linkedHealthKitUUID);
+  }
+  return candidates.filter(w => !w?.healthKitUUID || !seen.has(w.healthKitUUID));
+};
+
 // Get current week key (Sunday start date as "YYYY-MM-DD") for celebration tracking
 const getCurrentWeekKey = () => {
   const today = new Date();
@@ -12938,6 +12954,11 @@ export default function DaySevenApp() {
   useEffect(() => { userProfileRef.current = userProfile; }, [userProfile]);
   const userRef = useRef(user);
   useEffect(() => { userRef.current = user; }, [user]);
+  // Coalesces overlapping HealthKit syncs. visibilitychange (chatty on iOS),
+  // the initial load, and post-onboarding/username can all fire syncHealthKit
+  // while a previous run is mid-flight; without this guard each run computes
+  // its new-workouts list from the same pre-save snapshot and double-saves.
+  const syncingHealthKitRef = useRef(false);
 
   // Force Pro for accounts whose Firestore doc has `forceProTier: true` (comped
   // friends, marketing partners). OR'd with the live RevenueCat result so a real
@@ -14553,6 +14574,10 @@ export default function DaySevenApp() {
     if (!Capacitor.isNativePlatform()) return;
     if (userProfileRef.current?.disableHealthKitSync) return;
     if (isDemoAccount(userProfileRef.current, userRef.current)) return;
+    // Skip if a sync is already running — overlapping runs would each import
+    // the same workouts from a shared pre-save snapshot (duplicate auto-saves).
+    if (syncingHealthKitRef.current) return;
+    syncingHealthKitRef.current = true;
 
     try {
       const result = await syncHealthKitData();
@@ -14597,7 +14622,24 @@ export default function DaySevenApp() {
         );
         // Collapse cross-source duplicates (same workout written to HealthKit
         // by Apple Watch + Strava + Garmin Connect, etc.).
-        const newWorkouts = dedupeCrossSource(newWorkoutsRaw);
+        let newWorkouts = dedupeCrossSource(newWorkoutsRaw);
+
+        // Final idempotency guard. The UUID filter above keyed off a snapshot of
+        // activitiesRef taken when this run started; re-read the freshest list
+        // now and drop anything already persisted, then reuse it as the merge
+        // base below so every downstream surface (auto-log, smart-save, calendar,
+        // notifications) keys off the same de-duplicated set. Without this an
+        // earlier save that hadn't reached the snapshot would be appended twice.
+        const syncUid = userRef.current?.uid;
+        let freshActivitiesForSync = null;
+        if (syncUid && newWorkouts.length > 0) {
+          try {
+            freshActivitiesForSync = await getUserActivities(syncUid, true);
+            newWorkouts = dropAlreadySaved(newWorkouts, freshActivitiesForSync);
+          } catch {
+            freshActivitiesForSync = null;
+          }
+        }
 
         // --- Post-onboarding: auto-import ALL workouts silently ---
         if (justOnboardedRef.current && newWorkouts.length > 0) {
@@ -14612,7 +14654,7 @@ export default function DaySevenApp() {
           const uid = userRef.current?.uid;
           if (uid) {
             try {
-              const freshActivities = await getUserActivities(uid, true);
+              const freshActivities = freshActivitiesForSync ?? await getUserActivities(uid, true);
               const merged = [...autoImportedActivities, ...freshActivities];
               lastFirestoreActivityCount.current = merged.length;
               activitiesRef.current = merged;
@@ -14710,7 +14752,7 @@ export default function DaySevenApp() {
             const uid = userRef.current?.uid;
             if (uid) {
               try {
-                const freshActivities = await getUserActivities(uid, true);
+                const freshActivities = freshActivitiesForSync ?? await getUserActivities(uid, true);
                 const merged = [...newActivities, ...freshActivities];
                 lastFirestoreActivityCount.current = merged.length;
                 activitiesRef.current = merged;
@@ -14777,6 +14819,8 @@ export default function DaySevenApp() {
         }
       }
     } catch (error) {
+    } finally {
+      syncingHealthKitRef.current = false;
     }
   }, []);
 

@@ -42,6 +42,7 @@ ios/App/DaySeven Watch Watch App/GoogleService-Info.plist
 
 # Local dev/build config
 .claude/launch.json
+.claude/worktrees/
 ios/debug.xcconfig
 ios/App/archive.plist
 

@@ -1130,10 +1130,18 @@ export default function ProfilePage(props) {
                 {/* Week stats button - shows checkmark if all goals met */}
                 {(() => {
                   const goalsHit = weekGoalsMet[week.id];
+                  // week.days[0].date is always the Sunday of the row, which is the
+                  // key format stored in shieldedWeeks/vacationMode.vacationWeeks.
+                  const weekKey = week.days[0]?.date;
+                  const isVacation = (userData?.vacationMode?.vacationWeeks || []).includes(weekKey);
+                  const isShielded = (userData?.streakShield?.shieldedWeeks || []).includes(weekKey);
                   const weekEndDate = week.days[6]?.date || week.days[week.days.length - 1]?.date;
                   const isWeekLocked = !!(historyCutoffDate && weekEndDate < historyCutoffDate);
-                  const bgDefault = goalsHit ? 'rgba(0,255,148,0.15)' : 'rgba(255,255,255,0.05)';
-                  const bgPressed = goalsHit ? 'rgba(0,255,148,0.25)' : 'rgba(255,255,255,0.1)';
+                  // Vacation, shield, and goals-met all keep the streak alive, so tint
+                  // the cell to read as "good"; vacation gets its own orange accent.
+                  const isGood = goalsHit || isShielded || isVacation;
+                  const bgDefault = isVacation ? 'rgba(255,149,0,0.15)' : (isGood ? 'rgba(0,255,148,0.15)' : 'rgba(255,255,255,0.05)');
+                  const bgPressed = isVacation ? 'rgba(255,149,0,0.28)' : (isGood ? 'rgba(0,255,148,0.25)' : 'rgba(255,255,255,0.1)');
                   return (
                     <button
                       onClick={() => {
@@ -1167,7 +1175,11 @@ export default function ProfilePage(props) {
                         e.currentTarget.style.backgroundColor = bgDefault;
                       }}
                     >
-                      {goalsHit ? (
+                      {isVacation ? (
+                        <span style={{ fontSize: '13px', lineHeight: 1 }}>🌴</span>
+                      ) : isShielded ? (
+                        <span style={{ fontSize: '13px', lineHeight: 1 }}>🛡️</span>
+                      ) : goalsHit ? (
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00FF94" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                           <polyline points="20 6 9 17 4 12" />
                         </svg>

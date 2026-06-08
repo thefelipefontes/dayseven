@@ -8197,6 +8197,14 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
         ? pendingActivity.strengthType : (pendingActivity?.type || null);
       setActivityType(editType);
       setSubtype(pendingActivity?.subtype || '');
+      // Seed countToward from the saved value (edits) or the type's default (new
+      // logs), and remember that default so the effect above doesn't wipe a manual
+      // choice when only the subtype changes later (hybrid activities like Walking).
+      {
+        const seedCtDefault = editType ? getDefaultCountToward(editType, pendingActivity?.subtype || '') : null;
+        lastCtDefaultRef.current = seedCtDefault;
+        setCountToward(pendingActivity?.countToward ?? seedCtDefault);
+      }
       setStrengthType(pendingActivity?.strengthType || '');
       setFocusAreas(normalizeFocusAreas(pendingActivity?.focusAreas || (pendingActivity?.focusArea ? [pendingActivity.focusArea] : [])));
       setCustomSport('');
@@ -8562,19 +8570,21 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   // Uses shared getDefaultCountToward() defined above
 
   const [countToward, setCountToward] = useState(null);
+  // The default countToward implied by the current (type, subtype). The effect
+  // below only auto-applies a new default when this value actually changes — so
+  // changing a subtype that doesn't affect the default (e.g. Walking →
+  // Indoor/Outdoor, which is always "don't count") never wipes a manual choice.
+  const lastCtDefaultRef = useRef(null);
 
-  // Update countToward when activity type or subtype changes
+  // Auto-apply the type/subtype's default countToward, but only when that default
+  // changes. The open effect seeds both countToward and lastCtDefaultRef, so
+  // opening an existing activity keeps its saved category and a manual pick made
+  // before choosing indoor/outdoor survives.
   useEffect(() => {
-    if (activityType && activityType !== 'Other') {
-      const defaultCT = getDefaultCountToward(activityType, subtype);
-      if (defaultCT) {
-        setCountToward(defaultCT);
-      } else {
-        // For uncategorized HK types, don't override — customActivityCategory handles it
-        setCountToward(null);
-      }
-    } else {
-      setCountToward(null);
+    const defaultCT = activityType ? getDefaultCountToward(activityType, subtype) : null;
+    if (defaultCT !== lastCtDefaultRef.current) {
+      lastCtDefaultRef.current = defaultCT;
+      setCountToward(defaultCT);
     }
   }, [activityType, subtype]);
 

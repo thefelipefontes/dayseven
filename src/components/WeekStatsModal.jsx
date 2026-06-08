@@ -53,7 +53,22 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
   const liftsGoalMet = (weekData?.lifts || 0) >= goals.liftsPerWeek;
   const cardioGoalMet = (weekData?.cardio || 0) >= goals.cardioPerWeek;
   const recoveryGoalMet = (weekData?.recovery || 0) >= goals.recoveryPerWeek;
-  
+
+  // Vacation/shield weeks keep streaks alive without hitting the goals, so the
+  // streak rows show 🌴/🛡️ rather than a red ✗ (mirrors the Activity Calendar cells).
+  const isVacation = !!weekData?.isVacation;
+  const isShielded = !!weekData?.isShielded;
+  const streakIcon = (met, color) => {
+    if (isVacation) return <span style={{ fontSize: '13px', lineHeight: 1 }}>🌴</span>;
+    if (isShielded) return <span style={{ fontSize: '13px', lineHeight: 1 }}>🛡️</span>;
+    return <span className="text-xs font-bold" style={{ color: met ? color : '#FF453A' }}>{met ? '✓' : '✗'}</span>;
+  };
+  const streakRowStyle = (met, rgb) => {
+    if (isVacation) return { backgroundColor: 'rgba(255,149,0,0.1)', border: '1px solid rgba(255,149,0,0.2)' };
+    if (isShielded || met) return { backgroundColor: `rgba(${rgb},0.1)`, border: `1px solid rgba(${rgb},0.2)` };
+    return { backgroundColor: 'rgba(255,255,255,0.05)', border: 'none' };
+  };
+
   return (
     <div 
       className="fixed inset-0 z-50 flex flex-col transition-all duration-300"
@@ -146,16 +161,25 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
           </div>
         </div>
 
-        {/* Goals Status */}
-        <div className="p-3 rounded-xl mb-4 flex items-center justify-between" style={{ 
-          backgroundColor: weekData?.goalsMet ? 'rgba(0,255,148,0.1)' : 'rgba(255,69,58,0.1)',
-          border: `1px solid ${weekData?.goalsMet ? 'rgba(0,255,148,0.3)' : 'rgba(255,69,58,0.3)'}`
-        }}>
-          <span className="text-sm">Week Goals</span>
-          <span className="font-bold" style={{ color: weekData?.goalsMet ? '#00FF94' : '#FF453A' }}>
-            {weekData?.goalsMet ? '✓ Completed' : '✗ Incomplete'}
-          </span>
-        </div>
+        {/* Goals Status — vacation/shield weeks read as protected, not "Incomplete" */}
+        {(() => {
+          let bg, border, color, label;
+          if (isVacation) {
+            bg = 'rgba(255,149,0,0.1)'; border = 'rgba(255,149,0,0.3)'; color = '#FF9500'; label = '🌴 Vacation Week';
+          } else if (isShielded) {
+            bg = 'rgba(0,209,255,0.1)'; border = 'rgba(0,209,255,0.3)'; color = '#00D1FF'; label = '🛡️ Shield Used';
+          } else if (weekData?.goalsMet) {
+            bg = 'rgba(0,255,148,0.1)'; border = 'rgba(0,255,148,0.3)'; color = '#00FF94'; label = '✓ Completed';
+          } else {
+            bg = 'rgba(255,69,58,0.1)'; border = 'rgba(255,69,58,0.3)'; color = '#FF453A'; label = '✗ Incomplete';
+          }
+          return (
+            <div className="p-3 rounded-xl mb-4 flex items-center justify-between" style={{ backgroundColor: bg, border: `1px solid ${border}` }}>
+              <span className="text-sm">Week Goals</span>
+              <span className="font-bold" style={{ color }}>{label}</span>
+            </div>
+          );
+        })()}
 
         {/* Week Totals */}
         <div className="mb-4">
@@ -192,53 +216,33 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
             <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Streaks Maintained</span>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <div className="p-3 rounded-xl flex items-center justify-between" style={{ 
-              backgroundColor: liftsGoalMet ? 'rgba(0,255,148,0.1)' : 'rgba(255,255,255,0.05)',
-              border: liftsGoalMet ? '1px solid rgba(0,255,148,0.2)' : 'none'
-            }}>
+            <div className="p-3 rounded-xl flex items-center justify-between" style={streakRowStyle(liftsGoalMet, '0,255,148')}>
               <div>
                 <span className="text-xs">💪 Strength</span>
                 <div className="text-[10px] text-gray-500">{goals.liftsPerWeek}+ per week</div>
               </div>
-              <span className="text-xs font-bold" style={{ color: liftsGoalMet ? '#00FF94' : '#FF453A' }}>
-                {liftsGoalMet ? '✓' : '✗'}
-              </span>
+              {streakIcon(liftsGoalMet, '#00FF94')}
             </div>
-            <div className="p-3 rounded-xl flex items-center justify-between" style={{ 
-              backgroundColor: cardioGoalMet ? 'rgba(255,149,0,0.1)' : 'rgba(255,255,255,0.05)',
-              border: cardioGoalMet ? '1px solid rgba(255,149,0,0.2)' : 'none'
-            }}>
+            <div className="p-3 rounded-xl flex items-center justify-between" style={streakRowStyle(cardioGoalMet, '255,149,0')}>
               <div>
                 <span className="text-xs">❤️‍🔥 Cardio</span>
                 <div className="text-[10px] text-gray-500">{goals.cardioPerWeek}+ per week</div>
               </div>
-              <span className="text-xs font-bold" style={{ color: cardioGoalMet ? '#FF9500' : '#FF453A' }}>
-                {cardioGoalMet ? '✓' : '✗'}
-              </span>
+              {streakIcon(cardioGoalMet, '#FF9500')}
             </div>
-            <div className="p-3 rounded-xl flex items-center justify-between" style={{ 
-              backgroundColor: recoveryGoalMet ? 'rgba(0,209,255,0.1)' : 'rgba(255,255,255,0.05)',
-              border: recoveryGoalMet ? '1px solid rgba(0,209,255,0.2)' : 'none'
-            }}>
+            <div className="p-3 rounded-xl flex items-center justify-between" style={streakRowStyle(recoveryGoalMet, '0,209,255')}>
               <div>
                 <span className="text-xs">🧊 Recovery</span>
                 <div className="text-[10px] text-gray-500">{goals.recoveryPerWeek}+ per week</div>
               </div>
-              <span className="text-xs font-bold" style={{ color: recoveryGoalMet ? '#00D1FF' : '#FF453A' }}>
-                {recoveryGoalMet ? '✓' : '✗'}
-              </span>
+              {streakIcon(recoveryGoalMet, '#00D1FF')}
             </div>
-            <div className="p-3 rounded-xl flex items-center justify-between" style={{ 
-              backgroundColor: weekData?.goalsMet ? 'rgba(255,215,0,0.1)' : 'rgba(255,255,255,0.05)',
-              border: weekData?.goalsMet ? '1px solid rgba(255,215,0,0.2)' : 'none'
-            }}>
+            <div className="p-3 rounded-xl flex items-center justify-between" style={streakRowStyle(!!weekData?.goalsMet, '255,215,0')}>
               <div>
                 <span className="text-xs">🏆 Master</span>
                 <div className="text-[10px] text-gray-500">All goals hit</div>
               </div>
-              <span className="text-xs font-bold" style={{ color: weekData?.goalsMet ? '#FFD700' : '#FF453A' }}>
-                {weekData?.goalsMet ? '✓' : '✗'}
-              </span>
+              {streakIcon(!!weekData?.goalsMet, '#FFD700')}
             </div>
           </div>
         </div>

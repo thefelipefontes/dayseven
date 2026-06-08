@@ -291,6 +291,16 @@ const getPreviousWeekKey = () => {
   return toLocalDateStr(sunday);
 };
 
+// Sunday key ("YYYY-MM-DD") for the week containing a given "YYYY-MM-DD" date.
+// Used to compare a vacation's activation week against the current week.
+const getWeekKeyForDate = (dateStr) => {
+  if (!dateStr) return null;
+  const d = new Date(dateStr + 'T12:00:00');
+  const sunday = new Date(d);
+  sunday.setDate(d.getDate() - d.getDay());
+  return toLocalDateStr(sunday);
+};
+
 // Default empty week celebration state
 const emptyWeekCelebrations = { week: '', lifts: false, cardio: false, recovery: false, master: false };
 
@@ -12853,6 +12863,10 @@ export default function DaySevenApp() {
   const [celebrationType, setCelebrationType] = useState('weekly'); // 'weekly', 'daily-steps', 'daily-calories'
   const [showWeekStreakCelebration, setShowWeekStreakCelebration] = useState(false);
   const [showToast, setShowToast] = useState(false);
+  // When a vacation carries past its starting week, ending it pops a choice:
+  // does the current (spilled-into) week stay frozen or count toward the streak?
+  const [showVacationSpillChoice, setShowVacationSpillChoice] = useState(false);
+  const [vacationSpillAnimating, setVacationSpillAnimating] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState('record'); // 'record' or 'success'
   const [pendingToast, setPendingToast] = useState(null); // Queue toast to show after celebration
@@ -15250,6 +15264,14 @@ export default function DaySevenApp() {
   useEffect(() => {
     userDataRef.current = userData;
   }, [userData]);
+  // Drive the spill-choice modal's fade/scale-in (mirrors the quick-action modal).
+  useEffect(() => {
+    if (showVacationSpillChoice) {
+      const t = setTimeout(() => setVacationSpillAnimating(true), 10);
+      return () => clearTimeout(t);
+    }
+    setVacationSpillAnimating(false);
+  }, [showVacationSpillChoice]);
   useEffect(() => {
     healthKitDataRef.current = healthKitData;
   }, [healthKitData]);
@@ -15629,6 +15651,61 @@ export default function DaySevenApp() {
     }
 
     return streaks;
+  };
+
+  // Turn vacation mode off. `countCurrentWeekTowardStreak` decides how the week
+  // the user is ending in is treated: when true the current week is dropped from
+  // vacationWeeks (so the user must hit their goals to keep the streak); when
+  // false it stays frozen. Streaks are recalculated either way since membership
+  // in vacationWeeks changes the streak math.
+  const deactivateVacationMode = (countCurrentWeekTowardStreak) => {
+    setUserData(prev => {
+      const vm = prev.vacationMode || {};
+      const currentWeek = getCurrentWeekKey();
+      const existing = vm.vacationWeeks || [];
+      const vacationWeeks = countCurrentWeekTowardStreak
+        ? existing.filter(w => w !== currentWeek)
+        : (existing.includes(currentWeek) ? existing : [...existing, currentWeek]);
+      const updatedVm = { ...vm, isActive: false, vacationWeeks };
+      const updated = { ...prev, vacationMode: updatedVm };
+      const goals = prev.goals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2 };
+      const prevRef = userDataRef.current;
+      userDataRef.current = updated;
+      const recalculated = recalculateStreaksFromHistory(activities, goals);
+      userDataRef.current = prevRef;
+      if (recalculated) {
+        updated.streaks = { ...prev.streaks, ...recalculated };
+        if (user?.uid) updateUserProfile(user.uid, { vacationMode: updatedVm, streaks: updated.streaks }).catch(() => {});
+      } else if (user?.uid) {
+        updateUserProfile(user.uid, { vacationMode: updatedVm }).catch(() => {});
+      }
+      return updated;
+    });
+  };
+
+  // Fade the spill-choice modal out (matches the quick-action modal timing),
+  // then unmount it and run an optional follow-up once it's gone.
+  const closeVacationSpill = (after) => {
+    setVacationSpillAnimating(false);
+    setTimeout(() => {
+      setShowVacationSpillChoice(false);
+      if (after) after();
+    }, 250);
+  };
+
+  // Entry point for all "turn vacation off" buttons. If the vacation has carried
+  // into a week past the one it started in, ask whether that week should count
+  // toward the streak; otherwise just deactivate (the starting week stays frozen).
+  const requestVacationDeactivation = () => {
+    const vm = userData.vacationMode || {};
+    if (!vm.isActive) return;
+    const activationWeek = vm.startDate ? getWeekKeyForDate(vm.startDate) : getCurrentWeekKey();
+    const spilled = getCurrentWeekKey() !== activationWeek;
+    if (spilled) {
+      setShowVacationSpillChoice(true);
+    } else {
+      deactivateVacationMode(false);
+    }
   };
 
   const handleAddActivity = (pendingOrDate = null) => {
@@ -17088,13 +17165,7 @@ export default function DaySevenApp() {
                       return updated;
                     });
                   }}
-                  onDeactivateVacation={() => {
-                    const updated = { ...userData.vacationMode, isActive: false };
-                    setUserData(prev => ({ ...prev, vacationMode: updated }));
-                    if (user?.uid) {
-                      updateUserProfile(user.uid, { vacationMode: updated }).catch(() => {});
-                    }
-                  }}
+                  onDeactivateVacation={requestVacationDeactivation}
                   autoImportedCount={autoImportedCount}
                   onDismissAutoImported={() => setAutoImportedCount(0)}
                   onShareStamp={(activity, routeCoords) => {
@@ -17231,11 +17302,7 @@ export default function DaySevenApp() {
                   onToggleVacationMode={() => {
                     const vm = userData.vacationMode || {};
                     if (vm.isActive) {
-                      const updated = { ...vm, isActive: false };
-                      setUserData(prev => ({ ...prev, vacationMode: updated }));
-                      if (user?.uid) {
-                        updateUserProfile(user.uid, { vacationMode: updated }).catch(() => {});
-                      }
+                      requestVacationDeactivation();
                     } else {
                       const currentYear = new Date().getFullYear();
                       const used = vm.activationYear === currentYear ? (vm.activationsThisYear || 0) : 0;
@@ -17324,12 +17391,8 @@ export default function DaySevenApp() {
               onToggleVacationMode={() => {
                 const vm = userData.vacationMode || {};
                 if (vm.isActive) {
-                  // Deactivate
-                  const updated = { ...vm, isActive: false };
-                  setUserData(prev => ({ ...prev, vacationMode: updated }));
-                  if (user?.uid) {
-                    updateUserProfile(user.uid, { vacationMode: updated }).catch(() => {});
-                  }
+                  // Deactivate (may prompt how to count a spilled-into week)
+                  requestVacationDeactivation();
                 } else {
                   // Activate — check limits
                   const currentYear = new Date().getFullYear();
@@ -18365,6 +18428,77 @@ export default function DaySevenApp() {
         onTap={toastType === 'record' ? navigateToHallOfFame : null}
         type={toastType}
       />
+
+      {/* Vacation spill choice — shown when ending a vacation that carried past
+          its starting week. Lets the user keep the current week frozen or count
+          it toward their streak. */}
+      {showVacationSpillChoice && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center transition-opacity duration-300"
+          style={{ opacity: vacationSpillAnimating ? 1 : 0 }}
+          onClick={() => closeVacationSpill()}
+        >
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div
+            className="relative w-[85%] max-w-sm rounded-2xl p-6 transition-all duration-300 ease-out"
+            style={{
+              backgroundColor: '#1a1a1a',
+              transform: vacationSpillAnimating ? 'scale(1) translateY(0)' : 'scale(0.95) translateY(20px)',
+              opacity: vacationSpillAnimating ? 1 : 0,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex flex-col items-center text-center mb-5">
+              <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
+                <span className="text-3xl">🌴</span>
+              </div>
+              <h3 className="text-white font-semibold text-lg">This week carried over</h3>
+              <p className="text-gray-400 text-sm mt-2 leading-relaxed">
+                Your vacation ran into this week. How should this week count toward your streaks?
+              </p>
+            </div>
+
+            <div className="space-y-2.5">
+              <button
+                onClick={() => {
+                  triggerHaptic(ImpactStyle.Medium);
+                  closeVacationSpill(() => deactivateVacationMode(false));
+                }}
+                className="w-full p-3.5 rounded-xl text-left flex items-start gap-3"
+                style={{ backgroundColor: 'rgba(255,149,0,0.08)', border: '1px solid rgba(255,149,0,0.2)' }}
+              >
+                <span className="text-xl leading-none mt-0.5">🌴</span>
+                <div>
+                  <div className="text-sm font-semibold" style={{ color: '#FF9500' }}>Count as a vacation week</div>
+                  <div className="text-[11px] text-gray-400 mt-0.5 leading-snug">Streaks stay frozen for this week — no goals needed.</div>
+                </div>
+              </button>
+              <button
+                onClick={() => {
+                  triggerHaptic(ImpactStyle.Medium);
+                  closeVacationSpill(() => deactivateVacationMode(true));
+                }}
+                className="w-full p-3.5 rounded-xl text-left flex items-start gap-3"
+                style={{ backgroundColor: 'rgba(0,255,148,0.08)', border: '1px solid rgba(0,255,148,0.2)' }}
+              >
+                <span className="text-xl leading-none mt-0.5">🔥</span>
+                <div>
+                  <div className="text-sm font-semibold" style={{ color: '#00FF94' }}>Count toward my streak</div>
+                  <div className="text-[11px] text-gray-400 mt-0.5 leading-snug">You're back — hit this week's goals to keep your streak going.</div>
+                </div>
+              </button>
+            </div>
+
+            <button
+              onClick={() => closeVacationSpill()}
+              className="w-full mt-3 py-3 rounded-xl text-sm font-semibold text-white"
+              style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {showFriends && (
         <Friends

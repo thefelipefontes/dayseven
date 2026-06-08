@@ -3273,6 +3273,12 @@ export default function ProfilePage(props) {
             weekSteps += healthData?.steps || 0;
           });
 
+          // days[0].date is the Sunday key used in vacationWeeks/shieldedWeeks
+          // (same matching the calendar cells use, see Profile calendar above).
+          const weekKey = selectedWeek.days?.[0]?.date;
+          const isVacation = (userData?.vacationMode?.vacationWeeks || []).includes(weekKey);
+          const isShielded = (userData?.streakShield?.shieldedWeeks || []).includes(weekKey);
+
           return {
             lifts: lifts.length,
             cardio: cardioArr.length,
@@ -3281,7 +3287,9 @@ export default function ProfilePage(props) {
             steps: weekSteps,
             miles: miles,
             activities: weekActivities,
-            goalsMet: lifts.length >= goals.liftsPerWeek && cardioArr.length >= goals.cardioPerWeek && recoveryArr.length >= goals.recoveryPerWeek
+            goalsMet: lifts.length >= goals.liftsPerWeek && cardioArr.length >= goals.cardioPerWeek && recoveryArr.length >= goals.recoveryPerWeek,
+            isVacation,
+            isShielded
           };
         })() : null}
         weekLabel={selectedWeek?.label || ''}

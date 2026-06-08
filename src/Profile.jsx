@@ -36,7 +36,7 @@ export default function ProfilePage(props) {
     onAddActivity, onDeleteActivity, onEditActivity, initialView = 'calendar', initialStatsSubView = 'overview',
     activeStreaksRef, calendarRef, statsRef, progressPhotosRef, isPro, onPresentPaywall, onShareStamp,
     friends = [], onChallengeActivity, historyLatestActivityRef,
-    onUseStreakShield, onToggleVacationMode
+    onUseStreakShield, onToggleVacationMode, onCaptureLocation
   } = props;
 
   const [showSelfProfile, setShowSelfProfile] = useState(false);
@@ -3361,6 +3361,7 @@ export default function ProfilePage(props) {
         user={user}
         userProfile={userProfile}
         onShareStamp={onShareStamp}
+        onCaptureLocation={onCaptureLocation}
         isPro={isPro}
         onPresentPaywall={onPresentPaywall}
         onChallenge={(activity) => { onChallengeActivity && onChallengeActivity(activity); setSelectedDayActivity(null); }}

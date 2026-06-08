@@ -8,11 +8,12 @@ import { triggerHaptic, ImpactStyle } from '../utils/haptics';
 import { formatFriendlyDate } from '../utils/dateHelpers';
 import { normalizeFocusAreas } from '../utils/focusAreas';
 import { fetchWorkoutRoute } from '../services/healthService';
+import { reverseGeocode, formatLocation } from '../utils/geocode';
 import { getReactions, addReaction, removeReaction, getComments, addComment } from '../services/friendService';
 import { isChallengeable } from '../services/challengeService';
 import { resolveUnit, unitLabel, formatDistanceValue, formatPaceFromMinutesAndMiles } from '../utils/distance';
 
-const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user, userProfile, onShareStamp, isPro, onPresentPaywall, onChallenge, friends = [] }) => {
+const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user, userProfile, onShareStamp, onCaptureLocation, isPro, onPresentPaywall, onChallenge, friends = [] }) => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -29,6 +30,12 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
   const [routeCoords, setRouteCoords] = useState([]);
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeChecked, setRouteChecked] = useState(false);
+
+  // Location (city/state/country) — auto-derived from the GPS route's start
+  // point, persisted on the activity, and removable. Only captured for the
+  // user's own activities.
+  const [location, setLocation] = useState(null);
+  const geocodedIdRef = useRef(null);
 
   // Drag-to-dismiss state — only engages when the content is scrolled to the top.
   // Native iOS elastic overscroll has to be killed via preventDefault on a
@@ -87,6 +94,27 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
         setRouteChecked(true);
       });
   }, [isOpen, activity?.id, activity?.healthKitUUID]);
+
+  // Derive/display location. Shows a stored location immediately; otherwise, for
+  // the user's own activities with a GPS route, reverse-geocodes the route's
+  // start point once and persists it. `location === null` on the activity means
+  // the user removed it — don't re-capture.
+  useEffect(() => {
+    if (!isOpen || !activity) { setLocation(null); return; }
+    if (activity.location) { setLocation(activity.location); return; }
+    setLocation(null);
+    if (activity.location === null) return; // explicitly removed
+    const isOwn = activityOwnerId === user?.uid;
+    if (!isOwn || !onCaptureLocation) return;
+    if (!routeCoords || routeCoords.length === 0) return;
+    if (geocodedIdRef.current === activity.id) return;
+    geocodedIdRef.current = activity.id;
+    reverseGeocode(routeCoords[0].lat, routeCoords[0].lng).then(loc => {
+      if (!loc) return;
+      setLocation(loc);
+      onCaptureLocation(activity.id, loc);
+    });
+  }, [isOpen, activity?.id, activity?.location, routeCoords, activityOwnerId, user?.uid]);
 
   const fetchInteractions = async () => {
     if (!activity?.id || !activityOwnerId) return;
@@ -354,6 +382,26 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
               </div>
             </div>
           </div>
+
+          {/* Location — auto-captured from the GPS route, removable by the owner */}
+          {location && (location.city || location.state || location.country) && (
+            <div className="p-4 rounded-xl mb-4 flex items-center justify-between" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="text-lg">📍</span>
+                <div className="text-sm font-medium truncate">{formatLocation(location)}</div>
+              </div>
+              {activityOwnerId === user?.uid && onCaptureLocation && (
+                <button
+                  onClick={() => { setLocation(null); onCaptureLocation(activity.id, null); }}
+                  className="ml-3 flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}
+                  aria-label="Remove location"
+                >
+                  <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M3 3L11 11M11 3L3 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Metrics Grid */}
           <div className="grid grid-cols-2 gap-3 mb-4">
@@ -672,7 +720,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
             {onShareStamp && (
               <button
                 onClick={() => {
-                  onShareStamp(activity, routeCoords);
+                  onShareStamp({ ...activity, location: location || null }, routeCoords);
                   handleClose();
                 }}
                 className="w-full py-3 rounded-xl font-medium transition-all duration-150"

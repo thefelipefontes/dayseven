@@ -35,6 +35,7 @@ import { triggerHaptic } from './utils/haptics';
 import { toLocalDateStr, getTodayDate, getCurrentYear, parseLocalDate, formatFriendlyDate } from './utils/dateHelpers';
 import { FOCUS_AREA_GROUPS, ALL_FOCUS_AREAS, FOCUS_AREA_MIGRATION, normalizeFocusAreas } from './utils/focusAreas';
 import { initialUserData } from './utils/initialUserData';
+import { reverseGeocode, formatLocation } from './utils/geocode';
 import SectionIcon from './components/SectionIcon';
 import LongPressMenu from './components/LongPressMenu';
 import { SwipeableProvider, SwipeableActivityItem, SwipeableContext, globalIsPulling } from './components/SwipeableActivityItem';
@@ -5612,6 +5613,9 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
   // Measured center of the activity name text within the card (overlay mode),
   // used to horizontally center the route trace directly above it.
   const [nameCenterX, setNameCenterX] = useState(null);
+  // Whether to print the captured location on the card (user can remove it
+  // before sharing). Defaults on whenever the activity has a location.
+  const [includeLocation, setIncludeLocation] = useState(true);
 
   useEffect(() => {
     if (isOpen) {
@@ -5621,6 +5625,9 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
       setIsAnimating(false);
     }
   }, [isOpen]);
+
+  // Re-enable the location line each time a different activity is shared.
+  useEffect(() => { setIncludeLocation(true); }, [activity?.id, isOpen]);
 
   // Measure the activity-name text's horizontal center (relative to the card
   // content area's left edge) so the route trace can be absolutely positioned
@@ -5895,6 +5902,25 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
         </button>
       </div>
 
+      {/* Location toggle — only when the activity has a captured location.
+          Tap to include/remove it from the card before sharing. */}
+      {activity.location && (activity.location.city || activity.location.state || activity.location.country) && (
+        <button
+          onClick={() => setIncludeLocation(v => !v)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16,
+            padding: '6px 12px', borderRadius: 10, border: 'none', cursor: 'pointer',
+            fontSize: 13, fontWeight: 600,
+            backgroundColor: includeLocation ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)',
+            color: includeLocation ? '#fff' : 'rgba(255,255,255,0.45)',
+          }}
+        >
+          <span>📍</span>
+          <span>{formatLocation(activity.location, { short: true })}</span>
+          <span style={{ fontSize: 11, opacity: 0.7 }}>{includeLocation ? '✓ shown' : 'hidden'}</span>
+        </button>
+      )}
+
       {/* Stamp Card Preview */}
       <div style={{
         width: 270, height: 480, borderRadius: 16, overflow: 'hidden',
@@ -6139,6 +6165,14 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
             }}>
               {formatStampDate(activity.date)}{activity.time ? ` • ${activity.time}` : ''}
             </div>
+            {includeLocation && activity.location && (activity.location.city || activity.location.state || activity.location.country) && (
+              <div style={{
+                fontSize: 10, color: 'rgba(255,255,255,0.4)',
+                letterSpacing: '0.3px', marginTop: 2, textAlign: 'center',
+              }}>
+                📍 {formatLocation(activity.location, { short: true })}
+              </div>
+            )}
           </div>
 
           {/* Middle: Category-specific content */}
@@ -7959,6 +7993,113 @@ const MinutesPicker = ({ value, onChange, label = 'min' }) => {
   );
 };
 
+// Generic iOS-style scroll wheel — same look/feel as DurationPicker/MinutesPicker,
+// generalized so TimePicker can compose three of them (hour, minute, AM/PM).
+const ScrollWheel = ({ options, value, onChange, format = (v) => v, width = 56 }) => {
+  const ref = useRef(null);
+  const touchState = useRef({ startScroll: 0, startY: 0, lastY: 0, lastTime: 0, velocity: 0, animFrame: null, isTouching: false });
+  const itemHeight = 32;
+  const visibleItems = 3;
+  const index = Math.max(0, options.indexOf(value));
+
+  useEffect(() => {
+    if (ref.current && !touchState.current.isTouching) {
+      ref.current.scrollTop = index * itemHeight;
+    }
+  }, [index]);
+
+  const indexFromScroll = () => Math.max(0, Math.min(options.length - 1, Math.round(ref.current.scrollTop / itemHeight)));
+  const handleScroll = () => { if (ref.current) { const v = options[indexFromScroll()]; if (v !== value) onChange(v); } };
+  const snap = () => {
+    if (!ref.current) return;
+    const i = indexFromScroll();
+    ref.current.scrollTo({ top: i * itemHeight, behavior: 'smooth' });
+    if (options[i] !== value) onChange(options[i]);
+  };
+  const onTouchStart = (e) => {
+    if (touchState.current.animFrame) cancelAnimationFrame(touchState.current.animFrame);
+    const t = e.touches[0];
+    touchState.current = { startScroll: ref.current.scrollTop, startY: t.clientY, lastY: t.clientY, lastTime: Date.now(), velocity: 0, animFrame: null, isTouching: true };
+  };
+  const onTouchMove = (e) => {
+    if (!touchState.current.isTouching) return;
+    e.preventDefault();
+    const t = e.touches[0];
+    const now = Date.now();
+    const dt = now - touchState.current.lastTime;
+    if (dt > 0) touchState.current.velocity = (touchState.current.lastY - t.clientY) / dt;
+    touchState.current.lastY = t.clientY;
+    touchState.current.lastTime = now;
+    ref.current.scrollTop = touchState.current.startScroll + (touchState.current.startY - t.clientY);
+  };
+  const onTouchEnd = () => {
+    touchState.current.isTouching = false;
+    const v = touchState.current.velocity;
+    const maxScroll = (options.length - 1) * itemHeight;
+    if (Math.abs(v) > 0.3) {
+      let cv = v * 16;
+      const anim = () => {
+        cv *= 0.92;
+        if (Math.abs(cv) < 0.5) { snap(); return; }
+        ref.current.scrollTop = Math.max(0, Math.min(maxScroll, ref.current.scrollTop + cv));
+        touchState.current.animFrame = requestAnimationFrame(anim);
+      };
+      touchState.current.animFrame = requestAnimationFrame(anim);
+    } else {
+      snap();
+    }
+  };
+
+  return (
+    <div className="relative" style={{ height: itemHeight * visibleItems, width }}>
+      <div className="absolute top-0 left-0 right-0 z-10 pointer-events-none" style={{ height: itemHeight, background: 'linear-gradient(to bottom, rgba(10,10,10,1) 0%, rgba(10,10,10,0) 100%)' }} />
+      <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none" style={{ height: itemHeight, background: 'linear-gradient(to top, rgba(10,10,10,1) 0%, rgba(10,10,10,0) 100%)' }} />
+      <div className="absolute left-0 right-0 z-5 pointer-events-none rounded-lg" style={{ top: itemHeight, height: itemHeight, backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.3)' }} />
+      <div ref={ref} className="h-full overflow-y-scroll scrollbar-hide" style={{ scrollSnapType: 'none', WebkitOverflowScrolling: 'auto' }}
+        onScroll={handleScroll} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
+        <div style={{ height: itemHeight }} />
+        {options.map((v) => (
+          <div key={v} onClick={() => { if (ref.current) ref.current.scrollTo({ top: options.indexOf(v) * itemHeight, behavior: 'smooth' }); }}
+            className="flex items-center justify-center cursor-pointer transition-all duration-150"
+            style={{ height: itemHeight, color: v === value ? '#00FF94' : 'rgba(255,255,255,0.5)', fontWeight: v === value ? 'bold' : 'normal', fontSize: v === value ? '18px' : '14px' }}>
+            {format(v)}
+          </div>
+        ))}
+        <div style={{ height: itemHeight }} />
+      </div>
+    </div>
+  );
+};
+
+// Format a Date (or now) as the app's canonical time string, e.g. "7:30 AM".
+const formatTimeOfDay = (d = new Date()) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+
+// Time-of-day picker (hour / minute / AM-PM). value/onChange use "h:MM AM/PM".
+const TimePicker = ({ value, onChange }) => {
+  const parse = (str) => {
+    const m = (str || '').match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+    if (m) return { h: Math.min(12, Math.max(1, parseInt(m[1], 10))), min: Math.min(59, Math.max(0, parseInt(m[2], 10))), mer: m[3].toUpperCase() };
+    const now = new Date();
+    let h = now.getHours();
+    const mer = h >= 12 ? 'PM' : 'AM';
+    h = h % 12; if (h === 0) h = 12;
+    return { h, min: now.getMinutes(), mer };
+  };
+  const { h, min, mer } = parse(value);
+  const compose = (nh, nmin, nmer) => `${nh}:${String(nmin).padStart(2, '0')} ${nmer}`;
+  const hourOptions = Array.from({ length: 12 }, (_, i) => i + 1);
+  const minuteOptions = Array.from({ length: 60 }, (_, i) => i);
+
+  return (
+    <div className="flex items-center justify-center gap-2">
+      <ScrollWheel options={hourOptions} value={h} onChange={(v) => onChange(compose(v, min, mer))} width={48} />
+      <div className="text-xl font-bold text-gray-500">:</div>
+      <ScrollWheel options={minuteOptions} value={min} onChange={(v) => onChange(compose(h, v, mer))} format={(v) => String(v).padStart(2, '0')} width={48} />
+      <ScrollWheel options={['AM', 'PM']} value={mer} onChange={(v) => onChange(compose(h, min, v))} width={54} />
+    </div>
+  );
+};
+
 // Add Activity Modal
 const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, defaultDate = null, userData = null, userProfile = null, onSaveCustomActivity = null, onSaveHKPreference = null, onStartWorkout = null, hasActiveWorkout = false, otherPendingWorkoutsCount = 0, onSeeOtherWorkouts = null, onBackToWorkoutPicker = null, dismissedWorkoutUUIDs = [], linkedWorkoutUUIDs = [], pendingWorkouts = [], activeChallenges = [], friendsByUid = {} }) => {
   // `distance` state is canonically miles. The displayed input value is in the
@@ -8004,6 +8145,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   const sportsEmojis = ['⚽', '🏀', '🏈', '⚾', '🥎', '🎾', '🏐', '🏉', '🥏', '🎱', '🪀', '🏓', '🏸', '🏒', '🏑', '🥍', '🏏', '🪃', '🥅', '⛳', '🪁', '🏹', '🎣', '🤿', '🥊', '🥋', '🎽', '🛹', '🛼', '🛷', '⛸️', '🥌', '🎿', '⛷️', '🏂', '🪂', '🏋️', '🤼', '🤸', '⛹️', '🤺', '🏇', '🧘', '🏄', '🚣', '🧗', '🚵', '🚴', '🤾', '🤽', '🏊', '🏌️'];
   const [date, setDate] = useState(defaultDate || getTodayDate());
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [notes, setNotes] = useState('');
   const [distance, setDistance] = useState('');
   const [durationHours, setDurationHours] = useState(1);
@@ -8086,6 +8228,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       }
       setDate(defaultDate || pendingActivity?.date || getTodayDate());
       setShowDatePicker(false);
+      setShowTimePicker(false);
       setNotes(pendingActivity?.notes || '');
 
       // Check if this is a workout from the notification banner (has healthKitUUID and id starts with 'hk_')
@@ -8136,7 +8279,9 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
         setCalories(pendingActivity?.calories || '');
         setAvgHr(pendingActivity?.avgHr || '');
         setMaxHr(pendingActivity?.maxHr || '');
-        setActivityTime(pendingActivity?.time || '');
+        // Manual logs default to the current time so the field is pre-filled;
+        // the user can adjust it. Editing keeps the activity's saved time.
+        setActivityTime(pendingActivity?.time || formatTimeOfDay());
         // Set linked workout if editing an activity that was previously linked
         // Include activity data so the linked workout box shows details
         setLinkedWorkout(pendingActivity?.linkedHealthKitUUID ? {
@@ -10194,6 +10339,60 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               })()}
             </div>
 
+            {/* Time */}
+            <div>
+              <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Time</label>
+              <button
+                onClick={() => setShowTimePicker(!showTimePicker)}
+                className="w-full p-3 rounded-xl bg-white/5 border border-white/10 text-white text-left flex items-center justify-between transition-all duration-150"
+                onTouchStart={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.98)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                  triggerHaptic(ImpactStyle.Light);
+                }}
+                onTouchEnd={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                }}
+                onMouseDown={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.98)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                }}
+                onMouseUp={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                }}
+              >
+                <span>{activityTime || 'Set time'}</span>
+                <span className="text-gray-400">{showTimePicker ? '▲' : '▼'}</span>
+              </button>
+
+              {showTimePicker && (
+                <div className="mt-2 p-3 rounded-xl bg-white/5 border border-white/10">
+                  <TimePicker value={activityTime} onChange={setActivityTime} />
+                  <div className="mt-3 pt-3 border-t border-white/10 flex gap-2">
+                    <button
+                      onClick={() => { setActivityTime(formatTimeOfDay()); triggerHaptic(ImpactStyle.Light); }}
+                      className="flex-1 py-2 rounded-lg text-xs font-medium transition-all duration-150"
+                      style={{ backgroundColor: 'rgba(0,255,148,0.1)', color: '#00FF94' }}
+                    >
+                      Now
+                    </button>
+                    <button
+                      onClick={() => setShowTimePicker(false)}
+                      className="flex-1 py-2 rounded-lg text-xs font-medium bg-white/5 transition-all duration-150"
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Link to Apple Health Workout Section */}
             {!isFromAppleHealth && (linkableWorkouts.length > 0 || isLoadingWorkouts || linkedWorkout) && (
               <div>
@@ -10817,7 +11016,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss, distanceUnit = 'mi
 
 // Home Tab - Simplified
 
-const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeCountsChange, onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, optimisticChallengeCompletions = new Map(), onStartChallengeWorkout, onApplyPastActivityToChallenge, onChallengeDetailOpenChange, openActivityTarget = null, showHkEmptyHint = false, onDismissHkEmptyHint = () => {} }) => {
+const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeCountsChange, onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, optimisticChallengeCompletions = new Map(), onStartChallengeWorkout, onApplyPastActivityToChallenge, onChallengeDetailOpenChange, openActivityTarget = null, showHkEmptyHint = false, onDismissHkEmptyHint = () => {} }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
   const [dismissConfirmWorkouts, setDismissConfirmWorkouts] = useState(null); // Workouts pending dismiss confirmation
@@ -12758,6 +12957,7 @@ const HomeTab = ({ onAddActivity, pendingSync, activities = [], weeklyProgress: 
         user={user}
         userProfile={userProfile}
         onShareStamp={onShareStamp}
+        onCaptureLocation={onCaptureLocation}
         isPro={isPro}
         onPresentPaywall={onPresentPaywall}
         onChallenge={onChallengeActivity}
@@ -15757,6 +15957,24 @@ export default function DaySevenApp() {
     setChallengeChooserState({ activity, candidateChallenges: candidates });
   }, [user?.uid, activities]);
 
+  // Persist a reverse-geocoded location (object) — or null to remove — onto an
+  // activity. Only ever called for the user's own activities. Mirrors the direct
+  // save path in handleActivitySaved so it survives reloads and watch sync.
+  const handleCaptureLocation = (activityId, location) => {
+    const next = (location && (location.city || location.state || location.country)) ? location : null;
+    setActivities(prev => {
+      const updated = prev.map(a => a.id === activityId ? { ...a, location: next } : a);
+      activitiesFromFirestore.current = true;
+      lastFirestoreSyncTime.current = Date.now();
+      lastFirestoreActivityCount.current = updated.length;
+      activitiesRef.current = updated;
+      if (user?.uid && !isDemoAccount(userProfileRef.current, userRef.current)) {
+        saveUserActivities(user.uid, updated).then(() => notifyWatchDataChanged()).catch(() => {});
+      }
+      return updated;
+    });
+  };
+
   const handleActivitySaved = async (activity) => {
     // Haptic feedback when saving activity
     triggerHaptic(ImpactStyle.Medium);
@@ -16947,7 +17165,19 @@ export default function DaySevenApp() {
           const isOutdoor = workoutData.subtype !== 'Indoor';
           if (hasHkUUID && isOutdoor) {
             fetchWorkoutRoute(workoutData.healthKitUUID || workoutData.linkedHealthKitUUID, workoutData.healthKitStartDate || workoutData.linkedHealthKitStartDate)
-              .then(result => setStampRouteCoords(result.hasRoute ? result.coordinates : []))
+              .then(async (result) => {
+                const coords = result.hasRoute ? result.coordinates : [];
+                setStampRouteCoords(coords);
+                // Reverse-geocode the route start so the share card + detail view
+                // get a location without waiting for the detail modal to open.
+                if (coords.length > 0) {
+                  const loc = await reverseGeocode(coords[0].lat, coords[0].lng);
+                  if (loc) {
+                    setStampActivity(prev => prev && prev.id === workoutData.id ? { ...prev, location: loc } : prev);
+                    handleCaptureLocation(workoutData.id, loc);
+                  }
+                }
+              })
               .catch(() => setStampRouteCoords([]));
           } else {
             setStampRouteCoords([]);
@@ -17042,6 +17272,7 @@ export default function DaySevenApp() {
               {activeTab === 'home' && (
                 <HomeTab
                   onAddActivity={handleAddActivity}
+                  onCaptureLocation={handleCaptureLocation}
                   pendingSync={(healthKitData.pendingWorkouts || []).filter(w => {
                     // Filter out dismissed workouts
                     if (dismissedWorkoutUUIDs.includes(w.healthKitUUID)) {
@@ -17228,6 +17459,7 @@ export default function DaySevenApp() {
                   user={user}
                   userProfile={userProfile}
                   userData={userData}
+                  onCaptureLocation={handleCaptureLocation}
                   onOpenSettings={() => setShowSettings(true)}
                   onShare={(range) => {
                     if (range?.isMonthShare) {

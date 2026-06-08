@@ -110,8 +110,14 @@ class HealthKitService {
 
         let workoutRouteType = HKSeriesType.workoutRoute()
 
+        // activeEnergyBurned MUST be shareable: the HKLiveWorkoutBuilder's data
+        // source computes and *writes* active-energy samples during the workout,
+        // so without share authorization it can't collect them and
+        // statistics(for: .activeEnergyBurned) stays nil → 0 calories. (Distance
+        // is the same; heart rate is system-sourced so read access suffices.)
         let typesToShare: Set<HKSampleType> = [
             workoutType,
+            caloriesType,
             distanceWalkRunType, distanceCyclingType, distanceSwimmingType,
             workoutRouteType
         ]

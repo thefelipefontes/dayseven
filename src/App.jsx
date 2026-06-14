@@ -260,19 +260,34 @@ const dedupeCrossSource = (workouts) => {
 };
 
 // Final idempotency guard for HealthKit auto-import: drop any to-be-saved
-// workout whose UUID is already present in `existing`. The start-of-sync UUID
-// filter keys off a snapshot of activitiesRef; if a prior (or overlapping) sync
-// saved a workout that hasn't reached that snapshot yet, the workout slips
-// through and gets appended a second time. Re-checking against the freshest read
-// right before the merge makes the save idempotent regardless of run ordering.
+// workout that's already present in `existing` — by UUID OR by content.
+//
+// UUID match handles the overlapping-sync race: the start-of-sync UUID filter
+// keys off a snapshot of activitiesRef; if a prior (or overlapping) sync saved a
+// workout that hasn't reached that snapshot yet, it slips through and would be
+// appended a second time. Re-checking against the freshest read makes the save
+// idempotent regardless of run ordering.
+//
+// Content match handles UUID *churn*: third-party apps (Garmin Connect in
+// particular) re-write a workout to HealthKit once its stats finalize. HealthKit
+// samples are immutable, so the re-write deletes the old sample and inserts a new
+// one with a fresh UUID for byte-identical data — Apple Health then shows the run
+// once (under the new UUID) while we already imported it under the old one. A
+// UUID-only check misses this and imports the re-write as a duplicate, so we also
+// drop anything that matches an existing activity's underlying-workout signature.
 const dropAlreadySaved = (candidates, existing) => {
   if (!Array.isArray(candidates) || candidates.length === 0) return candidates || [];
+  const existingList = Array.isArray(existing) ? existing : [];
   const seen = new Set();
-  for (const a of existing || []) {
+  for (const a of existingList) {
     if (a?.healthKitUUID) seen.add(a.healthKitUUID);
     if (a?.linkedHealthKitUUID) seen.add(a.linkedHealthKitUUID);
   }
-  return candidates.filter(w => !w?.healthKitUUID || !seen.has(w.healthKitUUID));
+  return candidates.filter(w => {
+    if (w?.healthKitUUID && seen.has(w.healthKitUUID)) return false;
+    if (existingList.some(a => _isSameUnderlyingWorkout(a, w))) return false;
+    return true;
+  });
 };
 
 // Get current week key (Sunday start date as "YYYY-MM-DD") for celebration tracking

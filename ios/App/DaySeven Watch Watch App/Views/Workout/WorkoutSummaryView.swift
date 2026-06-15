@@ -25,6 +25,10 @@ struct WorkoutSummaryView: View {
     @State private var isAutoSaving = false
     @State private var showDiscardAlert = false
     @State private var savedActivityId: ActivityID?
+    // Handle to the auto-save Task so Discard can await its completion (network
+    // included) before deleting — awaiting a Task handle is reliable even after
+    // the view is torn down, unlike reading @State like isAutoSaving.
+    @State private var autoSaveTask: Task<Void, Never>?
 
     // Sheet-based pickers (since we're in an overlay, not a NavigationStack)
     @State private var showSubtypePicker = false
@@ -176,35 +180,41 @@ struct WorkoutSummaryView: View {
             if selectedFocusAreas.isEmpty { selectedFocusAreas = initialFocusAreas ?? [] }
             if selectedCountToward == nil { selectedCountToward = initialCountToward }
             // Auto-save immediately (like Apple Fitness)
-            if !isSaved {
-                Task { await autoSaveWorkout() }
+            if !isSaved && autoSaveTask == nil {
+                autoSaveTask = Task { await autoSaveWorkout() }
             }
         }
         .alert("Discard \(activityNoun)?", isPresented: $showDiscardAlert) {
             Button("Discard", role: .destructive) {
-                Task {
-                    // Wait for auto-save to finish so we have an activity ID to delete
-                    if isAutoSaving {
-                        // Poll briefly — auto-save is already in flight
-                        for _ in 0..<50 {
-                            if !isAutoSaving { break }
-                            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
-                        }
-                    }
+                // Capture what the background delete needs before we tear the view
+                // down. savedActivityId is set synchronously at the top of
+                // autoSaveWorkout(), so it's populated by the time the summary is
+                // on screen; autoSaveTask lets us wait for the save to *finish*.
+                let activityId = savedActivityId
+                let saveTask = autoSaveTask
 
-                    // Delete the auto-saved activity from Firestore
-                    if let activityId = savedActivityId {
+                // Dismiss the summary immediately. Never make the user wait on a
+                // Firestore round-trip to leave this screen — previously the delete
+                // was awaited *before* dismissing, so a slow or unreachable watch
+                // connection (or the app suspending mid-wait) left the summary stuck
+                // on screen and could abandon the delete entirely.
+                workoutMgr.cancelWorkout()
+                appVM.phoneService.notifyPhoneWorkoutEnded()
+                onDone?()
+
+                // Delete in the background, decoupled from the view's lifecycle.
+                Task {
+                    // Let the in-flight auto-save complete first so its batchSave
+                    // can't land *after* the delete and resurrect the activity.
+                    await saveTask?.value
+
+                    if let activityId {
                         await appVM.deleteActivity(withId: activityId)
                     } else {
-                        // Auto-save may not have completed — force a refresh on the phone
-                        // so it picks up the correct state from Firestore
+                        // Auto-save never produced an id — fall back to a phone
+                        // refresh so it re-reads the correct state from Firestore.
                         print("[WorkoutSummary] Discard: no savedActivityId — notifying phone to refresh")
                         appVM.notifyPhoneDataChanged()
-                    }
-                    workoutMgr.cancelWorkout()
-                    if let onDone = onDone {
-                        appVM.phoneService.notifyPhoneWorkoutEnded()
-                        onDone()
                     }
                 }
             }

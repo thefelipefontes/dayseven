@@ -10077,7 +10077,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               </div>
             )}
 
-            {mode !== 'start' && (activityType === 'Running' || activityType === 'Cycle' || activityType === 'Walking') && (
+            {mode !== 'start' && (activityType === 'Running' || activityType === 'Walking' || (activityType === 'Cycle' && subtype !== 'Indoor')) && (
               <div>
                 <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Distance ({_distanceUnitLabel})</label>
                 <input

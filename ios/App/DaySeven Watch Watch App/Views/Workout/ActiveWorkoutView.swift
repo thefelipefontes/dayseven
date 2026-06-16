@@ -41,6 +41,10 @@ struct ActiveWorkoutView: View {
 
     /// Whether this activity tracks distance (running, cycling, walking, etc.)
     private var tracksDistance: Bool {
+        // Indoor cycling has no distance source on the watch (no GPS, no wheel
+        // sensor) so the metric would sit at 0.00 the whole workout — Apple
+        // Fitness omits it too. Run/walk/swim still estimate distance indoors.
+        if activityType.lowercased() == "cycle" && isIndoor { return false }
         let distanceTypes = ["running", "cycle", "walking", "hiking", "swimming"]
         return distanceTypes.contains(activityType.lowercased())
     }

@@ -272,7 +272,10 @@ class WorkoutManager: NSObject, ObservableObject {
             let distanceType = HKQuantityType(.distanceWalkingRunning)
             dataSource.enableCollection(for: distanceType, predicate: nil)
             print("[WorkoutManager] Enabled distanceWalkingRunning, locationType: \(config.locationType.rawValue)")
-        } else if activityType == .cycling {
+        } else if activityType == .cycling && !isIndoor {
+            // Indoor cycling has no distance source (no GPS, no wheel sensor), so
+            // skip distance collection entirely — matches Apple Fitness, which
+            // doesn't record distance for indoor rides.
             let distanceType = HKQuantityType(.distanceCycling)
             dataSource.enableCollection(for: distanceType, predicate: nil)
             print("[WorkoutManager] Enabled distanceCycling, locationType: \(config.locationType.rawValue)")
@@ -297,7 +300,7 @@ class WorkoutManager: NSObject, ObservableObject {
         if activityType == .walking || activityType == .running || activityType == .hiking {
             let distanceType = HKQuantityType(.distanceWalkingRunning)
             dataSource.enableCollection(for: distanceType, predicate: nil)
-        } else if activityType == .cycling {
+        } else if activityType == .cycling && !isIndoor {
             let distanceType = HKQuantityType(.distanceCycling)
             dataSource.enableCollection(for: distanceType, predicate: nil)
         } else if activityType == .swimming {

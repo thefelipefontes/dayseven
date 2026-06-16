@@ -49,9 +49,14 @@ struct WorkoutSummaryView: View {
         return strengthType != nil
     }
 
-    /// Whether this activity type tracks distance
+    /// Whether this activity type tracks distance. Indoor cycling has no distance
+    /// source (no GPS, no wheel sensor) so distance is always 0 — Apple Fitness
+    /// omits it too, so we don't show the row.
     private var showsDistance: Bool {
-        ["Running", "Cycle", "Walking", "Elliptical", "Stair Climbing"].contains(activityType)
+        if activityType == "Cycle" && (selectedSubtype ?? initialSubtype)?.lowercased() == "indoor" {
+            return false
+        }
+        return ["Running", "Cycle", "Walking", "Elliptical", "Stair Climbing"].contains(activityType)
     }
 
     /// Whether this is a recovery activity (Sauna, Cold Plunge) — hides calories from summary

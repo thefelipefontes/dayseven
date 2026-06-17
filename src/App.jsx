@@ -5,6 +5,7 @@ import { auth, EmailAuthProvider, reauthenticateWithCredential, updatePassword, 
 import Login from './Login';
 import UsernameSetup from './UsernameSetup';
 import DiscordInvite from './DiscordInvite';
+import LockedScreen from './LockedScreen';
 import OnboardingFlow from './Onboarding';
 import Friends from './Friends';
 import ActivityFeed from './ActivityFeed';
@@ -13204,14 +13205,23 @@ export default function DaySevenApp() {
   // subscription still wins if both are present. Use this everywhere we'd
   // otherwise call setIsPro(rcStatus) directly.
   const applyProStatus = useCallback((rcStatus) => {
-    const override = userProfileRef.current?.forceProTier === true;
-    setIsPro(rcStatus || override);
+    const p = userProfileRef.current;
+    const override = p?.forceProTier === true;
+    // Grandfathered: accounts created before the subscription-only cutover never
+    // carry `subscriptionRequired`, so they keep full access for life. New accounts
+    // are stamped `subscriptionRequired: true` at creation (see createUserProfile),
+    // so they only get access from a real subscription or a forceProTier comp.
+    const grandfathered = !!p && p.subscriptionRequired !== true;
+    setIsPro(rcStatus || override || grandfathered);
   }, []);
-  // Re-apply when the profile flips on/off so existing sessions pick up the override
-  // without a sign-out (e.g. after running setProOverride.js while signed in).
+  // Re-apply when the profile loads/flips so existing sessions pick up the override
+  // or grandfather grant without a sign-out. Only ever promotes to true — it never
+  // clobbers a live RevenueCat subscription back to false.
   useEffect(() => {
-    if (userProfile?.forceProTier === true) setIsPro(true);
-  }, [userProfile?.forceProTier]);
+    if (!userProfile) return;
+    const grandfathered = userProfile.subscriptionRequired !== true;
+    if (userProfile.forceProTier === true || grandfathered) setIsPro(true);
+  }, [userProfile]);
   // Persists Activity Feed data across tab switches so re-mounts hydrate instantly
   // instead of flashing a spinner. Tagged with uid so a different signed-in user
   // doesn't see the previous user's cache.
@@ -16999,6 +17009,36 @@ export default function DaySevenApp() {
         });
       }}
     />;
+  }
+
+  // Hard paywall (subscription-only). Accounts created after the cutover are
+  // stamped `subscriptionRequired: true` and must hold an active subscription
+  // — or a comp (forceProTier) / grandfather grant — to enter the app. Computed
+  // inline from userProfile so existing & comped users never flash the lock
+  // screen while the isPro state catches up on cold start. Demo accounts return
+  // early from handleUserAuth with isPro=true, so they never reach here.
+  const isGrandfathered = userProfile.subscriptionRequired !== true;
+  const hasFullAccess = isPro || isGrandfathered || userProfile.forceProTier === true;
+  if (!hasFullAccess) {
+    return (
+      <LockedScreen
+        userProfile={userProfile}
+        onSubscribe={async () => {
+          const { purchased } = await presentPaywall();
+          if (purchased) {
+            const proStatus = await checkProStatus();
+            applyProStatus(proStatus);
+          }
+          return purchased;
+        }}
+        onRestore={async () => {
+          const { isPro: restored } = await restorePurchases();
+          applyProStatus(restored);
+          return restored;
+        }}
+        onSignOut={handleSignOut}
+      />
+    );
   }
 
   // Custom refresh indicator component

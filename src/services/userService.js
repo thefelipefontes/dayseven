@@ -129,7 +129,12 @@ export async function createUserProfile(user) {
             displayName: user.displayName || null,
             photoURL: user.photoURL || null,
             authProvider: user.authProvider || null,
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            // Subscription-only cutover: brand-new accounts must hold an active
+            // subscription to enter the app. Existing accounts predate this field
+            // and are grandfathered into full access for life (see applyProStatus
+            // / the hard-paywall gate in App.jsx). Only ever set on first creation.
+            subscriptionRequired: true
           },
           merge: true
         });
@@ -155,7 +160,12 @@ export async function createUserProfile(user) {
           displayName: user.displayName || null,
           photoURL: user.photoURL || null,
           authProvider: user.authProvider || null,
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
+          // Subscription-only cutover: brand-new accounts must hold an active
+          // subscription to enter the app. Existing accounts predate this field
+          // and are grandfathered into full access for life (see applyProStatus
+          // / the hard-paywall gate in App.jsx). Only ever set on first creation.
+          subscriptionRequired: true
         }, { merge: true }));
       } else if (user.authProvider && !userDoc.data().authProvider) {
         // Update authProvider if it wasn't set before (for existing users)

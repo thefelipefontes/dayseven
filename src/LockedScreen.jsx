@@ -19,11 +19,11 @@ import { ImpactStyle } from '@capacitor/haptics';
 //   onSignOut    () => void            sign out (escape hatch — never trap the user)
 //   userProfile  object                used only for a light personalized greeting
 const BENEFITS = [
-  'Build unbreakable weekly streaks',
-  'Unlimited friends & challenges',
-  'Full activity history, photos & advanced trends',
-  'Every leaderboard — week, month, year, all-time',
-  'Streak Shield & Vacation Mode protection',
+  'Strength, cardio and recovery streak tracking',
+  'Full workout history & detailed stats + trends',
+  'Challenge friends head-to-head',
+  'Compete on leaderboards',
+  'Streak shields & vacation mode protection',
 ];
 
 const CheckIcon = () => (

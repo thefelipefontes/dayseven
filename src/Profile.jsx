@@ -22,6 +22,27 @@ import { resolveUnit, unitLabel, formatDistanceValue, milesToDisplay, formatPace
 
 
 
+// Frozen categories to show for a calendar week, or null if it's not an injury week. Two sources:
+//  1) injuryMode.frozenWeeks — { "YYYY-MM-DD": ["lifts",...] } accumulated across ALL past/elapsed
+//     injury periods (so every prior injury stays marked).
+//  2) the CURRENT active injury's planned window [startWeek, estimatedEndWeek) — so the upcoming
+//     weeks of an in-progress injury are marked too, not just the ones that have elapsed.
+const injuryCalendarCats = (weekKey, injuryMode) => {
+  if (!injuryMode || !weekKey) return null;
+  const mapped = injuryMode.frozenWeeks?.[weekKey];
+  if (Array.isArray(mapped)) return mapped;
+  if (injuryMode.isActive && injuryMode.startWeek) {
+    const end = injuryMode.endWeek || injuryMode.estimatedEndWeek;
+    if (end && weekKey >= injuryMode.startWeek && weekKey < end) {
+      return (Array.isArray(injuryMode.frozenCategories) && injuryMode.frozenCategories.length > 0)
+        ? injuryMode.frozenCategories
+        : ['lifts', 'cardio', 'recovery'];
+    }
+  }
+  return null;
+};
+const isInjuryCalendarWeek = (weekKey, injuryMode) => injuryCalendarCats(weekKey, injuryMode) !== null;
+
 // === ProfilePage wrapper (replaces HistoryTab) ===
 
 export default function ProfilePage(props) {
@@ -848,6 +869,7 @@ export default function ProfilePage(props) {
             CTA, Pro users get a one-tap shield. */}
         {(() => {
           if (userData?.vacationMode?.isActive) return null;
+          if (userData?.injuryMode?.isActive) return null;
 
           const today = new Date();
           const dayOfWeek = today.getDay();
@@ -1135,13 +1157,14 @@ export default function ProfilePage(props) {
                   const weekKey = week.days[0]?.date;
                   const isVacation = (userData?.vacationMode?.vacationWeeks || []).includes(weekKey);
                   const isShielded = (userData?.streakShield?.shieldedWeeks || []).includes(weekKey);
+                  const isInjury = isInjuryCalendarWeek(weekKey, userData?.injuryMode);
                   const weekEndDate = week.days[6]?.date || week.days[week.days.length - 1]?.date;
                   const isWeekLocked = !!(historyCutoffDate && weekEndDate < historyCutoffDate);
-                  // Vacation, shield, and goals-met all keep the streak alive, so tint
-                  // the cell to read as "good"; vacation gets its own orange accent.
-                  const isGood = goalsHit || isShielded || isVacation;
-                  const bgDefault = isVacation ? 'rgba(255,149,0,0.15)' : (isGood ? 'rgba(0,255,148,0.15)' : 'rgba(255,255,255,0.05)');
-                  const bgPressed = isVacation ? 'rgba(255,149,0,0.28)' : (isGood ? 'rgba(0,255,148,0.25)' : 'rgba(255,255,255,0.1)');
+                  // Vacation, injury, shield, and goals-met all keep the streak alive, so tint
+                  // the cell to read as "good"; vacation = orange, injury = violet accent.
+                  const isGood = goalsHit || isShielded || isVacation || isInjury;
+                  const bgDefault = isVacation ? 'rgba(255,149,0,0.15)' : isInjury ? 'rgba(167,139,250,0.15)' : (isGood ? 'rgba(0,255,148,0.15)' : 'rgba(255,255,255,0.05)');
+                  const bgPressed = isVacation ? 'rgba(255,149,0,0.28)' : isInjury ? 'rgba(167,139,250,0.28)' : (isGood ? 'rgba(0,255,148,0.25)' : 'rgba(255,255,255,0.1)');
                   return (
                     <button
                       onClick={() => {
@@ -1177,6 +1200,8 @@ export default function ProfilePage(props) {
                     >
                       {isVacation ? (
                         <span style={{ fontSize: '13px', lineHeight: 1 }}>🌴</span>
+                      ) : isInjury ? (
+                        <span style={{ fontSize: '13px', lineHeight: 1 }}>🩹</span>
                       ) : isShielded ? (
                         <span style={{ fontSize: '13px', lineHeight: 1 }}>🛡️</span>
                       ) : goalsHit ? (
@@ -3278,6 +3303,9 @@ export default function ProfilePage(props) {
           const weekKey = selectedWeek.days?.[0]?.date;
           const isVacation = (userData?.vacationMode?.vacationWeeks || []).includes(weekKey);
           const isShielded = (userData?.streakShield?.shieldedWeeks || []).includes(weekKey);
+          const injuryCats = injuryCalendarCats(weekKey, userData?.injuryMode);
+          const isInjury = injuryCats !== null;
+          const injuryFrozenCats = injuryCats || [];
 
           return {
             lifts: lifts.length,
@@ -3289,7 +3317,9 @@ export default function ProfilePage(props) {
             activities: weekActivities,
             goalsMet: lifts.length >= goals.liftsPerWeek && cardioArr.length >= goals.cardioPerWeek && recoveryArr.length >= goals.recoveryPerWeek,
             isVacation,
-            isShielded
+            isShielded,
+            isInjury,
+            injuryFrozenCats
           };
         })() : null}
         weekLabel={selectedWeek?.label || ''}

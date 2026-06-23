@@ -23,6 +23,12 @@ class AppViewModel: ObservableObject {
     @Published var activities: [Activity] = []
     @Published var goals: UserGoals = .defaults
     @Published var streaks: UserStreaks = .defaults
+    /// Phone-owned injury pause. When true the streak is frozen and the watch shows a
+    /// "paused" treatment instead of the normal flame. The watch never mutates this.
+    @Published var injuryModeActive: Bool = false
+    /// Categories frozen by the active injury pause. The watch must not advance these when a
+    /// workout is saved (a partial injury keeps non-frozen categories counting). Phone-owned.
+    @Published var injuryFrozenCats: [String] = []
     @Published var personalRecords: PersonalRecords = .defaults
     @Published var weeklyProgress: WeeklyProgress = .empty
     @Published var weeklyStats: WeeklyStats = WeeklyStats(totalWorkouts: 0, totalCalories: 0, totalMiles: 0, strengthCount: 0, cardioCount: 0, recoveryCount: 0)
@@ -189,6 +195,8 @@ class AppViewModel: ObservableObject {
             activities = userData.activities
             goals = userData.goals
             streaks = userData.streaks
+            injuryModeActive = userData.injuryActive
+            injuryFrozenCats = userData.injuryFrozen
             personalRecords = userData.personalRecords
             distanceUnit = userData.distanceUnit
             SharedDefaults.writeDistanceUnit(userData.distanceUnit)
@@ -280,6 +288,8 @@ class AppViewModel: ObservableObject {
             activities = freshData.activities
             goals = freshData.goals
             streaks = freshData.streaks
+            injuryModeActive = freshData.injuryActive
+            injuryFrozenCats = freshData.injuryFrozen
             personalRecords = freshData.personalRecords
             print("[SaveActivity] Refreshed \(activities.count) activities from Firestore before save")
         } catch {
@@ -600,8 +610,16 @@ class AppViewModel: ObservableObject {
 
         var updates: [String: Any] = [:]
 
+        // Injury-aware: don't optimistically advance a frozen category, and never advance master
+        // during any injury pause (the phone recalc is canonical and applies activation-week
+        // credit). A partial injury still lets non-frozen categories advance normally.
+        let injFrozen = injuryModeActive ? injuryFrozenCats : []
+        let creditLifts = justCompletedLifts && !injFrozen.contains("lifts")
+        let creditCardio = justCompletedCardio && !injFrozen.contains("cardio")
+        let creditRecovery = justCompletedRecovery && !injFrozen.contains("recovery")
+
         // Update individual streaks
-        if justCompletedLifts {
+        if creditLifts {
             streaks.lifts += 1
             if streaks.lifts > (personalRecords.longestStrengthStreak ?? 0) {
                 personalRecords.longestStrengthStreak = streaks.lifts
@@ -609,7 +627,7 @@ class AppViewModel: ObservableObject {
             }
         }
 
-        if justCompletedCardio {
+        if creditCardio {
             streaks.cardio += 1
             if streaks.cardio > (personalRecords.longestCardioStreak ?? 0) {
                 personalRecords.longestCardioStreak = streaks.cardio
@@ -617,7 +635,7 @@ class AppViewModel: ObservableObject {
             }
         }
 
-        if justCompletedRecovery {
+        if creditRecovery {
             streaks.recovery += 1
             if streaks.recovery > (personalRecords.longestRecoveryStreak ?? 0) {
                 personalRecords.longestRecoveryStreak = streaks.recovery
@@ -625,12 +643,12 @@ class AppViewModel: ObservableObject {
             }
         }
 
-        // Check master streak (all three goals met)
+        // Check master streak (all three goals met) — frozen during any injury pause.
         let allGoalsMet = newProgress.allGoalsMet
         let wasAllGoalsMet = oldProgress.allGoalsMet
         var justCompletedWeek = false
 
-        if allGoalsMet && !wasAllGoalsMet {
+        if allGoalsMet && !wasAllGoalsMet && !injuryModeActive {
             streaks.master += 1
             justCompletedWeek = true
             if streaks.master > (personalRecords.longestMasterStreak ?? 0) {
@@ -642,7 +660,7 @@ class AppViewModel: ObservableObject {
         if !updates.isEmpty {
             recordUpdates = updates
         }
-        return (lifts: justCompletedLifts, cardio: justCompletedCardio, recovery: justCompletedRecovery, master: justCompletedWeek)
+        return (lifts: creditLifts, cardio: creditCardio, recovery: creditRecovery, master: justCompletedWeek)
     }
 
     /// Returns the current week key (Sunday start date as "yyyy-MM-dd")
@@ -727,7 +745,8 @@ class AppViewModel: ObservableObject {
             recoveryGoal: weeklyProgress.recovery.goal,
             todaySteps: todaySteps,
             stepsGoal: goals.stepsPerDay,
-            todayCalories: todayCalories
+            todayCalories: todayCalories,
+            injuryModeActive: injuryModeActive
         )
         WidgetCenter.shared.reloadAllTimelines()
         print("[Widget] Pushed streak data and reloaded timelines")

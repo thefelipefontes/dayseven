@@ -695,6 +695,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         defaults.set(call.getInt("stepsGoal") ?? 10000, forKey: "stepsGoal")
         defaults.set(call.getInt("todayCalories") ?? 0, forKey: "todayCalories")
         defaults.set(call.getInt("daysLeftInWeek") ?? 0, forKey: "daysLeftInWeek")
+        defaults.set(call.getBool("injuryModeActive") ?? false, forKey: "injuryModeActive")
         defaults.set(Date().timeIntervalSince1970, forKey: "lastUpdated")
 
         // Recent activities for large widget (array of JSON strings)

@@ -39,7 +39,8 @@ extension WidgetStreakData {
         cardioCompleted: 2, cardioGoal: 3,
         recoveryCompleted: 2, recoveryGoal: 2,
         todaySteps: 8432, stepsGoal: 10000, todayCalories: 347,
-        lastUpdated: Date().timeIntervalSince1970
+        lastUpdated: Date().timeIntervalSince1970,
+        injuryModeActive: false
     )
 }
 
@@ -50,6 +51,7 @@ struct WidgetColors {
     static let cardio = Color(red: 1.0, green: 0.58, blue: 0.0)      // #FF9500
     static let recovery = Color(red: 0.0, green: 0.82, blue: 1.0)    // #00D1FF
     static let streak = Color.yellow
+    static let injury = Color(red: 0.655, green: 0.545, blue: 0.980) // #A78BFA — streak paused
     static let steps = Color.purple
     static let calories = Color.orange
 }
@@ -86,9 +88,9 @@ struct CircularComplicationView: View {
 
             // Center: master streak
             VStack(spacing: -2) {
-                Image(systemName: "flame.fill")
+                Image(systemName: data.injuryModeActive ? "bandage.fill" : "flame.fill")
                     .font(.system(size: 7))
-                    .foregroundColor(WidgetColors.streak)
+                    .foregroundColor(data.injuryModeActive ? WidgetColors.injury : WidgetColors.streak)
                 Text("\(data.masterStreak)")
                     .font(.system(size: 11, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
@@ -154,12 +156,12 @@ struct RectangularComplicationView: View {
         HStack(spacing: 6) {
             // Streak badge
             VStack(spacing: 1) {
-                Image(systemName: "flame.fill")
+                Image(systemName: data.injuryModeActive ? "bandage.fill" : "flame.fill")
                     .font(.system(size: 12))
-                    .foregroundColor(WidgetColors.streak)
+                    .foregroundColor(data.injuryModeActive ? WidgetColors.injury : WidgetColors.streak)
                 Text("\(data.masterStreak)")
                     .font(.system(size: 18, weight: .black, design: .rounded))
-                Text("weeks")
+                Text(data.injuryModeActive ? "paused" : "weeks")
                     .font(.system(size: 8))
                     .foregroundColor(.secondary)
             }
@@ -235,7 +237,7 @@ struct InlineComplicationView: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: "flame.fill")
+            Image(systemName: data.injuryModeActive ? "bandage.fill" : "flame.fill")
             Text("\(data.totalCategoriesCompleted)/3 goals")
             Text("\u{00B7}")
             Text("\(formatSteps(data.todaySteps)) steps")

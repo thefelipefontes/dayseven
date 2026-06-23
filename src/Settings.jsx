@@ -36,12 +36,59 @@ const getPreviousWeekKey = () => {
   return toLocalDateStr(sunday);
 };
 
-export default function SettingsPage({ user, userProfile, userData, onSignOut, onEditGoals, onCancelPendingGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onUpdateDistanceUnit, onUpdateMaxHeartRate, onUpdateDisplayName, onUpdateUsername, onChangePassword, onResetPassword, onDeleteAccount, onNotificationSettings, isPro, onPresentPaywall, onPresentCustomerCenter, onRestorePurchases, onToggleVacationMode, onUseStreakShield, onClose }) {
+export default function SettingsPage({ user, userProfile, userData, onSignOut, onEditGoals, onCancelPendingGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onUpdateDistanceUnit, onUpdateMaxHeartRate, onUpdateDisplayName, onUpdateUsername, onChangePassword, onResetPassword, onDeleteAccount, onNotificationSettings, isPro, onPresentPaywall, onPresentCustomerCenter, onRestorePurchases, onToggleVacationMode, onActivateInjuryMode, onResumeInjuryMode, canResumeInjury = false, injuryMinWeeks = 2, injuryMaxWeeks = 12, injuryYearlyCap = 16, injuryRemainingWeeks = 16, onUseStreakShield, onClose }) {
   const [isEmailPasswordUser, setIsEmailPasswordUser] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [showVacationConfirm, setShowVacationConfirm] = useState(false);
   const [showVacationDeactivateConfirm, setShowVacationDeactivateConfirm] = useState(false);
   const [showShieldConfirmProfile, setShowShieldConfirmProfile] = useState(false);
+  const [showInjuryConfirm, setShowInjuryConfirm] = useState(false);
+  const [showInjuryResumeConfirm, setShowInjuryResumeConfirm] = useState(false);
+  // Duration slider value (weeks) for the injury activation modal. Clamped to the
+  // allowed range when the modal opens so it never exceeds the yearly budget.
+  const [injuryWeeks, setInjuryWeeks] = useState(4);
+  // Which category streaks the injury freezes. Defaults to all three (a full injury);
+  // deselecting some makes it a partial injury where the rest keep counting.
+  const [injuryCats, setInjuryCats] = useState(['lifts', 'cardio', 'recovery']);
+  // Play a fade/scale-out before unmounting the injury modals, so tapping out animates
+  // away instead of flashing. Mirrors the run-an-optional-callback-after-close pattern.
+  const [injuryConfirmClosing, setInjuryConfirmClosing] = useState(false);
+  const [injuryResumeClosing, setInjuryResumeClosing] = useState(false);
+  const closeInjuryConfirm = (after) => {
+    setInjuryConfirmClosing(true);
+    setTimeout(() => {
+      setShowInjuryConfirm(false);
+      setInjuryConfirmClosing(false);
+      if (after) after();
+    }, 180);
+  };
+  const closeInjuryResume = (after) => {
+    setInjuryResumeClosing(true);
+    setTimeout(() => {
+      setShowInjuryResumeConfirm(false);
+      setInjuryResumeClosing(false);
+      if (after) after();
+    }, 180);
+  };
+  // Same animated-dismiss treatment for the vacation modals.
+  const [vacationConfirmClosing, setVacationConfirmClosing] = useState(false);
+  const [vacationDeactivateClosing, setVacationDeactivateClosing] = useState(false);
+  const closeVacationConfirm = (after) => {
+    setVacationConfirmClosing(true);
+    setTimeout(() => {
+      setShowVacationConfirm(false);
+      setVacationConfirmClosing(false);
+      if (after) after();
+    }, 180);
+  };
+  const closeVacationDeactivate = (after) => {
+    setVacationDeactivateClosing(true);
+    setTimeout(() => {
+      setShowVacationDeactivateConfirm(false);
+      setVacationDeactivateClosing(false);
+      if (after) after();
+    }, 180);
+  };
 
   // Profile field edit modal — used for both display name and username.
   // editField is 'displayName' | 'username' | null.
@@ -1197,6 +1244,10 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                   }
                   if (userData.vacationMode?.isActive) {
                     setShowVacationDeactivateConfirm(true);
+                  } else if (userData.injuryMode?.isActive) {
+                    // Blocked by injury mode — surface the toast now instead of opening the
+                    // activation sheet only to reject it after the user picks "Activate".
+                    onToggleVacationMode?.();
                   } else {
                     setShowVacationConfirm(true);
                   }
@@ -1264,6 +1315,133 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                         const remaining = Math.max(0, 3 - used);
                         return `${remaining} of 3 activation${remaining !== 1 ? 's' : ''} remaining this year`;
                       })()}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Injury Mode Section */}
+        <div className="mb-6">
+          <h3 className="text-sm font-semibold text-gray-400 mb-3">INJURY MODE</h3>
+          <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+            <div className="flex items-center justify-between py-2">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(167,139,250,0.12)' }}>
+                  <span className="text-base">🩹</span>
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm text-white">Injury Mode</span>
+                    {!isPro && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(255,149,0,0.15)', color: '#FF9500' }}>PRO</span>}
+                  </div>
+                  <p className="text-[11px] text-gray-500">Protect your streak while you heal</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  triggerHaptic(ImpactStyle.Light);
+                  if (!isPro) {
+                    onPresentPaywall?.();
+                    return;
+                  }
+                  if (userData.injuryMode?.isActive) {
+                    setShowInjuryResumeConfirm(true);
+                  } else if (userData.vacationMode?.isActive) {
+                    // Blocked by vacation mode — surface the toast now instead of opening the
+                    // duration sheet only to reject it after the user picks "Start".
+                    onActivateInjuryMode?.(injuryMinWeeks);
+                  } else {
+                    setInjuryWeeks(Math.max(injuryMinWeeks, Math.min(4, injuryMaxWeeks)));
+                    setInjuryCats(['lifts', 'cardio', 'recovery']);
+                    setShowInjuryConfirm(true);
+                  }
+                }}
+                className="w-12 h-7 rounded-full transition-all duration-200 relative"
+                style={{
+                  backgroundColor: userData.injuryMode?.isActive ? '#A78BFA' : 'rgba(255,255,255,0.2)'
+                }}
+              >
+                <div
+                  className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-200"
+                  style={{
+                    left: userData.injuryMode?.isActive ? '26px' : '4px'
+                  }}
+                />
+              </button>
+            </div>
+
+            {/* Active state info */}
+            {userData.injuryMode?.isActive && (
+              <div className="mt-3 pt-3 border-t border-zinc-700/50">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#A78BFA' }} />
+                  <span className="text-xs text-gray-300">
+                    {userData.injuryMode.startDate
+                      ? `Recovering since ${new Date(userData.injuryMode.startDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                      : 'Recovering'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-gray-500 ml-4">
+                  {(() => {
+                    const im = userData.injuryMode || {};
+                    const labels = { lifts: 'Strength', cardio: 'Cardio', recovery: 'Recovery' };
+                    const fc = (Array.isArray(im.frozenCategories) && im.frozenCategories.length > 0) ? im.frozenCategories : ['lifts', 'cardio', 'recovery'];
+                    const paused = fc.length >= 3 ? 'All streaks paused' : `${fc.map(c => labels[c] || c).join(' & ')} paused`;
+                    if (!im.estimatedEndWeek) return `${paused} while you heal`;
+                    const end = new Date(im.estimatedEndWeek + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                    return `${paused} · auto-resumes around ${end}`;
+                  })()}
+                </p>
+                <button
+                  onClick={() => {
+                    if (!canResumeInjury) return;
+                    triggerHaptic(ImpactStyle.Medium);
+                    setShowInjuryResumeConfirm(true);
+                  }}
+                  disabled={!canResumeInjury}
+                  className="mt-3 w-full py-2.5 rounded-xl text-xs font-semibold transition-all"
+                  style={canResumeInjury
+                    ? { backgroundColor: 'rgba(167,139,250,0.15)', color: '#A78BFA' }
+                    : { backgroundColor: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.35)' }}
+                >
+                  {canResumeInjury
+                    ? "I'm back — resume my streak"
+                    : (() => {
+                        const im = userData.injuryMode || {};
+                        if (!im.startWeek) return 'Resume locked';
+                        const d = new Date(im.startWeek + 'T12:00:00');
+                        d.setDate(d.getDate() + injuryMinWeeks * 7);
+                        return `Resume unlocks ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+                      })()}
+                </button>
+              </div>
+            )}
+
+            {/* Inactive state info */}
+            {!userData.injuryMode?.isActive && (
+              <div className="mt-3 pt-3 border-t border-zinc-700/50">
+                <div className="space-y-2">
+                  <div className="flex items-start gap-2">
+                    <svg className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" fill="none" stroke="#A78BFA" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                    </svg>
+                    <p className="text-[11px] text-gray-400">Your streak freezes — no progress lost while you recover</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <svg className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" fill="none" stroke="#A78BFA" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                    </svg>
+                    <p className="text-[11px] text-gray-400">Set {injuryMinWeeks}–12 weeks · come back early or extend anytime</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <svg className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" fill="none" stroke="#FF9500" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                    </svg>
+                    <p className="text-[11px] text-gray-400">
+                      {`${injuryRemainingWeeks} of ${injuryYearlyCap} injury week${injuryRemainingWeeks !== 1 ? 's' : ''} left this year`}
                     </p>
                   </div>
                 </div>
@@ -2184,11 +2362,11 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
 
       {/* Vacation Mode Confirmation Modal */}
       {showVacationConfirm && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setShowVacationConfirm(false)}>
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => closeVacationConfirm()}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" style={{ animation: `${vacationConfirmClosing ? 'modalOverlayOut' : 'modalOverlayIn'} 0.18s ease forwards` }} />
           <div
             className="relative w-[85%] max-w-sm rounded-2xl p-6"
-            style={{ backgroundColor: '#1a1a1a' }}
+            style={{ backgroundColor: '#1a1a1a', animation: `${vacationConfirmClosing ? 'modalPanelOut' : 'modalPanelIn'} 0.18s ease forwards` }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex flex-col items-center text-center mb-5">
@@ -2226,7 +2404,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
 
             <div className="flex gap-3">
               <button
-                onClick={() => setShowVacationConfirm(false)}
+                onClick={() => closeVacationConfirm()}
                 className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
                 style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
               >
@@ -2234,9 +2412,8 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
               </button>
               <button
                 onClick={() => {
-                  setShowVacationConfirm(false);
                   triggerHaptic(ImpactStyle.Heavy);
-                  onToggleVacationMode?.();
+                  closeVacationConfirm(() => onToggleVacationMode?.());
                 }}
                 className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
                 style={{ backgroundColor: '#00D1FF' }}
@@ -2250,11 +2427,11 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
 
       {/* Vacation Mode Deactivation Confirmation Modal */}
       {showVacationDeactivateConfirm && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setShowVacationDeactivateConfirm(false)}>
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => closeVacationDeactivate()}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" style={{ animation: `${vacationDeactivateClosing ? 'modalOverlayOut' : 'modalOverlayIn'} 0.18s ease forwards` }} />
           <div
             className="relative w-[85%] max-w-sm rounded-2xl p-6"
-            style={{ backgroundColor: '#1a1a1a' }}
+            style={{ backgroundColor: '#1a1a1a', animation: `${vacationDeactivateClosing ? 'modalPanelOut' : 'modalPanelIn'} 0.18s ease forwards` }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex flex-col items-center text-center mb-5">
@@ -2280,7 +2457,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
 
             <div className="flex gap-3">
               <button
-                onClick={() => setShowVacationDeactivateConfirm(false)}
+                onClick={() => closeVacationDeactivate()}
                 className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
                 style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
               >
@@ -2288,9 +2465,8 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
               </button>
               <button
                 onClick={() => {
-                  setShowVacationDeactivateConfirm(false);
                   triggerHaptic(ImpactStyle.Medium);
-                  onToggleVacationMode?.();
+                  closeVacationDeactivate(() => onToggleVacationMode?.());
                 }}
                 className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
                 style={{ backgroundColor: '#FF9500' }}
@@ -2298,6 +2474,232 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                 Deactivate
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Keyframes for modal enter/exit transitions (injury + vacation) */}
+      <style>{`
+        @keyframes modalOverlayIn { from { opacity: 0 } to { opacity: 1 } }
+        @keyframes modalOverlayOut { from { opacity: 1 } to { opacity: 0 } }
+        @keyframes modalPanelIn { from { opacity: 0; transform: scale(0.94) } to { opacity: 1; transform: scale(1) } }
+        @keyframes modalPanelOut { from { opacity: 1; transform: scale(1) } to { opacity: 0; transform: scale(0.94) } }
+      `}</style>
+
+      {/* Injury Mode activation modal — duration slider */}
+      {showInjuryConfirm && (
+        <div data-modal-overlay className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => closeInjuryConfirm()}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" style={{ animation: `${injuryConfirmClosing ? 'modalOverlayOut' : 'modalOverlayIn'} 0.18s ease forwards` }} />
+          <div
+            className="relative w-[85%] max-w-sm rounded-2xl p-6"
+            style={{ backgroundColor: '#1a1a1a', animation: `${injuryConfirmClosing ? 'modalPanelOut' : 'modalPanelIn'} 0.18s ease forwards` }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex flex-col items-center text-center mb-5">
+              <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3" style={{ backgroundColor: 'rgba(167,139,250,0.12)' }}>
+                <span className="text-3xl">🩹</span>
+              </div>
+              <h3 className="text-white font-semibold text-lg">Injury Mode</h3>
+              <p className="text-gray-400 text-sm mt-2 leading-relaxed">
+                Getting hurt is hard enough. Roughly how long will you be out? Your streak freezes the whole time — it won't break, and it won't grow.
+              </p>
+            </div>
+
+            {injuryMaxWeeks < injuryMinWeeks ? (
+              <>
+                <div className="rounded-xl p-3 mb-5" style={{ backgroundColor: 'rgba(255,149,0,0.08)', border: '1px solid rgba(255,149,0,0.15)' }}>
+                  <p className="text-xs leading-relaxed text-center" style={{ color: '#FF9500' }}>
+                    You've used your {injuryYearlyCap} injury weeks for this year. They reset in January.
+                  </p>
+                </div>
+                <button
+                  onClick={() => closeInjuryConfirm()}
+                  className="w-full py-3 rounded-xl text-sm font-semibold text-white"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+                >
+                  Close
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="text-center mb-2">
+                  <span className="text-4xl font-black text-white" style={{ fontVariantNumeric: 'tabular-nums' }}>{injuryWeeks}</span>
+                  <span className="text-lg text-gray-400 ml-1.5">week{injuryWeeks !== 1 ? 's' : ''}</span>
+                </div>
+                <input
+                  type="range"
+                  min={injuryMinWeeks}
+                  max={injuryMaxWeeks}
+                  step={1}
+                  value={injuryWeeks}
+                  onChange={(e) => setInjuryWeeks(parseInt(e.target.value, 10))}
+                  className="w-full"
+                  style={{ accentColor: '#A78BFA' }}
+                />
+                <div className="flex justify-between text-[10px] text-gray-500 mb-3 px-0.5">
+                  <span>{injuryMinWeeks} wk min</span>
+                  <span>{injuryMaxWeeks} wk max</span>
+                </div>
+                <p className="text-[11px] text-center text-gray-400 mb-4">
+                  {(() => {
+                    const start = new Date();
+                    start.setDate(start.getDate() - start.getDay());
+                    const end = new Date(start);
+                    end.setDate(end.getDate() + injuryWeeks * 7);
+                    return `Auto-resumes around ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · you can come back early or extend`;
+                  })()}
+                </p>
+
+                {/* Which categories are affected. Each chip shows its state explicitly so there's
+                    no guessing: Paused (violet) = frozen/protected; Active (category color) = keeps
+                    counting. Default is all paused (a full injury). */}
+                <p className="text-[11px] text-gray-400 mb-2">Tap any area you can still train to keep it <span className="text-white font-medium">Active</span>. Paused areas are protected while you heal.</p>
+                <div className="flex gap-2 mb-5">
+                  {[
+                    { id: 'lifts', label: 'Strength', color: '#00FF94' },
+                    { id: 'cardio', label: 'Cardio', color: '#FF9500' },
+                    { id: 'recovery', label: 'Recovery', color: '#00D1FF' },
+                  ].map(cat => {
+                    const paused = injuryCats.includes(cat.id);
+                    return (
+                      <button
+                        key={cat.id}
+                        onClick={() => {
+                          triggerHaptic(ImpactStyle.Light);
+                          setInjuryCats(prev => prev.includes(cat.id) ? prev.filter(c => c !== cat.id) : [...prev, cat.id]);
+                        }}
+                        className="flex-1 py-2.5 rounded-xl transition-all flex flex-col items-center justify-center gap-0.5"
+                        style={paused
+                          ? { backgroundColor: 'rgba(167,139,250,0.15)', color: '#A78BFA', border: '1px solid rgba(167,139,250,0.5)' }
+                          : { backgroundColor: `${cat.color}1f`, color: cat.color, border: `1px solid ${cat.color}80` }}
+                      >
+                        <span className="text-xs font-semibold">{cat.label}</span>
+                        <span className="text-[9px] font-bold uppercase tracking-wide">{paused ? 'Paused' : 'Active'}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Clarify the hybrid-streak behavior whenever it's a partial injury (some active). */}
+                {injuryCats.length > 0 && injuryCats.length < 3 && (
+                  <p className="text-[11px] text-center mb-5 leading-snug" style={{ color: '#A78BFA' }}>
+                    Your hybrid streak stays paused while any area is healing — even as an active one keeps climbing.
+                  </p>
+                )}
+
+                <div className="space-y-2 mb-5">
+                  <div className="flex items-start gap-2.5 rounded-xl p-2.5" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                    <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="#A78BFA" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+                    </svg>
+                    <p className="text-xs text-gray-300">Locked on for at least <span className="text-white font-medium">{injuryMinWeeks} weeks</span> — not a quick streak save</p>
+                  </div>
+                  <div className="flex items-start gap-2.5 rounded-xl p-2.5" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                    <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="#A78BFA" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z M12 8.25v3.75l2.25 1.5" />
+                    </svg>
+                    <p className="text-xs text-gray-300">Each week we'll check in — heal up or come back when you're ready</p>
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => closeInjuryConfirm()}
+                    className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+                    style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (injuryCats.length === 0) return;
+                      triggerHaptic(ImpactStyle.Heavy);
+                      closeInjuryConfirm(() => onActivateInjuryMode?.(injuryWeeks, injuryCats));
+                    }}
+                    disabled={injuryCats.length === 0}
+                    className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+                    style={{ backgroundColor: '#A78BFA', opacity: injuryCats.length === 0 ? 0.4 : 1 }}
+                  >
+                    Start
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Injury Mode resume / locked modal */}
+      {showInjuryResumeConfirm && (
+        <div data-modal-overlay className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => closeInjuryResume()}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" style={{ animation: `${injuryResumeClosing ? 'modalOverlayOut' : 'modalOverlayIn'} 0.18s ease forwards` }} />
+          <div
+            className="relative w-[85%] max-w-sm rounded-2xl p-6"
+            style={{ backgroundColor: '#1a1a1a', animation: `${injuryResumeClosing ? 'modalPanelOut' : 'modalPanelIn'} 0.18s ease forwards` }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex flex-col items-center text-center mb-5">
+              <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3" style={{ backgroundColor: 'rgba(167,139,250,0.12)' }}>
+                <span className="text-3xl">{canResumeInjury ? '💪' : '🩹'}</span>
+              </div>
+              <h3 className="text-white font-semibold text-lg">{canResumeInjury ? 'Welcome back?' : 'Still healing'}</h3>
+              <p className="text-gray-400 text-sm mt-2 leading-relaxed">
+                {canResumeInjury
+                  ? "Your streak picks up right where it left off this week. No rush if you're not ready."
+                  : (() => {
+                      const im = userData.injuryMode || {};
+                      let unlock = '';
+                      if (im.startWeek) {
+                        const d = new Date(im.startWeek + 'T12:00:00');
+                        d.setDate(d.getDate() + injuryMinWeeks * 7);
+                        unlock = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                      }
+                      return `Injury mode stays on for at least ${injuryMinWeeks} weeks so it can't be used as a last-minute streak save. You can resume from ${unlock || 'next week'}.`;
+                    })()}
+              </p>
+            </div>
+
+            {canResumeInjury ? (
+              <>
+              <div className="rounded-xl p-3 mb-5" style={{ backgroundColor: 'rgba(255,149,0,0.08)', border: '1px solid rgba(255,149,0,0.15)' }}>
+                <div className="flex items-start gap-2">
+                  <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="#FF9500" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                  </svg>
+                  <p className="text-xs leading-relaxed" style={{ color: '#FF9500' }}>
+                    Your goals go back to normal — hit this week's to keep your streak, or it'll break like usual.
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => closeInjuryResume()}
+                  className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+                >
+                  Keep healing
+                </button>
+                <button
+                  onClick={() => {
+                    triggerHaptic(ImpactStyle.Medium);
+                    closeInjuryResume(() => onResumeInjuryMode?.());
+                  }}
+                  className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+                  style={{ backgroundColor: '#A78BFA' }}
+                >
+                  Resume
+                </button>
+              </div>
+              </>
+            ) : (
+              <button
+                onClick={() => closeInjuryResume()}
+                className="w-full py-3 rounded-xl text-sm font-semibold text-white"
+                style={{ backgroundColor: '#A78BFA' }}
+              >
+                Keep healing
+              </button>
+            )}
           </div>
         </div>
       )}

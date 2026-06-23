@@ -88,15 +88,15 @@ struct DashboardView: View {
 
     private var streakSection: some View {
         HStack(spacing: 4) {
-            Image(systemName: "flame.fill")
-                .foregroundColor(.yellow)
+            Image(systemName: appVM.injuryModeActive ? "bandage.fill" : "flame.fill")
+                .foregroundColor(appVM.injuryModeActive ? Color(red: 0.655, green: 0.545, blue: 0.980) : .yellow)
                 .font(.system(size: 18))
             Text("\(appVM.streaks.master)")
                 .font(.system(size: 28, weight: .black, design: .rounded))
                 .foregroundColor(.white)
-            Text("week streak")
+            Text(appVM.injuryModeActive ? "streak · paused" : "week streak")
                 .font(.system(size: 11))
-                .foregroundColor(.gray)
+                .foregroundColor(appVM.injuryModeActive ? Color(red: 0.655, green: 0.545, blue: 0.980) : .gray)
         }
     }
 

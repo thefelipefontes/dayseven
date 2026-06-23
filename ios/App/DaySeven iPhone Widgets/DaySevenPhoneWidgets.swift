@@ -40,6 +40,7 @@ extension WidgetStreakData {
         todaySteps: 8432, stepsGoal: 10000, todayCalories: 347,
         daysLeftInWeek: 3,
         lastUpdated: Date().timeIntervalSince1970,
+        injuryModeActive: false,
         recentActivities: [
             WidgetActivity(name: "Push Day", category: "lifting", date: "2026-03-19", duration: 55, calories: 320),
             WidgetActivity(name: "Running", category: "cardio", date: "2026-03-18", duration: 32, calories: 285),
@@ -57,6 +58,7 @@ struct WidgetColors {
     static let cardio = Color(red: 1.0, green: 0.58, blue: 0.0)      // #FF9500
     static let recovery = Color(red: 0.0, green: 0.82, blue: 1.0)    // #00D1FF
     static let streak = Color.yellow
+    static let injury = Color(red: 0.655, green: 0.545, blue: 0.980) // #A78BFA — streak paused
     static let steps = Color.purple
     static let calories = Color.orange
     static let background = Color(red: 0.078, green: 0.078, blue: 0.078)
@@ -124,13 +126,13 @@ struct SmallWidgetView: View {
 
             // Streak badge
             HStack(spacing: 3) {
-                Image(systemName: "flame.fill")
+                Image(systemName: data.injuryModeActive ? "bandage.fill" : "flame.fill")
                     .font(.system(size: 10))
-                    .foregroundColor(WidgetColors.streak)
+                    .foregroundColor(data.injuryModeActive ? WidgetColors.injury : WidgetColors.streak)
                 Text("\(data.masterStreak)")
                     .font(.system(size: 12, weight: .black, design: .rounded))
-                    .foregroundColor(WidgetColors.streak)
-                Text("weeks")
+                    .foregroundColor(data.injuryModeActive ? WidgetColors.injury : WidgetColors.streak)
+                Text(data.injuryModeActive ? "paused" : "weeks")
                     .font(.system(size: 9, weight: .medium))
                     .foregroundColor(.white.opacity(0.7))
             }
@@ -194,12 +196,12 @@ struct MediumWidgetView: View {
             VStack(spacing: 0) {
                 // Streak badge + daily stats
                 HStack(spacing: 4) {
-                    Image(systemName: "flame.fill")
+                    Image(systemName: data.injuryModeActive ? "bandage.fill" : "flame.fill")
                         .font(.system(size: 12))
-                        .foregroundColor(WidgetColors.streak)
-                    Text("\(data.masterStreak) week hybrid streak")
+                        .foregroundColor(data.injuryModeActive ? WidgetColors.injury : WidgetColors.streak)
+                    Text(data.injuryModeActive ? "\(data.masterStreak) week streak · paused" : "\(data.masterStreak) week hybrid streak")
                         .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundColor(WidgetColors.streak)
+                        .foregroundColor(data.injuryModeActive ? WidgetColors.injury : WidgetColors.streak)
                     Spacer()
                     HStack(spacing: 3) {
                         Image(systemName: "figure.walk")
@@ -289,12 +291,12 @@ struct LargeWidgetView: View {
         VStack(spacing: 10) {
             // Streak badge + steps/calories
             HStack(spacing: 4) {
-                Image(systemName: "flame.fill")
+                Image(systemName: data.injuryModeActive ? "bandage.fill" : "flame.fill")
                     .font(.system(size: 13))
-                    .foregroundColor(WidgetColors.streak)
-                Text("\(data.masterStreak) week hybrid streak")
+                    .foregroundColor(data.injuryModeActive ? WidgetColors.injury : WidgetColors.streak)
+                Text(data.injuryModeActive ? "\(data.masterStreak) week streak · paused" : "\(data.masterStreak) week hybrid streak")
                     .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .foregroundColor(WidgetColors.streak)
+                    .foregroundColor(data.injuryModeActive ? WidgetColors.injury : WidgetColors.streak)
                 Spacer()
                 HStack(spacing: 3) {
                     Image(systemName: "figure.walk")

@@ -20,7 +20,7 @@ class FirestoreService {
 
     // MARK: - Fetch User Data
 
-    func getUserData(uid: String) async throws -> (goals: UserGoals, streaks: UserStreaks, activities: [Activity], personalRecords: PersonalRecords, distanceUnit: String) {
+    func getUserData(uid: String) async throws -> (goals: UserGoals, streaks: UserStreaks, activities: [Activity], personalRecords: PersonalRecords, distanceUnit: String, injuryActive: Bool, injuryFrozen: [String]) {
         let data = try await getDocument("users/\(uid)")
 
         // Distance unit ('mi' default | 'km')
@@ -92,7 +92,23 @@ class FirestoreService {
             personalRecords = .defaults
         }
 
-        return (goals, streaks, activities, personalRecords, distanceUnit)
+        // Parse injury mode. The phone owns the lifecycle; the watch needs whether it's active
+        // (for the paused display) and which categories are frozen (so it doesn't optimistically
+        // advance a frozen streak when a workout is saved on the watch during a partial injury).
+        var injuryActive = false
+        var injuryFrozen: [String] = []
+        if let injuryWrapper = data["injuryMode"] as? [String: Any],
+           let injuryMapValue = injuryWrapper["mapValue"] as? [String: Any],
+           let injuryMap = injuryMapValue["fields"] as? [String: Any] {
+            injuryActive = boolFromFirestore(injuryMap["isActive"]) ?? false
+            if let fcWrapper = injuryMap["frozenCategories"] as? [String: Any],
+               let fcArrayValue = fcWrapper["arrayValue"] as? [String: Any],
+               let fcValues = fcArrayValue["values"] as? [[String: Any]] {
+                injuryFrozen = fcValues.compactMap { stringFromFirestore($0) }
+            }
+        }
+
+        return (goals, streaks, activities, personalRecords, distanceUnit, injuryActive, injuryFrozen)
     }
 
     // MARK: - Save Activities

@@ -318,6 +318,68 @@ const getWeekKeyForDate = (dateStr) => {
   return toLocalDateStr(sunday);
 };
 
+// Sunday week-key shifted by N whole weeks (N may be negative).
+const addWeeksToWeekKey = (weekKey, weeks) => {
+  if (!weekKey) return null;
+  const d = new Date(weekKey + 'T12:00:00');
+  d.setDate(d.getDate() + weeks * 7);
+  return toLocalDateStr(d);
+};
+
+// Count whole weeks in [startWeek, endWeek). Used to refund the yearly cap when a
+// user resumes early so honest early-resume doesn't over-count against the budget.
+const weekCountBetween = (startWeek, endWeek) => {
+  if (!startWeek || !endWeek) return 0;
+  let count = 0;
+  let w = startWeek;
+  // Hard stop at 60 to avoid any pathological loop; real windows are <= 12 weeks.
+  for (let i = 0; i < 60 && w < endWeek; i++) { count++; w = addWeeksToWeekKey(w, 1); }
+  return count;
+};
+
+// Per-activation ceiling and the soft yearly budget for injury pauses.
+const INJURY_MIN_WEEKS = 2;       // anti-abuse floor: can't be a one-week last-minute rescue
+const INJURY_MAX_WEEKS = 12;      // per-activation ceiling
+const INJURY_YEARLY_CAP = 16;     // soft cap on total frozen weeks per calendar year
+
+// Which category streaks an injury pause freezes. A partial injury (e.g. a bad shoulder)
+// freezes only the affected categories; the rest keep counting normally. Missing/empty =
+// all three (a full injury, the default). Master is treated as frozen whenever *any*
+// category is frozen, since you can't complete a full week with one paused.
+const INJURY_ALL_CATEGORIES = ['lifts', 'cardio', 'recovery'];
+const INJURY_CATEGORY_LABELS = { lifts: 'Strength', cardio: 'Cardio', recovery: 'Recovery' };
+const injuryFrozenCategories = (injuryMode) => {
+  const fc = injuryMode?.frozenCategories;
+  return (Array.isArray(fc) && fc.length > 0) ? fc : INJURY_ALL_CATEGORIES;
+};
+// "All streaks paused" / "Strength & Cardio paused" — describes which categories are frozen.
+const formatInjuryPausedLabel = (injuryMode) => {
+  const fc = injuryFrozenCategories(injuryMode);
+  if (fc.length >= 3) return 'All streaks paused';
+  return fc.map(c => INJURY_CATEGORY_LABELS[c] || c).join(' & ') + ' paused';
+};
+
+// Accumulate the per-week frozen-category map { "YYYY-MM-DD": ["lifts",...] } for an injury
+// window. This is the source of truth for the recalc + calendar, and it MERGES across injury
+// periods (never overwrites earlier weeks) so an old injury's weeks stay protected when a new one
+// starts. Non-activation weeks freeze the full selected set; the activation week freezes only the
+// categories that weren't already completed before going on injury (so pre-injury progress still
+// counts). The activation week is always recorded — even if its set ends up empty — so the master
+// streak still reads as paused for it.
+const accumulateInjuryFrozenWeeks = (existing, startWeek, endWeekExclusive, frozenCategories, completedAtActivation) => {
+  const map = { ...(existing || {}) };
+  const cats = (Array.isArray(frozenCategories) && frozenCategories.length > 0) ? frozenCategories : INJURY_ALL_CATEGORIES;
+  const completed = completedAtActivation || [];
+  let w = startWeek;
+  for (let i = 0; i < 60 && w && w < endWeekExclusive; i++) {
+    if (!map[w]) {
+      map[w] = (w === startWeek) ? cats.filter(c => !completed.includes(c)) : cats;
+    }
+    w = addWeeksToWeekKey(w, 1);
+  }
+  return map;
+};
+
 // Default empty week celebration state
 const emptyWeekCelebrations = { week: '', lifts: false, cardio: false, recovery: false, master: false };
 
@@ -11042,7 +11104,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss, distanceUnit = 'mi
 
 // Home Tab - Simplified
 
-const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeCountsChange, onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, optimisticChallengeCompletions = new Map(), onStartChallengeWorkout, onApplyPastActivityToChallenge, onChallengeDetailOpenChange, openActivityTarget = null, showHkEmptyHint = false, onDismissHkEmptyHint = () => {} }) => {
+const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeCountsChange, onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, optimisticChallengeCompletions = new Map(), onStartChallengeWorkout, onApplyPastActivityToChallenge, onChallengeDetailOpenChange, openActivityTarget = null, showHkEmptyHint = false, onDismissHkEmptyHint = () => {} }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
   const [dismissConfirmWorkouts, setDismissConfirmWorkouts] = useState(null); // Workouts pending dismiss confirmation
@@ -11216,9 +11278,13 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
   const dayOfWeek = today.getDay(); // 0 = Sunday, 6 = Saturday
   const daysLeft = 7 - dayOfWeek; // Days left including today (Saturday = 1, Friday = 2, etc.)
   
-  const liftsRemaining = Math.max(0, weekProgress.lifts.goal - weekProgress.lifts.completed);
-  const cardioRemaining = Math.max(0, (weekProgress.cardio?.goal || 0) - (weekProgress.cardio?.completed || 0));
-  const recoveryRemaining = Math.max(0, (weekProgress.recovery?.goal || 0) - (weekProgress.recovery?.completed || 0));
+  // Frozen categories during an injury pause don't count toward the at-risk warning (their
+  // streaks are protected). A full injury freezes all three, so the warning disappears entirely;
+  // a partial injury still nudges about the categories the user kept active.
+  const injuryFrozen = userData?.injuryMode?.isActive ? injuryFrozenCategories(userData.injuryMode) : [];
+  const liftsRemaining = injuryFrozen.includes('lifts') ? 0 : Math.max(0, weekProgress.lifts.goal - weekProgress.lifts.completed);
+  const cardioRemaining = injuryFrozen.includes('cardio') ? 0 : Math.max(0, (weekProgress.cardio?.goal || 0) - (weekProgress.cardio?.completed || 0));
+  const recoveryRemaining = injuryFrozen.includes('recovery') ? 0 : Math.max(0, (weekProgress.recovery?.goal || 0) - (weekProgress.recovery?.completed || 0));
 
   // Persist warning dismissal for the day — reappears next day if still needed
   const warningKey = new Date().toDateString();
@@ -12124,6 +12190,37 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
           </div>
         )}
 
+        {/* Injury Mode status — streak frozen while healing. The card is always present
+            while active, so the option to resume (once unlocked) is available every week
+            — that standing weekly option is the check-in. */}
+        {userData.injuryMode?.isActive && (
+          <div className="p-3 rounded-xl mb-3 flex items-center gap-3" style={{ backgroundColor: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.2)' }}>
+            <span className="text-lg">🩹</span>
+            <div className="flex-1">
+              <div className="text-xs font-semibold" style={{ color: '#A78BFA' }}>Injury Mode · {formatInjuryPausedLabel(userData.injuryMode)}</div>
+              <div className="text-[10px] text-gray-400 mt-0.5">
+                Take the time you need to heal
+                {userData.injuryMode.estimatedEndWeek && (() => {
+                  const end = new Date(userData.injuryMode.estimatedEndWeek + 'T12:00:00');
+                  return <span> · auto-resumes {end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>;
+                })()}
+              </div>
+            </div>
+            {canResumeInjury && (
+              <button
+                onClick={() => {
+                  triggerHaptic(ImpactStyle.Light);
+                  onRequestResumeInjury?.();
+                }}
+                className="px-3 py-1.5 rounded-lg text-[11px] font-semibold"
+                style={{ backgroundColor: 'rgba(167,139,250,0.15)', color: '#A78BFA' }}
+              >
+                I'm back
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Apple Health empty-state hint — surfaces once for users who granted
             HK permission but have nothing flowing in (typical Garmin/Whoop/
             Polar setup gap). Dismissible; persisted on the profile so we don't
@@ -12362,7 +12459,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         )}
 
         {/* Streak Shield Button - hidden during vacation */}
-        {!userData.vacationMode?.isActive && (() => {
+        {!userData.vacationMode?.isActive && !userData.injuryMode?.isActive && (() => {
           const currentWeek = getCurrentWeekKey();
           const previousWeek = getPreviousWeekKey();
           const hasActiveStreak = userData.streaks.master > 0 || userData.streaks.lifts > 0 || userData.streaks.cardio > 0 || userData.streaks.recovery > 0;
@@ -12693,7 +12790,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
               <SectionIcon type="target" />
               <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>This Week's Goals</span>
             </div>
-            <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Hit these to keep your streaks alive · {daysLeft} day{daysLeft !== 1 ? 's' : ''} left</p>
+            <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>{userData.injuryMode?.isActive ? 'Rest up — your streak is safe while you heal' : `Hit these to keep your streaks alive · ${daysLeft} day${daysLeft !== 1 ? 's' : ''} left`}</p>
           </div>
 
           {/* Individual Goals - The Main Event */}
@@ -13093,6 +13190,16 @@ export default function DaySevenApp() {
   // does the current (spilled-into) week stay frozen or count toward the streak?
   const [showVacationSpillChoice, setShowVacationSpillChoice] = useState(false);
   const [vacationSpillAnimating, setVacationSpillAnimating] = useState(false);
+  // Confirmation for the home-card "I'm back" injury-resume (mirrors the Settings confirm).
+  const [showHomeResumeConfirm, setShowHomeResumeConfirm] = useState(false);
+  const [homeResumeAnimating, setHomeResumeAnimating] = useState(false);
+  const closeHomeResumeConfirm = (after) => {
+    setHomeResumeAnimating(false);
+    setTimeout(() => {
+      setShowHomeResumeConfirm(false);
+      if (after) after();
+    }, 250);
+  };
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState('record'); // 'record' or 'success'
   const [pendingToast, setPendingToast] = useState(null); // Queue toast to show after celebration
@@ -14442,6 +14549,31 @@ export default function DaySevenApp() {
               setUserData(prev => ({ ...prev, vacationMode: vm }));
             }
           }
+          // Load injury mode data. While active, accumulate each elapsed week into the
+          // frozenWeeks map (handles weeks that passed while the app was closed), and flip
+          // isActive off once the pause window has fully elapsed (auto-resume). The accumulated
+          // weeks stay frozen forever, so historical injuries survive a later injury.
+          if (profileForStreaks?.injuryMode) {
+            let im = profileForStreaks.injuryMode;
+            const original = im;
+            if (im.isActive && im.startWeek) {
+              const currentWeek = getCurrentWeekKey();
+              const endWeek = im.endWeek || im.estimatedEndWeek;
+              // Freeze startWeek..currentWeek (inclusive), never past the window end.
+              const accumulateTo = (endWeek && currentWeek >= endWeek) ? endWeek : addWeeksToWeekKey(currentWeek, 1);
+              const frozenWeeks = accumulateInjuryFrozenWeeks(im.frozenWeeks, im.startWeek, accumulateTo, im.frozenCategories, im.completedAtActivation);
+              const stillActive = !(endWeek && currentWeek >= endWeek);
+              im = { ...im, isActive: stillActive, frozenWeeks };
+            }
+            // The userDataRef<-userData effect hasn't flushed during this async load, so
+            // make the freeze map visible to the load-time recalc below synchronously.
+            userDataRef.current = { ...(userDataRef.current || {}), injuryMode: im };
+            const imFinal = im;
+            setUserData(prev => ({ ...prev, injuryMode: imFinal }));
+            if (imFinal !== original && user?.uid) {
+              updateUserProfile(user.uid, { injuryMode: imFinal }).catch(() => {});
+            }
+          }
           if (profileForStreaks?.weekCelebrations) {
             const wc = profileForStreaks.weekCelebrations;
             if (wc.week === getCurrentWeekKey()) {
@@ -15371,6 +15503,7 @@ export default function DaySevenApp() {
       && !challengeChooserState
       && !applyPastActivityChallenge
       && !isChallengeDetailOpen
+      && !showHomeResumeConfirm
   });
 
   // Listen to auth state
@@ -15507,6 +15640,14 @@ export default function DaySevenApp() {
     }
     setVacationSpillAnimating(false);
   }, [showVacationSpillChoice]);
+  // Same fade/scale-in for the home injury-resume confirmation.
+  useEffect(() => {
+    if (showHomeResumeConfirm) {
+      const t = setTimeout(() => setHomeResumeAnimating(true), 10);
+      return () => clearTimeout(t);
+    }
+    setHomeResumeAnimating(false);
+  }, [showHomeResumeConfirm]);
   useEffect(() => {
     healthKitDataRef.current = healthKitData;
   }, [healthKitData]);
@@ -15768,6 +15909,7 @@ export default function DaySevenApp() {
       stepsGoal: g.stepsPerDay || 10000,
       todayCalories: hk.todayCalories || 0,
       daysLeftInWeek: daysLeft,
+      injuryModeActive: !!userDataRef.current?.injuryMode?.isActive,
       recentActivities
     });
   };
@@ -15778,6 +15920,13 @@ export default function DaySevenApp() {
       pushWidgetData();
     }
   }, [healthKitData?.todaySteps, healthKitData?.todayCalories]);
+
+  // Refresh widgets/complications the moment injury-pause flips on or off, so the paused
+  // treatment shows immediately instead of waiting for the next activity log. (userDataRef
+  // is synced by an earlier effect, so pushWidgetData reads the fresh injuryMode here.)
+  useEffect(() => {
+    pushWidgetData();
+  }, [userData?.injuryMode?.isActive]);
 
   // Recalculate streaks from actual activity history
   // Walks backwards week by week from the current week and counts consecutive completed weeks
@@ -15794,14 +15943,18 @@ export default function DaySevenApp() {
     currentWeekStart.setDate(today.getDate() - today.getDay()); // Sunday
     currentWeekStart.setHours(0, 0, 0, 0);
 
-    // Get shielded weeks and vacation weeks
+    // Get shielded weeks, vacation weeks, and the injury frozen-weeks map ({week: [cats]}).
     const shieldedWeeks = userDataRef.current?.streakShield?.shieldedWeeks || [];
     const vacationWeeks = userDataRef.current?.vacationMode?.vacationWeeks || [];
+    const injuryFrozenWeeks = userDataRef.current?.injuryMode?.frozenWeeks || {};
 
     // Walk backwards week by week, starting from LAST completed week
     // (current week is still in progress, so start from the week before)
     let streaks = { master: 0, lifts: 0, cardio: 0, recovery: 0 };
-    let liftsAlive = true, cardioAlive = true, recoveryAlive = true;
+    // masterAlive is tracked separately from the category flags so an injury pause can freeze
+    // master (protect it) even while a non-frozen category breaks. For normal weeks it's
+    // equivalent to "all three still alive".
+    let liftsAlive = true, cardioAlive = true, recoveryAlive = true, masterAlive = true;
 
     // Check up to 52 weeks back
     for (let weekOffset = 1; weekOffset <= 52; weekOffset++) {
@@ -15814,15 +15967,14 @@ export default function DaySevenApp() {
       const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
       const weekEndStr = `${weekEnd.getFullYear()}-${String(weekEnd.getMonth() + 1).padStart(2, '0')}-${String(weekEnd.getDate()).padStart(2, '0')}`;
 
-      // Check if this week was shielded or on vacation
+      // Check if this week was shielded, on vacation, or inside an injury pause.
       const isShielded = shieldedWeeks.includes(weekStartStr);
       const isVacation = vacationWeeks.includes(weekStartStr);
+      const injuryFrozenSet = injuryFrozenWeeks[weekStartStr]; // array of frozen cats, or undefined
+      const isInjury = injuryFrozenSet !== undefined;
 
-      // Vacation weeks: streak stays alive but doesn't increment (frozen)
-      if (isVacation) {
-        // Don't increment any streaks, but don't break them either — just skip
-        continue;
-      }
+      // Vacation weeks fully freeze every category — skip before counting.
+      if (isVacation) continue;
 
       // Get activities for this week
       const weekActivities = allActivities.filter(a => a.date >= weekStartStr && a.date <= weekEndStr);
@@ -15833,18 +15985,31 @@ export default function DaySevenApp() {
       const liftsGoalMet = isShielded || liftsCount >= goals.liftsPerWeek;
       const cardioGoalMet = isShielded || cardioCount >= goals.cardioPerWeek;
       const recoveryGoalMet = isShielded || recoveryCount >= goals.recoveryPerWeek;
+      const allGoalsMet = liftsGoalMet && cardioGoalMet && recoveryGoalMet;
 
-      if (liftsAlive && liftsGoalMet) streaks.lifts++;
-      else liftsAlive = false;
+      if (isInjury) {
+        // Per-week frozen set: those categories are held (protected, never broken); any category
+        // not in the set runs normally. The activation-week credit is already baked into the set
+        // (categories completed before going on injury were left out). Master is always frozen
+        // during an injury week.
+        const fz = injuryFrozenSet;
+        if (fz.includes('lifts')) { /* held — protected */ }
+        else if (liftsAlive && liftsGoalMet) { streaks.lifts++; } else { liftsAlive = false; }
 
-      if (cardioAlive && cardioGoalMet) streaks.cardio++;
-      else cardioAlive = false;
+        if (fz.includes('cardio')) { /* held — protected */ }
+        else if (cardioAlive && cardioGoalMet) { streaks.cardio++; } else { cardioAlive = false; }
 
-      if (recoveryAlive && recoveryGoalMet) streaks.recovery++;
-      else recoveryAlive = false;
+        if (fz.includes('recovery')) { /* held — protected */ }
+        else if (recoveryAlive && recoveryGoalMet) { streaks.recovery++; } else { recoveryAlive = false; }
+        // Master held (no advance, no break) for every injury week.
+        continue;
+      }
 
-      // Master streak: all three must be met
-      if (liftsAlive && cardioAlive && recoveryAlive) streaks.master++;
+      // Normal week.
+      if (liftsAlive && liftsGoalMet) streaks.lifts++; else liftsAlive = false;
+      if (cardioAlive && cardioGoalMet) streaks.cardio++; else cardioAlive = false;
+      if (recoveryAlive && recoveryGoalMet) streaks.recovery++; else recoveryAlive = false;
+      if (masterAlive && allGoalsMet) streaks.master++; else masterAlive = false;
 
       // If all streaks are broken, stop
       if (!liftsAlive && !cardioAlive && !recoveryAlive) break;
@@ -15857,8 +16022,10 @@ export default function DaySevenApp() {
     const cwEndStr = `${currentWeekEnd.getFullYear()}-${String(currentWeekEnd.getMonth() + 1).padStart(2, '0')}-${String(currentWeekEnd.getDate()).padStart(2, '0')}`;
     const currentWeekShielded = shieldedWeeks.includes(cwStartStr);
     const currentWeekVacation = vacationWeeks.includes(cwStartStr);
+    const cwFrozenSet = injuryFrozenWeeks[cwStartStr]; // array of frozen cats, or undefined
+    const currentWeekInjury = cwFrozenSet !== undefined;
 
-    // If current week is vacation, don't add to streaks (frozen)
+    // Vacation fully freezes the current week — nothing to add.
     if (currentWeekVacation) {
       return streaks;
     }
@@ -15867,23 +16034,28 @@ export default function DaySevenApp() {
     const cwLifts = cwActivities.filter(a => { const c = getActivityCategory(a); return c === 'lifting' || c === 'lifting+cardio'; }).length;
     const cwCardio = cwActivities.filter(a => { const c = getActivityCategory(a); return c === 'cardio' || c === 'lifting+cardio'; }).length;
     const cwRecovery = cwActivities.filter(a => getActivityCategory(a) === 'recovery').length;
+    const cwLiftsMet = currentWeekShielded || cwLifts >= goals.liftsPerWeek;
+    const cwCardioMet = currentWeekShielded || cwCardio >= goals.cardioPerWeek;
+    const cwRecoveryMet = currentWeekShielded || cwRecovery >= goals.recoveryPerWeek;
+    const cwAllMet = cwLiftsMet && cwCardioMet && cwRecoveryMet;
 
     // Current week extends the streak if it's contiguous (streaks > 0 means the most recent
     // past week had the goal met). If the past chain broke at an older week, the streak from
     // recent weeks is still valid and the current week should extend it, not reset to 1.
-    if (currentWeekShielded || cwLifts >= goals.liftsPerWeek) {
-      streaks.lifts = streaks.lifts > 0 ? streaks.lifts + 1 : 1;
+    if (currentWeekInjury) {
+      // Categories not in this week's frozen set extend normally (the activation-week credit is
+      // already baked into the set). Frozen categories are held. Master stays paused.
+      const fz = cwFrozenSet;
+      if (!fz.includes('lifts') && cwLiftsMet) streaks.lifts = streaks.lifts > 0 ? streaks.lifts + 1 : 1;
+      if (!fz.includes('cardio') && cwCardioMet) streaks.cardio = streaks.cardio > 0 ? streaks.cardio + 1 : 1;
+      if (!fz.includes('recovery') && cwRecoveryMet) streaks.recovery = streaks.recovery > 0 ? streaks.recovery + 1 : 1;
+      return streaks;
     }
-    if (currentWeekShielded || cwCardio >= goals.cardioPerWeek) {
-      streaks.cardio = streaks.cardio > 0 ? streaks.cardio + 1 : 1;
-    }
-    if (currentWeekShielded || cwRecovery >= goals.recoveryPerWeek) {
-      streaks.recovery = streaks.recovery > 0 ? streaks.recovery + 1 : 1;
-    }
-    const allCurrentMet = currentWeekShielded || (cwLifts >= goals.liftsPerWeek && cwCardio >= goals.cardioPerWeek && cwRecovery >= goals.recoveryPerWeek);
-    if (allCurrentMet) {
-      streaks.master = streaks.master > 0 ? streaks.master + 1 : 1;
-    }
+
+    if (cwLiftsMet) streaks.lifts = streaks.lifts > 0 ? streaks.lifts + 1 : 1;
+    if (cwCardioMet) streaks.cardio = streaks.cardio > 0 ? streaks.cardio + 1 : 1;
+    if (cwRecoveryMet) streaks.recovery = streaks.recovery > 0 ? streaks.recovery + 1 : 1;
+    if (cwAllMet) streaks.master = streaks.master > 0 ? streaks.master + 1 : 1;
 
     return streaks;
   };
@@ -15941,6 +16113,130 @@ export default function DaySevenApp() {
     } else {
       deactivateVacationMode(false);
     }
+  };
+
+  // Activate injury mode for `durationWeeks` (clamped to the min lock, the per-activation
+  // ceiling, and whatever remains of the yearly budget). Freezes from the current week
+  // onward; the current week is protected immediately so an at-risk streak is saved the
+  // moment the user toggles on. Streaks are recalculated since the current week is now frozen.
+  const activateInjuryMode = (durationWeeks, frozenCategories) => {
+    if (userData.vacationMode?.isActive) {
+      setToastMessage('Turn off vacation mode before starting injury mode');
+      setToastType('success');
+      setShowToast(true);
+      return;
+    }
+    const im = userData.injuryMode || {};
+    const currentYear = new Date().getFullYear();
+    const priorUsed = im.activationYear === currentYear ? (im.weeksUsedThisYear || 0) : 0;
+    const remaining = INJURY_YEARLY_CAP - priorUsed;
+    if (remaining < INJURY_MIN_WEEKS) {
+      setToastMessage(`You've used your ${INJURY_YEARLY_CAP} injury weeks for this year`);
+      setToastType('success');
+      setShowToast(true);
+      return;
+    }
+    const weeks = Math.max(INJURY_MIN_WEEKS, Math.min(durationWeeks || INJURY_MIN_WEEKS, INJURY_MAX_WEEKS, remaining));
+    const cats = (Array.isArray(frozenCategories) && frozenCategories.length > 0)
+      ? frozenCategories.filter(c => INJURY_ALL_CATEGORIES.includes(c))
+      : INJURY_ALL_CATEGORIES;
+    const startWeek = getCurrentWeekKey();
+    // Snapshot which goals were ALREADY met this week at the moment of activation. A frozen
+    // category only keeps its activation-week credit if it's in here — training a frozen
+    // category *after* going on injury must not advance its streak.
+    const g = userData.goals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2 };
+    const cwActsSnap = (activities || []).filter(a => a.date >= startWeek);
+    const snapLifts = cwActsSnap.filter(a => { const c = getActivityCategory(a); return c === 'lifting' || c === 'lifting+cardio'; }).length;
+    const snapCardio = cwActsSnap.filter(a => { const c = getActivityCategory(a); return c === 'cardio' || c === 'lifting+cardio'; }).length;
+    const snapRecovery = cwActsSnap.filter(a => getActivityCategory(a) === 'recovery').length;
+    const completedAtActivation = [];
+    if (snapLifts >= g.liftsPerWeek) completedAtActivation.push('lifts');
+    if (snapCardio >= g.cardioPerWeek) completedAtActivation.push('cardio');
+    if (snapRecovery >= g.recoveryPerWeek) completedAtActivation.push('recovery');
+    const updatedIm = {
+      isActive: true,
+      startDate: toLocalDateStr(new Date()),
+      startWeek,
+      durationWeeks: weeks,
+      estimatedEndWeek: addWeeksToWeekKey(startWeek, weeks),
+      endWeek: null,
+      frozenCategories: cats,
+      completedAtActivation,
+      // Merge into any existing map so earlier injury periods stay protected. Seeds the
+      // activation week now; later weeks get added by the hydration accumulator as they pass.
+      frozenWeeks: accumulateInjuryFrozenWeeks((userData.injuryMode || {}).frozenWeeks, startWeek, addWeeksToWeekKey(startWeek, 1), cats, completedAtActivation),
+      weeksUsedThisYear: priorUsed + weeks,
+      activationYear: currentYear
+    };
+    setUserData(prev => {
+      const updated = { ...prev, injuryMode: updatedIm };
+      const goals = prev.goals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2 };
+      const prevRef = userDataRef.current;
+      userDataRef.current = updated;
+      const recalculated = recalculateStreaksFromHistory(activities, goals);
+      userDataRef.current = prevRef;
+      if (recalculated) {
+        updated.streaks = { ...prev.streaks, ...recalculated };
+        if (user?.uid) updateUserProfile(user.uid, { injuryMode: updatedIm, streaks: updated.streaks }).catch(() => {});
+      } else if (user?.uid) {
+        updateUserProfile(user.uid, { injuryMode: updatedIm }).catch(() => {});
+      }
+      return updated;
+    });
+  };
+
+  // Resume early from injury mode. The minimum-lock gate lives in the UI (the control is
+  // disabled until INJURY_MIN_WEEKS have been frozen). Setting endWeek to the current week
+  // un-freezes it so this week counts again, refunds the unused weeks against the yearly
+  // cap, then recalculates streaks (the frozen window just shrank).
+  const resumeFromInjuryMode = () => {
+    setUserData(prev => {
+      const im = prev.injuryMode;
+      if (!im || !im.isActive) return prev;
+      const resumeWeek = getCurrentWeekKey();
+      const actualFrozen = weekCountBetween(im.startWeek, resumeWeek);
+      const refund = Math.max(0, (im.durationWeeks || 0) - actualFrozen);
+      // Drop the resume week (and anything later) from the frozen map so the current week counts
+      // again; earlier weeks of this and prior injuries stay protected.
+      const prunedFrozenWeeks = {};
+      Object.keys(im.frozenWeeks || {}).forEach(wk => { if (wk < resumeWeek) prunedFrozenWeeks[wk] = im.frozenWeeks[wk]; });
+      const updatedIm = {
+        ...im,
+        isActive: false,
+        endWeek: resumeWeek,
+        frozenWeeks: prunedFrozenWeeks,
+        weeksUsedThisYear: Math.max(0, (im.weeksUsedThisYear || 0) - refund)
+      };
+      const updated = { ...prev, injuryMode: updatedIm };
+      const goals = prev.goals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2 };
+      const prevRef = userDataRef.current;
+      userDataRef.current = updated;
+      const recalculated = recalculateStreaksFromHistory(activities, goals);
+      userDataRef.current = prevRef;
+      if (recalculated) {
+        updated.streaks = { ...prev.streaks, ...recalculated };
+        if (user?.uid) updateUserProfile(user.uid, { injuryMode: updatedIm, streaks: updated.streaks }).catch(() => {});
+      } else if (user?.uid) {
+        updateUserProfile(user.uid, { injuryMode: updatedIm }).catch(() => {});
+      }
+      return updated;
+    });
+  };
+
+  // Whether early-resume is unlocked yet (>= INJURY_MIN_WEEKS frozen). Drives both the
+  // Settings "Resume" control and the weekly check-in's resume option.
+  const canResumeFromInjury = () => {
+    const im = userData.injuryMode;
+    if (!im || !im.isActive || !im.startWeek) return false;
+    return weekCountBetween(im.startWeek, getCurrentWeekKey()) >= INJURY_MIN_WEEKS;
+  };
+
+  // Weeks of injury budget left this calendar year (resets each year). Caps the
+  // duration slider so a single activation can't exceed the yearly allowance.
+  const injuryRemainingWeeks = () => {
+    const im = userData.injuryMode || {};
+    const used = im.activationYear === new Date().getFullYear() ? (im.weeksUsedThisYear || 0) : 0;
+    return Math.max(0, INJURY_YEARLY_CAP - used);
   };
 
   const handleAddActivity = (pendingOrDate = null) => {
@@ -16456,11 +16752,18 @@ export default function DaySevenApp() {
     const wc = weekCelebrations.week === currentWeekKey ? weekCelebrations : { ...emptyWeekCelebrations, week: currentWeekKey };
     const newWC = { ...wc };
 
+    // Injury-aware: a frozen category must not optimistically increment/celebrate here, and
+    // master never advances during any injury pause (it's protected). Non-frozen categories
+    // during a partial injury still celebrate normally.
+    const _im = userData.injuryMode;
+    const _injuryActive = !!_im?.isActive;
+    const _injFrozen = _injuryActive ? injuryFrozenCategories(_im) : [];
+
     // Determine which categories are newly completing (transition) AND not already celebrated
-    const shouldCelebrateLifts = justCompletedLifts && !wc.lifts;
-    const shouldCelebrateCardio = justCompletedCardio && !wc.cardio;
-    const shouldCelebrateRecovery = justCompletedRecovery && !wc.recovery;
-    const willStreakWeek = willCompleteAllGoals && !wc.master;
+    const shouldCelebrateLifts = justCompletedLifts && !wc.lifts && !(_injuryActive && _injFrozen.includes('lifts'));
+    const shouldCelebrateCardio = justCompletedCardio && !wc.cardio && !(_injuryActive && _injFrozen.includes('cardio'));
+    const shouldCelebrateRecovery = justCompletedRecovery && !wc.recovery && !(_injuryActive && _injFrozen.includes('recovery'));
+    const willStreakWeek = willCompleteAllGoals && !wc.master && !_injuryActive;
 
     // Update streaks when goals are met - combined into single setUserData call to avoid race conditions
     // If week will be streaked, skip individual celebration (week streak takes priority)
@@ -17289,17 +17592,22 @@ export default function DaySevenApp() {
                   style={{ opacity: wordmarkOpacity }}
                 />
               </div>
-              {userData?.streaks?.master > 0 && !activeWorkout && (
+              {userData?.streaks?.master > 0 && !activeWorkout && (() => {
+                const injured = userData?.injuryMode?.isActive;
+                return (
                 <button
                   onClick={() => switchTab('profile')}
                   className="flex items-center gap-1.5 px-2.5 py-1 rounded-full transition-all duration-300 ease-out active:scale-95"
-                  style={{ backgroundColor: 'rgba(255,215,0,0.1)', border: '1px solid rgba(255,215,0,0.2)' }}
+                  style={injured
+                    ? { backgroundColor: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.25)' }
+                    : { backgroundColor: 'rgba(255,215,0,0.1)', border: '1px solid rgba(255,215,0,0.2)' }}
                 >
-                  <span style={{ fontSize: isCollapsed ? 12 : 14 }} className="transition-all duration-300">🔥</span>
-                  <span className="font-bold transition-all duration-300" style={{ color: '#FFD700', fontSize: isCollapsed ? 12 : 14 }}>{userData.streaks.master}</span>
-                  <span className="font-medium transition-all duration-300" style={{ color: 'rgba(255,215,0,0.7)', fontSize: isCollapsed ? 9 : 11 }}>week hybrid streak</span>
+                  <span style={{ fontSize: isCollapsed ? 12 : 14 }} className="transition-all duration-300">{injured ? '🩹' : '🔥'}</span>
+                  <span className="font-bold transition-all duration-300" style={{ color: injured ? '#A78BFA' : '#FFD700', fontSize: isCollapsed ? 12 : 14 }}>{userData.streaks.master}</span>
+                  <span className="font-medium transition-all duration-300" style={{ color: injured ? 'rgba(167,139,250,0.7)' : 'rgba(255,215,0,0.7)', fontSize: isCollapsed ? 9 : 11 }}>{injured ? 'week streak · paused' : 'week hybrid streak'}</span>
                 </button>
-              )}
+                );
+              })()}
             </div>
           </div>
         );
@@ -17462,6 +17770,8 @@ export default function DaySevenApp() {
                     });
                   }}
                   onDeactivateVacation={requestVacationDeactivation}
+                  onRequestResumeInjury={() => setShowHomeResumeConfirm(true)}
+                  canResumeInjury={canResumeFromInjury()}
                   autoImportedCount={autoImportedCount}
                   onDismissAutoImported={() => setAutoImportedCount(0)}
                   onShareStamp={(activity, routeCoords) => {
@@ -17601,6 +17911,12 @@ export default function DaySevenApp() {
                     if (vm.isActive) {
                       requestVacationDeactivation();
                     } else {
+                      if (userData.injuryMode?.isActive) {
+                        setToastMessage('Resume from injury mode before starting vacation mode');
+                        setToastType('success');
+                        setShowToast(true);
+                        return;
+                      }
                       const currentYear = new Date().getFullYear();
                       const used = vm.activationYear === currentYear ? (vm.activationsThisYear || 0) : 0;
                       if (used >= 3) {
@@ -17691,6 +18007,12 @@ export default function DaySevenApp() {
                   // Deactivate (may prompt how to count a spilled-into week)
                   requestVacationDeactivation();
                 } else {
+                  if (userData.injuryMode?.isActive) {
+                    setToastMessage('Resume from injury mode before starting vacation mode');
+                    setToastType('success');
+                    setShowToast(true);
+                    return;
+                  }
                   // Activate — check limits
                   const currentYear = new Date().getFullYear();
                   const used = vm.activationYear === currentYear ? (vm.activationsThisYear || 0) : 0;
@@ -17716,6 +18038,13 @@ export default function DaySevenApp() {
                   }
                 }
               }}
+              onActivateInjuryMode={(weeks, cats) => activateInjuryMode(weeks, cats)}
+              onResumeInjuryMode={() => resumeFromInjuryMode()}
+              canResumeInjury={canResumeFromInjury()}
+              injuryMinWeeks={INJURY_MIN_WEEKS}
+              injuryMaxWeeks={Math.min(INJURY_MAX_WEEKS, injuryRemainingWeeks())}
+              injuryYearlyCap={INJURY_YEARLY_CAP}
+              injuryRemainingWeeks={injuryRemainingWeeks()}
               onUseStreakShield={(weekKey) => {
                 const newShield = {
                   lastUsedWeek: weekKey,
@@ -18793,6 +19122,66 @@ export default function DaySevenApp() {
             >
               Cancel
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation for resuming from injury via the home card's "I'm back" button. */}
+      {showHomeResumeConfirm && (
+        <div
+          data-modal-overlay
+          className="fixed inset-0 z-[9999] flex items-center justify-center transition-opacity duration-300"
+          style={{ opacity: homeResumeAnimating ? 1 : 0 }}
+          onClick={() => closeHomeResumeConfirm()}
+        >
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div
+            className="relative w-[85%] max-w-sm rounded-2xl p-6 transition-all duration-300 ease-out"
+            style={{
+              backgroundColor: '#1a1a1a',
+              transform: homeResumeAnimating ? 'scale(1) translateY(0)' : 'scale(0.95) translateY(20px)',
+              opacity: homeResumeAnimating ? 1 : 0,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex flex-col items-center text-center mb-5">
+              <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3" style={{ backgroundColor: 'rgba(167,139,250,0.12)' }}>
+                <span className="text-3xl">💪</span>
+              </div>
+              <h3 className="text-white font-semibold text-lg">Welcome back?</h3>
+              <p className="text-gray-400 text-sm mt-2 leading-relaxed">
+                Your streak picks up right where it left off this week. No rush if you're not ready.
+              </p>
+            </div>
+            <div className="rounded-xl p-3 mb-5" style={{ backgroundColor: 'rgba(255,149,0,0.08)', border: '1px solid rgba(255,149,0,0.15)' }}>
+              <div className="flex items-start gap-2">
+                <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="#FF9500" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                </svg>
+                <p className="text-xs leading-relaxed" style={{ color: '#FF9500' }}>
+                  Your goals go back to normal — hit this week's to keep your streak, or it'll break like usual.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => closeHomeResumeConfirm()}
+                className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+                style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+              >
+                Keep healing
+              </button>
+              <button
+                onClick={() => {
+                  triggerHaptic(ImpactStyle.Medium);
+                  closeHomeResumeConfirm(() => resumeFromInjuryMode());
+                }}
+                className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+                style={{ backgroundColor: '#A78BFA' }}
+              >
+                Resume
+              </button>
+            </div>
           </div>
         </div>
       )}

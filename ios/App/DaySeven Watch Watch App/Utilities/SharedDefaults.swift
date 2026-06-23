@@ -20,6 +20,7 @@ struct SharedDefaults {
     static let stepsGoalKey = "stepsGoal"
     static let todayCaloriesKey = "todayCalories"
     static let lastUpdatedKey = "lastUpdated"
+    static let injuryModeActiveKey = "injuryModeActive"
 
     // Distance unit preference ('mi' | 'km'). Mirrored from the phone via WCSession
     // applicationContext + watch-side Firestore load. Widgets can read for distance
@@ -54,9 +55,11 @@ struct SharedDefaults {
         liftsCompleted: Int, liftsGoal: Int,
         cardioCompleted: Int, cardioGoal: Int,
         recoveryCompleted: Int, recoveryGoal: Int,
-        todaySteps: Int, stepsGoal: Int, todayCalories: Int
+        todaySteps: Int, stepsGoal: Int, todayCalories: Int,
+        injuryModeActive: Bool = false
     ) {
         guard let defaults = shared else { return }
+        defaults.set(injuryModeActive, forKey: injuryModeActiveKey)
         defaults.set(masterStreak, forKey: masterStreakKey)
         defaults.set(liftsStreak, forKey: liftsStreakKey)
         defaults.set(cardioStreak, forKey: cardioStreakKey)
@@ -91,7 +94,8 @@ struct SharedDefaults {
             todaySteps: defaults.integer(forKey: todayStepsKey),
             stepsGoal: defaults.integer(forKey: stepsGoalKey) > 0 ? defaults.integer(forKey: stepsGoalKey) : 10000,
             todayCalories: defaults.integer(forKey: todayCaloriesKey),
-            lastUpdated: defaults.double(forKey: lastUpdatedKey)
+            lastUpdated: defaults.double(forKey: lastUpdatedKey),
+            injuryModeActive: defaults.bool(forKey: injuryModeActiveKey)
         )
     }
 }
@@ -113,6 +117,7 @@ struct WidgetStreakData {
     let stepsGoal: Int
     let todayCalories: Int
     let lastUpdated: Double
+    let injuryModeActive: Bool
 
     var stepsProgress: Double {
         min(Double(todaySteps) / Double(stepsGoal), 1.0)
@@ -146,6 +151,7 @@ struct WidgetStreakData {
         cardioCompleted: 0, cardioGoal: 3,
         recoveryCompleted: 0, recoveryGoal: 2,
         todaySteps: 0, stepsGoal: 10000, todayCalories: 0,
-        lastUpdated: 0
+        lastUpdated: 0,
+        injuryModeActive: false
     )
 }

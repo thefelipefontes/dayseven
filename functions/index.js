@@ -781,8 +781,9 @@ exports.sendStreakReminders = onSchedule(
 
       if (hasRecentActivity) continue; // Has recent activity, skip
 
-      // Skip users on vacation mode
+      // Skip users on vacation or injury mode (streak is frozen — don't nag)
       if (userData.vacationMode?.isActive) continue;
+      if (userData.injuryMode?.isActive) continue;
 
       const prefs = await getUserPreferences(userId);
       if (!prefs.streakReminders) continue;
@@ -857,6 +858,9 @@ exports.sendDailyReminders = onSchedule(
       const userData = userDoc.data();
       const prefs = userData.notificationPreferences;
 
+      // Skip users healing — injury mode softens the "time to move" nudge
+      if (userData.injuryMode?.isActive) continue;
+
       // Skip users without preferences or with daily reminders disabled
       if (!prefs || !prefs.dailyReminders) continue;
 
@@ -903,8 +907,9 @@ exports.sendGoalReminder = onSchedule(
       const userId = userDoc.id;
       const userData = userDoc.data();
 
-      // Skip users on vacation mode
+      // Skip users on vacation or injury mode (streak is frozen — don't nag)
       if (userData.vacationMode?.isActive) continue;
+      if (userData.injuryMode?.isActive) continue;
 
       const prefs = await getUserPreferences(userId);
       if (!prefs.goalReminders) continue;
@@ -1024,6 +1029,10 @@ exports.sendWeeklySummary = onSchedule(
     for (const userDoc of usersSnapshot.docs) {
       const userId = userDoc.id;
       const userData = userDoc.data();
+
+      // Skip recap while healing — a "you crushed it / nothing logged" summary
+      // lands wrong during an injury pause.
+      if (userData.injuryMode?.isActive) continue;
 
       const prefs = await getUserPreferences(userId);
       if (!prefs.weeklySummary) continue;
@@ -1149,6 +1158,9 @@ exports.sendMonthlySummary = onSchedule(
     for (const userDoc of usersSnapshot.docs) {
       const userId = userDoc.id;
       const userData = userDoc.data();
+
+      // Skip recap while healing (see weekly summary).
+      if (userData.injuryMode?.isActive) continue;
 
       const prefs = await getUserPreferences(userId);
       if (!prefs.monthlySummary) continue;
@@ -1291,6 +1303,9 @@ exports.onStreakMilestone = onDocumentUpdated(
     const hitMilestone = milestones.find(m => newStreak >= m && oldStreak < m);
 
     if (!hitMilestone) return;
+
+    // Don't fire celebratory milestones while the streak is paused for injury.
+    if (after.injuryMode?.isActive) return;
 
     const prefs = await getUserPreferences(userId);
     if (!prefs.streakMilestones) return;

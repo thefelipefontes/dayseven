@@ -9,6 +9,7 @@
 const { onDocumentCreated, onDocumentUpdated, onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onCall, HttpsError, onRequest } = require("firebase-functions/v2/https");
+const { defineSecret } = require("firebase-functions/params");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
@@ -23,6 +24,10 @@ initializeApp();
 
 const db = getFirestore();
 const messaging = getMessaging();
+
+// Shared secret guarding the RevenueCat webhook. Set it with:
+//   firebase functions:secrets:set REVENUECAT_WEBHOOK_SECRET
+const revenueCatWebhookSecret = defineSecret("REVENUECAT_WEBHOOK_SECRET");
 
 // ==========================================
 // WATCH APP AUTHENTICATION
@@ -306,6 +311,11 @@ const NotificationType = {
   CHALLENGE_CANCEL_ACCEPTED: 'challenge_cancel_accepted',
   CHALLENGE_CANCEL_DECLINED: 'challenge_cancel_declined',
   CHALLENGE_PICK_WHICH: 'challenge_pick_which',
+  // Lifecycle / retention
+  TRIAL_ENDING: 'trial_ending',
+  TRIAL_FINAL: 'trial_final',
+  WINBACK: 'winback',
+  ACTIVATION: 'activation',
 };
 
 /**
@@ -432,7 +442,7 @@ function getDefaultPreferences() {
     friendActivity: false,
     streakReminders: true,
     goalReminders: true,
-    dailyReminders: false,
+    dailyReminders: true, // default ON — the core daily habit nudge (retention)
     dailyReminderTime: '09:00',
     streakMilestones: true,
     goalAchievements: true,
@@ -1226,6 +1236,369 @@ exports.sendMonthlySummary = onSchedule(
             comparison: (lastMonthCount - prevMonthCount).toString(),
           }
         );
+      }
+    }
+  }
+);
+
+// ==========================================
+// SUBSCRIPTION STATE — RevenueCat webhook
+// ==========================================
+//
+// The server otherwise has ZERO knowledge of subscription state (it lives
+// client-side in RevenueCat). This webhook persists a compact `subscription`
+// object on users/{uid}, which is what makes the trial-end nudge and win-back
+// sequences below possible.
+//
+// One-time setup in the RevenueCat dashboard:
+//   Project Settings > Integrations > Webhooks
+//     URL:                  https://us-central1-<project>.cloudfunctions.net/revenueCatWebhook
+//     Authorization header: <REVENUECAT_WEBHOOK_SECRET>   (value you choose)
+//   Then store the secret so the function can verify it:
+//     firebase functions:secrets:set REVENUECAT_WEBHOOK_SECRET
+//
+// `app_user_id` equals the Firebase UID once loginRevenueCat(uid) has aliased
+// the anonymous user at sign-in; we pick the first non-anonymous id available.
+exports.revenueCatWebhook = onRequest(
+  { secrets: [revenueCatWebhookSecret] },
+  async (req, res) => {
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: 'Method not allowed' });
+      return;
+    }
+
+    // RevenueCat sends the Authorization header value you configure in the
+    // dashboard. Accept it with or without a "Bearer " prefix.
+    const expected = revenueCatWebhookSecret.value();
+    const raw = req.headers.authorization || '';
+    const provided = raw.startsWith('Bearer ') ? raw.slice(7) : raw;
+    if (!expected || provided !== expected) {
+      console.warn('[revenueCatWebhook] Unauthorized request');
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    const event = req.body && req.body.event;
+    if (!event || !event.type) {
+      res.status(200).json({ ok: true, skipped: 'no_event' });
+      return;
+    }
+
+    // Resolve the Firebase UID, skipping RevenueCat anonymous ids.
+    const uid = [event.app_user_id, event.original_app_user_id, ...(event.aliases || [])]
+      .filter(Boolean)
+      .find((id) => !String(id).startsWith('$RCAnonymousID:'));
+    if (!uid) {
+      res.status(200).json({ ok: true, skipped: 'anonymous_only' });
+      return;
+    }
+
+    try {
+      const type = event.type;
+      const periodType = event.period_type || null; // TRIAL | NORMAL | INTRO
+      const expirationMs = event.expiration_at_ms || null;
+      const expiresAt = expirationMs ? new Date(expirationMs).toISOString() : null;
+
+      const ACTIVE = ['INITIAL_PURCHASE', 'RENEWAL', 'PRODUCT_CHANGE', 'UNCANCELLATION', 'SUBSCRIPTION_EXTENDED', 'TEMPORARY_ENTITLEMENT_GRANT'];
+      const INACTIVE = ['EXPIRATION', 'BILLING_ISSUE', 'SUBSCRIPTION_PAUSED'];
+
+      let entitlementActive;
+      if (ACTIVE.includes(type)) entitlementActive = true;
+      else if (INACTIVE.includes(type)) entitlementActive = false;
+      // CANCELLATION = auto-renew off but still entitled until expiry.
+      else if (type === 'CANCELLATION') entitlementActive = expirationMs ? expirationMs > Date.now() : true;
+      else entitlementActive = expirationMs ? expirationMs > Date.now() : false;
+
+      const isTrial = periodType === 'TRIAL';
+      const subscription = {
+        entitlementActive,
+        status: !entitlementActive ? 'expired' : (isTrial ? 'trial' : 'active'),
+        periodType,
+        expiresAt,
+        trialEndsAt: isTrial && entitlementActive ? expiresAt : null,
+        willRenew: type === 'CANCELLATION' ? false : entitlementActive,
+        lastEventType: type,
+        updatedAt: new Date().toISOString(),
+      };
+
+      const update = { subscription };
+      // Converting clears/re-arms the lifecycle nudges so a re-subscribe gets a
+      // fresh trial-end reminder and stops any in-flight win-back sequence.
+      if (entitlementActive) {
+        update.winbackStage = FieldValue.delete();
+        update.winbackLastSentAt = FieldValue.delete();
+        if (isTrial && type === 'INITIAL_PURCHASE') {
+          update.trialEndingNotified = FieldValue.delete();
+          update.trialFinalNotified = FieldValue.delete();
+        }
+      }
+
+      await db.collection('users').doc(uid).set(update, { merge: true });
+      console.log(`[revenueCatWebhook] ${type}/${periodType} uid=${uid} active=${entitlementActive} expiresAt=${expiresAt}`);
+      res.status(200).json({ ok: true });
+    } catch (err) {
+      console.error('[revenueCatWebhook] Error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+/**
+ * Helper: server-side mirror of the app's "full access" gate. A user can use
+ * the app (and therefore log workouts) when they hold an active entitlement,
+ * are grandfathered (pre-cutover, no subscriptionRequired field), or comped.
+ */
+function hasAppAccess(userData) {
+  if (userData.subscriptionRequired !== true) return true; // grandfathered
+  if (userData.forceProTier === true) return true; // comped
+  return userData.subscription?.entitlementActive === true;
+}
+
+/**
+ * Safety gate for the win-back sequence. Win-back targets users WITHOUT
+ * server-side access — but until the RevenueCat webhook is live and populating
+ * `subscription`, EVERY post-cutover user looks access-less, which would nag
+ * real subscribers. So win-back stays dormant until you explicitly enable it
+ * AFTER confirming the webhook works:
+ *   Firestore → config/lifecycleNotifications → { winbackEnabled: true }
+ * (trial-end + activation are safe by construction and need no flag.)
+ */
+async function isWinbackEnabled() {
+  try {
+    const doc = await db.collection('config').doc('lifecycleNotifications').get();
+    return doc.exists && doc.data().winbackEnabled === true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * Helper: whole days elapsed since an ISO timestamp (null-safe).
+ */
+function daysSince(iso) {
+  if (!iso) return Infinity;
+  const t = new Date(iso).getTime();
+  if (isNaN(t)) return Infinity;
+  return (Date.now() - t) / (24 * 60 * 60 * 1000);
+}
+
+/**
+ * Helper: count this-week (last 7 days) workouts + recovery for a value recap.
+ */
+function weekRecap(userData) {
+  const oneWeekAgo = new Date();
+  oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+  const weekAgoStr = oneWeekAgo.toISOString().split('T')[0];
+  let workouts = 0;
+  let recovery = 0;
+  (userData.activities || []).filter((a) => a.date >= weekAgoStr).forEach((a) => {
+    const cat = getActivityCategoryForGoals(a);
+    if (cat === 'lifting' || cat === 'cardio') workouts++;
+    else if (cat === 'recovery') recovery++;
+  });
+  return { workouts, recovery };
+}
+
+// ==========================================
+// LIFECYCLE / RETENTION REMINDERS
+// ==========================================
+
+/**
+ * Trial-end conversion nudge — runs hourly. Sends a "trial ends tomorrow"
+ * value recap ~24h out and a final nudge ~2h out. Each fires once (flagged)
+ * and ignores quiet hours since the timing is pinned to the trial expiry.
+ *
+ * Depends on the RevenueCat webhook having stamped subscription.trialEndsAt.
+ */
+exports.sendTrialEndingReminders = onSchedule(
+  {
+    schedule: '0 * * * *', // every hour
+    timeZone: 'UTC',
+  },
+  async () => {
+    const snap = await db.collection('users')
+      .where('subscription.status', '==', 'trial')
+      .get();
+
+    const now = Date.now();
+    for (const userDoc of snap.docs) {
+      const userId = userDoc.id;
+      const userData = userDoc.data();
+      const sub = userData.subscription || {};
+      if (!sub.entitlementActive || !sub.trialEndsAt) continue;
+
+      const hoursLeft = (new Date(sub.trialEndsAt).getTime() - now) / (60 * 60 * 1000);
+      if (hoursLeft <= 0) continue;
+
+      // Day-before nudge (~24h), once.
+      if (hoursLeft >= 22 && hoursLeft < 26 && !userData.trialEndingNotified) {
+        const { workouts, recovery } = weekRecap(userData);
+        const streak = userData.streak || 0;
+        const built = workouts > 0 || recovery > 0 || streak > 0;
+        const recapStr = built
+          ? `Your week: ${workouts} workout${workouts === 1 ? '' : 's'}` +
+            (recovery > 0 ? `, ${recovery} recovery` : '') +
+            (streak > 0 ? `, a ${streak}-week streak` : '') + '.'
+          : 'Keep your plan, streaks, and challenges.';
+        await sendNotificationToUser(
+          userId,
+          'Your free week ends tomorrow ⏳',
+          `${recapStr} Tap to keep it going.`,
+          { type: NotificationType.TRIAL_ENDING },
+          { ignoreQuietHours: true }
+        );
+        await db.collection('users').doc(userId).set({ trialEndingNotified: true }, { merge: true });
+        continue;
+      }
+
+      // Final nudge (~2h), once.
+      if (hoursLeft > 0 && hoursLeft < 3 && !userData.trialFinalNotified) {
+        await sendNotificationToUser(
+          userId,
+          'Last chance — trial ending ⏰',
+          "Your free trial ends in about an hour. Don't lose your streak and stats.",
+          { type: NotificationType.TRIAL_FINAL },
+          { ignoreQuietHours: true }
+        );
+        await db.collection('users').doc(userId).set({ trialFinalNotified: true }, { merge: true });
+      }
+    }
+  }
+);
+
+/**
+ * Win-back sequence — runs daily at 6 PM ET. Targets post-cutover accounts
+ * (subscriptionRequired === true) that lack app access (never subscribed or
+ * lapsed) but DID complete signup (have a username, hence an FCM token). Three
+ * escalating touches at day 1 / 3 / 7, one per run, tracked by `winbackStage`.
+ * Taps open the app → the hard gate (LockedScreen) carries the subscribe CTA.
+ */
+exports.sendWinbackReminders = onSchedule(
+  {
+    schedule: '0 18 * * *', // 6 PM daily
+    timeZone: 'America/New_York',
+  },
+  async () => {
+    // Dormant until explicitly enabled (see isWinbackEnabled). Guards against
+    // nagging real subscribers before the RevenueCat webhook is populating state.
+    if (!(await isWinbackEnabled())) {
+      console.log('[sendWinbackReminders] disabled (config/lifecycleNotifications.winbackEnabled !== true) — skipping');
+      return;
+    }
+
+    const snap = await db.collection('users')
+      .where('subscriptionRequired', '==', true)
+      .get();
+
+    const STAGES = [
+      { stage: 1, minDays: 1, title: 'Your free week is waiting 🎁', body: 'You built your plan — now unlock it. Start your 7-day free trial.' },
+      { stage: 2, minDays: 3, title: "Don't lose your progress 💪", body: 'Your goals are set up and ready. Start your free trial and pick up where you left off.' },
+      { stage: 3, minDays: 7, title: 'Last call 👋', body: 'Your DaySeven plan is still here. Tap to start your free 7-day trial.' },
+    ];
+
+    for (const userDoc of snap.docs) {
+      const userId = userDoc.id;
+      const userData = userDoc.data();
+
+      if (hasAppAccess(userData)) continue;       // subscribed/comped — not a target
+      if (!userData.username) continue;            // still mid-onboarding
+      if (userData.demoMode === true) continue;
+
+      const sentStage = userData.winbackStage || 0;
+      if (sentStage >= STAGES.length) continue;    // sequence complete
+
+      // Highest stage now due beyond what we last sent. One message per run.
+      const age = daysSince(userData.createdAt);
+      const due = [...STAGES].reverse().find((s) => age >= s.minDays && s.stage > sentStage);
+      if (!due) continue;
+
+      const result = await sendNotificationToUser(
+        userId, due.title, due.body,
+        { type: NotificationType.WINBACK, stage: String(due.stage) }
+      );
+      if (result.success) {
+        await db.collection('users').doc(userId).set({
+          winbackStage: due.stage,
+          winbackLastSentAt: new Date().toISOString(),
+        }, { merge: true });
+      }
+    }
+  }
+);
+
+/**
+ * Week-one activation nudges — runs daily at 5 PM ET. Targets brand-new users
+ * WITH app access (trialing/comped/grandfathered) who haven't gotten going:
+ *  - "log your first workout" ~day 1 if they have zero activities, and
+ *  - "finish your first week" ~day 3 if they've started but not hit their goals.
+ * Fills the gap left by the streak reminder, which can't fire in week one
+ * (streak is still 0). Gated on the streakReminders pref. Each fires once.
+ */
+exports.sendActivationReminders = onSchedule(
+  {
+    schedule: '0 17 * * *', // 5 PM daily
+    timeZone: 'America/New_York',
+  },
+  async () => {
+    const snap = await db.collection('users')
+      .where('subscriptionRequired', '==', true)
+      .get();
+
+    for (const userDoc of snap.docs) {
+      const userId = userDoc.id;
+      const userData = userDoc.data();
+
+      if (!hasAppAccess(userData)) continue;       // locked out → win-back handles them
+      if (!userData.username) continue;             // still mid-onboarding
+      if (userData.demoMode === true) continue;
+      if (userData.injuryMode?.isActive || userData.vacationMode?.isActive) continue;
+      if ((userData.streak || 0) > 0) continue;     // past their first completed week
+      if (daysSince(userData.createdAt) >= 7) continue; // week-one only
+
+      const prefs = await getUserPreferences(userId);
+      if (!prefs.streakReminders) continue;
+
+      const activities = userData.activities || [];
+      const age = daysSince(userData.createdAt);
+
+      // First-workout nudge — once, from ~day 1, when nothing is logged yet.
+      if (activities.length === 0) {
+        if (age >= 1 && !userData.activationFirstNudge) {
+          await sendNotificationToUser(
+            userId,
+            'Start your first streak 🔥',
+            'Log your first workout to kick off week one — it only takes a tap.',
+            { type: NotificationType.ACTIVATION, stage: 'first' }
+          );
+          await db.collection('users').doc(userId).set({ activationFirstNudge: true }, { merge: true });
+        }
+        continue;
+      }
+
+      // Finish-the-week nudge — once, from ~day 3, when started but goals unmet.
+      if (age >= 3 && !userData.activationWeekNudge) {
+        const goals = userData.goals || { liftsPerWeek: 3, cardioPerWeek: 2, recoveryPerWeek: 2 };
+        const oneWeekAgo = new Date();
+        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+        const weekAgoStr = oneWeekAgo.toISOString().split('T')[0];
+        let strength = 0, cardio = 0, recovery = 0;
+        activities.filter((a) => a.date >= weekAgoStr).forEach((a) => {
+          const cat = getActivityCategoryForGoals(a);
+          if (cat === 'lifting') strength++;
+          else if (cat === 'cardio') cardio++;
+          else if (cat === 'recovery') recovery++;
+        });
+        const done = strength >= goals.liftsPerWeek && cardio >= goals.cardioPerWeek && recovery >= goals.recoveryPerWeek;
+        if (!done) {
+          const completed = strength + cardio + recovery;
+          await sendNotificationToUser(
+            userId,
+            "You're building something 💪",
+            `${completed} workout${completed === 1 ? '' : 's'} down this week. Finish your goals before Sunday to lock in week one!`,
+            { type: NotificationType.ACTIVATION, stage: 'week' }
+          );
+          await db.collection('users').doc(userId).set({ activationWeekNudge: true }, { merge: true });
+        }
       }
     }
   }

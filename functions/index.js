@@ -842,6 +842,9 @@ exports.sendStreakReminders = onSchedule(
       const userId = userDoc.id;
       const userData = userDoc.data();
 
+      // No app access (locked out / lapsed) → win-back owns them; stay silent here.
+      if (!hasAppAccess(userData)) continue;
+
       // Check if they've logged any activity in the last 48 hours
       // Activities are stored as an array in the user document
       const activities = userData.activities || [];
@@ -926,6 +929,9 @@ exports.sendDailyReminders = onSchedule(
       const userData = userDoc.data();
       const prefs = userData.notificationPreferences;
 
+      // No app access (locked out / lapsed) → win-back owns them; stay silent here.
+      if (!hasAppAccess(userData)) continue;
+
       // Skip users healing — injury mode softens the "time to move" nudge
       if (userData.injuryMode?.isActive) continue;
 
@@ -974,6 +980,9 @@ exports.sendGoalReminder = onSchedule(
     for (const userDoc of usersSnapshot.docs) {
       const userId = userDoc.id;
       const userData = userDoc.data();
+
+      // No app access (locked out / lapsed) → win-back owns them; stay silent here.
+      if (!hasAppAccess(userData)) continue;
 
       // Skip users on vacation or injury mode (streak is frozen — don't nag)
       if (userData.vacationMode?.isActive) continue;
@@ -1097,6 +1106,9 @@ exports.sendWeeklySummary = onSchedule(
     for (const userDoc of usersSnapshot.docs) {
       const userId = userDoc.id;
       const userData = userDoc.data();
+
+      // No app access (locked out / lapsed) → win-back owns them; stay silent here.
+      if (!hasAppAccess(userData)) continue;
 
       // Skip recap while healing — a "you crushed it / nothing logged" summary
       // lands wrong during an injury pause.
@@ -1226,6 +1238,9 @@ exports.sendMonthlySummary = onSchedule(
     for (const userDoc of usersSnapshot.docs) {
       const userId = userDoc.id;
       const userData = userDoc.data();
+
+      // No app access (locked out / lapsed) → win-back owns them; stay silent here.
+      if (!hasAppAccess(userData)) continue;
 
       // Skip recap while healing (see weekly summary).
       if (userData.injuryMode?.isActive) continue;

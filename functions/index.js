@@ -1372,6 +1372,7 @@ exports.revenueCatWebhook = onRequest(
         entitlementActive,
         status: !entitlementActive ? 'expired' : (isTrial ? 'trial' : 'active'),
         periodType,
+        environment: event.environment || null, // 'PRODUCTION' | 'SANDBOX' — exclude SANDBOX from counts/targeting
         expiresAt,
         trialEndsAt: isTrial && entitlementActive ? expiresAt : null,
         willRenew: type === 'CANCELLATION' ? false : entitlementActive,

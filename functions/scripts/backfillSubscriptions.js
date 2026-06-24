@@ -97,6 +97,7 @@ function mapSubscription(rc) {
     entitlementActive,
     status: !entitlementActive ? 'expired' : (isTrial ? 'trial' : 'active'),
     periodType,
+    environment: detail ? (detail.is_sandbox ? 'SANDBOX' : 'PRODUCTION') : null,
     expiresAt,
     trialEndsAt: isTrial && entitlementActive ? expiresAt : null,
     willRenew: cancelled ? false : entitlementActive,

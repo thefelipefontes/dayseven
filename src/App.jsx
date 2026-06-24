@@ -13106,6 +13106,35 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
 
 
 // Main App
+// Fresh-signup Welcome Offer paywall, shown after login and before username
+// setup in the reordered (account-first) subscription-only onboarding. Presents
+// the native RC paywall on mount; no-ops if the user is already entitled (e.g.
+// a restore). Resolves via onDone whether they purchase or dismiss.
+function WelcomePaywallStep({ onDone, applyProStatus }) {
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (Capacitor.isNativePlatform()) {
+          const alreadyPro = await checkProStatus();
+          if (!alreadyPro) {
+            await presentPaywall({ offeringIdentifier: 'Welcome Offer' });
+          }
+          const proNow = await checkProStatus();
+          if (!cancelled) applyProStatus(proNow);
+        }
+      } catch (e) {
+        console.error('[App] Welcome paywall error:', e);
+      } finally {
+        if (!cancelled) onDone();
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  // Dark backdrop while the native paywall presents over it.
+  return <div style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 50 }} />;
+}
+
 export default function DaySevenApp() {
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
@@ -13115,6 +13144,9 @@ export default function DaySevenApp() {
   // flipped on by UsernameSetup completion, off by user dismissing the screen.
   // Returning users skip this entirely because they already have a username.
   const [showDiscordInvite, setShowDiscordInvite] = useState(false);
+  // Reordered onboarding: fresh signups see the Welcome Offer paywall after
+  // login and before username setup (account-first → maximizes reachable users).
+  const [showWelcomePaywall, setShowWelcomePaywall] = useState(false);
   // Pre-signup onboarding: collected answers live in localStorage until the
   // user creates an account, at which point handleUserAuth applies them.
   // Read once on mount so the first paint already routes to Login vs survey.
@@ -14451,6 +14483,15 @@ export default function DaySevenApp() {
         return;
       }
 
+      // Reordered onboarding (subscription-only): fresh signups create the
+      // account FIRST, then see the Welcome Offer paywall before username setup.
+      // Flag it here (synchronously, batched with setUser above) so the welcome
+      // gate renders without a flash of the username screen. WelcomePaywallStep
+      // no-ops if the user turns out to already be entitled.
+      if (shouldApplyPreSignup && Capacitor.isNativePlatform()) {
+        setShowWelcomePaywall(true);
+      }
+
       // Load remaining data in background (don't await)
       (async () => {
         try {
@@ -14909,6 +14950,17 @@ export default function DaySevenApp() {
         (notification, actionId) => {
           clearBadge();
           clearAllNotifications();
+          // Conversion nudges (trial ending): drop the user straight onto the
+          // paywall instead of just opening the app.
+          const tapType = notification?.notification?.data?.type || notification?.data?.type;
+          if ((tapType === 'trial_ending' || tapType === 'trial_final') && Capacitor.isNativePlatform()) {
+            presentPaywall()
+              .then(async ({ purchased }) => {
+                if (purchased) { const s = await checkProStatus(); applyProStatus(s); }
+              })
+              .catch(() => {});
+            return;
+          }
           handleNotificationNavigation(notification, (tab, opts) => {
             setActiveTab(tab);
             if (tab === 'challenges' && (opts?.challengesSegment || opts?.challengesSubSegment)) {
@@ -17267,6 +17319,15 @@ export default function DaySevenApp() {
         signupOnly={cameFromCompletedSurvey}
       />
     );
+  }
+
+  // Reordered onboarding (subscription-only): fresh signups land here right
+  // after creating their account. Show the Welcome Offer paywall once, before
+  // username setup. The step no-ops if they're already entitled and resolves
+  // whether they purchase or dismiss — non-subscribers then continue to
+  // username → app, where the hard gate (LockedScreen) takes over.
+  if (showWelcomePaywall) {
+    return <WelcomePaywallStep onDone={() => setShowWelcomePaywall(false)} applyProStatus={applyProStatus} />;
   }
 
   // Show username setup if user doesn't have a username

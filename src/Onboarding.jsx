@@ -7,7 +7,6 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { fetchHealthKitWorkouts, requestHealthKitAuthorization } from './services/healthService';
 import { requestNotificationPermission } from './services/notificationService';
-import { presentPaywall } from './services/subscriptionService';
 
 // ============================================================================
 // Brand + style helpers
@@ -1399,10 +1398,6 @@ export default function OnboardingFlow({ onComplete, onSignIn }) {
   const [hkAuthorized, setHkAuthorized] = useState(false);
   const [linkedWorkouts, setLinkedWorkouts] = useState([]);
   const [onboardingCredits, setOnboardingCredits] = useState([]);
-  // Guards the Celebrate → Notif transition while the pre-signup paywall
-  // is being presented (native modal). Prevents double-tap from firing two
-  // paywalls in parallel.
-  const [paywallSubmitting, setPaywallSubmitting] = useState(false);
 
   // Restore in-progress survey answers if user reloaded mid-flow (rare path).
   // We don't auto-skip steps — restarting from welcome is fine — but answers
@@ -1597,29 +1592,17 @@ export default function OnboardingFlow({ onComplete, onSignIn }) {
     }
 
     if (step === 'notif') {
-      // After the user responds to the notification prompt (grant / deny /
-      // skip), fire the pre-signup paywall, then finish the flow → Login.
-      // Order: emotional peak (Celebrate) → soft ask (Notif) → conversion
-      // (Paywall) → commitment (Signup). The paywall is the last decision
-      // before sign up, so it owns the conversion moment cleanly.
-      const finishWithPaywall = async () => {
-        if (paywallSubmitting) return;
-        setPaywallSubmitting(true);
-        try {
-          if (Capacitor.isNativePlatform()) {
-            await presentPaywall({ offeringIdentifier: 'Welcome Offer' });
-          }
-        } catch (e) {
-          console.error('[Onboarding] pre-signup paywall error:', e);
-        }
-        setPaywallSubmitting(false);
-        finish();
-      };
+      // Account-first reorder (subscription-only): the notification prompt is
+      // the LAST pre-signup step. After the user responds (grant / deny / skip)
+      // we finish → Login. The Welcome Offer paywall now fires AFTER signup
+      // (WelcomePaywallStep in App.jsx), so a user who creates an account but
+      // declines the trial is still a reachable account we can re-engage.
+      // Order: emotional peak (Celebrate) → soft ask (Notif) → commitment
+      // (Signup) → conversion (Paywall).
       return (
         <NotifPrescreen
-          submitting={paywallSubmitting}
-          onEnabled={() => finishWithPaywall()}
-          onSkip={() => finishWithPaywall()}
+          onEnabled={() => finish()}
+          onSkip={() => finish()}
         />
       );
     }

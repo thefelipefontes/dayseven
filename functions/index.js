@@ -1508,7 +1508,13 @@ exports.sendWinbackReminders = onSchedule(
       if (sentStage >= STAGES.length) continue;    // sequence complete
 
       // Highest stage now due beyond what we last sent. One message per run.
-      const age = daysSince(userData.createdAt);
+      // Stage clock starts when they LOST access (lapsed subs/trials) — not raw
+      // account age — so a lapsed trial gets the full day 1/3/7 sequence from the
+      // lapse, not a truncated "last call". Never-subscribed users have no
+      // expiry, so they fall back to signup (createdAt), which is correct.
+      const sub = userData.subscription;
+      const clockStart = (sub && sub.entitlementActive === false && sub.expiresAt) ? sub.expiresAt : userData.createdAt;
+      const age = daysSince(clockStart);
       const due = [...STAGES].reverse().find((s) => age >= s.minDays && s.stage > sentStage);
       if (!due) continue;
 

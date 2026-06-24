@@ -554,12 +554,70 @@ async function sendNotificationToUser(userId, title, body, data = {}, options = 
       }
     }
 
+    // Best-effort instrumentation: record the send for open-rate analysis
+    // (paired with the 'opened' events from logNotificationOpen on tap). Awaited
+    // + guarded so a metrics failure never affects delivery.
+    if (response.successCount > 0) {
+      try {
+        const sentAt = new Date();
+        await db.collection('notificationEvents').add({
+          type: data.type || 'unknown',
+          event: 'sent',
+          uid: userId,
+          stage: data.stage || null,
+          ts: sentAt.toISOString(),
+          date: sentAt.toISOString().split('T')[0],
+        });
+      } catch (e) {
+        console.warn(`[notif-metrics] sent-log failed for ${userId}: ${e.message}`);
+      }
+    }
+
     return { success: response.successCount > 0 };
   } catch (error) {
     console.error(`Error sending notification to ${userId}:`, error);
     return { success: false, error: error.message };
   }
 }
+
+// ==========================================
+// NOTIFICATION METRICS (open tracking)
+// ==========================================
+//
+// The client POSTs here when a user taps a notification (opens can't be known
+// on the send side). Pairs with the 'sent' events written in
+// sendNotificationToUser → per-type open rates (functions/scripts/notificationStats.js).
+exports.logNotificationOpen = onRequest(async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  if (req.method === 'OPTIONS') {
+    res.set('Access-Control-Allow-Methods', 'POST');
+    res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    res.status(204).send('');
+    return;
+  }
+  if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
+
+  const authHeader = req.headers.authorization || '';
+  if (!authHeader.startsWith('Bearer ')) { res.status(401).json({ error: 'Missing token' }); return; }
+
+  try {
+    const decoded = await getAuth().verifyIdToken(authHeader.split('Bearer ')[1]);
+    const body = req.body || {};
+    const openedAt = new Date();
+    await db.collection('notificationEvents').add({
+      type: body.type || 'unknown',
+      event: 'opened',
+      uid: decoded.uid, // from the verified token — can't be spoofed for another user
+      stage: body.stage || null,
+      ts: openedAt.toISOString(),
+      date: openedAt.toISOString().split('T')[0],
+    });
+    res.status(200).json({ ok: true });
+  } catch (err) {
+    console.warn('[logNotificationOpen] error:', err.message);
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
 
 // ==========================================
 // SOCIAL NOTIFICATIONS

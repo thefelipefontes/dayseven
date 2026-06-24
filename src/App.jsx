@@ -15650,16 +15650,22 @@ export default function DaySevenApp() {
   // Check if tour should be shown for new/returning users who haven't seen it yet
   const tourShownRef = useRef(false);
   useEffect(() => {
-    if (!isLoading && isOnboarded && userProfile && userProfile.hasCompletedTour !== true && !tourShownRef.current) {
+    // Only arm once the user is actually ON the main app — past every post-signup
+    // gate (username → Welcome paywall → Discord) and through the hard paywall
+    // (isPro). The account-first reorder put the Welcome paywall after signup, so
+    // without these checks the one-shot fired while a gate was still showing and
+    // the tour never reached Home.
+    const onMainApp = !!userProfile?.username && !showWelcomePaywall && !showDiscordInvite && isPro;
+    if (!isLoading && isOnboarded && userProfile && userProfile.hasCompletedTour !== true && onMainApp && !tourShownRef.current) {
       tourShownRef.current = true;
-      // Delay to ensure home tab UI is fully rendered (especially after paywall dismissal)
+      // Delay to ensure home tab UI is fully rendered.
       const timer = setTimeout(() => {
         setActiveTab('home');
         setShowTour(true);
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [isLoading, isOnboarded, userProfile?.hasCompletedTour]);
+  }, [isLoading, isOnboarded, userProfile?.hasCompletedTour, userProfile?.username, showWelcomePaywall, showDiscordInvite, isPro]);
 
   // Real state management
   const [activities, setActivities] = useState(initialActivities);

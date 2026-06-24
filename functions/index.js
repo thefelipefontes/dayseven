@@ -823,8 +823,8 @@ exports.onReplyCreated = onDocumentCreated(
  */
 exports.sendStreakReminders = onSchedule(
   {
-    schedule: '0 20 * * *', // 8 PM every day
-    timeZone: 'America/New_York',
+    schedule: '0 * * * *', // hourly; fires at 8 PM in each user's local timezone
+    timeZone: 'UTC',
   },
   async () => {
 
@@ -844,6 +844,10 @@ exports.sendStreakReminders = onSchedule(
 
       // No app access (locked out / lapsed) → win-back owns them; stay silent here.
       if (!hasAppAccess(userData)) continue;
+
+      // Fire at 8 PM in the USER's local timezone (hourly job, gated per user).
+      const { time: localTime } = getUserLocalTime(userData.notificationPreferences?.timezone);
+      if (localTime !== '20:00') continue;
 
       // Check if they've logged any activity in the last 48 hours
       // Activities are stored as an array in the user document
@@ -1093,8 +1097,8 @@ exports.sendGoalReminder = onSchedule(
  */
 exports.sendWeeklySummary = onSchedule(
   {
-    schedule: '0 10 * * 0', // 10 AM every Sunday
-    timeZone: 'America/New_York',
+    schedule: '0 * * * *', // hourly; fires Sunday 10 AM in each user's local timezone
+    timeZone: 'UTC',
   },
   async () => {
 
@@ -1109,6 +1113,10 @@ exports.sendWeeklySummary = onSchedule(
 
       // No app access (locked out / lapsed) → win-back owns them; stay silent here.
       if (!hasAppAccess(userData)) continue;
+
+      // Fire Sunday 10 AM in the USER's local timezone (hourly job, gated per user).
+      const { time: localTime, dayOfWeek } = getUserLocalTime(userData.notificationPreferences?.timezone);
+      if (dayOfWeek !== 0 || localTime !== '10:00') continue;
 
       // Skip recap while healing — a "you crushed it / nothing logged" summary
       // lands wrong during an injury pause.
@@ -1213,8 +1221,8 @@ exports.sendWeeklySummary = onSchedule(
  */
 exports.sendMonthlySummary = onSchedule(
   {
-    schedule: '0 10 1 * *', // 10 AM on the 1st of every month
-    timeZone: 'America/New_York',
+    schedule: '0 * * * *', // hourly; fires the 1st at 10 AM in each user's local timezone
+    timeZone: 'UTC',
   },
   async () => {
 
@@ -1241,6 +1249,10 @@ exports.sendMonthlySummary = onSchedule(
 
       // No app access (locked out / lapsed) → win-back owns them; stay silent here.
       if (!hasAppAccess(userData)) continue;
+
+      // Fire the 1st at 10 AM in the USER's local timezone (hourly job, gated per user).
+      const { time: localTime, dateStr } = getUserLocalTime(userData.notificationPreferences?.timezone);
+      if (!dateStr.endsWith('-01') || localTime !== '10:00') continue;
 
       // Skip recap while healing (see weekly summary).
       if (userData.injuryMode?.isActive) continue;
@@ -1553,8 +1565,8 @@ exports.sendTrialEndingReminders = onSchedule(
  */
 exports.sendWinbackReminders = onSchedule(
   {
-    schedule: '0 18 * * *', // 6 PM daily
-    timeZone: 'America/New_York',
+    schedule: '0 * * * *', // hourly; fires at 6 PM in each user's local timezone
+    timeZone: 'UTC',
   },
   async () => {
     // Dormant until explicitly enabled (see isWinbackEnabled). Guards against
@@ -1595,6 +1607,10 @@ exports.sendWinbackReminders = onSchedule(
       if (hasAppAccess(userData)) continue;       // subscribed/comped — not a target
       if (!userData.username) continue;            // still mid-onboarding
       if (userData.demoMode === true) continue;
+
+      // Fire at 6 PM in the USER's local timezone (hourly job, gated per user).
+      const { time: localTime } = getUserLocalTime(userData.notificationPreferences?.timezone);
+      if (localTime !== '18:00') continue;
 
       const sentStage = userData.winbackStage || 0;
       if (sentStage >= 3) continue;                // sequence complete (3 stages)
@@ -1645,8 +1661,8 @@ exports.sendWinbackReminders = onSchedule(
  */
 exports.sendActivationReminders = onSchedule(
   {
-    schedule: '0 17 * * *', // 5 PM daily
-    timeZone: 'America/New_York',
+    schedule: '0 * * * *', // hourly; fires at 5 PM in each user's local timezone
+    timeZone: 'UTC',
   },
   async () => {
     const snap = await db.collection('users')
@@ -1663,6 +1679,10 @@ exports.sendActivationReminders = onSchedule(
       if (userData.injuryMode?.isActive || userData.vacationMode?.isActive) continue;
       if ((userData.streak || 0) > 0) continue;     // past their first completed week
       if (daysSince(userData.createdAt) >= 7) continue; // week-one only
+
+      // Fire at 5 PM in the USER's local timezone (hourly job, gated per user).
+      const { time: localTime } = getUserLocalTime(userData.notificationPreferences?.timezone);
+      if (localTime !== '17:00') continue;
 
       const prefs = await getUserPreferences(userId);
       if (!prefs.streakReminders) continue;

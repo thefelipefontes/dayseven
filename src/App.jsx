@@ -14918,6 +14918,17 @@ export default function DaySevenApp() {
       clearBadge();
       updateUserProfile(uid, { unreadBadgeCount: 0 });
 
+      // Keep the user's timezone current so scheduled notifications fire at their
+      // LOCAL time (the server falls back to Eastern when it's missing). Merge-safe:
+      // spread the existing prefs so we only touch timezone. Only writes on change.
+      try {
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const currentPrefs = userProfileRef.current?.notificationPreferences || {};
+        if (tz && currentPrefs.timezone !== tz) {
+          updateUserProfile(uid, { notificationPreferences: { ...currentPrefs, timezone: tz } });
+        }
+      } catch {}
+
       const { cleanup, token } = await initializePushNotifications(
         uid,
         async (notification) => {

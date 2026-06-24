@@ -68,6 +68,12 @@ export const NotificationType = {
   CHALLENGE_CANCEL_DECLINED: 'challenge_cancel_declined',
   CHALLENGE_PICK_WHICH: 'challenge_pick_which',
 
+  // Lifecycle / retention (server-sent)
+  TRIAL_ENDING: 'trial_ending',
+  TRIAL_FINAL: 'trial_final',
+  WINBACK: 'winback',
+  ACTIVATION: 'activation',
+
   // Local-only — fired client-side after an auto-saved strength workout from
   // Apple Health is missing focus areas. Tapping deep-links to the activity
   // detail modal so the user can add muscle groups.
@@ -290,7 +296,7 @@ export const getDefaultPreferences = () => ({
   // Reminders
   streakReminders: true,
   goalReminders: true,
-  dailyReminders: false,
+  dailyReminders: true, // default ON — the core daily habit nudge (retention)
   dailyReminderTime: '09:00', // Default 9 AM
 
   // Activity detection
@@ -640,6 +646,17 @@ export const handleNotificationNavigation = (notification, navigate, options = {
       navigate('challenges', { challengesSegment: 'active', challengesSubSegment: 'received' });
       break;
     }
+
+    // Lifecycle / retention nudges. trial_ending / trial_final are intercepted
+    // earlier (App.jsx tap handler) to present the paywall directly; winback /
+    // activation just open the app — locked-out users then hit LockedScreen,
+    // trialing users land on Home.
+    case NotificationType.TRIAL_ENDING:
+    case NotificationType.TRIAL_FINAL:
+    case NotificationType.WINBACK:
+    case NotificationType.ACTIVATION:
+      navigate('home');
+      break;
 
     default:
       // Default to home

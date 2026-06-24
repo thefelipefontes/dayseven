@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>DaySeven · Notification Playbook</title>
+<style>
+  @page { size: letter; margin: 0.5in; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+    color: #1a1a1a; font-size: 10.5px; line-height: 1.42; -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .wrap { max-width: 7.5in; margin: 0 auto; }
+  header { border-bottom: 2px solid #00c47a; padding-bottom: 7px; margin-bottom: 11px; display: flex; align-items: baseline; justify-content: space-between; }
+  header h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.2px; }
+  header .sub { font-size: 9.5px; color: #6b6b6b; text-align: right; }
+  .stage { border-left: 3px solid #d8d8d8; padding: 4px 0 7px 10px; margin-bottom: 8px; }
+  .stage.amber { border-color: #f0a23b; }
+  .stage.teal { border-color: #19b6a8; }
+  .stage.green { border-color: #00c47a; }
+  .stage.grey { border-color: #c2c2c2; }
+  .stage h2 { font-size: 12.5px; font-weight: 700; margin-bottom: 2px; }
+  .stage h2 .tag { font-weight: 400; color: #888; font-size: 9.5px; }
+  .stage .note { color: #555; font-size: 9.7px; margin-bottom: 3px; }
+  .seq { font-size: 9.7px; margin: 1px 0; }
+  .seq b { font-weight: 600; }
+  .lbl { display: inline-block; min-width: 92px; color: #00916a; font-weight: 600; }
+  .lbl.amberx { color: #cf7f1c; }
+  .copy { color: #333; }
+  .muted { color: #777; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 18px; }
+  footer { margin-top: 10px; border-top: 1px solid #e2e2e2; padding-top: 7px; font-size: 9.3px; color: #555; }
+  footer .row { margin-bottom: 2px; }
+  footer b { color: #1a1a1a; font-weight: 600; }
+  .pill { display:inline-block; background:#f1f1f1; border-radius: 4px; padding: 0 5px; margin: 0 2px 2px 0; font-size: 9px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>DaySeven · Notification Playbook</h1>
+    <div class="sub">What every user receives, by lifecycle stage.<br><b>All notifications fire in the user's local time.</b> · v1.5.7</div>
+  </header>
+
+  <div class="stage grey">
+    <h2>① Downloaded <span class="tag">· no account</span></h2>
+    <div class="note">Unreachable — no push token. Only the in-app paywall reaches them.</div>
+  </div>
+
+  <div class="stage amber">
+    <h2>② Locked out <span class="tag">· signed up, never subscribed</span></h2>
+    <div class="note">Engagement is silenced. <b>Win-back is the only sequence</b> — day 1 / 3 / 7, 6 PM local:</div>
+    <div class="seq"><span class="lbl amberx">Day 1</span><span class="copy">"Your free week is waiting 🎁" — start your 7-day free trial</span></div>
+    <div class="seq"><span class="lbl amberx">Day 3</span><span class="copy">"Your goals are ready 💪"</span></div>
+    <div class="seq"><span class="lbl amberx">Day 7</span><span class="copy">"Last call 👋"</span></div>
+  </div>
+
+  <div class="stage teal">
+    <h2>③ Trialing</h2>
+    <div class="seq"><span class="lbl">Activation</span><span class="copy">"Start your first streak 🔥" (~day 1) · "You're building something 💪" (~day 3) — week 1 only</span></div>
+    <div class="seq"><span class="lbl">Trial-end</span><span class="copy">"Your free week ends tomorrow ⏳" (~24h) · "Last chance — trial ending ⏰" (~2h) — <b>only if they cancelled auto-renew</b></span></div>
+    <div class="seq"><span class="lbl">Engagement</span><span class="copy">daily 9 AM · streak 8 PM · goal Thu 8 AM · weekly Sun 10 AM · monthly 1st 10 AM</span></div>
+    <div class="seq"><span class="lbl">Also</span><span class="copy muted">streak milestones · goals complete · new-workout detected · friend &amp; social · challenges</span></div>
+  </div>
+
+  <div class="stage green">
+    <h2>④ Paying subscriber</h2>
+    <div class="note">The <b>full engagement set</b> above — daily, streak, goal, weekly/monthly summaries, milestones, social, challenges. No activation, trial-end, or win-back (they self-exclude once a user has access).</div>
+  </div>
+
+  <div class="stage amber">
+    <h2>⑤ Lapsed <span class="tag">· trial or subscription expired</span></h2>
+    <div class="note">Engagement is silenced. <b>Win-back only</b>, clocked from the lapse date — day 1 / 3 / 7, 6 PM local:</div>
+    <div class="seq"><span class="lbl amberx">Has progress</span><span class="copy">"We saved your spot 👋" — resubscribe, leans on their streak &amp; stats</span></div>
+    <div class="seq"><span class="lbl amberx">Never engaged</span><span class="copy">"Your plan is still here 🎯" — resubscribe, leans on their plan (no false "your stats" claim)</span></div>
+    <div class="note muted" style="margin-top:3px">Grandfathered users keep access for life → they never land here; they get the paying set.</div>
+  </div>
+
+  <footer>
+    <div class="row"><b>Local-time schedule —</b>
+      <span class="pill">streak 8 PM</span><span class="pill">daily 9 AM</span><span class="pill">goal Thu 8 AM</span><span class="pill">weekly Sun 10 AM</span><span class="pill">monthly 1st 10 AM</span><span class="pill">activation 5 PM</span><span class="pill">win-back 6 PM</span><span class="pill">trial-end ~24h &amp; ~2h before expiry</span>
+    </div>
+    <div class="row"><b>Always respected —</b> per-type mute toggles · quiet hours · injury / vacation pause. <b>Every send &amp; open is logged</b> for open-rate analysis.</div>
+  </footer>
+
+</div>
+</body>
+</html>

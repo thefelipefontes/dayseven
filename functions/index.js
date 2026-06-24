@@ -1485,6 +1485,10 @@ exports.sendTrialEndingReminders = onSchedule(
       const userData = userDoc.data();
       const sub = userData.subscription || {};
       if (!sub.entitlementActive || !sub.trialEndsAt) continue;
+      // Only nudge CANCELLED trials (auto-renew off). A trial set to convert
+      // needs no action — and reminding it the trial is ending just invites a
+      // cancel-before-billing, which raises churn. Skip unless willRenew===false.
+      if (sub.willRenew !== false) continue;
 
       const hoursLeft = (new Date(sub.trialEndsAt).getTime() - now) / (60 * 60 * 1000);
       if (hoursLeft <= 0) continue;

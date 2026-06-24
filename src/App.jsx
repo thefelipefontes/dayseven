@@ -17321,15 +17321,6 @@ export default function DaySevenApp() {
     );
   }
 
-  // Reordered onboarding (subscription-only): fresh signups land here right
-  // after creating their account. Show the Welcome Offer paywall once, before
-  // username setup. The step no-ops if they're already entitled and resolves
-  // whether they purchase or dismiss — non-subscribers then continue to
-  // username → app, where the hard gate (LockedScreen) takes over.
-  if (showWelcomePaywall) {
-    return <WelcomePaywallStep onDone={() => setShowWelcomePaywall(false)} applyProStatus={applyProStatus} />;
-  }
-
   // Show username setup if user doesn't have a username
   if (!userProfile.username) {
     return (
@@ -17339,10 +17330,10 @@ export default function DaySevenApp() {
           setUserProfile(prev => ({ ...prev, username }));
           // Last screen of the post-signup flow: invite to the private Discord.
           setShowDiscordInvite(true);
-          // Paywall + permissions were both handled pre-signup (paywall on
-          // the Celebrate→Notif transition under the anonymous RC user; HK +
-          // push prompts in their respective pre-screens). After username we
-          // only need to kick off silent HK sync and FCM token registration.
+          // Permissions were handled pre-signup (HK + push prompts in their
+          // pre-screens). After username we kick off silent HK sync + FCM token
+          // registration; the next gate then shows the Welcome Offer paywall
+          // (account + username are grouped as "sign up", paywall comes after).
           if (isOnboarded && Capacitor.isNativePlatform()) {
             try { await syncHealthKit(); } catch (e) { console.error('[App] Post-username HK sync failed:', e); }
             try { await setupPushNotifications(user.uid); } catch (e) { console.error('[App] Post-username push setup failed:', e); }
@@ -17350,6 +17341,15 @@ export default function DaySevenApp() {
         }}
       />
     );
+  }
+
+  // Reordered onboarding (subscription-only): account creation + username are
+  // grouped as "sign up", THEN the Welcome Offer paywall fires once as the
+  // final conversion gate. The account, username, and FCM token are all in
+  // place before the paywall, so a non-subscriber remains a reachable account.
+  // No-ops if already entitled; resolves whether they purchase or dismiss.
+  if (showWelcomePaywall) {
+    return <WelcomePaywallStep onDone={() => setShowWelcomePaywall(false)} applyProStatus={applyProStatus} />;
   }
 
   // Final post-signup step: private Discord invite. Local-state gated so it

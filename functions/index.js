@@ -1568,10 +1568,24 @@ exports.sendWinbackReminders = onSchedule(
       .where('subscriptionRequired', '==', true)
       .get();
 
-    const STAGES = [
-      { stage: 1, minDays: 1, title: 'Your free week is waiting 🎁', body: 'You built your plan — now unlock it. Start your 7-day free trial.' },
-      { stage: 2, minDays: 3, title: "Don't lose your progress 💪", body: 'Your goals are set up and ready. Start your free trial and pick up where you left off.' },
+    // Three copy variants, same day 1/3/7 cadence, picked per user:
+    //  • never subscribed     → offer the free trial
+    //  • lapsed, has progress → resubscribe, lean on their stats
+    //  • lapsed, no progress  → resubscribe, lean on their plan (no false "stats" claim)
+    const NEVER_SUBSCRIBED = [
+      { stage: 1, minDays: 1, title: 'Your free week is waiting 🎁', body: 'You built your plan — start your 7-day free trial and put it to work.' },
+      { stage: 2, minDays: 3, title: 'Your goals are ready 💪', body: 'Start your free trial and pick up where you left off.' },
       { stage: 3, minDays: 7, title: 'Last call 👋', body: 'Your DaySeven plan is still here. Tap to start your free 7-day trial.' },
+    ];
+    const LAPSED_WITH_PROGRESS = [
+      { stage: 1, minDays: 1, title: 'We saved your spot 👋', body: 'Your streak and stats are still here — resubscribe to pick up where you left off.' },
+      { stage: 2, minDays: 3, title: "Don't lose your progress 💪", body: 'Your history is waiting. Resubscribe any time to keep it going.' },
+      { stage: 3, minDays: 7, title: 'Last call 👋', body: 'Your progress is still here — resubscribe to keep it.' },
+    ];
+    const LAPSED_NO_PROGRESS = [
+      { stage: 1, minDays: 1, title: 'Your plan is still here 🎯', body: 'Resubscribe and give your first week a real shot.' },
+      { stage: 2, minDays: 3, title: 'Ready when you are 💪', body: 'Your goals are set up — resubscribe and put them to work.' },
+      { stage: 3, minDays: 7, title: 'Last call 👋', body: 'Your DaySeven plan is saved. Resubscribe to pick it back up.' },
     ];
 
     for (const userDoc of snap.docs) {
@@ -1583,17 +1597,28 @@ exports.sendWinbackReminders = onSchedule(
       if (userData.demoMode === true) continue;
 
       const sentStage = userData.winbackStage || 0;
-      if (sentStage >= STAGES.length) continue;    // sequence complete
+      if (sentStage >= 3) continue;                // sequence complete (3 stages)
+
+      // Pick the copy variant. A win-back target WITH a subscription record has
+      // already used their trial (entitlement inactive) → resubscribe, no trial
+      // offer; split by whether they built anything worth keeping.
+      const sub = userData.subscription;
+      let stages;
+      if (!sub) {
+        stages = NEVER_SUBSCRIBED;
+      } else {
+        const realActivities = (userData.activities || []).filter((a) => a.source !== 'onboarding_credit');
+        const hasProgress = (userData.streak || 0) > 0 || realActivities.length > 0;
+        stages = hasProgress ? LAPSED_WITH_PROGRESS : LAPSED_NO_PROGRESS;
+      }
 
       // Highest stage now due beyond what we last sent. One message per run.
       // Stage clock starts when they LOST access (lapsed subs/trials) — not raw
       // account age — so a lapsed trial gets the full day 1/3/7 sequence from the
-      // lapse, not a truncated "last call". Never-subscribed users have no
-      // expiry, so they fall back to signup (createdAt), which is correct.
-      const sub = userData.subscription;
+      // lapse. Never-subscribed users have no expiry, so they fall back to signup.
       const clockStart = (sub && sub.entitlementActive === false && sub.expiresAt) ? sub.expiresAt : userData.createdAt;
       const age = daysSince(clockStart);
-      const due = [...STAGES].reverse().find((s) => age >= s.minDays && s.stage > sentStage);
+      const due = [...stages].reverse().find((s) => age >= s.minDays && s.stage > sentStage);
       if (!due) continue;
 
       const result = await sendNotificationToUser(

@@ -665,6 +665,29 @@ export const handleNotificationNavigation = (notification, navigate, options = {
 };
 
 /**
+ * Best-effort: tell the server a notification was tapped (open tracking).
+ * POSTs to the logNotificationOpen function with the user's ID token (direct
+ * fetch, not httpsCallable, which hangs on iOS). Never throws — metrics must
+ * not block navigation. Pairs with the server-side 'sent' events for per-type
+ * open rates (see functions/scripts/notificationStats.js).
+ */
+export const logNotificationOpen = async (type, stage = null) => {
+  try {
+    if (!Capacitor.isNativePlatform()) return;
+    const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+    const { token } = await FirebaseAuthentication.getIdToken();
+    if (!token) return;
+    await fetch('https://us-central1-dayseven-f1a89.cloudfunctions.net/logNotificationOpen', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: type || 'unknown', stage: stage || null }),
+    });
+  } catch {
+    // best-effort — swallow
+  }
+};
+
+/**
  * Set app badge count
  * @param {number} count - Badge count to set
  */

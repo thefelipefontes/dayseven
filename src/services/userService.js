@@ -5,6 +5,7 @@ import { Capacitor } from '@capacitor/core';
 import { FirebaseFirestore } from '@capacitor-firebase/firestore';
 import { FirebaseStorage } from '@capacitor-firebase/storage';
 import { Filesystem, Directory } from '@capacitor/filesystem';
+import * as Sentry from '@sentry/react';
 
 // Convert a Date to YYYY-MM-DD string in local timezone (avoids UTC date shifting)
 const toLocalDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -116,7 +117,7 @@ export async function createUserProfile(user) {
   try {
     if (isNative) {
       // Use native Firestore
-      const { snapshot } = await FirebaseFirestore.getDocument({ reference: path });
+      const { snapshot } = await withTimeout(FirebaseFirestore.getDocument({ reference: path }));
 
       if (!snapshot?.data) {
         // Use merge: true so we never wipe existing data (e.g. goals, hasCompletedOnboarding)
@@ -210,11 +211,15 @@ export async function getUserProfile(uid, forceRefresh = false) {
         }
       } catch (restErr) {
         console.warn('[getUserProfile] REST failed, using Capacitor:', restErr);
-        const { snapshot } = await FirebaseFirestore.getDocument({ reference: path });
+        const { snapshot } = await withTimeout(FirebaseFirestore.getDocument({ reference: path }));
         profile = snapshot?.data || null;
       }
     } else if (isNative) {
-      const { snapshot } = await FirebaseFirestore.getDocument({ reference: path });
+      // Wrap the native plugin read in withTimeout: the Capacitor Firestore
+      // call can hang indefinitely if the server round-trip never settles
+      // (cold cache + unreachable backend), which would otherwise trap the
+      // startup auth gate forever. On timeout this rejects → caught below.
+      const { snapshot } = await withTimeout(FirebaseFirestore.getDocument({ reference: path }));
       profile = snapshot?.data || null;
     } else {
       const userRef = doc(db, 'users', uid);
@@ -230,6 +235,13 @@ export async function getUserProfile(uid, forceRefresh = false) {
 
     return profile;
   } catch (error) {
+    // Report before falling back — this read gates app startup, so a timeout or
+    // error here is the prime suspect for the "stuck on 7" stall. `timedOut`
+    // distinguishes a genuine hang (withTimeout fired) from a real backend error.
+    Sentry.captureException(error, {
+      tags: { phase: 'getUserProfile', isNative, timedOut: error?.message === 'Firestore operation timed out' },
+      extra: { servedFromCache: cache.userProfiles.has(uid) },
+    });
     // Return cached data if available, even if expired
     if (cache.userProfiles.has(uid)) {
       return cache.userProfiles.get(uid);
@@ -483,11 +495,11 @@ export async function getUserActivities(uid, forceRefresh = false) {
         }
       } catch (restErr) {
         console.warn('[getUserActivities] REST failed, using Capacitor:', restErr);
-        const { snapshot } = await FirebaseFirestore.getDocument({ reference: path });
+        const { snapshot } = await withTimeout(FirebaseFirestore.getDocument({ reference: path }));
         activities = snapshot?.data?.activities || [];
       }
     } else if (isNative) {
-      const { snapshot } = await FirebaseFirestore.getDocument({ reference: path });
+      const { snapshot } = await withTimeout(FirebaseFirestore.getDocument({ reference: path }));
       activities = snapshot?.data?.activities || [];
     } else {
       const userRef = doc(db, 'users', uid);
@@ -517,7 +529,7 @@ export async function checkUsernameAvailable(username, currentUid = null) {
   try {
     if (isNative) {
       // Check /usernames collection first
-      const { snapshot } = await FirebaseFirestore.getDocument({ reference: path });
+      const { snapshot } = await withTimeout(FirebaseFirestore.getDocument({ reference: path }));
       if (snapshot?.data) {
         // Allow if it belongs to the current user (reclaiming their own username)
         if (currentUid && snapshot.data.uid === currentUid) return true;
@@ -715,7 +727,7 @@ export async function getCustomActivities(uid, forceRefresh = false) {
   try {
     let customActivities;
     if (isNative) {
-      const { snapshot } = await FirebaseFirestore.getDocument({ reference: path });
+      const { snapshot } = await withTimeout(FirebaseFirestore.getDocument({ reference: path }));
       customActivities = snapshot?.data?.customActivities || [];
     } else {
       const userRef = doc(db, 'users', uid);
@@ -812,7 +824,7 @@ export async function getUserGoals(uid, forceRefresh = false) {
   try {
     let goals;
     if (isNative) {
-      const { snapshot } = await FirebaseFirestore.getDocument({ reference: path });
+      const { snapshot } = await withTimeout(FirebaseFirestore.getDocument({ reference: path }));
       goals = snapshot?.data?.goals || null;
     } else {
       const userRef = doc(db, 'users', uid);
@@ -901,7 +913,7 @@ export async function getPersonalRecords(uid) {
   try {
     let personalRecords, streaks, weeksWon;
     if (isNative) {
-      const { snapshot } = await FirebaseFirestore.getDocument({ reference: path });
+      const { snapshot } = await withTimeout(FirebaseFirestore.getDocument({ reference: path }));
       personalRecords = snapshot?.data?.personalRecords || null;
       streaks = snapshot?.data?.streaks || null;
       weeksWon = snapshot?.data?.weeksWon || 0;
@@ -1239,7 +1251,7 @@ export async function getDailyHealthData(uid, date) {
   try {
     let data;
     if (isNative) {
-      const { snapshot } = await FirebaseFirestore.getDocument({ reference: path });
+      const { snapshot } = await withTimeout(FirebaseFirestore.getDocument({ reference: path }));
       data = snapshot?.data || null;
     } else {
       const docRef = doc(db, 'users', uid, 'dailyHealth', date);

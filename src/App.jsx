@@ -14403,6 +14403,10 @@ export default function DaySevenApp() {
           profile = await getUserProfile(user.uid, true); // Force refresh
         }
       } catch (error) {
+        // Previously swallowed silently. Report it: a failure here (timeout or
+        // error on the profile read) is what leaves a returning user with a null
+        // profile, and is the prime suspect for the startup stall.
+        Sentry.captureException(error, { tags: { phase: 'handleUserAuth-profile' } });
       }
 
       // Check onboarding status
@@ -15578,10 +15582,28 @@ export default function DaySevenApp() {
       const isNative = typeof window !== 'undefined' && window.Capacitor?.isNativePlatform();
 
       if (isNative) {
+        Sentry.addBreadcrumb({ category: 'auth', level: 'info', message: 'native checkAuth: start' });
+        const nativeAuthStart = Date.now();
+        // Safety net: getCurrentUser() and handleUserAuth()'s profile read are
+        // native plugin calls that can hang indefinitely if the Firebase backend
+        // round-trip never settles (cold cache + unreachable backend). Without a
+        // backstop the "7" auth gate would stay up forever for returning users.
+        // This mirrors the web authTimeout below — better to drop to Login/app
+        // than trap on the loader. Cleared in finally, so it only fires on a
+        // genuine hang (the await never returns, so finally never runs).
+        const nativeAuthTimeout = setTimeout(() => {
+          // The backstop fired: startup auth/profile read never settled within
+          // 8s. This is the production "stuck on 7" condition — report it so we
+          // can see how many real users hit it and how far startup got (the
+          // attached breadcrumbs show the last stage reached before the stall).
+          Sentry.captureMessage('Native auth gate timed out (8s) — startup auth/Firestore read stalled', 'error');
+          setAuthLoading(false);
+        }, 8000);
         // On native, check native Firebase auth state
         try {
           const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
           const result = await FirebaseAuthentication.getCurrentUser();
+          Sentry.addBreadcrumb({ category: 'auth', level: 'info', message: `native checkAuth: getCurrentUser resolved in ${Date.now() - nativeAuthStart}ms (hasUser=${!!result.user})` });
 
           if (result.user) {
             // Convert native user to our user format
@@ -15592,14 +15614,18 @@ export default function DaySevenApp() {
               photoURL: result.user.photoUrl,
             };
             await handleUserAuth(user);
+            Sentry.addBreadcrumb({ category: 'auth', level: 'info', message: `native checkAuth: handleUserAuth done in ${Date.now() - nativeAuthStart}ms` });
           } else {
             // No native user - show login immediately
             setAuthLoading(false);
           }
           return; // Don't set up web listener on native
         } catch (error) {
+          Sentry.captureException(error, { tags: { phase: 'native-auth-checkAuth' } });
           setAuthLoading(false);
           return;
+        } finally {
+          clearTimeout(nativeAuthTimeout);
         }
       }
 

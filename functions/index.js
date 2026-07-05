@@ -967,18 +967,19 @@ exports.sendDailyReminders = onSchedule(
       if (todayPlan) {
         if (todayPlan.length === 0) continue; // planned rest day — respect it, no nudge
 
-        const need = { strength: 0, cardio: 0, recovery: 0 };
-        const typeByCat = {}; // first specific type seen per category, for the copy
+        // Collect each planned session's type per category (keeps duplicates,
+        // so two cardio sessions are counted as two).
+        const byCat = { strength: [], cardio: [], recovery: [] };
         for (const p of todayPlan) {
-          if (need[p.cat] === undefined) continue;
-          need[p.cat]++;
-          if (p.type && !typeByCat[p.cat]) typeByCat[p.cat] = p.type;
+          if (byCat[p.cat]) byCat[p.cat].push(p.type || null);
         }
-        const unmet = ['strength', 'cardio', 'recovery'].filter((c) => need[c] > doneToday[c]);
-        if (unmet.length === 0) continue; // everything planned for today is already done
+        const anyUnmet = ['strength', 'cardio', 'recovery']
+          .some((c) => byCat[c].length > (doneToday[c] || 0));
+        if (!anyUnmet) continue; // everything planned for today is already done
 
-        const { title, body } = buildPlannedReminderMessage(unmet, typeByCat);
-        await sendNotificationToUser(userId, title, body, { type: NotificationType.DAILY_REMINDER });
+        const msg = buildPlannedReminderMessage(byCat, doneToday);
+        if (!msg) continue;
+        await sendNotificationToUser(userId, msg.title, msg.body, { type: NotificationType.DAILY_REMINDER });
         continue;
       }
 

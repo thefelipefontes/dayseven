@@ -59,23 +59,50 @@ function getPlannedCategoriesForToday(weeklyPlan, userToday, dayOfWeek) {
 }
 
 /**
- * Build notification copy for the unfinished categories today. `typeByCat`
- * maps a category to a representative planned type (if any) so the copy can
- * say "your run" instead of "your cardio".
- * @param {string[]} unmet          ordered category ids
- * @param {Object} [typeByCat]      { cat: type }
+ * Build notification copy for the sessions still unfinished today, counting
+ * multiples of a category (e.g. two cardio → "2 Cardio sessions", or the two
+ * distinct types if both are set).
+ * @param {Object} byCat      { strength: (type|null)[], cardio: [...], recovery: [...] }
+ * @param {Object} doneToday  { strength, cardio, recovery } — logged counts today
+ * @returns {{title,body}|null} null if nothing is unfinished
  */
-function buildPlannedReminderMessage(unmet, typeByCat = {}) {
-  const labelFor = (c) => {
-    const t = typeByCat[c];
-    return t ? (TYPE_LABEL[t] || t) : PLAN_CAT_DISPLAY[c].label;
-  };
-  const parts = unmet.map((c) => `${PLAN_CAT_DISPLAY[c].emoji} ${labelFor(c)}`);
-  if (parts.length === 1) {
-    return { title: "Today's Plan", body: `Time for your ${parts[0]} today.` };
+function buildPlannedReminderMessage(byCat, doneToday = {}) {
+  const order = ['strength', 'cardio', 'recovery'];
+  const label = (t) => (t ? (TYPE_LABEL[t] || t) : null);
+  const segments = [];
+  let totalUnmet = 0;
+
+  for (const c of order) {
+    const types = byCat[c] || [];
+    const planned = types.length;
+    const done = doneToday[c] || 0;
+    const unmet = Math.max(0, planned - done);
+    if (unmet === 0) continue;
+    totalUnmet += unmet;
+    const { emoji, label: catLabel } = PLAN_CAT_DISPLAY[c];
+
+    if (unmet === 1) {
+      // Use the type only when there's a single planned session (otherwise we
+      // can't tell which of several was already done).
+      const t = planned === 1 ? label(types[0]) : null;
+      segments.push(`${emoji} ${t || catLabel}`);
+    } else if (done === 0 && types.every((t) => t)) {
+      // None done yet and every session is typed → list each distinct session.
+      types.forEach((t) => segments.push(`${emoji} ${label(t)}`));
+    } else {
+      // Multiple unfinished but ambiguous/untyped → convey the count.
+      segments.push(`${unmet} ${emoji} ${catLabel} sessions`);
+    }
   }
-  const list = parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1];
-  return { title: "Today's Plan", body: `You've got ${list} on the schedule today.` };
+
+  if (segments.length === 0) return null;
+  const list = segments.length === 1
+    ? segments[0]
+    : segments.slice(0, -1).join(', ') + ' and ' + segments[segments.length - 1];
+  const body = totalUnmet === 1
+    ? `Time for your ${list} today.`
+    : `You've got ${list} on the schedule today.`;
+  return { title: "Today's Plan", body };
 }
 
 module.exports = {

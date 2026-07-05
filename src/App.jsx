@@ -11798,14 +11798,6 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         </div>
       </div>
 
-      {/* Weekly Planner - drag cardio/strength/recovery onto the days you'll train */}
-      <WeeklyPlanner
-        goals={userData?.goals}
-        activities={activities}
-        weeklyPlan={userData?.weeklyPlan}
-        onSave={onSaveWeeklyPlan}
-      />
-
       {/* Auto-Imported Summary Banner - Shows after onboarding auto-import */}
       {autoImportedCount > 0 && (
         <div className="mx-4 mb-4">
@@ -12986,6 +12978,14 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         </div>
         {/* End of weeklyGoalsRef wrapper */}
       </div>
+
+      {/* Weekly Planner — collapsible; sits directly under This Week's Goals */}
+      <WeeklyPlanner
+        goals={userData?.goals}
+        activities={activities}
+        weeklyPlan={userData?.weeklyPlan}
+        onSave={onSaveWeeklyPlan}
+      />
 
       <ChallengesSection
         user={user}

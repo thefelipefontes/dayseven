@@ -184,13 +184,12 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
     return map;
   }, [activities, dayDates]);
 
-  // Placed counts + unplaced (tray) pills per category.
+  // Placed counts + one tray entry per category with its remaining count.
   const placedByCat = { strength: 0, cardio: 0, recovery: 0 };
   DAYS.forEach(d => plan[d.key].forEach(p => { placedByCat[p.cat]++; }));
-  const trayPills = CAT_ORDER.flatMap(cat => {
-    const remaining = Math.max(0, goalCount[cat] - placedByCat[cat]);
-    return Array.from({ length: remaining }, () => ({ cat, type: null }));
-  });
+  const trayByCat = CAT_ORDER
+    .map(cat => ({ cat, count: Math.max(0, goalCount[cat] - placedByCat[cat]) }))
+    .filter(x => x.count > 0);
 
   // --- Drag + tap interaction ----------------------------------------------
   const zonesRef = useRef({});          // dropzone key -> element
@@ -202,6 +201,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
   const [hoverKey, setHoverKey] = useState(null);
   const [selected, setSelected] = useState(null); // tap-to-place a tray pill { cat }
   const [picker, setPicker] = useState(null);      // type picker { day, index, cat }
+  const [expanded, setExpanded] = useState(false); // collapsible dropdown
 
   const registerZone = (key) => (el) => {
     if (el) zonesRef.current[key] = el;
@@ -382,33 +382,91 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
     );
   };
 
+  // Tray chip: one per category, showing the remaining count as a badge. Drag
+  // or tap-select it to place a generic session; the count ticks down.
+  const TrayBadge = ({ cat, count }) => {
+    const c = CATS[cat];
+    const sel = selected && selected.cat === cat;
+    const pill = { cat, type: null };
+    return (
+      <button
+        onPointerDown={(e) => onPillPointerDown(e, pill, 'tray', -1)}
+        onClick={(e) => { e.stopPropagation(); onPillClick(pill, 'tray', -1); }}
+        className="inline-flex items-center gap-1.5 rounded-full pl-2.5 pr-1.5 py-1 text-[12px] font-semibold transition-transform active:scale-95 select-none"
+        style={{
+          touchAction: 'none',
+          color: c.color,
+          backgroundColor: c.bg,
+          border: `1px solid ${sel ? c.color : 'transparent'}`,
+          boxShadow: sel ? `0 0 0 2px ${c.bg}` : 'none',
+        }}
+      >
+        <span style={{ fontSize: 11 }}>{c.emoji}</span>
+        {c.label}
+        <span
+          className="inline-flex items-center justify-center"
+          style={{ minWidth: 17, height: 17, borderRadius: 999, backgroundColor: c.color, color: '#0A0A0A', fontSize: 11 }}
+        >
+          {count}
+        </span>
+      </button>
+    );
+  };
+
   const pickerType = picker ? (plan[picker.day]?.[picker.index]?.type ?? null) : null;
+  const placedTotal = placedByCat.strength + placedByCat.cardio + placedByCat.recovery;
 
   return (
     <div className="px-4 mb-4" ref={cardRef}>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-3">
+      {/* Header — tap to expand/collapse the planner */}
+      <button
+        onClick={() => { triggerHaptic(ImpactStyle.Light); setExpanded(v => !v); }}
+        className="w-full flex items-center justify-between mb-2 text-left"
+      >
         <div>
           <div className="flex items-center gap-2">
             <span className="text-lg">🗓️</span>
             <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>This Week's Plan</span>
           </div>
-          <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>{rangeLabel}</p>
+          <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>
+            {placedTotal}/{totalGoal} sessions placed · tap to {expanded ? 'collapse' : 'plan'}
+          </p>
         </div>
-        <button
-          onClick={() => { triggerHaptic(ImpactStyle.Light); setRepeatWeekly(v => !v); }}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full transition-all active:scale-95"
-          style={{
-            backgroundColor: repeatWeekly ? 'rgba(48,209,88,0.12)' : 'rgba(255,255,255,0.05)',
-            border: `1px solid ${repeatWeekly ? 'rgba(48,209,88,0.4)' : 'rgba(255,255,255,0.1)'}`,
-          }}
-        >
-          <span className="text-[11px] font-semibold" style={{ color: repeatWeekly ? '#30D158' : '#999' }}>
-            {repeatWeekly ? '✓ Repeats weekly' : 'Repeat weekly'}
-          </span>
-        </button>
-      </div>
+        <span className="text-[13px] pr-1" style={{ color: '#777' }}>{expanded ? '▲' : '▼'}</span>
+      </button>
 
+      {/* Collapsed: at-a-glance week strip (dots colored by category, dimmed = not yet done) */}
+      {!expanded && (
+        <button
+          onClick={() => { triggerHaptic(ImpactStyle.Light); setExpanded(true); }}
+          className="w-full flex gap-1 justify-between px-1 py-3 rounded-xl"
+          style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
+        >
+          {DAYS.map(d => {
+            const pills = plan[d.key];
+            const logged = loggedByDay[d.key];
+            const isToday = d.key === todayKey;
+            const usedDone = { strength: 0, cardio: 0, recovery: 0 };
+            return (
+              <div key={d.key} className="flex-1 flex flex-col items-center gap-1.5">
+                <span className="text-[10px] font-semibold" style={{ color: isToday ? '#fff' : '#666' }}>{d.label[0]}</span>
+                <div className="flex flex-col gap-0.5 items-center" style={{ minHeight: 6 }}>
+                  {pills.length === 0
+                    ? <span style={{ width: 4, height: 4, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.12)' }} />
+                    : pills.map((p, i) => {
+                        const done = usedDone[p.cat] < logged[p.cat];
+                        if (done) usedDone[p.cat]++;
+                        return <span key={i} style={{ width: 6, height: 6, borderRadius: 999, backgroundColor: CATS[p.cat].color, opacity: done ? 1 : 0.45 }} />;
+                      })}
+                </div>
+              </div>
+            );
+          })}
+        </button>
+      )}
+
+      {/* Expanded: the full drag/tap planner */}
+      {expanded && (
       <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
         {/* Tray of unplaced pills */}
         <div
@@ -422,17 +480,17 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
             borderRadius: hoverKey === 'tray' ? 12 : 0,
           }}
         >
-          {trayPills.length === 0 ? (
+          {trayByCat.length === 0 ? (
             <div className="flex items-center gap-1.5 text-[12px]" style={{ color: '#30D158' }}>
-              <span>✓</span> All {totalGoal} sessions placed{selected ? ' · tap a day to move' : ' · tap one to set its type'}
+              <span>✓</span> All {totalGoal} sessions placed
             </div>
           ) : (
             <>
               <span className="w-full text-[11px] mb-0.5" style={{ color: '#777' }}>
                 Drag onto a day{selected ? ' · or tap a day' : ''}
               </span>
-              {trayPills.map((pill, i) => (
-                <Pill key={`tray-${pill.cat}-${i}`} pill={pill} from="tray" index={i} />
+              {trayByCat.map(({ cat, count }) => (
+                <TrayBadge key={cat} cat={cat} count={count} />
               ))}
             </>
           )}
@@ -478,7 +536,27 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
             );
           })}
         </div>
+
+        {/* Footer: repeat toggle + type hint share one row (keeps the top tight) */}
+        <div className="flex items-center justify-between gap-2 mt-3 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <button
+            onClick={() => { triggerHaptic(ImpactStyle.Light); setRepeatWeekly(v => !v); }}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full transition-all active:scale-95 shrink-0"
+            style={{
+              backgroundColor: repeatWeekly ? 'rgba(48,209,88,0.12)' : 'rgba(255,255,255,0.05)',
+              border: `1px solid ${repeatWeekly ? 'rgba(48,209,88,0.4)' : 'rgba(255,255,255,0.1)'}`,
+            }}
+          >
+            <span className="text-[11px] font-semibold" style={{ color: repeatWeekly ? '#30D158' : '#999' }}>
+              {repeatWeekly ? '✓ Repeats weekly' : 'Repeat weekly'}
+            </span>
+          </button>
+          <span className="text-[11px] text-right" style={{ color: '#666' }}>
+            Tap a session to set its type · drag to move
+          </span>
+        </div>
       </div>
+      )}
 
       {/* Drag ghost */}
       {ghost && (() => {

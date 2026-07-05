@@ -18,6 +18,7 @@ const jwt = require("jsonwebtoken");
 const http2 = require("http2");
 const fs = require("fs");
 const path = require("path");
+const { getPlannedCategoriesForToday, buildPlannedReminderMessage } = require("./plannerReminders");
 
 // Initialize Firebase Admin
 initializeApp();
@@ -943,16 +944,41 @@ exports.sendDailyReminders = onSchedule(
       if (!prefs || !prefs.dailyReminders) continue;
 
       const reminderTime = prefs.dailyReminderTime || '09:00';
-      const { time: userLocalTime, dateStr: userToday } = getUserLocalTime(prefs.timezone);
+      const { time: userLocalTime, dateStr: userToday, dayOfWeek } = getUserLocalTime(prefs.timezone);
 
       if (reminderTime !== userLocalTime) continue;
 
-      // Check if they already logged today (in their timezone)
-      // Activities are stored as an array in the user document
+      // Categories already satisfied today (in the user's timezone).
+      // Activities are stored as an array in the user document.
       const activities = userData.activities || [];
-      const hasActivityToday = activities.some(a => a.date === userToday);
+      const doneToday = { strength: 0, cardio: 0, recovery: 0 };
+      let loggedAnythingToday = false;
+      for (const a of activities) {
+        if (a.date !== userToday) continue;
+        loggedAnythingToday = true;
+        const c = getActivityCategoryForGoals(a);
+        if (c === 'lifting') doneToday.strength++;
+        else if (c === 'cardio') doneToday.cardio++;
+        else if (c === 'recovery') doneToday.recovery++;
+      }
 
-      if (hasActivityToday) continue; // Already logged today
+      // If the user has a weekly plan, make the nudge specific to today's plan.
+      const todayPlan = getPlannedCategoriesForToday(userData.weeklyPlan, userToday, dayOfWeek);
+      if (todayPlan) {
+        if (todayPlan.length === 0) continue; // planned rest day — respect it, no nudge
+
+        const need = { strength: 0, cardio: 0, recovery: 0 };
+        todayPlan.forEach((c) => { if (need[c] !== undefined) need[c]++; });
+        const unmet = ['strength', 'cardio', 'recovery'].filter((c) => need[c] > doneToday[c]);
+        if (unmet.length === 0) continue; // everything planned for today is already done
+
+        const { title, body } = buildPlannedReminderMessage(unmet);
+        await sendNotificationToUser(userId, title, body, { type: NotificationType.DAILY_REMINDER });
+        continue;
+      }
+
+      // No plan this week → generic nudge, only if nothing logged yet today.
+      if (loggedAnythingToday) continue;
 
       await sendNotificationToUser(
         userId,

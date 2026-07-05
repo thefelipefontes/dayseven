@@ -100,10 +100,12 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
   // --- Persistence (debounced; skips the initial render) --------------------
   const firstRender = useRef(true);
   const saveTimer = useRef(null);
+  const pendingSave = useRef(false);
   const latest = useRef({ plan, repeatWeekly });
   latest.current = { plan, repeatWeekly };
 
   const persist = useCallback(() => {
+    pendingSave.current = false;
     if (!onSave) return;
     const { plan: p, repeatWeekly: r } = latest.current;
     onSave({
@@ -115,10 +117,21 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
 
   useEffect(() => {
     if (firstRender.current) { firstRender.current = false; return; }
+    pendingSave.current = true;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(persist, 700);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, [plan, repeatWeekly, persist]);
+
+  // Flush a still-pending debounced save on unmount, so a quick Continue (in
+  // onboarding) or tab switch (on Home) right after a drag doesn't drop the
+  // last edit. Only fires when there's an unsaved change — no spurious writes.
+  useEffect(() => () => {
+    if (pendingSave.current) {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      persist();
+    }
+  }, [persist]);
 
   // --- Reconciliation: logged sessions per day, per category ----------------
   const loggedByDay = useMemo(() => {

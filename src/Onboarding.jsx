@@ -7,6 +7,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { fetchHealthKitWorkouts, requestHealthKitAuthorization } from './services/healthService';
 import { requestNotificationPermission } from './services/notificationService';
+import WeeklyPlanner from './WeeklyPlanner';
 
 // ============================================================================
 // Brand + style helpers
@@ -793,6 +794,98 @@ function DailyTargetsScreen({ weeklyGoals, onUpdateGoals, distanceUnit, onUpdate
 }
 
 // ============================================================================
+// Weekly schedule step — pre-fill a sensible default from the user's goals so
+// even a skipper leaves with a plan, then let them drag/tap to adjust.
+// ============================================================================
+
+// Spread the weekly goal sessions across the week as a starting default:
+// interleave categories (avoid clustering) and round-robin onto days that
+// favor weekdays, leaving lighter days at the end.
+function distributeSessions(goals) {
+  const dayOrder = ['mon', 'wed', 'fri', 'tue', 'thu', 'sat', 'sun'];
+  const plan = { sun: [], mon: [], tue: [], wed: [], thu: [], fri: [], sat: [] };
+  const pools = [
+    { c: 'strength', n: goals?.liftsPerWeek || 0 },
+    { c: 'cardio', n: goals?.cardioPerWeek || 0 },
+    { c: 'recovery', n: goals?.recoveryPerWeek || 0 },
+  ];
+  const sessions = [];
+  let any = true;
+  while (any) {
+    any = false;
+    for (const p of pools) {
+      if (p.n > 0) { sessions.push(p.c); p.n--; any = true; }
+    }
+  }
+  sessions.forEach((c, i) => { plan[dayOrder[i % 7]].push(c); });
+  return plan;
+}
+
+function ScheduleScreen({ goals, initialPlan, onChange, onBack, onContinue, onSkip }) {
+  // The plan handed to WeeklyPlanner. Fixed once on mount so its internal state
+  // seeds from a stable value; edits flow back up through onChange.
+  const seedRef = useRef(null);
+  if (!seedRef.current) {
+    seedRef.current = initialPlan
+      || { repeatWeekly: true, template: distributeSessions(goals), weeks: {} };
+  }
+  // Make sure the parent has the (default) plan even if the user never drags.
+  useEffect(() => { if (!initialPlan) onChange(seedRef.current); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black text-white flex flex-col overflow-hidden">
+      <div className="flex-shrink-0 px-6 pb-2" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)' }}>
+        <button
+          onClick={onBack}
+          className="text-gray-400 flex items-center gap-1 transition-all duration-150 px-2 py-1 rounded-lg -ml-2 mb-3"
+          {...pressProps}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+          <span className="text-sm">Back</span>
+        </button>
+      </div>
+
+      <div className="flex-1 pb-32 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="max-w-md mx-auto px-2">
+          <div className="px-4">
+            <h2 className="text-2xl font-bold mb-2">Plan your week.</h2>
+            <p className="text-gray-400 text-[14px] leading-relaxed mb-4">
+              We've spread your sessions across the week as a starting point. Drag them onto the days you'll actually train — you can change this anytime.
+            </p>
+          </div>
+          <WeeklyPlanner
+            goals={goals}
+            activities={[]}
+            weeklyPlan={seedRef.current}
+            onSave={onChange}
+          />
+        </div>
+      </div>
+
+      <div className="fixed bottom-0 left-0 right-0 p-6 pb-12" style={{ background: 'linear-gradient(to top, #000 80%, transparent)' }}>
+        <button
+          onClick={onContinue}
+          className="w-full py-4 rounded-xl font-bold text-lg transition-all duration-150"
+          style={{ backgroundColor: '#00FF94', color: 'black' }}
+          {...ctaPressProps(true)}
+        >
+          Continue
+        </button>
+        <button
+          onClick={onSkip}
+          className="w-full py-3 mt-1 text-gray-400 text-sm font-medium transition-all duration-150"
+          {...pressProps}
+        >
+          Skip for now
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // HealthKit permission pre-screen
 // ============================================================================
 
@@ -1351,7 +1444,8 @@ function NotifPrescreen({ onEnabled, onSkip, submitting = false }) {
 // Main flow component
 // ============================================================================
 //
-// Steps: 'welcome' → 'survey' → 'results' → 'hk' → 'linking' → 'notif' → done
+// Steps: 'welcome' → 'survey' → 'results' → 'customize' → 'daily-targets' →
+//        'schedule' → 'hk' → 'linking' → 'celebrate' → 'notif' → done
 // On done(), parent (App.jsx) marks pre-signup complete and renders Login.
 // localStorage shape stored in 'preSignupOnboarding' (when done):
 //   {
@@ -1398,6 +1492,7 @@ export default function OnboardingFlow({ onComplete, onSignIn }) {
   const [hkAuthorized, setHkAuthorized] = useState(false);
   const [linkedWorkouts, setLinkedWorkouts] = useState([]);
   const [onboardingCredits, setOnboardingCredits] = useState([]);
+  const [weeklyPlan, setWeeklyPlan] = useState(null); // set on the schedule step
 
   // Restore in-progress survey answers if user reloaded mid-flow (rare path).
   // We don't auto-skip steps — restarting from welcome is fine — but answers
@@ -1423,6 +1518,7 @@ export default function OnboardingFlow({ onComplete, onSignIn }) {
         if (parsed?.distanceUnit === 'km' || parsed?.distanceUnit === 'mi') {
           setDistanceUnit(parsed.distanceUnit);
         }
+        if (parsed?.weeklyPlan) setWeeklyPlan(parsed.weeklyPlan);
       }
     } catch {}
   }, []);
@@ -1454,6 +1550,7 @@ export default function OnboardingFlow({ onComplete, onSignIn }) {
       distanceUnit,
       linkedWorkouts: overrides.linkedWorkouts ?? linkedWorkouts,
       onboardingCredits: overrides.onboardingCredits ?? onboardingCredits,
+      weeklyPlan: overrides.weeklyPlan ?? weeklyPlan,
       done: true,
       savedAt: new Date().toISOString(),
     };
@@ -1541,8 +1638,21 @@ export default function OnboardingFlow({ onComplete, onSignIn }) {
           onBack={() => goBack('customize')}
           onContinue={() => {
             persistInProgress({ goals: goalsForSave, distanceUnit });
-            goForward('hk');
+            goForward('schedule');
           }}
+        />
+      );
+    }
+
+    if (step === 'schedule' && weeklyGoals) {
+      return (
+        <ScheduleScreen
+          goals={goalsForSave}
+          initialPlan={weeklyPlan}
+          onChange={(wp) => { setWeeklyPlan(wp); persistInProgress({ weeklyPlan: wp }); }}
+          onBack={() => goBack('daily-targets')}
+          onContinue={() => goForward('hk')}
+          onSkip={() => goForward('hk')}
         />
       );
     }

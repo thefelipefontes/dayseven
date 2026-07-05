@@ -5,10 +5,15 @@ import { toLocalDateStr } from './utils/dateHelpers';
 // ---------------------------------------------------------------------------
 // Weekly Planner
 // Users drag (or tap) cardio / strength / recovery "pills" — one per weekly
-// goal session — onto the days they intend to train. Placed pills reconcile
-// against logged activities so each planned session shows done vs. pending.
-// The plan lives on the user doc as `weeklyPlan` (see handleSaveWeeklyPlan in
-// App.jsx). Week starts Sunday to match the rest of the app.
+// goal session — onto the days they intend to train, and optionally tap a
+// placed pill to give it a specific type (e.g. Cardio → Run). Placed pills
+// reconcile against logged activities so each planned session shows done vs.
+// pending. The plan lives on the user doc as `weeklyPlan` (see
+// handleSaveWeeklyPlan in App.jsx). Week starts Sunday to match the app.
+//
+// A pill is stored as { cat, type } where type is optional (null = generic).
+// Legacy plans stored pills as bare category strings; normalizePill upgrades
+// those transparently.
 // ---------------------------------------------------------------------------
 
 const DAYS = [
@@ -21,8 +26,7 @@ const DAYS = [
   { key: 'sat', label: 'Sat' },
 ];
 
-// Pill categories → weekly goal field + display. `match` lists the activity
-// categories (from getActivityCategory) that satisfy a pill of this type.
+// Pill categories → weekly goal field + display.
 // Emoji + colors mirror the app's goal rings (see the weekly rings in App.jsx).
 const CATS = {
   strength: { label: 'Strength', color: '#00FF94', bg: 'rgba(0,255,148,0.14)', emoji: '💪', goalKey: 'liftsPerWeek' },
@@ -31,15 +35,40 @@ const CATS = {
 };
 const CAT_ORDER = ['strength', 'cardio', 'recovery'];
 
+// Specific types a pill can carry, per category. Values match how the app
+// names activities so a planned type lines up with what gets logged.
+const TYPE_OPTIONS = {
+  strength: ['Full Body', 'Upper', 'Lower', 'Push', 'Pull', 'Core'],
+  cardio: ['Running', 'Cycling', 'Swimming', 'Rowing', 'Walking', 'Stair Climbing', 'Elliptical', 'Sports'],
+  recovery: ['Yoga', 'Pilates', 'Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage'],
+};
+// Shorter labels for the chip itself (the picker shows the full name).
+const TYPE_SHORT = {
+  Running: 'Run', Cycling: 'Bike', Swimming: 'Swim', Rowing: 'Row',
+  Walking: 'Walk', 'Stair Climbing': 'Stairs', Sports: 'Sport',
+  'Contrast Therapy': 'Contrast',
+};
+const chipLabel = (pill) => pill.type ? (TYPE_SHORT[pill.type] || pill.type) : CATS[pill.cat].label;
+
 const emptyPlan = () => DAYS.reduce((acc, d) => { acc[d.key] = []; return acc; }, {});
 
-// Ensure every day key exists and holds only known categories.
+// Upgrade a stored entry (bare string OR {cat,type}) to a normalized pill,
+// dropping unknown categories/types. Returns null if unusable.
+const normalizePill = (raw) => {
+  if (typeof raw === 'string') return CATS[raw] ? { cat: raw, type: null } : null;
+  if (raw && typeof raw === 'object' && CATS[raw.cat]) {
+    const type = raw.type && TYPE_OPTIONS[raw.cat]?.includes(raw.type) ? raw.type : null;
+    return { cat: raw.cat, type };
+  }
+  return null;
+};
+
 const normalizePlan = (raw) => {
   const out = emptyPlan();
   if (raw && typeof raw === 'object') {
     DAYS.forEach(d => {
       const arr = raw[d.key];
-      if (Array.isArray(arr)) out[d.key] = arr.filter(c => CATS[c]);
+      if (Array.isArray(arr)) out[d.key] = arr.map(normalizePill).filter(Boolean);
     });
   }
   return out;
@@ -152,10 +181,10 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
 
   // Placed counts + unplaced (tray) pills per category.
   const placedByCat = { strength: 0, cardio: 0, recovery: 0 };
-  DAYS.forEach(d => plan[d.key].forEach(c => { placedByCat[c]++; }));
+  DAYS.forEach(d => plan[d.key].forEach(p => { placedByCat[p.cat]++; }));
   const trayPills = CAT_ORDER.flatMap(cat => {
     const remaining = Math.max(0, goalCount[cat] - placedByCat[cat]);
-    return Array.from({ length: remaining }, () => cat);
+    return Array.from({ length: remaining }, () => ({ cat, type: null }));
   });
 
   // --- Drag + tap interaction ----------------------------------------------
@@ -164,30 +193,46 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
   const justDragged = useRef(false);    // swallow the click synthesised after a drag
   const cardRef = useRef(null);         // root element, for locating the scroller
   const scrollLock = useRef(null);      // saved scroller styles while dragging
-  const [ghost, setGhost] = useState(null);   // { cat, x, y }
+  const [ghost, setGhost] = useState(null);   // { pill, x, y }
   const [hoverKey, setHoverKey] = useState(null);
-  const [selected, setSelected] = useState(null); // tap-to-move { cat, from }
+  const [selected, setSelected] = useState(null); // tap-to-place a tray pill { cat }
+  const [picker, setPicker] = useState(null);      // type picker { day, index, cat }
 
   const registerZone = (key) => (el) => {
     if (el) zonesRef.current[key] = el;
     else delete zonesRef.current[key];
   };
 
-  const movePill = useCallback((cat, from, to) => {
+  // Move a pill between the tray and days. Day→day preserves the exact pill
+  // (and its type); tray→day always creates a fresh generic pill.
+  const movePill = useCallback((pill, from, fromIndex, to) => {
     if (from === to) return;
     setPlan(prev => {
       const next = { ...prev };
+      let moving = { cat: pill.cat, type: pill.type ?? null };
       if (from !== 'tray') {
         const arr = [...next[from]];
-        const i = arr.indexOf(cat);
-        if (i >= 0) arr.splice(i, 1);
+        const removed = arr.splice(fromIndex, 1)[0];
+        if (removed) moving = removed;
         next[from] = arr;
+      } else {
+        moving = { cat: pill.cat, type: null };
       }
-      if (to !== 'tray') next[to] = [...next[to], cat];
+      if (to !== 'tray') next[to] = [...next[to], moving];
       return next;
     });
     triggerHaptic(ImpactStyle.Light);
   }, []);
+
+  const setPillType = (day, index, type) => {
+    setPlan(prev => {
+      const arr = [...(prev[day] || [])];
+      if (!arr[index]) return prev;
+      arr[index] = { ...arr[index], type };
+      return { ...prev, [day]: arr };
+    });
+    triggerHaptic(ImpactStyle.Light);
+  };
 
   const hitTest = (x, y) => {
     const zones = zonesRef.current;
@@ -198,9 +243,8 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
     return null;
   };
 
-  // Freeze the page's scroll container for the duration of a drag. This is the
-  // guarantee that the page can't slide (works regardless of pointer-event
-  // quirks) — we find the nearest scrollable ancestor and pin its overflow.
+  // Freeze the page's scroll container for the duration of a drag so the page
+  // can't slide out from under it (pins the nearest scrollable ancestor).
   const lockPageScroll = () => {
     if (scrollLock.current) return;
     let n = cardRef.current;
@@ -225,10 +269,6 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
   const onPointerMove = useCallback((e) => {
     const st = dragRef.current;
     if (!st) return;
-    // Block the page's native scroll the instant a pill touch moves, so the
-    // page can't slide out from under the drag on iOS. Must happen before the
-    // threshold check — otherwise the first few px start a native scroll that
-    // can no longer be cancelled.
     if (e.cancelable) e.preventDefault();
     const dx = e.clientX - st.startX;
     const dy = e.clientY - st.startY;
@@ -239,7 +279,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
       triggerHaptic(ImpactStyle.Light);
     }
     st.target = hitTest(e.clientX, e.clientY);
-    setGhost({ cat: st.cat, x: e.clientX, y: e.clientY });
+    setGhost({ pill: st.pill, x: e.clientX, y: e.clientY });
     setHoverKey(st.target);
   }, []);
 
@@ -255,19 +295,16 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
     if (!st) return;
     if (st.active) {
       justDragged.current = true;
-      if (st.target && st.target !== st.from) movePill(st.cat, st.from, st.target);
+      if (st.target && st.target !== st.from) movePill(st.pill, st.from, st.fromIndex, st.target);
     }
   }, [onPointerMove, movePill]);
 
-  const onPillPointerDown = (e, cat, from) => {
+  const onPillPointerDown = (e, pill, from, index) => {
     if (e.button && e.button !== 0) return;
-    // NB: intentionally NOT calling setPointerCapture — on iOS it suppresses the
-    // synthesised click that tap-to-place relies on. Drag tracking uses
-    // window-level pointer listeners + coordinate hit-testing, so capture isn't
-    // needed. justDragged is reset here so a fresh tap is never eaten by a stale
-    // flag left over from a previous drag that fired no trailing click.
+    // No setPointerCapture — on iOS it suppresses the click tap-to-place relies
+    // on. Drag tracking uses window listeners + coordinate hit-testing.
     justDragged.current = false;
-    dragRef.current = { cat, from, startX: e.clientX, startY: e.clientY, active: false, target: null };
+    dragRef.current = { pill, from, fromIndex: index, startX: e.clientX, startY: e.clientY, active: false, target: null };
     window.addEventListener('pointermove', onPointerMove, { passive: false });
     window.addEventListener('pointerup', endDrag);
     window.addEventListener('pointercancel', endDrag);
@@ -280,39 +317,42 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
   }, [onPointerMove, endDrag]);
 
   // iOS WKWebView ignores preventDefault on pointer events for native scroll,
-  // so block the underlying touchmove directly — capture phase + non-passive —
-  // for the whole gesture once a pill is grabbed. This is what actually keeps
-  // the page from scrolling out from under the drag.
+  // so block the underlying touchmove directly (capture phase, non-passive)
+  // for the whole gesture once a pill is grabbed.
   useEffect(() => {
     const block = (e) => { if (dragRef.current && e.cancelable) e.preventDefault(); };
     document.addEventListener('touchmove', block, { passive: false, capture: true });
     return () => document.removeEventListener('touchmove', block, { capture: true });
   }, []);
 
-  // Tap fallback: tap a pill to pick it up, tap a day (or the tray) to drop it.
-  const onPillClick = (cat, from) => {
+  // Tap: a tray pill selects itself (then tap a day to place it); a placed pill
+  // opens the type picker. Placed pills are moved by dragging.
+  const onPillClick = (pill, from, index) => {
     if (justDragged.current) { justDragged.current = false; return; }
-    setSelected(prev => (prev && prev.cat === cat && prev.from === from) ? null : { cat, from });
+    if (from === 'tray') {
+      setSelected(prev => (prev && prev.cat === pill.cat) ? null : { cat: pill.cat });
+    } else {
+      setSelected(null);
+      setPicker({ day: from, index, cat: pill.cat });
+    }
   };
   const onZoneClick = (key) => {
     if (justDragged.current) { justDragged.current = false; return; }
     setSelected(prev => {
-      if (prev && key !== prev.from) movePill(prev.cat, prev.from, key);
+      if (prev && key !== 'tray') movePill({ cat: prev.cat, type: null }, 'tray', -1, key);
       return null;
     });
   };
 
   if (totalGoal === 0) return null; // no standards set yet
 
-  const isSelected = (cat, from) => selected && selected.cat === cat && selected.from === from;
-
-  const Pill = ({ cat, from, done = false }) => {
-    const c = CATS[cat];
-    const sel = isSelected(cat, from);
+  const Pill = ({ pill, from, index, done = false }) => {
+    const c = CATS[pill.cat];
+    const sel = from === 'tray' && selected && selected.cat === pill.cat;
     return (
       <button
-        onPointerDown={(e) => onPillPointerDown(e, cat, from)}
-        onClick={(e) => { e.stopPropagation(); onPillClick(cat, from); }}
+        onPointerDown={(e) => onPillPointerDown(e, pill, from, index)}
+        onClick={(e) => { e.stopPropagation(); onPillClick(pill, from, index); }}
         className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-semibold transition-transform active:scale-95 select-none"
         style={{
           touchAction: 'none',
@@ -324,10 +364,12 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
         }}
       >
         <span style={{ fontSize: 11 }}>{done ? '✓' : c.emoji}</span>
-        {c.label}
+        {chipLabel(pill)}
       </button>
     );
   };
+
+  const pickerType = picker ? (plan[picker.day]?.[picker.index]?.type ?? null) : null;
 
   return (
     <div className="px-4 mb-4" ref={cardRef}>
@@ -369,15 +411,15 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
         >
           {trayPills.length === 0 ? (
             <div className="flex items-center gap-1.5 text-[12px]" style={{ color: '#30D158' }}>
-              <span>✓</span> All {totalGoal} sessions placed{selected ? ' · tap a day to move' : ''}
+              <span>✓</span> All {totalGoal} sessions placed{selected ? ' · tap a day to move' : ' · tap one to set its type'}
             </div>
           ) : (
             <>
               <span className="w-full text-[11px] mb-0.5" style={{ color: '#777' }}>
                 Drag onto a day{selected ? ' · or tap a day' : ''}
               </span>
-              {trayPills.map((cat, i) => (
-                <Pill key={`tray-${cat}-${i}`} cat={cat} from="tray" />
+              {trayPills.map((pill, i) => (
+                <Pill key={`tray-${pill.cat}-${i}`} pill={pill} from="tray" index={i} />
               ))}
             </>
           )}
@@ -389,7 +431,6 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
             const dayPills = plan[d.key];
             const logged = loggedByDay[d.key];
             const isToday = d.key === todayKey;
-            // How many placed pills of each cat are satisfied by logged activity.
             const usedDone = { strength: 0, cardio: 0, recovery: 0 };
             return (
               <div
@@ -413,10 +454,10 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
                   {dayPills.length === 0 ? (
                     <span className="text-[12px]" style={{ color: '#555' }}>Rest day</span>
                   ) : (
-                    dayPills.map((cat, i) => {
-                      const done = usedDone[cat] < logged[cat];
-                      if (done) usedDone[cat]++;
-                      return <Pill key={`${d.key}-${cat}-${i}`} cat={cat} from={d.key} done={done} />;
+                    dayPills.map((pill, i) => {
+                      const done = usedDone[pill.cat] < logged[pill.cat];
+                      if (done) usedDone[pill.cat]++;
+                      return <Pill key={`${d.key}-${i}`} pill={pill} from={d.key} index={i} done={done} />;
                     })
                   )}
                 </div>
@@ -428,7 +469,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
 
       {/* Drag ghost */}
       {ghost && (() => {
-        const c = CATS[ghost.cat];
+        const c = CATS[ghost.pill.cat];
         return (
           <div
             className="fixed z-[100] pointer-events-none inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-semibold"
@@ -440,7 +481,51 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
               boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
             }}
           >
-            <span style={{ fontSize: 11 }}>{c.emoji}</span>{c.label}
+            <span style={{ fontSize: 11 }}>{c.emoji}</span>{chipLabel(ghost.pill)}
+          </div>
+        );
+      })()}
+
+      {/* Type picker sheet */}
+      {picker && (() => {
+        const c = CATS[picker.cat];
+        const opts = [null, ...TYPE_OPTIONS[picker.cat]];
+        return (
+          <div
+            className="fixed inset-0 z-[110] flex items-end"
+            style={{ backgroundColor: 'rgba(0,0,0,0.55)' }}
+            onClick={() => setPicker(null)}
+          >
+            <div
+              className="w-full rounded-t-2xl p-4"
+              style={{ backgroundColor: '#161616', paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 20px)' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <span style={{ fontSize: 15 }}>{c.emoji}</span>
+                <span className="text-white font-semibold text-[15px]">Pick a {c.label.toLowerCase()} type</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {opts.map((t) => {
+                  const active = pickerType === t;
+                  const label = t == null ? 'Any' : t;
+                  return (
+                    <button
+                      key={label}
+                      onClick={() => { setPillType(picker.day, picker.index, t); setPicker(null); }}
+                      className="px-3 py-2 rounded-full text-[13px] font-semibold transition-transform active:scale-95"
+                      style={{
+                        color: active ? '#0A0A0A' : c.color,
+                        backgroundColor: active ? c.color : c.bg,
+                        border: `1px solid ${active ? c.color : 'transparent'}`,
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         );
       })()}

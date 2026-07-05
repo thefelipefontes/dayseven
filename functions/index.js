@@ -968,11 +968,16 @@ exports.sendDailyReminders = onSchedule(
         if (todayPlan.length === 0) continue; // planned rest day — respect it, no nudge
 
         const need = { strength: 0, cardio: 0, recovery: 0 };
-        todayPlan.forEach((c) => { if (need[c] !== undefined) need[c]++; });
+        const typeByCat = {}; // first specific type seen per category, for the copy
+        for (const p of todayPlan) {
+          if (need[p.cat] === undefined) continue;
+          need[p.cat]++;
+          if (p.type && !typeByCat[p.cat]) typeByCat[p.cat] = p.type;
+        }
         const unmet = ['strength', 'cardio', 'recovery'].filter((c) => need[c] > doneToday[c]);
         if (unmet.length === 0) continue; // everything planned for today is already done
 
-        const { title, body } = buildPlannedReminderMessage(unmet);
+        const { title, body } = buildPlannedReminderMessage(unmet, typeByCat);
         await sendNotificationToUser(userId, title, body, { type: NotificationType.DAILY_REMINDER });
         continue;
       }

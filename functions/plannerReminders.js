@@ -3,8 +3,10 @@
  * they can be unit-tested without initializing Firebase Admin.
  *
  * The weekly plan lives at users/{uid}.weeklyPlan:
- *   { repeatWeekly, template: {sun..sat: string[]}, weeks: { [sundayKey]: {sun..sat: string[]} } }
- * where each day array holds category ids: 'strength' | 'cardio' | 'recovery'.
+ *   { repeatWeekly, template: {sun..sat: Pill[]}, weeks: { [sundayKey]: {sun..sat: Pill[]} } }
+ * A Pill is { cat, type } where cat is 'strength'|'cardio'|'recovery' and type
+ * is an optional specific string. Legacy plans stored pills as bare category
+ * strings; normPill upgrades those transparently.
  */
 
 const PLAN_DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -15,13 +17,28 @@ const PLAN_CAT_DISPLAY = {
   recovery: { emoji: '🧊', label: 'Recovery' },
 };
 
+// Friendlier phrasing for a pill's specific type in notification copy.
+const TYPE_LABEL = {
+  'Full Body': 'Full body', Upper: 'Upper body', Lower: 'Lower body', Push: 'Push', Pull: 'Pull', Core: 'Core',
+  Running: 'Run', Cycling: 'Ride', Swimming: 'Swim', Rowing: 'Row', Walking: 'Walk',
+  'Stair Climbing': 'Stair session', Elliptical: 'Elliptical', Sports: 'Sport',
+  Yoga: 'Yoga', Pilates: 'Pilates', 'Cold Plunge': 'Cold plunge', Sauna: 'Sauna',
+  'Contrast Therapy': 'Contrast session', Massage: 'Massage',
+};
+
+// Upgrade a stored entry (bare string OR {cat,type}) to { cat, type }, or null.
+function normPill(raw) {
+  if (typeof raw === 'string') return PLAN_CAT_DISPLAY[raw] ? { cat: raw, type: null } : null;
+  if (raw && typeof raw === 'object' && PLAN_CAT_DISPLAY[raw.cat]) {
+    return { cat: raw.cat, type: typeof raw.type === 'string' ? raw.type : null };
+  }
+  return null;
+}
+
 /**
- * Resolve the categories the user planned for *today*.
- * @param {object|undefined} weeklyPlan  users/{uid}.weeklyPlan
- * @param {string} userToday             'YYYY-MM-DD' in the user's local tz
- * @param {number} dayOfWeek             0 (Sun) .. 6 (Sat), user's local day
- * @returns {string[]|null} category ids (empty array = planned rest day),
- *                          or null if there's no plan covering this week.
+ * Resolve the pills the user planned for *today*.
+ * @returns {Array<{cat,type}>|null} pills (empty array = planned rest day),
+ *          or null if there's no plan covering this week.
  */
 function getPlannedCategoriesForToday(weeklyPlan, userToday, dayOfWeek) {
   if (!weeklyPlan) return null;
@@ -38,17 +55,24 @@ function getPlannedCategoriesForToday(weeklyPlan, userToday, dayOfWeek) {
   if (!week) return null;
 
   const arr = week[PLAN_DAY_KEYS[dayOfWeek]];
-  return Array.isArray(arr) ? arr.filter((c) => PLAN_CAT_DISPLAY[c]) : [];
+  return Array.isArray(arr) ? arr.map(normPill).filter(Boolean) : [];
 }
 
 /**
- * Build notification copy for the planned categories still unfinished today.
- * @param {string[]} unmet  ordered category ids
+ * Build notification copy for the unfinished categories today. `typeByCat`
+ * maps a category to a representative planned type (if any) so the copy can
+ * say "your run" instead of "your cardio".
+ * @param {string[]} unmet          ordered category ids
+ * @param {Object} [typeByCat]      { cat: type }
  */
-function buildPlannedReminderMessage(unmet) {
-  const parts = unmet.map((c) => `${PLAN_CAT_DISPLAY[c].emoji} ${PLAN_CAT_DISPLAY[c].label}`);
+function buildPlannedReminderMessage(unmet, typeByCat = {}) {
+  const labelFor = (c) => {
+    const t = typeByCat[c];
+    return t ? (TYPE_LABEL[t] || t) : PLAN_CAT_DISPLAY[c].label;
+  };
+  const parts = unmet.map((c) => `${PLAN_CAT_DISPLAY[c].emoji} ${labelFor(c)}`);
   if (parts.length === 1) {
-    return { title: "Today's Plan", body: `Time for your ${parts[0]} session today.` };
+    return { title: "Today's Plan", body: `Time for your ${parts[0]} today.` };
   }
   const list = parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1];
   return { title: "Today's Plan", body: `You've got ${list} on the schedule today.` };
@@ -57,6 +81,7 @@ function buildPlannedReminderMessage(unmet) {
 module.exports = {
   PLAN_DAY_KEYS,
   PLAN_CAT_DISPLAY,
+  TYPE_LABEL,
   getPlannedCategoriesForToday,
   buildPlannedReminderMessage,
 };

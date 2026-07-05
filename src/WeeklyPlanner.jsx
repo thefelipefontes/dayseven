@@ -133,7 +133,12 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
   const latest = useRef({ plan, repeatWeekly });
   latest.current = { plan, repeatWeekly };
 
-  const persist = useCallback(() => {
+  // persist is stored in a ref and refreshed every render so the debounce
+  // effect can depend ONLY on [plan, repeatWeekly] — never on onSave/weeklyPlan
+  // identity. Depending on those created a save↔re-render feedback loop that
+  // wrote to Firestore every 700ms and thrashed the whole app.
+  const persistRef = useRef(null);
+  persistRef.current = () => {
     pendingSave.current = false;
     if (!onSave) return;
     const { plan: p, repeatWeekly: r } = latest.current;
@@ -142,15 +147,15 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
       template: r ? normalizePlan(p) : (weeklyPlan?.template || null),
       weeks: { [weekKey]: { ...normalizePlan(p), confirmedAt: new Date().toISOString() } },
     });
-  }, [onSave, weekKey, weeklyPlan?.template]);
+  };
 
   useEffect(() => {
     if (firstRender.current) { firstRender.current = false; return; }
     pendingSave.current = true;
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(persist, 700);
+    saveTimer.current = setTimeout(() => persistRef.current?.(), 700);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
-  }, [plan, repeatWeekly, persist]);
+  }, [plan, repeatWeekly]);
 
   // Flush a still-pending debounced save on unmount, so a quick Continue (in
   // onboarding) or tab switch (on Home) right after a drag doesn't drop the
@@ -158,9 +163,9 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
   useEffect(() => () => {
     if (pendingSave.current) {
       if (saveTimer.current) clearTimeout(saveTimer.current);
-      persist();
+      persistRef.current?.();
     }
-  }, [persist]);
+  }, []);
 
   // --- Reconciliation: logged sessions per day, per category ----------------
   const loggedByDay = useMemo(() => {
@@ -283,10 +288,23 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
     setHoverKey(st.target);
   }, []);
 
+  // iOS WKWebView ignores preventDefault on pointer events for native scroll,
+  // so we cancel the underlying touchmove directly while a pill is grabbed.
+  // Attached ONLY for the duration of a drag (see onPillPointerDown / endDrag)
+  // — leaving a global non-passive touch listener attached at rest makes WebKit
+  // gate every tap on it, which broke first-tap navigation elsewhere.
+  const blockTouchMove = useCallback((e) => {
+    if (dragRef.current && e.cancelable) e.preventDefault();
+  }, []);
+
+  // All drag handlers are memoized with stable deps (onPointerMove/movePill/
+  // blockTouchMove never change identity), so the exact same function refs are
+  // used for add and remove — no ref bookkeeping needed.
   const endDrag = useCallback(() => {
     window.removeEventListener('pointermove', onPointerMove);
     window.removeEventListener('pointerup', endDrag);
     window.removeEventListener('pointercancel', endDrag);
+    document.removeEventListener('touchmove', blockTouchMove, { capture: true });
     unlockPageScroll();
     const st = dragRef.current;
     dragRef.current = null;
@@ -297,33 +315,28 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
       justDragged.current = true;
       if (st.target && st.target !== st.from) movePill(st.pill, st.from, st.fromIndex, st.target);
     }
-  }, [onPointerMove, movePill]);
+  }, [onPointerMove, blockTouchMove, movePill]);
 
   const onPillPointerDown = (e, pill, from, index) => {
     if (e.button && e.button !== 0) return;
-    // No setPointerCapture — on iOS it suppresses the click tap-to-place relies
-    // on. Drag tracking uses window listeners + coordinate hit-testing.
+    // No setPointerCapture — on iOS it suppresses the click tap-to-place relies on.
     justDragged.current = false;
     dragRef.current = { pill, from, fromIndex: index, startX: e.clientX, startY: e.clientY, active: false, target: null };
     window.addEventListener('pointermove', onPointerMove, { passive: false });
     window.addEventListener('pointerup', endDrag);
     window.addEventListener('pointercancel', endDrag);
+    document.addEventListener('touchmove', blockTouchMove, { passive: false, capture: true });
   };
 
+  // Safety net: if the component unmounts mid-drag, tear everything down and
+  // release the scroll lock so nothing leaks into the rest of the app.
   useEffect(() => () => {
     window.removeEventListener('pointermove', onPointerMove);
     window.removeEventListener('pointerup', endDrag);
     window.removeEventListener('pointercancel', endDrag);
-  }, [onPointerMove, endDrag]);
-
-  // iOS WKWebView ignores preventDefault on pointer events for native scroll,
-  // so block the underlying touchmove directly (capture phase, non-passive)
-  // for the whole gesture once a pill is grabbed.
-  useEffect(() => {
-    const block = (e) => { if (dragRef.current && e.cancelable) e.preventDefault(); };
-    document.addEventListener('touchmove', block, { passive: false, capture: true });
-    return () => document.removeEventListener('touchmove', block, { capture: true });
-  }, []);
+    document.removeEventListener('touchmove', blockTouchMove, { capture: true });
+    unlockPageScroll();
+  }, [onPointerMove, endDrag, blockTouchMove]);
 
   // Tap: a tray pill selects itself (then tap a day to place it); a placed pill
   // opens the type picker. Placed pills are moved by dragging.

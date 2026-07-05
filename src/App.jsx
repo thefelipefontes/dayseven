@@ -14518,11 +14518,18 @@ export default function DaySevenApp() {
             // Re-persist goals to Firestore to ensure they stay synced
             saveUserGoals(user.uid, userGoals).catch(() => {});
           } else {
-            // Goals missing from Firestore but user may have them in local state
-            // (e.g., set during onboarding but Firestore was wiped)
-            // Re-persist local goals to repair Firestore
+            // Goals came back empty. This can mean "never set" OR a transient
+            // read failure (getUserGoals returns null on timeout). Only "repair"
+            // Firestore from local state when those local goals are clearly
+            // user-customized — i.e. they differ from the initial defaults.
+            // Otherwise a failed read would overwrite real Firestore goals with
+            // the 4/3/2 defaults still sitting in local state during load.
             const localGoals = userDataRef.current?.goals;
-            if (localGoals && localGoals.liftsPerWeek) {
+            const isJustDefaults = localGoals
+              && localGoals.liftsPerWeek === initialUserData.goals.liftsPerWeek
+              && localGoals.cardioPerWeek === initialUserData.goals.cardioPerWeek
+              && localGoals.recoveryPerWeek === initialUserData.goals.recoveryPerWeek;
+            if (localGoals && localGoals.liftsPerWeek && !isJustDefaults) {
               saveUserGoals(user.uid, localGoals).catch(() => {});
             }
           }
@@ -16368,14 +16375,15 @@ export default function DaySevenApp() {
     setShowAddActivity(true);
   };
 
-  // Persist the user's weekly plan (drag/tap planner on Home).
-  const handleSaveWeeklyPlan = (weeklyPlan) => {
+  // Persist the user's weekly plan (drag/tap planner on Home). Memoized so its
+  // identity is stable — an unstable onSave prop fed a save↔re-render loop.
+  const handleSaveWeeklyPlan = useCallback((weeklyPlan) => {
     setUserData(prev => ({ ...prev, weeklyPlan }));
     if (user?.uid) {
       updateUserProfile(user.uid, { weeklyPlan }).catch(err =>
         console.log('[WeeklyPlan] save failed:', err?.message));
     }
-  };
+  }, [user?.uid]);
 
   // Refresh active accepted challenges whenever the AddActivityModal or FinishWorkoutModal opens —
   // both modals need this list to enforce photo-required challenges at save. One-shot fetch (not

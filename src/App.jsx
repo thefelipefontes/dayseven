@@ -15290,7 +15290,7 @@ export default function DaySevenApp() {
   // mark onboarded. The paywall fires *after* username is set (post-signup)
   // and HK/push permissions were already requested in the pre-signup
   // pre-screens so we don't re-prompt here.
-  const finalizeOnboardingFlow = useCallback(async (uid, { goals, privacy, extra, linkedWorkouts, onboardingCredits, distanceUnit, weeklyPlan }) => {
+  const finalizeOnboardingFlow = useCallback(async (uid, { goals, privacy, extra, linkedWorkouts, onboardingCredits, distanceUnit, weeklyPlan, limitations }) => {
     const goalsToSave = {
       liftsPerWeek: goals.liftsPerWeek,
       cardioPerWeek: goals.cardioPerWeek,
@@ -15303,6 +15303,11 @@ export default function DaySevenApp() {
     // Weekly plan set during onboarding (skippable — may be a pre-filled default).
     if (weeklyPlan) {
       await updateUserProfile(uid, { weeklyPlan });
+    }
+
+    // Injuries/limitations — stored for suggestion tailoring (negative filter).
+    if (Array.isArray(limitations) && limitations.length > 0) {
+      await updateUserProfile(uid, { limitations });
     }
 
     const unitToSave = distanceUnit === 'km' ? 'km' : 'mi';

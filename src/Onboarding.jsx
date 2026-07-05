@@ -169,7 +169,22 @@ function strengthCreditLabel(origin) {
   return 'Weightlifting';
 }
 
-function cardioCreditLabel(origin) {
+// Injuries / limitations the injuries step can capture. Kept coarse on purpose
+// — this is a light negative filter for suggestions, not medical guidance.
+const LIMITATION_OPTIONS = [
+  { id: 'knees', label: 'Knees' },
+  { id: 'back', label: 'Lower back' },
+  { id: 'shoulders', label: 'Shoulders' },
+  { id: 'ankles', label: 'Ankles / feet' },
+  { id: 'wrists', label: 'Wrists / elbows' },
+  { id: 'hips', label: 'Hips' },
+];
+// Limitations that make high-impact cardio (running) a poor default suggestion.
+const HIGH_IMPACT_LIMITATIONS = ['knees', 'ankles', 'back', 'hips'];
+
+function cardioCreditLabel(origin, limitations = []) {
+  // Negative filter: steer away from running toward low-impact cycling.
+  if (limitations.some((l) => HIGH_IMPACT_LIMITATIONS.includes(l))) return 'Cycling';
   if (origin === 'lifter_adding_cardio') return 'Cycling';
   return 'Running';
 }
@@ -794,6 +809,90 @@ function DailyTargetsScreen({ weeklyGoals, onUpdateGoals, distanceUnit, onUpdate
 }
 
 // ============================================================================
+// Injuries / limitations step — a light negative filter. We only steer
+// suggestions away from flagged areas; we never prescribe or block anything.
+// ============================================================================
+
+function InjuriesScreen({ value, onChange, onBack, onContinue }) {
+  const selected = value || [];
+  const noneSelected = selected.includes('none');
+  const toggle = (id) => {
+    if (selected.includes(id)) onChange(selected.filter((x) => x !== id));
+    else onChange([...selected.filter((x) => x !== 'none'), id]);
+  };
+  const chooseNone = () => onChange(noneSelected ? [] : ['none']);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black text-white flex flex-col overflow-hidden">
+      <div className="flex-shrink-0 px-6 pb-2" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)' }}>
+        <button
+          onClick={onBack}
+          className="text-gray-400 flex items-center gap-1 transition-all duration-150 px-2 py-1 rounded-lg -ml-2 mb-3"
+          {...pressProps}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+          <span className="text-sm">Back</span>
+        </button>
+      </div>
+
+      <div className="flex-1 px-6 pb-32 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="max-w-md mx-auto">
+          <h2 className="text-2xl font-bold mb-2">Anything we should plan around?</h2>
+          <p className="text-gray-400 text-[14px] leading-relaxed mb-6">
+            Pick any areas that flare up. We'll steer suggestions toward gentler options — you can still log anything you like. This isn't medical advice.
+          </p>
+
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            {LIMITATION_OPTIONS.map((opt) => {
+              const active = selected.includes(opt.id);
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => toggle(opt.id)}
+                  className="py-3 px-3 rounded-xl text-left transition-all duration-150"
+                  style={{
+                    backgroundColor: active ? 'rgba(0,209,255,0.14)' : 'rgba(255,255,255,0.05)',
+                    border: active ? '1px solid rgba(0,209,255,0.55)' : '1px solid transparent',
+                  }}
+                  {...pressProps}
+                >
+                  <span className="text-[14px] font-semibold" style={{ color: active ? '#00D1FF' : 'white' }}>{opt.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            onClick={chooseNone}
+            className="w-full py-3 px-3 rounded-xl text-center transition-all duration-150"
+            style={{
+              backgroundColor: noneSelected ? 'rgba(0,255,148,0.14)' : 'rgba(255,255,255,0.05)',
+              border: noneSelected ? '1px solid rgba(0,255,148,0.55)' : '1px solid transparent',
+            }}
+            {...pressProps}
+          >
+            <span className="text-[14px] font-semibold" style={{ color: noneSelected ? '#00FF94' : 'white' }}>No injuries — I'm good</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="fixed bottom-0 left-0 right-0 p-6 pb-12" style={{ background: 'linear-gradient(to top, #000 80%, transparent)' }}>
+        <button
+          onClick={onContinue}
+          className="w-full py-4 rounded-xl font-bold text-lg transition-all duration-150"
+          style={{ backgroundColor: '#00FF94', color: 'black' }}
+          {...ctaPressProps(true)}
+        >
+          Continue
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // Weekly schedule step — pre-fill a sensible default from the user's goals so
 // even a skipper leaves with a plan, then let them drag/tap to adjust.
 // ============================================================================
@@ -983,7 +1082,7 @@ function workoutCardIcon(ring, type) {
   return '💪';
 }
 
-function LinkingScreen({ weeklyGoals, hkAuthorized, answers, initialLinked, initialCredits, onContinue }) {
+function LinkingScreen({ weeklyGoals, hkAuthorized, answers, limitations = [], initialLinked, initialCredits, onContinue }) {
   const [hkWorkouts, setHkWorkouts] = useState([]);
   const [loadingHK, setLoadingHK] = useState(hkAuthorized && Capacitor.isNativePlatform());
   // linkedIds: Set of activity IDs currently linked
@@ -1038,9 +1137,9 @@ function LinkingScreen({ weeklyGoals, hkAuthorized, answers, initialLinked, init
   // survey answers (e.g. "Zone 2 Session" for a lifter adding cardio).
   const creditPool = useMemo(() => ([
     { id: 'credit_strength', ring: 'strength', label: strengthCreditLabel(answers.origin) },
-    { id: 'credit_cardio',   ring: 'cardio',   label: cardioCreditLabel(answers.origin) },
+    { id: 'credit_cardio',   ring: 'cardio',   label: cardioCreditLabel(answers.origin, limitations) },
     { id: 'credit_recovery', ring: 'recovery', label: recoveryCreditLabel(answers.recovery) },
-  ]), [answers.origin, answers.recovery]);
+  ]), [answers.origin, answers.recovery, limitations]);
 
   // No per-ring rationing anymore — show all three credits so the user can
   // pick whichever feels honest.
@@ -1445,7 +1544,7 @@ function NotifPrescreen({ onEnabled, onSkip, submitting = false }) {
 // ============================================================================
 //
 // Steps: 'welcome' → 'survey' → 'results' → 'customize' → 'daily-targets' →
-//        'schedule' → 'hk' → 'linking' → 'celebrate' → 'notif' → done
+//        'injuries' → 'schedule' → 'hk' → 'linking' → 'celebrate' → 'notif' → done
 // On done(), parent (App.jsx) marks pre-signup complete and renders Login.
 // localStorage shape stored in 'preSignupOnboarding' (when done):
 //   {
@@ -1493,6 +1592,7 @@ export default function OnboardingFlow({ onComplete, onSignIn }) {
   const [linkedWorkouts, setLinkedWorkouts] = useState([]);
   const [onboardingCredits, setOnboardingCredits] = useState([]);
   const [weeklyPlan, setWeeklyPlan] = useState(null); // set on the schedule step
+  const [limitations, setLimitations] = useState([]); // injuries step (may include 'none')
 
   // Restore in-progress survey answers if user reloaded mid-flow (rare path).
   // We don't auto-skip steps — restarting from welcome is fine — but answers
@@ -1519,6 +1619,7 @@ export default function OnboardingFlow({ onComplete, onSignIn }) {
           setDistanceUnit(parsed.distanceUnit);
         }
         if (parsed?.weeklyPlan) setWeeklyPlan(parsed.weeklyPlan);
+        if (Array.isArray(parsed?.limitations)) setLimitations(parsed.limitations);
       }
     } catch {}
   }, []);
@@ -1551,6 +1652,7 @@ export default function OnboardingFlow({ onComplete, onSignIn }) {
       linkedWorkouts: overrides.linkedWorkouts ?? linkedWorkouts,
       onboardingCredits: overrides.onboardingCredits ?? onboardingCredits,
       weeklyPlan: overrides.weeklyPlan ?? weeklyPlan,
+      limitations: limitations.filter((x) => x !== 'none'),
       done: true,
       savedAt: new Date().toISOString(),
     };
@@ -1638,8 +1740,19 @@ export default function OnboardingFlow({ onComplete, onSignIn }) {
           onBack={() => goBack('customize')}
           onContinue={() => {
             persistInProgress({ goals: goalsForSave, distanceUnit });
-            goForward('schedule');
+            goForward('injuries');
           }}
+        />
+      );
+    }
+
+    if (step === 'injuries') {
+      return (
+        <InjuriesScreen
+          value={limitations}
+          onChange={(next) => { setLimitations(next); persistInProgress({ limitations: next }); }}
+          onBack={() => goBack('daily-targets')}
+          onContinue={() => goForward('schedule')}
         />
       );
     }
@@ -1650,7 +1763,7 @@ export default function OnboardingFlow({ onComplete, onSignIn }) {
           goals={goalsForSave}
           initialPlan={weeklyPlan}
           onChange={(wp) => { setWeeklyPlan(wp); persistInProgress({ weeklyPlan: wp }); }}
-          onBack={() => goBack('daily-targets')}
+          onBack={() => goBack('injuries')}
           onContinue={() => goForward('hk')}
           onSkip={() => goForward('hk')}
         />
@@ -1678,6 +1791,7 @@ export default function OnboardingFlow({ onComplete, onSignIn }) {
           weeklyGoals={weeklyGoals}
           hkAuthorized={hkAuthorized}
           answers={answers}
+          limitations={limitations.filter((x) => x !== 'none')}
           initialLinked={linkedWorkouts}
           initialCredits={onboardingCredits}
           onContinue={({ linkedWorkouts: lw, onboardingCredits: cr }) => {

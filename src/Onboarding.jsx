@@ -798,11 +798,12 @@ function DailyTargetsScreen({ weeklyGoals, onUpdateGoals, distanceUnit, onUpdate
 // even a skipper leaves with a plan, then let them drag/tap to adjust.
 // ============================================================================
 
-// Spread the weekly goal sessions across the week as a starting default:
-// interleave categories so consecutive sessions differ (strength → cardio →
-// recovery → …), then place them on days spread evenly across the week (so
-// rest days are interspersed, not bunched at the end).
-function distributeSessions(goals) {
+// Seed a starting plan from the user's goals. Interleave categories so
+// consecutive sessions differ (strength → cardio → recovery → …), then place
+// them on days spread evenly across the week (rest days interspersed).
+// `limit` caps how many sessions get pre-placed — the rest are left in the
+// tray for the user to drag, so onboarding teaches the interaction.
+function distributeSessions(goals, limit) {
   const dayKeys = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
   const plan = { sun: [], mon: [], tue: [], wed: [], thu: [], fri: [], sat: [] };
   const pools = [
@@ -811,14 +812,15 @@ function distributeSessions(goals) {
     { c: 'recovery', n: goals?.recoveryPerWeek || 0 },
   ];
   // Round-robin across categories → [S, C, R, S, C, R, S, ...]
-  const sessions = [];
+  const all = [];
   let any = true;
   while (any) {
     any = false;
     for (const p of pools) {
-      if (p.n > 0) { sessions.push(p.c); p.n--; any = true; }
+      if (p.n > 0) { all.push(p.c); p.n--; any = true; }
     }
   }
+  const sessions = typeof limit === 'number' ? all.slice(0, limit) : all;
   const total = sessions.length;
   if (total === 0) return plan;
   // Place the interleaved sessions on evenly-spread day slots (in calendar
@@ -841,7 +843,7 @@ function ScheduleScreen({ goals, initialPlan, onChange, onBack, onContinue, onSk
   const seedRef = useRef(null);
   if (!seedRef.current) {
     seedRef.current = initialPlan
-      || { repeatWeekly: true, template: distributeSessions(goals), weeks: {} };
+      || { repeatWeekly: true, template: distributeSessions(goals, 2), weeks: {} };
   }
   // Make sure the parent has the (default) plan even if the user never drags.
   useEffect(() => { if (!initialPlan) onChange(seedRef.current); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -861,12 +863,12 @@ function ScheduleScreen({ goals, initialPlan, onChange, onBack, onContinue, onSk
         </button>
       </div>
 
-      <div className="flex-1 pb-32 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+      <div className="flex-1 pb-52 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
         <div className="max-w-md mx-auto px-2">
           <div className="px-4">
             <h2 className="text-2xl font-bold mb-2">Plan your week.</h2>
             <p className="text-gray-400 text-[14px] leading-relaxed mb-4">
-              We've spread your sessions across the week as a starting point. Drag them onto the days you'll actually train, and tap any session to pick a specific workout (e.g. Cardio → Run). You can change all of this anytime.
+              We've placed a couple to get you started — drag the rest from the tray onto the days you'll actually train. Tap any session to pick a specific workout (e.g. Cardio → Run). You can change all of this anytime.
             </p>
           </div>
           <WeeklyPlanner

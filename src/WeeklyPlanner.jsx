@@ -1,4 +1,5 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { triggerHaptic, ImpactStyle } from './utils/haptics';
 import { toLocalDateStr } from './utils/dateHelpers';
 
@@ -558,12 +559,13 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
       </div>
       )}
 
-      {/* Drag ghost */}
-      {ghost && (() => {
+      {/* Drag ghost — portalled to body so a transformed ancestor (e.g. the
+          onboarding slide wrapper) can't offset its fixed positioning. */}
+      {ghost && createPortal((() => {
         const c = CATS[ghost.pill.cat];
         return (
           <div
-            className="fixed z-[100] pointer-events-none inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-semibold"
+            className="fixed z-[9998] pointer-events-none inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-semibold"
             style={{
               left: ghost.x, top: ghost.y,
               transform: 'translate(-50%, -50%) scale(1.08)',
@@ -575,15 +577,16 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
             <span style={{ fontSize: 11 }}>{c.emoji}</span>{chipLabel(ghost.pill)}
           </div>
         );
-      })()}
+      })(), document.body)}
 
-      {/* Type picker sheet */}
-      {picker && (() => {
+      {/* Type picker sheet — portalled to body so it overlays the full viewport
+          above any fixed footer (a transform ancestor otherwise traps it). */}
+      {picker && createPortal((() => {
         const c = CATS[picker.cat];
         const opts = [null, ...TYPE_OPTIONS[picker.cat]];
         return (
           <div
-            className="fixed inset-0 z-[110] flex items-end"
+            className="fixed inset-0 z-[9999] flex items-end"
             style={{ backgroundColor: 'rgba(0,0,0,0.55)' }}
             onClick={() => setPicker(null)}
           >
@@ -619,7 +622,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
             </div>
           </div>
         );
-      })()}
+      })(), document.body)}
     </div>
   );
 }

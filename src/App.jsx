@@ -11,6 +11,7 @@ import Friends from './Friends';
 import ActivityFeed from './ActivityFeed';
 import { ChallengeFriendModal, ChallengesSection, ChallengeActivityPickerModal, ChallengeApplyPastActivityModal } from './Challenges';
 import ChallengesTab from './ChallengesTab';
+import WeeklyPlanner from './WeeklyPlanner';
 import SettingsPage from './Settings';
 import ProfilePage from './Profile';
 import { isChallengeable, getChallengesForUser, activityMatchesChallengeRule, describeMatchRule, evaluateActivityAgainstChallenge, applyOptimisticChallengeCompletions, applyChallengeIntent } from './services/challengeService';
@@ -11104,7 +11105,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss, distanceUnit = 'mi
 
 // Home Tab - Simplified
 
-const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeCountsChange, onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, optimisticChallengeCompletions = new Map(), onStartChallengeWorkout, onApplyPastActivityToChallenge, onChallengeDetailOpenChange, openActivityTarget = null, showHkEmptyHint = false, onDismissHkEmptyHint = () => {} }) => {
+const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onSaveWeeklyPlan, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeCountsChange, onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, optimisticChallengeCompletions = new Map(), onStartChallengeWorkout, onApplyPastActivityToChallenge, onChallengeDetailOpenChange, openActivityTarget = null, showHkEmptyHint = false, onDismissHkEmptyHint = () => {} }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
   const [dismissConfirmWorkouts, setDismissConfirmWorkouts] = useState(null); // Workouts pending dismiss confirmation
@@ -11796,6 +11797,14 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
           </div>
         </div>
       </div>
+
+      {/* Weekly Planner - drag cardio/strength/recovery onto the days you'll train */}
+      <WeeklyPlanner
+        goals={userData?.goals}
+        activities={activities}
+        weeklyPlan={userData?.weeklyPlan}
+        onSave={onSaveWeeklyPlan}
+      />
 
       {/* Auto-Imported Summary Banner - Shows after onboarding auto-import */}
       {autoImportedCount > 0 && (
@@ -16349,6 +16358,15 @@ export default function DaySevenApp() {
     setShowAddActivity(true);
   };
 
+  // Persist the user's weekly plan (drag/tap planner on Home).
+  const handleSaveWeeklyPlan = (weeklyPlan) => {
+    setUserData(prev => ({ ...prev, weeklyPlan }));
+    if (user?.uid) {
+      updateUserProfile(user.uid, { weeklyPlan }).catch(err =>
+        console.log('[WeeklyPlan] save failed:', err?.message));
+    }
+  };
+
   // Refresh active accepted challenges whenever the AddActivityModal or FinishWorkoutModal opens —
   // both modals need this list to enforce photo-required challenges at save. One-shot fetch (not
   // a subscription) because the user's accepted challenges don't churn during a single save session.
@@ -17751,6 +17769,7 @@ export default function DaySevenApp() {
               {activeTab === 'home' && (
                 <HomeTab
                   onAddActivity={handleAddActivity}
+                  onSaveWeeklyPlan={handleSaveWeeklyPlan}
                   onCaptureLocation={handleCaptureLocation}
                   pendingSync={(healthKitData.pendingWorkouts || []).filter(w => {
                     // Filter out dismissed workouts

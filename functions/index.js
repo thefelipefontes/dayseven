@@ -298,6 +298,7 @@ const NotificationType = {
   STREAK_REMINDER: 'streak_reminder',
   GOAL_REMINDER: 'goal_reminder',
   DAILY_REMINDER: 'daily_reminder',
+  PLAN_WEEK_REMINDER: 'plan_week_reminder',
   STREAK_MILESTONE: 'streak_milestone',
   GOAL_ACHIEVED: 'goal_achieved',
   WEEKLY_SUMMARY: 'weekly_summary',
@@ -947,6 +948,27 @@ exports.sendDailyReminders = onSchedule(
       const { time: userLocalTime, dateStr: userToday, dayOfWeek } = getUserLocalTime(prefs.timezone);
 
       if (reminderTime !== userLocalTime) continue;
+
+      // Sunday: nudge users who haven't planned this week to set it up. Fires at
+      // the user's normal reminder time (so it never double-sends alongside the
+      // daily nudge) and takes priority over it. Skips users whose plan repeats
+      // weekly or who already planned this week, and users with no goals set.
+      if (dayOfWeek === 0) {
+        const g = userData.goals || {};
+        const totalGoal = (g.liftsPerWeek || 0) + (g.cardioPerWeek || 0) + (g.recoveryPerWeek || 0);
+        const wp = userData.weeklyPlan;
+        // On Sunday, the current week's key IS today's date.
+        const alreadyPlanned = !!(wp && (wp.repeatWeekly || (wp.weeks && wp.weeks[userToday])));
+        if (totalGoal > 0 && !alreadyPlanned) {
+          await sendNotificationToUser(
+            userId,
+            'Plan your week 🗓️',
+            "Drop your sessions on the days you'll train and we'll keep you on track.",
+            { type: NotificationType.PLAN_WEEK_REMINDER }
+          );
+          continue;
+        }
+      }
 
       // Categories already satisfied today (in the user's timezone).
       // Activities are stored as an array in the user document.

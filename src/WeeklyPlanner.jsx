@@ -131,6 +131,8 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
   const firstRender = useRef(true);
   const saveTimer = useRef(null);
   const pendingSave = useRef(false);
+  const userEdited = useRef(false);  // true once the user drags/taps/toggles
+  const adopted = useRef(false);     // true once we've synced the loaded plan in
   const latest = useRef({ plan, repeatWeekly });
   latest.current = { plan, repeatWeekly };
 
@@ -157,6 +159,23 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
     saveTimer.current = setTimeout(() => persistRef.current?.(), 700);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, [plan, repeatWeekly]);
+
+  // The plan state initializes once, but on a fresh launch the saved plan can
+  // arrive as a prop AFTER this mounts (the Home loading gate is a fixed timer,
+  // not tied to the profile load). Adopt it when it appears — but only until the
+  // user starts editing, so we never clobber an in-progress plan. firstRender is
+  // re-armed so the adoption itself doesn't trigger a redundant save.
+  useEffect(() => {
+    if (userEdited.current || adopted.current) return;
+    const wp = weeklyPlan || {};
+    const source = (wp.weeks && wp.weeks[weekKey]) ? wp.weeks[weekKey]
+      : (wp.repeatWeekly && wp.template) ? wp.template : null;
+    if (!source) return;
+    adopted.current = true;
+    firstRender.current = true;
+    setPlan(normalizePlan(source));
+    setRepeatWeekly(!!wp.repeatWeekly);
+  }, [weeklyPlan, weekKey]);
 
   // Flush a still-pending debounced save on unmount, so a quick Continue (in
   // onboarding) or tab switch (on Home) right after a drag doesn't drop the
@@ -213,6 +232,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
   // (and its type); tray→day always creates a fresh generic pill.
   const movePill = useCallback((pill, from, fromIndex, to) => {
     if (from === to) return;
+    userEdited.current = true;
     setPlan(prev => {
       const next = { ...prev };
       let moving = { cat: pill.cat, type: pill.type ?? null };
@@ -231,6 +251,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
   }, []);
 
   const setPillType = (day, index, type) => {
+    userEdited.current = true;
     setPlan(prev => {
       const arr = [...(prev[day] || [])];
       if (!arr[index]) return prev;
@@ -541,7 +562,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
         {/* Footer: repeat toggle + type hint share one row (keeps the top tight) */}
         <div className="flex items-center justify-between gap-2 mt-3 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
           <button
-            onClick={() => { triggerHaptic(ImpactStyle.Light); setRepeatWeekly(v => !v); }}
+            onClick={() => { triggerHaptic(ImpactStyle.Light); userEdited.current = true; setRepeatWeekly(v => !v); }}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full transition-all active:scale-95 shrink-0"
             style={{
               backgroundColor: repeatWeekly ? 'rgba(48,209,88,0.12)' : 'rgba(255,255,255,0.05)',

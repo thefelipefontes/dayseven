@@ -13727,6 +13727,11 @@ export default function DaySevenApp() {
           }));
         }
 
+        // Sync the saved weekly plan
+        if (freshProfile?.weeklyPlan) {
+          setUserData(prev => ({ ...prev, weeklyPlan: freshProfile.weeklyPlan }));
+        }
+
         // Sync weekCelebrations
         if (freshProfile?.weekCelebrations?.week === currentWeekKey) {
           setWeekCelebrations(freshProfile.weekCelebrations);
@@ -14569,6 +14574,10 @@ export default function DaySevenApp() {
                 stepsGoal: profileForStreaks.streaks.stepsGoal ?? prev.streaks.stepsGoal
               }
             }));
+          }
+          // Load the saved weekly plan (Home planner) so it survives relaunch.
+          if (profileForStreaks?.weeklyPlan) {
+            setUserData(prev => ({ ...prev, weeklyPlan: profileForStreaks.weeklyPlan }));
           }
           // Load streak shield data
           if (profileForStreaks?.streakShield) {

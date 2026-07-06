@@ -25,7 +25,7 @@ import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
 import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, fetchHealthDataForDate, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, pushDistanceUnitToWatch, fetchWorkoutRoute, updateWidgetData, updateLiveActivityState, startWatchWorkoutLiveActivity, endAllLiveActivities, checkActiveLiveActivity, showLocationDeniedDialog } from './services/healthService';
 import NotificationSettings from './NotificationSettings';
-import { initializePushNotifications, handleNotificationNavigation, removeFCMToken, clearBadge, clearAllNotifications, incrementBadge, shouldShowNotification, getNotificationPreferences, logNotificationOpen } from './services/notificationService';
+import { initializePushNotifications, handleNotificationNavigation, removeFCMToken, clearBadge, clearAllNotifications, shouldShowNotification, getNotificationPreferences, logNotificationOpen } from './services/notificationService';
 import { initializeRevenueCat, loginRevenueCat, checkProStatus, addCustomerInfoListener, logoutRevenueCat, presentPaywall, presentCustomerCenter, restorePurchases, setDevAuthEmail, getOfferings } from './services/subscriptionService';
 import ActivityIcon, { ICON_PICKER_CATEGORIES, CATEGORY_COLORS as ICON_CATEGORY_COLORS } from './components/ActivityIcon';
 import RouteMapView, { ll2px, bestFit, makeTiles, RouteOverlay, TileLayer, TILE } from './components/RouteMapView';
@@ -14960,7 +14960,11 @@ export default function DaySevenApp() {
             setToastType('success');
             setShowToast(true);
           }
-          incrementBadge();
+          // Push arrived while the app is in the foreground — the user is looking
+          // at it (we just showed an in-app toast), so clear the badge and
+          // re-baseline the server count rather than bumping the icon badge.
+          clearBadge();
+          if (uid) updateUserProfile(uid, { unreadBadgeCount: 0 }).catch(() => {});
 
           const notifType = notification?.notification?.data?.type || notification?.data?.type;
           const socialTypes = ['reaction', 'comment', 'reply', 'friend_request', 'friend_accepted', 'friend_workout'];
@@ -15439,9 +15443,14 @@ export default function DaySevenApp() {
       if (document.visibilityState === 'visible') {
         // Skip refresh when returning from photo picker to prevent re-render glitch
         if (photoPickerActive) return;
-        // Clear badge and delivered notifications when app returns to foreground
+        // Clear badge and delivered notifications when app returns to foreground.
+        // Also re-baseline the server-side unread count: the Cloud Function stamps
+        // the app-icon badge from users/{uid}.unreadBadgeCount, so if we only clear
+        // the OS badge (not the Firestore count), the count keeps accumulating and
+        // the next push re-stamps a phantom badge that maps to nothing in-app.
         clearBadge();
         clearAllNotifications();
+        if (user?.uid) updateUserProfile(user.uid, { unreadBadgeCount: 0 }).catch(() => {});
         refreshHealthKitData();
         // Re-sync workouts when returning to foreground.
         // Demo accounts: skip — local mocks (and any newly-logged demo workouts)

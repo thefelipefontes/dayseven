@@ -12282,146 +12282,144 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
           if (sorted.length === 1) {
             const head = sorted[0];
             return (
-              <button
-                onClick={() => {
-                  triggerHaptic(ImpactStyle.Light);
-                  setSelectedActivity(head);
-                }}
-                className="relative w-full p-3 rounded-xl mb-3 flex items-center gap-3 text-left"
-                style={{
-                  backgroundColor: 'rgba(0,209,255,0.10)',
-                  border: '1px solid rgba(0,209,255,0.3)'
-                }}
-              >
-                <span className="text-xl">💪</span>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-semibold" style={{ color: '#00D1FF' }}>
-                    Add muscle groups to your strength workout
-                  </div>
-                  <div className="text-[10px] text-gray-400 mt-0.5 truncate">
-                    {formatRow(head)}
-                  </div>
-                  {(head.calories || head.avgHr || head.maxHr) && (
-                    <div className="flex items-center gap-2 text-[10px] text-gray-400 mt-1">
-                      {head.calories && (
-                        <span className="flex items-center gap-1">
-                          <span className="text-orange-400">🔥</span>
-                          <span>{head.calories} cal</span>
-                        </span>
-                      )}
-                      {(head.avgHr || head.maxHr) && (
-                        <span className="flex items-center gap-1">
-                          <span className="text-red-400">♥</span>
-                          {head.avgHr && <span>{head.avgHr} avg</span>}
-                          {head.avgHr && head.maxHr && <span className="text-gray-600">•</span>}
-                          {head.maxHr && <span>{head.maxHr} max</span>}
-                        </span>
-                      )}
+              <SwipeableProvider>
+                <div className="mb-3">
+                  <SwipeableActivityItem
+                    activity={head}
+                    onDelete={(a) => onDeleteActivity && onDeleteActivity(a.id)}
+                    onEdit={onEditActivity}
+                  >
+                    <div
+                      onClick={() => { triggerHaptic(ImpactStyle.Light); setSelectedActivity(head); }}
+                      className="w-full p-3 flex items-center gap-3 text-left cursor-pointer"
+                      style={{ backgroundColor: 'rgba(0,209,255,0.10)', border: '1px solid rgba(0,209,255,0.3)' }}
+                    >
+                      <span className="text-xl">💪</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-semibold" style={{ color: '#00D1FF' }}>
+                          Add muscle groups to your strength workout
+                        </div>
+                        <div className="text-[10px] text-gray-400 mt-0.5 truncate">
+                          {formatRow(head)}
+                        </div>
+                        {(head.calories || head.avgHr || head.maxHr) && (
+                          <div className="flex items-center gap-2 text-[10px] text-gray-400 mt-1">
+                            {head.calories && (
+                              <span className="flex items-center gap-1">
+                                <span className="text-orange-400">🔥</span>
+                                <span>{head.calories} cal</span>
+                              </span>
+                            )}
+                            {(head.avgHr || head.maxHr) && (
+                              <span className="flex items-center gap-1">
+                                <span className="text-red-400">♥</span>
+                                {head.avgHr && <span>{head.avgHr} avg</span>}
+                                {head.avgHr && head.maxHr && <span className="text-gray-600">•</span>}
+                                {head.maxHr && <span>{head.maxHr} max</span>}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <svg className="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                      </svg>
                     </div>
-                  )}
+                  </SwipeableActivityItem>
                 </div>
-                <svg className="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-                </svg>
-              </button>
+              </SwipeableProvider>
             );
           }
 
           // Multi entry — parent banner that toggles to reveal the rows.
           return (
-            <div className="mb-3">
-              <button
-                onClick={() => {
-                  triggerHaptic(ImpactStyle.Light);
-                  setNeedsDetailsExpanded(prev => !prev);
-                }}
-                className="relative w-full p-3 rounded-xl flex items-center gap-3 text-left"
-                style={{
-                  backgroundColor: 'rgba(0,209,255,0.10)',
-                  border: '1px solid rgba(0,209,255,0.3)',
-                  borderBottomLeftRadius: needsDetailsExpanded ? 0 : 12,
-                  borderBottomRightRadius: needsDetailsExpanded ? 0 : 12,
-                }}
-              >
-                <span className="text-xl">💪</span>
-                <div className="flex-1">
-                  <div className="text-xs font-semibold" style={{ color: '#00D1FF' }}>
-                    {sorted.length} strength workouts need details
-                  </div>
-                  <div className="text-[10px] text-gray-400 mt-0.5">
-                    Tap to {needsDetailsExpanded ? 'hide' : 'pick which to edit'}
-                  </div>
-                </div>
-                <svg
-                  className="w-4 h-4 text-gray-500 flex-shrink-0 transition-transform duration-200"
-                  style={{ transform: needsDetailsExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
-                  fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-                </svg>
-              </button>
-              {needsDetailsExpanded && (
-                <div
-                  className="rounded-b-xl overflow-hidden"
+            <SwipeableProvider>
+              <div className="mb-3">
+                <button
+                  onClick={() => {
+                    triggerHaptic(ImpactStyle.Light);
+                    setNeedsDetailsExpanded(prev => !prev);
+                  }}
+                  className="relative w-full p-3 rounded-xl flex items-center gap-3 text-left"
                   style={{
-                    backgroundColor: 'rgba(0,209,255,0.05)',
+                    backgroundColor: 'rgba(0,209,255,0.10)',
                     border: '1px solid rgba(0,209,255,0.3)',
-                    borderTop: 'none',
                   }}
                 >
-                  {sorted.map((item, idx) => {
-                    const durationLabel = item.duration
-                      ? (item.duration >= 60
-                          ? `${Math.floor(item.duration / 60)}h ${item.duration % 60}m`
-                          : `${item.duration} min`)
-                      : null;
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => {
-                          triggerHaptic(ImpactStyle.Light);
-                          setSelectedActivity(item);
-                        }}
-                        className="w-full px-3 py-2.5 flex items-center gap-3 text-left"
-                        style={{
-                          borderTop: idx === 0 ? '1px solid rgba(0,209,255,0.15)' : '1px solid rgba(0,209,255,0.1)',
-                        }}
-                      >
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs text-white truncate">
-                            {item.strengthType || item.subtype || 'Strength Training'}
-                          </div>
-                          <div className="text-[10px] text-gray-500 mt-0.5 truncate">
-                            {[durationLabel, item.time].filter(Boolean).join(' · ')}
-                          </div>
-                          {(item.calories || item.avgHr || item.maxHr) && (
-                            <div className="flex items-center gap-2 text-[10px] text-gray-400 mt-1">
-                              {item.calories && (
-                                <span className="flex items-center gap-1">
-                                  <span className="text-orange-400">🔥</span>
-                                  <span>{item.calories} cal</span>
-                                </span>
-                              )}
-                              {(item.avgHr || item.maxHr) && (
-                                <span className="flex items-center gap-1">
-                                  <span className="text-red-400">♥</span>
-                                  {item.avgHr && <span>{item.avgHr} avg</span>}
-                                  {item.avgHr && item.maxHr && <span className="text-gray-600">•</span>}
-                                  {item.maxHr && <span>{item.maxHr} max</span>}
-                                </span>
+                  <span className="text-xl">💪</span>
+                  <div className="flex-1">
+                    <div className="text-xs font-semibold" style={{ color: '#00D1FF' }}>
+                      {sorted.length} strength workouts need details
+                    </div>
+                    <div className="text-[10px] text-gray-400 mt-0.5">
+                      Tap to {needsDetailsExpanded ? 'hide' : 'pick which to edit'} · swipe a row to delete
+                    </div>
+                  </div>
+                  <svg
+                    className="w-4 h-4 text-gray-500 flex-shrink-0 transition-transform duration-200"
+                    style={{ transform: needsDetailsExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                  </svg>
+                </button>
+                {needsDetailsExpanded && (
+                  <div className="space-y-2 mt-2">
+                    {sorted.map((item) => {
+                      const durationLabel = item.duration
+                        ? (item.duration >= 60
+                            ? `${Math.floor(item.duration / 60)}h ${item.duration % 60}m`
+                            : `${item.duration} min`)
+                        : null;
+                      return (
+                        <SwipeableActivityItem
+                          key={item.id}
+                          activity={item}
+                          onDelete={(a) => onDeleteActivity && onDeleteActivity(a.id)}
+                          onEdit={onEditActivity}
+                        >
+                          <div
+                            onClick={() => { triggerHaptic(ImpactStyle.Light); setSelectedActivity(item); }}
+                            className="w-full px-3 py-2.5 flex items-center gap-3 text-left cursor-pointer"
+                            style={{ backgroundColor: 'rgba(0,209,255,0.08)', border: '1px solid rgba(0,209,255,0.2)' }}
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="text-xs text-white truncate">
+                                {item.strengthType || item.subtype || 'Strength Training'}
+                              </div>
+                              <div className="text-[10px] text-gray-500 mt-0.5 truncate">
+                                {[durationLabel, item.time].filter(Boolean).join(' · ')}
+                              </div>
+                              {(item.calories || item.avgHr || item.maxHr) && (
+                                <div className="flex items-center gap-2 text-[10px] text-gray-400 mt-1">
+                                  {item.calories && (
+                                    <span className="flex items-center gap-1">
+                                      <span className="text-orange-400">🔥</span>
+                                      <span>{item.calories} cal</span>
+                                    </span>
+                                  )}
+                                  {(item.avgHr || item.maxHr) && (
+                                    <span className="flex items-center gap-1">
+                                      <span className="text-red-400">♥</span>
+                                      {item.avgHr && <span>{item.avgHr} avg</span>}
+                                      {item.avgHr && item.maxHr && <span className="text-gray-600">•</span>}
+                                      {item.maxHr && <span>{item.maxHr} max</span>}
+                                    </span>
+                                  )}
+                                </div>
                               )}
                             </div>
-                          )}
-                        </div>
-                        <svg className="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-                        </svg>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+                            <svg className="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                            </svg>
+                          </div>
+                        </SwipeableActivityItem>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </SwipeableProvider>
           );
         })()}
 
@@ -15107,9 +15105,19 @@ export default function DaySevenApp() {
           }
         }
 
-        // --- Post-onboarding: auto-import ALL workouts silently ---
+        // --- Post-onboarding: auto-import only the CURRENT WEEK's workouts ---
+        // A brand-new user shouldn't pull in pre-onboarding history — that would
+        // flood "needs details" with old workouts. Anything before this week's
+        // Sunday is ignored (it never gets auto-imported and never falls through
+        // to the normal notify/auto-log flow below).
         if (justOnboardedRef.current && newWorkouts.length > 0) {
-          const autoImportedActivities = newWorkouts.map((workout, i) => ({
+          const onbWeekStart = new Date();
+          onbWeekStart.setDate(onbWeekStart.getDate() - onbWeekStart.getDay());
+          onbWeekStart.setHours(0, 0, 0, 0);
+          const onbWeekStartStr = toLocalDateStr(onbWeekStart);
+          const onboardingWorkouts = newWorkouts.filter(w => w.date && w.date >= onbWeekStartStr);
+
+          const autoImportedActivities = onboardingWorkouts.map((workout, i) => ({
             ...workout,
             id: Date.now() + i,
             time: workout.time || new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
@@ -15141,7 +15149,7 @@ export default function DaySevenApp() {
 
           setCalendarData(prev => {
             const updated = { ...prev };
-            for (const workout of newWorkouts) {
+            for (const workout of onboardingWorkouts) {
               const dateKey = workout.date;
               if (!updated[dateKey]) updated[dateKey] = [];
               updated[dateKey] = [...updated[dateKey], {
@@ -15167,7 +15175,7 @@ export default function DaySevenApp() {
           }));
 
           // Show summary banner on homescreen
-          setAutoImportedCount(newWorkouts.length);
+          setAutoImportedCount(onboardingWorkouts.length);
 
           justOnboardedRef.current = false;
         } else {

@@ -12983,6 +12983,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         activities={activities}
         weeklyPlan={userData?.weeklyPlan}
         onSave={onSaveWeeklyPlan}
+        onLogActivity={onAddActivity}
       />
 
       <ChallengesSection

@@ -51,6 +51,35 @@ const TYPE_SHORT = {
 };
 const chipLabel = (pill) => pill.type ? (TYPE_SHORT[pill.type] || pill.type) : CATS[pill.cat].label;
 
+// Map a strength split to the muscle groups the log form prefills.
+const STRENGTH_FOCUS = {
+  'Full Body': ['Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps', 'Quads', 'Hamstrings', 'Glutes', 'Adductors', 'Calves', 'Abs'],
+  Upper: ['Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps'],
+  Lower: ['Quads', 'Hamstrings', 'Glutes', 'Adductors', 'Calves'],
+  Push: ['Chest', 'Shoulders', 'Triceps'],
+  Pull: ['Back', 'Biceps'],
+  Core: ['Abs'],
+};
+// Cardio pill type → the app's activity type name (e.g. Cycling → 'Cycle').
+const CARDIO_ACTIVITY_TYPE = {
+  Running: 'Running', Cycling: 'Cycle', Swimming: 'Swimming', Rowing: 'Rowing',
+  Walking: 'Walking', 'Stair Climbing': 'Stair Climbing', Elliptical: 'Elliptical', Sports: 'Sports',
+};
+
+// Build a pre-filled activity (for the add-activity modal) from a planned pill,
+// so logging it satisfies that day's planned session. Generic pills fall back
+// to a sensible default type the user can change in the modal.
+const pillToActivity = (pill, date) => {
+  const base = { date };
+  if (pill.cat === 'strength') {
+    return { ...base, type: 'Strength Training', strengthType: 'Weightlifting', countToward: 'lifting', focusAreas: pill.type ? (STRENGTH_FOCUS[pill.type] || []) : [] };
+  }
+  if (pill.cat === 'cardio') {
+    return { ...base, type: pill.type ? (CARDIO_ACTIVITY_TYPE[pill.type] || 'Running') : 'Running', countToward: 'cardio' };
+  }
+  return { ...base, type: pill.type || 'Yoga', countToward: 'recovery' };
+};
+
 const emptyPlan = () => DAYS.reduce((acc, d) => { acc[d.key] = []; return acc; }, {});
 
 // Upgrade a stored entry (bare string OR {cat,type}) to a normalized pill,
@@ -88,7 +117,7 @@ const activityCat = (a) => {
   return c; // 'lifting' | 'cardio' | 'recovery' | 'lifting+cardio' | 'other'
 };
 
-export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSave }) {
+export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSave, onLogActivity }) {
   // --- Week boundaries (Sunday-based) ---------------------------------------
   const { weekKey, dayDates, todayKey, rangeLabel } = useMemo(() => {
     const now = new Date();
@@ -605,6 +634,11 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
       {picker && createPortal((() => {
         const c = CATS[picker.cat];
         const opts = [null, ...TYPE_OPTIONS[picker.cat]];
+        const dayIdx = DAYS.findIndex((d) => d.key === picker.day);
+        const todayIdx = DAYS.findIndex((d) => d.key === todayKey);
+        // Only today or earlier this week can be logged — you can't log a future workout.
+        const canLog = !!onLogActivity && dayIdx <= todayIdx;
+        const dayLabel = DAYS[dayIdx]?.label;
         return (
           <div
             className="fixed inset-0 z-[9999] flex items-end"
@@ -618,8 +652,23 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
             >
               <div className="flex items-center gap-2 mb-3">
                 <span style={{ fontSize: 15 }}>{c.emoji}</span>
-                <span className="text-white font-semibold text-[15px]">Pick a {c.label.toLowerCase()} type</span>
+                <span className="text-white font-semibold text-[15px]">{c.label}{dayLabel ? ` · ${dayLabel}` : ''}</span>
               </div>
+              {canLog && (
+                <button
+                  onClick={() => {
+                    const pill = plan[picker.day]?.[picker.index] || { cat: picker.cat, type: null };
+                    const date = dayDates[dayIdx];
+                    setPicker(null);
+                    onLogActivity(pillToActivity(pill, date));
+                  }}
+                  className="w-full flex items-center justify-center gap-2 rounded-xl py-3 mb-4 text-[14px] font-semibold transition-transform active:scale-95"
+                  style={{ backgroundColor: c.color, color: '#0A0A0A' }}
+                >
+                  <span style={{ fontSize: 13 }}>✓</span> Log this {c.label.toLowerCase()} workout
+                </button>
+              )}
+              <div className="text-[11px] mb-2" style={{ color: '#777' }}>Set the type</div>
               <div className="flex flex-wrap gap-2">
                 {opts.map((t) => {
                   const active = pickerType === t;

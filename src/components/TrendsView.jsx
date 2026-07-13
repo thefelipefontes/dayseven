@@ -725,7 +725,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
                     {fullDayActivities.map((activity, idx) => (
                       <div key={idx} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                         <div className="flex items-center gap-2">
-                          <ActivityIcon type={activity.type} subtype={activity.subtype} size={14} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} />
+                          <ActivityIcon type={activity.type} subtype={activity.subtype} size={14} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} countToward={activity.countToward} customActivityCategory={activity.customActivityCategory} />
                           <span className="text-sm text-white font-medium">
                             {activity.subtype || activity.type}
                           </span>

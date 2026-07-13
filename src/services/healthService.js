@@ -361,18 +361,20 @@ function convertWorkoutToActivity(workout, resolvedTypes = {}) {
     hour12: true
   });
 
-  // Calculate duration in minutes
-  // Check if workout already has a duration field (in seconds from HealthKit)
-  let durationMinutes;
+  // Calculate duration. HealthKit reports seconds; keep whole minutes in `duration`
+  // (backwards-compatible with every minute-based consumer) plus the leftover seconds
+  // in `durationSeconds` so cardio pace stays accurate instead of rounding to the minute.
+  let totalDurationSeconds;
   if (workout.duration !== undefined && workout.duration !== null) {
     // Duration from HealthKit is typically in seconds
-    durationMinutes = Math.round(workout.duration / 60);
+    totalDurationSeconds = Math.round(workout.duration);
   } else {
     // Fallback: calculate from start/end dates
     const endDate = new Date(workout.endDate);
-    const durationMs = endDate - startDate;
-    durationMinutes = Math.round(durationMs / (1000 * 60));
+    totalDurationSeconds = Math.round((endDate - startDate) / 1000);
   }
+  const durationMinutes = Math.floor(totalDurationSeconds / 60);
+  const durationSeconds = totalDurationSeconds % 60;
 
   // Get calories (active energy burned)
   const calories = workout.totalEnergyBurned
@@ -389,8 +391,8 @@ function convertWorkoutToActivity(workout, resolvedTypes = {}) {
 
   // Calculate pace for running/cycling (minutes per mile)
   let pace = null;
-  if (distance && distance > 0 && durationMinutes > 0) {
-    const paceMinutes = durationMinutes / distance;
+  if (distance && distance > 0 && totalDurationSeconds > 0) {
+    const paceMinutes = (totalDurationSeconds / 60) / distance;
     const paceMin = Math.floor(paceMinutes);
     const paceSec = Math.round((paceMinutes - paceMin) * 60);
     pace = `${paceMin}:${paceSec.toString().padStart(2, '0')}`;
@@ -409,6 +411,7 @@ function convertWorkoutToActivity(workout, resolvedTypes = {}) {
     date: dateStr,
     time: timeStr,
     duration: durationMinutes,
+    durationSeconds: durationSeconds || undefined,
     source: 'healthkit',
     sourceDevice: workout.sourceName || 'Apple Health',
     healthKitUUID: uniqueId, // Unique identifier for linking

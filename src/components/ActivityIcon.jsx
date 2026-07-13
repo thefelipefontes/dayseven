@@ -409,14 +409,31 @@ Object.entries(LEGACY_ICON_NAMES).forEach(([name, Icon]) => {
  * @param {string} [subtype] - Activity subtype (e.g., 'Basketball' for Sports)
  * @param {string} [sportEmoji] - Sport emoji fallback (for unmapped "Sports" subtypes)
  */
-export default function ActivityIcon({ type, strengthType, subtype, size = 18, color, className = '', customEmoji, customIcon, sportEmoji }) {
+// Color implied by an activity's chosen goal category (countToward / customActivityCategory),
+// used to color otherwise-generic "Other"/uncategorized icons (e.g. a cold shower saved as
+// Recovery → blue). Returns null when there's no explicit goal category.
+function goalCategoryColor(countToward, customActivityCategory) {
+  const raw = countToward || customActivityCategory;
+  if (!raw) return null;
+  if (raw === 'lifting' || raw === 'strength') return CATEGORY_COLORS.strength;
+  if (raw === 'lifting+cardio') return CATEGORY_COLORS.hybrid;
+  if (raw === 'cardio') return CATEGORY_COLORS.cardio;
+  if (raw === 'recovery') return CATEGORY_COLORS.recovery;
+  if (raw === 'warmup') return '#FFD60A';
+  return null;
+}
+
+export default function ActivityIcon({ type, strengthType, subtype, size = 18, color, className = '', customEmoji, customIcon, sportEmoji, countToward, customActivityCategory }) {
+  // Goal-category color only overrides where the type itself implies no color (generic
+  // "Other" grey / uncategorized yellow); built-in types keep their own category color.
+  const goalColor = goalCategoryColor(countToward, customActivityCategory);
   // Custom icon for "Other" activities OR uncategorized Apple Health types (e.g., Tai Chi, Dance)
   // For types without a built-in ICON_MAP entry, use customIcon if provided
   const hasBuiltInIcon = ICON_MAP[type];
   if (customIcon && ICON_NAME_MAP[customIcon] && (type === 'Other' || !hasBuiltInIcon)) {
     const CustomIconComponent = ICON_NAME_MAP[customIcon];
-    // Uncategorized Apple Health types default to yellow; manual "Other" stays grey
-    const defaultColor = (type === 'Other') ? CATEGORY_COLORS.other : CATEGORY_COLORS.uncategorized;
+    // Prefer the saved goal-category color; else uncategorized→yellow, manual "Other"→grey.
+    const defaultColor = goalColor || ((type === 'Other') ? CATEGORY_COLORS.other : CATEGORY_COLORS.uncategorized);
     return (
       <CustomIconComponent
         size={size}
@@ -454,11 +471,11 @@ export default function ActivityIcon({ type, strengthType, subtype, size = 18, c
 
   const mapping = ICON_MAP[type];
   if (!mapping) {
-    // Fallback for unknown/uncategorized types — heartbeat pulse icon in yellow
+    // Fallback for unknown/uncategorized types — heartbeat pulse icon, goal color if known else yellow
     return (
       <IconHeartbeat
         size={size}
-        color={color || CATEGORY_COLORS.uncategorized}
+        color={color || goalColor || CATEGORY_COLORS.uncategorized}
         className={className}
         strokeWidth={2}
       />
@@ -466,10 +483,14 @@ export default function ActivityIcon({ type, strengthType, subtype, size = 18, c
   }
 
   const { Icon, category } = mapping;
+  // Generic "Other"/uncategorized icons take the goal-category color when one is set.
+  const mappedColor = (goalColor && (category === 'other' || category === 'uncategorized'))
+    ? goalColor
+    : CATEGORY_COLORS[category];
   return (
     <Icon
       size={size}
-      color={color || CATEGORY_COLORS[category]}
+      color={color || mappedColor}
       className={className}
       strokeWidth={2}
     />

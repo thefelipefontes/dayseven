@@ -1260,11 +1260,23 @@ export default function ProfilePage(props) {
                       </span>
                       {dayActivities.length > 0 && (
                         <div className="flex gap-0.5 mt-0.5">
-                          {dayActivities.slice(0, 2).map((a, i) => (
-                            <div key={i} className="w-1 h-1 rounded-full"
-                              style={{ backgroundColor: a.type === 'Strength Training' ? '#00FF94' : a.type === 'Running' ? '#FF9500' : '#00D1FF' }}
-                            />
-                          ))}
+                          {dayActivities.slice(0, 2).map((a, i) => {
+                            // Color the dot by the activity's effective category so custom
+                            // "Other" activities (e.g. a cold shower saved as Recovery) show
+                            // the right color, not a hardcoded default.
+                            const cat = getActivityCategory(a);
+                            const dotColor = cat === 'lifting' ? '#00FF94'
+                              : cat === 'cardio' ? '#FF9500'
+                              : cat === 'recovery' ? '#00D1FF'
+                              : cat === 'lifting+cardio' ? '#C4B5FD'
+                              : cat === 'warmup' ? '#FFD60A'
+                              : '#9CA3AF';
+                            return (
+                              <div key={i} className="w-1 h-1 rounded-full"
+                                style={{ backgroundColor: dotColor }}
+                              />
+                            );
+                          })}
                         </div>
                       )}
                     </button>
@@ -1442,7 +1454,7 @@ export default function ProfilePage(props) {
                   className="w-full p-3 flex items-center gap-3 text-left rounded-xl transition-opacity active:opacity-70"
                   style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
                 >
-                  <ActivityIcon type={activity.type} subtype={activity.subtype} size={20} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} />
+                  <ActivityIcon type={activity.type} subtype={activity.subtype} size={20} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} countToward={activity.countToward} customActivityCategory={activity.customActivityCategory} />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-semibold truncate">{
                       activity.type === 'Other' ? (activity.subtype || 'Other')
@@ -1650,7 +1662,7 @@ export default function ProfilePage(props) {
                         >
                           <div className="flex justify-between items-start mb-2">
                             <div className="font-medium text-sm flex items-center gap-1">
-                              {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} />}
+                              {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} customActivityCategory={activity.customActivityCategory} />}
                               {activity.type === 'Strength Training'
                                 ? (() => { const areas = normalizeFocusAreas(activity.focusAreas || (activity.focusArea ? [activity.focusArea] : [])); return activity.subtype ? `${activity.subtype}${areas.length > 0 ? ` • ${areas.join(', ')}` : ''}` : (areas.length > 0 ? `Strength Training • ${areas.join(', ')}` : 'Strength Training'); })()
                                 : (activity.type === 'Other' ? (activity.subtype || 'Other') : (activity.subtype ? `${activity.type} • ${activity.subtype}` : activity.type))}
@@ -1698,7 +1710,7 @@ export default function ProfilePage(props) {
                         >
                           <div className="flex justify-between items-start mb-2">
                             <div className="font-medium text-sm flex items-center gap-1">
-                              {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} />}
+                              {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} customActivityCategory={activity.customActivityCategory} />}
                               {activity.type === 'Other' ? (activity.subtype || activity.type) : (activity.subtype ? `${activity.type} • ${activity.subtype}` : activity.type)}
                             </div>
                             <span className="text-gray-500 text-xs">›</span>
@@ -1744,7 +1756,7 @@ export default function ProfilePage(props) {
                         >
                           <div className="flex justify-between items-start mb-2">
                             <div className="font-medium text-sm flex items-center gap-1">
-                              {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} />}
+                              {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} customActivityCategory={activity.customActivityCategory} />}
                               {activity.type === 'Other' ? (activity.subtype || activity.type) : (activity.subtype ? `${activity.type} • ${activity.subtype}` : activity.type)}
                             </div>
                             <span className="text-gray-500 text-xs">›</span>
@@ -2427,7 +2439,7 @@ export default function ProfilePage(props) {
         };
 
         const getActivityIcon = (activity, size = 12) => {
-          return <ActivityIcon type={activity.type} subtype={activity.subtype} size={size} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} />;
+          return <ActivityIcon type={activity.type} subtype={activity.subtype} size={size} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} countToward={activity.countToward} customActivityCategory={activity.customActivityCategory} />;
         };
 
         // Get selected activities sorted by date for comparison

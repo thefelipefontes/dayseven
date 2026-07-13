@@ -297,7 +297,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div className="font-medium text-sm flex items-center gap-1">
-                        {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} />}
+                        {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} customActivityCategory={activity.customActivityCategory} />}
                         {activity.subtype || activity.type}
                       </div>
                       <div className="text-xs text-gray-500">{activity.date}</div>
@@ -345,7 +345,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div className="font-medium text-sm flex items-center gap-1">
-                        {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} />}
+                        {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} customActivityCategory={activity.customActivityCategory} />}
                         {activity.subtype || activity.type}
                       </div>
                       <div className="text-xs text-gray-500">{activity.date}</div>
@@ -393,7 +393,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div className="font-medium text-sm flex items-center gap-1">
-                        {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} />}
+                        {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} customActivityCategory={activity.customActivityCategory} />}
                         {activity.type === 'Other' ? (activity.subtype || activity.type) : activity.type}
                       </div>
                       <div className="text-xs text-gray-500">{activity.date}</div>

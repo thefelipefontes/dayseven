@@ -1726,7 +1726,15 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
     return Math.floor((now - start) / 60000); // Duration in minutes
   };
 
+  // Leftover seconds beyond the whole minutes — kept for accurate cardio pace.
+  const getDurationSeconds = () => {
+    if (!workout?.startTime) return 0;
+    const totalSec = Math.floor((Date.now() - new Date(workout.startTime).getTime()) / 1000);
+    return totalSec % 60;
+  };
+
   const duration = getDuration();
+  const durationSeconds = getDurationSeconds();
 
   // Format duration for display
   const formatDuration = (minutes) => {
@@ -2127,6 +2135,8 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
     const finalMaxHr = linkedWorkout?.maxHr || (maxHr ? parseInt(maxHr) : undefined);
     const finalDistance = linkedWorkout?.distance || (distance ? parseFloat(distance) : undefined);
     const finalDuration = linkedWorkout?.duration || duration;
+    // Seconds must track whichever duration source we used, so pace stays consistent.
+    const finalDurationSeconds = linkedWorkout?.duration ? (linkedWorkout?.durationSeconds || 0) : durationSeconds;
 
     // Use workout start time for the activity card time display
     const startTimeDisplay = workout.startTime
@@ -2138,6 +2148,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
       date: dateStr,
       time: startTimeDisplay,
       duration: finalDuration,
+      durationSeconds: finalDurationSeconds || undefined,
       notes: notes || undefined,
       calories: finalCalories,
       avgHr: finalAvgHr,
@@ -5753,8 +5764,10 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
   const distanceUnitLabel = _unit === 'km' ? 'km' : 'mi';
   const distanceUnitWord = _unit === 'km' ? 'kilometers' : 'miles';
 
-  // Pace per display unit: duration / distanceInUnit gives min per unit.
-  const pace = hasDistance && duration > 0 ? duration / distanceInUnit : 0;
+  // Pace per display unit: duration / distanceInUnit gives min per unit. Use the
+  // seconds-precise duration so a 25:30 run isn't rounded to a whole-minute pace.
+  const durationForPace = duration + (activity.durationSeconds || 0) / 60;
+  const pace = hasDistance && durationForPace > 0 ? durationForPace / distanceInUnit : 0;
   const paceMin = Math.floor(pace);
   const paceSec = Math.round((pace - paceMin) * 60);
   const paceStr = `${paceMin}:${String(paceSec).padStart(2, '0')}`;
@@ -7824,14 +7837,17 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
 };
 
 // Duration Picker Component
-const DurationPicker = ({ hours, minutes, onChange, disabled = false }) => {
+const DurationPicker = ({ hours, minutes, seconds = 0, onChange, disabled = false, showSeconds = false }) => {
   const hourOptions = Array.from({ length: 6 }, (_, i) => i); // 0-5 hours
   const minuteOptions = Array.from({ length: 60 }, (_, i) => i); // 0-59 minutes
+  const secondOptions = Array.from({ length: 60 }, (_, i) => i); // 0-59 seconds
 
   const hoursRef = useRef(null);
   const minutesRef = useRef(null);
+  const secondsRef = useRef(null);
   const hoursTouchRef = useRef({ startY: 0, startScroll: 0, lastY: 0, lastTime: 0, velocity: 0, animFrame: null, isTouching: false });
   const minutesTouchRef = useRef({ startY: 0, startScroll: 0, lastY: 0, lastTime: 0, velocity: 0, animFrame: null, isTouching: false });
+  const secondsTouchRef = useRef({ startY: 0, startScroll: 0, lastY: 0, lastTime: 0, velocity: 0, animFrame: null, isTouching: false });
 
   const itemHeight = 32;
   const visibleItems = 3;
@@ -7843,7 +7859,10 @@ const DurationPicker = ({ hours, minutes, onChange, disabled = false }) => {
     if (minutesRef.current && !minutesTouchRef.current.isTouching) {
       minutesRef.current.scrollTop = minutes * itemHeight;
     }
-  }, [hours, minutes]);
+    if (secondsRef.current && !secondsTouchRef.current.isTouching) {
+      secondsRef.current.scrollTop = seconds * itemHeight;
+    }
+  }, [hours, minutes, seconds]);
 
   const snapToNearest = (ref, options, type) => {
     if (!ref.current) return;
@@ -7852,9 +7871,11 @@ const DurationPicker = ({ hours, minutes, onChange, disabled = false }) => {
     const clampedIndex = Math.max(0, Math.min(options.length - 1, index));
     ref.current.scrollTo({ top: clampedIndex * itemHeight, behavior: 'smooth' });
     if (type === 'hours' && clampedIndex !== hours) {
-      onChange(clampedIndex, minutes);
-    } else if (type === 'minutes' && clampedIndex !== hours) {
-      onChange(hours, clampedIndex);
+      onChange(clampedIndex, minutes, seconds);
+    } else if (type === 'minutes' && clampedIndex !== minutes) {
+      onChange(hours, clampedIndex, seconds);
+    } else if (type === 'seconds' && clampedIndex !== seconds) {
+      onChange(hours, minutes, clampedIndex);
     }
   };
 
@@ -7864,9 +7885,11 @@ const DurationPicker = ({ hours, minutes, onChange, disabled = false }) => {
     const index = Math.round(scrollTop / itemHeight);
     const clampedIndex = Math.max(0, Math.min(options.length - 1, index));
     if (type === 'hours' && clampedIndex !== hours) {
-      onChange(clampedIndex, minutes);
+      onChange(clampedIndex, minutes, seconds);
     } else if (type === 'minutes' && clampedIndex !== minutes) {
-      onChange(hours, clampedIndex);
+      onChange(hours, clampedIndex, seconds);
+    } else if (type === 'seconds' && clampedIndex !== seconds) {
+      onChange(hours, minutes, clampedIndex);
     }
   };
 
@@ -7970,6 +7993,13 @@ const DurationPicker = ({ hours, minutes, onChange, disabled = false }) => {
       <div className="text-xl font-bold text-gray-500">:</div>
       {renderWheel(minutesRef, minutesTouchRef, minuteOptions, minutes, 'minutes', (v) => String(v).padStart(2, '0'))}
       <div className="text-xs text-gray-400">min</div>
+      {showSeconds && (
+        <>
+          <div className="text-xl font-bold text-gray-500">:</div>
+          {renderWheel(secondsRef, secondsTouchRef, secondOptions, seconds, 'seconds', (v) => String(v).padStart(2, '0'))}
+          <div className="text-xs text-gray-400">sec</div>
+        </>
+      )}
     </div>
   );
 };
@@ -8180,7 +8210,7 @@ const TimePicker = ({ value, onChange }) => {
 };
 
 // Add Activity Modal
-const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, defaultDate = null, userData = null, userProfile = null, onSaveCustomActivity = null, onSaveHKPreference = null, onStartWorkout = null, hasActiveWorkout = false, otherPendingWorkoutsCount = 0, onSeeOtherWorkouts = null, onBackToWorkoutPicker = null, dismissedWorkoutUUIDs = [], linkedWorkoutUUIDs = [], pendingWorkouts = [], activeChallenges = [], friendsByUid = {} }) => {
+const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, defaultDate = null, userData = null, userProfile = null, onSaveCustomActivity = null, onDeleteCustomActivity = null, onSaveHKPreference = null, onStartWorkout = null, hasActiveWorkout = false, otherPendingWorkoutsCount = 0, onSeeOtherWorkouts = null, onBackToWorkoutPicker = null, dismissedWorkoutUUIDs = [], linkedWorkoutUUIDs = [], pendingWorkouts = [], activeChallenges = [], friendsByUid = {} }) => {
   // `distance` state is canonically miles. The displayed input value is in the
   // user's preferred unit; convert at the input boundary only.
   const _distanceUnit = userProfile?.distanceUnit === 'km' ? 'km' : 'mi';
@@ -8229,6 +8259,10 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   const [distance, setDistance] = useState('');
   const [durationHours, setDurationHours] = useState(1);
   const [durationMinutes, setDurationMinutes] = useState(0);
+  // Seconds component of duration — matters for cardio pace accuracy (min/mi is thrown
+  // off when a 25:30 run is rounded to 25 or 26 min). Kept separate from `duration`
+  // (whole minutes) so all the minute-based displays/stats stay untouched.
+  const [durationSeconds, setDurationSeconds] = useState(0);
   // Optional metrics (auto-filled from Apple Health or manual)
   const [calories, setCalories] = useState('');
   const [avgHr, setAvgHr] = useState('');
@@ -8245,6 +8279,9 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   const [activityPhoto, setActivityPhoto] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
   const [isPhotoPrivate, setIsPhotoPrivate] = useState(false);
+  // True when the user explicitly deleted the existing photo. Needed because a null
+  // activityPhoto alone can't tell "removed the photo" from "didn't touch the photo".
+  const [photoRemoved, setPhotoRemoved] = useState(false);
   const [showPhotoOptions, setShowPhotoOptions] = useState(false);
   // Contrast Therapy state
   const [contrastColdType, setContrastColdType] = useState('Cold Plunge');
@@ -8332,6 +8369,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
         const duration = pendingActivity?.duration || 0;
         setDurationHours(Math.floor(duration / 60));
         setDurationMinutes(duration % 60);
+        setDurationSeconds(pendingActivity?.durationSeconds || 0);
         setCalories(pendingActivity?.calories?.toString() || '');
         setAvgHr(pendingActivity?.avgHr?.toString() || '');
         setMaxHr(pendingActivity?.maxHr?.toString() || '');
@@ -8363,6 +8401,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
           setDurationHours(1);
           setDurationMinutes(0);
         }
+        // Restore saved sub-minute precision when editing; 0 for new/manual logs.
+        setDurationSeconds(pendingActivity?.durationSeconds || 0);
         setCalories(pendingActivity?.calories || '');
         setAvgHr(pendingActivity?.avgHr || '');
         setMaxHr(pendingActivity?.maxHr || '');
@@ -8395,6 +8435,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       setActivityPhoto(null);
       setPhotoPreview(pendingActivity?.photoURL || null);
       setIsPhotoPrivate(pendingActivity?.isPhotoPrivate || false);
+      setPhotoRemoved(false);
       setShowPhotoOptions(false);
       // Load contrast therapy fields if editing
       if (pendingActivity?.type === 'Contrast Therapy') {
@@ -8752,6 +8793,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       setDistance('');
       setDurationHours(1);
       setDurationMinutes(0);
+      setDurationSeconds(0);
       setActivityTime('');
     } else {
       // Link and auto-fill metrics
@@ -8766,6 +8808,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
         const mins = Math.round(workout.duration % 60);
         setDurationHours(hours);
         setDurationMinutes(mins);
+        setDurationSeconds(workout.durationSeconds || 0);
       }
       if (workout.time) setActivityTime(workout.time);
     }
@@ -8879,10 +8922,95 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
     }
     setActivityPhoto(null);
     setPhotoPreview(null);
+    // Mark for removal so save clears any existing photoURL instead of preserving it.
+    setPhotoRemoved(true);
   };
 
   // Get user's custom activities
   const customActivities = userData?.customActivities || [];
+
+  // Which picker section a saved custom activity belongs under. Built-in sections are
+  // strength / cardio / hybrid / recovery; warm-up and un-categorized customs fall to "other".
+  const customActivitySectionId = (customItem) => {
+    const cat = typeof customItem === 'object' ? customItem.category : undefined;
+    if (cat === 'strength' || cat === 'cardio' || cat === 'recovery') return cat;
+    return 'other';
+  };
+
+  // Renders one saved-custom-activity pill. Extracted so it can be shown under the
+  // activity's saved category section (and, for uncategorized ones, under "Other").
+  // A div (not a button) so it can host the inner × delete control without nesting buttons.
+  const renderCustomActivityButton = (customItem) => {
+    // Support old string format, object with emoji, and new object with icon
+    const activityName = typeof customItem === 'string' ? customItem : customItem.name;
+    const activityIconName = typeof customItem === 'object' ? customItem.icon : undefined;
+    const activityEmoji = typeof customItem === 'string' ? '' : (customItem.emoji || '');
+    const savedCategory = typeof customItem === 'object' ? customItem.category : undefined;
+    return (
+      <div
+        key={`custom-${activityName}`}
+        role="button"
+        onClick={() => {
+          setActivityType('Other');
+          setCustomActivityName(activityName);
+          // Restore the category it was saved as so it logs (and colors) correctly.
+          if (savedCategory) setCustomActivityCategory(savedCategory);
+          if (activityIconName) {
+            setCustomActivityIcon(activityIconName);
+            setCustomActivityEmoji('');
+          } else {
+            setCustomActivityEmoji(activityEmoji);
+            setCustomActivityIcon(activityEmoji ? '' : 'CirclePlus');
+          }
+          setIsChangingActivityType(false);
+        }}
+        className="flex items-center gap-2 pl-3 pr-2 py-2 rounded-full transition-all duration-150 active:scale-95 cursor-pointer"
+        style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(0,255,148,0.2)' }}
+        onTouchStart={(e) => {
+          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.12)';
+          triggerHaptic(ImpactStyle.Light);
+        }}
+        onTouchEnd={(e) => {
+          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+        }}
+        onMouseDown={(e) => {
+          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.12)';
+        }}
+        onMouseUp={(e) => {
+          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+        }}
+      >
+        {activityIconName ? (
+          <ActivityIcon type="Other" customIcon={activityIconName} size={18} customActivityCategory={savedCategory} />
+        ) : activityEmoji ? (
+          <span className="text-base">{activityEmoji}</span>
+        ) : (
+          <ActivityIcon type="Other" size={18} customActivityCategory={savedCategory} />
+        )}
+        <span className="text-sm font-medium whitespace-nowrap">{activityName}</span>
+        {onDeleteCustomActivity && (
+          <button
+            type="button"
+            aria-label={`Delete ${activityName}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerHaptic(ImpactStyle.Light);
+              if (window.confirm(`Remove "${activityName}" from your saved activities? This won't affect activities you've already logged.`)) {
+                onDeleteCustomActivity(activityName);
+              }
+            }}
+            className="w-5 h-5 flex items-center justify-center rounded-full shrink-0"
+            style={{ backgroundColor: 'rgba(255,255,255,0.12)' }}
+          >
+            <span className="text-sm leading-none text-gray-300" style={{ marginTop: -1 }}>×</span>
+          </button>
+        )}
+      </div>
+    );
+  };
 
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
@@ -9090,6 +9218,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               notes,
               distance: distance ? parseFloat(distance) : undefined,
               duration: activityType === 'Chiropractic' ? undefined : activityType === 'Contrast Therapy' ? (contrastColdMinutes + contrastHotMinutes) : (durationHours * 60 + durationMinutes),
+              // Sub-minute precision for cardio pace; omitted when zero so we don't bloat old-style records.
+              durationSeconds: (durationSeconds && activityType !== 'Chiropractic' && activityType !== 'Contrast Therapy') ? durationSeconds : undefined,
               calories: calories ? parseInt(calories) : undefined,
               avgHr: avgHr ? parseInt(avgHr) : undefined,
               maxHr: maxHr ? parseInt(maxHr) : undefined,
@@ -9112,7 +9242,9 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               customActivityCategory: showCustomActivityInput ? customActivityCategory : undefined,
               // Photo data
               photoFile: activityPhoto,
-              photoURL: !activityPhoto ? (pendingActivity?.photoURL || null) : undefined, // Preserve existing photo if not changing
+              // New photo → let the handler upload it (undefined). No new photo → keep the
+              // existing one, UNLESS the user explicitly deleted it, in which case clear it.
+              photoURL: activityPhoto ? undefined : (photoRemoved ? null : (pendingActivity?.photoURL || null)),
               isPhotoPrivate: isPhotoPrivate,
               // Resolved challenge-fulfill intent: only set when there are matches the user could see
               // in the modal. An empty array is meaningful (= explicit "don't apply to any").
@@ -9130,8 +9262,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             handleClose();
           }}
           className="font-bold transition-all duration-150 px-2 py-1 rounded-lg"
-          style={{ color: !activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0) || (mode === 'completed' && photoMissingForChallenge) ? 'rgba(0,255,148,0.3)' : '#00FF94' }}
-          disabled={!activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0) || (mode === 'completed' && photoMissingForChallenge)}
+          style={{ color: !activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0 && !pendingActivity?.id) || (mode === 'completed' && !pendingActivity?.id && photoMissingForChallenge) ? 'rgba(0,255,148,0.3)' : '#00FF94' }}
+          disabled={!activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0 && !pendingActivity?.id) || (mode === 'completed' && !pendingActivity?.id && photoMissingForChallenge)}
           onTouchStart={(e) => {
             if (!e.currentTarget.disabled) {
               e.currentTarget.style.transform = 'scale(0.9)';
@@ -9362,6 +9494,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                               setLinkedWorkout(workout);
                               setDurationHours(Math.floor((workout.duration || 0) / 60));
                               setDurationMinutes((workout.duration || 0) % 60);
+                              setDurationSeconds(workout.durationSeconds || 0);
                               if (workout.calories) setCalories(String(workout.calories));
                               if (workout.distance) setDistance(String(workout.distance));
                               if (workout.avgHr) setAvgHr(String(workout.avgHr));
@@ -9471,6 +9604,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                           setStrengthType(type.name);
                           setFocusAreas([]);
                         }
+                        // Switching type discards any sub-minute duration precision.
+                        setDurationSeconds(0);
                         // Set default duration based on activity type
                         if (type.name === 'Sauna') {
                           setDurationHours(0);
@@ -9514,66 +9649,20 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                       <span className="text-sm font-medium whitespace-nowrap">{type.name}</span>
                     </button>
                   ))}
+                  {/* Saved custom activities that were saved under this category */}
+                  {customActivities.filter(ci => customActivitySectionId(ci) === category.id).map(renderCustomActivityButton)}
                 </React.Fragment>
               );
             })}
 
-            {/* Other section with custom activities */}
+            {/* Other section: the "Custom" create button plus any custom activities
+                that weren't saved under a strength/cardio/recovery category (e.g. warm-ups). */}
             <div className="w-full flex items-center gap-2 mt-3 mb-2">
               <span className="text-gray-400">{categoryIcons.other}</span>
               <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">Other</span>
             </div>
-            {/* User's saved custom activities */}
-            {customActivities.map((customItem) => {
-              // Support old string format, object with emoji, and new object with icon
-              const activityName = typeof customItem === 'string' ? customItem : customItem.name;
-              const activityIconName = typeof customItem === 'object' ? customItem.icon : undefined;
-              const activityEmoji = typeof customItem === 'string' ? '' : (customItem.emoji || '');
-              return (
-                <button
-                  key={`custom-${activityName}`}
-                  onClick={() => {
-                    setActivityType('Other');
-                    setCustomActivityName(activityName);
-                    if (activityIconName) {
-                      setCustomActivityIcon(activityIconName);
-                      setCustomActivityEmoji('');
-                    } else {
-                      setCustomActivityEmoji(activityEmoji);
-                      setCustomActivityIcon(activityEmoji ? '' : 'CirclePlus');
-                    }
-                    setIsChangingActivityType(false);
-                  }}
-                  className="flex items-center gap-2 px-3 py-2 rounded-full transition-all duration-150 active:scale-95"
-                  style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(0,255,148,0.2)' }}
-                  onTouchStart={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.12)';
-                    triggerHaptic(ImpactStyle.Light);
-                  }}
-                  onTouchEnd={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-                  }}
-                  onMouseDown={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.12)';
-                  }}
-                  onMouseUp={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
-                  }}
-                >
-                  {activityIconName ? (
-                    <ActivityIcon type="Other" customIcon={activityIconName} size={18} />
-                  ) : activityEmoji ? (
-                    <span className="text-base">{activityEmoji}</span>
-                  ) : (
-                    <ActivityIcon type="Other" size={18} />
-                  )}
-                  <span className="text-sm font-medium whitespace-nowrap">{activityName}</span>
-                </button>
-              );
-            })}
+            {/* Uncategorized / warm-up saved custom activities */}
+            {customActivities.filter(ci => customActivitySectionId(ci) === 'other').map(renderCustomActivityButton)}
             {/* "Other" option always shown last */}
             <button
               key="Other"
@@ -10217,9 +10306,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               <DurationPicker
                 hours={durationHours}
                 minutes={durationMinutes}
-                onChange={(h, m) => {
+                seconds={durationSeconds}
+                showSeconds={activityType === 'Running' || activityType === 'Walking' || (activityType === 'Cycle' && subtype !== 'Indoor')}
+                onChange={(h, m, s) => {
                   setDurationHours(h);
                   setDurationMinutes(m);
+                  setDurationSeconds(s ?? 0);
                 }}
               />
             </div>
@@ -11047,7 +11139,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss, distanceUnit = 'mi
         >
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              <ActivityIcon type={workout.type} subtype={workout.subtype} customIcon={workout.customIcon} customEmoji={workout.customEmoji} sportEmoji={workout.sportEmoji} strengthType={workout.strengthType} size={22} />
+              <ActivityIcon type={workout.type} subtype={workout.subtype} customIcon={workout.customIcon} customEmoji={workout.customEmoji} sportEmoji={workout.sportEmoji} strengthType={workout.strengthType} size={22} countToward={workout.countToward} customActivityCategory={workout.customActivityCategory} />
             </div>
             <div className="flex-1">
               <div className="text-white font-medium">
@@ -12901,7 +12993,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                 {weekProgress.cardio?.otherActivities?.map((activity, i) => (
                   <div key={activity.id || i} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                     <div className="text-lg font-bold">1</div>
-                    <div className="text-[10px] text-gray-400 flex items-center gap-1"><ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={10} /> {activity.subtype || 'Other'}</div>
+                    <div className="text-[10px] text-gray-400 flex items-center gap-1"><ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={10} customActivityCategory={activity.customActivityCategory} /> {activity.subtype || 'Other'}</div>
                   </div>
                 ))}
               </div>
@@ -12957,7 +13049,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                 {weekProgress.recovery?.otherActivities?.map((activity, i) => (
                   <div key={activity.id || i} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                     <div className="text-lg font-bold">1</div>
-                    <div className="text-[10px] text-gray-400 flex items-center gap-1"><ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={10} /> {activity.subtype || 'Other'}</div>
+                    <div className="text-[10px] text-gray-400 flex items-center gap-1"><ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={10} customActivityCategory={activity.customActivityCategory} /> {activity.subtype || 'Other'}</div>
                   </div>
                 ))}
               </div>
@@ -13037,7 +13129,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                       className="w-full p-3 flex items-center gap-3 text-left cursor-pointer active:opacity-70 transition-opacity"
                       style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
                     >
-                      <ActivityIcon type={act.type} subtype={act.subtype} size={20} sportEmoji={act.sportEmoji} customEmoji={act.customEmoji} customIcon={act.customIcon} />
+                      <ActivityIcon type={act.type} subtype={act.subtype} size={20} sportEmoji={act.sportEmoji} customEmoji={act.customEmoji} customIcon={act.customIcon} countToward={act.countToward} customActivityCategory={act.customActivityCategory} />
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-semibold truncate">{
                           act.type === 'Other' ? (act.subtype || 'Other')
@@ -14248,7 +14340,7 @@ export default function DaySevenApp() {
 
         // Fastest pace (running) - lower is better
         if (activity.type === 'Running' && activity.distance && activity.distance >= 0.1 && activity.duration) {
-          const pace = activity.duration / activity.distance;
+          const pace = (activity.duration + (activity.durationSeconds || 0) / 60) / activity.distance;
           if (pace >= 3 && pace <= 30) { // Reasonable range
             if (newRecords.fastestPace.value === null || pace < newRecords.fastestPace.value) {
               newRecords.fastestPace = { value: pace, activityType: 'Running' };
@@ -14258,7 +14350,7 @@ export default function DaySevenApp() {
 
         // Fastest cycling pace - lower is better
         if (activity.type === 'Cycle' && activity.distance && activity.distance >= 0.1 && activity.duration) {
-          const pace = activity.duration / activity.distance;
+          const pace = (activity.duration + (activity.durationSeconds || 0) / 60) / activity.distance;
           if (pace >= 0.5 && pace <= 30) { // Reasonable range
             if (newRecords.fastestCyclingPace.value === null || pace < newRecords.fastestCyclingPace.value) {
               newRecords.fastestCyclingPace = { value: pace, activityType: 'Cycle' };
@@ -14689,7 +14781,9 @@ export default function DaySevenApp() {
                   distance: activity.distance,
                   calories: activity.calories,
                   avgHr: activity.avgHr,
-                  maxHr: activity.maxHr
+                  maxHr: activity.maxHr,
+                  countToward: activity.countToward,
+                  customActivityCategory: activity.customActivityCategory
                 });
               }
             });
@@ -14871,7 +14965,9 @@ export default function DaySevenApp() {
               distance: activity.distance,
               calories: activity.calories,
               avgHr: activity.avgHr,
-              maxHr: activity.maxHr
+              maxHr: activity.maxHr,
+              countToward: activity.countToward,
+              customActivityCategory: activity.customActivityCategory
             });
           }
         });
@@ -15892,8 +15988,9 @@ export default function DaySevenApp() {
       return;
     }
 
-    // Only save if customActivities exists and has items
-    if (userData.customActivities && userData.customActivities.length > 0) {
+    // Persist whenever the list is an array — including empty, so deleting the last
+    // custom activity removes it from Firestore instead of resurrecting it on reload.
+    if (Array.isArray(userData.customActivities)) {
       const timeoutId = setTimeout(() => {
         saveCustomActivities(user.uid, userData.customActivities);
       }, 500);
@@ -16530,7 +16627,9 @@ export default function DaySevenApp() {
         distance: activity.distance,
         calories: activity.calories,
         avgHr: activity.avgHr,
-        maxHr: activity.maxHr
+        maxHr: activity.maxHr,
+        countToward: activity.countToward,
+        customActivityCategory: activity.customActivityCategory
       });
       setCalendarData(updatedCalendar);
     } else {
@@ -16559,7 +16658,9 @@ export default function DaySevenApp() {
         distance: activity.distance,
         calories: activity.calories,
         avgHr: activity.avgHr,
-        maxHr: activity.maxHr
+        maxHr: activity.maxHr,
+        countToward: activity.countToward,
+        customActivityCategory: activity.customActivityCategory
       }];
       setCalendarData(updatedCalendar);
     }
@@ -16742,7 +16843,7 @@ export default function DaySevenApp() {
         // Only count if distance is at least 0.1 miles and pace is reasonable (3-30 min/mile)
         const runDistance = parseFloat(activity.distance);
         if (activity.type === 'Running' && runDistance >= 0.1 && activity.duration) {
-          const pace = activity.duration / runDistance; // min per mile
+          const pace = (activity.duration + (activity.durationSeconds || 0) / 60) / runDistance; // min per mile
           if (pace >= 3 && pace <= 30) { // Reasonable running pace range
             // Get current fastest from updatedRecords first, then fall back to records
             const currentRecord = updatedRecords.fastestPace || records.fastestPace;
@@ -16761,7 +16862,7 @@ export default function DaySevenApp() {
         // Fastest cycling pace (for cycles with distance and duration)
         const cycleDistance = parseFloat(activity.distance);
         if (activity.type === 'Cycle' && cycleDistance >= 0.1 && activity.duration) {
-          const pace = activity.duration / cycleDistance; // min per mile
+          const pace = (activity.duration + (activity.durationSeconds || 0) / 60) / cycleDistance; // min per mile
           if (pace > 0 && pace <= 30) { // Allow any positive pace up to 30 min/mile
             // Get current fastest from updatedRecords first, then fall back to records
             const currentRecord = updatedRecords.fastestCyclingPace || records.fastestCyclingPace;
@@ -17204,7 +17305,7 @@ export default function DaySevenApp() {
 
           // Fastest pace (running) - lower is better
           if (activity.type === 'Running' && activity.distance && activity.duration) {
-            const pace = activity.duration / activity.distance;
+            const pace = (activity.duration + (activity.durationSeconds || 0) / 60) / activity.distance;
             if (newRecords.fastestPace.value === null || pace < newRecords.fastestPace.value) {
               newRecords.fastestPace = { value: pace, activityType: activity.type };
             }
@@ -17212,7 +17313,7 @@ export default function DaySevenApp() {
 
           // Fastest cycling pace - lower is better
           if (activity.type === 'Cycle' && activity.distance && activity.duration) {
-            const pace = activity.duration / activity.distance;
+            const pace = (activity.duration + (activity.durationSeconds || 0) / 60) / activity.distance;
             if (newRecords.fastestCyclingPace.value === null || pace < newRecords.fastestCyclingPace.value) {
               newRecords.fastestCyclingPace = { value: pace, activityType: activity.type };
             }
@@ -18480,6 +18581,16 @@ export default function DaySevenApp() {
               customActivities: [...(prev.customActivities || []), customActivity]
             }));
           }
+        }}
+        onDeleteCustomActivity={(name) => {
+          // Remove a saved custom-activity template by name (string or object formats).
+          // Only affects the saved option list — already-logged activities are untouched.
+          setUserData(prev => ({
+            ...prev,
+            customActivities: (prev.customActivities || []).filter(
+              a => (typeof a === 'string' ? a : a.name) !== name
+            )
+          }));
         }}
         onSaveHKPreference={(appleWorkoutName, pref) => {
           // Save HealthKit type preference (icon and/or category) for future auto-detection

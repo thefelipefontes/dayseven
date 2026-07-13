@@ -343,7 +343,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
               className="w-14 h-14 rounded-2xl flex items-center justify-center"
               style={{ backgroundColor: `${color}20` }}
             >
-              <ActivityIcon type={activity.type} subtype={activity.subtype} size={28} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} />
+              <ActivityIcon type={activity.type} subtype={activity.subtype} size={28} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} countToward={activity.countToward} customActivityCategory={activity.customActivityCategory} />
             </div>
             <div className="flex-1">
               <div className="text-xl font-bold">{

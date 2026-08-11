@@ -1854,7 +1854,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
       setFinishCountToward(null);
       setFinishSportEmoji(null);
       setFinishStrengthType('');
-      setFinishFocusArea('');
+      setFinishFocusAreas([]);
       setContrastColdType('Cold Plunge');
       setContrastHotType('Sauna');
       setContrastColdMinutes(5);

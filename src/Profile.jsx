@@ -19,6 +19,7 @@ import ActivityDetailModal from './components/ActivityDetailModal';
 import TrendsView from './components/TrendsView';
 import OwnProfileModal from './components/OwnProfileModal';
 import { resolveUnit, unitLabel, formatDistanceValue, milesToDisplay, formatPace } from './utils/distance';
+import { getActivityCategory } from './utils/activityCategory';
 
 
 
@@ -138,24 +139,6 @@ export default function ProfilePage(props) {
     }
     return map;
   }, [healthHistory, healthKitData.todaySteps, healthKitData.todayCalories, todayStr]);
-
-  // Helper to determine effective category of an activity
-  const getActivityCategory = (activity) => {
-    // If countToward is set (for Yoga/Pilates or custom activities), use that
-    if (activity.countToward) {
-      if (activity.countToward === 'strength') return 'lifting';
-      return activity.countToward;
-    }
-    // Check customActivityCategory for "Other" activities
-    if (activity.customActivityCategory) {
-      if (activity.customActivityCategory === 'strength') return 'lifting';
-      return activity.customActivityCategory;
-    }
-    if (activity.type === 'Strength Training') return 'lifting';
-    if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Swimming'].includes(activity.type)) return 'cardio';
-    if (['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
-    return 'other';
-  };
 
   // Update view when initialView prop changes
   useEffect(() => {
@@ -947,7 +930,7 @@ export default function ProfilePage(props) {
             </div>
           </div>
           <div className="text-xs text-gray-500 mt-2 pt-2 border-t border-white/10">
-            Your longest: {records.longestMasterStreak} weeks
+            Your longest: {Math.max(records.longestMasterStreak || 0, streaks.master || 0)} weeks
           </div>
         </div>
 

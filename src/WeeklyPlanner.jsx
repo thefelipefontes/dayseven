@@ -2,6 +2,7 @@ import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { triggerHaptic, ImpactStyle } from './utils/haptics';
 import { toLocalDateStr } from './utils/dateHelpers';
+import { getActivityCategory } from './utils/activityCategory';
 
 // ---------------------------------------------------------------------------
 // Weekly Planner
@@ -104,22 +105,31 @@ const normalizePlan = (raw) => {
   return out;
 };
 
-// Mirror of getActivityCategory in App.jsx, collapsed to strength/cardio/recovery.
-const activityCat = (a) => {
-  let c = a.countToward || a.customActivityCategory || '';
-  if (!c) {
-    if (a.type === 'Strength Training') c = 'lifting';
-    else if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Swimming', 'Rowing'].includes(a.type)) c = 'cardio';
-    else if (['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(a.type)) c = 'recovery';
-    else c = 'other';
-  }
-  if (c === 'strength') c = 'lifting';
-  return c; // 'lifting' | 'cardio' | 'recovery' | 'lifting+cardio' | 'other'
-};
+// Compare two normalized plans day-by-day. Drives the "this week differs from your
+// repeating plan" prompt, so it must ignore key order and pill object identity.
+const plansEqual = (a, b) => DAYS.every(d => {
+  const x = a?.[d.key] || [], y = b?.[d.key] || [];
+  return x.length === y.length
+    && x.every((p, i) => p.cat === y[i].cat && (p.type || null) === (y[i].type || null));
+});
 
-export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSave, onLogActivity }) {
+// 'lifting' | 'cardio' | 'recovery' | 'lifting+cardio' | 'other'
+const activityCat = getActivityCategory;
+
+// `planLoaded` tells us the saved plan has been resolved (loaded, or confirmed absent).
+// Defaults to true for callers that hand us a plan synchronously — e.g. Onboarding, which
+// passes a seed built on mount. Home passes it explicitly, because there `userData.weeklyPlan`
+// is undefined until the profile fetch lands while the planner is already on screen and
+// interactive. Saving in that window used to write `repeatWeekly: false` + `template: null`
+// and permanently wipe the user's recurring plan.
+export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSave, onLogActivity, planLoaded = true }) {
   // --- Week boundaries (Sunday-based) ---------------------------------------
-  const { weekKey, dayDates, todayKey, rangeLabel } = useMemo(() => {
+  // Recomputed on a clock tick, not frozen at mount: phones sit open across
+  // midnight, and nothing remounts this component (the foreground resync in
+  // App.jsx only refreshes data). A stale weekKey meant edits after a Sat→Sun
+  // rollover were written into the *previous* week's entry and, with repeat on,
+  // rebuilt the template from a week that had already ended.
+  const computeWeek = () => {
     const now = new Date();
     const start = new Date(now);
     start.setDate(now.getDate() - now.getDay());
@@ -138,6 +148,22 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
       todayKey: DAYS[now.getDay()].key,
       rangeLabel: `${fmt(start)} – ${fmt(end)}`,
     };
+  };
+  const [week, setWeek] = useState(computeWeek);
+  const { weekKey, dayDates, todayKey, rangeLabel } = week;
+
+  // Re-check the calendar on an interval and whenever the app returns to the
+  // foreground (iOS throttles timers in the background, so the tick alone can't
+  // be trusted to fire). setWeek only swaps state when the day actually changed,
+  // so this is a no-op on every check but one.
+  useEffect(() => {
+    const check = () => setWeek(prev => {
+      const next = computeWeek();
+      return next.weekKey === prev.weekKey && next.todayKey === prev.todayKey ? prev : next;
+    });
+    const id = setInterval(check, 60000);
+    document.addEventListener('visibilitychange', check);
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', check); };
   }, []);
 
   const goalCount = {
@@ -162,8 +188,37 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
   const pendingSave = useRef(false);
   const userEdited = useRef(false);  // true once the user drags/taps/toggles
   const adopted = useRef(false);     // true once we've synced the loaded plan in
+  // Edits made before the saved plan arrived were made against a blank placeholder, not
+  // the user's real plan — they must not latch userEdited (which would permanently block
+  // adoption) and must not be persisted. markEdited() is the single gate for both.
+  const planLoadedRef = useRef(planLoaded);
+  planLoadedRef.current = planLoaded;
+  const markEdited = () => { if (planLoadedRef.current) userEdited.current = true; };
   const latest = useRef({ plan, repeatWeekly });
   latest.current = { plan, repeatWeekly };
+
+  // True when repeat is on and this week has been changed away from the saved
+  // template — the only case where the "update my repeating plan" offer makes sense.
+  const savedTemplate = weeklyPlan?.template ? normalizePlan(weeklyPlan.template) : null;
+  const divergesFromTemplate = repeatWeekly && !!savedTemplate && !plansEqual(plan, savedTemplate);
+
+  // Push this week's plan into the recurring template. Bumping planRevision (rather
+  // than touching `plan`) gives the debounced save effect a dep change to react to,
+  // so promoting re-persists without faking an edit to the plan itself.
+  const [planRevision, setPlanRevision] = useState(0);
+  const promoteThisWeek = () => {
+    triggerHaptic(ImpactStyle.Light);
+    markEdited();
+    promoteToTemplate.current = true;
+    setPlanRevision(n => n + 1);
+  };
+
+  // Editing the plan changes THIS WEEK only. The recurring template is rewritten
+  // solely when the user says so — by switching repeat on (that plan is what they're
+  // choosing to repeat) or by tapping "Update repeating plan". Previously every edit
+  // rewrote the template, so clearing a day for one travel week silently deleted it
+  // from every future week.
+  const promoteToTemplate = useRef(false);
 
   // persist is stored in a ref and refreshed every render so the debounce
   // effect can depend ONLY on [plan, repeatWeekly] — never on onSave/weeklyPlan
@@ -174,37 +229,60 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
     pendingSave.current = false;
     if (!onSave) return;
     const { plan: p, repeatWeekly: r } = latest.current;
+    const promote = promoteToTemplate.current;
+    promoteToTemplate.current = false;
+    const normalized = normalizePlan(p);
     onSave({
       repeatWeekly: r,
-      template: r ? normalizePlan(p) : (weeklyPlan?.template || null),
-      weeks: { [weekKey]: { ...normalizePlan(p), confirmedAt: new Date().toISOString() } },
+      template: promote ? normalized : (weeklyPlan?.template || null),
+      weeks: { [weekKey]: { ...normalized, confirmedAt: new Date().toISOString() } },
     });
   };
 
   useEffect(() => {
     if (firstRender.current) { firstRender.current = false; return; }
+    // Never write before the saved plan has resolved — see planLoaded above.
+    if (!planLoaded) return;
     pendingSave.current = true;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => persistRef.current?.(), 700);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
-  }, [plan, repeatWeekly]);
+  }, [plan, repeatWeekly, planLoaded, planRevision]);
 
   // The plan state initializes once, but on a fresh launch the saved plan can
   // arrive as a prop AFTER this mounts (the Home loading gate is a fixed timer,
   // not tied to the profile load). Adopt it when it appears — but only until the
-  // user starts editing, so we never clobber an in-progress plan. firstRender is
-  // re-armed so the adoption itself doesn't trigger a redundant save.
+  // user starts editing *a loaded plan*, so we never clobber an in-progress edit
+  // while still recovering from taps made against the pre-load blank state.
+  // firstRender is re-armed so the adoption itself doesn't trigger a redundant save.
+  // Also handles the week rolling over underneath us: the previous week's adoption
+  // and edit latch are cleared so the new week re-derives from its own saved entry,
+  // falling back to the repeating template. Without the reset, `adopted` would still
+  // be true and last week's plan would sit there — and then get written into the new
+  // week's key on the next edit.
+  const prevWeekKey = useRef(weekKey);
   useEffect(() => {
+    const rolled = prevWeekKey.current !== weekKey;
+    if (rolled) {
+      prevWeekKey.current = weekKey;
+      adopted.current = false;
+      userEdited.current = false;
+    }
     if (userEdited.current || adopted.current) return;
     const wp = weeklyPlan || {};
     const source = (wp.weeks && wp.weeks[weekKey]) ? wp.weeks[weekKey]
       : (wp.repeatWeekly && wp.template) ? wp.template : null;
-    if (!source) return;
+    if (!source) {
+      // Nothing saved for the new week and no repeating template — start clean
+      // rather than carrying the finished week's plan forward.
+      if (rolled) { firstRender.current = true; setPlan(emptyPlan()); }
+      return;
+    }
     adopted.current = true;
     firstRender.current = true;
     setPlan(normalizePlan(source));
     setRepeatWeekly(!!wp.repeatWeekly);
-  }, [weeklyPlan, weekKey]);
+  }, [weeklyPlan, weekKey, planLoaded]);
 
   // Flush a still-pending debounced save on unmount, so a quick Continue (in
   // onboarding) or tab switch (on Home) right after a drag doesn't drop the
@@ -261,7 +339,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
   // (and its type); tray→day always creates a fresh generic pill.
   const movePill = useCallback((pill, from, fromIndex, to) => {
     if (from === to) return;
-    userEdited.current = true;
+    markEdited();
     setPlan(prev => {
       const next = { ...prev };
       let moving = { cat: pill.cat, type: pill.type ?? null };
@@ -280,7 +358,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
   }, []);
 
   const setPillType = (day, index, type) => {
-    userEdited.current = true;
+    markEdited();
     setPlan(prev => {
       const arr = [...(prev[day] || [])];
       if (!arr[index]) return prev;
@@ -588,10 +666,39 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
           })}
         </div>
 
+        {/* This week has drifted from the repeating plan — offer to make it the new
+            default. Edits are week-scoped now, so without this there's no way to
+            update the template short of toggling repeat off and on. */}
+        {divergesFromTemplate && (
+          <div
+            className="flex items-center justify-between gap-2 mt-3 px-2.5 py-2 rounded-xl"
+            style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
+          >
+            <span className="text-[11px] leading-snug" style={{ color: '#999' }}>
+              This week differs from your repeating plan.
+            </span>
+            <button
+              onClick={promoteThisWeek}
+              className="shrink-0 px-2.5 py-1 rounded-full transition-all active:scale-95"
+              style={{ backgroundColor: 'rgba(48,209,88,0.12)', border: '1px solid rgba(48,209,88,0.4)' }}
+            >
+              <span className="text-[11px] font-semibold" style={{ color: '#30D158' }}>Update repeating plan</span>
+            </button>
+          </div>
+        )}
+
         {/* Footer: repeat toggle + type hint share one row (keeps the top tight) */}
         <div className="flex items-center justify-between gap-2 mt-3 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
           <button
-            onClick={() => { triggerHaptic(ImpactStyle.Light); userEdited.current = true; setRepeatWeekly(v => !v); }}
+            onClick={() => {
+              triggerHaptic(ImpactStyle.Light);
+              markEdited();
+              // Switching repeat ON snapshots the current plan as the template —
+              // this plan is precisely what the user is choosing to repeat.
+              // Switching OFF leaves the stored template alone so it survives.
+              if (!repeatWeekly) promoteToTemplate.current = true;
+              setRepeatWeekly(v => !v);
+            }}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full transition-all active:scale-95 shrink-0"
             style={{
               backgroundColor: repeatWeekly ? 'rgba(48,209,88,0.12)' : 'rgba(255,255,255,0.05)',

@@ -168,10 +168,11 @@ export default function LockedScreen({ onSubscribe, onRestore, onSignOut, userPr
           className="w-full rounded-2xl font-bold text-black text-[17px] py-4 mt-8 transition-opacity active:opacity-80 disabled:opacity-60"
           style={{ backgroundColor: '#00FF94' }}
         >
-          {busy === 'subscribe' ? 'Opening…' : 'Start 7-day free trial'}
+          {busy === 'subscribe' ? 'Opening…' : 'See plans'}
         </button>
         <p className="text-center text-gray-500 text-[12px] mt-3 leading-snug px-2">
-          7 days free, then your chosen monthly or annual plan. Cancel anytime in Settings.
+          Monthly and yearly start with 7 days free and auto-renew until cancelled.
+          Lifetime is a one-time purchase. Cancel anytime in Settings.
         </p>
 
         {/* Secondary actions */}

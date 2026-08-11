@@ -10,6 +10,7 @@ import FriendProfileCard from './components/FriendProfileCard';
 import ZoomablePhoto from './components/ZoomablePhoto';
 import { isDemoAccount, getDemoLeaderboardFriends, getDemoActivities, getDemoHealthHistory, getDemoUserData, getDemoChallengeStats, getDemoUserLeaderboardOverride } from './demoData';
 import { resolveUnit, unitLabel, formatDistanceValue, milesToDisplay } from './utils/distance';
+import { getActivityCategory } from './utils/activityCategory';
 
 // Convert a Date to YYYY-MM-DD string in local timezone (avoids UTC date shifting)
 const toLocalDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -22,22 +23,6 @@ const triggerHaptic = async (style = ImpactStyle.Medium) => {
     // Fallback to vibrate API for web/Android
     if (navigator.vibrate) navigator.vibrate(10);
   }
-};
-
-// Helper to determine effective category of an activity (same logic as App.jsx)
-const getActivityCategory = (activity) => {
-  if (activity.countToward) {
-    if (activity.countToward === 'strength') return 'lifting';
-    return activity.countToward;
-  }
-  if (activity.customActivityCategory) {
-    if (activity.customActivityCategory === 'strength') return 'lifting';
-    return activity.customActivityCategory;
-  }
-  if (activity.type === 'Strength Training') return 'lifting';
-  if (['Running', 'Cycle', 'Sports', 'Swimming'].includes(activity.type)) return 'cardio';
-  if (['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
-  return 'other';
 };
 
 // Helper to calculate leaderboard stats from activities and health data

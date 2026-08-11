@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import SectionIcon from './SectionIcon';
 import { normalizeFocusAreas } from '../utils/focusAreas';
 import { initialUserData } from '../utils/initialUserData';
+import { countsAsLifting, countsAsCardio, countsAsRecovery } from '../utils/activityCategory';
 
 const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, userData, activities, healthHistory }) => {
   const [isAnimating, setIsAnimating] = useState(false);
@@ -37,26 +38,10 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
   const monthActivities = monthData?.activities || [];
   const monthDates = monthData?.dates || [];
 
-  // Helper to determine effective category respecting countToward
-  const getMonthActivityCategory = (a) => {
-    if (a.countToward) {
-      if (a.countToward === 'strength') return 'lifting';
-      return a.countToward;
-    }
-    if (a.customActivityCategory) {
-      if (a.customActivityCategory === 'strength') return 'lifting';
-      return a.customActivityCategory;
-    }
-    if (a.type === 'Strength Training') return 'lifting';
-    if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Swimming'].includes(a.type)) return 'cardio';
-    if (['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
-    return 'other';
-  };
-
-  // Session counts
-  const liftsCount = monthActivities.filter(a => getMonthActivityCategory(a) === 'lifting').length;
-  const cardioCount = monthActivities.filter(a => getMonthActivityCategory(a) === 'cardio').length;
-  const recoveryCount = monthActivities.filter(a => getMonthActivityCategory(a) === 'recovery').length;
+  // Session counts ('lifting+cardio' fills both, matching the home rings)
+  const liftsCount = monthActivities.filter(countsAsLifting).length;
+  const cardioCount = monthActivities.filter(countsAsCardio).length;
+  const recoveryCount = monthActivities.filter(countsAsRecovery).length;
 
   // Calculate totals
   const totalCalories = monthData?.calories || 0;
@@ -88,9 +73,9 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
     Object.values(weekMap).forEach(weekDates => {
       const weekActivities = monthActivities.filter(a => weekDates.includes(a.date));
 
-      const weekLifts = weekActivities.filter(a => getMonthActivityCategory(a) === 'lifting').length;
-      const weekCardio = weekActivities.filter(a => getMonthActivityCategory(a) === 'cardio').length;
-      const weekRecovery = weekActivities.filter(a => getMonthActivityCategory(a) === 'recovery').length;
+      const weekLifts = weekActivities.filter(countsAsLifting).length;
+      const weekCardio = weekActivities.filter(countsAsCardio).length;
+      const weekRecovery = weekActivities.filter(countsAsRecovery).length;
 
       const liftMet = weekLifts >= goals.liftsPerWeek;
       const cardioMet = weekCardio >= goals.cardioPerWeek;

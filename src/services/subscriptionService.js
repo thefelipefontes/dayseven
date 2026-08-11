@@ -169,6 +169,42 @@ export const checkProStatus = async () => {
 };
 
 /**
+ * Which flavour of Pro access an entitlement represents.
+ *
+ * Lifetime is a non-consumable, so RevenueCat reports it with a null
+ * expirationDate. That's the signal we key off rather than the product
+ * identifier, which would break the day we add a second lifetime SKU.
+ *
+ * @param {Object|null} customerInfo
+ * @returns {'lifetime'|'subscription'|null} null when not entitled
+ */
+const planTypeFrom = (customerInfo) => {
+  const entitlement = customerInfo?.entitlements?.active?.[ENTITLEMENT_ID];
+  // Dev/comped accounts hold no real entitlement — treat them as subscribers so
+  // the UI keeps its normal manage-subscription affordances.
+  if (!entitlement) return isDevProUser() ? 'subscription' : null;
+  return entitlement.expirationDate ? 'subscription' : 'lifetime';
+};
+
+/**
+ * Whether the user's Pro access came from the lifetime purchase or a
+ * subscription. Used to hide renewal/cancellation UI from lifetime buyers.
+ *
+ * @returns {Promise<'lifetime'|'subscription'|null>}
+ */
+export const getPlanType = async () => {
+  if (!isNative || !Purchases) return isDevProUser() ? 'subscription' : null;
+
+  try {
+    const { customerInfo } = await Purchases.getCustomerInfo();
+    return planTypeFrom(customerInfo);
+  } catch (error) {
+    console.error('[SubscriptionService] getPlanType error:', error);
+    return null;
+  }
+};
+
+/**
  * Get the full customer info object.
  *
  * @returns {Promise<Object|null>}
@@ -189,7 +225,7 @@ export const getCustomerInfo = async () => {
  * Add a listener for customer info updates.
  * Called whenever subscription status changes (purchase, renewal, expiry, etc.)
  *
- * @param {Function} callback - Called with { isPro: boolean, customerInfo: Object }
+ * @param {Function} callback - Called with { isPro: boolean, planType: string|null, customerInfo: Object }
  */
 export const addCustomerInfoListener = async (callback) => {
   if (!isNative || !Purchases) return;
@@ -197,7 +233,7 @@ export const addCustomerInfoListener = async (callback) => {
   try {
     await Purchases.addCustomerInfoUpdateListener((customerInfo) => {
       const isPro = !!customerInfo?.entitlements?.active?.[ENTITLEMENT_ID] || isDevProUser();
-      callback({ isPro, customerInfo });
+      callback({ isPro, planType: planTypeFrom(customerInfo), customerInfo });
     });
   } catch (error) {
     console.error('[SubscriptionService] addCustomerInfoListener error:', error);

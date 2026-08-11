@@ -374,8 +374,10 @@ function getActivityCategoryForGoals(activity) {
   // 3. Infer from activity type (matches client-side getDefaultCountToward)
   const type = activity.type || '';
   const subtype = activity.subtype || '';
+  // Keep this table in sync with src/utils/activityCategory.js (the client's single source
+  // of truth). Note Circuit resolves to 'lifting' here but 'lifting+cardio' on the client.
   if (['Strength Training', 'Weightlifting', 'Bodyweight', 'Circuit'].includes(type)) return 'lifting';
-  if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical'].includes(type)) return 'cardio';
+  if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Ski Trainer'].includes(type)) return 'cardio';
   if (['Basketball', 'Soccer', 'Football', 'Tennis', 'Golf', 'Badminton', 'Boxing', 'Martial Arts',
     'Baseball', 'Volleyball', 'Hockey', 'Lacrosse', 'Rugby', 'Softball', 'Squash', 'Table Tennis',
     'Racquetball', 'Handball', 'Pickleball', 'Cricket', 'Australian Football', 'Wrestling',
@@ -386,7 +388,8 @@ function getActivityCategoryForGoals(activity) {
     if (['Power', 'Hot', 'Vinyasa'].includes(subtype)) return 'cardio';
     return 'recovery';
   }
-  if (['Pilates', 'Stretching', 'Foam Rolling', 'Cold Plunge', 'Sauna'].includes(type)) return 'recovery';
+  if (['Pilates', 'Stretching', 'Foam Rolling', 'Cold Plunge', 'Sauna', 'Contrast Therapy',
+    'Massage', 'Chiropractic', 'Tai Chi', 'Cooldown'].includes(type)) return 'recovery';
   if (['Swimming', 'Rowing', 'Hiking', 'Dance'].includes(type)) return 'cardio';
   return null;
 }

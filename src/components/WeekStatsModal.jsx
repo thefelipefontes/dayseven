@@ -3,6 +3,7 @@ import SectionIcon from './SectionIcon';
 import { SwipeableProvider, SwipeableActivityItem } from './SwipeableActivityItem';
 import ActivityIcon from './ActivityIcon';
 import { initialUserData } from '../utils/initialUserData';
+import { countsAsLifting, countsAsCardio, countsAsRecovery } from '../utils/activityCategory';
 
 const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity, onSelectActivity, onShare, userData }) => {
   const [isAnimating, setIsAnimating] = useState(false);
@@ -28,23 +29,11 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
 
   if (!isOpen && !isClosing) return null;
   
-  const getWeekActivityCategory = (a) => {
-    if (a.countToward) {
-      if (a.countToward === 'strength') return 'lifting';
-      return a.countToward;
-    }
-    if (a.customActivityCategory) {
-      if (a.customActivityCategory === 'strength') return 'lifting';
-      return a.customActivityCategory;
-    }
-    if (a.type === 'Strength Training') return 'lifting';
-    if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Swimming'].includes(a.type)) return 'cardio';
-    if (['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(a.type)) return 'recovery';
-    return 'other';
-  };
-  const lifts = weekData?.activities?.filter(a => getWeekActivityCategory(a) === 'lifting') || [];
-  const cardioActivities = weekData?.activities?.filter(a => getWeekActivityCategory(a) === 'cardio') || [];
-  const recoveryActivities = weekData?.activities?.filter(a => getWeekActivityCategory(a) === 'recovery') || [];
+  // 'lifting+cardio' (Circuit, or manually tagged) fills BOTH rings — same dual-count
+  // rule the home rings and share card use.
+  const lifts = weekData?.activities?.filter(countsAsLifting) || [];
+  const cardioActivities = weekData?.activities?.filter(countsAsCardio) || [];
+  const recoveryActivities = weekData?.activities?.filter(countsAsRecovery) || [];
   const nonCardioWalks = weekData?.activities?.filter(a =>
     a.type === 'Walking' && !a.countToward
   ) || [];

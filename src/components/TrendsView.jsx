@@ -3,6 +3,7 @@ import SectionIcon from './SectionIcon';
 import ActivityIcon from './ActivityIcon';
 import { triggerHaptic, ImpactStyle } from '../utils/haptics';
 import { parseLocalDate, toLocalDateStr } from '../utils/dateHelpers';
+import { getActivityCategory } from '../utils/activityCategory';
 
 const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], healthKitData = {}, isPro, onPresentPaywall }) => {
   const [metric, setMetric] = useState('calories');
@@ -105,24 +106,6 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
     const today = new Date();
     return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   }, []);
-
-  // Helper to determine effective category of an activity
-  const getActivityCategory = (activity) => {
-    // If countToward is set (for Yoga/Pilates or custom activities), use that
-    if (activity.countToward) {
-      if (activity.countToward === 'strength') return 'lifting';
-      return activity.countToward;
-    }
-    // Check customActivityCategory for "Other" activities
-    if (activity.customActivityCategory) {
-      if (activity.customActivityCategory === 'strength') return 'lifting';
-      return activity.customActivityCategory;
-    }
-    if (activity.type === 'Strength Training') return 'lifting';
-    if (['Running', 'Cycle', 'Sports', 'Stair Climbing', 'Elliptical', 'Swimming'].includes(activity.type)) return 'cardio';
-    if (['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic', 'Yoga', 'Pilates'].includes(activity.type)) return 'recovery';
-    return 'other';
-  };
 
   // Create a lookup map from healthHistory for quick date access
   // Override today's data with live healthKitData

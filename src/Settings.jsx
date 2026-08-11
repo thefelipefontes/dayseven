@@ -36,7 +36,11 @@ const getPreviousWeekKey = () => {
   return toLocalDateStr(sunday);
 };
 
-export default function SettingsPage({ user, userProfile, userData, onSignOut, onEditGoals, onCancelPendingGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onUpdateDistanceUnit, onUpdateMaxHeartRate, onUpdateDisplayName, onUpdateUsername, onChangePassword, onResetPassword, onDeleteAccount, onNotificationSettings, isPro, onPresentPaywall, onPresentCustomerCenter, onRestorePurchases, onToggleVacationMode, onActivateInjuryMode, onResumeInjuryMode, canResumeInjury = false, injuryMinWeeks = 2, injuryMaxWeeks = 12, injuryYearlyCap = 16, injuryRemainingWeeks = 16, onUseStreakShield, onClose }) {
+export default function SettingsPage({ user, userProfile, userData, onSignOut, onEditGoals, onCancelPendingGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onUpdateDistanceUnit, onUpdateMaxHeartRate, onUpdateDisplayName, onUpdateUsername, onChangePassword, onResetPassword, onDeleteAccount, onNotificationSettings, isPro, planType, onPresentPaywall, onPresentCustomerCenter, onRestorePurchases, onToggleVacationMode, onActivateInjuryMode, onResumeInjuryMode, canResumeInjury = false, injuryMinWeeks = 2, injuryMaxWeeks = 12, injuryYearlyCap = 16, injuryRemainingWeeks = 16, onUseStreakShield, onClose }) {
+  // Lifetime is a non-consumable, so there's no renewal to manage or cancel —
+  // the Customer Center still handles refunds and receipts, but the row that
+  // opens it shouldn't call itself "Manage Subscription".
+  const isLifetime = planType === 'lifetime';
   const [isEmailPasswordUser, setIsEmailPasswordUser] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [showVacationConfirm, setShowVacationConfirm] = useState(false);
@@ -1690,7 +1694,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                   <div>
                     <span className="text-sm text-white block">{isPro ? 'DaySeven Pro' : 'DaySeven'}</span>
                     <p className="text-[11px]" style={{ color: isPro ? '#00FF94' : '#9ca3af' }}>
-                      {isPro ? 'Active' : 'Free plan'}
+                      {!isPro ? 'Free plan' : isLifetime ? 'Lifetime — yours forever' : 'Active'}
                     </p>
                   </div>
                 </div>
@@ -1716,7 +1720,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                       </svg>
                     )}
                   </div>
-                  <span className="text-sm text-white">{isPro ? 'Manage Subscription' : 'Upgrade to Pro'}</span>
+                  <span className="text-sm text-white">{!isPro ? 'Upgrade to Pro' : isLifetime ? 'Purchase History & Support' : 'Manage Subscription'}</span>
                 </div>
                 <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />

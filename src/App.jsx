@@ -11330,6 +11330,45 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
   const cardioRemaining = injuryFrozen.includes('cardio') ? 0 : Math.max(0, (weekProgress.cardio?.goal || 0) - (weekProgress.cardio?.completed || 0));
   const recoveryRemaining = injuryFrozen.includes('recovery') ? 0 : Math.max(0, (weekProgress.recovery?.goal || 0) - (weekProgress.recovery?.completed || 0));
 
+  // Does the user have a streak carried in from COMPLETED weeks — i.e. something
+  // to keep rather than to start?
+  //
+  // userData.streaks can't answer this on its own: computeStreaks lets the
+  // in-progress week extend a streak, so someone with no history who met one
+  // goal this week already reads as streak 1. Since the current week can only
+  // ever add 1, subtracting it back out for any category already met recovers
+  // what the user actually walked in with.
+  const metThisWeek = (cat) => {
+    const p = weekProgress?.[cat];
+    return !!p && (p.goal || 0) > 0 && (p.completed || 0) >= p.goal;
+  };
+  const priorStreak = (cat) => {
+    const current = userData?.streaks?.[cat] || 0;
+    // A frozen category is held during an injury pause — the current week
+    // neither advances nor breaks it, so there's nothing to subtract back out.
+    if (injuryFrozen.includes(cat)) return current;
+    return Math.max(0, current - (metThisWeek(cat) ? 1 : 0));
+  };
+  const hasExistingStreak =
+    priorStreak('lifts') > 0 || priorStreak('cardio') > 0 || priorStreak('recovery') > 0;
+
+  // This banner is about the hybrid streak specifically — it lists every
+  // category still outstanding, and only the master streak requires all three.
+  // So the stake it names is the master run, under the name the rest of the app
+  // uses for it ("Hybrid Streak" on Profile and the share cards). Same
+  // in-progress-week correction as the categories: a week where all three land
+  // extends master by 1, so subtract that back out to get what the user walked
+  // in with.
+  const priorMaster = (() => {
+    const current = userData?.streaks?.master || 0;
+    if (injuryFrozen.length > 0) return current; // held during an injury pause
+    const allMet = metThisWeek('lifts') && metThisWeek('cardio') && metThisWeek('recovery');
+    return Math.max(0, current - (allMet ? 1 : 0));
+  })();
+  const streakStakes = priorMaster > 0
+    ? 'to keep your hybrid streak'
+    : 'to start your first hybrid streak';
+
   // Persist warning dismissal for the day — reappears next day if still needed
   const warningKey = new Date().toDateString();
   const streakWarningDismissed = dismissedWarningKey === warningKey;
@@ -12533,7 +12572,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                   liftsRemaining > 0 ? `${liftsRemaining} strength` : null,
                   cardioRemaining > 0 ? `${cardioRemaining} cardio` : null,
                   recoveryRemaining > 0 ? `${recoveryRemaining} recovery` : null
-                ].filter(Boolean).join(', ')} remaining to keep your streak
+                ].filter(Boolean).join(', ')} remaining {streakStakes}
               </div>
             </div>
             <button
@@ -12889,7 +12928,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
               <SectionIcon type="target" />
               <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>This Week's Goals</span>
             </div>
-            <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>{userData.injuryMode?.isActive ? 'Rest up — your streak is safe while you heal' : `Hit these to keep your streaks alive · ${daysLeft} day${daysLeft !== 1 ? 's' : ''} left`}</p>
+            <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>{userData.injuryMode?.isActive ? 'Rest up — your streak is safe while you heal' : `${hasExistingStreak ? 'Hit these to keep your streaks alive' : 'Hit these to start your first streak'} · ${daysLeft} day${daysLeft !== 1 ? 's' : ''} left`}</p>
           </div>
 
           {/* Individual Goals - The Main Event */}

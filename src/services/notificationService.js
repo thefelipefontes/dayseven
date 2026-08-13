@@ -33,6 +33,21 @@ const ensureBadgeLoaded = async () => {
   }
 };
 
+// Every Badge operation — set, get, clear, increase — calls
+// UNUserNotificationCenter.requestAuthorization(options: .badge) internally
+// before doing its work (see BadgePlugin.swift). So merely clearing the badge
+// on launch raises a system prompt, which is how one appeared over the paywall
+// for users who had just declined notifications. Gate every call on an existing
+// grant; with none, we skip the badge entirely — it's cosmetic.
+const badgeUsable = async () => {
+  if (!isNative) return false;
+  try {
+    return (await getNotificationPermissionStatus()) === 'granted';
+  } catch {
+    return false;
+  }
+};
+
 // Notification types for your app
 export const NotificationType = {
   // Social notifications
@@ -120,6 +135,26 @@ export const checkNotificationPermission = async () => {
   } catch (error) {
     console.error('[Notifications] Permission check failed:', error);
     return { granted: false };
+  }
+};
+
+/**
+ * Raw permission state, which checkNotificationPermission() flattens away.
+ * Callers need the difference between "denied" and "never asked" to decide
+ * whether presenting the system prompt would do anything.
+ * @returns {Promise<'granted'|'denied'|'prompt'>}
+ */
+export const getNotificationPermissionStatus = async () => {
+  if (!isNotificationSupported()) return 'denied';
+
+  try {
+    const result = await FirebaseMessaging.checkPermissions();
+    if (result.receive === 'granted') return 'granted';
+    if (result.receive === 'denied') return 'denied';
+    return 'prompt';
+  } catch (error) {
+    console.error('[Notifications] Permission check failed:', error);
+    return 'denied';
   }
 };
 
@@ -411,11 +446,18 @@ export const initializePushNotifications = async (userId, onNotificationReceived
   let currentToken = null;
 
   try {
-    // Request permissions
-    const { granted } = await requestNotificationPermission();
+    // Never ask from here — only check. This runs on every launch and again
+    // right after signup, so a request would surface a system prompt on top of
+    // whatever is on screen (the paywall, in practice). "Not yet asked" usually
+    // means the user tapped "No thanks" on the onboarding prescreen, and
+    // prompting anyway overrides the answer they just gave.
+    //
+    // Asking belongs to the two places the user opted into it: the onboarding
+    // prescreen, and Enable in Notification Settings.
+    const status = await getNotificationPermissionStatus();
 
-    if (!granted) {
-      console.warn('[Notifications] Permission not granted');
+    if (status !== 'granted') {
+      console.warn(`[Notifications] Permission not granted (status: ${status}) — skipping token registration`);
       return { cleanup: () => {}, token: null };
     }
 
@@ -501,11 +543,15 @@ export const initializePushNotifications = async (userId, onNotificationReceived
 export const scheduleAddDetailsNotification = async (activity) => {
   if (!isNotificationSupported() || !activity?.id) return;
   try {
+    // Check, never request. This fires from the HealthKit sync, which runs
+    // post-onboarding while the paywall is on screen — requesting here put a
+    // system prompt on top of it even for users who'd just tapped "No thanks".
+    // Local and remote notifications share one iOS authorization, so asking via
+    // this plugin overrides the answer the user gave the other one.
+    // Without permission we simply don't schedule; the incomplete-strength
+    // banner on Home still surfaces these workouts.
     const { display } = await LocalNotifications.checkPermissions();
-    if (display !== 'granted') {
-      const req = await LocalNotifications.requestPermissions();
-      if (req?.display !== 'granted') return;
-    }
+    if (display !== 'granted') return;
 
     const durationLabel = activity.duration
       ? (activity.duration >= 60
@@ -693,6 +739,7 @@ export const logNotificationOpen = async (type, stage = null) => {
  */
 export const setBadge = async (count) => {
   if (!isNotificationSupported()) return;
+  if (!(await badgeUsable())) return;
 
   try {
     await ensureBadgeLoaded();
@@ -710,6 +757,7 @@ export const setBadge = async (count) => {
  */
 export const getBadgeCount = async () => {
   if (!isNotificationSupported()) return 0;
+  if (!(await badgeUsable())) return 0;
 
   try {
     await ensureBadgeLoaded();
@@ -729,6 +777,7 @@ export const getBadgeCount = async () => {
  */
 export const incrementBadge = async () => {
   if (!isNotificationSupported()) return;
+  if (!(await badgeUsable())) return;
   try {
     await ensureBadgeLoaded();
     if (Badge) {
@@ -744,6 +793,7 @@ export const incrementBadge = async () => {
  */
 export const clearBadge = async () => {
   if (!isNotificationSupported()) return;
+  if (!(await badgeUsable())) return;
   try {
     await ensureBadgeLoaded();
     if (Badge) {

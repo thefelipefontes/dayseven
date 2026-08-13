@@ -814,6 +814,54 @@ export async function checkHealthKitWriteAuthorization() {
   }
 }
 
+// Which OS screen the "Apple Health" row opens: 'health' = the Health app,
+// 'app' = dayseven's own page in iOS Settings. Health is the right answer —
+// verified on device that the app's Settings page carries no Health row at all
+// (Photos, Camera, Siri, Search, Notifications, Live Activities, Cellular), so
+// 'app' is a dead end. There's no public deep link into Health's per-app pane,
+// so the UI spells out the last two taps (profile photo → Apps → DaySeven).
+export const HEALTH_SETTINGS_TARGET = 'health';
+
+export async function openHealthSettings() {
+  if (!Capacitor.isNativePlatform()) return false;
+  try {
+    const result = await HealthKitWriter.openHealthSettings({ target: HEALTH_SETTINGS_TARGET });
+    return !!result?.opened;
+  } catch (error) {
+    return false;
+  }
+}
+
+// Best-effort read of whether Health is actually connected.
+//
+// iOS never reveals READ authorization status — by design, since "we have no
+// data for you" would otherwise leak that the user is hiding some — so there is
+// no direct answer available. What we can see is the WRITE status for workouts,
+// which the same prompt covers: someone who tapped "Don't Allow" leaves it
+// denied, and someone who has never been asked leaves it notDetermined.
+//
+// Known gap: a user who granted write but individually denied read reads as
+// 'connected' here. That's the least-bad tradeoff — the alternative is nagging
+// people whose only crime is having no workouts this week.
+//
+// Returns 'connected' | 'denied' | 'unasked' | 'unavailable'.
+export async function getHealthConnectionStatus() {
+  if (!Capacitor.isNativePlatform()) return 'unavailable';
+
+  try {
+    const result = await HealthKitWriter.checkWriteAuthorization();
+    if (result?.reason === 'not_available') return 'unavailable';
+    // HKAuthorizationStatus: 0 notDetermined, 1 sharingDenied, 2 sharingAuthorized
+    if (result?.status === 2) return 'connected';
+    if (result?.status === 1) return 'denied';
+    return 'unasked';
+  } catch (error) {
+    // Don't claim a problem we can't confirm — treat an error as "unknown but
+    // probably fine" so the UI stays quiet rather than crying wolf.
+    return 'connected';
+  }
+}
+
 // Map DaySeven activity to HealthKit workout type string
 export function getHealthKitActivityType(activity) {
   const { type, subtype, strengthType } = activity;

@@ -23,9 +23,9 @@ import { getFriends, getReactions, getFriendRequests, getComments, addReply, get
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
-import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, fetchHealthDataForDate, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, pushDistanceUnitToWatch, fetchWorkoutRoute, updateWidgetData, updateLiveActivityState, startWatchWorkoutLiveActivity, endAllLiveActivities, checkActiveLiveActivity, showLocationDeniedDialog } from './services/healthService';
+import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, fetchHealthDataForDate, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, pushDistanceUnitToWatch, fetchWorkoutRoute, updateWidgetData, updateLiveActivityState, startWatchWorkoutLiveActivity, endAllLiveActivities, checkActiveLiveActivity, showLocationDeniedDialog, getHealthConnectionStatus } from './services/healthService';
 import NotificationSettings from './NotificationSettings';
-import { initializePushNotifications, handleNotificationNavigation, removeFCMToken, clearBadge, clearAllNotifications, shouldShowNotification, getNotificationPreferences, logNotificationOpen } from './services/notificationService';
+import { initializePushNotifications, handleNotificationNavigation, removeFCMToken, clearBadge, clearAllNotifications, shouldShowNotification, getNotificationPreferences, logNotificationOpen, getNotificationPermissionStatus, requestNotificationPermission } from './services/notificationService';
 import { initializeRevenueCat, loginRevenueCat, checkProStatus, getPlanType, addCustomerInfoListener, logoutRevenueCat, presentPaywall, presentCustomerCenter, restorePurchases, setDevAuthEmail, getOfferings } from './services/subscriptionService';
 import ActivityIcon, { ICON_PICKER_CATEGORIES, CATEGORY_COLORS as ICON_CATEGORY_COLORS } from './components/ActivityIcon';
 import RouteMapView, { ll2px, bestFit, makeTiles, RouteOverlay, TileLayer, TILE } from './components/RouteMapView';
@@ -11158,7 +11158,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss, distanceUnit = 'mi
 
 // Home Tab - Simplified
 
-const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onSaveWeeklyPlan, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeCountsChange, onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, optimisticChallengeCompletions = new Map(), onStartChallengeWorkout, onApplyPastActivityToChallenge, onChallengeDetailOpenChange, openActivityTarget = null, showHkEmptyHint = false, onDismissHkEmptyHint = () => {} }) => {
+const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onSaveWeeklyPlan, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeCountsChange, onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, optimisticChallengeCompletions = new Map(), onStartChallengeWorkout, onApplyPastActivityToChallenge, onChallengeDetailOpenChange, openActivityTarget = null, showHkEmptyHint = false, hkAccessBlocked = false, onDismissHkEmptyHint = () => {}, onOpenHealthSettings = () => {}, showNotifReask = false, onAcceptNotifReask = () => {}, onDismissNotifReask = () => {} }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
   const [dismissConfirmWorkouts, setDismissConfirmWorkouts] = useState(null); // Workouts pending dismiss confirmation
@@ -12271,25 +12271,73 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             re-nag. */}
         {showHkEmptyHint && (
           <div
-            className="relative p-3 rounded-xl mb-3 flex items-start gap-3"
+            onClick={onOpenHealthSettings}
+            className="relative p-3 rounded-xl mb-3 flex items-start gap-3 transition-all duration-150"
             style={{
               backgroundColor: 'rgba(0,209,255,0.08)',
               border: '1px solid rgba(0,209,255,0.25)'
             }}
+            onTouchStart={(e) => { e.currentTarget.style.opacity = '0.7'; }}
+            onTouchEnd={(e) => { e.currentTarget.style.opacity = '1'; }}
+            onTouchCancel={(e) => { e.currentTarget.style.opacity = '1'; }}
           >
-            <span className="text-xl">🩺</span>
+            <span className="text-xl">{hkAccessBlocked ? '❤️' : '🩺'}</span>
             <div className="flex-1 pr-6">
-              <div className="text-xs font-semibold" style={{ color: '#00D1FF' }}>
-                No workouts found in Apple Health
+              <div className="text-xs font-semibold flex items-center gap-1" style={{ color: '#00D1FF' }}>
+                {hkAccessBlocked ? 'Apple Health isn’t connected' : 'No workouts found in Apple Health'}
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
               </div>
               <div className="text-[10px] text-gray-400 mt-0.5 leading-snug">
-                If you use Garmin, Whoop, or Polar, enable Apple Health sync inside their companion app and your workouts will start flowing in.
+                {hkAccessBlocked
+                  ? 'We can’t see your workouts, so nothing will auto-log. Tap to turn it back on.'
+                  : 'If you use Garmin, Whoop, or Polar, enable Apple Health sync inside their companion app and your workouts will start flowing in. Tap to check your Apple Health settings.'}
               </div>
             </div>
             <button
-              onClick={onDismissHkEmptyHint}
+              onClick={(e) => { e.stopPropagation(); onDismissHkEmptyHint(); }}
               className="absolute flex items-center justify-center"
               style={{ top: 4, right: 4, width: 44, height: 44, color: 'rgba(0,209,255,0.6)' }}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M3 3L11 11M11 3L3 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+              </svg>
+            </button>
+          </div>
+        )}
+
+        {/* Notification re-ask — only ever shown when the system prompt is still
+            unspent (see maybeOfferNotifReask). Tapping it is what presents the
+            prompt; nothing here auto-fires, so the user is never ambushed. */}
+        {showNotifReask && (
+          <div
+            onClick={onAcceptNotifReask}
+            className="relative p-3 rounded-xl mb-3 flex items-start gap-3 transition-all duration-150"
+            style={{
+              backgroundColor: 'rgba(0,255,148,0.08)',
+              border: '1px solid rgba(0,255,148,0.25)'
+            }}
+            onTouchStart={(e) => { e.currentTarget.style.opacity = '0.7'; }}
+            onTouchEnd={(e) => { e.currentTarget.style.opacity = '1'; }}
+            onTouchCancel={(e) => { e.currentTarget.style.opacity = '1'; }}
+          >
+            <span className="text-xl">🔔</span>
+            <div className="flex-1 pr-6">
+              <div className="text-xs font-semibold flex items-center gap-1" style={{ color: '#00FF94' }}>
+                Nice work — want a nudge next time?
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </div>
+              <div className="text-[10px] text-gray-400 mt-0.5 leading-snug">
+                We'll tell you when a ring is still open — before the week closes. Tap to turn on reminders.
+              </div>
+            </div>
+            <button
+              onClick={(e) => { e.stopPropagation(); onDismissNotifReask(); }}
+              className="absolute flex items-center justify-center"
+              style={{ top: 4, right: 4, width: 44, height: 44, color: 'rgba(0,255,148,0.6)' }}
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                 <path d="M3 3L11 11M11 3L3 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
@@ -12547,8 +12595,21 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             showRetroactive = hadStreakBeforeLastWeek && prevIncomplete && !prevAlreadyShielded;
           }
 
-          // Current week shield (Thu/Fri/Sat as before)
-          const showCurrentWeek = daysLeft <= 3 && (liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0) && hasActiveStreak;
+          // Current week shield (Thu/Fri/Sat as before).
+          //
+          // hasActiveStreak alone isn't a good enough gate: computeStreaks lets the
+          // in-progress week extend a streak, so a user with no history who simply
+          // met one goal this week reads as streak 1 and gets offered a shield that
+          // would protect nothing. What actually makes the shield worth offering is
+          // a category the user has NOT yet met this week that is carrying a streak
+          // into it — that's the run a missed week would break.
+          const atRiskStreak =
+            (liftsRemaining > 0 && userData.streaks.lifts > 0) ||
+            (cardioRemaining > 0 && userData.streaks.cardio > 0) ||
+            (recoveryRemaining > 0 && userData.streaks.recovery > 0) ||
+            (userData.streaks.master > 0 && (liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0));
+
+          const showCurrentWeek = daysLeft <= 3 && atRiskStreak;
 
           if (!showRetroactive && !showCurrentWeek) return null;
 
@@ -13212,6 +13273,9 @@ export default function DaySevenApp() {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('home');
   const [showSettings, setShowSettings] = useState(false);
+  // Section to jump to when Settings opens — set by callers that deep link in
+  // (the home "no workouts found" banner points at 'health'). Cleared on close.
+  const [settingsScrollTo, setSettingsScrollTo] = useState(null);
   const [scrollY, setScrollY] = useState(0);
   const [prevTab, setPrevTab] = useState('home');
   const [tabDirection, setTabDirection] = useState(0); // -1 = left, 0 = none, 1 = right
@@ -13241,6 +13305,14 @@ export default function DaySevenApp() {
   // their device's companion app. We surface a one-time, dismissible tip on
   // Home rather than ask about wearables in onboarding.
   const [showHkEmptyHint, setShowHkEmptyHint] = useState(false);
+  // Why the hint is showing. A zero-workout sync looks identical whether the
+  // user denied Health outright or just hasn't bridged their Garmin/Whoop into
+  // it, so we ask for the access status separately and word the banner to match.
+  const [hkAccessBlocked, setHkAccessBlocked] = useState(false);
+  // Contextual notification re-ask. Skipping the onboarding prescreen leaves the
+  // system prompt unspent, so it's still offerable — once, after the user has
+  // logged something themselves.
+  const [showNotifReask, setShowNotifReask] = useState(false);
   // Multi-match chooser state — shape: { activity, candidateChallenges } | null.
   // Set when an activity matches 2+ challenges and the cloud function deferred fulfillment
   // (push notification deep-link or anywhere we surface the modal).
@@ -14065,6 +14137,7 @@ export default function DaySevenApp() {
     // clean Home, not the Settings overlay (which would render on top of Home
     // and leak Home's pull-to-refresh through the modal).
     setShowSettings(false);
+    setSettingsScrollTo(null);
     setShowShare(false);
     setShowEditGoals(false);
     setShowChangePassword(false);
@@ -15095,6 +15168,51 @@ export default function DaySevenApp() {
     }
   }, []);
 
+  // Mark the re-ask as spent. Whether they took it or waved it off, we don't
+  // come back — one contextual offer, not a recurring pitch.
+  //
+  // Deliberately localStorage rather than the Firestore profile: this records
+  // "declined an offer to enable notifications ON THIS DEVICE", and iOS
+  // permissions are themselves per-install. localStorage is wiped when the app
+  // is deleted, so the flag's lifetime matches exactly what it's tracking. An
+  // account-level flag would follow the user through a reinstall or a new phone
+  // — where permissions have reset and the offer is precisely what they need —
+  // and would also suppress it on a second device that never saw it.
+  const consumeNotifReask = useCallback(() => {
+    setShowNotifReask(false);
+    try { localStorage.setItem('notifReaskDismissed', '1'); } catch {}
+  }, []);
+
+  // Offer the banner only when the prompt is genuinely still available:
+  // 'granted' means there's nothing to ask for, 'denied' means the prompt is
+  // spent and only Settings can undo it. 'prompt' is the skipped-onboarding
+  // case this exists for.
+  const maybeOfferNotifReask = useCallback(async () => {
+    if (!Capacitor.isNativePlatform()) return;
+    let dismissed = false;
+    try { dismissed = localStorage.getItem('notifReaskDismissed') === '1'; } catch {}
+    if (dismissed) return;
+    try {
+      const status = await getNotificationPermissionStatus();
+      if (status === 'prompt') setShowNotifReask(true);
+    } catch (e) {
+      // A failed check is not a reason to nag.
+    }
+  }, []);
+
+  // The banner is the only thing that presents the prompt — the user taps it
+  // first, so iOS's dialog never arrives unannounced.
+  const handleAcceptNotifReask = useCallback(async () => {
+    consumeNotifReask();
+    const uid = userRef.current?.uid;
+    try {
+      const { granted } = await requestNotificationPermission();
+      if (granted && uid) await setupPushNotifications(uid);
+    } catch (e) {
+      console.error('[App] Notification re-ask failed:', e);
+    }
+  }, [consumeNotifReask, setupPushNotifications]);
+
   // Sync HealthKit data function
   const syncHealthKit = useCallback(async () => {
     if (!Capacitor.isNativePlatform()) return;
@@ -15122,6 +15240,9 @@ export default function DaySevenApp() {
           !currentActivities.some(a => a.healthKitUUID || a.linkedHealthKitUUID || a.source === 'healthkit')
         ) {
           setShowHkEmptyHint(true);
+          getHealthConnectionStatus()
+            .then(status => setHkAccessBlocked(status === 'denied' || status === 'unasked'))
+            .catch(() => setHkAccessBlocked(false));
         }
 
         // Find workouts that aren't already in activities (by healthKitUUID) and not dismissed
@@ -16543,6 +16664,11 @@ export default function DaySevenApp() {
       });
     }
 
+    // A workout the user logged themselves is when "we'll remind you before the
+    // week closes" actually means something — far better than mid-onboarding,
+    // where they had no streak to protect yet. Edits don't count.
+    if (!isEdit) maybeOfferNotifReask();
+
     // Optimistic fulfillment — flip the UI to "completed" instantly for any challenge this
     // activity will fulfill. Mirrors the cloud function's decision logic so we don't get out
     // of sync. Cloud function still runs server-side for stats + push notifications.
@@ -17831,7 +17957,12 @@ export default function DaySevenApp() {
                   onWorkoutPickerChange={setIsHomeWorkoutPickerOpen}
                   openActivityTarget={homeOpenActivityTarget}
                   showHkEmptyHint={showHkEmptyHint}
+                  hkAccessBlocked={hkAccessBlocked}
                   onDismissHkEmptyHint={handleDismissHkEmptyHint}
+                  onOpenHealthSettings={() => { setSettingsScrollTo('health'); setShowSettings(true); }}
+                  showNotifReask={showNotifReask}
+                  onAcceptNotifReask={handleAcceptNotifReask}
+                  onDismissNotifReask={consumeNotifReask}
                   friends={friends}
                   onChallengeCountsChange={({ outgoingThisMonthCount }) => setOutgoingThisMonthChallengeCount(outgoingThisMonthCount)}
                   onChallengeActivity={(activity) => setChallengeModalActivity(activity)}
@@ -18073,7 +18204,11 @@ export default function DaySevenApp() {
           )}
         </div>
         {showSettings && (
-          <div className="fixed inset-0 z-50" style={{ backgroundColor: '#000' }}>
+          // data-modal-overlay opts this out of the page-level pull-to-refresh.
+          // Settings scrolls in its own container, so without the marker the
+          // page handler reads Home's scrollTop (still 0 underneath) and fires a
+          // refresh on any downward drag, however far down Settings you are.
+          <div data-modal-overlay className="fixed inset-0 z-50" style={{ backgroundColor: '#000' }}>
             {/* Status bar blur — same treatment as the regular non-home tabs underneath. */}
             <div
               className="fixed top-0 left-0 right-0 pointer-events-none"
@@ -18088,7 +18223,8 @@ export default function DaySevenApp() {
               }}
             />
             <SettingsPage
-              onClose={() => setShowSettings(false)}
+              scrollTo={settingsScrollTo}
+              onClose={() => { setShowSettings(false); setSettingsScrollTo(null); }}
               user={user}
               userProfile={userProfile}
               userData={userData}

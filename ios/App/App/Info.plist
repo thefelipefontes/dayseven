@@ -35,6 +35,14 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<!-- Schemes we probe with canOpenURL. Without these entries canOpenURL
+	     returns false regardless of whether the app is installed, which silently
+	     hides the "Open Watch App" action in the location-denied dialog. -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>x-apple-watch</string>
+		<string>x-apple-health</string>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>

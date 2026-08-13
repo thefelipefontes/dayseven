@@ -4,6 +4,7 @@ import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
 import { checkUsernameAvailable } from './services/userService';
+import { getHealthConnectionStatus, openHealthSettings } from './services/healthService';
 import { isSundayToday, formatApplyOn } from './utils/goalsSchedule';
 
 // Helper function for haptic feedback that works on iOS
@@ -36,7 +37,7 @@ const getPreviousWeekKey = () => {
   return toLocalDateStr(sunday);
 };
 
-export default function SettingsPage({ user, userProfile, userData, onSignOut, onEditGoals, onCancelPendingGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onUpdateDistanceUnit, onUpdateMaxHeartRate, onUpdateDisplayName, onUpdateUsername, onChangePassword, onResetPassword, onDeleteAccount, onNotificationSettings, isPro, planType, onPresentPaywall, onPresentCustomerCenter, onRestorePurchases, onToggleVacationMode, onActivateInjuryMode, onResumeInjuryMode, canResumeInjury = false, injuryMinWeeks = 2, injuryMaxWeeks = 12, injuryYearlyCap = 16, injuryRemainingWeeks = 16, onUseStreakShield, onClose }) {
+export default function SettingsPage({ user, userProfile, userData, onSignOut, onEditGoals, onCancelPendingGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onUpdateDistanceUnit, onUpdateMaxHeartRate, onUpdateDisplayName, onUpdateUsername, onChangePassword, onResetPassword, onDeleteAccount, onNotificationSettings, isPro, planType, onPresentPaywall, onPresentCustomerCenter, onRestorePurchases, onToggleVacationMode, onActivateInjuryMode, onResumeInjuryMode, canResumeInjury = false, injuryMinWeeks = 2, injuryMaxWeeks = 12, injuryYearlyCap = 16, injuryRemainingWeeks = 16, onUseStreakShield, onClose, scrollTo = null }) {
   // Lifetime is a non-consumable, so there's no renewal to manage or cancel —
   // the Customer Center still handles refunds and receipts, but the row that
   // opens it shouldn't call itself "Manage Subscription".
@@ -102,6 +103,34 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
   const [isCheckingUsername, setIsCheckingUsername] = useState(false);
   const [usernameTaken, setUsernameTaken] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+
+  // Apple Health access state: 'connected' | 'denied' | 'unasked' | 'unavailable'.
+  // Re-checked whenever the app comes back to the foreground, because the only
+  // way to change it is out in Settings — so returning from the background is
+  // exactly when the answer is likely to have changed.
+  const [healthStatus, setHealthStatus] = useState('connected');
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      const status = await getHealthConnectionStatus();
+      if (!cancelled) setHealthStatus(status);
+    };
+    check();
+    document.addEventListener('visibilitychange', check);
+    return () => { cancelled = true; document.removeEventListener('visibilitychange', check); };
+  }, []);
+  const healthConnected = healthStatus === 'connected' || healthStatus === 'unavailable';
+
+  // Deep link into a section (currently only 'health', from the home-screen
+  // "no workouts found" banner). Runs after paint so the section has laid out.
+  const healthSectionRef = useRef(null);
+  useEffect(() => {
+    if (scrollTo !== 'health') return;
+    const t = setTimeout(() => {
+      healthSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+    return () => clearTimeout(t);
+  }, [scrollTo]);
 
   const openEditField = (field) => {
     triggerHaptic(ImpactStyle.Light);
@@ -1753,11 +1782,56 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
         )}
 
         {/* Health Section */}
-        <div className="mb-6">
+        <div className="mb-6" ref={healthSectionRef} style={{ scrollMarginTop: 'calc(env(safe-area-inset-top, 0px) + 24px)' }}>
           <h3 className="text-sm font-semibold text-gray-400 mb-3">HEALTH</h3>
           <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+            {/* Apple Health access — a row, not a toggle. We can't re-present the
+                HealthKit sheet once the user has answered it, so the only honest
+                control is a link out to where the real toggles live. */}
+            {healthStatus !== 'unavailable' && (
+              <div className="pb-3 mb-1 border-b border-zinc-700/50">
+                <button
+                  onClick={() => {
+                    triggerHaptic(ImpactStyle.Light);
+                    if (!healthConnected) openHealthSettings();
+                  }}
+                  disabled={healthConnected}
+                  className="w-full flex items-center justify-between py-2 transition-all duration-150"
+                  onTouchStart={(e) => { if (!healthConnected) e.currentTarget.style.opacity = '0.7'; }}
+                  onTouchEnd={(e) => e.currentTarget.style.opacity = '1'}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(255,69,87,0.12)' }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                        <path d="M12 21C12 21 4 14 4 8.5C4 5.46243 6.46243 3 9.5 3C11.0367 3 12.4118 3.5825 13.4 4.55C14.3882 3.5825 15.7633 3 17.3 3C20.3376 3 22.8 5.46243 22.8 8.5C22.8 9.55225 22.5 10.5612 22 11.5" stroke="#FF4557" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </div>
+                    <div className="text-left">
+                      <span className="text-sm text-white block">Apple Health</span>
+                      <p className="text-[11px] text-gray-500">
+                        {healthConnected ? 'Connected' : 'Not connected — nothing will auto-log'}
+                      </p>
+                    </div>
+                  </div>
+                  {!healthConnected && (
+                    <span className="text-[13px] font-medium flex items-center gap-1" style={{ color: '#00FF94' }}>
+                      Open Health
+                      <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="9 18 15 12 9 6" />
+                      </svg>
+                    </span>
+                  )}
+                </button>
+                {!healthConnected && (
+                  <p className="text-[11px] text-gray-500 ml-11 -mt-1">
+                    In Health, tap your profile photo → Apps (under Privacy) → DaySeven → Turn On All, then come back — we'll pick it up automatically.
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Smart Save Toggle */}
-            <div className="flex items-center justify-between py-2">
+            <div className={`flex items-center justify-between py-2 ${healthConnected ? '' : 'opacity-40 pointer-events-none'}`}>
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
                   <svg className="w-4 h-4" fill="none" stroke="#00FF94" viewBox="0 0 24 24" strokeWidth={1.5}>
@@ -1828,8 +1902,9 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
               </div>
             )}
 
-            {/* Auto-log from Apple Health — per-category */}
-            <div className="border-t border-zinc-700/50 mt-2 pt-3">
+            {/* Auto-log from Apple Health — per-category. Inert without Health
+                access, so it's dimmed and unresponsive rather than pretending. */}
+            <div className={`border-t border-zinc-700/50 mt-2 pt-3 ${healthConnected ? '' : 'opacity-40 pointer-events-none'}`}>
               <p className="text-[11px] text-gray-500 mb-2 px-1">Auto-save from Apple Health</p>
 
               {/* Strength */}

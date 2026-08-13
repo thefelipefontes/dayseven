@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { fetchHealthKitWorkouts, requestHealthKitAuthorization } from './services/healthService';
+import { fetchHealthKitWorkouts, requestHealthKitAuthorization, getHealthConnectionStatus, openHealthSettings } from './services/healthService';
 import { requestNotificationPermission } from './services/notificationService';
 import WeeklyPlanner from './WeeklyPlanner';
 
@@ -905,7 +905,10 @@ function ScheduleScreen({ goals, initialPlan, onChange, onBack, onContinue, onSk
 // HealthKit permission pre-screen
 // ============================================================================
 
-function HKPrescreen({ onConnected, onSkip }) {
+// Per App Review guidance: once this explanation is on screen the only way
+// forward is the system HealthKit sheet. No "later" button — declining is
+// something the user does in Apple's prompt, not in ours.
+function HKPrescreen({ onConnected }) {
   const [requesting, setRequesting] = useState(false);
   const handleConnect = async () => {
     if (requesting) return;
@@ -946,9 +949,6 @@ function HKPrescreen({ onConnected, onSkip }) {
           {...ctaPressProps(!requesting)}
         >
           {requesting ? 'Connecting…' : 'Connect Apple Health'}
-        </button>
-        <button onClick={onSkip} className="w-full mt-3 py-3 text-gray-400 text-sm font-medium">
-          I'll do this later
         </button>
       </div>
     </div>
@@ -1005,6 +1005,11 @@ function LinkingScreen({ weeklyGoals, hkAuthorized, answers, initialLinked, init
   // linkedIds: Set of activity IDs currently linked
   const [linkedIds, setLinkedIds] = useState(() => new Set((initialLinked || []).map(a => a.id)));
   const [claimedCreditIds, setClaimedCreditIds] = useState(() => new Set((initialCredits || []).map(c => c.id)));
+  // Whether to explain the empty list, and a counter that re-runs the fetch
+  // below when access comes back on.
+  const [healthBlocked, setHealthBlocked] = useState(false);
+  const [hkRefresh, setHkRefresh] = useState(0);
+  const wasBlockedRef = useRef(false);
 
   // Fetch this week's HK workouts (auto-pulls 7 days, filter to current week)
   useEffect(() => {
@@ -1026,7 +1031,25 @@ function LinkingScreen({ weeklyGoals, hkAuthorized, answers, initialLinked, init
       }
     })();
     return () => { cancelled = true; };
-  }, [hkAuthorized]);
+  }, [hkAuthorized, hkRefresh]);
+
+  // Re-checked on foreground so a user who leaves for Settings and grants
+  // access comes back to a clean screen with their workouts loaded.
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      const status = await getHealthConnectionStatus();
+      if (cancelled) return;
+      const blocked = status === 'denied' || status === 'unasked';
+      // Access just came back on — pull the workouts we couldn't see before.
+      if (wasBlockedRef.current && !blocked) setHkRefresh(n => n + 1);
+      wasBlockedRef.current = blocked;
+      setHealthBlocked(blocked);
+    };
+    check();
+    document.addEventListener('visibilitychange', check);
+    return () => { cancelled = true; document.removeEventListener('visibilitychange', check); };
+  }, []);
 
   // Build the credit pool based on what's needed AFTER counting linked HK workouts.
   // We compute the *full* credit pool (max possible), then cap by what's claimed.
@@ -1147,6 +1170,27 @@ function LinkingScreen({ weeklyGoals, hkAuthorized, answers, initialLinked, init
       <div className="flex-1 px-6 py-5 pb-32 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
         {loadingHK && (
           <div className="text-center text-gray-500 text-sm py-6">Reading from Apple Health…</div>
+        )}
+
+        {/* Nothing came back and Health access is off — say so here, where the
+            workouts should have been, rather than interrupting with a dialog. */}
+        {!loadingHK && !hasAnyHK && healthBlocked && (
+          <div className="mb-6 rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.04)' }}>
+            <p className="text-sm text-white mb-1">Apple Health isn't connected.</p>
+            <p className="text-[13px] text-gray-400 leading-relaxed mb-3">
+              We can't see your workouts, so nothing will auto-log. You can turn it on any time — in Health, tap your profile photo → Apps (under Privacy) → DaySeven → Turn On All. This screen still works without it.
+            </p>
+            <button
+              onClick={() => openHealthSettings()}
+              className="text-[13px] font-semibold flex items-center gap-1"
+              style={{ color: '#00FF94' }}
+            >
+              Open Health
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+          </div>
         )}
 
         {hasAnyHK && (
@@ -1678,10 +1722,6 @@ export default function OnboardingFlow({ onComplete, onSignIn }) {
         <HKPrescreen
           onConnected={(granted) => {
             setHkAuthorized(granted);
-            goForward('linking');
-          }}
-          onSkip={() => {
-            setHkAuthorized(false);
             goForward('linking');
           }}
         />

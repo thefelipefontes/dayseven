@@ -46,7 +46,9 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "startWatchWorkoutLiveActivity", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "endAllLiveActivities", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "checkActiveLiveActivity", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "showLocationDeniedDialog", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "showLocationDeniedDialog", returnType: CAPPluginReturnPromise),
+        // Send the user to the OS screen where Health access can be re-granted
+        CAPPluginMethod(name: "openHealthSettings", returnType: CAPPluginReturnPromise)
     ]
 
     private let healthStore = HKHealthStore()
@@ -1584,6 +1586,61 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             })
 
             vc.present(alert, animated: true)
+        }
+    }
+
+    /// Opens the OS surface where the user can change dayseven's Health access.
+    /// We can't re-present the HealthKit sheet ourselves — once a data type has
+    /// been answered for, requestAuthorization returns silently with no UI — so
+    /// leaving the app is the only recovery path.
+    ///
+    /// `target` picks which surface: "app" = this app's own page in Settings,
+    /// "health" = the Health app, where the per-app data toggles live. Which one
+    /// lands closer to the toggles depends on the iOS Settings layout, so the
+    /// choice stays on the JS side (HEALTH_SETTINGS_TARGET) and can be flipped
+    /// without a native rebuild. Whichever is asked for, the other is the
+    /// fallback if the URL won't open.
+    @objc func openHealthSettings(_ call: CAPPluginCall) {
+        let target = call.getString("target") ?? "health"
+
+        DispatchQueue.main.async {
+            let healthApp = URL(string: "x-apple-health://")
+            let appSettings = URL(string: UIApplication.openSettingsURLString)
+
+            let candidates: [(String, URL?)] = target == "app"
+                ? [("app", appSettings), ("health", healthApp)]
+                : [("health", healthApp), ("app", appSettings)]
+
+            self.openFirstAvailable(candidates, call: call)
+        }
+    }
+
+    /// Opens the first URL that actually launches, falling back down the list.
+    ///
+    /// Deliberately uses open()'s completion handler rather than canOpenURL:
+    /// canOpenURL requires the scheme to be listed in LSApplicationQueriesSchemes
+    /// and returns false when it isn't, which would silently skip the Health app
+    /// and drop the user on the app's own Settings page — where, as of iOS 26,
+    /// there is no Health row at all.
+    private func openFirstAvailable(_ candidates: [(String, URL?)], call: CAPPluginCall) {
+        var remaining = candidates
+        guard !remaining.isEmpty else {
+            call.resolve(["opened": false, "target": ""])
+            return
+        }
+
+        let (name, url) = remaining.removeFirst()
+        guard let url else {
+            openFirstAvailable(remaining, call: call)
+            return
+        }
+
+        UIApplication.shared.open(url, options: [:]) { success in
+            if success {
+                call.resolve(["opened": true, "target": name])
+            } else {
+                self.openFirstAvailable(remaining, call: call)
+            }
         }
     }
 

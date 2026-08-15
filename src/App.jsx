@@ -4758,7 +4758,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                 <div className="flex justify-around">
                   <div className="text-center">
                     <div className={`${isPostFormat ? 'text-base' : 'text-lg'} font-black`} style={{ color: colors.primary }}>{records.longestMasterStreak || 0}</div>
-                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>Master</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>Hybrid</div>
                   </div>
                   <div className="text-center">
                     <div className={`${isPostFormat ? 'text-base' : 'text-lg'} font-black`} style={{ color: '#00FF94' }}>{records.longestStrengthStreak || 0}</div>

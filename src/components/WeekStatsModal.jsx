@@ -238,7 +238,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
             </div>
             <div className="p-3 rounded-xl flex items-center justify-between" style={streakRowStyle(!!weekData?.goalsMet, '255,215,0', 'master')}>
               <div>
-                <span className="text-xs">🏆 Master</span>
+                <span className="text-xs">🏆 Hybrid</span>
                 <div className="text-[10px] text-gray-500">All goals hit</div>
               </div>
               {streakIcon(!!weekData?.goalsMet, '#FFD700', 'master')}
@@ -294,7 +294,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
                     </div>
                     <div className="flex gap-4 text-xs text-gray-400">
                       <span>{activity.duration} min</span>
-                      <span>{activity.calories} cal</span>
+                      {activity.calories > 0 && <span>{activity.calories} cal</span>}
                       {activity.avgHr && <span>♥ {activity.avgHr} avg</span>}
                     </div>
                   </div>
@@ -343,7 +343,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
                     <div className="flex gap-4 text-xs text-gray-400">
                       {activity.distance && <span>{parseFloat(activity.distance).toFixed(2)} mi</span>}
                       <span>{activity.duration} min</span>
-                      <span>{activity.calories} cal</span>
+                      {activity.calories > 0 && <span>{activity.calories} cal</span>}
                     </div>
                   </div>
                 </SwipeableActivityItem>
@@ -391,7 +391,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
                     <div className="flex gap-4 text-xs text-gray-400">
                       <span>{activity.duration} min</span>
                       {activity.temp && <span>{activity.temp}°F</span>}
-                      {activity.calories && <span>{activity.calories} cal</span>}
+                      {activity.calories > 0 && <span>{activity.calories} cal</span>}
                     </div>
                   </div>
                 </SwipeableActivityItem>
@@ -430,7 +430,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
                     <div className="flex gap-4 text-xs text-gray-400">
                       {activity.distance && <span>{parseFloat(activity.distance).toFixed(2)} mi</span>}
                       {activity.duration && <span>{activity.duration} min</span>}
-                      {activity.calories && <span>{activity.calories} cal</span>}
+                      {activity.calories > 0 && <span>{activity.calories} cal</span>}
                     </div>
                   </div>
                 </SwipeableActivityItem>

@@ -1,3 +1,4 @@
+import CategoryIcon from './CategoryIcon';
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getUserProfile } from '../services/userService';
@@ -234,7 +235,7 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
               style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
             >
               <BestRow icon="🏃" label="Longest Run" value={longestDistance ? `${longestDistance.toFixed(1)} mi` : '—'} />
-              <BestRow icon="🔥" label="Top Calorie Workout" value={highestCalories ? highestCalories.toLocaleString() : '—'} />
+              <BestRow icon={<CategoryIcon category="calories" size={13} color="currentColor" />} label="Top Calorie Workout" value={highestCalories ? highestCalories.toLocaleString() : '—'} />
               <BestRow icon="⚡" label="Fastest Pace" value={fastestPace ? `${formatPace(fastestPace)} /mi` : '—'} />
               <BestRow icon="📍" label="Most Miles in a Week" value={mostMilesWeek ? `${mostMilesWeek.toFixed(1)} mi` : '—'} />
             </div>

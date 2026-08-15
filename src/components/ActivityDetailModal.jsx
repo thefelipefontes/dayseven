@@ -358,7 +358,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
               )}
               {activity.type === 'Walking' && (
                 <div className="text-xs mt-0.5" style={{ color: activity.countToward === 'cardio' ? '#FF9500' : activity.countToward === 'warmup' ? '#FFD60A' : '#808080' }}>
-                  {activity.countToward === 'cardio' ? '❤️‍🔥 Counts as Cardio' : activity.countToward === 'warmup' ? '🔥 Warm Up' : '🚶 Casual Walk'}
+                  {activity.countToward === 'cardio' ? '❤️ Counts as Cardio' : activity.countToward === 'warmup' ? '🔥 Warm Up' : '🚶 Casual Walk'}
                 </div>
               )}
               {(activity.avgHr || activity.maxHr) && (

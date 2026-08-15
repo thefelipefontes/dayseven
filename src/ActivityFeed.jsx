@@ -1,3 +1,4 @@
+import CategoryIcon from './components/CategoryIcon';
 import React, { useState, useEffect, useCallback, useRef, useMemo, createContext, useContext } from 'react';
 import { getUserActivities, getPersonalRecords, getDailyHealthHistory, getUserProfile } from './services/userService';
 import { addReaction, getReactions, removeReaction, addComment, getComments, deleteComment, addReply, getReplies, deleteReply, getFriends } from './services/friendService';
@@ -683,7 +684,7 @@ const MemoizedActivityCard = React.memo(({
           </p>
           <div className="flex items-center gap-3 mt-1">
             {duration && <span className="text-gray-400 text-sm">⏱ {formatDuration(duration)}</span>}
-            {calories && <span className="text-gray-400 text-sm">🔥 {calories} cal</span>}
+            {calories && <span className="text-gray-400 text-sm"><CategoryIcon category="calories" size={12} className="inline align-[-2px] mr-1" />{calories} cal</span>}
             {distance && <span className="text-gray-400 text-sm">📍 {formatDistanceValue(distance, viewerUnit, 1)} {unitLabel(viewerUnit)}</span>}
           </div>
         </div>
@@ -2947,7 +2948,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
 
                 {/* Strength Leaders */}
                 <div className="mb-4">
-                  <div className="text-xs text-gray-400 uppercase tracking-wide mb-2">💪 Strength</div>
+                  <div className="text-xs text-gray-400 uppercase tracking-wide mb-2"><CategoryIcon category="lifts" size={12} className="inline align-[-2px] mr-1" />Strength</div>
                   <div className="grid grid-cols-2 gap-2">
                     {/* Most Sessions */}
                     <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(255, 107, 107, 0.1)' }}>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import SectionIcon from './SectionIcon';
+import CategoryIcon from './CategoryIcon';
 import { normalizeFocusAreas } from '../utils/focusAreas';
 import { initialUserData } from '../utils/initialUserData';
 import { countsAsLifting, countsAsCardio, countsAsRecovery } from '../utils/activityCategory';
@@ -199,15 +200,15 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
           <div className="grid grid-cols-3 gap-2 mb-4">
             <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
               <div className="text-2xl font-black" style={{ color: '#00FF94' }}>{liftsCount}</div>
-              <div className="text-[10px] text-gray-400">💪 Strength</div>
+              <div className="text-[10px] text-gray-400"><CategoryIcon category="lifts" size={11} className="inline align-[-2px] mr-1" />Strength</div>
             </div>
             <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
               <div className="text-2xl font-black" style={{ color: '#FF9500' }}>{cardioCount}</div>
-              <div className="text-[10px] text-gray-400">❤️‍🔥 Cardio</div>
+              <div className="text-[10px] text-gray-400"><CategoryIcon category="cardio" size={11} className="inline align-[-2px] mr-1" />Cardio</div>
             </div>
             <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
               <div className="text-2xl font-black" style={{ color: '#00D1FF' }}>{recoveryCount}</div>
-              <div className="text-[10px] text-gray-400">🧊 Recovery</div>
+              <div className="text-[10px] text-gray-400"><CategoryIcon category="recovery" size={11} className="inline align-[-2px] mr-1" />Recovery</div>
             </div>
           </div>
 
@@ -220,15 +221,15 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
             <div className="grid grid-cols-2 gap-2">
               <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                 <div className="text-lg font-black">{totalCalories.toLocaleString()}</div>
-                <div className="text-[10px] text-gray-400">🔥 Calories Burned</div>
+                <div className="text-[10px] text-gray-400"><CategoryIcon category="calories" size={11} className="inline align-[-2px] mr-1" />Calories Burned</div>
               </div>
               <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                 <div className="text-lg font-black">{totalMiles.toFixed(1)} mi</div>
-                <div className="text-[10px] text-gray-400">❤️‍🔥 Distance</div>
+                <div className="text-[10px] text-gray-400"><CategoryIcon category="cardio" size={11} className="inline align-[-2px] mr-1" />Distance</div>
               </div>
               <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                 <div className="text-lg font-black">{(totalSteps / 1000).toFixed(0)}k</div>
-                <div className="text-[10px] text-gray-400">👟 Steps</div>
+                <div className="text-[10px] text-gray-400"><CategoryIcon category="steps" size={11} className="inline align-[-2px] mr-1" />Steps</div>
               </div>
               <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                 <div className="text-lg font-black">{daysActive}</div>
@@ -249,7 +250,7 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
                 <div className="text-base font-black" style={{ color: bestBurn?.calories > 0 ? '#FF453A' : '#555' }}>
                   {bestBurn?.calories > 0 ? bestBurn.calories.toLocaleString() : 'N/A'}
                 </div>
-                <div className="text-[9px] text-gray-400">🔥 Best Burn</div>
+                <div className="text-[9px] text-gray-400"><CategoryIcon category="calories" size={10} className="inline align-[-2px] mr-1" />Best Burn</div>
                 <div className="text-[9px] text-gray-500">{bestBurn?.calories > 0 ? bestBurn.type : '—'}</div>
               </div>
               {/* Longest Session */}
@@ -323,7 +324,7 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
                 border: weeksData.lift === weeksData.total && weeksData.total > 0 ? '1px solid rgba(0,255,148,0.2)' : 'none'
               }}>
                 <div>
-                  <span className="text-xs">💪 Strength</span>
+                  <span className="text-xs"><CategoryIcon category="lifts" size={12} className="inline align-[-2px] mr-1" />Strength</span>
                   <div className="text-[10px] text-gray-500">{goals.liftsPerWeek}+ per week</div>
                 </div>
                 <span className="text-sm font-bold" style={{ color: '#00FF94' }}>
@@ -335,7 +336,7 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
                 border: weeksData.cardio === weeksData.total && weeksData.total > 0 ? '1px solid rgba(255,149,0,0.2)' : 'none'
               }}>
                 <div>
-                  <span className="text-xs">❤️‍🔥 Cardio</span>
+                  <span className="text-xs"><CategoryIcon category="cardio" size={12} className="inline align-[-2px] mr-1" />Cardio</span>
                   <div className="text-[10px] text-gray-500">{goals.cardioPerWeek}+ per week</div>
                 </div>
                 <span className="text-sm font-bold" style={{ color: '#FF9500' }}>
@@ -347,7 +348,7 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
                 border: weeksData.recovery === weeksData.total && weeksData.total > 0 ? '1px solid rgba(0,209,255,0.2)' : 'none'
               }}>
                 <div>
-                  <span className="text-xs">🧊 Recovery</span>
+                  <span className="text-xs"><CategoryIcon category="recovery" size={12} className="inline align-[-2px] mr-1" />Recovery</span>
                   <div className="text-[10px] text-gray-500">{goals.recoveryPerWeek}+ per week</div>
                 </div>
                 <span className="text-sm font-bold" style={{ color: '#00D1FF' }}>

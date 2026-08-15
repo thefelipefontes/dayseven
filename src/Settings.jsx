@@ -1,3 +1,4 @@
+import CategoryIcon from './components/CategoryIcon';
 import React, { useState, useEffect, useRef } from 'react';
 import { auth } from './firebase';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
@@ -325,10 +326,10 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
   };
 
   const goalLabels = {
-    liftsPerWeek: { label: 'Strength', icon: '💪', suffix: '/week' },
-    cardioPerWeek: { label: 'Cardio', icon: '❤️‍🔥', suffix: '/week' },
-    recoveryPerWeek: { label: 'Recovery', icon: '🧊', suffix: '/week' },
-    stepsPerDay: { label: 'Steps', icon: '👟', suffix: '/day', format: (v) => `${(v/1000).toFixed(0)}k` }
+    liftsPerWeek: { label: 'Strength', category: 'lifts', suffix: '/week' },
+    cardioPerWeek: { label: 'Cardio', category: 'cardio', suffix: '/week' },
+    recoveryPerWeek: { label: 'Recovery', category: 'recovery', suffix: '/week' },
+    stepsPerDay: { label: 'Steps', category: 'steps', suffix: '/day', format: (v) => `${(v/1000).toFixed(0)}k` }
   };
 
   // Sunday = immediate save. Other days = queue into pendingGoals, applied on
@@ -1104,14 +1105,14 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
           )}
           <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
             <div className="grid grid-cols-2 gap-3">
-              {Object.entries(goalLabels).map(([key, { label, icon, suffix, format }]) => {
+              {Object.entries(goalLabels).map(([key, { label, icon, category, suffix, format }]) => {
                 const current = userData?.goals?.[key] || 0;
                 const queued = pendingGoals?.[key];
                 const hasChange = pendingGoals && queued !== undefined && queued !== current;
                 return (
                   <div key={key} className="bg-zinc-700/30 rounded-xl p-3">
                     <div className="flex items-center gap-2 mb-1">
-                      <span>{icon}</span>
+                      <span>{category ? <CategoryIcon category={category} size={14} /> : icon}</span>
                       <span className="text-xs text-gray-400">{label}</span>
                     </div>
                     <div className="text-lg font-bold text-white">

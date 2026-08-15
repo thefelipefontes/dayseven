@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, createContext, useContext, useCallback } from 'react';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import ActivityIcon from './components/ActivityIcon';
+import CategoryIcon from './components/CategoryIcon';
 import RouteMapView from './components/RouteMapView';
 import MuscleBodyMap from './components/MuscleBodyMap';
 import { fetchWorkoutRoute } from './services/healthService';
@@ -963,7 +964,7 @@ export default function ProfilePage(props) {
                 <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ backgroundColor: '#00FF94' }}></div>
                 <CheckBadge met={cwLiftsOk} color="#00FF94" />
                 <div className="flex items-center gap-1.5">
-                  <span className="text-sm">💪</span>
+                  <span className="text-sm"><CategoryIcon category="lifts" size={14} /></span>
                   <span className="text-lg font-bold leading-tight" style={{ color: '#00FF94' }}>{streaks.lifts}</span>
                 </div>
                 <span className="text-[11px] text-gray-400">Strength</span>
@@ -975,7 +976,7 @@ export default function ProfilePage(props) {
                 <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ backgroundColor: '#FF9500' }}></div>
                 <CheckBadge met={cwCardioOk} color="#FF9500" />
                 <div className="flex items-center gap-1.5">
-                  <span className="text-sm">❤️‍🔥</span>
+                  <span className="text-sm"><CategoryIcon category="cardio" size={14} /></span>
                   <span className="text-lg font-bold leading-tight" style={{ color: '#FF9500' }}>{streaks.cardio}</span>
                 </div>
                 <span className="text-[11px] text-gray-400">Cardio</span>
@@ -987,7 +988,7 @@ export default function ProfilePage(props) {
                 <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ backgroundColor: '#00D1FF' }}></div>
                 <CheckBadge met={cwRecoveryOk} color="#00D1FF" />
                 <div className="flex items-center gap-1.5">
-                  <span className="text-sm">🧊</span>
+                  <span className="text-sm"><CategoryIcon category="recovery" size={14} /></span>
                   <span className="text-lg font-bold leading-tight" style={{ color: '#00D1FF' }}>{streaks.recovery}</span>
                 </div>
                 <span className="text-[11px] text-gray-400">Recovery</span>
@@ -1315,7 +1316,7 @@ export default function ProfilePage(props) {
               <div className="grid grid-cols-5 gap-2 text-center">
                 <div>
                   <div className="text-lg font-black text-white">{currentWeekStats.lifts}</div>
-                  <div className="text-[10px] text-gray-400 whitespace-nowrap">💪 Strength</div>
+                  <div className="text-[10px] text-gray-400 whitespace-nowrap"><CategoryIcon category="lifts" size={11} className="inline align-[-2px] mr-1" />Strength</div>
                   {(() => {
                     const compare = compareWeek === 'average' ? weeklyStats['average']?.lifts || 0 : weeklyStats['week-2']?.lifts || 0;
                     if (currentWeekStats.lifts > compare) return <div className="text-[10px] mt-1" style={{ color: '#00FF94' }}>↑</div>;
@@ -1325,7 +1326,7 @@ export default function ProfilePage(props) {
                 </div>
                 <div>
                   <div className="text-lg font-black text-white">{currentWeekStats.cardio}</div>
-                  <div className="text-[10px] text-gray-400 whitespace-nowrap">❤️‍🔥 Cardio</div>
+                  <div className="text-[10px] text-gray-400 whitespace-nowrap"><CategoryIcon category="cardio" size={11} className="inline align-[-2px] mr-1" />Cardio</div>
                   {(() => {
                     const compare = compareWeek === 'average' ? weeklyStats['average']?.cardio || 0 : weeklyStats['week-2']?.cardio || 0;
                     if (currentWeekStats.cardio > compare) return <div className="text-[10px] mt-1" style={{ color: '#00FF94' }}>↑</div>;
@@ -1335,7 +1336,7 @@ export default function ProfilePage(props) {
                 </div>
                 <div>
                   <div className="text-lg font-black text-white">{currentWeekStats.recovery}</div>
-                  <div className="text-[10px] text-gray-400 whitespace-nowrap">🧊 Recov</div>
+                  <div className="text-[10px] text-gray-400 whitespace-nowrap"><CategoryIcon category="recovery" size={11} className="inline align-[-2px] mr-1" />Recov</div>
                   {(() => {
                     const compare = compareWeek === 'average' ? weeklyStats['average']?.recovery || 0 : weeklyStats['week-2']?.recovery || 0;
                     if (currentWeekStats.recovery > compare) return <div className="text-[10px] mt-1" style={{ color: '#00FF94' }}>↑</div>;
@@ -1345,7 +1346,7 @@ export default function ProfilePage(props) {
                 </div>
                 <div>
                   <div className="text-lg font-black text-white">{(currentWeekStats.calories/1000).toFixed(1)}k</div>
-                  <div className="text-[10px] text-gray-400 whitespace-nowrap">🔥 Cals</div>
+                  <div className="text-[10px] text-gray-400 whitespace-nowrap"><CategoryIcon category="calories" size={11} className="inline align-[-2px] mr-1" />Cals</div>
                   {(() => {
                     const compare = compareWeek === 'average' ? weeklyStats['average']?.calories || 0 : weeklyStats['week-2']?.calories || 0;
                     if (currentWeekStats.calories > compare) return <div className="text-[10px] mt-1" style={{ color: '#00FF94' }}>↑</div>;
@@ -1374,22 +1375,22 @@ export default function ProfilePage(props) {
               <div className="grid grid-cols-5 gap-2 text-center">
                 <div>
                   <div className="text-lg font-black">{compareWeek === 'average' ? weeklyStats['average']?.lifts || 0 : weeklyStats['week-2']?.lifts || 0}</div>
-                  <div className="text-[10px] text-gray-400 whitespace-nowrap">💪 Strength</div>
+                  <div className="text-[10px] text-gray-400 whitespace-nowrap"><CategoryIcon category="lifts" size={11} className="inline align-[-2px] mr-1" />Strength</div>
                   <div className="text-[10px] mt-1 opacity-0">-</div>
                 </div>
                 <div>
                   <div className="text-lg font-black">{compareWeek === 'average' ? weeklyStats['average']?.cardio || 0 : weeklyStats['week-2']?.cardio || 0}</div>
-                  <div className="text-[10px] text-gray-400 whitespace-nowrap">❤️‍🔥 Cardio</div>
+                  <div className="text-[10px] text-gray-400 whitespace-nowrap"><CategoryIcon category="cardio" size={11} className="inline align-[-2px] mr-1" />Cardio</div>
                   <div className="text-[10px] mt-1 opacity-0">-</div>
                 </div>
                 <div>
                   <div className="text-lg font-black">{compareWeek === 'average' ? weeklyStats['average']?.recovery || 0 : weeklyStats['week-2']?.recovery || 0}</div>
-                  <div className="text-[10px] text-gray-400 whitespace-nowrap">🧊 Recov</div>
+                  <div className="text-[10px] text-gray-400 whitespace-nowrap"><CategoryIcon category="recovery" size={11} className="inline align-[-2px] mr-1" />Recov</div>
                   <div className="text-[10px] mt-1 opacity-0">-</div>
                 </div>
                 <div>
                   <div className="text-lg font-black">{compareWeek === 'average' ? ((weeklyStats['average']?.calories || 0)/1000).toFixed(1) + 'k' : ((weeklyStats['week-2']?.calories || 0)/1000).toFixed(1) + 'k'}</div>
-                  <div className="text-[10px] text-gray-400 whitespace-nowrap">🔥 Cals</div>
+                  <div className="text-[10px] text-gray-400 whitespace-nowrap"><CategoryIcon category="calories" size={11} className="inline align-[-2px] mr-1" />Cals</div>
                   <div className="text-[10px] mt-1 opacity-0">-</div>
                 </div>
                 <div>
@@ -1577,15 +1578,15 @@ export default function ProfilePage(props) {
               <div className="grid grid-cols-3 gap-2 mb-4">
                 <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
                   <div className="text-2xl font-black" style={{ color: '#00FF94' }}>{lifts.length}</div>
-                  <div className="text-[10px] text-gray-400">💪 Strength</div>
+                  <div className="text-[10px] text-gray-400"><CategoryIcon category="lifts" size={11} className="inline align-[-2px] mr-1" />Strength</div>
                 </div>
                 <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
                   <div className="text-2xl font-black" style={{ color: '#FF9500' }}>{cardioActivities.length}</div>
-                  <div className="text-[10px] text-gray-400">❤️‍🔥 Cardio</div>
+                  <div className="text-[10px] text-gray-400"><CategoryIcon category="cardio" size={11} className="inline align-[-2px] mr-1" />Cardio</div>
                 </div>
                 <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
                   <div className="text-2xl font-black" style={{ color: '#00D1FF' }}>{recoveryActivities.length}</div>
-                  <div className="text-[10px] text-gray-400">🧊 Recovery</div>
+                  <div className="text-[10px] text-gray-400"><CategoryIcon category="recovery" size={11} className="inline align-[-2px] mr-1" />Recovery</div>
                 </div>
               </div>
 
@@ -1629,7 +1630,7 @@ export default function ProfilePage(props) {
               {lifts.length > 0 && (
                 <div className="mb-4">
                   <div className="flex items-center gap-2 mb-2">
-                    <span className="text-xs font-medium text-gray-300">💪 Strength</span>
+                    <span className="text-xs font-medium text-gray-300"><CategoryIcon category="lifts" size={12} className="inline align-[-2px] mr-1" />Strength</span>
                   </div>
                   <div className="space-y-2">
                     {lifts.map((activity, i) => (
@@ -1677,7 +1678,7 @@ export default function ProfilePage(props) {
               {cardioActivities.length > 0 && (
                 <div className="mb-4">
                   <div className="flex items-center gap-2 mb-2">
-                    <span className="text-xs font-medium text-gray-300">❤️‍🔥 Cardio</span>
+                    <span className="text-xs font-medium text-gray-300"><CategoryIcon category="cardio" size={12} className="inline align-[-2px] mr-1" />Cardio</span>
                   </div>
                   <div className="space-y-2">
                     {cardioActivities.map((activity, i) => (
@@ -1723,7 +1724,7 @@ export default function ProfilePage(props) {
               {recoveryActivities.length > 0 && (
                 <div className="mb-4">
                   <div className="flex items-center gap-2 mb-2">
-                    <span className="text-xs font-medium text-gray-300">🧊 Recovery</span>
+                    <span className="text-xs font-medium text-gray-300"><CategoryIcon category="recovery" size={12} className="inline align-[-2px] mr-1" />Recovery</span>
                   </div>
                   <div className="space-y-2">
                     {recoveryActivities.map((activity, i) => (
@@ -1939,21 +1940,21 @@ export default function ProfilePage(props) {
                 <div className="p-3.5 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(0, 255, 148, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
                   <div className="text-3xl font-black" style={{ color: '#00FF94' }}>{totalsData.liftingCount || 0}</div>
                   <div className="text-xs text-gray-400 flex items-center gap-1 mt-1">
-                    <span>💪</span>
+                    <span><CategoryIcon category="lifts" size={14} /></span>
                     <span>Strength</span>
                   </div>
                 </div>
                 <div className="p-3.5 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(255, 149, 0, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
                   <div className="text-3xl font-black" style={{ color: '#FF9500' }}>{Object.values(totalsData.cardio || {}).reduce((a, b) => a + b, 0)}</div>
                   <div className="text-xs text-gray-400 flex items-center gap-1 mt-1">
-                    <span>❤️‍🔥</span>
+                    <span><CategoryIcon category="cardio" size={14} /></span>
                     <span>Cardio</span>
                   </div>
                 </div>
                 <div className="p-3.5 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(0, 209, 255, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
                   <div className="text-3xl font-black" style={{ color: '#00D1FF' }}>{totalsData.recovery}</div>
                   <div className="text-xs text-gray-400 flex items-center gap-1 mt-1">
-                    <span>🧊</span>
+                    <span><CategoryIcon category="recovery" size={14} /></span>
                     <span>Recovery</span>
                   </div>
                 </div>
@@ -2039,7 +2040,7 @@ export default function ProfilePage(props) {
                       <>
                         <div className="text-2xl font-black" style={{ color: '#A882FF' }}>{stepsDisplay}</div>
                         <div className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
-                          <span>👟</span>
+                          <span><CategoryIcon category="steps" size={14} /></span>
                           <span>Steps</span>
                         </div>
                         {estMiles >= 0.1 && (
@@ -2058,7 +2059,7 @@ export default function ProfilePage(props) {
 
               {/* Strength Breakdown */}
               <div className="mb-6">
-                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">💪 Muscle groups trained {(() => {
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3"><CategoryIcon category="lifts" size={12} className="inline align-[-2px] mr-1" />Muscle groups trained {(() => {
                   const labels = { 'this-week': '(this week)', 'this-month': '(this month)', 'last-month': '(last month)', 'last-30-days': '(last 30 days)', 'all-time': '(all time)' };
                   if (labels[totalsView]) return labels[totalsView];
                   if (/^\d{4}$/.test(totalsView)) return `(${totalsView})`;
@@ -2088,7 +2089,7 @@ export default function ProfilePage(props) {
 
               {/* Cardio Breakdown */}
               <div className="mb-6">
-                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">❤️‍🔥 Cardio Breakdown</div>
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3"><CategoryIcon category="cardio" size={12} className="inline align-[-2px] mr-1" />Cardio Breakdown</div>
                 <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                   {Object.keys(totalsData.cardio || {}).length > 0 ? (
                     <div className="space-y-2">
@@ -2107,7 +2108,7 @@ export default function ProfilePage(props) {
 
               {/* Recovery Breakdown */}
               <div className="mb-6">
-                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">🧊 Recovery Breakdown</div>
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3"><CategoryIcon category="recovery" size={12} className="inline align-[-2px] mr-1" />Recovery Breakdown</div>
                 {Object.keys(totalsData.recoveryBreakdown || {}).length > 0 ? (
                   <div className="space-y-2">
                     {Object.entries(totalsData.recoveryBreakdown).map(([type, count]) => (
@@ -2161,19 +2162,19 @@ export default function ProfilePage(props) {
                   {/* Other Streaks */}
                   <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <div className="text-[10px] text-gray-600 mb-1">💪 Strength</div>
+                      <div className="text-[10px] text-gray-600 mb-1"><CategoryIcon category="lifts" size={11} className="inline align-[-2px] mr-1" />Strength</div>
                       <div className="text-lg font-bold text-white">
                         {records.longestStrengthStreak ? `${records.longestStrengthStreak}w` : '—'}
                       </div>
                     </div>
                     <div>
-                      <div className="text-[10px] text-gray-600 mb-1">❤️‍🔥 Cardio</div>
+                      <div className="text-[10px] text-gray-600 mb-1"><CategoryIcon category="cardio" size={11} className="inline align-[-2px] mr-1" />Cardio</div>
                       <div className="text-lg font-bold text-white">
                         {records.longestCardioStreak ? `${records.longestCardioStreak}w` : '—'}
                       </div>
                     </div>
                     <div>
-                      <div className="text-[10px] text-gray-600 mb-1">🧊 Recovery</div>
+                      <div className="text-[10px] text-gray-600 mb-1"><CategoryIcon category="recovery" size={11} className="inline align-[-2px] mr-1" />Recovery</div>
                       <div className="text-lg font-bold text-white">
                         {records.longestRecoveryStreak ? `${records.longestRecoveryStreak}w` : '—'}
                       </div>
@@ -2207,7 +2208,7 @@ export default function ProfilePage(props) {
                   {/* Longest Strength */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <span className="text-sm">💪</span>
+                      <span className="text-sm"><CategoryIcon category="lifts" size={14} /></span>
                       <div className="text-xs text-gray-500">Longest Strength Session</div>
                     </div>
                     <div className="text-base font-bold text-white">
@@ -2225,7 +2226,7 @@ export default function ProfilePage(props) {
                   {/* Longest Cardio */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <span className="text-sm">❤️‍🔥</span>
+                      <span className="text-sm"><CategoryIcon category="cardio" size={14} /></span>
                       <div className="text-xs text-gray-500">Longest Cardio Session</div>
                     </div>
                     <div className="text-right">
@@ -2248,7 +2249,7 @@ export default function ProfilePage(props) {
                   {/* Furthest Run */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <span className="text-sm">❤️‍🔥</span>
+                      <span className="text-sm"><CategoryIcon category="cardio" size={14} /></span>
                       <div className="text-xs text-gray-500">Furthest Run</div>
                     </div>
                     <div className="text-base font-bold text-white">
@@ -2536,9 +2537,9 @@ export default function ProfilePage(props) {
             <div className="flex gap-2 mb-3 overflow-x-auto pb-2 -mx-4 px-4 no-scrollbar">
               {[
                 { key: 'all', label: 'All Photos' },
-                { key: 'strength', label: '💪 Strength' },
-                { key: 'cardio', label: '❤️‍🔥 Cardio' },
-                { key: 'recovery', label: '🧘 Recovery' }
+                { key: 'strength', label: 'Strength', cat: 'lifts' },
+                { key: 'cardio', label: 'Cardio', cat: 'cardio' },
+                { key: 'recovery', label: 'Recovery', cat: 'recovery' }
               ].map(filter => (
                 <button
                   key={filter.key}
@@ -2552,7 +2553,10 @@ export default function ProfilePage(props) {
                     color: photoFilter === filter.key ? 'black' : 'rgba(255,255,255,0.5)'
                   }}
                 >
-                  {filter.label}
+                  <span className="inline-flex items-center gap-1">
+                    {filter.cat && <CategoryIcon category={filter.cat} size={12} color="currentColor" />}
+                    {filter.label}
+                  </span>
                 </button>
               ))}
             </div>
@@ -2968,14 +2972,14 @@ export default function ProfilePage(props) {
 
                           {/* Strength */}
                           <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
-                            <p className="text-xl">💪</p>
+                            <p className="text-xl flex justify-center"><CategoryIcon category="lifts" size={20} /></p>
                             <p className="text-2xl font-bold" style={{ color: '#00FF94' }}>{strengthSessions}</p>
                             <p className="text-xs text-gray-400 mt-1">strength sessions</p>
                           </div>
 
                           {/* Cardio */}
                           <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
-                            <p className="text-xl">❤️‍🔥</p>
+                            <p className="text-xl flex justify-center"><CategoryIcon category="cardio" size={20} /></p>
                             <p className="text-2xl font-bold" style={{ color: '#00D1FF' }}>{cardioSessions}</p>
                             <p className="text-xs text-gray-400 mt-1">cardio sessions</p>
                           </div>
@@ -3119,7 +3123,7 @@ export default function ProfilePage(props) {
                             const statItems = [
                               { emoji: '🔥', value: totalCalories.toLocaleString(), label: 'calories burned', color: '#FF9500', bg: 'rgba(255,149,0,0.15)' },
                               { emoji: '💪', value: strengthSessions.toString(), label: 'strength sessions', color: '#00FF94', bg: 'rgba(0,255,148,0.15)' },
-                              { emoji: '❤️‍🔥', value: cardioSessions.toString(), label: 'cardio sessions', color: '#00D1FF', bg: 'rgba(0,209,255,0.15)' },
+                              { emoji: '❤️', value: cardioSessions.toString(), label: 'cardio sessions', color: '#00D1FF', bg: 'rgba(0,209,255,0.15)' },
                               { emoji: '🧘', value: recoverySessions.toString(), label: 'recovery sessions', color: '#BF5AF2', bg: 'rgba(191,90,242,0.15)' }
                             ];
 

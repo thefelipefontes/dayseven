@@ -1,6 +1,7 @@
 import React, { useState, useRef, useMemo } from 'react';
 import SectionIcon from './SectionIcon';
 import ActivityIcon from './ActivityIcon';
+import CategoryIcon from './CategoryIcon';
 import { triggerHaptic, ImpactStyle } from '../utils/haptics';
 import { parseLocalDate, toLocalDateStr } from '../utils/dateHelpers';
 import { getActivityCategory } from '../utils/activityCategory';
@@ -332,8 +333,8 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
   }
 
   const metricConfig = {
-    calories: { label: 'Calories', icon: '🔥', unit: 'cal', color: '#FF9500' },
-    steps: { label: 'Steps', icon: '👟', unit: 'steps', color: '#00D1FF' },
+    calories: { label: 'Calories', cat: 'calories', unit: 'cal', color: '#FF9500' },
+    steps: { label: 'Steps', cat: 'steps', unit: 'steps', color: '#00D1FF' },
     miles: { label: 'Miles', icon: '📍', unit: 'mi', color: '#00FF94' }
   };
 
@@ -365,7 +366,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
               color: metric === key ? cfg.color : 'rgba(255,255,255,0.5)'
             }}
           >
-            <span>{cfg.icon}</span>
+            <span>{cfg.cat ? <CategoryIcon category={cfg.cat} size={13} color="currentColor" /> : cfg.icon}</span>
             {cfg.label}
           </button>
         ))}
@@ -669,15 +670,15 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
                 <div className="grid grid-cols-3 gap-2">
                   <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
                     <div className="text-lg font-black" style={{ color: '#00FF94' }}>{lifts.length}</div>
-                    <div className="text-[9px] text-gray-400">💪 Strength</div>
+                    <div className="text-[9px] text-gray-400"><CategoryIcon category="lifts" size={10} className="inline align-[-2px] mr-1" />Strength</div>
                   </div>
                   <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
                     <div className="text-lg font-black" style={{ color: '#FF9500' }}>{cardioActivities.length}</div>
-                    <div className="text-[9px] text-gray-400">❤️‍🔥 Cardio</div>
+                    <div className="text-[9px] text-gray-400"><CategoryIcon category="cardio" size={10} className="inline align-[-2px] mr-1" />Cardio</div>
                   </div>
                   <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
                     <div className="text-lg font-black" style={{ color: '#00D1FF' }}>{recoveryActivities.length}</div>
-                    <div className="text-[9px] text-gray-400">🧊 Recovery</div>
+                    <div className="text-[9px] text-gray-400"><CategoryIcon category="recovery" size={10} className="inline align-[-2px] mr-1" />Recovery</div>
                   </div>
                 </div>
 

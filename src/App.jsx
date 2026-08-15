@@ -41,6 +41,7 @@ import { getDefaultCountToward, getActivityCategory, countsAsLifting, countsAsCa
 import { computeStreaks } from './utils/streaks';
 import { reverseGeocode, formatLocation } from './utils/geocode';
 import SectionIcon from './components/SectionIcon';
+import CategoryIcon from './components/CategoryIcon';
 import LongPressMenu from './components/LongPressMenu';
 import { SwipeableProvider, SwipeableActivityItem, SwipeableContext, globalIsPulling } from './components/SwipeableActivityItem';
 import WeekStatsModal from './components/WeekStatsModal';
@@ -922,6 +923,46 @@ const ProgressRing = ({ progress, size = 60, strokeWidth = 4, color = '#00FF94',
     </svg>
   );
 };
+
+// The per-category streak line under each Home ring. The master (hybrid) streak already
+// sits in the sticky header, so what's missing on Home is the per-category runs — those
+// otherwise only exist on Profile, which is the trip this saves.
+//
+// Renders a fixed-height blank line when there's no streak rather than nothing at all, so
+// the three rings stay baseline-aligned no matter who has what going. Paused (injury or
+// vacation) borrows the header's purple 🩹 treatment.
+//
+// The marker stays an emoji while the activity labels above are line icons — that contrast
+// is deliberate. It keeps 🔥 as the single warm accent in the card and matches the emoji
+// the header's master-streak badge uses.
+const RingStreak = ({ weeks = 0, color, paused = false }) => (
+  <div
+    className="text-[11px] font-bold mt-0.5 h-[15px] leading-[15px]"
+    style={{ color: paused ? '#A78BFA' : color }}
+  >
+    {weeks > 0 ? `${paused ? '🩹' : '🔥'} ${weeks}w` : ''}
+  </div>
+);
+
+// Ring label + its expand chevron. The chevron is absolutely positioned so it sits OUTSIDE
+// the centering box: the ring, "💪 Strength", and the streak line below then all share one
+// center axis, with only the chevron hanging off to the right. Left in the flow it would
+// drag the title left of the ring and push the streak line off-axis with it.
+//
+// The mark is a line icon tinted to the ring's own color, which ties label to ring in a way
+// the old emoji couldn't. It comes from CategoryIcon so Home, Profile, the share cards and
+// every stats modal draw these three marks from one mapping.
+const RingLabel = ({ category, label, expanded }) => (
+  <div className="text-sm font-medium mt-2">
+    <span className="relative inline-flex items-center gap-[5px]">
+      <CategoryIcon category={category} size={16} className="flex-shrink-0" />
+      <span>{label}</span>
+      <span className="text-[10px] text-gray-500 absolute left-full ml-1 top-1/2 -translate-y-1/2">
+        {expanded ? '▲' : '▼'}
+      </span>
+    </span>
+  </div>
+);
 
 const ProgressBar = ({ progress, color = '#00FF94', height = 4 }) => (
   <div className="w-full rounded-full overflow-hidden" style={{ height, backgroundColor: 'rgba(255,255,255,0.1)' }}>
@@ -2324,7 +2365,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                     color: (finishCountToward === 'lifting' || finishCountToward === 'lifting+cardio') ? '#00FF94' : 'white'
                   }}
                 >
-                  <span>💪</span> Strength
+                  <span><CategoryIcon category="lifts" size={14} color="currentColor" /></span> Strength
                 </button>
                 <button
                   onClick={() => {
@@ -2341,7 +2382,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                     color: (finishCountToward === 'cardio' || finishCountToward === 'lifting+cardio') ? '#FF9500' : 'white'
                   }}
                 >
-                  <span>❤️‍🔥</span> Cardio
+                  <span><CategoryIcon category="cardio" size={14} color="currentColor" /></span> Cardio
                 </button>
                 <button
                   onClick={() => { setFinishCountToward('recovery'); triggerHaptic(ImpactStyle.Light); }}
@@ -2352,7 +2393,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                     color: finishCountToward === 'recovery' ? '#00D1FF' : 'white'
                   }}
                 >
-                  <span>🧊</span> Recovery
+                  <span><CategoryIcon category="recovery" size={14} color="currentColor" /></span> Recovery
                 </button>
               </div>
               <div className="flex gap-2 mt-2">
@@ -3331,7 +3372,7 @@ const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!", type
       bgOverlay: 'rgba(0,0,0,0.55)',
       ringColor1: 'rgba(255,149,0,0.5)',
       ringColor2: 'rgba(255,149,0,0.3)',
-      emoji: '❤️‍🔥',
+      emoji: '❤️',
       confettiColors: ['#FF9500', '#FFD700', '#FF6B00', '#FFAB00', '#FFC107', '#FF453A'],
       subtext: 'Crushing it!'
     },
@@ -4747,19 +4788,19 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                     <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{records.mostRunsWeek || 0}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}>💪 Most Lifts/Week</span>
+                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}><CategoryIcon category="lifts" size={11} className="inline align-[-2px] mr-1" />Most Lifts/Week</span>
                     <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{records.mostLiftsWeek || 0}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}>💪 Most Workouts/Week</span>
+                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}><CategoryIcon category="lifts" size={11} className="inline align-[-2px] mr-1" />Most Workouts/Week</span>
                     <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{records.mostWorkoutsWeek || 0}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}>🧊 Most Recovery/Week</span>
+                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}><CategoryIcon category="recovery" size={11} className="inline align-[-2px] mr-1" />Most Recovery/Week</span>
                     <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{records.mostRecoveryWeek || 0}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}>🔥 Most Calories/Workout</span>
+                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}><CategoryIcon category="calories" size={11} className="inline align-[-2px] mr-1" />Most Calories/Workout</span>
                     <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{records.mostCaloriesDay ? records.mostCaloriesDay.toLocaleString() : (getRecordVal(records.highestCalories) || '--')}</span>
                   </div>
                   <div className="flex justify-between items-center">
@@ -4877,7 +4918,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                         <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`} style={{ lineHeight: 1 }}>{weeklyLifts}/{liftsGoal}</span>
                       </div>
                     </div>
-                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><span style={{ fontSize: '0.9em' }}>💪</span><span>Strength</span></div>
+                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><CategoryIcon category="lifts" size={11} /><span>Strength</span></div>
                   </div>
                   <div className="flex flex-col items-center text-center">
                     <div className="relative">
@@ -4890,7 +4931,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                         <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`} style={{ lineHeight: 1 }}>{weeklyCardio}/{cardioGoal}</span>
                       </div>
                     </div>
-                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><span style={{ fontSize: '0.9em' }}>❤️‍🔥</span><span>Cardio</span></div>
+                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><CategoryIcon category="cardio" size={11} /><span>Cardio</span></div>
                   </div>
                   <div className="flex flex-col items-center text-center">
                     <div className="relative">
@@ -4903,7 +4944,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                         <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`} style={{ lineHeight: 1 }}>{weeklyRecovery}/{recoveryGoal}</span>
                       </div>
                     </div>
-                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><span style={{ fontSize: '0.9em' }}>🧊</span><span>Recovery</span></div>
+                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><CategoryIcon category="recovery" size={11} /><span>Recovery</span></div>
                   </div>
                 </div>
 
@@ -5110,15 +5151,15 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                 <div className="flex justify-around">
                   <div className="text-center">
                     <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#00FF94' }}>{stats?.strengthStreak || 0}</div>
-                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>💪 weeks</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}><CategoryIcon category="lifts" size={9} className="inline align-[-2px] mr-1" />weeks</div>
                   </div>
                   <div className="text-center">
                     <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#FF9500' }}>{stats?.cardioStreak || 0}</div>
-                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>❤️‍🔥 weeks</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}><CategoryIcon category="cardio" size={9} className="inline align-[-2px] mr-1" />weeks</div>
                   </div>
                   <div className="text-center">
                     <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#00D1FF' }}>{stats?.recoveryStreak || 0}</div>
-                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>🧊 weeks</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}><CategoryIcon category="recovery" size={9} className="inline align-[-2px] mr-1" />weeks</div>
                   </div>
                 </div>
               </div>
@@ -5132,15 +5173,15 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                 <div className="flex justify-around">
                   <div className="text-center">
                     <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#00FF94' }}>{stats?.longestStrengthStreak || 0}</div>
-                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>💪 weeks</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}><CategoryIcon category="lifts" size={9} className="inline align-[-2px] mr-1" />weeks</div>
                   </div>
                   <div className="text-center">
                     <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#FF9500' }}>{stats?.longestCardioStreak || 0}</div>
-                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>❤️‍🔥 weeks</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}><CategoryIcon category="cardio" size={9} className="inline align-[-2px] mr-1" />weeks</div>
                   </div>
                   <div className="text-center">
                     <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#00D1FF' }}>{stats?.longestRecoveryStreak || 0}</div>
-                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>🧊 weeks</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}><CategoryIcon category="recovery" size={9} className="inline align-[-2px] mr-1" />weeks</div>
                   </div>
                 </div>
               </div>
@@ -5177,13 +5218,13 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                 {/* Stats as subtext row */}
                 <div className={`flex flex-wrap justify-center items-center ${isPostFormat ? 'gap-x-2 gap-y-0.5 mt-1.5' : 'gap-x-3 gap-y-1 mt-2'}`}>
                   <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>
-                    🔥 {(stats?.monthlyCalories || 0).toLocaleString()} cal
+                    <CategoryIcon category="calories" size={9} className="inline align-[-2px] mr-1" />{(stats?.monthlyCalories || 0).toLocaleString()} cal
                   </span>
                   <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>
                     🏃 {_shareMilesToUnit(stats?.monthlyMiles || 0).toFixed(1)} {_shareUnitLabel}
                   </span>
                   <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>
-                    👟 {((stats?.monthlySteps || 0) / 1000).toFixed(0)}k steps
+                    <CategoryIcon category="steps" size={9} className="inline align-[-2px] mr-1" />{((stats?.monthlySteps || 0) / 1000).toFixed(0)}k steps
                   </span>
                   <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>
                     📅 {stats?.monthlyDaysActive || 0} days active
@@ -5199,11 +5240,11 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                   <div className="grid grid-cols-3 w-full">
                     <div className="text-center">
                       <div className={`${isPostFormat ? 'text-lg' : 'text-xl'} font-black`} style={{ color: '#00FF94' }}>{stats?.monthlyLifts || 0}</div>
-                      <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>💪 lift</div>
+                      <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}><CategoryIcon category="lifts" size={9} className="inline align-[-2px] mr-1" />lift</div>
                     </div>
                     <div className="text-center">
                       <div className={`${isPostFormat ? 'text-lg' : 'text-xl'} font-black`} style={{ color: '#FF9500' }}>{stats?.monthlyCardio || 0}</div>
-                      <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>❤️‍🔥 cardio</div>
+                      <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}><CategoryIcon category="cardio" size={9} className="inline align-[-2px] mr-1" />cardio</div>
                     </div>
                     <div className="text-center">
                       <div className={`${isPostFormat ? 'text-lg' : 'text-xl'} font-black`} style={{ color: '#00D1FF' }}>{stats?.monthlyRecovery || 0}</div>
@@ -9486,7 +9527,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                               </div>
                               {(workout.calories || workout.distance) && (
                                 <div className="flex gap-2 mt-1 text-xs text-gray-500">
-                                  {workout.calories && <span>🔥 {workout.calories} cal</span>}
+                                  {workout.calories && <span><CategoryIcon category="calories" size={12} className="inline align-[-2px] mr-1" />{workout.calories} cal</span>}
                                   {workout.distance && <span>📍 {_milesToDisplay(workout.distance).toFixed(2)} {_distanceUnitLabel}</span>}
                                 </div>
                               )}
@@ -9861,7 +9902,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                       color: (countToward === 'lifting' || countToward === 'lifting+cardio') ? '#00FF94' : 'white'
                     }}
                   >
-                    <span>💪</span> Strength
+                    <span><CategoryIcon category="lifts" size={14} color="currentColor" /></span> Strength
                   </button>
                   <button
                     onClick={() => {
@@ -9876,7 +9917,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                       color: (countToward === 'cardio' || countToward === 'lifting+cardio') ? '#FF9500' : 'white'
                     }}
                   >
-                    <span>❤️‍🔥</span> Cardio
+                    <span><CategoryIcon category="cardio" size={14} color="currentColor" /></span> Cardio
                   </button>
                   <button
                     onClick={() => setCountToward('recovery')}
@@ -9887,7 +9928,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                       color: countToward === 'recovery' ? '#00D1FF' : 'white'
                     }}
                   >
-                    <span>🧊</span> Recovery
+                    <span><CategoryIcon category="recovery" size={14} color="currentColor" /></span> Recovery
                   </button>
                 </div>
                 {countToward === 'lifting+cardio' && (
@@ -10088,7 +10129,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                         border: customActivityCategory === 'strength' ? '1px solid #00FF94' : '1px solid transparent'
                       }}
                     >
-                      <span className="text-lg">💪</span>
+                      <span className="text-lg"><CategoryIcon category="lifts" size={18} color="currentColor" /></span>
                       <div className="text-xs mt-1" style={{ color: customActivityCategory === 'strength' ? '#00FF94' : 'rgba(255,255,255,0.6)' }}>Strength</div>
                     </button>
                     <button
@@ -10100,7 +10141,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                         border: customActivityCategory === 'cardio' ? '1px solid #FF9500' : '1px solid transparent'
                       }}
                     >
-                      <span className="text-lg">❤️‍🔥</span>
+                      <span className="text-lg"><CategoryIcon category="cardio" size={18} color="currentColor" /></span>
                       <div className="text-xs mt-1" style={{ color: customActivityCategory === 'cardio' ? '#FF9500' : 'rgba(255,255,255,0.6)' }}>Cardio</div>
                     </button>
                     <button
@@ -10112,7 +10153,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                         border: customActivityCategory === 'recovery' ? '1px solid #00D1FF' : '1px solid transparent'
                       }}
                     >
-                      <span className="text-lg">🧊</span>
+                      <span className="text-lg"><CategoryIcon category="recovery" size={18} color="currentColor" /></span>
                       <div className="text-xs mt-1" style={{ color: customActivityCategory === 'recovery' ? '#00D1FF' : 'rgba(255,255,255,0.6)' }}>Recovery</div>
                     </button>
                   </div>
@@ -10599,7 +10640,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                           {(linkedWorkout.calories || linkedWorkout.avgHr || linkedWorkout.distance) && (
                             <div className="flex gap-4 mt-2 text-xs text-gray-400">
                               {linkedWorkout.calories && (
-                                <span>🔥 {linkedWorkout.calories} cal</span>
+                                <span><CategoryIcon category="calories" size={12} className="inline align-[-2px] mr-1" />{linkedWorkout.calories} cal</span>
                               )}
                               {linkedWorkout.avgHr && (
                                 <span>❤️ {linkedWorkout.avgHr} bpm avg</span>
@@ -10661,7 +10702,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                               {(workout.calories || workout.avgHr) && (
                                 <div className="flex gap-4 mt-2 text-xs text-gray-400">
                                   {workout.calories && (
-                                    <span>🔥 {workout.calories} cal</span>
+                                    <span><CategoryIcon category="calories" size={12} className="inline align-[-2px] mr-1" />{workout.calories} cal</span>
                                   )}
                                   {workout.avgHr && (
                                     <span>❤️ {workout.avgHr} bpm avg</span>
@@ -10700,7 +10741,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                             {(linkedWorkout.calories || linkedWorkout.distance) && (
                               <div className="flex gap-4 mt-2 text-xs text-gray-400">
                                 {linkedWorkout.calories && (
-                                  <span>🔥 {linkedWorkout.calories} cal</span>
+                                  <span><CategoryIcon category="calories" size={12} className="inline align-[-2px] mr-1" />{linkedWorkout.calories} cal</span>
                                 )}
                                 {linkedWorkout.distance && (
                                   <span>📍 {_milesToDisplay(linkedWorkout.distance).toFixed(2)} {_distanceUnitLabel}</span>
@@ -11112,7 +11153,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss, distanceUnit = 'mi
               </div>
               {(workout.calories || workout.distance || workout.avgHr) && (
                 <div className="flex gap-3 mt-1.5 text-xs text-gray-500">
-                  {workout.calories && <span>🔥 {workout.calories} cal</span>}
+                  {workout.calories && <span><CategoryIcon category="calories" size={12} className="inline align-[-2px] mr-1" />{workout.calories} cal</span>}
                   {workout.distance && <span>📍 {_itemMilesToUnit(workout.distance).toFixed(2)} {_itemUnitLabel}</span>}
                   {workout.avgHr && <span>♥ {workout.avgHr} bpm</span>}
                 </div>
@@ -11329,6 +11370,10 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
   const liftsRemaining = injuryFrozen.includes('lifts') ? 0 : Math.max(0, weekProgress.lifts.goal - weekProgress.lifts.completed);
   const cardioRemaining = injuryFrozen.includes('cardio') ? 0 : Math.max(0, (weekProgress.cardio?.goal || 0) - (weekProgress.cardio?.completed || 0));
   const recoveryRemaining = injuryFrozen.includes('recovery') ? 0 : Math.max(0, (weekProgress.recovery?.goal || 0) - (weekProgress.recovery?.completed || 0));
+
+  // Is this category's streak on hold? Vacation freezes all three; an injury freezes only
+  // the categories it selected (a partial injury leaves the rest running normally).
+  const streakPaused = (cat) => !!userData?.vacationMode?.isActive || injuryFrozen.includes(cat);
 
   // Does the user have a streak carried in from COMPLETED weeks — i.e. something
   // to keep rather than to start?
@@ -11840,7 +11885,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         <div className="p-4 rounded-2xl space-y-3" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
           {/* Steps */}
           <div className="flex items-center gap-3">
-            <span className="text-lg">👟</span>
+            <span className="text-lg"><CategoryIcon category="steps" size={18} /></span>
             <div className="flex-1">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs text-gray-400">Steps</span>
@@ -11860,7 +11905,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
 
           {/* Calories */}
           <div className="flex items-center gap-3">
-            <span className="text-lg">🔥</span>
+            <CategoryIcon category="calories" size={18} />
             <div className="flex-1">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs text-gray-400">Active Calories</span>
@@ -12950,8 +12995,8 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                   <span className="text-xl font-black"><AnimatedCounter value={weekProgress.lifts.completed} />/{weekProgress.lifts.goal}</span>
                 </div>
               </div>
-              <div className="text-sm font-medium mt-2">💪 Strength</div>
-              <div className="text-[10px] text-gray-500">{showStrengthBreakdown ? '▲' : '▼'}</div>
+              <RingLabel category="lifts" label="Strength" expanded={showStrengthBreakdown} />
+              <RingStreak weeks={userData.streaks?.lifts} color="#00FF94" paused={streakPaused('lifts')} />
             </button>
             
             {/* Cardio */}
@@ -12970,8 +13015,8 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                   <span className="text-xl font-black"><AnimatedCounter value={weekProgress.cardio?.completed || 0} />/{weekProgress.cardio?.goal || 0}</span>
                 </div>
               </div>
-              <div className="text-sm font-medium mt-2">❤️‍🔥 Cardio</div>
-              <div className="text-[10px] text-gray-500">{showCardioBreakdown ? '▲' : '▼'}</div>
+              <RingLabel category="cardio" label="Cardio" expanded={showCardioBreakdown} />
+              <RingStreak weeks={userData.streaks?.cardio} color="#FF9500" paused={streakPaused('cardio')} />
             </button>
             
             {/* Recovery */}
@@ -12990,8 +13035,8 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                   <span className="text-xl font-black"><AnimatedCounter value={weekProgress.recovery?.completed || 0} />/{weekProgress.recovery?.goal || 0}</span>
                 </div>
               </div>
-              <div className="text-sm font-medium mt-2">🧊 Recovery</div>
-              <div className="text-[10px] text-gray-500">{showRecoveryBreakdown ? '▲' : '▼'}</div>
+              <RingLabel category="recovery" label="Recovery" expanded={showRecoveryBreakdown} />
+              <RingStreak weeks={userData.streaks?.recovery} color="#00D1FF" paused={streakPaused('recovery')} />
             </button>
           </div>
           
@@ -16852,7 +16897,7 @@ export default function DaySevenApp() {
           const hours = Math.floor(activity.duration / 60);
           const mins = activity.duration % 60;
           const durationStr = hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
-          recordsBroken.push(`${durationStr} cardio (${activity.type === 'Other' ? (activity.subtype || 'Other') : activity.type}) ❤️‍🔥`);
+          recordsBroken.push(`${durationStr} cardio (${activity.type === 'Other' ? (activity.subtype || 'Other') : activity.type}) ❤️`);
         }
 
         // Longest distance
@@ -16861,7 +16906,7 @@ export default function DaySevenApp() {
           const _u = userProfile?.distanceUnit === 'km' ? 'km' : 'mi';
           const _kpm = 1.60934;
           const _v = (_u === 'km' ? parseFloat(activity.distance) * _kpm : parseFloat(activity.distance)).toFixed(2);
-          recordsBroken.push(`${_v} ${_u} (${activity.type === 'Other' ? (activity.subtype || 'Other') : activity.type}) ❤️‍🔥`);
+          recordsBroken.push(`${_v} ${_u} (${activity.type === 'Other' ? (activity.subtype || 'Other') : activity.type}) ❤️`);
         }
         
         // Fastest pace (for runs with distance and duration)
@@ -17090,7 +17135,7 @@ export default function DaySevenApp() {
         } else if (checkStreakMilestone(newStreak)) {
           setCelebrationMessage(`${newStreak} Week Cardio Streak! 🔥`);
         } else {
-          setCelebrationMessage('Cardio goal complete! ❤️‍🔥');
+          setCelebrationMessage('Cardio goal complete! ❤️');
         }
         setCelebrationType('cardio');
         triggerHaptic(ImpactStyle.Heavy);

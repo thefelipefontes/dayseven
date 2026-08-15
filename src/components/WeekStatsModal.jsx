@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import SectionIcon from './SectionIcon';
 import { SwipeableProvider, SwipeableActivityItem } from './SwipeableActivityItem';
 import ActivityIcon from './ActivityIcon';
+import CategoryIcon from './CategoryIcon';
 import { initialUserData } from '../utils/initialUserData';
 import { countsAsLifting, countsAsCardio, countsAsRecovery } from '../utils/activityCategory';
 
@@ -145,15 +146,15 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
         <div className="grid grid-cols-3 gap-2 mb-4">
           <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
             <div className="text-2xl font-black" style={{ color: '#00FF94' }}>{weekData?.lifts || 0}</div>
-            <div className="text-[10px] text-gray-400">💪 Strength</div>
+            <div className="text-[10px] text-gray-400"><CategoryIcon category="lifts" size={11} className="inline align-[-2px] mr-1" />Strength</div>
           </div>
           <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
             <div className="text-2xl font-black" style={{ color: '#FF9500' }}>{weekData?.cardio || 0}</div>
-            <div className="text-[10px] text-gray-400">❤️‍🔥 Cardio</div>
+            <div className="text-[10px] text-gray-400"><CategoryIcon category="cardio" size={11} className="inline align-[-2px] mr-1" />Cardio</div>
           </div>
           <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
             <div className="text-2xl font-black" style={{ color: '#00D1FF' }}>{weekData?.recovery || 0}</div>
-            <div className="text-[10px] text-gray-400">🧊 Recovery</div>
+            <div className="text-[10px] text-gray-400"><CategoryIcon category="recovery" size={11} className="inline align-[-2px] mr-1" />Recovery</div>
           </div>
         </div>
 
@@ -216,21 +217,21 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
           <div className="grid grid-cols-2 gap-2">
             <div className="p-3 rounded-xl flex items-center justify-between" style={streakRowStyle(liftsGoalMet, '0,255,148', 'lifts')}>
               <div>
-                <span className="text-xs">💪 Strength</span>
+                <span className="text-xs"><CategoryIcon category="lifts" size={12} className="inline align-[-2px] mr-1" />Strength</span>
                 <div className="text-[10px] text-gray-500">{goals.liftsPerWeek}+ per week</div>
               </div>
               {streakIcon(liftsGoalMet, '#00FF94', 'lifts')}
             </div>
             <div className="p-3 rounded-xl flex items-center justify-between" style={streakRowStyle(cardioGoalMet, '255,149,0', 'cardio')}>
               <div>
-                <span className="text-xs">❤️‍🔥 Cardio</span>
+                <span className="text-xs"><CategoryIcon category="cardio" size={12} className="inline align-[-2px] mr-1" />Cardio</span>
                 <div className="text-[10px] text-gray-500">{goals.cardioPerWeek}+ per week</div>
               </div>
               {streakIcon(cardioGoalMet, '#FF9500', 'cardio')}
             </div>
             <div className="p-3 rounded-xl flex items-center justify-between" style={streakRowStyle(recoveryGoalMet, '0,209,255', 'recovery')}>
               <div>
-                <span className="text-xs">🧊 Recovery</span>
+                <span className="text-xs"><CategoryIcon category="recovery" size={12} className="inline align-[-2px] mr-1" />Recovery</span>
                 <div className="text-[10px] text-gray-500">{goals.recoveryPerWeek}+ per week</div>
               </div>
               {streakIcon(recoveryGoalMet, '#00D1FF', 'recovery')}
@@ -260,7 +261,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
           <div className="mb-4">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-gray-300">💪 Strength ({lifts.length})</span>
+                <span className="text-xs font-medium text-gray-300"><CategoryIcon category="lifts" size={12} className="inline align-[-2px] mr-1" />Strength ({lifts.length})</span>
               </div>
               {weekData?.liftBreakdown && (
                 <div className="flex gap-1">
@@ -308,7 +309,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
           <div className="mb-4">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-gray-300">❤️‍🔥 Cardio ({cardioActivities.length})</span>
+                <span className="text-xs font-medium text-gray-300"><CategoryIcon category="cardio" size={12} className="inline align-[-2px] mr-1" />Cardio ({cardioActivities.length})</span>
               </div>
               {weekData?.cardioBreakdown && (
                 <div className="flex gap-1">
@@ -356,7 +357,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
           <div className="mb-6">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-gray-300">🧊 Recovery ({recoveryActivities.length})</span>
+                <span className="text-xs font-medium text-gray-300"><CategoryIcon category="recovery" size={12} className="inline align-[-2px] mr-1" />Recovery ({recoveryActivities.length})</span>
               </div>
               {weekData?.recoveryBreakdown && (
                 <div className="flex gap-1 flex-wrap justify-end">

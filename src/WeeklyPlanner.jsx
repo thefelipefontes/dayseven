@@ -31,9 +31,9 @@ const DAYS = [
 // Pill categories → weekly goal field + display.
 // Emoji + colors mirror the app's goal rings (see the weekly rings in App.jsx).
 const CATS = {
-  strength: { label: 'Strength', color: '#00FF94', bg: 'rgba(0,255,148,0.14)', emoji: '💪', goalKey: 'liftsPerWeek' },
-  cardio:   { label: 'Cardio',   color: '#FF9500', bg: 'rgba(255,149,0,0.14)', emoji: '❤️‍🔥', goalKey: 'cardioPerWeek' },
-  recovery: { label: 'Recovery', color: '#00D1FF', bg: 'rgba(0,209,255,0.14)', emoji: '🧊', goalKey: 'recoveryPerWeek' },
+  strength: { label: 'Strength', color: '#00FF94', bg: 'rgba(0,255,148,0.14)', cat: 'lifts',    goalKey: 'liftsPerWeek' },
+  cardio:   { label: 'Cardio',   color: '#FF9500', bg: 'rgba(255,149,0,0.14)', cat: 'cardio',   goalKey: 'cardioPerWeek' },
+  recovery: { label: 'Recovery', color: '#00D1FF', bg: 'rgba(0,209,255,0.14)', cat: 'recovery', goalKey: 'recoveryPerWeek' },
 };
 const CAT_ORDER = ['strength', 'cardio', 'recovery'];
 
@@ -505,7 +505,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
           opacity: done ? 0.92 : 1,
         }}
       >
-        <span style={{ fontSize: 11 }}>{done ? '✓' : c.emoji}</span>
+        <span style={{ fontSize: 11 }}>{done ? '✓' : <CategoryIcon category={c.cat} size={11} color="currentColor" />}</span>
         {chipLabel(pill)}
       </button>
     );
@@ -530,7 +530,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
           boxShadow: sel ? `0 0 0 2px ${c.bg}` : 'none',
         }}
       >
-        <span style={{ fontSize: 11 }}>{c.emoji}</span>
+        <CategoryIcon category={c.cat} size={11} color="currentColor" />
         {c.label}
         <span
           className="inline-flex items-center justify-center"
@@ -731,7 +731,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
               boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
             }}
           >
-            <span style={{ fontSize: 11 }}>{c.emoji}</span>{chipLabel(ghost.pill)}
+            <CategoryIcon category={c.cat} size={11} color="currentColor" />{chipLabel(ghost.pill)}
           </div>
         );
       })(), document.body)}
@@ -758,7 +758,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center gap-2 mb-3">
-                <span style={{ fontSize: 15 }}>{c.emoji}</span>
+                <CategoryIcon category={c.cat} size={15} color="currentColor" />
                 <span className="text-white font-semibold text-[15px]">{c.label}{dayLabel ? ` · ${dayLabel}` : ''}</span>
               </div>
               {canLog && (

@@ -1,6 +1,15 @@
 import React from 'react';
 import { BicepsFlexed, Footprints } from 'lucide-react';
-import { IconHeartbeat, IconSnowflake, IconFlame } from '@tabler/icons-react';
+import {
+  IconHeartbeat,
+  IconSnowflake,
+  IconFlame,
+  IconChecklist,
+  IconBolt,
+  IconCrown,
+  IconTrophy,
+  IconChartBar,
+} from '@tabler/icons-react';
 
 // The app's icon vocabulary: the three weekly-goal categories (was 💪 / ❤️ / 🧊) plus the two
 // daily Apple Health metrics (was 👟 / 🔥).
@@ -22,12 +31,21 @@ import { IconHeartbeat, IconSnowflake, IconFlame } from '@tabler/icons-react';
 // `activity`, which sits in the "Today's Activity" header directly above this very card. In
 // practice the two flames read differently anyway — the streak is a full-color emoji, this is
 // a monochrome line icon — and flame-for-calories is the convention users arrive with.
+// The leaderboard adds four marks that aren't goal categories or Health metrics. `wins` is
+// deliberately the bolt: that's the Challenges tab's own icon, and these pills live in the
+// Challenges section, so here the bolt reinforces rather than collides. Challenge win STREAKS
+// keep the 🔥 emoji, same as streaks everywhere else in the app.
 export const CATEGORY_ICONS = {
   lifts: BicepsFlexed,
   cardio: IconHeartbeat,
   recovery: IconSnowflake,
   steps: Footprints,
   calories: IconFlame,
+  workouts: IconChecklist,
+  wins: IconBolt,
+  longest: IconCrown,
+  overall: IconTrophy,
+  chart: IconChartBar,
 };
 
 export const CATEGORY_COLORS = {
@@ -36,6 +54,11 @@ export const CATEGORY_COLORS = {
   recovery: '#00D1FF',
   steps: '#BF5AF2',
   calories: '#FF9500',
+  workouts: '#00FF94',
+  wins: '#FFD60A',
+  longest: '#FFD700',
+  overall: '#FFD700',
+  chart: '#04d1ff',
 };
 
 // Aliases for the names the older surfaces use for the same things.

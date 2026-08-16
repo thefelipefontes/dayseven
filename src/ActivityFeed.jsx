@@ -2586,29 +2586,37 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     const topThree = sortedLeaderboard.slice(0, 3);
     const rest = sortedLeaderboard.slice(3);
 
+    // Leading mark for a leaderboard label. currentColor so it tracks whatever the surrounding
+    // text is doing (these render on both the muted "… Rankings" line and inside selected pills,
+    // which flip to black text).
+    const mark = (cat) => (
+      <CategoryIcon category={cat} size={12} color="currentColor" className="inline align-[-2px] mr-1" />
+    );
+
     const getCategoryLabel = () => {
       if (leaderboardSection === 'activity') {
         switch (leaderboardCategory) {
-          case 'calories': return '🔥 Calories Burned';
-          case 'steps': return '👟 Steps';
-          case 'workouts': return '💪 Total Workouts';
-          case 'strengthSessions': return '🏋️ Strength Sessions';
-          case 'cardioSessions': return '🏃 Cardio Sessions';
-          case 'recoverySessions': return '🧊 Recovery Sessions';
-          default: return '🔥 Calories Burned';
+          case 'steps': return <>{mark('steps')}Steps</>;
+          case 'workouts': return <>{mark('workouts')}Total Workouts</>;
+          case 'strengthSessions': return <>{mark('lifts')}Strength Sessions</>;
+          case 'cardioSessions': return <>{mark('cardio')}Cardio Sessions</>;
+          case 'recoverySessions': return <>{mark('recovery')}Recovery Sessions</>;
+          case 'calories':
+          default: return <>{mark('calories')}Calories Burned</>;
         }
       } else if (leaderboardSection === 'challenges') {
         switch (leaderboardCategory) {
-          case 'currentStreak': return '🔥 Current Win Streak';
-          case 'longestStreak': return '👑 Longest Win Streak';
-          default: return '⚡ Challenge Wins';
+          // Win streaks keep 🔥, matching how streaks read everywhere else in the app.
+          case 'currentStreak': return <>🔥 Current Win Streak</>;
+          case 'longestStreak': return <>{mark('longest')}Longest Win Streak</>;
+          default: return <>{mark('wins')}Challenge Wins</>;
         }
       } else {
         switch (leaderboardCategory) {
-          case 'strength': return '💪 Strength Streak';
-          case 'cardio': return '🏃 Cardio Streak';
-          case 'recovery': return '🧊 Recovery Streak';
-          default: return '🏆 Overall Streak';
+          case 'strength': return <>{mark('lifts')}Strength Streak</>;
+          case 'cardio': return <>{mark('cardio')}Cardio Streak</>;
+          case 'recovery': return <>{mark('recovery')}Recovery Streak</>;
+          default: return <>{mark('overall')}Overall Streak</>;
         }
       }
     };
@@ -2691,9 +2699,12 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               }}
             />
             {[
-              { key: 'activity', label: '📊 Activity' },
+              // Streaks keeps 🔥: the flame means "streak" throughout the app, and both
+              // icon alternatives are taken here — a flame icon is calories, a bolt is
+              // Challenges, which is the tab sitting right beside it.
+              { key: 'activity', cat: 'chart', label: 'Activity' },
               { key: 'streak', label: '🔥 Streaks' },
-              { key: 'challenges', label: '⚡ Challenges' }
+              { key: 'challenges', cat: 'wins', label: 'Challenges' }
             ].map((section) => (
               <TouchButton
                 key={section.key}
@@ -2719,7 +2730,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                 className="flex-1 py-1.5 rounded-md text-xs font-semibold transition-colors duration-200 relative z-10 text-center"
                 style={{ color: leaderboardSection === section.key ? 'black' : 'rgba(255,255,255,0.5)' }}
               >
-                {section.label}
+                {section.cat && <CategoryIcon category={section.cat} size={12} color="currentColor" className="inline align-[-2px] mr-1" />}{section.label}
               </TouchButton>
             ))}
           </div>
@@ -2728,12 +2739,12 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           <div className="flex gap-1.5 overflow-x-auto no-scrollbar mb-4 -mx-1 px-1" style={{ WebkitOverflowScrolling: 'touch' }}>
             {leaderboardSection === 'activity' ? (
               [
-                { key: 'calories', label: '🔥 Calories', color: '#FF6B6B' },
-                { key: 'steps', label: '👟 Steps', color: '#3498DB' },
-                { key: 'workouts', label: '💪 Workouts', color: '#00FF94' },
-                { key: 'strengthSessions', label: '🏋️ Strength', color: '#00FF94' },
-                { key: 'cardioSessions', label: '🏃 Cardio', color: '#FF9500' },
-                { key: 'recoverySessions', label: '🧊 Recovery', color: '#00D1FF' }
+                { key: 'calories', cat: 'calories', label: 'Calories', color: '#FF6B6B' },
+                { key: 'steps', cat: 'steps', label: 'Steps', color: '#3498DB' },
+                { key: 'workouts', cat: 'workouts', label: 'Workouts', color: '#00FF94' },
+                { key: 'strengthSessions', cat: 'lifts', label: 'Strength', color: '#00FF94' },
+                { key: 'cardioSessions', cat: 'cardio', label: 'Cardio', color: '#FF9500' },
+                { key: 'recoverySessions', cat: 'recovery', label: 'Recovery', color: '#00D1FF' }
               ].map((cat) => (
                 <ScrollablePill
                   key={cat.key}
@@ -2742,14 +2753,14 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                   color={cat.color}
                   textColor="black"
                 >
-                  {cat.label}
+                  {cat.cat && <CategoryIcon category={cat.cat} size={12} color="currentColor" className="inline align-[-2px] mr-1" />}{cat.label}
                 </ScrollablePill>
               ))
             ) : leaderboardSection === 'challenges' ? (
               [
-                { key: 'wins', label: '⚡ Wins', color: '#FFD60A' },
+                { key: 'wins', cat: 'wins', label: 'Wins', color: '#FFD60A' },
                 { key: 'currentStreak', label: '🔥 Win Streak', color: '#FF9500' },
-                { key: 'longestStreak', label: '👑 Longest', color: '#FFD700' }
+                { key: 'longestStreak', cat: 'longest', label: 'Longest', color: '#FFD700' }
               ].map((cat) => (
                 <ScrollablePill
                   key={cat.key}
@@ -2758,15 +2769,15 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                   color={cat.color}
                   textColor="black"
                 >
-                  {cat.label}
+                  {cat.cat && <CategoryIcon category={cat.cat} size={12} color="currentColor" className="inline align-[-2px] mr-1" />}{cat.label}
                 </ScrollablePill>
               ))
             ) : (
               [
-                { key: 'master', label: '🏆 Overall', color: '#FFD700' },
-                { key: 'strength', label: '💪 Strength', color: '#00FF94' },
-                { key: 'cardio', label: '🏃 Cardio', color: '#FF9500' },
-                { key: 'recovery', label: '🧊 Recovery', color: '#00D1FF' }
+                { key: 'master', cat: 'overall', label: 'Overall', color: '#FFD700' },
+                { key: 'strength', cat: 'lifts', label: 'Strength', color: '#00FF94' },
+                { key: 'cardio', cat: 'cardio', label: 'Cardio', color: '#FF9500' },
+                { key: 'recovery', cat: 'recovery', label: 'Recovery', color: '#00D1FF' }
               ].map((cat) => (
                 <ScrollablePill
                   key={cat.key}
@@ -2775,7 +2786,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                   color={cat.color}
                   textColor={cat.key === 'master' ? 'black' : 'white'}
                 >
-                  {cat.label}
+                  {cat.cat && <CategoryIcon category={cat.cat} size={12} color="currentColor" className="inline align-[-2px] mr-1" />}{cat.label}
                 </ScrollablePill>
               ))
             )}
@@ -2787,7 +2798,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             </div>
           ) : sortedLeaderboard.length === 0 ? (
             <div className="text-center py-12">
-              <div className="text-5xl mb-4">🏆</div>
+              <div className="flex justify-center mb-4"><CategoryIcon category="overall" size={48} /></div>
               <p className="text-white font-medium mb-2">No leaderboard data yet</p>
               <p className="text-gray-500 text-sm">Start logging workouts to see rankings!</p>
             </div>
@@ -2883,7 +2894,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
 
                 {/* Running Leaders */}
                 <div className="mb-4">
-                  <div className="text-xs text-gray-400 uppercase tracking-wide mb-2">🏃 Running</div>
+                  <div className="text-xs text-gray-400 uppercase tracking-wide mb-2"><ActivityIcon type="Running" size={12} className="inline align-[-2px] mr-1" />Running</div>
                   <div className="grid grid-cols-3 gap-2">
                     {/* Most Runs */}
                     <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(78, 205, 196, 0.1)' }}>
@@ -2994,7 +3005,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                   <div className="grid grid-cols-3 gap-2">
                     {/* Cold Plunge */}
                     <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(155, 89, 182, 0.1)' }}>
-                      <div className="text-[10px] text-gray-500 uppercase mb-1">🧊 Cold Plunge</div>
+                      <div className="text-[10px] text-gray-500 uppercase mb-1"><CategoryIcon category="recovery" size={11} className="inline align-[-2px] mr-1" />Cold Plunge</div>
                       {[...sortedLeaderboard]
                         .sort((a, b) => (b.volume?.coldPlunges?.[leaderboardTimeRange] || 0) - (a.volume?.coldPlunges?.[leaderboardTimeRange] || 0))
                         .slice(0, 3)
@@ -3010,7 +3021,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
 
                     {/* Sauna */}
                     <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(155, 89, 182, 0.1)' }}>
-                      <div className="text-[10px] text-gray-500 uppercase mb-1">🔥 Sauna</div>
+                      <div className="text-[10px] text-gray-500 uppercase mb-1"><ActivityIcon type="Sauna" size={11} className="inline align-[-2px] mr-1" />Sauna</div>
                       {[...sortedLeaderboard]
                         .sort((a, b) => (b.volume?.saunaSessions?.[leaderboardTimeRange] || 0) - (a.volume?.saunaSessions?.[leaderboardTimeRange] || 0))
                         .slice(0, 3)

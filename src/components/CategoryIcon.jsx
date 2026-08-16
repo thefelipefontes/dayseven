@@ -8,7 +8,6 @@ import {
   IconBolt,
   IconCrown,
   IconTrophy,
-  IconChartBar,
 } from '@tabler/icons-react';
 
 // The app's icon vocabulary: the three weekly-goal categories (was 💪 / ❤️ / 🧊) plus the two
@@ -45,7 +44,6 @@ export const CATEGORY_ICONS = {
   wins: IconBolt,
   longest: IconCrown,
   overall: IconTrophy,
-  chart: IconChartBar,
 };
 
 export const CATEGORY_COLORS = {
@@ -54,11 +52,10 @@ export const CATEGORY_COLORS = {
   recovery: '#00D1FF',
   steps: '#BF5AF2',
   calories: '#FF9500',
-  workouts: '#00FF94',
+  workouts: '#FFD60A',
   wins: '#FFD60A',
   longest: '#FFD700',
   overall: '#FFD700',
-  chart: '#04d1ff',
 };
 
 // Aliases for the names the older surfaces use for the same things.

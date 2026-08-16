@@ -182,6 +182,20 @@ const SectionIcon = ({ type, size = 22, color = '#04d1ff' }) => {
 
 // ScrollablePill - a pill button that allows horizontal scrolling through it
 // Uses onPointerUp for tap detection which doesn't block scroll gestures
+// '#RRGGBB' (or '#RGB') -> 'rgba(r,g,b,a)'. The pill colours are authored as hex, but the
+// unselected outline needs them at partial alpha.
+//
+// The shorthand branch matters: every pill colour today is 6-digit, but parsing '#777' as if
+// it were 6-digit yields rgba(0,7,119) — a dark blue, not a grey — and it would fail silently
+// as a slightly-wrong border rather than a visible error.
+const hexAlpha = (hex, a) => {
+  let h = String(hex).replace('#', '');
+  if (h.length === 3) h = h.split('').map(c => c + c).join('');
+  const n = parseInt(h, 16);
+  if (Number.isNaN(n)) return `rgba(255, 255, 255, ${a})`;
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+};
+
 const ScrollablePill = ({ onClick, isSelected, color, textColor, children }) => {
   const startPos = useRef({ x: 0, y: 0 });
 
@@ -206,6 +220,10 @@ const ScrollablePill = ({ onClick, isSelected, color, textColor, children }) => 
       style={{
         backgroundColor: isSelected ? color : 'rgba(255,255,255,0.05)',
         color: isSelected ? textColor : 'rgba(255,255,255,0.5)',
+        // Unselected pills carry their category colour as an outline (and on the icon), so the
+        // row is scannable without a selection. Always a 1px border, so selecting one doesn't
+        // shift the row's layout.
+        border: `1px solid ${isSelected ? color : hexAlpha(color, 0.45)}`,
       }}
     >
       {children}
@@ -2699,12 +2717,13 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               }}
             />
             {[
-              // Streaks keeps 🔥: the flame means "streak" throughout the app, and both
-              // icon alternatives are taken here — a flame icon is calories, a bolt is
-              // Challenges, which is the tab sitting right beside it.
-              { key: 'activity', cat: 'chart', label: 'Activity' },
+              // Emoji here, icons on the category pills below. The section slider is
+              // navigation rather than data, and 🔥 keeps meaning streak — which no
+              // available icon could say, since a flame reads as calories and a bolt is
+              // the Challenges tab sitting right beside it.
+              { key: 'activity', label: '📊 Activity' },
               { key: 'streak', label: '🔥 Streaks' },
-              { key: 'challenges', cat: 'wins', label: 'Challenges' }
+              { key: 'challenges', label: '⚡ Challenges' }
             ].map((section) => (
               <TouchButton
                 key={section.key}
@@ -2730,7 +2749,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                 className="flex-1 py-1.5 rounded-md text-xs font-semibold transition-colors duration-200 relative z-10 text-center"
                 style={{ color: leaderboardSection === section.key ? 'black' : 'rgba(255,255,255,0.5)' }}
               >
-                {section.cat && <CategoryIcon category={section.cat} size={12} color="currentColor" className="inline align-[-2px] mr-1" />}{section.label}
+                {section.label}
               </TouchButton>
             ))}
           </div>
@@ -2741,7 +2760,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               [
                 { key: 'calories', cat: 'calories', label: 'Calories', color: '#FF6B6B' },
                 { key: 'steps', cat: 'steps', label: 'Steps', color: '#3498DB' },
-                { key: 'workouts', cat: 'workouts', label: 'Workouts', color: '#00FF94' },
+                { key: 'workouts', cat: 'workouts', label: 'Workouts', color: '#FFD60A' },
                 { key: 'strengthSessions', cat: 'lifts', label: 'Strength', color: '#00FF94' },
                 { key: 'cardioSessions', cat: 'cardio', label: 'Cardio', color: '#FF9500' },
                 { key: 'recoverySessions', cat: 'recovery', label: 'Recovery', color: '#00D1FF' }
@@ -2753,7 +2772,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                   color={cat.color}
                   textColor="black"
                 >
-                  {cat.cat && <CategoryIcon category={cat.cat} size={12} color="currentColor" className="inline align-[-2px] mr-1" />}{cat.label}
+                  {cat.cat && <CategoryIcon category={cat.cat} size={12} color={leaderboardCategory === cat.key ? 'currentColor' : cat.color} className="inline align-[-2px] mr-1" />}{cat.label}
                 </ScrollablePill>
               ))
             ) : leaderboardSection === 'challenges' ? (
@@ -2769,7 +2788,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                   color={cat.color}
                   textColor="black"
                 >
-                  {cat.cat && <CategoryIcon category={cat.cat} size={12} color="currentColor" className="inline align-[-2px] mr-1" />}{cat.label}
+                  {cat.cat && <CategoryIcon category={cat.cat} size={12} color={leaderboardCategory === cat.key ? 'currentColor' : cat.color} className="inline align-[-2px] mr-1" />}{cat.label}
                 </ScrollablePill>
               ))
             ) : (
@@ -2786,7 +2805,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                   color={cat.color}
                   textColor={cat.key === 'master' ? 'black' : 'white'}
                 >
-                  {cat.cat && <CategoryIcon category={cat.cat} size={12} color="currentColor" className="inline align-[-2px] mr-1" />}{cat.label}
+                  {cat.cat && <CategoryIcon category={cat.cat} size={12} color={leaderboardCategory === cat.key ? 'currentColor' : cat.color} className="inline align-[-2px] mr-1" />}{cat.label}
                 </ScrollablePill>
               ))
             )}

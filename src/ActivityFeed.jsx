@@ -2228,8 +2228,8 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         case 'recovery': return '#00D1FF';
         case 'recoverySessions': return '#00D1FF';
         case 'calories': return '#FF6B6B';
-        case 'steps': return '#3498DB';
-        case 'workouts': return '#00FF94';
+        case 'steps': return '#BF5AF2';
+        case 'workouts': return '#FFD60A';
         default: return '#FFD700';
       }
     };
@@ -2759,7 +2759,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             {leaderboardSection === 'activity' ? (
               [
                 { key: 'calories', cat: 'calories', label: 'Calories', color: '#FF6B6B' },
-                { key: 'steps', cat: 'steps', label: 'Steps', color: '#3498DB' },
+                { key: 'steps', cat: 'steps', label: 'Steps', color: '#BF5AF2' },
                 { key: 'workouts', cat: 'workouts', label: 'Workouts', color: '#FFD60A' },
                 { key: 'strengthSessions', cat: 'lifts', label: 'Strength', color: '#00FF94' },
                 { key: 'cardioSessions', cat: 'cardio', label: 'Cardio', color: '#FF9500' },
@@ -3087,7 +3087,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                             <span className="text-[10px] text-gray-500">{i + 1}.</span>
                             <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
                             <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
-                            <span className="text-[11px] font-bold" style={{ color: '#3498DB' }}>{user.volume?.rides?.[leaderboardTimeRange] || 0}</span>
+                            <span className="text-[11px] font-bold" style={{ color: '#BF5AF2' }}>{user.volume?.rides?.[leaderboardTimeRange] || 0}</span>
                           </div>
                         ))}
                     </div>
@@ -3103,7 +3103,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                             <span className="text-[10px] text-gray-500">{i + 1}.</span>
                             <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
                             <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
-                            <span className="text-[11px] font-bold" style={{ color: '#3498DB' }}>{user.volume?.cycleMiles?.[leaderboardTimeRange]?.toFixed(0) || 0}</span>
+                            <span className="text-[11px] font-bold" style={{ color: '#BF5AF2' }}>{user.volume?.cycleMiles?.[leaderboardTimeRange]?.toFixed(0) || 0}</span>
                           </div>
                         ))}
                     </div>
@@ -3122,7 +3122,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                               <span className="text-[10px] text-gray-500">{i + 1}.</span>
                               <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
                               <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
-                              <span className="text-[11px] font-bold" style={{ color: '#3498DB' }}>{hrs}h</span>
+                              <span className="text-[11px] font-bold" style={{ color: '#BF5AF2' }}>{hrs}h</span>
                             </div>
                           );
                         })}

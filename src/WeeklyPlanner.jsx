@@ -1,5 +1,6 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import CategoryIcon from './components/CategoryIcon';
 import { triggerHaptic, ImpactStyle } from './utils/haptics';
 import { toLocalDateStr } from './utils/dateHelpers';
 import { getActivityCategory } from './utils/activityCategory';

@@ -1597,8 +1597,8 @@ export default function ProfilePage(props) {
                   <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Daily Totals</span>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
-                    <div className="text-lg font-black" style={{ color: '#FF9500' }}>{dayCalories.toLocaleString()}</div>
+                  <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,107,107,0.1)' }}>
+                    <div className="text-lg font-black" style={{ color: '#FF6B6B' }}>{dayCalories.toLocaleString()}</div>
                     <div className="text-[10px] text-gray-400">Calories Burned</div>
                   </div>
                   <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,107,157,0.1)' }}>
@@ -2963,10 +2963,13 @@ export default function ProfilePage(props) {
 
                         {/* Aggregate stats grid */}
                         <div className="grid grid-cols-2 gap-3">
+                          {/* All four tiles take their mark and colour from CategoryIcon /
+                              CATEGORY_COLORS, so this card matches Home and the leaderboard:
+                              calories red, strength green, cardio orange, recovery cyan. */}
                           {/* Calories */}
-                          <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
-                            <p className="text-xl">🔥</p>
-                            <p className="text-2xl font-bold" style={{ color: '#FF9500' }}>{totalCalories.toLocaleString()}</p>
+                          <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,107,107,0.1)' }}>
+                            <p className="text-xl flex justify-center"><CategoryIcon category="calories" size={20} /></p>
+                            <p className="text-2xl font-bold" style={{ color: '#FF6B6B' }}>{totalCalories.toLocaleString()}</p>
                             <p className="text-xs text-gray-400 mt-1">calories burned</p>
                           </div>
 
@@ -2978,16 +2981,16 @@ export default function ProfilePage(props) {
                           </div>
 
                           {/* Cardio */}
-                          <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
+                          <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
                             <p className="text-xl flex justify-center"><CategoryIcon category="cardio" size={20} /></p>
-                            <p className="text-2xl font-bold" style={{ color: '#00D1FF' }}>{cardioSessions}</p>
+                            <p className="text-2xl font-bold" style={{ color: '#FF9500' }}>{cardioSessions}</p>
                             <p className="text-xs text-gray-400 mt-1">cardio sessions</p>
                           </div>
 
                           {/* Recovery */}
-                          <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(191,90,242,0.1)' }}>
-                            <p className="text-xl">🧘</p>
-                            <p className="text-2xl font-bold" style={{ color: '#BF5AF2' }}>{recoverySessions}</p>
+                          <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
+                            <p className="text-xl flex justify-center"><CategoryIcon category="recovery" size={20} /></p>
+                            <p className="text-2xl font-bold" style={{ color: '#00D1FF' }}>{recoverySessions}</p>
                             <p className="text-xs text-gray-400 mt-1">recovery sessions</p>
                           </div>
                         </div>
@@ -3121,7 +3124,7 @@ export default function ProfilePage(props) {
 
                             // Stats grid
                             const statItems = [
-                              { emoji: '🔥', value: totalCalories.toLocaleString(), label: 'calories burned', color: '#FF9500', bg: 'rgba(255,149,0,0.15)' },
+                              { emoji: '🔥', value: totalCalories.toLocaleString(), label: 'calories burned', color: '#FF6B6B', bg: 'rgba(255,107,107,0.15)' },
                               { emoji: '💪', value: strengthSessions.toString(), label: 'strength sessions', color: '#00FF94', bg: 'rgba(0,255,148,0.15)' },
                               { emoji: '❤️', value: cardioSessions.toString(), label: 'cardio sessions', color: '#00D1FF', bg: 'rgba(0,209,255,0.15)' },
                               { emoji: '🧘', value: recoverySessions.toString(), label: 'recovery sessions', color: '#BF5AF2', bg: 'rgba(191,90,242,0.15)' }

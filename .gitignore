@@ -49,5 +49,9 @@ ios/App/archive.plist
 # User-uploaded media (not source)
 public/feed-photos/
 
+# Rendered App Store frames — regenerate with `node app-store-screenshots/build.mjs`
+# from the captures + config, which are tracked. ~27MB of derived PNGs otherwise.
+app-store-screenshots/out/
+
 # Orphaned Xcode duplicate (not referenced by project.pbxproj)
 ios/App/Dayseven Watch Widgets 2/

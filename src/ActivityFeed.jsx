@@ -1162,8 +1162,12 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       const dummyFriends = [
         { uid: 'dummy1', username: 'alex_fitness', displayName: 'Alex Thompson', photoURL: 'https://i.pravatar.cc/150?img=1' },
         { uid: 'dummy2', username: 'sarah_runs', displayName: 'Sarah Chen', photoURL: 'https://i.pravatar.cc/150?img=5' },
-        { uid: 'dummy3', username: 'mike_lifts', displayName: 'Mike Johnson', photoURL: 'https://i.pravatar.cc/150?img=8' },
-        { uid: 'dummy4', username: 'emma_yoga', displayName: 'Emma Williams', photoURL: 'https://i.pravatar.cc/150?img=9' },
+        // Mike and Emma use the same portraits as DEMO_FRIEND_PROFILES in demoData.js
+        // so their avatars match both the leaderboard and the workout photo on their
+        // own feed post. The rest of this list is a separate pravatar set — see the
+        // note above dummyFriends.
+        { uid: 'dummy3', username: 'mike_lifts', displayName: 'Mike Johnson', photoURL: 'https://randomuser.me/api/portraits/men/59.jpg' },
+        { uid: 'dummy4', username: 'emma_yoga', displayName: 'Emma Williams', photoURL: '/demo-avatars/emma.png' },
         { uid: 'dummy5', username: 'jake_athlete', displayName: 'Jake Martinez', photoURL: 'https://i.pravatar.cc/150?img=12' },
         { uid: 'dummy6', username: 'lisa_cardio', displayName: 'Lisa Park', photoURL: 'https://i.pravatar.cc/150?img=16' }
       ];
@@ -1206,26 +1210,30 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         {
           id: 'demo-3',
           type: 'Strength Training',
-          subtype: 'Lifting - Push',
+          subtype: 'Lifting - Upper Body',
           strengthType: 'Lifting',
           date: formatDate(today),
           time: '6:00 AM',
           duration: 65,
           calories: 420,
+          // Rendered as the card subtitle for strength activities (see displaySubtype).
+          focusAreas: ['Shoulders', 'Chest', 'Back', 'Abs'],
+          maxHr: 162, avgHr: 124,
           friend: dummyFriends[2],
           photoURL: '/feed-photos/1.png'
         },
         {
           id: 'demo-4',
-          type: 'Strength Training',
-          subtype: 'Lifting - Shoulders',
-          strengthType: 'Lifting',
+          type: 'Running',
           date: formatDate(today),
           time: '5:30 AM',
-          duration: 55,
-          calories: 350,
+          duration: 34,
+          distance: 4.3,
+          pace: '7:54',
+          calories: 402,
+          maxHr: 176, avgHr: 152,
           friend: dummyFriends[3],
-          photoURL: '/feed-photos/4.png'
+          photoURL: '/feed-photos/5.png'
         },
         // Yesterday's activities
         {

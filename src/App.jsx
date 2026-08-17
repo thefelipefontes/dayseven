@@ -30,7 +30,7 @@ import { initializeRevenueCat, loginRevenueCat, checkProStatus, getPlanType, add
 import ActivityIcon, { ICON_PICKER_CATEGORIES, CATEGORY_COLORS as ICON_CATEGORY_COLORS } from './components/ActivityIcon';
 import RouteMapView, { ll2px, bestFit, makeTiles, RouteOverlay, TileLayer, TILE } from './components/RouteMapView';
 import MuscleBodyMap from './components/MuscleBodyMap';
-import { isDemoAccount, getDemoActivities, getDemoUserData, getDemoHealthKitData, getDemoHealthHistory, getDemoCalendarData, getDemoFriends, getDemoChallengeStats } from './demoData';
+import { isDemoAccount, getDemoActivities, getDemoUserData, getDemoProfileOverride, getDemoHealthKitData, getDemoHealthHistory, getDemoCalendarData, getDemoFriends, getDemoChallengeStats } from './demoData';
 import { Dumbbell } from 'lucide-react';
 import { IconRun, IconSnowflake } from '@tabler/icons-react';
 import { triggerHaptic } from './utils/haptics';
@@ -1629,7 +1629,7 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
               </div>
             </div>
             <div className="py-2 px-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              <div className="text-lg font-bold" style={{ color: '#FF9500' }}>{liveMetrics.calories || '0'}</div>
+              <div className="text-lg font-bold" style={{ color: '#FF6B6B' }}>{liveMetrics.calories || '0'}</div>
               <div className="text-[10px] text-gray-500">CAL</div>
             </div>
             <div className="py-2 px-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
@@ -3396,10 +3396,10 @@ const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!", type
       subtext: 'Way to move!'
     },
     'daily-calories': {
-      primary: '#FF9500',
-      bgGradient: 'radial-gradient(circle at center, rgba(255,149,0,0.2) 0%, transparent 70%)',
-      ringColor1: 'rgba(255,149,0,0.3)',
-      ringColor2: 'rgba(255,149,0,0.2)',
+      primary: '#FF6B6B',
+      bgGradient: 'radial-gradient(circle at center, rgba(255,107,107,0.2) 0%, transparent 70%)',
+      ringColor1: 'rgba(255,107,107,0.3)',
+      ringColor2: 'rgba(255,107,107,0.2)',
       emoji: '🔥',
       confettiColors: ['#FF9500', '#FFD700', '#FF6B00', '#FFAB00', '#FFC107', '#FF453A'],
       subtext: 'Crushing it!'
@@ -5023,10 +5023,10 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
               <div className={`w-full grid grid-cols-2 ${isPostFormat ? 'gap-1.5 mb-2' : 'gap-2 mb-3'}`}>
                 {/* Best workout */}
                 {weeklyAnalysis?.bestCalorieWorkout && (
-                  <div className={`${isPostFormat ? 'p-2' : 'p-2.5'} rounded-xl text-center flex flex-col justify-center`} style={{ backgroundColor: 'rgba(255,149,0,0.08)' }}>
+                  <div className={`${isPostFormat ? 'p-2' : 'p-2.5'} rounded-xl text-center flex flex-col justify-center`} style={{ backgroundColor: 'rgba(255,107,107,0.08)' }}>
                     <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500 uppercase mb-0.5`}>Best Burn</div>
                     <div className={`${isPostFormat ? 'text-base' : 'text-lg'} flex justify-center`}>{getActivityEmoji(weeklyAnalysis.bestCalorieWorkout.type)}</div>
-                    <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-black`} style={{ color: '#FF9500' }}>{parseInt(weeklyAnalysis.bestCalorieWorkout.calories).toLocaleString()}</div>
+                    <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-black`} style={{ color: '#FF6B6B' }}>{parseInt(weeklyAnalysis.bestCalorieWorkout.calories).toLocaleString()}</div>
                     <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>calories</div>
                   </div>
                 )}
@@ -5275,10 +5275,10 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                 {/* Highlights Section - Best Burn, Longest Session, Furthest Distance */}
                 <div className={`w-full grid grid-cols-3 ${isPostFormat ? 'gap-1' : 'gap-1.5'}`}>
                   {/* Best Burn */}
-                  <div className={`${isPostFormat ? 'p-1' : 'p-1.5'} rounded-xl text-center`} style={{ backgroundColor: 'rgba(255,149,0,0.08)' }}>
+                  <div className={`${isPostFormat ? 'p-1' : 'p-1.5'} rounded-xl text-center`} style={{ backgroundColor: 'rgba(255,107,107,0.08)' }}>
                     <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500 uppercase`}>Best Burn</div>
                     <div className={`${isPostFormat ? 'text-xs' : 'text-sm'} flex justify-center`}>{getActivityEmoji(stats?.monthlyHighestCalorieSession?.type, 14)}</div>
-                    <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} font-black`} style={{ color: '#FF9500' }}>{(stats?.monthlyHighestCalorieSession?.calories || 0).toLocaleString()}</div>
+                    <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} font-black`} style={{ color: '#FF6B6B' }}>{(stats?.monthlyHighestCalorieSession?.calories || 0).toLocaleString()}</div>
                     <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500`}>cal</div>
                   </div>
                   {/* Longest Session */}
@@ -7636,7 +7636,7 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
             />
             <div className="mb-5">
               <div className="flex items-center gap-2 mb-1">
-                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#FF9500' }} />
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#FF6B6B' }} />
                 <label className="text-sm font-semibold">Active Calories</label>
               </div>
               <p className="text-xs text-gray-500 mb-2 ml-4">Calories burned from exercise only. Recommended: 400-600/day.</p>
@@ -7650,11 +7650,11 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
                     onClick={() => { goalsManuallySet.current = true; setGoals({ ...goals, caloriesPerDay: option }); }}
                     className="py-3 rounded-xl text-center border-2 flex-shrink-0 px-4 min-w-[70px] cursor-pointer select-none"
                     style={{
-                      backgroundColor: goals.caloriesPerDay === option ? 'rgba(255,149,0,0.2)' : 'rgba(255,255,255,0.05)',
-                      borderColor: goals.caloriesPerDay === option ? '#FF9500' : 'transparent',
+                      backgroundColor: goals.caloriesPerDay === option ? 'rgba(255,107,107,0.2)' : 'rgba(255,255,255,0.05)',
+                      borderColor: goals.caloriesPerDay === option ? '#FF6B6B' : 'transparent',
                     }}
                   >
-                    <span className="font-bold" style={{ color: goals.caloriesPerDay === option ? '#FF9500' : 'white' }}>
+                    <span className="font-bold" style={{ color: goals.caloriesPerDay === option ? '#FF6B6B' : 'white' }}>
                       {option}
                     </span>
                   </div>
@@ -11916,7 +11916,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                   className="h-full rounded-full transition-all duration-1000"
                   style={{ 
                     width: `${Math.min(caloriesPercent, 100)}%`,
-                    backgroundColor: '#FF9500'
+                    backgroundColor: '#FF6B6B'
                   }}
                 />
               </div>
@@ -14680,6 +14680,7 @@ export default function DaySevenApp() {
         const demoHealthKit = getDemoHealthKitData();
         setActivities(demoActivities);
         activitiesRef.current = demoActivities;
+        setUserProfile(prev => (prev ? { ...prev, ...getDemoProfileOverride() } : prev));
         setUserData(demoUserData);
         setCalendarData(getDemoCalendarData(demoActivities));
         setHealthKitData(prev => ({ ...prev, ...demoHealthKit }));

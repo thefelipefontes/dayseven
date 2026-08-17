@@ -30,6 +30,14 @@ import {
 // `activity`, which sits in the "Today's Activity" header directly above this very card. In
 // practice the two flames read differently anyway — the streak is a full-color emoji, this is
 // a monochrome line icon — and flame-for-calories is the convention users arrive with.
+//
+// Calories is RED (#FF6B6B), not orange. It used to share cardio's #FF9500, which put two
+// identical-looking tiles side by side wherever the two appear together (Home's Today's
+// Activity rows, the Progress Comparison grid, the Trends metric switcher). The leaderboard
+// pill row in ActivityFeed.jsx had already been assigning calories red independently — this
+// adopts that value so the whole app agrees. Keep it clear of #FF453A, which is the app's
+// negative/loss red (down arrows, losses, expired challenges), and note #FF5757 is
+// miles/"Ran" in TrendsView — close to this, but the two never render side by side.
 // The leaderboard adds four marks that aren't goal categories or Health metrics. `wins` is
 // deliberately the bolt: that's the Challenges tab's own icon, and these pills live in the
 // Challenges section, so here the bolt reinforces rather than collides. Challenge win STREAKS
@@ -51,7 +59,7 @@ export const CATEGORY_COLORS = {
   cardio: '#FF9500',
   recovery: '#00D1FF',
   steps: '#BF5AF2',
-  calories: '#FF9500',
+  calories: '#FF6B6B',
   workouts: '#FFD60A',
   wins: '#FFD60A',
   longest: '#FFD700',

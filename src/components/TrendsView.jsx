@@ -201,7 +201,8 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
           label: date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
           shortLabel: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
           value,
-          date: dateStr
+          date: dateStr,
+          endDate: dateStr
         };
 
         if (metric === 'miles') {
@@ -260,7 +261,8 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
           label: `${startLabel} - ${endLabel}`,
           shortLabel: weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
           value,
-          date: toLocalDateStr(weekStart)
+          date: toLocalDateStr(weekStart),
+          endDate: toLocalDateStr(weekEndDate)
         };
         if (metric === 'miles') {
           weekPoint.milesRan = weekRan;
@@ -307,7 +309,9 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
           label: monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
           shortLabel: monthDate.toLocaleDateString('en-US', { month: 'short' }),
           value,
-          date: toLocalDateStr(monthDate)
+          date: toLocalDateStr(monthDate),
+          // Clamp to today so the in-progress month doesn't claim future days.
+          endDate: toLocalDateStr(monthEnd > today ? today : monthEnd)
         };
         if (metric === 'miles') {
           monthPoint.milesRan = monthRan;
@@ -333,7 +337,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
   }
 
   const metricConfig = {
-    calories: { label: 'Calories', cat: 'calories', unit: 'cal', color: '#FF9500' },
+    calories: { label: 'Calories', cat: 'calories', unit: 'cal', color: '#FF6B6B' },
     steps: { label: 'Steps', cat: 'steps', unit: 'steps', color: '#00D1FF' },
     miles: { label: 'Miles', icon: '📍', unit: 'mi', color: '#00FF94' }
   };
@@ -632,23 +636,29 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
       {/* Selected Day Activities - only shows on click */}
       {selectedBar !== null && trendData[selectedBar] && (() => {
         const selectedPoint = trendData[selectedBar];
-        const dateStr = selectedPoint.date;
-        // Get full activity data from activities array
-        const fullDayActivities = activities.filter(a => a.date === dateStr);
-        const lifts = fullDayActivities.filter(a => getActivityCategory(a) === 'lifting');
-        const cardioActivities = fullDayActivities.filter(a => getActivityCategory(a) === 'cardio');
-        const recoveryActivities = fullDayActivities.filter(a => getActivityCategory(a) === 'recovery');
-        const nonCardioWalks = fullDayActivities.filter(a =>
+        // A bar covers a day, a rolling 7-day week or a month depending on the
+        // selected range, so the detail panel has to read the bucket's whole
+        // span. It used to filter on the bucket's start day alone, which made a
+        // weekly bar report a single day's counts under a "Jul 21 - 27" header
+        // — a 29-mile week could show 0 cardio sessions.
+        const rangeStart = selectedPoint.date;
+        const rangeEnd = selectedPoint.endDate || selectedPoint.date;
+        const inRange = (d) => d >= rangeStart && d <= rangeEnd; // ISO dates sort lexically
+        const rangeActivities = activities.filter(a => inRange(a.date));
+        const lifts = rangeActivities.filter(a => getActivityCategory(a) === 'lifting');
+        const cardioActivities = rangeActivities.filter(a => getActivityCategory(a) === 'cardio');
+        const recoveryActivities = rangeActivities.filter(a => getActivityCategory(a) === 'recovery');
+        const nonCardioWalks = rangeActivities.filter(a =>
           a.type === 'Walking' && !a.countToward
         );
 
-        // Get HealthKit data for this day
-        const dayHealthData = healthDataByDate[dateStr];
+        // HealthKit totals summed across the same range.
         // Use HealthKit calories directly — wearables already track all active energy
-        const dayCalories = dayHealthData?.calories || 0;
-        const daySteps = dayHealthData?.steps || 0;
-        const dayMiles = fullDayActivities.reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
-        const totalDuration = fullDayActivities.reduce((sum, a) => sum + (a.duration || 0), 0);
+        const rangeHealth = Object.entries(healthDataByDate).filter(([d]) => inRange(d));
+        const dayCalories = rangeHealth.reduce((sum, [, v]) => sum + (v?.calories || 0), 0);
+        const daySteps = rangeHealth.reduce((sum, [, v]) => sum + (v?.steps || 0), 0);
+        const dayMiles = rangeActivities.reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
+        const totalDuration = rangeActivities.reduce((sum, a) => sum + (a.duration || 0), 0);
 
         return (
           <div className="p-4 rounded-xl mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
@@ -664,7 +674,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
               </button>
             </div>
 
-            {fullDayActivities.length > 0 ? (
+            {rangeActivities.length > 0 ? (
               <div className="space-y-3">
                 {/* Summary Stats */}
                 <div className="grid grid-cols-3 gap-2">
@@ -684,8 +694,8 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
 
                 {/* Daily Totals */}
                 <div className="grid grid-cols-4 gap-2">
-                  <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
-                    <div className="text-sm font-bold" style={{ color: '#FF9500' }}>{dayCalories.toLocaleString()}</div>
+                  <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,107,107,0.1)' }}>
+                    <div className="text-sm font-bold" style={{ color: '#FF6B6B' }}>{dayCalories.toLocaleString()}</div>
                     <div className="text-[9px] text-gray-400">Calories</div>
                   </div>
                   <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,107,157,0.1)' }}>
@@ -706,7 +716,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
                 <div className="pt-2 border-t border-white/10">
                   <div className="text-xs text-gray-400 mb-2">Activities</div>
                   <div className="space-y-2">
-                    {fullDayActivities.map((activity, idx) => (
+                    {rangeActivities.map((activity, idx) => (
                       <div key={idx} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                         <div className="flex items-center gap-2">
                           <ActivityIcon type={activity.type} subtype={activity.subtype} size={14} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} countToward={activity.countToward} customActivityCategory={activity.customActivityCategory} />

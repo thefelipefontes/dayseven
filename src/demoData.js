@@ -42,43 +42,53 @@ export const getDemoActivities = () => {
   const today = new Date();
   const dayOfWeek = today.getDay(); // 0=Sun
 
-  // --- Current week scenario: Monday ---
-  // Monday (today-ish): Lower body workout, no calves
-  // Sunday: Full upper body + walk
-  // No cardio or recovery yet this week
+  // --- Current week ---
+  // Each session is anchored to a day of the *current* week (0=Sun … 6=Sat)
+  // rather than to "today". The previous version hardcoded today/yesterday, so
+  // on a Sunday — when the week has just rolled over — the "yesterday" entries
+  // landed in the previous week and the rings read 1/4, 0/2, 0/2. Anchoring to
+  // the week instead keeps the weekly goals filled on any day it's opened.
+  //
+  // Days later than today are clamped to today so nothing is dated in the
+  // future; early in the week that stacks sessions onto the current day.
+  //
+  // Fills 3/4 lifting, 1/2 cardio, 2/2 recovery = 75% week progress. Note that
+  // Walking counts toward no goal (see utils/activityCategory.js) — it's here
+  // for the feed and step totals, not the rings.
+  const currentWeekPlan = [
+    { day: 0, time: '7:05 AM',
+      type: 'Strength Training', subtype: 'Weightlifting - Legs', strengthType: 'Weightlifting',
+      duration: 54, calories: 413,
+      focusAreas: ['Quads', 'Hamstrings', 'Glutes', 'Adductors'],
+      maxHr: 168, avgHr: 127 },
+    { day: 1, time: '6:20 AM',
+      type: 'Running',
+      duration: 38, calories: 415, distance: 4.6, pace: '8:15',
+      maxHr: 171, avgHr: 148 },
+    { day: 1, time: '5:45 PM',
+      type: 'Walking',
+      duration: 43, calories: 195, distance: 2.1, avgHr: 102 },
+    { day: 2, time: '7:00 AM',
+      type: 'Strength Training', subtype: 'Weightlifting - Upper Body', strengthType: 'Weightlifting',
+      duration: 65, calories: 327,
+      focusAreas: ['Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps'],
+      maxHr: 155, avgHr: 118,
+      notes: 'Bench 225x5, barbell rows 185x8, OHP 135x6, curls, tricep pushdowns' },
+    { day: 2, time: '8:30 PM', type: 'Sauna', duration: 20 },
+    { day: 4, time: '6:45 AM',
+      type: 'Strength Training', subtype: 'Weightlifting - Shoulders', strengthType: 'Weightlifting',
+      duration: 48, calories: 305,
+      focusAreas: ['Shoulders', 'Triceps'],
+      maxHr: 149, avgHr: 115 },
+    { day: 4, time: '7:50 AM', type: 'Cold Plunge', duration: 5 },
+  ];
 
-  const thisWeek = [];
   let idCounter = 1;
-
-  // Today — Lower body (no calves), 54 min, 413 cal, HR 168/127
-  thisWeek.push({
+  const thisWeek = currentWeekPlan.map(({ day, ...activity }) => ({
     id: `demo-${idCounter++}`,
-    date: formatDate(daysAgo(0)),
-    type: 'Strength Training', subtype: 'Weightlifting - Legs', strengthType: 'Weightlifting',
-    time: '7:05 AM', duration: 54, calories: 413,
-    focusAreas: ['Quads', 'Hamstrings', 'Glutes', 'Adductors'],
-    maxHr: 168, avgHr: 127
-  });
-
-  // Yesterday — Full upper body
-  thisWeek.push({
-    id: `demo-${idCounter++}`,
-    date: formatDate(daysAgo(1)),
-    type: 'Strength Training', subtype: 'Weightlifting - Upper Body', strengthType: 'Weightlifting',
-    time: '7:00 AM', duration: 65, calories: 327,
-    focusAreas: ['Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps'],
-    maxHr: 155, avgHr: 118,
-    notes: 'Bench 225x5, barbell rows 185x8, OHP 135x6, curls, tricep pushdowns'
-  });
-
-  // Yesterday — 43 min walk
-  thisWeek.push({
-    id: `demo-${idCounter++}`,
-    date: formatDate(daysAgo(1)),
-    type: 'Walking',
-    time: '5:45 PM', duration: 43, calories: 195,
-    distance: 2.1, avgHr: 102
-  });
+    date: formatDate(daysAgo(dayOfWeek - Math.min(day, dayOfWeek))),
+    ...activity,
+  }));
 
   // Historical activities — past 12 weeks for heatmap density
   const historical = [];
@@ -93,30 +103,113 @@ export const getDemoActivities = () => {
     { type: 'Cold Plunge', time: '8:00 AM', duration: 5 },
     { type: 'Sauna', time: '8:30 AM', duration: 20 },
     { type: 'Yoga', time: '7:00 AM', duration: 45, calories: 180 },
+    { type: 'Walking', time: '6:30 PM', duration: 40, calories: 180, distance: 2.0 },
+    { type: 'Cycle', time: '5:30 PM', duration: 28, calories: 220, distance: 8.0 },
   ];
 
-  // Generate 3-6 activities per week for past N weeks (skip current week).
-  // Bumped to 50 so Mila/Jace marketing personas (40-week strength streaks)
+  // Deterministic per-week jitter, so distance-driven charts (Trends → Miles)
+  // move week to week instead of drawing near-identical bars. Seeded from the
+  // week + template rather than Math.random() so a given build always renders
+  // the same chart and screenshots stay reproducible.
+  const jitter = (week, seed, spread) => {
+    const x = Math.sin(week * 12.9898 + seed * 78.233) * 43758.5453;
+    return 1 + ((x - Math.floor(x)) * 2 - 1) * spread;
+  };
+
+  const formatPace = (minutes, miles) => {
+    const perMile = minutes / miles;
+    const mm = Math.floor(perMile);
+    const ss = Math.round((perMile - mm) * 60);
+    return `${mm}:${String(ss).padStart(2, '0')}`;
+  };
+
+  // Every historical week must MEET the demo goals (4 lifting / 2 cardio /
+  // 2 recovery — see getDemoUserData). The old pattern only produced 3 lifting,
+  // 1 cardio and 1 recovery, so every week silently failed its goals and
+  // contradicted the hardcoded streak badges. Most visibly, the home screen's
+  // "Revive Last Week's Broken Streak" prompt reads last week's real activities
+  // (see App.jsx), so it sat directly beneath a "12 week hybrid streak" pill.
+  //
+  // Entries are [templateIndex, dayOfWeek] with 0=Sun … 6=Sat, and are placed
+  // by counting back from that week's Sunday so they always land inside their
+  // own week. The previous `Math.min(i, 6)` spread also collapsed anything past
+  // the 7th activity onto one day and pushed the last slot into the next week.
+  const weekPattern = [
+    [8, 0],  // sauna       — Sun
+    [0, 1],  // chest       — Mon
+    [11, 1], // short ride  — Mon
+    [1, 2],  // back        — Tue
+    [10, 2], // walk        — Tue
+    [4, 3],  // run         — Wed
+    [2, 4],  // legs        — Thu
+    [7, 4],  // cold plunge — Thu
+    [3, 5],  // shoulders   — Fri
+    [6, 6],  // long ride   — Sat
+  ];
+
+  // 50 weeks so the Mila/Jace marketing personas (40-week strength streaks)
   // have heatmap + past-N-months chart coverage backing the streak number.
   for (let week = 1; week <= 50; week++) {
-    const weekStart = 7 * week + dayOfWeek; // days ago for Sunday of that week
-    // Pick 4-5 activities per week for a consistent pattern
-    const weekActivities = [0, 1, 2, 4, 7]; // chest, back, legs, run, cold plunge
-    // Add variety: extra activities some weeks
-    if (week % 2 === 0) weekActivities.push(6, 8); // cycle + sauna
-    if (week % 3 === 0) weekActivities.push(5, 9); // second run + yoga
+    const weekSunday = 7 * week + dayOfWeek; // days ago for Sunday of that week
+    const weekActivities = [...weekPattern];
+    // Keep the heatmap from reading as a perfectly uniform grid.
+    if (week % 2 === 0) weekActivities.push([5, 6]);  // second run  — Sat
+    if (week % 3 === 0) weekActivities.push([9, 0]);  // yoga        — Sun
+    if (week % 4 === 0) weekActivities.push([10, 6]); // second walk — Sat
 
-    weekActivities.forEach((templateIdx, i) => {
-      const dayOffset = Math.min(i, 6); // spread across the week (Mon-Sat)
-      const daysFromToday = weekStart - dayOffset - 1;
-      if (daysFromToday > 0) {
-        historical.push({
-          id: `demo-hist-${week}-${i}`,
-          date: formatDate(daysAgo(daysFromToday)),
-          ...activityTemplates[templateIdx]
-        });
+    weekActivities.forEach(([templateIdx, day], i) => {
+      const daysFromToday = weekSunday - day;
+      if (daysFromToday <= 0) return;
+
+      const template = activityTemplates[templateIdx];
+      const activity = {
+        id: `demo-hist-${week}-${i}`,
+        date: formatDate(daysAgo(daysFromToday)),
+        ...template,
+      };
+
+      // Vary anything carrying a distance, so the Trends chart has real
+      // week-to-week movement. Distance and effort use separate seeds so pace
+      // shifts too, rather than every run coming out at an identical split.
+      if (template.distance) {
+        const distanceFactor = jitter(week, templateIdx, 0.32);
+        const effortFactor = jitter(week, templateIdx + 40, 0.1);
+        activity.distance = +(template.distance * distanceFactor).toFixed(1);
+        activity.duration = Math.round(template.duration * distanceFactor * effortFactor);
+        if (template.calories) {
+          activity.calories = Math.round(template.calories * distanceFactor * effortFactor);
+        }
+        if (template.pace) {
+          activity.pace = formatPace(activity.duration, activity.distance);
+        }
       }
+
+      historical.push(activity);
     });
+  }
+
+  // Progress photos for the Compare tab. Profile.jsx builds that grid from
+  // activities carrying a photoURL, so a before/after pair is just two dated
+  // sessions tagged with an image — there's no separate photo collection to
+  // seed. Held 72 days apart so the "days apart" readout means something.
+  const progressPhotos = [
+    { offset: 112, photoURL: '/demo-progress/before.png' },
+    { offset: 40, photoURL: '/demo-progress/after.png' },
+  ];
+
+  for (const { offset, photoURL } of progressPhotos) {
+    // Land on a strength session near the target date. The weekly pattern puts
+    // lifting on Mon/Tue/Thu/Fri, so a ±3 day window always finds one.
+    let match;
+    for (let slip = 0; slip <= 3 && !match; slip++) {
+      const candidates = slip === 0 ? [offset] : [offset - slip, offset + slip];
+      for (const d of candidates) {
+        const date = formatDate(daysAgo(d));
+        match = historical.find(a => a.date === date && a.type === 'Strength Training');
+        if (match) break;
+      }
+    }
+    if (match) match.photoURL = photoURL;
   }
 
   return [...thisWeek, ...historical];
@@ -182,6 +275,18 @@ const DEMO_USER_OVERRIDES = {
   },
 };
 
+// Marketing identity for the demo account. The profile card, share cards and
+// feed read `userProfile` (the real Firestore profile) rather than
+// getDemoUserData, so the persona's name and handle have to be layered on top
+// of it separately. `demoMode` is included so isDemoAccount() keeps returning
+// true after the username is overridden away from 'appreview'.
+export const getDemoProfileOverride = () => ({
+  displayName: 'Jackson Day',
+  username: 'jacksonday',
+  photoURL: '/demo-avatars/jackson.png',
+  demoMode: true,
+});
+
 export const getDemoUserData = (username) => {
   const base = {
     name: 'DaySeven',
@@ -192,11 +297,15 @@ export const getDemoUserData = (username) => {
       stepsPerDay: 10000,
       caloriesPerDay: 500
     },
+    // The hybrid (master) streak only increments on weeks where ALL three goals
+    // were met, so every component streak must be >= master or the profile
+    // contradicts itself — a 12-week hybrid streak alongside a 5-week recovery
+    // streak claims six weeks that recovery never hit.
     streaks: {
       master: 12,
-      lifts: 12,
-      cardio: 8,
-      recovery: 5,
+      lifts: 14,
+      cardio: 12,
+      recovery: 12,
       stepsGoal: 3
     },
     streakShield: {
@@ -221,10 +330,11 @@ export const getDemoUserData = (username) => {
       mostWorkoutsWeek: 8,
       mostCaloriesWeek: 3200,
       mostMilesWeek: 22.5,
+      // Personal bests must stay >= the current streaks above.
       longestMasterStreak: 12,
-      longestStrengthStreak: 12,
-      longestCardioStreak: 10,
-      longestRecoveryStreak: 7
+      longestStrengthStreak: 16,
+      longestCardioStreak: 14,
+      longestRecoveryStreak: 12
     }
   };
 
@@ -310,7 +420,7 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 8, strength: 10, cardio: 6, recovery: 5, longestMaster: 12 },
     challengeStats: { accepted: 16, wins: 12, losses: 4, currentWinStreak: 2, longestWinStreak: 5 },
     weeksWon: 6,
-    weekly: { calories: 4500, steps: 65000, runs: 3, miles: 14, runMinutes: 140, strengthSessions: 4, liftingMinutes: 240, recoverySessions: 2, coldPlunges: 1, saunaSessions: 1, yogaSessions: 0, rides: 3, cycleMiles: 45, cycleMinutes: 150 } },
+    weekly: { calories: 3400, steps: 62000, runs: 2, miles: 12, runMinutes: 105, strengthSessions: 3, liftingMinutes: 180, recoverySessions: 2, coldPlunges: 1, saunaSessions: 1, yogaSessions: 0, rides: 1, cycleMiles: 16, cycleMinutes: 55 } },
 
   // 2) Sarah — runner + challenge winner. #1 in challenge wins / longest win streak.
   { uid: 'dummy2', username: 'sarah_runs', displayName: 'Sarah Chen',
@@ -318,23 +428,23 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 24, strength: 6, cardio: 28, recovery: 9, longestMaster: 30 },
     challengeStats: { accepted: 22, wins: 15, losses: 7, currentWinStreak: 4, longestWinStreak: 8 },
     weeksWon: 14,
-    weekly: { calories: 5200, steps: 92000, runs: 6, miles: 32, runMinutes: 320, strengthSessions: 2, liftingMinutes: 90, recoverySessions: 3, coldPlunges: 1, saunaSessions: 1, yogaSessions: 1, rides: 2, cycleMiles: 30, cycleMinutes: 100 } },
+    weekly: { calories: 3100, steps: 78000, runs: 3, miles: 22, runMinutes: 200, strengthSessions: 1, liftingMinutes: 45, recoverySessions: 1, coldPlunges: 0, saunaSessions: 0, yogaSessions: 1, rides: 1, cycleMiles: 14, cycleMinutes: 45 } },
 
   // 3) Mike — lifter. #1 in strengthSessions / liftingMinutes.
   { uid: 'dummy3', username: 'mike_lifts', displayName: 'Mike Johnson',
-    photoURL: 'https://randomuser.me/api/portraits/men/68.jpg',
+    photoURL: 'https://randomuser.me/api/portraits/men/59.jpg',
     streaks: { master: 14, strength: 22, cardio: 4, recovery: 8, longestMaster: 18 },
     challengeStats: { accepted: 20, wins: 14, losses: 6, currentWinStreak: 3, longestWinStreak: 6 },
     weeksWon: 9,
-    weekly: { calories: 3700, steps: 38000, runs: 1, miles: 3, runMinutes: 30, strengthSessions: 6, liftingMinutes: 420, recoverySessions: 3, coldPlunges: 2, saunaSessions: 1, yogaSessions: 0, rides: 1, cycleMiles: 15, cycleMinutes: 50 } },
+    weekly: { calories: 2900, steps: 34000, runs: 0, miles: 0, runMinutes: 0, strengthSessions: 5, liftingMinutes: 300, recoverySessions: 1, coldPlunges: 1, saunaSessions: 0, yogaSessions: 0, rides: 0, cycleMiles: 0, cycleMinutes: 0 } },
 
   // 4) Emma — yogi. #1 in master streak / yogaSessions.
   { uid: 'dummy4', username: 'emma_yoga', displayName: 'Emma Williams',
-    photoURL: 'https://randomuser.me/api/portraits/women/68.jpg',
+    photoURL: '/demo-avatars/emma.png',
     streaks: { master: 32, strength: 8, cardio: 14, recovery: 28, longestMaster: 35 },
     challengeStats: { accepted: 14, wins: 9, losses: 5, currentWinStreak: 1, longestWinStreak: 4 },
     weeksWon: 18,
-    weekly: { calories: 2800, steps: 50000, runs: 2, miles: 8, runMinutes: 80, strengthSessions: 3, liftingMinutes: 135, recoverySessions: 6, coldPlunges: 1, saunaSessions: 1, yogaSessions: 5, rides: 4, cycleMiles: 60, cycleMinutes: 200 } },
+    weekly: { calories: 2600, steps: 48000, runs: 1, miles: 4, runMinutes: 38, strengthSessions: 2, liftingMinutes: 90, recoverySessions: 3, coldPlunges: 0, saunaSessions: 0, yogaSessions: 3, rides: 1, cycleMiles: 12, cycleMinutes: 40 } },
 
   // 5) Jake — overall powerhouse. #1 in calories.
   { uid: 'dummy5', username: 'jake_athlete', displayName: 'Jake Martinez',
@@ -342,7 +452,7 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 18, strength: 16, cardio: 18, recovery: 6, longestMaster: 22 },
     challengeStats: { accepted: 24, wins: 16, losses: 8, currentWinStreak: 2, longestWinStreak: 7 },
     weeksWon: 11,
-    weekly: { calories: 6100, steps: 78000, runs: 5, miles: 28, runMinutes: 280, strengthSessions: 5, liftingMinutes: 350, recoverySessions: 2, coldPlunges: 1, saunaSessions: 1, yogaSessions: 0, rides: 5, cycleMiles: 75, cycleMinutes: 250 } },
+    weekly: { calories: 4200, steps: 72000, runs: 3, miles: 18, runMinutes: 165, strengthSessions: 3, liftingMinutes: 195, recoverySessions: 2, coldPlunges: 1, saunaSessions: 1, yogaSessions: 0, rides: 1, cycleMiles: 18, cycleMinutes: 60 } },
 
   // 6) Lisa — runner + step queen. #1 in steps / runs / miles / cardioStreak.
   { uid: 'dummy6', username: 'lisa_cardio', displayName: 'Lisa Park',
@@ -350,7 +460,7 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 20, strength: 4, cardio: 32, recovery: 5, longestMaster: 24 },
     challengeStats: { accepted: 14, wins: 10, losses: 4, currentWinStreak: 1, longestWinStreak: 5 },
     weeksWon: 10,
-    weekly: { calories: 4400, steps: 105000, runs: 7, miles: 38, runMinutes: 380, strengthSessions: 1, liftingMinutes: 45, recoverySessions: 2, coldPlunges: 0, saunaSessions: 1, yogaSessions: 1, rides: 6, cycleMiles: 90, cycleMinutes: 300 } },
+    weekly: { calories: 3600, steps: 88000, runs: 4, miles: 30, runMinutes: 270, strengthSessions: 1, liftingMinutes: 40, recoverySessions: 1, coldPlunges: 0, saunaSessions: 0, yogaSessions: 1, rides: 0, cycleMiles: 0, cycleMinutes: 0 } },
 
   // 7) Noah — recovery specialist. #1 in recoverySessions / coldPlunges / saunaSessions.
   { uid: 'dummy7', username: 'noah_climbs', displayName: 'Noah Reyes',
@@ -358,7 +468,7 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 11, strength: 12, cardio: 9, recovery: 18, longestMaster: 14 },
     challengeStats: { accepted: 12, wins: 8, losses: 4, currentWinStreak: 0, longestWinStreak: 3 },
     weeksWon: 5,
-    weekly: { calories: 3200, steps: 45000, runs: 2, miles: 7, runMinutes: 70, strengthSessions: 3, liftingMinutes: 180, recoverySessions: 8, coldPlunges: 4, saunaSessions: 4, yogaSessions: 0, rides: 1, cycleMiles: 12, cycleMinutes: 40 } },
+    weekly: { calories: 2400, steps: 42000, runs: 0, miles: 0, runMinutes: 0, strengthSessions: 1, liftingMinutes: 60, recoverySessions: 4, coldPlunges: 2, saunaSessions: 2, yogaSessions: 0, rides: 1, cycleMiles: 12, cycleMinutes: 40 } },
 
   // 8) Maya — strength runner-up. Tied for #1 currentWinStreak.
   { uid: 'dummy8', username: 'maya_lifts', displayName: 'Maya Patel',
@@ -366,7 +476,7 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 12, strength: 18, cardio: 7, recovery: 12, longestMaster: 14 },
     challengeStats: { accepted: 18, wins: 12, losses: 6, currentWinStreak: 5, longestWinStreak: 6 },
     weeksWon: 8,
-    weekly: { calories: 4100, steps: 55000, runs: 2, miles: 9, runMinutes: 90, strengthSessions: 5, liftingMinutes: 360, recoverySessions: 3, coldPlunges: 1, saunaSessions: 1, yogaSessions: 3, rides: 2, cycleMiles: 25, cycleMinutes: 80 } },
+    weekly: { calories: 3300, steps: 50000, runs: 1, miles: 4, runMinutes: 38, strengthSessions: 4, liftingMinutes: 260, recoverySessions: 1, coldPlunges: 1, saunaSessions: 0, yogaSessions: 0, rides: 0, cycleMiles: 0, cycleMinutes: 0 } },
 
   // 9) Leo — cyclist. #1 in rides / cycleMiles / cycleMinutes. Tied for #1 currentWinStreak.
   { uid: 'dummy9', username: 'leo_runner', displayName: 'Leo Hernandez',
@@ -374,7 +484,7 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 16, strength: 5, cardio: 22, recovery: 7, longestMaster: 19 },
     challengeStats: { accepted: 19, wins: 11, losses: 8, currentWinStreak: 5, longestWinStreak: 4 },
     weeksWon: 7,
-    weekly: { calories: 4900, steps: 60000, runs: 4, miles: 18, runMinutes: 180, strengthSessions: 1, liftingMinutes: 50, recoverySessions: 1, coldPlunges: 0, saunaSessions: 1, yogaSessions: 0, rides: 8, cycleMiles: 130, cycleMinutes: 430 } },
+    weekly: { calories: 3500, steps: 54000, runs: 1, miles: 5, runMinutes: 45, strengthSessions: 1, liftingMinutes: 45, recoverySessions: 1, coldPlunges: 0, saunaSessions: 1, yogaSessions: 0, rides: 3, cycleMiles: 52, cycleMinutes: 175 } },
 
   // 10) Kai — well-rounded #2 across multiple. High master streak.
   { uid: 'dummy10', username: 'kai_movement', displayName: 'Kai Nguyen',
@@ -382,7 +492,7 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 22, strength: 10, cardio: 12, recovery: 14, longestMaster: 26 },
     challengeStats: { accepted: 16, wins: 10, losses: 6, currentWinStreak: 3, longestWinStreak: 4 },
     weeksWon: 12,
-    weekly: { calories: 3900, steps: 70000, runs: 3, miles: 12, runMinutes: 120, strengthSessions: 4, liftingMinutes: 220, recoverySessions: 4, coldPlunges: 1, saunaSessions: 2, yogaSessions: 2, rides: 3, cycleMiles: 40, cycleMinutes: 130 } },
+    weekly: { calories: 3000, steps: 58000, runs: 2, miles: 8, runMinutes: 75, strengthSessions: 2, liftingMinutes: 120, recoverySessions: 1, coldPlunges: 0, saunaSessions: 1, yogaSessions: 0, rides: 1, cycleMiles: 14, cycleMinutes: 45 } },
 ];
 
 // Period multipliers: weekly numbers expanded into month/year/all totals so the

@@ -1193,7 +1193,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           duration: 58,
           calories: 385,
           friend: dummyFriends[0],
-          photoURL: '/feed-photos/2.png'
+          photoURL: '/demo-feed/alex.png'
         },
         {
           id: 'demo-2',
@@ -1205,7 +1205,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           duration: 72,
           calories: 410,
           friend: dummyFriends[1],
-          photoURL: '/feed-photos/3.png'
+          photoURL: '/demo-feed/sarah.png'
         },
         {
           id: 'demo-3',
@@ -1220,7 +1220,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           focusAreas: ['Shoulders', 'Chest', 'Back', 'Abs'],
           maxHr: 162, avgHr: 124,
           friend: dummyFriends[2],
-          photoURL: '/feed-photos/1.png'
+          photoURL: '/demo-feed/mike.png'
         },
         {
           id: 'demo-4',
@@ -1233,7 +1233,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           calories: 402,
           maxHr: 176, avgHr: 152,
           friend: dummyFriends[3],
-          photoURL: '/feed-photos/5.png'
+          photoURL: '/demo-feed/emma.png'
         },
         // Yesterday's activities
         {

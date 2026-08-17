@@ -46,7 +46,10 @@ ios/App/DaySeven Watch Watch App/GoogleService-Info.plist
 ios/debug.xcconfig
 ios/App/archive.plist
 
-# User-uploaded media (not source)
+# Scratch media dropped in during development. Demo assets the app references
+# by path are NOT here — they live in public/demo-feed, public/demo-avatars and
+# public/demo-progress, and are tracked: committed code hardcodes those paths,
+# so a clone without them can't render the demo account correctly.
 public/feed-photos/
 
 # Rendered App Store frames — regenerate with `node app-store-screenshots/build.mjs`

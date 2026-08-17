@@ -2968,28 +2968,28 @@ export default function ProfilePage(props) {
                               calories red, strength green, cardio orange, recovery cyan. */}
                           {/* Calories */}
                           <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,107,107,0.1)' }}>
-                            <p className="text-xl flex justify-center"><CategoryIcon category="calories" size={20} /></p>
+                            <p className="text-xl flex justify-center" data-share-icon="calories"><CategoryIcon category="calories" size={20} /></p>
                             <p className="text-2xl font-bold" style={{ color: '#FF6B6B' }}>{totalCalories.toLocaleString()}</p>
                             <p className="text-xs text-gray-400 mt-1">calories burned</p>
                           </div>
 
                           {/* Strength */}
                           <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
-                            <p className="text-xl flex justify-center"><CategoryIcon category="lifts" size={20} /></p>
+                            <p className="text-xl flex justify-center" data-share-icon="lifts"><CategoryIcon category="lifts" size={20} /></p>
                             <p className="text-2xl font-bold" style={{ color: '#00FF94' }}>{strengthSessions}</p>
                             <p className="text-xs text-gray-400 mt-1">strength sessions</p>
                           </div>
 
                           {/* Cardio */}
                           <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
-                            <p className="text-xl flex justify-center"><CategoryIcon category="cardio" size={20} /></p>
+                            <p className="text-xl flex justify-center" data-share-icon="cardio"><CategoryIcon category="cardio" size={20} /></p>
                             <p className="text-2xl font-bold" style={{ color: '#FF9500' }}>{cardioSessions}</p>
                             <p className="text-xs text-gray-400 mt-1">cardio sessions</p>
                           </div>
 
                           {/* Recovery */}
                           <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
-                            <p className="text-xl flex justify-center"><CategoryIcon category="recovery" size={20} /></p>
+                            <p className="text-xl flex justify-center" data-share-icon="recovery"><CategoryIcon category="recovery" size={20} /></p>
                             <p className="text-2xl font-bold" style={{ color: '#00D1FF' }}>{recoverySessions}</p>
                             <p className="text-xs text-gray-400 mt-1">recovery sessions</p>
                           </div>
@@ -3122,13 +3122,45 @@ export default function ProfilePage(props) {
                             roundRect(ctx, 15, statsY, width - 30, 200, 12);
                             ctx.fill();
 
-                            // Stats grid
+                            // Stats grid. `icon` is a CategoryIcon key — the mark is lifted
+                            // from the tile that's already rendered in this modal (see
+                            // loadShareIcon below) rather than re-declaring path data or
+                            // falling back to emoji, so the share image can't drift from the
+                            // app's icon vocabulary the way it did when these were
+                            // 🔥/💪/❤️/🧘.
                             const statItems = [
-                              { emoji: '🔥', value: totalCalories.toLocaleString(), label: 'calories burned', color: '#FF6B6B', bg: 'rgba(255,107,107,0.15)' },
-                              { emoji: '💪', value: strengthSessions.toString(), label: 'strength sessions', color: '#00FF94', bg: 'rgba(0,255,148,0.15)' },
-                              { emoji: '❤️', value: cardioSessions.toString(), label: 'cardio sessions', color: '#00D1FF', bg: 'rgba(0,209,255,0.15)' },
-                              { emoji: '🧘', value: recoverySessions.toString(), label: 'recovery sessions', color: '#BF5AF2', bg: 'rgba(191,90,242,0.15)' }
+                              { icon: 'calories', value: totalCalories.toLocaleString(), label: 'calories burned', color: '#FF6B6B', bg: 'rgba(255,107,107,0.15)' },
+                              { icon: 'lifts', value: strengthSessions.toString(), label: 'strength sessions', color: '#00FF94', bg: 'rgba(0,255,148,0.15)' },
+                              { icon: 'cardio', value: cardioSessions.toString(), label: 'cardio sessions', color: '#FF9500', bg: 'rgba(255,149,0,0.15)' },
+                              { icon: 'recovery', value: recoverySessions.toString(), label: 'recovery sessions', color: '#00D1FF', bg: 'rgba(0,209,255,0.15)' }
                             ];
+
+                            // Serialise a tile's <svg> into an Image the canvas can draw.
+                            // Returns null rather than throwing: a missing mark should cost
+                            // the icon, not the whole share.
+                            const loadShareIcon = (category, color, px) => new Promise(resolve => {
+                              const source = document.querySelector(`[data-share-icon="${category}"] svg`);
+                              if (!source) return resolve(null);
+                              const svg = source.cloneNode(true);
+                              svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+                              svg.setAttribute('width', px);
+                              svg.setAttribute('height', px);
+                              // Both packs stroke with currentColor, which doesn't resolve
+                              // once the SVG is loaded as a standalone image.
+                              svg.setAttribute('stroke', color);
+                              const markup = new XMLSerializer().serializeToString(svg);
+                              const img = new Image();
+                              img.onload = () => resolve(img);
+                              img.onerror = () => resolve(null);
+                              img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`;
+                            });
+
+                            // 20px ending ~y+28 keeps the same optical gap above the value
+                            // that the emoji had at its y+25 baseline.
+                            const ICON_PX = 20;
+                            const statIcons = await Promise.all(
+                              statItems.map(s => loadShareIcon(s.icon, s.color, ICON_PX))
+                            );
 
                             const cellWidth = (width - 60) / 2;
                             const cellHeight = 85;
@@ -3145,9 +3177,10 @@ export default function ProfilePage(props) {
                               ctx.fill();
 
                               ctx.textAlign = 'center';
-                              ctx.font = '20px -apple-system, BlinkMacSystemFont, sans-serif';
-                              ctx.fillStyle = '#ffffff';
-                              ctx.fillText(stat.emoji, x + cellWidth / 2, y + 25);
+                              const icon = statIcons[i];
+                              if (icon) {
+                                ctx.drawImage(icon, x + cellWidth / 2 - ICON_PX / 2, y + 8, ICON_PX, ICON_PX);
+                              }
 
                               ctx.font = 'bold 22px -apple-system, BlinkMacSystemFont, sans-serif';
                               ctx.fillStyle = stat.color;

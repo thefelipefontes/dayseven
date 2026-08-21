@@ -908,7 +908,12 @@ function ScheduleScreen({ goals, initialPlan, onChange, onBack, onContinue, onSk
 // Per App Review guidance: once this explanation is on screen the only way
 // forward is the system HealthKit sheet. No "later" button — declining is
 // something the user does in Apple's prompt, not in ours.
-function HKPrescreen({ onConnected }) {
+// Also used by App.jsx for returning users whose HealthKit permission was reset by a
+// reinstall or a restore to a new phone. Note the shape: one CTA and no skip. The Aug 2026
+// App Review rejection was for letting users past this screen without the prompt firing,
+// so the only way out is the iOS dialog itself — which still dismisses this either way,
+// granted or denied, so nobody is trapped here.
+export function HKPrescreen({ onConnected, title, body, cta }) {
   const [requesting, setRequesting] = useState(false);
   const handleConnect = async () => {
     if (requesting) return;
@@ -934,9 +939,11 @@ function HKPrescreen({ onConnected }) {
               <path d="M12 21C12 21 4 14 4 8.5C4 5.46243 6.46243 3 9.5 3C11.0367 3 12.4118 3.5825 13.4 4.55C14.3882 3.5825 15.7633 3 17.3 3C20.3376 3 22.8 5.46243 22.8 8.5C22.8 9.55225 22.5 10.5612 22 11.5" stroke="#FF4557" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </div>
-          <h2 className="text-2xl font-bold mb-3">dayseven works best when it knows what you've already done.</h2>
+          <h2 className="text-2xl font-bold mb-3">
+            {title || "dayseven works best when it knows what you've already done."}
+          </h2>
           <p className="text-gray-400 text-[15px] leading-relaxed">
-            Connect Apple Health to automatically log workouts to your rings — no manual entry needed.
+            {body || 'Connect Apple Health to automatically log workouts to your rings — no manual entry needed.'}
           </p>
         </div>
       </div>
@@ -948,7 +955,7 @@ function HKPrescreen({ onConnected }) {
           style={{ backgroundColor: '#00FF94', color: 'black', opacity: requesting ? 0.6 : 1 }}
           {...ctaPressProps(!requesting)}
         >
-          {requesting ? 'Connecting…' : 'Connect Apple Health'}
+          {requesting ? 'Connecting…' : (cta || 'Connect Apple Health')}
         </button>
       </div>
     </div>

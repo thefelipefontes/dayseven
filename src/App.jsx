@@ -6,7 +6,7 @@ import Login from './Login';
 import UsernameSetup from './UsernameSetup';
 import DiscordInvite from './DiscordInvite';
 import LockedScreen from './LockedScreen';
-import OnboardingFlow from './Onboarding';
+import OnboardingFlow, { HKPrescreen } from './Onboarding';
 import Friends from './Friends';
 import ActivityFeed from './ActivityFeed';
 import { ChallengeFriendModal, ChallengesSection, ChallengeActivityPickerModal, ChallengeApplyPastActivityModal } from './Challenges';
@@ -13394,6 +13394,9 @@ export default function DaySevenApp() {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('home');
   const [showSettings, setShowSettings] = useState(false);
+  /// Shown at launch when a returning user's HealthKit permission is gone (reinstall,
+  /// restore to a new phone) so the system prompt has context and a tap behind it.
+  const [showHealthReconnect, setShowHealthReconnect] = useState(false);
   // Section to jump to when Settings opens — set by callers that deep link in
   // (the home "no workouts found" banner points at 'health'). Cleared on close.
   const [settingsScrollTo, setSettingsScrollTo] = useState(null);
@@ -15049,7 +15052,16 @@ export default function DaySevenApp() {
           // otherwise the system permission dialog would stack on top of
           // either the onboarding survey or the username setup screen.
           if (Capacitor.isNativePlatform() && !profile?.disableHealthKitSync && hasCompletedOnboarding && profile?.username) {
-            syncHealthKit();
+            // A reinstall or a restore to a new phone clears the iOS permission while the
+            // account still says onboarded, so this path used to fire a bare HealthKit
+            // dialog at launch with nothing on screen explaining it — and no second chance
+            // if the user declined a prompt they had no context for. Show the same screen
+            // onboarding uses instead, and let the tap raise the prompt.
+            if (isHealthKitReadAuthorized()) {
+              syncHealthKit();
+            } else {
+              setShowHealthReconnect(true);
+            }
           }
 
           // Load daily health history for trends (365 days for full year view)
@@ -19776,6 +19788,22 @@ export default function DaySevenApp() {
         <NotificationSettings
           userId={user?.uid}
           onClose={() => setShowNotificationSettings(false)}
+        />
+      )}
+
+      {/* Returning user whose Apple Health permission was reset. Same screen onboarding
+          shows, so the prompt arrives with context and behind a tap. One CTA and no skip,
+          matching the shape App Review asked for — the iOS dialog dismisses this either
+          way, granted or denied, so there is no dead end. */}
+      {showHealthReconnect && (
+        <HKPrescreen
+          title="Reconnect Apple Health."
+          body="Your Apple Health permission was reset — that happens after a reinstall or a move to a new phone. Reconnect to keep logging workouts to your rings automatically."
+          cta="Reconnect Apple Health"
+          onConnected={(granted) => {
+            setShowHealthReconnect(false);
+            if (granted) syncHealthKit();
+          }}
         />
       )}
 

@@ -62,6 +62,13 @@ export async function requestHealthKitAuthorization(force = false) {
   }
 }
 
+// Whether READ access was already granted, without asking for it. Callers that run
+// on their own (no user tap behind them) must gate on this: requestHealthKitAuthorization
+// short-circuits on this same flag, so a true here guarantees no permission sheet.
+export function isHealthKitReadAuthorized() {
+  return healthKitAuthorized;
+}
+
 // Map HealthKit workout types to our app's activity types
 // Plugin returns lowercase camelCase (e.g., "walking", "running", "strengthTraining")
 const workoutTypeMap = {
@@ -1529,7 +1536,7 @@ async function fetchActiveEnergyForRange(startDate, endDate) {
   }
 }
 
-export async function backfillHkCalories(activities, { onProgress } = {}) {
+export async function backfillHkCalories(activities, { onProgress, limit = BACKFILL_LIMIT } = {}) {
   if (!Capacitor.isNativePlatform()) {
     return { success: false, reason: 'not_native' };
   }
@@ -1548,7 +1555,7 @@ export async function backfillHkCalories(activities, { onProgress } = {}) {
   // pass is interrupted. Anything past the cap is reported, never silently dropped —
   // it stays unstamped and gets picked up the next time this runs.
   const ordered = [...pending].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-  const targets = ordered.slice(0, BACKFILL_LIMIT);
+  const targets = ordered.slice(0, Math.max(1, limit));
   const skipped = ordered.length - targets.length;
 
   const stamps = new Map(); // activity object reference -> calories HealthKit holds

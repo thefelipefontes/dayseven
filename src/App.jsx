@@ -23,7 +23,7 @@ import { getFriends, getReactions, getFriendRequests, getComments, addReply, get
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
-import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, fetchHealthDataForDate, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, pushDistanceUnitToWatch, fetchWorkoutRoute, updateWidgetData, updateLiveActivityState, startWatchWorkoutLiveActivity, endAllLiveActivities, checkActiveLiveActivity, showLocationDeniedDialog, getHealthConnectionStatus, backfillHkCalories } from './services/healthService';
+import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, fetchHealthDataForDate, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, pushDistanceUnitToWatch, fetchWorkoutRoute, updateWidgetData, updateLiveActivityState, startWatchWorkoutLiveActivity, endAllLiveActivities, checkActiveLiveActivity, showLocationDeniedDialog, getHealthConnectionStatus, backfillHkCalories, isHealthKitReadAuthorized } from './services/healthService';
 import NotificationSettings from './NotificationSettings';
 import { initializePushNotifications, handleNotificationNavigation, removeFCMToken, clearBadge, clearAllNotifications, shouldShowNotification, getNotificationPreferences, logNotificationOpen, getNotificationPermissionStatus, requestNotificationPermission } from './services/notificationService';
 import { initializeRevenueCat, loginRevenueCat, checkProStatus, getPlanType, addCustomerInfoListener, logoutRevenueCat, presentPaywall, presentCustomerCenter, restorePurchases, setDevAuthEmail, getOfferings } from './services/subscriptionService';
@@ -14368,10 +14368,10 @@ export default function DaySevenApp() {
   //
   // Deliberately user-initiated — it can surface the HealthKit permission sheet, which
   // must never appear without a tap behind it.
-  const handleBackfillCalories = async (onProgress) => {
+  const runCalorieBackfill = async ({ onProgress, limit } = {}) => {
     if (!user) return { success: false, reason: 'no_user' };
 
-    const result = await backfillHkCalories(activitiesRef.current || activities, { onProgress });
+    const result = await backfillHkCalories(activitiesRef.current || activities, { onProgress, limit });
 
     if (!result.success || result.stamped === 0) return result;
 
@@ -14392,6 +14392,38 @@ export default function DaySevenApp() {
 
     return result;
   };
+
+  const handleBackfillCalories = (onProgress) => runCalorieBackfill({ onProgress });
+
+  // Most users never need to think about this: their wearable logs calories properly,
+  // so the pass confirms every workout and changes nothing. Surfacing a "check 247 older
+  // workouts" chore to all of them to fix the few whose watch dropped calories is the
+  // wrong trade, so it runs itself once in the background and the Settings row only
+  // appears if something is genuinely left over.
+  //
+  // Gated on read access ALREADY being granted. requestHealthKitAuthorization
+  // short-circuits on that same cached flag without touching native, so nothing here can
+  // raise a permission sheet without a tap behind it.
+  const autoCalorieBackfillStarted = useRef(false);
+  const [calorieBackfillSettled, setCalorieBackfillSettled] = useState(false);
+  useEffect(() => {
+    if (!user?.uid) return;
+    if (autoCalorieBackfillStarted.current) return;
+    autoCalorieBackfillStarted.current = true;
+
+    if (!Capacitor.isNativePlatform() || !isHealthKitReadAuthorized()) {
+      setCalorieBackfillSettled(true);
+      return;
+    }
+
+    // Held off launch so it isn't competing with the initial HealthKit sync.
+    const timer = setTimeout(() => {
+      runCalorieBackfill()
+        .catch(() => {})
+        .finally(() => setCalorieBackfillSettled(true));
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, [user?.uid]);
 
   // Handle Smart Save explanation modal close
   const handleSmartSaveExplainClose = async () => {
@@ -18433,7 +18465,7 @@ export default function DaySevenApp() {
                 const { isPro: restoredPro } = await restorePurchases();
                 applyProStatus(restoredPro);
               }}
-              pendingCalorieBackfillCount={(activities || []).filter(needsHkCaloriesBackfill).length}
+              pendingCalorieBackfillCount={calorieBackfillSettled ? (activities || []).filter(needsHkCaloriesBackfill).length : 0}
               onBackfillCalories={handleBackfillCalories}
               onToggleVacationMode={() => {
                 const vm = userData.vacationMode || {};

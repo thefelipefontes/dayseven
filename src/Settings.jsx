@@ -1995,7 +1995,10 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
             {/* Recheck calories against Apple Health. Only worth showing when there are
                 pre-stamp workouts left to reconcile, or right after a run so the user
                 sees what happened. */}
-            {healthConnected && onBackfillCalories && (pendingCalorieBackfillCount > 0 || calorieFixState === 'done' || calorieFixState === 'error') && (
+            {/* Native only: healthConnected is also true when healthStatus is 'unavailable',
+                which is the web case — there the pass can't run and would report a
+                permissions error the user can do nothing about. */}
+            {Capacitor.isNativePlatform() && healthConnected && onBackfillCalories && (pendingCalorieBackfillCount > 0 || calorieFixState === 'done' || calorieFixState === 'error') && (
               <div className="border-t border-zinc-700/50 mt-2 pt-3">
                 <button
                   onClick={async () => {

@@ -244,8 +244,10 @@ struct MainTabView: View {
             if phase == .active {
                 appVM.phoneService.ensureSessionActive()
 
-                // Refresh health data to catch daily goals hit while backgrounded
-                Task { await appVM.refreshHealthData() }
+                // Refresh health data to catch daily goals hit while backgrounded, and
+                // reload activities so the rings reflect anything logged on the phone
+                // while we were away (rate limited inside).
+                Task { await appVM.refreshOnForeground() }
 
                 // Flush any offline-queued activities
                 Task { await appVM.flushOfflineQueue() }

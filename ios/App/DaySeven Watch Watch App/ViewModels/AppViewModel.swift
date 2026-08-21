@@ -56,10 +56,14 @@ class AppViewModel: ObservableObject {
     /// launch spinner, so guarding on it would block the very first load.
     private var isLoadingData = false
 
-    /// Timestamp of the last loadUserData() attempt. Stamped when the load STARTS, so a
-    /// cold launch -- where .task and the scenePhase handler both fire -- runs one load
-    /// rather than two racing ones.
+    /// Timestamp of the last SUCCESSFUL load. Only successes count: a failed fetch must
+    /// leave the next foreground free to retry immediately. Concurrent loads are already
+    /// deduped by isLoadingData, so this doesn't need to guard against them.
     private var lastLoadTime: Date = .distantPast
+
+    /// Consecutive failed loads, for the bounded retry below.
+    private var loadRetryCount = 0
+    private let maxLoadRetries = 3
 
     /// Timestamp of the last successful save/delete/update. Used to skip redundant
     /// dataChanged-triggered reloads within a cooldown window — after a save the watch
@@ -200,7 +204,7 @@ class AppViewModel: ObservableObject {
         defer { isLoadingData = false }
 
         isLoading = true
-        lastLoadTime = Date()
+        print("[LoadUserData] Starting fetch for uid \(uid.prefix(6))…")
 
         do {
             // Fetch Firestore data and HealthKit data in parallel
@@ -224,6 +228,9 @@ class AppViewModel: ObservableObject {
             // Calculate progress
             weeklyProgress = calculateWeeklyProgress(activities: activities, goals: goals)
             weeklyStats = calculateWeeklyStats(activities: activities)
+
+            lastLoadTime = Date()
+            loadRetryCount = 0
 
             print("[LoadUserData] Loaded \(activities.count) activities — lifts: \(weeklyProgress.lifts.completed)/\(goals.liftsPerWeek), cardio: \(weeklyProgress.cardio.completed)/\(goals.cardioPerWeek), recovery: \(weeklyProgress.recovery.completed)/\(goals.recoveryPerWeek)")
 
@@ -257,6 +264,26 @@ class AppViewModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
             isLoading = false
+
+            // This used to fail completely silently, which made a watch showing empty
+            // rings indistinguishable from a watch that had simply loaded nothing.
+            print("[LoadUserData] FAILED: \(error)")
+
+            // Nothing else retries: RootView's .task guards on activities.isEmpty and has
+            // already fired by now, and the foreground refresh only advances its cooldown
+            // on success. watchOS connectivity drops constantly, so one unlucky fetch
+            // would otherwise leave the rings at zero until the app is relaunched.
+            if loadRetryCount < maxLoadRetries {
+                loadRetryCount += 1
+                let attempt = loadRetryCount
+                print("[LoadUserData] Retrying in \(attempt * 2)s (attempt \(attempt)/\(maxLoadRetries))")
+                Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: UInt64(attempt) * 2_000_000_000)
+                    await self?.loadUserData()
+                }
+            } else {
+                print("[LoadUserData] Giving up after \(maxLoadRetries) retries — will try again on next foreground")
+            }
         }
     }
 

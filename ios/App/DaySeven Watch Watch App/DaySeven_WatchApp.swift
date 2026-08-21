@@ -3,9 +3,16 @@ import FirebaseCore
 import HealthKit
 import WatchKit
 
-// MARK: - Extension Delegate (handles startWatchApp launches from iPhone)
+// MARK: - Application Delegate (handles startWatchApp launches from iPhone)
 
-class ExtensionDelegate: NSObject, WKExtensionDelegate {
+// WKApplicationDelegate, not WKExtensionDelegate: this is a single-target watch app
+// (WKApplication = true in the built Info.plist), so there is no WatchKit extension
+// process for the extension-era protocol to belong to. SwiftUI warned about the mismatch
+// on every launch — "WKExtensionDelegateAdaptor should only be used within an extension
+// based process" — while quietly routing the callbacks through a compatibility path.
+// handle(_ workoutConfiguration:) below is how the iPhone starts a workout here, so it
+// should not be riding a shim Apple is free to drop.
+class ExtensionDelegate: NSObject, WKApplicationDelegate {
     func applicationDidFinishLaunching() {
         print("[ExtDelegate] applicationDidFinishLaunching — watch app launched")
         // Haptic on launch so we know the delegate is wired up
@@ -130,7 +137,7 @@ class ExtensionDelegate: NSObject, WKExtensionDelegate {
 
 @main
 struct DaySeven_Watch_Watch_AppApp: App {
-    @WKExtensionDelegateAdaptor(ExtensionDelegate.self) var delegate
+    @WKApplicationDelegateAdaptor(ExtensionDelegate.self) var delegate
     @StateObject private var appVM = AppViewModel()
 
     init() {

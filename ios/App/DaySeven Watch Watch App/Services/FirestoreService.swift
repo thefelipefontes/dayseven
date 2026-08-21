@@ -198,15 +198,42 @@ class FirestoreService {
 
     // MARK: - REST API Helpers
 
-    private func getAuthToken() async throws -> String {
+    private func getAuthToken(forceRefresh: Bool = false) async throws -> String {
         guard let user = Auth.auth().currentUser else {
             throw FirestoreError.notAuthenticated
+        }
+        if forceRefresh {
+            return try await user.getIDTokenResult(forcingRefresh: true).token
         }
         return try await user.getIDToken()
     }
 
-    private func getDocument(_ path: String) async throws -> [String: Any] {
+    /// Runs an authenticated request, and if Firestore rejects the token as
+    /// UNAUTHENTICATED, forces an ID token refresh and tries once more.
+    ///
+    /// The watch signs in on its own and restores that session from the keychain at
+    /// launch. getIDToken() hands back its cached token whenever it believes it is still
+    /// valid, so a token that went stale while the watch was off gets sent as-is and
+    /// Firestore answers 401 — over and over, since nothing ever asked for a new one.
+    /// That left every read failing while Auth still reported a happily signed-in user.
+    private func withFreshTokenRetry<T>(_ body: (String) async throws -> T) async throws -> T {
         let token = try await getAuthToken()
+        do {
+            return try await body(token)
+        } catch FirestoreError.unauthenticated {
+            print("[Firestore] 401 — forcing ID token refresh and retrying once")
+            let refreshed = try await getAuthToken(forceRefresh: true)
+            return try await body(refreshed)
+        }
+    }
+
+    private func getDocument(_ path: String) async throws -> [String: Any] {
+        try await withFreshTokenRetry { token in
+            try await self.performGet(path, token: token)
+        }
+    }
+
+    private func performGet(_ path: String, token: String) async throws -> [String: Any] {
         let url = URL(string: "\(baseURL)/\(path)")!
 
         var request = URLRequest(url: url)
@@ -227,6 +254,11 @@ class FirestoreService {
             let responseStr = String(data: data, encoding: .utf8) ?? "no body"
             print("[Firestore] getDocument FAILED status=\(httpResponse.statusCode) path=\(path)")
             print("[Firestore] Response: \(String(responseStr.prefix(500)))")
+            // Distinct so withFreshTokenRetry can tell "token went stale" from a genuine
+            // permissions or not-found failure, which retrying would not help.
+            if httpResponse.statusCode == 401 {
+                throw FirestoreError.unauthenticated
+            }
             throw FirestoreError.httpError(status: httpResponse.statusCode)
         }
 
@@ -244,8 +276,12 @@ class FirestoreService {
     }
 
     private func updateDocument(_ path: String, fields: [String: Any], fieldMask: [String]? = nil) async throws {
-        let token = try await getAuthToken()
+        try await withFreshTokenRetry { token in
+            try await self.performUpdate(path, fields: fields, fieldMask: fieldMask, token: token)
+        }
+    }
 
+    private func performUpdate(_ path: String, fields: [String: Any], fieldMask: [String]?, token: String) async throws {
         // ALWAYS use field masks to prevent full document replacement.
         // If no explicit mask is provided, derive it from the fields dictionary keys.
         let mask = fieldMask ?? Array(fields.keys)
@@ -272,14 +308,19 @@ class FirestoreService {
             let responseStr = String(data: responseData, encoding: .utf8) ?? "no body"
             print("[Firestore] updateDocument FAILED status=\(statusCode) path=\(path)")
             print("[Firestore] Response: \(String(responseStr.prefix(500)))")
+            if statusCode == 401 { throw FirestoreError.unauthenticated }
             throw FirestoreError.saveFailed
         }
         print("[Firestore] updateDocument SUCCESS path=\(path)")
     }
 
     private func updateDocumentWithFieldMask(_ path: String, nestedField: String, fields: [String: Any]) async throws {
-        let token = try await getAuthToken()
+        try await withFreshTokenRetry { token in
+            try await self.performNestedUpdate(path, nestedField: nestedField, fields: fields, token: token)
+        }
+    }
 
+    private func performNestedUpdate(_ path: String, nestedField: String, fields: [String: Any], token: String) async throws {
         let fieldMaskParams = fields.keys.map { "updateMask.fieldPaths=\(nestedField).\($0)" }.joined(separator: "&")
         let urlString = "\(baseURL)/\(path)?\(fieldMaskParams)"
         let url = URL(string: urlString)!
@@ -302,10 +343,15 @@ class FirestoreService {
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (_, response) = try await Self.session.data(for: request)
+        let (nestedData, response) = try await Self.session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+            let responseStr = String(data: nestedData, encoding: .utf8) ?? "no body"
+            print("[Firestore] updateDocumentWithFieldMask FAILED status=\(statusCode) path=\(path)")
+            print("[Firestore] Response: \(String(responseStr.prefix(500)))")
+            if statusCode == 401 { throw FirestoreError.unauthenticated }
             throw FirestoreError.saveFailed
         }
     }
@@ -460,6 +506,7 @@ class FirestoreService {
 
 enum FirestoreError: Error, LocalizedError {
     case documentNotFound
+    case unauthenticated
     case httpError(status: Int)
     case malformedResponse
     case encodingFailed
@@ -470,6 +517,7 @@ enum FirestoreError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .documentNotFound: return "User document not found"
+        case .unauthenticated: return "Firestore rejected the sign-in token (401)"
         case .httpError(let status): return "Firestore returned HTTP \(status)"
         case .malformedResponse: return "Unexpected response from Firestore"
         case .encodingFailed: return "Failed to encode data"

@@ -219,13 +219,25 @@ class FirestoreService {
             throw FirestoreError.networkError
         }
 
+        // These used to all collapse into .documentNotFound, so a permissions rejection, an
+        // expired token and a malformed body were indistinguishable in the console — which
+        // is most of why the watch's empty rings took so long to explain. updateDocument
+        // has logged status and body all along; this mirrors it.
         guard httpResponse.statusCode == 200 else {
-            throw FirestoreError.documentNotFound
+            let responseStr = String(data: data, encoding: .utf8) ?? "no body"
+            print("[Firestore] getDocument FAILED status=\(httpResponse.statusCode) path=\(path)")
+            print("[Firestore] Response: \(String(responseStr.prefix(500)))")
+            throw FirestoreError.httpError(status: httpResponse.statusCode)
         }
 
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let fields = json["fields"] as? [String: Any] else {
-            throw FirestoreError.documentNotFound
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            print("[Firestore] getDocument path=\(path): response was not a JSON object")
+            throw FirestoreError.malformedResponse
+        }
+
+        guard let fields = json["fields"] as? [String: Any] else {
+            print("[Firestore] getDocument path=\(path): 200 but no 'fields' key. Top-level keys: \(Array(json.keys))")
+            throw FirestoreError.malformedResponse
         }
 
         return fields
@@ -448,6 +460,8 @@ class FirestoreService {
 
 enum FirestoreError: Error, LocalizedError {
     case documentNotFound
+    case httpError(status: Int)
+    case malformedResponse
     case encodingFailed
     case notAuthenticated
     case networkError
@@ -456,6 +470,8 @@ enum FirestoreError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .documentNotFound: return "User document not found"
+        case .httpError(let status): return "Firestore returned HTTP \(status)"
+        case .malformedResponse: return "Unexpected response from Firestore"
         case .encodingFailed: return "Failed to encode data"
         case .notAuthenticated: return "Not authenticated"
         case .networkError: return "Network error"

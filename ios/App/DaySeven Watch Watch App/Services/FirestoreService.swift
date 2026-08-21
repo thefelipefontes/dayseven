@@ -398,17 +398,24 @@ class FirestoreService {
             smartSaved: boolFromFirestore(fields["smartSaved"]),
             appleWorkoutName: stringFromFirestore(fields["appleWorkoutName"]),
             photoURL: stringFromFirestore(fields["photoURL"]),
-            isPhotoPrivate: boolFromFirestore(fields["isPhotoPrivate"])
+            isPhotoPrivate: boolFromFirestore(fields["isPhotoPrivate"]),
+            rawFirestoreFields: fields
         )
     }
 
     // MARK: - Encode Activity to Firestore REST format
 
     private func encodeActivity(_ activity: Activity) -> [String: Any] {
-        var fields: [String: Any] = [
-            "type": ["stringValue": activity.type],
-            "date": ["stringValue": activity.date]
-        ]
+        // Start from the dictionary this activity was parsed from, so phone-written fields
+        // the watch doesn't model survive being rewritten here. Every known field below
+        // then overwrites its entry, making the watch authoritative for what it does model.
+        //
+        // Note the known fields are still written only when non-nil, so the watch cannot
+        // CLEAR one it failed to parse. That asymmetry is deliberate: wrongly keeping a
+        // stale value is recoverable, wrongly deleting the user's data is not.
+        var fields: [String: Any] = activity.rawFirestoreFields ?? [:]
+        fields["type"] = ["stringValue": activity.type]
+        fields["date"] = ["stringValue": activity.date]
 
         // Encode ID
         switch activity.id {

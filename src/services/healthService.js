@@ -1,5 +1,6 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { Health } from '@capgo/capacitor-health';
+import { needsHkCaloriesBackfill, activityTimeRange } from '../utils/calories';
 
 // Register the local HealthKitWriter plugin for writing workouts
 const HealthKitWriter = registerPlugin('HealthKitWriter');
@@ -1482,5 +1483,105 @@ export function addWatchActivitySavedListener(callback) {
   });
   return () => {
     handle.then(h => h.remove());
+  };
+}
+
+// ============================================================
+// Backfill: what HealthKit already holds for past workouts
+// ============================================================
+
+// Activities logged before the hkCalories stamp existed carry no record of how much
+// of their burn HealthKit already counts, so utils/calories has to assume the whole
+// amount and adds nothing to the daily total. That's wrong whenever HealthKit
+// tracked the workout but recorded no calories for it — a phone-only run, say —
+// because the number the user typed then vanishes from the day entirely.
+//
+// This asks HealthKit directly: how much active energy is in the workout's window?
+// Whatever comes back is the true "already counted" figure, so the rest can be added
+// on top. Note this queries active-energy SAMPLES over the span, not the workout's
+// own totalEnergyBurned — a phone-tracked run often reports nothing on the workout
+// object while still contributing some estimated energy to the day, and the day's
+// total is what we're reconciling against.
+//
+// Must be called from a user action: it can surface the HealthKit permission sheet.
+const BACKFILL_LIMIT = 400;
+
+// Active energy HealthKit holds over a span.
+//
+// Deliberately not fetchWorkoutMetricsForTimeRange: that one swallows a failed query
+// and reports it as "no calories", which is indistinguishable from a span that
+// genuinely has none. The backfill has to tell those apart — stamping zero off the
+// back of a transient error would credit the user's typed calories on top of a burn
+// HealthKit really does hold, and nothing would ever correct it.
+async function fetchActiveEnergyForRange(startDate, endDate) {
+  try {
+    const result = await Health.queryAggregated({ dataType: 'calories', startDate, endDate });
+    if (result?.value !== undefined && result.value !== null) {
+      return { ok: true, calories: Math.max(0, Math.round(result.value)) };
+    }
+    if (Array.isArray(result?.samples)) {
+      const total = result.samples.reduce((sum, sample) => sum + (sample.value || 0), 0);
+      return { ok: true, calories: Math.max(0, Math.round(total)) };
+    }
+    return { ok: false };
+  } catch {
+    return { ok: false };
+  }
+}
+
+export async function backfillHkCalories(activities, { onProgress } = {}) {
+  if (!Capacitor.isNativePlatform()) {
+    return { success: false, reason: 'not_native' };
+  }
+
+  const pending = (activities || []).filter(needsHkCaloriesBackfill);
+  if (pending.length === 0) {
+    return { success: true, scanned: 0, stamped: 0, skipped: 0, recovered: 0, activities };
+  }
+
+  const authorized = await requestHealthKitAuthorization();
+  if (!authorized) {
+    return { success: false, reason: 'not_authorized' };
+  }
+
+  // Newest first, so the days the user is actually looking at get fixed even if the
+  // pass is interrupted. Anything past the cap is reported, never silently dropped —
+  // it stays unstamped and gets picked up the next time this runs.
+  const ordered = [...pending].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const targets = ordered.slice(0, BACKFILL_LIMIT);
+  const skipped = ordered.length - targets.length;
+
+  const stamps = new Map(); // activity object reference -> calories HealthKit holds
+  let recovered = 0;
+
+  for (let i = 0; i < targets.length; i++) {
+    const activity = targets[i];
+    const range = activityTimeRange(activity);
+    // No usable timestamps — leave it unstamped rather than guess a window.
+    if (range) {
+      const held = await fetchActiveEnergyForRange(range.start, range.end);
+      // A real zero IS an answer — HealthKit holds nothing for that span — and stamps
+      // zero, which is exactly the case that restores the user's typed calories. A
+      // failed query stamps nothing, so a later run retries it.
+      if (held.ok) {
+        stamps.set(activity, held.calories);
+        const total = parseInt(activity.calories, 10) || 0;
+        if (total > held.calories) recovered += total - held.calories;
+      }
+    }
+    onProgress?.(i + 1, targets.length);
+  }
+
+  const updated = stamps.size === 0
+    ? activities
+    : activities.map(a => (stamps.has(a) ? { ...a, hkCalories: stamps.get(a) } : a));
+
+  return {
+    success: true,
+    scanned: targets.length,
+    stamped: stamps.size,
+    skipped,
+    recovered,
+    activities: updated,
   };
 }

@@ -38,7 +38,7 @@ const getPreviousWeekKey = () => {
   return toLocalDateStr(sunday);
 };
 
-export default function SettingsPage({ user, userProfile, userData, onSignOut, onEditGoals, onCancelPendingGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onUpdateDistanceUnit, onUpdateMaxHeartRate, onUpdateDisplayName, onUpdateUsername, onChangePassword, onResetPassword, onDeleteAccount, onNotificationSettings, isPro, planType, onPresentPaywall, onPresentCustomerCenter, onRestorePurchases, onToggleVacationMode, onActivateInjuryMode, onResumeInjuryMode, canResumeInjury = false, injuryMinWeeks = 2, injuryMaxWeeks = 12, injuryYearlyCap = 16, injuryRemainingWeeks = 16, onUseStreakShield, onClose, scrollTo = null }) {
+export default function SettingsPage({ user, userProfile, userData, onSignOut, onEditGoals, onCancelPendingGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onUpdateDistanceUnit, onUpdateMaxHeartRate, onUpdateDisplayName, onUpdateUsername, onChangePassword, onResetPassword, onDeleteAccount, onNotificationSettings, isPro, planType, onPresentPaywall, onPresentCustomerCenter, onRestorePurchases, onToggleVacationMode, onActivateInjuryMode, onResumeInjuryMode, canResumeInjury = false, injuryMinWeeks = 2, injuryMaxWeeks = 12, injuryYearlyCap = 16, injuryRemainingWeeks = 16, onUseStreakShield, onClose, scrollTo = null, onBackfillCalories = null, pendingCalorieBackfillCount = 0 }) {
   // Lifetime is a non-consumable, so there's no renewal to manage or cancel —
   // the Customer Center still handles refunds and receipts, but the row that
   // opens it shouldn't call itself "Manage Subscription".
@@ -104,6 +104,11 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
   const [isCheckingUsername, setIsCheckingUsername] = useState(false);
   const [usernameTaken, setUsernameTaken] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+
+  // Calorie reconciliation pass (see handleBackfillCalories in App).
+  const [calorieFixState, setCalorieFixState] = useState('idle'); // 'idle' | 'running' | 'done' | 'error'
+  const [calorieFixProgress, setCalorieFixProgress] = useState({ done: 0, total: 0 });
+  const [calorieFixResult, setCalorieFixResult] = useState(null);
 
   // Apple Health access state: 'connected' | 'denied' | 'unasked' | 'unavailable'.
   // Re-checked whenever the app comes back to the foreground, because the only
@@ -1986,6 +1991,66 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                 </button>
               </div>
             </div>
+
+            {/* Recheck calories against Apple Health. Only worth showing when there are
+                pre-stamp workouts left to reconcile, or right after a run so the user
+                sees what happened. */}
+            {healthConnected && onBackfillCalories && (pendingCalorieBackfillCount > 0 || calorieFixState === 'done' || calorieFixState === 'error') && (
+              <div className="border-t border-zinc-700/50 mt-2 pt-3">
+                <button
+                  onClick={async () => {
+                    if (calorieFixState === 'running') return;
+                    triggerHaptic(ImpactStyle.Light);
+                    setCalorieFixState('running');
+                    setCalorieFixProgress({ done: 0, total: pendingCalorieBackfillCount });
+                    setCalorieFixResult(null);
+                    try {
+                      const result = await onBackfillCalories((done, total) => setCalorieFixProgress({ done, total }));
+                      setCalorieFixResult(result);
+                      setCalorieFixState(result?.success ? 'done' : 'error');
+                    } catch {
+                      setCalorieFixState('error');
+                    }
+                  }}
+                  disabled={calorieFixState === 'running'}
+                  className="w-full flex items-center justify-between py-2 transition-all duration-150"
+                  onTouchStart={(e) => { if (calorieFixState !== 'running') e.currentTarget.style.opacity = '0.7'; }}
+                  onTouchEnd={(e) => e.currentTarget.style.opacity = '1'}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(255,107,107,0.12)' }}>
+                      <CategoryIcon category="calories" size={16} />
+                    </div>
+                    <div className="text-left">
+                      <span className="text-sm text-white block">Recheck past calories</span>
+                      <p className="text-[11px] text-gray-500">
+                        {calorieFixState === 'running'
+                          ? `Checking ${calorieFixProgress.done} of ${calorieFixProgress.total || pendingCalorieBackfillCount}…`
+                          : `Compare ${pendingCalorieBackfillCount} older workout${pendingCalorieBackfillCount === 1 ? '' : 's'} against Apple Health`}
+                      </p>
+                    </div>
+                  </div>
+                  {calorieFixState !== 'running' && (
+                    <span className="text-[13px] font-medium" style={{ color: '#FF6B6B' }}>
+                      {calorieFixState === 'done' ? 'Run again' : 'Check'}
+                    </span>
+                  )}
+                </button>
+                {calorieFixState === 'done' && calorieFixResult && (
+                  <p className="text-[11px] text-gray-500 ml-11 -mt-1">
+                    {calorieFixResult.recovered > 0
+                      ? `Added ${calorieFixResult.recovered.toLocaleString()} calories back across ${calorieFixResult.stamped} workout${calorieFixResult.stamped === 1 ? '' : 's'}. Apple Health was already counting the rest.`
+                      : `Checked ${calorieFixResult.scanned} workout${calorieFixResult.scanned === 1 ? '' : 's'} — Apple Health was already counting all of them, so your totals don't change.`}
+                    {calorieFixResult.skipped > 0 && ` ${calorieFixResult.skipped} older one${calorieFixResult.skipped === 1 ? '' : 's'} left — run again to continue.`}
+                  </p>
+                )}
+                {calorieFixState === 'error' && (
+                  <p className="text-[11px] text-amber-500 ml-11 -mt-1">
+                    Couldn't read from Apple Health. Check its permissions and try again.
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Max Heart Rate */}
             <div className="flex items-center justify-between py-2 border-t border-zinc-700/50 mt-2 pt-4">

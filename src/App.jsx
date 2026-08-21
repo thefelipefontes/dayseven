@@ -23,7 +23,7 @@ import { getFriends, getReactions, getFriendRequests, getComments, addReply, get
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
-import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, fetchHealthDataForDate, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, pushDistanceUnitToWatch, fetchWorkoutRoute, updateWidgetData, updateLiveActivityState, startWatchWorkoutLiveActivity, endAllLiveActivities, checkActiveLiveActivity, showLocationDeniedDialog, getHealthConnectionStatus } from './services/healthService';
+import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, fetchHealthDataForDate, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, pushDistanceUnitToWatch, fetchWorkoutRoute, updateWidgetData, updateLiveActivityState, startWatchWorkoutLiveActivity, endAllLiveActivities, checkActiveLiveActivity, showLocationDeniedDialog, getHealthConnectionStatus, backfillHkCalories } from './services/healthService';
 import NotificationSettings from './NotificationSettings';
 import { initializePushNotifications, handleNotificationNavigation, removeFCMToken, clearBadge, clearAllNotifications, shouldShowNotification, getNotificationPreferences, logNotificationOpen, getNotificationPermissionStatus, requestNotificationPermission } from './services/notificationService';
 import { initializeRevenueCat, loginRevenueCat, checkProStatus, getPlanType, addCustomerInfoListener, logoutRevenueCat, presentPaywall, presentCustomerCenter, restorePurchases, setDevAuthEmail, getOfferings } from './services/subscriptionService';
@@ -39,6 +39,7 @@ import { FOCUS_AREA_GROUPS, ALL_FOCUS_AREAS, FOCUS_AREA_MIGRATION, normalizeFocu
 import { initialUserData } from './utils/initialUserData';
 import { getDefaultCountToward, getActivityCategory, countsAsLifting, countsAsCardio, countsAsRecovery } from './utils/activityCategory';
 import { computeStreaks } from './utils/streaks';
+import { manualCaloriesForDate, needsHkCaloriesBackfill } from './utils/calories';
 import { reverseGeocode, formatLocation } from './utils/geocode';
 import SectionIcon from './components/SectionIcon';
 import CategoryIcon from './components/CategoryIcon';
@@ -2166,6 +2167,11 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
       // Photo data
       photoFile: activityPhoto || undefined,
       isPhotoPrivate: activityPhoto ? isPhotoPrivate : undefined,
+      // What HealthKit already counts for this workout; the live/watch session fills
+      // this in on the parent side when nothing was linked (see utils/calories).
+      hkCalories: linkedWorkout?.calories != null
+        ? (parseInt(linkedWorkout.calories, 10) || 0)
+        : undefined,
       // Link to Apple Health workout if selected
       linkedHealthKitUUID: linkedWorkout?.healthKitUUID || undefined,
       linkedHealthKitStartDate: linkedWorkout?.healthKitStartDate || undefined,
@@ -8414,6 +8420,10 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
         // Set linked workout if editing an activity that was previously linked
         // Include activity data so the linked workout box shows details
         setLinkedWorkout(pendingActivity?.linkedHealthKitUUID ? {
+          // Rebuilt from the saved activity, NOT read back from HealthKit — so its
+          // calories are whatever is on the record now, possibly hand-typed. The flag
+          // keeps the hkCalories stamp from mistaking them for HealthKit's own number.
+          fromExistingActivity: true,
           healthKitUUID: pendingActivity.linkedHealthKitUUID,
           type: pendingActivity.type,
           subtype: pendingActivity.subtype,
@@ -9237,6 +9247,23 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               customEmoji: showCustomActivityInput ? customActivityEmoji : undefined, // Store emoji for old "Other" activities
               customIcon: showCustomActivityInput ? customActivityIcon : undefined, // Store icon name for new "Other" activities
               fromAppleHealth: isFromAppleHealth,
+              // What HealthKit already counts toward the day's active energy for this
+              // workout. Anything the user types above it is added on top of the daily
+              // total instead of being swallowed by it (see utils/calories).
+              hkCalories: (() => {
+                // A workout just picked out of HealthKit reports HealthKit's own number.
+                if (linkedWorkout && !linkedWorkout.fromExistingActivity && linkedWorkout.calories != null) {
+                  return parseInt(linkedWorkout.calories, 10) || 0;
+                }
+                // Editing: the stamp from the original save is authoritative. Never
+                // re-derive it from the activity's current calories — those may have been
+                // typed in precisely because HealthKit recorded none.
+                if (pendingActivity?.hkCalories != null) return parseInt(pendingActivity.hkCalories, 10) || 0;
+                // Anything else HealthKit-backed carries no stamp — leave it off so the
+                // reader falls back, and "Recheck past calories" can resolve it properly.
+                if (isFromAppleHealth || pendingActivity?.healthKitUUID || pendingActivity?.linkedHealthKitUUID) return undefined;
+                return 0;
+              })(),
               linkedHealthKitUUID: linkedWorkout?.healthKitUUID || undefined, // Link to Apple Health workout
               linkedHealthKitStartDate: linkedWorkout?.healthKitStartDate || undefined,
               sourceDevice: linkedWorkout?.sourceDevice || pendingActivity?.sourceDevice || undefined, // Device that recorded the workout
@@ -11320,11 +11347,11 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
     const totalMiles = running.reduce((sum, r) => sum + (parseFloat(r.distance) || 0), 0);
     const totalCalories = weekActivities.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
 
-    // For today's calories: use HealthKit active calories directly when connected.
-    // HealthKit already includes all active energy from wearables (Apple Watch, Whoop, etc.),
-    // so adding manual workout calories on top would double-count.
+    // For today's calories: HealthKit active energy PLUS any calories the user typed in
+    // that HealthKit doesn't already account for (see utils/calories). HealthKit covers
+    // everything a wearable recorded, so only hand-entered numbers get added on top.
     // When HealthKit isn't connected — including the brief window at cold launch before the
-    // first sync resolves — fall back to summing TODAY's manual activity calories only.
+    // first sync resolves — fall back to summing TODAY's activity calories only.
     // Falling back to the full-week total here misreports up to 6 days of calories as "today"
     // until HealthKit responds.
     const todayDateStr = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
@@ -11332,7 +11359,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
       .filter(a => a.date === todayDateStr)
       .reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
     const todayBurnedCalories = healthKitData.isConnected
-      ? (healthKitData.todayCalories || 0)
+      ? (healthKitData.todayCalories || 0) + manualCaloriesForDate(activities, todayDateStr)
       : todayActivityCalories;
 
     return {
@@ -14331,6 +14358,41 @@ export default function DaySevenApp() {
     }
   };
 
+  // Reconcile past workouts against HealthKit's own numbers.
+  //
+  // Activities logged before we started stamping hkCalories carry no record of how
+  // much of their burn HealthKit already counts, so the daily total assumes all of it
+  // and adds nothing. That silently drops calories the user typed on a workout
+  // HealthKit tracked but recorded no energy for (a phone-only run, say). This asks
+  // HealthKit what it actually holds for each of those workouts and stamps the answer.
+  //
+  // Deliberately user-initiated — it can surface the HealthKit permission sheet, which
+  // must never appear without a tap behind it.
+  const handleBackfillCalories = async (onProgress) => {
+    if (!user) return { success: false, reason: 'no_user' };
+
+    const result = await backfillHkCalories(activitiesRef.current || activities, { onProgress });
+
+    if (!result.success || result.stamped === 0) return result;
+
+    const updated = result.activities;
+    activitiesRef.current = updated;
+    lastFirestoreActivityCount.current = updated.length;
+    activitiesFromFirestore.current = true; // Prevent debounced save — saving directly
+    setActivities(updated);
+    try {
+      await saveUserActivities(user.uid, updated);
+    } catch (error) {
+      return { success: false, reason: 'save_failed' };
+    }
+
+    // Widgets and the home ring read the same totals, so refresh them now rather than
+    // leaving stale numbers until the next activity is logged.
+    pushWidgetData(calculateWeeklyProgress(updated));
+
+    return result;
+  };
+
   // Handle Smart Save explanation modal close
   const handleSmartSaveExplainClose = async () => {
     setShowSmartSaveExplainModal(false);
@@ -14538,9 +14600,9 @@ export default function DaySevenApp() {
           if (activity.type === 'Running') week.runs++;
         });
 
-        // Use HealthKit calories directly — wearables already track all active energy
+        // HealthKit active energy + hand-entered calories it doesn't know about
         const healthData = healthDataByDate[dateStr];
-        weekCalories += healthData?.calories || 0;
+        weekCalories += (healthData?.calories || 0) + manualCaloriesForDate(activitiesList, dateStr);
       });
 
       week.calories = weekCalories;
@@ -16316,7 +16378,9 @@ export default function DaySevenApp() {
       recoveryGoal: g.recoveryPerWeek || 2,
       todaySteps: hk.todaySteps || 0,
       stepsGoal: g.stepsPerDay || 10000,
-      todayCalories: hk.todayCalories || 0,
+      // Match the in-app ring: HealthKit active energy + hand-entered calories it
+      // doesn't already know about.
+      todayCalories: (hk.todayCalories || 0) + manualCaloriesForDate(allActs, getTodayDate()),
       daysLeftInWeek: daysLeft,
       injuryModeActive: !!userDataRef.current?.injuryMode?.isActive,
       recentActivities
@@ -16668,6 +16732,9 @@ export default function DaySevenApp() {
         healthKitUUID: activityData.healthKitUUID ?? existingActivity?.healthKitUUID,
         healthKitStartDate: activityData.healthKitStartDate ?? existingActivity?.healthKitStartDate,
         source: activityData.source ?? existingActivity?.source,
+        // Same reasoning for the HealthKit calorie stamp: losing it would make an
+        // auto-tracked burn look hand-entered and get added on top of the daily total.
+        hkCalories: activityData.hkCalories ?? existingActivity?.hkCalories,
       };
       updatedActivities = activities.map(a => a.id === activityData.id ? newActivity : a);
       
@@ -16992,9 +17059,9 @@ export default function DaySevenApp() {
         date.setDate(weekStart.getDate() + d);
         const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
-        // Use HealthKit calories directly — wearables already track all active energy
+        // HealthKit active energy + hand-entered calories it doesn't know about
         const healthData = healthDataByDate[dateStr];
-        weeklyCalories += healthData?.calories || 0;
+        weeklyCalories += (healthData?.calories || 0) + manualCaloriesForDate(updatedActivities, dateStr);
       }
 
       const currentMostCalories = getRecordValue('mostCaloriesWeek');
@@ -17506,6 +17573,10 @@ export default function DaySevenApp() {
       return;
     }
 
+    // Same total the ring shows: HealthKit active energy + hand-entered calories it
+    // doesn't already know about.
+    const todayCalories = (healthKitData.todayCalories || 0) + manualCaloriesForDate(activities, today);
+
     // Check steps goal
     if (!dailyGoalsCelebrated.steps && healthKitData.todaySteps >= stepsGoal && healthKitData.todaySteps > 0) {
       setCelebrationMessage('Steps Goal Hit!');
@@ -17517,7 +17588,7 @@ export default function DaySevenApp() {
       localStorage.setItem('dailyGoalsCelebrated', JSON.stringify(updated));
     }
     // Check calories goal (only if steps celebration isn't showing)
-    else if (!dailyGoalsCelebrated.calories && healthKitData.todayCalories >= caloriesGoal && healthKitData.todayCalories > 0 && !showCelebration) {
+    else if (!dailyGoalsCelebrated.calories && todayCalories >= caloriesGoal && todayCalories > 0 && !showCelebration) {
       setCelebrationMessage('Calories Goal Hit!');
       setCelebrationType('daily-calories');
       setShowCelebration(true);
@@ -17526,7 +17597,7 @@ export default function DaySevenApp() {
       setDailyGoalsCelebrated(updated);
       localStorage.setItem('dailyGoalsCelebrated', JSON.stringify(updated));
     }
-  }, [healthKitData.todaySteps, healthKitData.todayCalories, userData?.goals, dailyGoalsCelebrated, showCelebration]);
+  }, [healthKitData.todaySteps, healthKitData.todayCalories, activities, userData?.goals, dailyGoalsCelebrated, showCelebration]);
 
   // Show loading spinner while checking auth
   if (authLoading) {
@@ -17858,6 +17929,19 @@ export default function DaySevenApp() {
             healthKitSaved: shouldSkipHealthKitWrite || isWatchWorkout ? true : liveResult.success,
             healthKitUUID: shouldSkipHealthKitWrite ? undefined : liveResult.workoutUUID,
           };
+
+          // Record how much of this workout's burn HealthKit already holds, so the daily
+          // total can add the rest without double-counting (see utils/calories).
+          // A linked workout keeps whatever the modal stamped. A live phone session
+          // reports what it read back from HealthKit — zero when no wearable was writing,
+          // which is exactly the case where the user's typed number has to count. A watch
+          // session always writes its own energy, so fall back to the full amount when the
+          // end command was queued and no final metrics came back.
+          if (!shouldSkipHealthKitWrite) {
+            workoutData.hkCalories = liveResult.calories != null
+              ? (parseInt(liveResult.calories, 10) || 0)
+              : (isWatchWorkout ? (parseInt(finishedWorkout.calories, 10) || 0) : 0);
+          }
 
           // Save the finished workout to Firestore using the existing handler
           handleActivitySaved(workoutData);
@@ -18349,6 +18433,8 @@ export default function DaySevenApp() {
                 const { isPro: restoredPro } = await restorePurchases();
                 applyProStatus(restoredPro);
               }}
+              pendingCalorieBackfillCount={(activities || []).filter(needsHkCaloriesBackfill).length}
+              onBackfillCalories={handleBackfillCalories}
               onToggleVacationMode={() => {
                 const vm = userData.vacationMode || {};
                 if (vm.isActive) {

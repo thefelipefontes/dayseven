@@ -19,8 +19,14 @@
 //   • The current / as-of week is still in progress: it can extend a streak but never
 //     break one.
 //
-// Goals are always the user's CURRENT goals — the app doesn't keep a history of goal
-// changes, so a longest value means "longest run that qualifies under today's goals".
+// Each week is judged against the goals that were in force THAT week, read from the
+// user's goalHistory (recorded by saveUserGoals whenever goals change — and goals only
+// ever change on a Sunday, so an entry always covers whole weeks). Without that, lowering
+// a goal retroactively marked earlier weeks as met and inflated the streak.
+//
+// Weeks earlier than any recorded change fall back to current goals. For accounts that
+// predate goalHistory that means every week, so their numbers are unchanged — the past
+// can't be reconstructed, only kept honest from here on.
 
 import { countsAsLifting, countsAsCardio, countsAsRecovery } from './activityCategory';
 
@@ -64,13 +70,34 @@ export function computeStreaks(activities, goals, options = {}) {
     shieldedWeeks = [],
     vacationWeeks = [],
     injuryFrozenWeeks = {},
+    goalHistory = [],
     asOf = new Date(),
   } = options;
 
-  const goalFor = {
+  const currentGoals = {
     lifts: goals.liftsPerWeek,
     cardio: goals.cardioPerWeek,
     recovery: goals.recoveryPerWeek,
+  };
+
+  // Newest entry at or before the week wins. Sorted defensively — saveUserGoals writes
+  // these in order, but a hand-edited or partially-migrated doc shouldn't skew the walk.
+  const history = (Array.isArray(goalHistory) ? goalHistory : [])
+    .filter((h) => h && h.fromWeek)
+    .sort((a, b) => a.fromWeek.localeCompare(b.fromWeek));
+
+  const goalsForWeek = (weekKey) => {
+    let chosen = null;
+    for (const h of history) {
+      if (h.fromWeek > weekKey) break;
+      chosen = h;
+    }
+    if (!chosen) return currentGoals;
+    return {
+      lifts: chosen.liftsPerWeek ?? currentGoals.lifts,
+      cardio: chosen.cardioPerWeek ?? currentGoals.cardio,
+      recovery: chosen.recoveryPerWeek ?? currentGoals.recovery,
+    };
   };
 
   // Bucket every activity into its week.
@@ -113,6 +140,7 @@ export function computeStreaks(activities, goals, options = {}) {
     // Vacation freezes everything — the week is invisible to the streak.
     if (!vacationWeeks.includes(weekKey)) {
       const counts = weeks.get(weekKey) || { lifts: 0, cardio: 0, recovery: 0 };
+      const goalFor = goalsForWeek(weekKey);
       const shielded = shieldedWeeks.includes(weekKey);
       const met = {};
       CATEGORIES.forEach((c) => { met[c] = shielded || counts[c] >= goalFor[c]; });

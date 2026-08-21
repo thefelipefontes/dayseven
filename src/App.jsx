@@ -14673,6 +14673,7 @@ export default function DaySevenApp() {
       shieldedWeeks: protections.shieldedWeeks || [],
       vacationWeeks: protections.vacationWeeks || [],
       injuryFrozenWeeks: protections.injuryFrozenWeeks || {},
+      goalHistory: existingRecords?._goalHistory || [],
     });
     const longest = walked.longest;
 
@@ -14876,6 +14877,12 @@ export default function DaySevenApp() {
           // Load the saved weekly plan (Home planner) so it survives relaunch.
           if (profileForStreaks?.weeklyPlan) {
             setUserData(prev => ({ ...prev, weeklyPlan: profileForStreaks.weeklyPlan, weeklyPlanLoaded: true }));
+          }
+          // Goal history — which goals were in force from which week. The streak walk
+          // judges each past week against these rather than today's goals, so lowering a
+          // goal can't retroactively mark earlier weeks as met (see utils/streaks).
+          if (profileForStreaks?.goalHistory) {
+            setUserData(prev => ({ ...prev, goalHistory: profileForStreaks.goalHistory }));
           }
           // Load streak shield data
           if (profileForStreaks?.streakShield) {
@@ -15108,6 +15115,7 @@ export default function DaySevenApp() {
               {
                 ...userRecords,
                 _goals: userGoals || {},
+                _goalHistory: profileForStreaks?.goalHistory || [],
                 _currentStreaks: recordsResult?.streaks || {},
                 // Read straight off the profile: the userData state hydrated from it a few
                 // awaits ago may not have landed in the ref yet, and without these the
@@ -16483,6 +16491,7 @@ export default function DaySevenApp() {
       shieldedWeeks: src.streakShield?.shieldedWeeks || [],
       vacationWeeks: src.vacationMode?.vacationWeeks || [],
       injuryFrozenWeeks: src.injuryMode?.frozenWeeks || {},
+      goalHistory: src.goalHistory || [],
     });
   };
 
@@ -19054,6 +19063,7 @@ export default function DaySevenApp() {
             shieldedWeeks,
             vacationWeeks,
             injuryFrozenWeeks: userData?.injuryMode?.frozenWeeks || {},
+            goalHistory: userData?.goalHistory || [],
             asOf: new Date(`${weekRange.startStr}T12:00:00`),
           });
           const historicalStreaks = {

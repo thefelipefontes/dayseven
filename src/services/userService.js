@@ -749,6 +749,15 @@ export async function getCustomActivities(uid, forceRefresh = false) {
   }
 }
 
+// Sunday-start week key ('YYYY-MM-DD') for today, matching utils/streaks.
+function currentWeekKey() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - d.getDay());
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 export async function saveUserGoals(uid, goals) {
   // Update cache immediately (optimistic update)
   cache.userGoals.set(uid, goals);
@@ -756,22 +765,61 @@ export async function saveUserGoals(uid, goals) {
 
   const path = `users/${uid}`;
 
+  // Record which goals took effect from which week, so streak math can judge each past
+  // week against the goals that were actually in force then. Without this, lowering a
+  // goal retroactively marks earlier weeks as met and inflates the streak.
+  //
+  // Goals only ever change on a Sunday (see utils/goalsSchedule), so a week key is
+  // exactly the right granularity — an entry always covers whole weeks, never a split one.
+  //
+  // Appended here rather than at the call sites: every goal write funnels through this
+  // function, so history can't be missed by a path that forgot to record it.
+  // Read the existing history here rather than making callers pass it — this function has
+  // five call sites and one forgetting would silently truncate the record to a single entry.
+  //
+  // If that read fails we write goals ALONE and leave goalHistory untouched. Writing a
+  // fresh single-entry array on a failed read would destroy the very history we're keeping.
+  const weekKey = currentWeekKey();
+  let history = null;
+  try {
+    const profile = await getUserProfile(uid);
+    if (profile) {
+      const existing = Array.isArray(profile.goalHistory) ? profile.goalHistory : [];
+      history = [
+        // Replace rather than append when this week already has an entry: goals can only
+        // change on a Sunday, and the launch-time re-persist calls through here too, so a
+        // week must end up with exactly one record of what was in force.
+        ...existing.filter(h => h?.fromWeek !== weekKey),
+        {
+          fromWeek: weekKey,
+          liftsPerWeek: goals.liftsPerWeek ?? null,
+          cardioPerWeek: goals.cardioPerWeek ?? null,
+          recoveryPerWeek: goals.recoveryPerWeek ?? null,
+        },
+      ]
+        .sort((a, b) => (a.fromWeek || '').localeCompare(b.fromWeek || ''))
+        .slice(-260); // ~5 years of weekly entries; the walk only needs recent ones
+    }
+  } catch (error) {
+    // history stays null — goals are written without touching goalHistory.
+  }
+
+  const data = history ? { goals, goalHistory: history } : { goals };
+
   try {
     await withRetry(async () => {
       if (isNative) {
-        await FirebaseFirestore.setDocument({
-          reference: path,
-          data: { goals },
-          merge: true
-        });
+        await FirebaseFirestore.setDocument({ reference: path, data, merge: true });
       } else {
         const userRef = doc(db, 'users', uid);
-        await withTimeout(setDoc(userRef, { goals }, { merge: true }));
+        await withTimeout(setDoc(userRef, data, { merge: true }));
       }
     });
   } catch (error) {
     // Don't throw - optimistic update already applied
   }
+
+  return history;
 }
 
 // Queued goals change. Non-Sunday edits write here instead of `goals` so the

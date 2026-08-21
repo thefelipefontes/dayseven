@@ -198,6 +198,34 @@ struct ActivityTypes {
 
     // MARK: - Activity Categorization (matches App.jsx line 17141)
 
+    // Type -> goal category tables. These MUST mirror src/utils/activityCategory.js, the
+    // single source of truth on the phone. When they drift, the watch quietly drops whole
+    // activity types into "other" and the rings under-count against the phone's — a
+    // Hiking or Tennis session filling the cardio ring on the phone and nothing here.
+    private static let teamSports: Set<String> = [
+        "Basketball", "Soccer", "Football", "Tennis", "Golf", "Badminton", "Boxing", "Martial Arts",
+        "Baseball", "Volleyball", "Hockey", "Lacrosse", "Rugby", "Softball", "Squash", "Table Tennis",
+        "Racquetball", "Handball", "Pickleball", "Cricket", "Australian Football", "Wrestling",
+        "Fencing", "Curling", "Bowling",
+    ]
+
+    private static let individualCardioSports: Set<String> = [
+        "Track & Field", "Jump Rope", "Downhill Skiing", "Cross Country Skiing", "Snowboarding",
+        "Skating", "Surfing", "Water Polo", "Paddle Sports",
+    ]
+
+    private static let liftingTypes: Set<String> = ["Strength Training", "Weightlifting", "Bodyweight"]
+
+    private static let cardioTypes: Set<String> = [
+        "Running", "Cycle", "Sports", "Stair Climbing", "Elliptical", "Rowing", "Ski Trainer",
+        "Swimming", "Hiking", "Dance",
+    ]
+
+    private static let recoveryTypes: Set<String> = [
+        "Pilates", "Cold Plunge", "Sauna", "Contrast Therapy", "Massage", "Chiropractic",
+        "Stretching", "Foam Rolling", "Tai Chi", "Cooldown",
+    ]
+
     static func getActivityCategory(_ activity: Activity) -> String {
         // Priority 1: countToward override
         if let countToward = activity.countToward, !countToward.isEmpty {
@@ -210,18 +238,19 @@ struct ActivityTypes {
             return customCat
         }
         // Priority 3: Type-based defaults
-        switch activity.type {
-        case "Strength Training", "Weightlifting", "Bodyweight":
-            return "lifting"
-        case "Circuit":
-            return "lifting+cardio"
-        case "Running", "Cycle", "Sports", "Stair Climbing", "Elliptical", "Swimming", "Rowing", "Ski Trainer":
-            return "cardio"
-        case "Cold Plunge", "Sauna", "Contrast Therapy", "Massage", "Chiropractic", "Yoga", "Pilates":
-            return "recovery"
-        default:
-            return "other"
+        if liftingTypes.contains(activity.type) { return "lifting" }
+        if activity.type == "Circuit" { return "lifting+cardio" }
+        if cardioTypes.contains(activity.type) { return "cardio" }
+        if teamSports.contains(activity.type) { return "cardio" }
+        if individualCardioSports.contains(activity.type) { return "cardio" }
+        if activity.type == "Yoga" {
+            // Power/Hot/Vinyasa are worked hard enough to count as cardio.
+            let sub = activity.subtype ?? ""
+            return ["Power", "Hot", "Vinyasa"].contains(sub) ? "cardio" : "recovery"
         }
+        if recoveryTypes.contains(activity.type) { return "recovery" }
+        // Walking and anything unrecognised fill no ring.
+        return "other"
     }
 
     // MARK: - Default countToward for hybrid activities

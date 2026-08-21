@@ -212,7 +212,11 @@ export const getDemoActivities = () => {
     if (match) match.photoURL = photoURL;
   }
 
-  return [...thisWeek, ...historical];
+  // The seeded daily health totals below already represent a full day of active
+  // energy, workouts included — as if every session came off a wearable. Stamping
+  // hkCalories keeps utils/calories from adding these on top of that (which is
+  // exactly what it does for a genuinely hand-entered workout).
+  return [...thisWeek, ...historical].map(a => ({ ...a, hkCalories: a.calories || 0 }));
 };
 
 // Per-username deep overrides on top of the base demo profile. Use this to

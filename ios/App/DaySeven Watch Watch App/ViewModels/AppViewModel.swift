@@ -52,6 +52,19 @@ class AppViewModel: ObservableObject {
     /// Without this, a phone-triggered reload can race with a watch save and reset progress.
     private var isSaving = false
 
+    /// Re-entrancy guard for loadUserData(). Not isLoading — that starts true to drive the
+    /// launch spinner, so guarding on it would block the very first load.
+    private var isLoadingData = false
+
+    /// Timestamp of the last SUCCESSFUL load. Only successes count: a failed fetch must
+    /// leave the next foreground free to retry immediately. Concurrent loads are already
+    /// deduped by isLoadingData, so this doesn't need to guard against them.
+    private var lastLoadTime: Date = .distantPast
+
+    /// Consecutive failed loads, for the bounded retry below.
+    private var loadRetryCount = 0
+    private let maxLoadRetries = 3
+
     /// Timestamp of the last successful save/delete/update. Used to skip redundant
     /// dataChanged-triggered reloads within a cooldown window — after a save the watch
     /// already has the correct local state, so an immediate reload is unnecessary.
@@ -181,7 +194,17 @@ class AppViewModel: ObservableObject {
             return
         }
 
+        // A cold launch fires .task and the scenePhase handler together; without this
+        // they'd both fetch the same document.
+        if isLoadingData {
+            print("[LoadUserData] Skipping — load already in progress")
+            return
+        }
+        isLoadingData = true
+        defer { isLoadingData = false }
+
         isLoading = true
+        print("[LoadUserData] Starting fetch for uid \(uid.prefix(6))…")
 
         do {
             // Fetch Firestore data and HealthKit data in parallel
@@ -205,6 +228,9 @@ class AppViewModel: ObservableObject {
             // Calculate progress
             weeklyProgress = calculateWeeklyProgress(activities: activities, goals: goals)
             weeklyStats = calculateWeeklyStats(activities: activities)
+
+            lastLoadTime = Date()
+            loadRetryCount = 0
 
             print("[LoadUserData] Loaded \(activities.count) activities — lifts: \(weeklyProgress.lifts.completed)/\(goals.liftsPerWeek), cardio: \(weeklyProgress.cardio.completed)/\(goals.cardioPerWeek), recovery: \(weeklyProgress.recovery.completed)/\(goals.recoveryPerWeek)")
 
@@ -238,7 +264,50 @@ class AppViewModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
             isLoading = false
+
+            // This used to fail completely silently, which made a watch showing empty
+            // rings indistinguishable from a watch that had simply loaded nothing.
+            print("[LoadUserData] FAILED: \(error)")
+
+            // Nothing else retries: RootView's .task guards on activities.isEmpty and has
+            // already fired by now, and the foreground refresh only advances its cooldown
+            // on success. watchOS connectivity drops constantly, so one unlucky fetch
+            // would otherwise leave the rings at zero until the app is relaunched.
+            if loadRetryCount < maxLoadRetries {
+                loadRetryCount += 1
+                let attempt = loadRetryCount
+                print("[LoadUserData] Retrying in \(attempt * 2)s (attempt \(attempt)/\(maxLoadRetries))")
+                Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: UInt64(attempt) * 2_000_000_000)
+                    await self?.loadUserData()
+                }
+            } else {
+                print("[LoadUserData] Giving up after \(maxLoadRetries) retries — will try again on next foreground")
+            }
         }
+    }
+
+    // MARK: - Foreground Refresh
+
+    /// Called when the app becomes active.
+    ///
+    /// Steps, calories and distance come straight from HealthKit and are cheap, so they
+    /// always refresh. The rings are different: weeklyProgress is derived from the
+    /// activities loaded out of Firestore, and nothing recomputed it once the app had
+    /// data — .task guards on activities.isEmpty, and the phone's dataChanged push only
+    /// lands if the watch happens to be reachable at that moment. So a workout logged on
+    /// the phone left the rings frozen until the next cold launch.
+    ///
+    /// Rate limited so raising your wrist repeatedly doesn't hammer Firestore, and held
+    /// off briefly after a local save, whose state is already correct.
+    func refreshOnForeground() async {
+        await refreshHealthData()
+
+        if isLoadingData || isSaving { return }
+        if Date().timeIntervalSince(lastLoadTime) < 30 { return }
+        if Date().timeIntervalSince(lastSaveTime) < 5 { return }
+
+        await loadUserData()
     }
 
     // MARK: - Refresh Health Data

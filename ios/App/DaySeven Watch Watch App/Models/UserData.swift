@@ -127,6 +127,19 @@ struct Activity: Codable, Identifiable {
     var photoURL: String?
     var isPhotoPrivate: Bool?
 
+    /// The raw Firestore field dictionary this activity was parsed from, kept so that
+    /// fields this watch build knows nothing about survive a save.
+    ///
+    /// The watch rewrites the WHOLE activities array whenever it saves, re-encoding every
+    /// activity from this struct. Anything the struct doesn't model — durationSeconds,
+    /// healthKitStartDate, the Contrast Therapy fields, challenge intents, hkCalories —
+    /// used to be silently dropped from the user's entire history by a single watch-side
+    /// workout. Carrying the original dictionary through lets the encoder put them back.
+    ///
+    /// Deliberately outside CodingKeys: it isn't part of the watch's own persistence
+    /// (the offline queue), only of the Firestore round trip.
+    var rawFirestoreFields: [String: Any]? = nil
+
     /// Returns focusAreas array, falling back to wrapping single focusArea in an array
     var effectiveFocusAreas: [String] {
         focusAreas ?? (focusArea.map { [$0] } ?? [])

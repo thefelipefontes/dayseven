@@ -21,6 +21,7 @@ import TrendsView from './components/TrendsView';
 import OwnProfileModal from './components/OwnProfileModal';
 import { resolveUnit, unitLabel, formatDistanceValue, milesToDisplay, formatPace } from './utils/distance';
 import { getActivityCategory } from './utils/activityCategory';
+import { manualCaloriesForDate } from './utils/calories';
 
 
 
@@ -434,9 +435,8 @@ export default function ProfilePage(props) {
       date.setDate(lastWeekStart.getDate() + d);
       const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
       const healthData = healthDataByDate[dateStr];
-      const dayActivities = activities.filter(a => a.date === dateStr);
-      // Use HealthKit calories directly — wearables already track all active energy
-      lastWeekCalories += healthData?.calories || 0;
+      // HealthKit active energy + hand-entered calories it doesn't know about
+      lastWeekCalories += (healthData?.calories || 0) + manualCaloriesForDate(activities, dateStr);
     }
 
     // Calculate average from first activity to now
@@ -480,9 +480,8 @@ export default function ProfilePage(props) {
           if (date >= currentWeekStart) break;
           const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
           const healthData = healthDataByDate[dateStr];
-          const dayActivities = activities.filter(a => a.date === dateStr);
-          // Use HealthKit calories directly — wearables already track all active energy
-          totalCalories += healthData?.calories || 0;
+          // HealthKit active energy + hand-entered calories it doesn't know about
+          totalCalories += (healthData?.calories || 0) + manualCaloriesForDate(activities, dateStr);
         }
 
         avgLifts = Math.round((totalLifts / weeksBetween) * 10) / 10;
@@ -560,11 +559,9 @@ export default function ProfilePage(props) {
       date.setDate(startOfWeek.getDate() + d);
       const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
       const healthData = healthDataByDate[dateStr];
-      // Use activities array (source of truth) instead of calendarData
-      const dayActivities = activities.filter(a => a.date === dateStr);
 
-      // Use HealthKit calories directly — wearables already track all active energy
-      weekCalories += healthData?.calories || 0;
+      // HealthKit active energy + hand-entered calories it doesn't know about
+      weekCalories += (healthData?.calories || 0) + manualCaloriesForDate(activities, dateStr);
 
       // Add HealthKit steps
       weekSteps += healthData?.steps || 0;
@@ -1499,8 +1496,8 @@ export default function ProfilePage(props) {
         // Calculate daily totals from actual data
         // Get HealthKit data for this day
         const dayHealthData = healthDataByDate[selectedDate];
-        // Use HealthKit calories directly — wearables already track all active energy
-        const dayCalories = dayHealthData?.calories || 0;
+        // HealthKit active energy + hand-entered calories it doesn't know about
+        const dayCalories = (dayHealthData?.calories || 0) + manualCaloriesForDate(activities, selectedDate);
         const daySteps = dayHealthData?.steps || 0;
         const dayMiles = fullDayActivities.reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
         const totalSessions = fullDayActivities.length;
@@ -3328,8 +3325,8 @@ export default function ProfilePage(props) {
           let weekSteps = 0;
           weekDates.forEach(dateStr => {
             const healthData = healthDataByDate[dateStr];
-            // Use HealthKit calories directly — wearables already track all active energy
-            weekCalories += healthData?.calories || 0;
+            // HealthKit active energy + hand-entered calories it doesn't know about
+            weekCalories += (healthData?.calories || 0) + manualCaloriesForDate(activities, dateStr);
             weekSteps += healthData?.steps || 0;
           });
 
@@ -3392,8 +3389,8 @@ export default function ProfilePage(props) {
           let monthSteps = 0;
           monthDates.forEach(dateStr => {
             const healthData = healthDataByDate[dateStr];
-            // Use HealthKit calories directly — wearables already track all active energy
-            monthCalories += healthData?.calories || 0;
+            // HealthKit active energy + hand-entered calories it doesn't know about
+            monthCalories += (healthData?.calories || 0) + manualCaloriesForDate(activities, dateStr);
             monthSteps += healthData?.steps || 0;
           });
 

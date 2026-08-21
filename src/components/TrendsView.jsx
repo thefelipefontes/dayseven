@@ -5,6 +5,7 @@ import CategoryIcon from './CategoryIcon';
 import { triggerHaptic, ImpactStyle } from '../utils/haptics';
 import { parseLocalDate, toLocalDateStr } from '../utils/dateHelpers';
 import { getActivityCategory } from '../utils/activityCategory';
+import { manualCaloriesForDate, manualCaloriesInRange } from '../utils/calories';
 
 const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], healthKitData = {}, isPro, onPresentPaywall }) => {
   const [metric, setMetric] = useState('calories');
@@ -186,8 +187,8 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
 
         let value = 0;
         if (metric === 'calories') {
-          // Use HealthKit calories directly — wearables already track all active energy
-          value = healthData?.calories || 0;
+          // HealthKit active energy + hand-entered calories it doesn't know about
+          value = (healthData?.calories || 0) + manualCaloriesForDate(activities, dateStr);
         } else if (metric === 'steps') {
           // Use steps from HealthKit
           value = healthData?.steps || 0;
@@ -232,8 +233,8 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
           const dayActivities = activities.filter(a => a.date === dateStr);
 
           if (metric === 'calories') {
-            // Use HealthKit calories directly — wearables already track all active energy
-            value += healthData?.calories || 0;
+            // HealthKit active energy + hand-entered calories it doesn't know about
+            value += (healthData?.calories || 0) + manualCaloriesForDate(activities, dateStr);
           } else if (metric === 'steps') {
             // Use steps from HealthKit
             value += healthData?.steps || 0;
@@ -288,8 +289,8 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
           const dayActivities = activities.filter(a => a.date === dateStr);
 
           if (metric === 'calories') {
-            // Use HealthKit calories directly — wearables already track all active energy
-            value += healthData?.calories || 0;
+            // HealthKit active energy + hand-entered calories it doesn't know about
+            value += (healthData?.calories || 0) + manualCaloriesForDate(activities, dateStr);
           } else if (metric === 'steps') {
             // Use steps from HealthKit
             value += healthData?.steps || 0;
@@ -652,10 +653,11 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
           a.type === 'Walking' && !a.countToward
         );
 
-        // HealthKit totals summed across the same range.
-        // Use HealthKit calories directly — wearables already track all active energy
+        // HealthKit totals summed across the same range, plus any hand-entered
+        // calories HealthKit doesn't already account for.
         const rangeHealth = Object.entries(healthDataByDate).filter(([d]) => inRange(d));
-        const dayCalories = rangeHealth.reduce((sum, [, v]) => sum + (v?.calories || 0), 0);
+        const dayCalories = rangeHealth.reduce((sum, [, v]) => sum + (v?.calories || 0), 0)
+          + manualCaloriesInRange(activities, rangeStart, rangeEnd);
         const daySteps = rangeHealth.reduce((sum, [, v]) => sum + (v?.steps || 0), 0);
         const dayMiles = rangeActivities.reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
         const totalDuration = rangeActivities.reduce((sum, a) => sum + (a.duration || 0), 0);

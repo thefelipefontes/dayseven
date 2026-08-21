@@ -2190,6 +2190,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
   return (
     <div
       ref={overlayRef}
+      data-modal-overlay
       className="fixed inset-0 z-50 flex items-end justify-center"
       style={{ backgroundColor: 'rgba(0,0,0,0.7)' }}
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
@@ -3437,6 +3438,9 @@ const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!", type
   if (!isVisible) return null;
 
   return (
+    // Deliberately NOT data-modal-overlay: pointer-events-none means touches land on
+    // the page underneath, so the pull-to-refresh handler's closest() lookup would never
+    // reach this element anyway. Marking it would be dead weight, not protection.
     <div
       className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none"
       style={{
@@ -3881,6 +3885,7 @@ const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1, goals 
 
   return (
     <div
+      data-modal-overlay
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       onClick={handleOverlayTap}
       style={{
@@ -5329,6 +5334,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
 
   return (
     <div
+      data-modal-overlay
       className="fixed inset-0 z-50 flex items-center justify-center transition-all duration-300 p-4"
       style={{ backgroundColor: isAnimating ? 'rgba(0,0,0,0.95)' : 'rgba(0,0,0,0)' }}
       onClick={(e) => e.target === e.currentTarget && handleClose()}
@@ -6690,6 +6696,7 @@ const ChangePasswordModal = ({ isOpen, onClose, user }) => {
 
   return (
     <div
+      data-modal-overlay
       className={`fixed inset-0 z-50 flex items-end justify-center transition-all duration-300 ${
         isAnimating && !isClosing ? 'bg-black/60' : 'bg-black/0'
       }`}
@@ -6979,6 +6986,7 @@ const DeleteAccountModal = ({ isOpen, onClose, user, userProfile, onDeleteComple
 
   return (
     <div
+      data-modal-overlay
       className={`fixed inset-0 z-50 flex items-end justify-center transition-all duration-300 ${
         isAnimating && !isClosing ? 'bg-black/60' : 'bg-black/0'
       }`}
@@ -7126,7 +7134,7 @@ const DeleteAccountModal = ({ isOpen, onClose, user, userProfile, onDeleteComple
 // Smart Save Explanation Modal - shown once when the first walk is auto-saved
 const SmartSaveExplainModal = ({ onClose, onDisable }) => {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+    <div data-modal-overlay className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
       <div
         className="mx-6 p-6 rounded-3xl max-w-sm w-full"
         style={{ backgroundColor: '#1a1a1a' }}
@@ -7739,7 +7747,7 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black text-white flex flex-col overflow-hidden" style={{ overscrollBehavior: 'none', touchAction: 'pan-y' }}>
+    <div data-modal-overlay className="fixed inset-0 z-50 bg-black text-white flex flex-col overflow-hidden" style={{ overscrollBehavior: 'none', touchAction: 'pan-y' }}>
       {/* Header with progress bar and back/cancel */}
       <div className="flex-shrink-0 px-6 pt-12 pb-2">
         <div className="flex items-center justify-between mb-5">
@@ -9090,6 +9098,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 
   return (
     <div
+      data-modal-overlay
       className="fixed inset-0 z-50 flex flex-col transition-all duration-300"
       style={{
         backgroundColor: isClosing ? 'rgba(0,0,0,0)' : (isAnimating && dragY === 0 ? 'rgba(0,0,0,0.95)' : `rgba(0,0,0,${Math.max(0, 0.95 - dragY / 300)})`),
@@ -12137,6 +12146,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
       {/* Workout Picker Modal - Shows when multiple workouts detected */}
       {showWorkoutPicker && (
         <div
+          data-modal-overlay
           className="fixed inset-0 z-50 flex items-end justify-center"
           style={{ touchAction: 'none' }}
           onTouchMove={(e) => e.preventDefault()}
@@ -18871,7 +18881,7 @@ export default function DaySevenApp() {
 
       {/* Workout Picker Modal (shown from "See other workouts" or when multiple pending) */}
       {showWorkoutPicker && (healthKitData.pendingWorkouts || []).filter(w => !dismissedWorkoutUUIDs.includes(w.healthKitUUID)).length > 0 && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center">
+        <div data-modal-overlay className="fixed inset-0 z-50 flex items-end justify-center">
           <div
             className="absolute inset-0 bg-black/70"
             onClick={() => setShowWorkoutPicker(false)}
@@ -19771,7 +19781,7 @@ export default function DaySevenApp() {
 
       {/* Edit Goals Screen */}
       {showEditGoals && (
-        <div className="fixed inset-0 z-50 bg-black">
+        <div data-modal-overlay className="fixed inset-0 z-50 bg-black">
           <OnboardingSurvey
             currentGoals={userData.pendingGoals
               ? {

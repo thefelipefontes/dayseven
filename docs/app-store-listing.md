@@ -53,7 +53,7 @@ SET YOUR WEEK
 Set a bar you can clear on a busy week. Raise it when you're ready.
 
 WIN THE WEEK, BUILD THE STREAK
-Hit all three goals by the end of the week and your streak grows. A rough day never breaks it. Only an unfinished week does. Milestones at 1 month, 3 months, 6 months and beyond.
+Hit all three goals by the end of the week and you build your Hybrid Streak: strength, cardio and recovery in the same week. A rough day never breaks it. Only an unfinished week does. Milestones at 1 month, 3 months, 6 months and beyond.
 
 LOG ANYTHING IN SECONDS
 • Lifting, with the muscle groups you trained
@@ -89,6 +89,7 @@ Terms of Use (EULA): https://www.apple.com/legal/internet-services/itunes/dev/st
 
 Notes on the description
 - First three lines are what shows before "more", so they carry the whole pitch: the problem, the idea, who it's for.
+- "Hybrid Streak" is named once, in the streak section, and defined in the same sentence, since a store visitor has never seen the term.
 - No weight-loss or medical claims anywhere, on purpose. After the August HealthKit rejection, the listing stays strictly about logging, goals and consistency.
 - Prices are left out of the body because they vary by country; the App Store shows them automatically.
 - Add your Privacy Policy URL in App Store Connect's dedicated field (required for subscription apps).

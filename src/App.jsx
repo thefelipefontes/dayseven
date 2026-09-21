@@ -8366,7 +8366,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
         if (pref?.icon) setCustomActivityIcon(pref.icon);
         if (pref?.category) setCustomActivityCategory(pref.category);
       }
-      setDate(defaultDate || pendingActivity?.date || getTodayDate());
+      // A future defaultDate (e.g. from a calendar tap) is clamped to today —
+      // activities can't be logged ahead of time. An existing activity's own
+      // date is kept as-is so a mis-dated one can be opened and corrected.
+      const today = getTodayDate();
+      const seedDate = defaultDate && defaultDate > today ? today : defaultDate;
+      setDate(seedDate || pendingActivity?.date || today);
       setShowDatePicker(false);
       setShowTimePicker(false);
       setNotes(pendingActivity?.notes || '');
@@ -8588,8 +8593,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   const changeMonth = (delta) => {
     const currentDate = new Date(date + 'T12:00:00');
     currentDate.setMonth(currentDate.getMonth() + delta);
-    const newDate = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-01`;
-    setDate(newDate);
+    const newMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+    // Never browse past the current month — future days can't be logged, so
+    // there's nothing to pick there. (This was the accidental path to a
+    // future-dated log: "→" used to jump the selected date to next month's 1st.)
+    if (newMonth > getTodayDate().slice(0, 7)) return;
+    setDate(`${newMonth}-01`);
   };
 
   // Strength types are flattened into the main list (not nested under "Strength Training").
@@ -9301,7 +9310,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
           }}
           className="font-bold transition-all duration-150 px-2 py-1 rounded-lg"
           style={{ color: !activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0 && !pendingActivity?.id) || (mode === 'completed' && !pendingActivity?.id && photoMissingForChallenge) ? 'rgba(0,255,148,0.3)' : '#00FF94' }}
-          disabled={!activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0 && !pendingActivity?.id) || (mode === 'completed' && !pendingActivity?.id && photoMissingForChallenge)}
+          disabled={!activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0 && !pendingActivity?.id) || (mode === 'completed' && !pendingActivity?.id && photoMissingForChallenge) || (mode !== 'start' && date > getTodayDate())}
           onTouchStart={(e) => {
             if (!e.currentTarget.disabled) {
               e.currentTarget.style.transform = 'scale(0.9)';
@@ -10387,12 +10396,20 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 </span>
                 <span className="text-gray-400">{showDatePicker ? '▲' : '▼'}</span>
               </button>
+              {date > getTodayDate() && (
+                // Only reachable when editing an activity that was mis-dated before
+                // future dates were blocked; Save stays disabled until it's moved back.
+                <p className="mt-1.5 text-xs" style={{ color: '#FF453A' }}>
+                  Activities can't be logged in the future. Pick today or an earlier day.
+                </p>
+              )}
               
               {/* Calendar Dropdown */}
               {showDatePicker && (() => {
                 const { days, year, month } = getCalendarDays();
                 const monthName = new Date(year, month).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
                 const today = getTodayDate();
+                const isCurrentMonth = `${year}-${String(month + 1).padStart(2, '0')}` >= today.slice(0, 7);
                 
                 return (
                   <div className="mt-2 p-3 rounded-xl bg-white/5 border border-white/10">
@@ -10427,7 +10444,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                       <span className="font-medium">{monthName}</span>
                       <button 
                         onClick={() => changeMonth(1)}
-                        className="p-2 text-gray-400 hover:text-white rounded-lg transition-all duration-150"
+                        disabled={isCurrentMonth}
+                        className="p-2 text-gray-400 hover:text-white rounded-lg transition-all duration-150 disabled:opacity-25 disabled:hover:text-gray-400"
                         onTouchStart={(e) => {
                           e.currentTarget.style.transform = 'scale(0.85)';
                           e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
@@ -10462,30 +10480,36 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     
                     {/* Calendar Days */}
                     <div className="grid grid-cols-7 gap-1">
-                      {days.map((dayDate, i) => (
+                      {days.map((dayDate, i) => {
+                        // YYYY-MM-DD strings compare correctly as plain strings
+                        const isFuture = !!dayDate && dayDate > today;
+                        return (
                         <button
                           key={i}
                           onClick={() => {
-                            if (dayDate) {
+                            if (dayDate && !isFuture) {
                               setDate(dayDate);
                               setShowDatePicker(false);
                             }
                           }}
-                          disabled={!dayDate}
+                          disabled={!dayDate || isFuture}
                           className={`aspect-square rounded-lg text-sm flex items-center justify-center transition-all ${
                             !dayDate ? 'invisible' : 
                             dayDate === date ? 'font-bold' : 
                             dayDate === today ? 'border border-white/30' : 
+                            isFuture ? '' :
                             'hover:bg-white/10'
                           }`}
                           style={{
                             backgroundColor: dayDate === date ? '#00FF94' : 'transparent',
-                            color: dayDate === date ? 'black' : 'white'
+                            color: dayDate === date ? 'black' : 'white',
+                            opacity: isFuture && dayDate !== date ? 0.25 : 1
                           }}
                         >
                           {dayDate ? parseInt(dayDate.split('-')[2]) : ''}
                         </button>
-                      ))}
+                        );
+                      })}
                     </div>
                     
                     {/* Quick Select */}
@@ -11235,7 +11259,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss, distanceUnit = 'mi
 
 // Home Tab - Simplified
 
-const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onSaveWeeklyPlan, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeCountsChange, onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, optimisticChallengeCompletions = new Map(), onStartChallengeWorkout, onApplyPastActivityToChallenge, onChallengeDetailOpenChange, openActivityTarget = null, showHkEmptyHint = false, hkAccessBlocked = false, onDismissHkEmptyHint = () => {}, onOpenHealthSettings = () => {}, showNotifReask = false, onAcceptNotifReask = () => {}, onDismissNotifReask = () => {} }) => {
+const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onSaveWeeklyPlan, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeCountsChange, onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, optimisticChallengeCompletions = new Map(), onStartChallengeWorkout, onApplyPastActivityToChallenge, onChallengeDetailOpenChange, openActivityTarget = null, showHkEmptyHint = false, hkAccessBlocked = false, onDismissHkEmptyHint = () => {}, onOpenHealthSettings = () => {}, showNotifReask = false, onAcceptNotifReask = () => {}, onDismissNotifReask = () => {}, onReplayCelebration = () => {} }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
   const [dismissConfirmWorkouts, setDismissConfirmWorkouts] = useState(null); // Workouts pending dismiss confirmation
@@ -11449,6 +11473,23 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
   const streakStakes = priorMaster > 0
     ? 'to keep your hybrid streak'
     : 'to start your first hybrid streak';
+
+  // The week is genuinely won: all three categories hit their own goal this week.
+  // Mirrors the condition that fires the celebration in the first place (see
+  // `willStreakWeek` in handleAddActivity) so the banner appears exactly on the
+  // weeks that earned a celebration — never on a week that only *looks* complete.
+  //
+  // Deliberately NOT excluded: a week the user also spent a streak shield on. The
+  // shield rescues weeks where goals were missed, so it can't co-occur with this
+  // check being true — unless the user shielded early and then went and hit
+  // everything anyway, which is as earned as it gets.
+  //
+  // Vacation and injury are excluded: both freeze the week, so master never
+  // advances and there is no new celebration behind the tap.
+  const weekComplete =
+    !userData?.vacationMode?.isActive &&
+    !userData?.injuryMode?.isActive &&
+    metThisWeek('lifts') && metThisWeek('cardio') && metThisWeek('recovery');
 
   // Persist warning dismissal for the day — reappears next day if still needed
   const warningKey = new Date().toDateString();
@@ -13010,8 +13051,48 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
               <SectionIcon type="target" />
               <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>This Week's Goals</span>
             </div>
-            <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>{userData.injuryMode?.isActive ? 'Rest up — your streak is safe while you heal' : `${hasExistingStreak ? 'Hit these to keep your streaks alive' : 'Hit these to start your first streak'} · ${daysLeft} day${daysLeft !== 1 ? 's' : ''} left`}</p>
+            <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>{userData.injuryMode?.isActive
+              ? 'Rest up — your streak is safe while you heal'
+              // The Week Won banner directly below already delivers the news in green;
+              // repeating "all goals met" here would stack the same line twice. So drop
+              // the instruction — there's nothing left to hit — and keep only the fact
+              // whose meaning changed: the days left are now headroom, not a deadline.
+              : weekComplete
+                ? `${daysLeft} day${daysLeft !== 1 ? 's' : ''} left in the week`
+                : `${hasExistingStreak ? 'Hit these to keep your streaks alive' : 'Hit these to start your first streak'} · ${daysLeft} day${daysLeft !== 1 ? 's' : ''} left`}</p>
           </div>
+
+          {/* Week Won — the mirror of the "streak at risk" warning above. That banner
+              only exists while categories are still outstanding; this one takes over the
+              moment all three land, and stays put for the rest of the week so the tap
+              back into the celebration is always reachable. Not dismissible: dismissing
+              it would take the only replay affordance with it. */}
+          {weekComplete && (
+            <button
+              onClick={onReplayCelebration}
+              className="w-full p-3 rounded-xl mb-3 flex items-center gap-3 text-left transition-all duration-150"
+              style={{
+                backgroundColor: 'rgba(0,255,148,0.12)',
+                border: '1px solid rgba(0,255,148,0.3)'
+              }}
+              onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.98)'}
+              onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
+              onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.98)'}
+              onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            >
+              <span className="text-xl">🏆</span>
+              <div className="flex-1">
+                <div className="text-xs font-semibold" style={{ color: '#00FF94' }}>
+                  Week complete — hybrid streak is safe
+                </div>
+                <div className="text-[10px] text-gray-400 mt-0.5">Tap to replay the celebration</div>
+              </div>
+              <svg width="7" height="12" viewBox="0 0 7 12" fill="none" style={{ color: '#00FF94', flexShrink: 0 }}>
+                <path d="M1 1L6 6L1 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+          )}
 
           {/* Individual Goals - The Main Event */}
           <div className="p-5 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
@@ -16752,6 +16833,16 @@ export default function DaySevenApp() {
   };
 
   const handleActivitySaved = async (activity) => {
+    // Hard stop on future-dated logs. They land in a future week, so this
+    // week's rings silently stay open and the user can't tell why. The modal
+    // disables Save for these; this guards every other path into a save.
+    if (activity?.date && activity.date > getTodayDate()) {
+      setToastMessage("Activities can't be logged in the future.");
+      setToastType('error');
+      setShowToast(true);
+      return;
+    }
+
     // Haptic feedback when saving activity
     triggerHaptic(ImpactStyle.Medium);
 
@@ -18195,6 +18286,13 @@ export default function DaySevenApp() {
                   showNotifReask={showNotifReask}
                   onAcceptNotifReask={handleAcceptNotifReask}
                   onDismissNotifReask={consumeNotifReask}
+                  onReplayCelebration={() => {
+                    // Pure replay — no streak/celebration state is written. The modal
+                    // resets itself whenever `show` goes false, so re-showing it plays
+                    // the full ring convergence again from the top.
+                    triggerHaptic(ImpactStyle.Heavy);
+                    setShowWeekStreakCelebration(true);
+                  }}
                   friends={friends}
                   onChallengeCountsChange={({ outgoingThisMonthCount }) => setOutgoingThisMonthChallengeCount(outgoingThisMonthCount)}
                   onChallengeActivity={(activity) => setChallengeModalActivity(activity)}

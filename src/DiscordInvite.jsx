@@ -145,7 +145,7 @@ const DiscordInvite = ({ onDone }) => {
             {[
               'Talk to me directly (founder)',
               'Request features and help shape what we build next',
-              'Connect with other current and aspiring hybrid athletes',
+              'Connect with people leveling up their physiques without giving up their lives',
             ].map((perk) => (
               <li key={perk} className="flex items-start gap-3">
                 <span

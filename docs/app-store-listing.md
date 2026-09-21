@@ -1,6 +1,6 @@
 # DaySeven · App Store listing (rewrite, 2026-09-21)
 
-Positioning: **win the week, not the day.** For anyone who wants to be in shape without fitness running their life. The "hybrid athlete" language is gone; lifting + cardio + recovery is simply what a complete week looks like.
+Positioning: **win the week, not the day.** For anyone who wants to be in shape without fitness running their life. The "hybrid athlete" identity language is gone (the in-app "Hybrid Streak" name stays, see the end of this doc); lifting + cardio + recovery is simply what a complete week looks like.
 
 Paste each field into App Store Connect → App Information / Version page. Limits are Apple's; counts are verified.
 
@@ -114,9 +114,10 @@ Panel 5 drops "Dominate": it fights the "without sacrificing your life" tone.
 
 ## Inside the app (needs a release, not just a listing edit)
 
-The word "hybrid" is still user-facing in the app in about a dozen places, most visibly:
-- **"Hybrid Streak"** on Profile, the home streak banner, share cards and the week-complete message
-- Onboarding: "This is what hybrid actually looks like", "your first hybrid week", the `already_hybrid` answer label
-- Discord invite: "current and aspiring hybrid athletes"
+"Hybrid athlete" as an identity is gone from the app, but **"Hybrid Streak" stays** (decided 2026-09-21). It names the method, not the person: a week that combines strength, cardio and recovery. It also keeps the all-goals streak distinct from the per-category Strength, Cardio and Recovery streaks that sit beside it on Profile and the share cards. The "Hybrid" activity group (Yoga, Pilates, Walking) stays too, since there it means "can count toward either goal".
 
-Suggested rename: **"Hybrid Streak" → "Week Streak"** (or "Winning Streak"). Internal identifiers like the `hybrid` activity category and `already_hybrid` value should stay as they are; only the displayed text changes.
+Rewritten in the new voice:
+- Onboarding: "This is what hybrid actually looks like." → "This is what a complete week looks like."; "your first hybrid week" → "your first full week"
+- Discord invite: "current and aspiring hybrid athletes" → "people leveling up their physiques without giving up their lives"
+
+Because "Hybrid Streak" is unchanged, the existing screenshots don't need re-capturing for this. Internal identifiers like the `hybrid` activity category and the `already_hybrid` onboarding value are untouched.

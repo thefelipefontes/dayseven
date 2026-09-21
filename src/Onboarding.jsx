@@ -130,7 +130,7 @@ export function computeWeeklyGoals({ origin = null, daysPerWeek, recovery = [] }
 // ============================================================================
 
 const ORIGIN_MESSAGE = {
-  lifter_adding_cardio:  "You've built the foundation. Now you're adding the engine. This is what hybrid actually looks like.",
+  lifter_adding_cardio:  "You've built the foundation. Now you're adding the engine. This is what a complete week looks like.",
   runner_adding_muscle:  "You already have the engine. Now you build the frame to match.",
   already_hybrid:        "You already know the lifestyle. You just need something that holds you to it.",
   starting_from_scratch: "Everyone starts somewhere. The ones who last don't start harder — they start smarter. Small weeks compound into something serious.",
@@ -1362,7 +1362,7 @@ function CelebrateScreen({ weeklyGoals, linkedWorkouts, onboardingCredits, onCon
   const headline = allDone ? 'First week — locked in.' : 'Already on your way.';
   const subhead = allDone
     ? "Every session from here compounds. Now make it real."
-    : "Here's what's left to complete your first hybrid week.";
+    : "Here's what's left to complete your first full week.";
 
   const breakdownRow = (ring, label, isLast) => {
     const rem = remaining[ring];

@@ -76,6 +76,7 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "123B68302F3BB06F00AA20FB"
             BuildableName = "DaySeven Watch Watch App.app"
+            BlueprintName = "DaySeven Watch Watch App"
             ReferencedContainer = "container:App.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -109,6 +110,7 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "120994C82F3E747300DB44E4"
             BuildableName = "Dayseven Watch WidgetsExtension.appex"
+            BlueprintName = "Dayseven Watch WidgetsExtension"
             ReferencedContainer = "container:App.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

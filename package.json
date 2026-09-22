@@ -29,7 +29,7 @@
     "@capacitor/splash-screen": "^8.0.2",
     "@capacitor/status-bar": "^8.0.3",
     "@capawesome/capacitor-badge": "^8.0.3",
-    "@capgo/capacitor-health": "^8.2.11",
+    "@capgo/capacitor-health": "^8.11.3",
     "@revenuecat/purchases-capacitor": "^13.6.0",
     "@revenuecat/purchases-capacitor-ui": "^13.6.0",
     "@sentry/react": "^10.36.0",

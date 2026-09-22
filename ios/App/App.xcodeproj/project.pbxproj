@@ -163,7 +163,7 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		120994CF2F3E747300DB44E4 /* Dayseven Watch Widgets */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (120994DC2F3E747300DB44E4 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = "Dayseven Watch Widgets"; sourceTree = "<group>"; };
+		120994CF2F3E747300DB44E4 /* Dayseven Watch Widgets */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (120994DC2F3E747300DB44E4 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = "DaySeven Watch Widgets"; sourceTree = "<group>"; };
 		123B68322F3BB06F00AA20FB /* DaySeven Watch Watch App */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (120994E72F3E75C500DB44E4 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = "DaySeven Watch Watch App"; sourceTree = "<group>"; };
 		123B68402F3BB07000AA20FB /* DaySeven Watch Watch AppTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "DaySeven Watch Watch AppTests"; sourceTree = "<group>"; };
 		123B684A2F3BB07000AA20FB /* DaySeven Watch Watch AppUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "DaySeven Watch Watch AppUITests"; sourceTree = "<group>"; };
@@ -654,7 +654,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "Dayseven Watch Widgets/Info.plist";
+				INFOPLIST_FILE = "DaySeven Watch Widgets/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Dayseven Watch Widgets";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -695,7 +695,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "Dayseven Watch Widgets/Info.plist";
+				INFOPLIST_FILE = "DaySeven Watch Widgets/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Dayseven Watch Widgets";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (

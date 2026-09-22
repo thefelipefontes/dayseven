@@ -8,13 +8,13 @@ Paste each field into App Store Connect → App Information / Version page. Limi
 
 ## App name (30 max)
 
-**Recommended:** `DaySeven: Workout Streaks` (25)
+**Decision (2026-09-21): keep `Fitness Tracker - DaySeven`.** No change.
 
-Alternates:
+Considered and passed on for now:
+- `DaySeven: Workout Streaks` (25)
 - `DaySeven: Weekly Fitness Goals` (30)
-- `Fitness Tracker - DaySeven` (26) ← current
 
-Why change: "fitness tracker" is one of the most competitive searches on the store and a new app won't rank for it. "Workout streaks" and "weekly goals" are searches DaySeven can actually win, and they describe what it does. Leading with the brand name also matches how people will look for it after seeing your content.
+Reasoning for the alternates, kept for later: "fitness tracker" is one of the most competitive searches on the store and a new app won't rank for it. "Workout streaks" and "weekly goals" are searches DaySeven can actually win, and they describe what it does. Leading with the brand name also matches how people will look for it after seeing your content.
 
 ## Subtitle (30 max)
 
@@ -97,6 +97,8 @@ Notes on the description
 ---
 
 ## Screenshot captions (7 panels)
+
+**Decision (2026-09-21): keep the current captions for now.** The new set below is parked until the in-app "Hybrid Streak" rename ships and screenshots are re-captured anyway.
 
 | # | Screen | Now | New headline | New subline |
 |---|---|---|---|---|

@@ -73,17 +73,20 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         }
     }
 
-    func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
-        // Called when the app was launched with a url. Feel free to add additional processing here,
-        // but if you want the App API to support tracking app url opens, make sure to keep this call
-        return ApplicationDelegateProxy.shared.application(app, open: url, options: options)
-    }
+    // MARK: - UIScene
 
-    func application(_ application: UIApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {
-        // Called when the app was launched with an activity, including Universal Links.
-        // Feel free to add additional processing here, but if you want the App API to support
-        // tracking app url opens, make sure to keep this call
-        return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
+    // With UIApplicationSceneManifest in Info.plist, iOS routes URL opens and
+    // universal links to SceneDelegate instead of application(_:open:) /
+    // application(_:continue:), so those handlers are gone from here. The
+    // app-level callbacks below (push registration, ActivityKit, Watch) still
+    // fire as before.
+    func application(_ application: UIApplication,
+                     configurationForConnecting connectingSceneSession: UISceneSession,
+                     options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+        let config = UISceneConfiguration(name: "Default Configuration",
+                                          sessionRole: connectingSceneSession.role)
+        config.delegateClass = SceneDelegate.self
+        return config
     }
 
     // MARK: - Push Notification Registration

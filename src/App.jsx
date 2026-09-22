@@ -8358,7 +8358,13 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       setSaveCustomActivity(false);
       setSaveHKIcon(false);
       setSaveHKCategory(false);
-      setCustomActivityCategory(loadCustomFields ? (pendingActivity?.customActivityCategory || pendingActivity?.countToward || '') : '');
+      // Uncategorized HK types with a known default (Dance → cardio, Cooldown →
+      // recovery, ...) start on it instead of forcing a pick; a saved per-type
+      // preference below still wins.
+      const uncatDefault = isUncatType
+        ? { lifting: 'strength', cardio: 'cardio', recovery: 'recovery' }[getDefaultCountToward(pendingActivity.type, pendingActivity?.subtype || '')] || ''
+        : '';
+      setCustomActivityCategory(loadCustomFields ? (pendingActivity?.customActivityCategory || pendingActivity?.countToward || uncatDefault) : '');
       // Apply saved HealthKit type preferences for uncategorized types
       if (isUncatType && userData?.healthKitTypePreferences) {
         const prefKey = pendingActivity?.appleWorkoutName || pendingActivity?.type;

@@ -307,13 +307,22 @@ const hkRawTypeMap = {
   82: 'swimBikeRun',
 };
 
+// A plugin workoutType we can't map ourselves. Covers the plugin's "other" and,
+// since @capgo/capacitor-health 8.3, the many specific names it now emits that
+// workoutTypeMap doesn't know (cardioDance, preparationAndRecovery, stairs, ...).
+// Either way we fall back to the raw HK type, exactly as we did when the plugin
+// still collapsed all of those to "other".
+function isUnmappedWorkoutType(workoutType) {
+  return workoutType === 'other' || !workoutTypeMap[workoutType];
+}
+
 // Batch-resolve unknown workout types via native Swift bridge
 // Returns a map: { "77": { key: "dance", name: "Dance" }, ... }
 async function resolveUnknownTypes(workouts) {
   const unknownRawValues = workouts
     .filter(w => {
       const wType = w.workoutActivityType || w.workoutType || '';
-      return wType === 'other' && w.workoutActivityTypeRaw !== undefined;
+      return isUnmappedWorkoutType(wType) && w.workoutActivityTypeRaw !== undefined;
     })
     .map(w => w.workoutActivityTypeRaw);
 
@@ -334,16 +343,17 @@ async function resolveUnknownTypes(workouts) {
 function convertWorkoutToActivity(workout, resolvedTypes = {}) {
   let workoutType = workout.workoutActivityType || workout.workoutType || 'HKWorkoutActivityTypeOther';
 
-  // If the plugin returned "other" but we have the raw HK type number,
-  // try to recover the actual workout type
-  if (workoutType === 'other' && workout.workoutActivityTypeRaw !== undefined) {
+  // If the plugin returned a type we don't map ("other", or a name our map
+  // lacks) but we have the raw HK type number, try to recover the actual type
+  if (isUnmappedWorkoutType(workoutType) && workout.workoutActivityTypeRaw !== undefined) {
     // 1. Try native-resolved type first (always up to date with iOS SDK)
     const nativeResolved = resolvedTypes[String(workout.workoutActivityTypeRaw)];
-    if (nativeResolved && nativeResolved.key !== 'other') {
+    const nativeResolvedIt = Boolean(nativeResolved && nativeResolved.key !== 'other');
+    if (nativeResolvedIt) {
       workoutType = nativeResolved.key;
     }
     // 2. Fall back to hardcoded JS map
-    if (workoutType === 'other') {
+    if (!nativeResolvedIt) {
       const recovered = hkRawTypeMap[workout.workoutActivityTypeRaw];
       if (recovered) {
         workoutType = recovered;

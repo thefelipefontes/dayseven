@@ -8358,7 +8358,13 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       setSaveCustomActivity(false);
       setSaveHKIcon(false);
       setSaveHKCategory(false);
-      setCustomActivityCategory(loadCustomFields ? (pendingActivity?.customActivityCategory || pendingActivity?.countToward || '') : '');
+      // Uncategorized HK types with a known default (Dance → cardio, Cooldown →
+      // recovery, ...) start on it instead of forcing a pick; a saved per-type
+      // preference below still wins.
+      const uncatDefault = isUncatType
+        ? { lifting: 'strength', cardio: 'cardio', recovery: 'recovery' }[getDefaultCountToward(pendingActivity.type, pendingActivity?.subtype || '')] || ''
+        : '';
+      setCustomActivityCategory(loadCustomFields ? (pendingActivity?.customActivityCategory || pendingActivity?.countToward || uncatDefault) : '');
       // Apply saved HealthKit type preferences for uncategorized types
       if (isUncatType && userData?.healthKitTypePreferences) {
         const prefKey = pendingActivity?.appleWorkoutName || pendingActivity?.type;
@@ -13495,6 +13501,8 @@ export default function DaySevenApp() {
   const [stampActivity, setStampActivity] = useState(null);
   const [stampRouteCoords, setStampRouteCoords] = useState([]);
   const [showFriends, setShowFriends] = useState(false);
+  // Which view the Friends modal opens on; notification taps set 'requests'.
+  const [friendsInitialTab, setFriendsInitialTab] = useState('friends');
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);
   const [friends, setFriends] = useState([]);
   const [challengeModalActivity, setChallengeModalActivity] = useState(null); // activity to challenge a friend with (null = modal closed)
@@ -15419,6 +15427,10 @@ export default function DaySevenApp() {
           }
           handleNotificationNavigation(notification, (tab, opts) => {
             setActiveTab(tab);
+            if (opts?.friendsView) {
+              setFriendsInitialTab(opts.friendsView);
+              setShowFriends(true);
+            }
             if (tab === 'challenges' && (opts?.challengesSegment || opts?.challengesSubSegment)) {
               setChallengesNavTarget({
                 segment: opts.challengesSegment || null,
@@ -19685,8 +19697,10 @@ export default function DaySevenApp() {
         <Friends
           user={user}
           userProfile={userProfile}
+          initialTab={friendsInitialTab}
           onClose={async () => {
             setShowFriends(false);
+            setFriendsInitialTab('friends');
             // Refresh friends and pending requests after modal closes
             if (user) {
               const friendsList = await getFriends(user.uid);

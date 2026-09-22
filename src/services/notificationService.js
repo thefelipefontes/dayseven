@@ -595,9 +595,14 @@ export const handleNotificationNavigation = (notification, navigate, options = {
   const type = data.type;
 
   switch (type) {
+    // There is no 'friends' tab: the Friends bottom tab is 'feed', and requests
+    // live in the Friends modal. Setting activeTab to a name nothing renders
+    // left the app on a black screen after a friend-request tap.
     case NotificationType.FRIEND_REQUEST:
+      navigate('feed', { friendsView: 'requests' });
+      break;
     case NotificationType.FRIEND_ACCEPTED:
-      navigate('friends');
+      navigate('feed', { friendsView: 'friends' });
       break;
 
     case NotificationType.REACTION:

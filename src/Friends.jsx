@@ -25,8 +25,8 @@ const triggerHaptic = async (style = ImpactStyle.Medium) => {
 
 const FREE_FRIEND_LIMIT = 3;
 
-const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenChallenge }) => {
-  const [activeTab, setActiveTab] = useState('friends');
+const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenChallenge, initialTab = 'friends' }) => {
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [friends, setFriends] = useState([]);
   const [requests, setRequests] = useState([]);
   const [sentRequests, setSentRequests] = useState([]);

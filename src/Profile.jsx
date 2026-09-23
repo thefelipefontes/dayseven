@@ -3339,12 +3339,19 @@ export default function ProfilePage(props) {
           const isInjury = injuryCats !== null;
           const injuryFrozenCats = injuryCats || [];
 
+          // Days of this week that have started (today included) — the divisor for per-day
+          // averages, so the current week isn't averaged over days that haven't happened yet.
+          const todayKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
+          const daysElapsed = Math.max(1, weekDates.filter(d => d <= todayKey).length);
+
           return {
             lifts: lifts.length,
             cardio: cardioArr.length,
             recovery: recoveryArr.length,
             calories: weekCalories,
             steps: weekSteps,
+            daysElapsed,
+            isCurrentWeek: weekDates.includes(todayKey),
             miles: miles,
             activities: weekActivities,
             goalsMet: lifts.length >= goals.liftsPerWeek && cardioArr.length >= goals.cardioPerWeek && recoveryArr.length >= goals.recoveryPerWeek,

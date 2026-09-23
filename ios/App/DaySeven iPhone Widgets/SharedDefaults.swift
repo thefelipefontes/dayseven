@@ -23,6 +23,9 @@ struct SharedDefaults {
     static let recentActivitiesKey = "recentActivities"
     static let daysLeftInWeekKey = "daysLeftInWeek"
     static let injuryModeActiveKey = "injuryModeActive"
+    static let weekStepsKey = "weekSteps"
+    static let weekStartDateKey = "weekStartDate"
+    static let showCaloriesKey = "showCalories"
 
     // Celebration tracking keys (used by CelebrationManager)
     static let dailyGoalsCelebratedKey = "dailyGoalsCelebrated"
@@ -81,8 +84,11 @@ struct SharedDefaults {
             daysLeftInWeek: defaults.integer(forKey: daysLeftInWeekKey),
             lastUpdated: defaults.double(forKey: lastUpdatedKey),
             injuryModeActive: defaults.bool(forKey: injuryModeActiveKey),
-            recentActivities: Self.readRecentActivities(from: defaults)
-        )
+            recentActivities: Self.readRecentActivities(from: defaults),
+            weekSteps: defaults.integer(forKey: weekStepsKey),
+            weekStartDate: defaults.string(forKey: weekStartDateKey) ?? "",
+            showCalories: defaults.bool(forKey: showCaloriesKey)
+        ).rolledOverIfNewWeek()
     }
     private static func readRecentActivities(from defaults: UserDefaults) -> [WidgetActivity] {
         guard let jsonStrings = defaults.stringArray(forKey: recentActivitiesKey) else { return [] }
@@ -130,6 +136,54 @@ struct WidgetStreakData {
     let lastUpdated: Double
     let injuryModeActive: Bool
     let recentActivities: [WidgetActivity]
+    let weekSteps: Int
+    let weekStartDate: String   // "YYYY-MM-DD", the Sunday of the week the app last wrote
+    let showCalories: Bool      // mirrors the app's "Active calories on Home" setting
+
+    // MARK: Week, computed from the clock rather than the last app write, so the widget
+    // stays right on days the app isn't opened. The app's week runs Sunday–Saturday.
+
+    private static var weekCalendar: Calendar {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = .current
+        return cal
+    }
+
+    /// Days of this week already finished (Sunday = 0 … Saturday = 6).
+    static var finishedDaysThisWeek: Int {
+        weekCalendar.component(.weekday, from: Date()) - 1
+    }
+
+    static var currentWeekStartKey: String {
+        let cal = weekCalendar
+        let start = cal.date(byAdding: .day, value: -finishedDaysThisWeek, to: cal.startOfDay(for: Date())) ?? Date()
+        let c = cal.dateComponents([.year, .month, .day], from: start)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
+
+    /// Days left including today.
+    var daysLeftThisWeek: Int { 7 - Self.finishedDaysThisWeek }
+
+    var weekStepsGoal: Int { stepsGoal * 7 }
+
+    /// Week steps vs. the daily goal × finished days. Today can only put you ahead.
+    var stepsAheadBy: Int { weekSteps - stepsGoal * Self.finishedDaysThisWeek }
+
+    /// Last write was for an earlier week (the app wasn't opened since Sunday): this week
+    /// starts from zero instead of showing last week's rings and steps.
+    func rolledOverIfNewWeek() -> WidgetStreakData {
+        guard !weekStartDate.isEmpty, weekStartDate != Self.currentWeekStartKey else { return self }
+        return WidgetStreakData(
+            masterStreak: masterStreak, liftsStreak: liftsStreak, cardioStreak: cardioStreak, recoveryStreak: recoveryStreak,
+            liftsCompleted: 0, liftsGoal: liftsGoal,
+            cardioCompleted: 0, cardioGoal: cardioGoal,
+            recoveryCompleted: 0, recoveryGoal: recoveryGoal,
+            todaySteps: 0, stepsGoal: stepsGoal, todayCalories: 0,
+            daysLeftInWeek: daysLeftInWeek, lastUpdated: lastUpdated,
+            injuryModeActive: injuryModeActive, recentActivities: recentActivities,
+            weekSteps: 0, weekStartDate: Self.currentWeekStartKey, showCalories: showCalories
+        )
+    }
 
     var stepsProgress: Double {
         min(Double(todaySteps) / Double(stepsGoal), 1.0)
@@ -166,6 +220,7 @@ struct WidgetStreakData {
         daysLeftInWeek: 0,
         lastUpdated: 0,
         injuryModeActive: false,
-        recentActivities: []
+        recentActivities: [],
+        weekSteps: 0, weekStartDate: "", showCalories: false
     )
 }

@@ -16331,6 +16331,8 @@ export default function DaySevenApp() {
   useEffect(() => {
     healthKitDataRef.current = healthKitData;
   }, [healthKitData]);
+  const healthHistoryRef = useRef(healthHistory);
+  useEffect(() => { healthHistoryRef.current = healthHistory; }, [healthHistory]);
   useEffect(() => {
     recordsLoadedRef.current = recordsLoaded;
   }, [recordsLoaded]);
@@ -16584,6 +16586,23 @@ export default function DaySevenApp() {
     // Days left in the week including today (Sunday=0 through Saturday=6)
     const daysLeft = 7 - new Date().getDay();
 
+    // This week's steps (same sum as Home's week view): earlier days from the saved daily
+    // history, today from the live HealthKit read. weekStartDate lets the widget tell when
+    // the week has rolled over without the app being opened, and reset instead of showing
+    // last week's rings.
+    const now = new Date();
+    const dateKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const stepsByDate = {};
+    (healthHistoryRef.current || []).forEach(e => { if (e?.date) stepsByDate[e.date] = e.steps || 0; });
+    let weekSteps = hk.todaySteps || 0;
+    for (let d = 1; d <= now.getDay(); d++) {
+      const day = new Date(now);
+      day.setDate(now.getDate() - d);
+      weekSteps += stepsByDate[dateKey(day)] || 0;
+    }
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - now.getDay());
+
     updateWidgetData({
       masterStreak: s.master || 0,
       liftsStreak: s.lifts || 0,
@@ -16601,6 +16620,10 @@ export default function DaySevenApp() {
       // doesn't already know about.
       todayCalories: (hk.todayCalories || 0) + manualCaloriesForDate(allActs, getTodayDate()),
       daysLeftInWeek: daysLeft,
+      weekSteps,
+      weekStartDate: dateKey(weekStart),
+      // Widget follows the Home setting: calories only when the user turned them on.
+      showCalories: userProfileRef.current?.privacySettings?.showCaloriesOnHome === true,
       injuryModeActive: !!userDataRef.current?.injuryMode?.isActive,
       recentActivities
     });
@@ -16619,6 +16642,13 @@ export default function DaySevenApp() {
   useEffect(() => {
     pushWidgetData();
   }, [userData?.injuryMode?.isActive]);
+
+  // Earlier days' steps arrive with healthHistory after launch, and the calories toggle can
+  // flip in Settings — refresh the widget for both. (Refs are synced by earlier effects.)
+  useEffect(() => {
+    if (healthHistory.length === 0) return; // not loaded yet — don't overwrite the widget with a partial week
+    pushWidgetData();
+  }, [healthHistory, userProfile?.privacySettings?.showCaloriesOnHome]);
 
   // Recalculate streaks from actual activity history.
   // The week-by-week walk lives in utils/streaks so the current streak, the longest-ever

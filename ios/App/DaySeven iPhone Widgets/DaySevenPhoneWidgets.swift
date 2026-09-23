@@ -76,7 +76,7 @@ enum WeekCopy {
 
     static func streakTitle(_ data: WidgetStreakData) -> String {
         if data.injuryModeActive { return "\(data.masterStreak) week streak · paused" }
-        return data.masterStreak == 1 ? "1 winning week" : "\(data.masterStreak) winning weeks"
+        return "\(data.masterStreak) week winning streak"
     }
 
     /// "4 days left · 3.9k ahead on steps" — the days part is plain, the steps part colored.
@@ -195,7 +195,7 @@ struct SmallWidgetView: View {
                 Text("\(data.masterStreak)")
                     .font(.system(size: 12, weight: .black, design: .rounded))
                     .foregroundColor(data.injuryModeActive ? WidgetColors.injury : WidgetColors.streak)
-                Text(data.injuryModeActive ? "paused" : (data.masterStreak == 1 ? "winning week" : "winning weeks"))
+                Text(data.injuryModeActive ? "paused" : "week winning streak")
                     .font(.system(size: 9, weight: .medium))
                     .foregroundColor(.white.opacity(0.7))
             }

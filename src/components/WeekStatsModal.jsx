@@ -281,7 +281,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
             </div>
             <div className="p-3 rounded-xl flex items-center justify-between" style={streakRowStyle(!!weekData?.goalsMet, '255,215,0', 'master')}>
               <div>
-                <span className="text-xs">🏆 Hybrid</span>
+                <span className="text-xs">🏆 Week won</span>
                 <div className="text-[10px] text-gray-500">All goals hit</div>
               </div>
               {streakIcon(!!weekData?.goalsMet, '#FFD700', 'master')}

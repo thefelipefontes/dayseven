@@ -918,13 +918,13 @@ export default function ProfilePage(props) {
           </div>
         </div>
 
-        {/* Hybrid Streak - Hero */}
+        {/* Winning Streak - Hero */}
         <div className="p-4 rounded-2xl mb-3" style={{ background: 'linear-gradient(135deg, rgba(255,215,0,0.15) 0%, rgba(255,149,0,0.1) 100%)', border: '1px solid rgba(255,215,0,0.3)' }}>
           <div className="flex items-center gap-3 mb-2">
             <span className="text-2xl">🏆</span>
             <div>
               <div className="text-3xl font-black" style={{ color: '#FFD700' }}>{streaks.master} Weeks</div>
-              <div className="text-sm text-gray-300">Hybrid Streak</div>
+              <div className="text-sm text-gray-300">Winning Streak</div>
             </div>
           </div>
           <div className="text-xs text-gray-500 mt-2 pt-2 border-t border-white/10">
@@ -2148,7 +2148,7 @@ export default function ProfilePage(props) {
                     <div className="flex items-center gap-3">
                       <span className="text-lg">🏆</span>
                       <div>
-                        <div className="text-xs text-gray-500">Longest Hybrid Streak</div>
+                        <div className="text-xs text-gray-500">Longest Winning Streak</div>
                         <div className="text-2xl font-black text-white">
                           {records.longestMasterStreak ? `${records.longestMasterStreak} weeks` : '—'}
                         </div>

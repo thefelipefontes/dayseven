@@ -1,6 +1,6 @@
 # DaySeven · App Store listing (rewrite, 2026-09-21)
 
-Positioning: **win the week, not the day.** For anyone who wants to be in shape without fitness running their life. The "hybrid athlete" identity language is gone (the in-app "Hybrid Streak" name stays, see the end of this doc); lifting + cardio + recovery is simply what a complete week looks like.
+Positioning: **win the week, not the day.** For anyone who wants to be in shape without fitness running their life. The "hybrid athlete" identity language is gone, and the all-goals streak is now the "Winning Streak" (renamed 2026-09-23, see the end of this doc); lifting + cardio + recovery is simply what a complete week looks like.
 
 Paste each field into App Store Connect → App Information / Version page. Limits are Apple's; counts are verified.
 
@@ -53,7 +53,7 @@ SET YOUR WEEK
 Set a bar you can clear on a busy week. Raise it when you're ready.
 
 WIN THE WEEK, BUILD THE STREAK
-Hit all three goals by the end of the week and you build your Hybrid Streak: strength, cardio and recovery in the same week. A rough day never breaks it. Only an unfinished week does. Milestones at 1 month, 3 months, 6 months and beyond.
+Hit all three goals by the end of the week and you build your Winning Streak: strength, cardio and recovery in the same week. A rough day never breaks it. Only an unfinished week does. Milestones at 1 month, 3 months, 6 months and beyond.
 
 LOG ANYTHING IN SECONDS
 • Lifting, with the muscle groups you trained
@@ -89,7 +89,7 @@ Terms of Use (EULA): https://www.apple.com/legal/internet-services/itunes/dev/st
 
 Notes on the description
 - First three lines are what shows before "more", so they carry the whole pitch: the problem, the idea, who it's for.
-- "Hybrid Streak" is named once, in the streak section, and defined in the same sentence, since a store visitor has never seen the term.
+- "Winning Streak" is named once, in the streak section, and defined in the same sentence, since a store visitor has never seen the term.
 - No weight-loss or medical claims anywhere, on purpose. After the August HealthKit rejection, the listing stays strictly about logging, goals and consistency.
 - Prices are left out of the body because they vary by country; the App Store shows them automatically.
 - Add your Privacy Policy URL in App Store Connect's dedicated field (required for subscription apps).
@@ -98,7 +98,7 @@ Notes on the description
 
 ## Screenshot captions (7 panels)
 
-**Decision (2026-09-21): keep the current captions for now.** The new set below is parked until the in-app "Hybrid Streak" rename ships and screenshots are re-captured anyway.
+**Decision (2026-09-21): keep the current captions for now.** The new set below is parked until the in-app "Winning Streak" rename (2026-09-23) ships and screenshots are re-captured anyway.
 
 | # | Screen | Now | New headline | New subline |
 |---|---|---|---|---|
@@ -117,7 +117,7 @@ Panel 5 drops "Dominate": it fights the "without sacrificing your life" tone.
 
 ## Inside the app (needs a release, not just a listing edit)
 
-"Hybrid athlete" as an identity is gone from the app, but **"Hybrid Streak" stays** (decided 2026-09-21). It names the method, not the person: a week that combines strength, cardio and recovery. It also keeps the all-goals streak distinct from the per-category Strength, Cardio and Recovery streaks that sit beside it on Profile and the share cards. The "Hybrid" activity group (Yoga, Pilates, Walking) stays too, since there it means "can count toward either goal".
+"Hybrid athlete" as an identity is gone from the app. On 2026-09-21 "Hybrid Streak" was kept; on **2026-09-23 it was renamed "Winning Streak"** to match "win the week" (Profile hero, top pill, share cards, celebrations, friend profiles, iPhone widget). Where only one word fits beside Strength, Cardio and Recovery (share-card and friend-profile records) it reads "Winning"; the week-stats tile reads "Week won". "Winning weeks" alone was rejected because it doesn't say *in a row*. The "Hybrid" activity group (Yoga, Pilates, Walking) stays too, since there it means "can count toward either goal".
 
 Rewritten in the new voice:
 - Onboarding: "This is what hybrid actually looks like." → "This is what a complete week looks like."; "your first hybrid week" → "your first full week"

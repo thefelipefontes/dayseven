@@ -197,11 +197,11 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
           {/* Body — natural height. The overlay above is the scroll container, so the
               card itself doesn't need internal scrolling. */}
           <div className="px-4 pb-3">
-            {/* Headline triplet — Hybrid Streak (current), Best Streak (longestMasterStreak),
+            {/* Headline triplet — Winning Streak (current), Best Streak (longestMasterStreak),
                 Challenges (W-L stacked above completion %). Single-word labels avoid the
                 two-line wrap problem the previous "Challenges W-L" had. */}
             <div className="grid grid-cols-3 gap-2 mb-3">
-              <StatTile label="Hybrid Streak" value={masterStreak} />
+              <StatTile label="Winning Streak" value={masterStreak} />
               <StatTile label="Best Streak" value={bestMaster} />
               <div
                 className="rounded-xl p-2 text-center"
@@ -222,7 +222,7 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
               className="rounded-xl p-2.5 mb-3 grid grid-cols-4 gap-1"
               style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
             >
-              <StreakPill value={bestMaster} label="Hybrid" color="#FFD60A" />
+              <StreakPill value={bestMaster} label="Winning" color="#FFD60A" />
               <StreakPill value={bestStrength} label="Strength" color="#00FF94" />
               <StreakPill value={bestCardio} label="Cardio" color="#FF9500" />
               <StreakPill value={bestRecovery} label="Recovery" color="#00D1FF" />

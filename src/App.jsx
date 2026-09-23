@@ -4071,7 +4071,7 @@ const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1, goals 
           {/* Streak count */}
           <div className="flex items-center justify-center gap-2 mb-4">
             <span className="text-2xl">🔥</span>
-            <span className="text-xl font-bold text-white">{streakCount} Week Hybrid Streak</span>
+            <span className="text-xl font-bold text-white">{streakCount} Week Winning Streak</span>
           </div>
 
           {/* Goals summary */}
@@ -4769,7 +4769,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                 <div className="flex justify-around">
                   <div className="text-center">
                     <div className={`${isPostFormat ? 'text-base' : 'text-lg'} font-black`} style={{ color: colors.primary }}>{records.longestMasterStreak || 0}</div>
-                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>Hybrid</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>Winning</div>
                   </div>
                   <div className="text-center">
                     <div className={`${isPostFormat ? 'text-base' : 'text-lg'} font-black`} style={{ color: '#00FF94' }}>{records.longestStrengthStreak || 0}</div>
@@ -4865,7 +4865,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
         const achievements = [];
         if (allGoalsMet) achievements.push({ emoji: '🏆', text: 'All goals completed!' });
         if (weeklyAnalysis?.uniqueDays >= 5) achievements.push({ emoji: '📅', text: `Worked out ${weeklyAnalysis.uniqueDays} days` });
-        if (stats?.streak >= 2) achievements.push({ emoji: '🔥', text: `${stats.streak} week hybrid streak!` });
+        if (stats?.streak >= 2) achievements.push({ emoji: '🔥', text: `${stats.streak} week winning streak!` });
         // Show total distance if > 0
         if (weeklyAnalysis?.totalDistance > 0) {
           achievements.push({ emoji: '🏃', text: `${_shareMilesToUnit(weeklyAnalysis.totalDistance).toFixed(1)}${_shareUnitLabel} run` });
@@ -5149,7 +5149,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                 <div className="font-black leading-none" style={{ fontSize: isPostFormat ? '3rem' : '4rem', color: colors.primary, textShadow: `0 0 40px ${colors.glow}, 0 0 80px ${colors.glow}`, animation: 'ring-pulse 3s ease-in-out infinite' }}>
                   {stats?.streak || 0}
                 </div>
-                <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} font-semibold tracking-widest text-gray-400 uppercase mt-1`}>🔥 Hybrid Streak</div>
+                <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} font-semibold tracking-widest text-gray-400 uppercase mt-1`}>🔥 Winning Streak</div>
                 <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500`}>weeks hitting all goals</div>
               </div>
 
@@ -11493,10 +11493,10 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
   const hasExistingStreak =
     priorStreak('lifts') > 0 || priorStreak('cardio') > 0 || priorStreak('recovery') > 0;
 
-  // This banner is about the hybrid streak specifically — it lists every
+  // This banner is about the winning (master) streak specifically — it lists every
   // category still outstanding, and only the master streak requires all three.
   // So the stake it names is the master run, under the name the rest of the app
-  // uses for it ("Hybrid Streak" on Profile and the share cards). Same
+  // uses for it ("Winning Streak" on Profile and the share cards). Same
   // in-progress-week correction as the categories: a week where all three land
   // extends master by 1, so subtract that back out to get what the user walked
   // in with.
@@ -11507,8 +11507,8 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
     return Math.max(0, current - (allMet ? 1 : 0));
   })();
   const streakStakes = priorMaster > 0
-    ? 'to keep your hybrid streak'
-    : 'to start your first hybrid streak';
+    ? 'to keep your winning streak'
+    : 'to start your first winning streak';
 
   // The week is genuinely won: all three categories hit their own goal this week.
   // Mirrors the condition that fires the celebration in the first place (see
@@ -13154,7 +13154,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
               <span className="text-xl">🏆</span>
               <div className="flex-1">
                 <div className="text-xs font-semibold" style={{ color: '#00FF94' }}>
-                  Week complete — hybrid streak is safe
+                  Week complete — winning streak is safe
                 </div>
                 <div className="text-[10px] text-gray-400 mt-0.5">Tap to replay the celebration</div>
               </div>
@@ -18285,7 +18285,7 @@ export default function DaySevenApp() {
                 >
                   <span style={{ fontSize: isCollapsed ? 12 : 14 }} className="transition-all duration-300">{injured ? '🩹' : '🔥'}</span>
                   <span className="font-bold transition-all duration-300" style={{ color: injured ? '#A78BFA' : '#FFD700', fontSize: isCollapsed ? 12 : 14 }}>{userData.streaks.master}</span>
-                  <span className="font-medium transition-all duration-300" style={{ color: injured ? 'rgba(167,139,250,0.7)' : 'rgba(255,215,0,0.7)', fontSize: isCollapsed ? 9 : 11 }}>{injured ? 'week streak · paused' : 'week hybrid streak'}</span>
+                  <span className="font-medium transition-all duration-300" style={{ color: injured ? 'rgba(167,139,250,0.7)' : 'rgba(255,215,0,0.7)', fontSize: isCollapsed ? 9 : 11 }}>{injured ? 'week streak · paused' : 'week winning streak'}</span>
                 </button>
                 );
               })()}

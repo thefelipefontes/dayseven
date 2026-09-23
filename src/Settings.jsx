@@ -2759,7 +2759,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                 {/* Clarify the hybrid-streak behavior whenever it's a partial injury (some active). */}
                 {injuryCats.length > 0 && injuryCats.length < 3 && (
                   <p className="text-[11px] text-center mb-5 leading-snug" style={{ color: '#A78BFA' }}>
-                    Your hybrid streak stays paused while any area is healing — even as an active one keeps climbing.
+                    Your winning streak stays paused while any area is healing — even as an active one keeps climbing.
                   </p>
                 )}
 

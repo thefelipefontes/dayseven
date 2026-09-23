@@ -44,6 +44,15 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
   const cardioGoalMet = (weekData?.cardio || 0) >= goals.cardioPerWeek;
   const recoveryGoalMet = (weekData?.recovery || 0) >= goals.recoveryPerWeek;
 
+  // The week that's still happening reads as in progress, not failed: unmet goals show a
+  // count instead of a red ✗, and steps get Home's pace view (see HomeTab's weekSteps).
+  const isLiveWeek = !!weekData?.isCurrentWeek;
+  const daysElapsed = weekData?.daysElapsed || 7; // days started, today included
+  const dailyStepsGoal = goals.stepsPerDay || 10000;
+  const weekStepsGoal = dailyStepsGoal * 7;
+  const weekStepsTotal = weekData?.steps || 0;
+  const formatK = (n) => `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+
   // Vacation/shield weeks keep streaks alive without hitting the goals, so the
   // streak rows show 🌴/🛡️ rather than a red ✗ (mirrors the Activity Calendar cells).
   const isVacation = !!weekData?.isVacation;
@@ -53,10 +62,13 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
   // A category row is injury-frozen if injury was active that week and the category was paused.
   // Master ('master') is always frozen during any injury.
   const injuryFrozenRow = (cat) => isInjury && (cat === 'master' || injuryFrozenCats.includes(cat));
-  const streakIcon = (met, color, cat) => {
+  const streakIcon = (met, color, cat, count, goal) => {
     if (isVacation) return <span style={{ fontSize: '13px', lineHeight: 1 }}>🌴</span>;
     if (injuryFrozenRow(cat)) return <span style={{ fontSize: '13px', lineHeight: 1 }}>🩹</span>;
     if (isShielded) return <span style={{ fontSize: '13px', lineHeight: 1 }}>🛡️</span>;
+    if (!met && isLiveWeek) {
+      return <span className="text-xs font-bold" style={{ color: '#888' }}>{count === undefined ? '—' : `${count}/${goal}`}</span>;
+    }
     return <span className="text-xs font-bold" style={{ color: met ? color : '#FF453A' }}>{met ? '✓' : '✗'}</span>;
   };
   const streakRowStyle = (met, rgb, cat) => {
@@ -145,15 +157,15 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
         {/* Summary Stats */}
         <div className="grid grid-cols-3 gap-2 mb-4">
           <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
-            <div className="text-2xl font-black" style={{ color: '#00FF94' }}>{weekData?.lifts || 0}</div>
+            <div className="text-2xl font-black" style={{ color: '#00FF94' }}>{weekData?.lifts || 0}<span className="text-[13px] font-semibold" style={{ opacity: 0.55 }}>/{goals.liftsPerWeek}</span></div>
             <div className="text-[10px] text-gray-400"><CategoryIcon category="lifts" size={11} className="inline align-[-2px] mr-1" />Strength</div>
           </div>
           <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
-            <div className="text-2xl font-black" style={{ color: '#FF9500' }}>{weekData?.cardio || 0}</div>
+            <div className="text-2xl font-black" style={{ color: '#FF9500' }}>{weekData?.cardio || 0}<span className="text-[13px] font-semibold" style={{ opacity: 0.55 }}>/{goals.cardioPerWeek}</span></div>
             <div className="text-[10px] text-gray-400"><CategoryIcon category="cardio" size={11} className="inline align-[-2px] mr-1" />Cardio</div>
           </div>
           <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
-            <div className="text-2xl font-black" style={{ color: '#00D1FF' }}>{weekData?.recovery || 0}</div>
+            <div className="text-2xl font-black" style={{ color: '#00D1FF' }}>{weekData?.recovery || 0}<span className="text-[13px] font-semibold" style={{ opacity: 0.55 }}>/{goals.recoveryPerWeek}</span></div>
             <div className="text-[10px] text-gray-400"><CategoryIcon category="recovery" size={11} className="inline align-[-2px] mr-1" />Recovery</div>
           </div>
         </div>
@@ -169,6 +181,10 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
             bg = 'rgba(0,209,255,0.1)'; border = 'rgba(0,209,255,0.3)'; color = '#00D1FF'; label = '🛡️ Shield Used';
           } else if (weekData?.goalsMet) {
             bg = 'rgba(0,255,148,0.1)'; border = 'rgba(0,255,148,0.3)'; color = '#00FF94'; label = '✓ Completed';
+          } else if (isLiveWeek) {
+            const daysLeft = 8 - daysElapsed; // today included
+            bg = 'rgba(255,255,255,0.05)'; border = 'rgba(255,255,255,0.12)'; color = '#ddd';
+            label = daysLeft <= 1 ? 'In progress · last day' : `In progress · ${daysLeft} days left`;
           } else {
             bg = 'rgba(255,69,58,0.1)'; border = 'rgba(255,69,58,0.3)'; color = '#FF453A'; label = '✗ Incomplete';
           }
@@ -186,24 +202,51 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
             <SectionIcon type="chart" />
             <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Week Totals</span>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          {/* Steps: the same weekly bar as Home's Today's Activity card */}
+          <div className="p-3.5 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs text-gray-400 flex items-center gap-2"><CategoryIcon category="steps" size={16} />Steps</span>
+              <span className="text-xs font-bold">{formatK(weekStepsTotal)} <span className="font-medium" style={{ color: '#777' }}>/ {formatK(weekStepsGoal)}</span></span>
+            </div>
+            <div className="h-1.5 rounded-full relative" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
+              <div className="h-full rounded-full" style={{ width: `${Math.min((weekStepsTotal / weekStepsGoal) * 100, 100)}%`, backgroundColor: 'rgba(191,90,242,0.5)' }} />
+              {isLiveWeek && daysElapsed > 1 && weekStepsTotal < weekStepsGoal && (
+                <div className="absolute rounded-full" style={{ left: `calc(${((daysElapsed - 1) / 7) * 100}% - 1px)`, top: '-4px', width: '2px', height: '14px', backgroundColor: '#fff' }} />
+              )}
+            </div>
+            <p className="text-[12.5px] mt-2 leading-snug" style={{ color: '#bbb' }}>
+              {(() => {
+                const perDayAvg = formatK(weekStepsTotal / daysElapsed);
+                if (weekStepsTotal >= weekStepsGoal) {
+                  return <><span className="font-semibold" style={{ color: '#00FF94' }}>Week won.</span> {formatK(weekStepsTotal)} steps, ~{perDayAvg} a day.</>;
+                }
+                if (!isLiveWeek) {
+                  return <><span className="font-semibold" style={{ color: '#ddd' }}>{formatK(weekStepsGoal - weekStepsTotal)} short.</span> ~{perDayAvg} a day.</>;
+                }
+                // Live week — same math as Home: pace counts only finished days.
+                const finishedDays = daysElapsed - 1;
+                const aheadBy = weekStepsTotal - dailyStepsGoal * finishedDays;
+                const perDayToFinish = formatK(Math.ceil((weekStepsGoal - weekStepsTotal) / (7 - finishedDays) / 100) * 100);
+                if (finishedDays === 0) return <><span className="font-semibold text-white">New week.</span> {perDayToFinish} a day wins it.</>;
+                if (Math.abs(aheadBy) < 500) return <><span className="font-semibold" style={{ color: '#00FF94' }}>Right on pace.</span> {perDayToFinish} a day finishes the week.</>;
+                if (aheadBy > 0) return <><span className="font-semibold" style={{ color: '#00FF94' }}>{formatK(aheadBy)} ahead of pace.</span> {perDayToFinish} a day finishes the week.</>;
+                return <><span className="font-semibold" style={{ color: '#FFC800' }}>{formatK(-aheadBy)} to make up.</span> {perDayToFinish} a day still wins the week.</>;
+              })()}
+            </p>
+          </div>
+          <div className="grid grid-cols-3 gap-2 mt-2">
             <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              <div className="text-lg font-black">{weekData?.calories?.toLocaleString() || 0}</div>
-              <div className="text-[10px] text-gray-400">Calories Burned</div>
-              <div className="text-[10px] text-gray-500 mt-1">~{Math.round((weekData?.calories || 0) / 7).toLocaleString()}/day avg</div>
+              <div className="text-base font-black">{(weekData?.activities?.length || 0)}</div>
+              <div className="text-[10px] text-gray-400">Sessions</div>
             </div>
             <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              <div className="text-lg font-black">{(weekData?.miles || 0).toFixed(2)} mi</div>
-              <div className="text-[10px] text-gray-400">Distance Traveled</div>
+              <div className="text-base font-black">{(weekData?.miles || 0).toFixed(1)} mi</div>
+              <div className="text-[10px] text-gray-400">Distance</div>
             </div>
             <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              <div className="text-lg font-black">{weekData?.steps?.toLocaleString() || 0}</div>
-              <div className="text-[10px] text-gray-400">Total Steps</div>
-              <div className="text-[10px] text-gray-500 mt-1">~{Math.round((weekData?.steps || 0) / 7).toLocaleString()}/day avg</div>
-            </div>
-            <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              <div className="text-lg font-black">{(weekData?.activities?.length || 0)}</div>
-              <div className="text-[10px] text-gray-400">Total Sessions</div>
+              <div className="text-base font-black">{weekData?.calories?.toLocaleString() || 0}</div>
+              <div className="text-[10px] text-gray-400">Active cal</div>
+              <div className="text-[10px] text-gray-500 mt-1">~{Math.round((weekData?.calories || 0) / daysElapsed).toLocaleString()}/day</div>
             </div>
           </div>
         </div>
@@ -212,7 +255,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
         <div className="mb-6">
           <div className="flex items-center gap-2 mb-3">
             <SectionIcon type="streak" />
-            <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Streaks Maintained</span>
+            <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>{isLiveWeek ? 'Streaks' : 'Streaks Maintained'}</span>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div className="p-3 rounded-xl flex items-center justify-between" style={streakRowStyle(liftsGoalMet, '0,255,148', 'lifts')}>
@@ -220,21 +263,21 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
                 <span className="text-xs"><CategoryIcon category="lifts" size={12} className="inline align-[-2px] mr-1" />Strength</span>
                 <div className="text-[10px] text-gray-500">{goals.liftsPerWeek}+ per week</div>
               </div>
-              {streakIcon(liftsGoalMet, '#00FF94', 'lifts')}
+              {streakIcon(liftsGoalMet, '#00FF94', 'lifts', weekData?.lifts || 0, goals.liftsPerWeek)}
             </div>
             <div className="p-3 rounded-xl flex items-center justify-between" style={streakRowStyle(cardioGoalMet, '255,149,0', 'cardio')}>
               <div>
                 <span className="text-xs"><CategoryIcon category="cardio" size={12} className="inline align-[-2px] mr-1" />Cardio</span>
                 <div className="text-[10px] text-gray-500">{goals.cardioPerWeek}+ per week</div>
               </div>
-              {streakIcon(cardioGoalMet, '#FF9500', 'cardio')}
+              {streakIcon(cardioGoalMet, '#FF9500', 'cardio', weekData?.cardio || 0, goals.cardioPerWeek)}
             </div>
             <div className="p-3 rounded-xl flex items-center justify-between" style={streakRowStyle(recoveryGoalMet, '0,209,255', 'recovery')}>
               <div>
                 <span className="text-xs"><CategoryIcon category="recovery" size={12} className="inline align-[-2px] mr-1" />Recovery</span>
                 <div className="text-[10px] text-gray-500">{goals.recoveryPerWeek}+ per week</div>
               </div>
-              {streakIcon(recoveryGoalMet, '#00D1FF', 'recovery')}
+              {streakIcon(recoveryGoalMet, '#00D1FF', 'recovery', weekData?.recovery || 0, goals.recoveryPerWeek)}
             </div>
             <div className="p-3 rounded-xl flex items-center justify-between" style={streakRowStyle(!!weekData?.goalsMet, '255,215,0', 'master')}>
               <div>

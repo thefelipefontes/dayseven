@@ -11265,7 +11265,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss, distanceUnit = 'mi
 
 // Home Tab - Simplified
 
-const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onSaveWeeklyPlan, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeCountsChange, onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, optimisticChallengeCompletions = new Map(), onStartChallengeWorkout, onApplyPastActivityToChallenge, onChallengeDetailOpenChange, openActivityTarget = null, showHkEmptyHint = false, hkAccessBlocked = false, onDismissHkEmptyHint = () => {}, onOpenHealthSettings = () => {}, showNotifReask = false, onAcceptNotifReask = () => {}, onDismissNotifReask = () => {}, onReplayCelebration = () => {} }) => {
+const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onSaveWeeklyPlan, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, healthHistory = [], onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeCountsChange, onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, optimisticChallengeCompletions = new Map(), onStartChallengeWorkout, onApplyPastActivityToChallenge, onChallengeDetailOpenChange, openActivityTarget = null, showHkEmptyHint = false, hkAccessBlocked = false, onDismissHkEmptyHint = () => {}, onOpenHealthSettings = () => {}, showNotifReask = false, onAcceptNotifReask = () => {}, onDismissNotifReask = () => {}, onReplayCelebration = () => {} }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
   const [dismissConfirmWorkouts, setDismissConfirmWorkouts] = useState(null); // Workouts pending dismiss confirmation
@@ -11419,6 +11419,36 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
   }, [activities, userData?.goals, healthKitData.todaySteps, healthKitData.todayCalories, healthKitData.isConnected]);
 
   const stepsPercent = weekProgress.steps?.goal > 0 ? Math.min((weekProgress.steps.today / weekProgress.steps.goal) * 100, 100) : 0;
+  // Week view under today's steps: "win the week, not the day". The weekly goal is the daily
+  // goal × 7. Pace compares the week's total with the daily goal × days already finished, so
+  // today can only put you ahead, never behind — a Monday morning never opens in the red.
+  const weekSteps = useMemo(() => {
+    const dailyGoal = weekProgress.steps?.goal || 10000;
+    const now = new Date();
+    const dayIndex = now.getDay(); // 0 = Sunday, the first day of the app's week
+    const dateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const stepsByDate = {};
+    healthHistory.forEach(entry => { if (entry?.date) stepsByDate[entry.date] = entry.steps || 0; });
+    let total = weekProgress.steps?.today || 0; // today comes from the live HealthKit read
+    for (let d = 1; d <= dayIndex; d++) {
+      const day = new Date(now);
+      day.setDate(now.getDate() - d);
+      total += stepsByDate[dateStr(day)] || 0;
+    }
+    const goal = dailyGoal * 7;
+    const daysLeft = 7 - dayIndex; // including today
+    return {
+      total,
+      goal,
+      dayIndex,
+      aheadBy: total - dailyGoal * dayIndex,
+      perDayToFinish: Math.ceil(Math.max(0, goal - total) / daysLeft / 100) * 100,
+      pacePercent: (dayIndex / 7) * 100,
+    };
+  }, [healthHistory, weekProgress.steps?.today, weekProgress.steps?.goal]);
+  const formatK = (n) => `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  const showCaloriesOnHome = userProfile?.privacySettings?.showCaloriesOnHome === true;
+
   const caloriesPercent = weekProgress.calories.goal > 0 ? Math.min((weekProgress.calories.burned / weekProgress.calories.goal) * 100, 100) : 0;
   const liftsPercent = weekProgress.lifts.goal > 0 ? Math.min((weekProgress.lifts.completed / weekProgress.lifts.goal) * 100, 100) : 0;
   const cardioPercent = weekProgress.cardio?.goal > 0 ? Math.min((weekProgress.cardio.completed / weekProgress.cardio.goal) * 100, 100) : 0;
@@ -11986,7 +12016,40 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             </div>
           </div>
 
-          {/* Calories */}
+          {/* This week — lines up under the steps bar (18px icon + 12px gap) */}
+          <div className="pl-[30px] pt-0.5">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-gray-400">This week</span>
+              <span className="text-xs font-bold">{formatK(weekSteps.total)} <span className="font-medium" style={{ color: '#777' }}>/ {formatK(weekSteps.goal)}</span></span>
+            </div>
+            <div className="h-1.5 rounded-full relative" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
+              <div
+                className="h-full rounded-full transition-all duration-1000"
+                style={{ width: `${Math.min((weekSteps.total / weekSteps.goal) * 100, 100)}%`, backgroundColor: 'rgba(191,90,242,0.5)' }}
+              />
+              {/* Pace tick: where the daily goal × finished days would put you */}
+              {weekSteps.dayIndex > 0 && weekSteps.total < weekSteps.goal && (
+                <div className="absolute rounded-full" style={{ left: `calc(${weekSteps.pacePercent}% - 1px)`, top: '-4px', width: '2px', height: '14px', backgroundColor: '#fff' }} />
+              )}
+            </div>
+            <p className="text-[12.5px] mt-2 leading-snug" style={{ color: '#bbb' }}>
+              {weekSteps.total >= weekSteps.goal ? (
+                <><span className="font-semibold" style={{ color: '#00FF94' }}>Week won.</span> {formatK(weekSteps.goal)} done. Everything from here is extra.</>
+              ) : weekSteps.dayIndex === 0 ? (
+                <><span className="font-semibold text-white">New week.</span> {formatK(weekSteps.perDayToFinish)} a day wins it.</>
+              ) : Math.abs(weekSteps.aheadBy) < 500 ? (
+                <><span className="font-semibold" style={{ color: '#00FF94' }}>Right on pace.</span> {formatK(weekSteps.perDayToFinish)} a day finishes the week.</>
+              ) : weekSteps.aheadBy > 0 ? (
+                <><span className="font-semibold" style={{ color: '#00FF94' }}>{formatK(weekSteps.aheadBy)} ahead of pace.</span> {formatK(weekSteps.perDayToFinish)} a day finishes the week.</>
+              ) : (
+                <><span className="font-semibold" style={{ color: '#FFC800' }}>{formatK(-weekSteps.aheadBy)} to make up.</span> {formatK(weekSteps.perDayToFinish)} a day still wins the week.</>
+              )}
+            </p>
+          </div>
+
+          {/* Calories — optional (Settings → Health) */}
+          {showCaloriesOnHome && (<>
+          <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
           <div className="flex items-center gap-3">
             <CategoryIcon category="calories" size={18} />
             <div className="flex-1">
@@ -12005,6 +12068,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
               </div>
             </div>
           </div>
+          </>)}
         </div>
       </div>
 
@@ -16267,6 +16331,8 @@ export default function DaySevenApp() {
   useEffect(() => {
     healthKitDataRef.current = healthKitData;
   }, [healthKitData]);
+  const healthHistoryRef = useRef(healthHistory);
+  useEffect(() => { healthHistoryRef.current = healthHistory; }, [healthHistory]);
   useEffect(() => {
     recordsLoadedRef.current = recordsLoaded;
   }, [recordsLoaded]);
@@ -16520,6 +16586,23 @@ export default function DaySevenApp() {
     // Days left in the week including today (Sunday=0 through Saturday=6)
     const daysLeft = 7 - new Date().getDay();
 
+    // This week's steps (same sum as Home's week view): earlier days from the saved daily
+    // history, today from the live HealthKit read. weekStartDate lets the widget tell when
+    // the week has rolled over without the app being opened, and reset instead of showing
+    // last week's rings.
+    const now = new Date();
+    const dateKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const stepsByDate = {};
+    (healthHistoryRef.current || []).forEach(e => { if (e?.date) stepsByDate[e.date] = e.steps || 0; });
+    let weekSteps = hk.todaySteps || 0;
+    for (let d = 1; d <= now.getDay(); d++) {
+      const day = new Date(now);
+      day.setDate(now.getDate() - d);
+      weekSteps += stepsByDate[dateKey(day)] || 0;
+    }
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - now.getDay());
+
     updateWidgetData({
       masterStreak: s.master || 0,
       liftsStreak: s.lifts || 0,
@@ -16537,6 +16620,10 @@ export default function DaySevenApp() {
       // doesn't already know about.
       todayCalories: (hk.todayCalories || 0) + manualCaloriesForDate(allActs, getTodayDate()),
       daysLeftInWeek: daysLeft,
+      weekSteps,
+      weekStartDate: dateKey(weekStart),
+      // Widget follows the Home setting: calories only when the user turned them on.
+      showCalories: userProfileRef.current?.privacySettings?.showCaloriesOnHome === true,
       injuryModeActive: !!userDataRef.current?.injuryMode?.isActive,
       recentActivities
     });
@@ -16555,6 +16642,13 @@ export default function DaySevenApp() {
   useEffect(() => {
     pushWidgetData();
   }, [userData?.injuryMode?.isActive]);
+
+  // Earlier days' steps arrive with healthHistory after launch, and the calories toggle can
+  // flip in Settings — refresh the widget for both. (Refs are synced by earlier effects.)
+  useEffect(() => {
+    if (healthHistory.length === 0) return; // not loaded yet — don't overwrite the widget with a partial week
+    pushWidgetData();
+  }, [healthHistory, userProfile?.privacySettings?.showCaloriesOnHome]);
 
   // Recalculate streaks from actual activity history.
   // The week-by-week walk lives in utils/streaks so the current streak, the longest-ever
@@ -17754,7 +17848,8 @@ export default function DaySevenApp() {
       localStorage.setItem('dailyGoalsCelebrated', JSON.stringify(updated));
     }
     // Check calories goal (only if steps celebration isn't showing)
-    else if (!dailyGoalsCelebrated.calories && todayCalories >= caloriesGoal && todayCalories > 0 && !showCelebration) {
+    // (skipped when the user has hidden calories from Home — no celebrating a number they chose not to see)
+    else if (userProfile?.privacySettings?.showCaloriesOnHome === true && !dailyGoalsCelebrated.calories && todayCalories >= caloriesGoal && todayCalories > 0 && !showCelebration) {
       setCelebrationMessage('Calories Goal Hit!');
       setCelebrationType('daily-calories');
       setShowCelebration(true);
@@ -17763,7 +17858,7 @@ export default function DaySevenApp() {
       setDailyGoalsCelebrated(updated);
       localStorage.setItem('dailyGoalsCelebrated', JSON.stringify(updated));
     }
-  }, [healthKitData.todaySteps, healthKitData.todayCalories, activities, userData?.goals, dailyGoalsCelebrated, showCelebration]);
+  }, [healthKitData.todaySteps, healthKitData.todayCalories, activities, userData?.goals, dailyGoalsCelebrated, showCelebration, userProfile?.privacySettings?.showCaloriesOnHome]);
 
   // Show loading spinner while checking auth
   if (authLoading) {
@@ -18230,6 +18325,7 @@ export default function DaySevenApp() {
             <>
               {activeTab === 'home' && (
                 <HomeTab
+                  healthHistory={healthHistory}
                   onAddActivity={handleAddActivity}
                   onSaveWeeklyPlan={handleSaveWeeklyPlan}
                   onCaptureLocation={handleCaptureLocation}

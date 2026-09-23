@@ -295,6 +295,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
   const autoLogStrength = userProfile?.privacySettings?.autoLogStrength !== false;
   const autoLogCardio = userProfile?.privacySettings?.autoLogCardio !== false;
   const autoLogRecovery = userProfile?.privacySettings?.autoLogRecovery !== false;
+  const showCaloriesOnHome = userProfile?.privacySettings?.showCaloriesOnHome === true; // default false: Home leads with steps
   const [showSmartSaveInfo, setShowSmartSaveInfo] = useState(false);
 
   const handlePrivacyToggle = (setting, value) => {
@@ -1990,6 +1991,33 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                   />
                 </button>
               </div>
+            </div>
+
+            {/* Home card: Active Calories row. Steps lead the card and carry the week view;
+                calories are optional because the method doesn't count calories. */}
+            <div className="border-t border-zinc-700/50 mt-2 pt-3 flex items-center justify-between py-1.5">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(255,107,107,0.1)' }}>
+                  <CategoryIcon category="calories" size={16} />
+                </div>
+                <div>
+                  <span className="text-sm text-white">Active calories on Home</span>
+                  <p className="text-[11px] text-gray-500">Show today's burn under steps</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  triggerHaptic(ImpactStyle.Light);
+                  handlePrivacyToggle('showCaloriesOnHome', !showCaloriesOnHome);
+                }}
+                className="w-12 h-7 rounded-full transition-all duration-200 relative flex-shrink-0"
+                style={{ backgroundColor: showCaloriesOnHome ? '#FF6B6B' : 'rgba(255,255,255,0.2)' }}
+              >
+                <div
+                  className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-200"
+                  style={{ left: showCaloriesOnHome ? '26px' : '4px' }}
+                />
+              </button>
             </div>
 
             {/* Recheck calories against Apple Health. Only worth showing when there are

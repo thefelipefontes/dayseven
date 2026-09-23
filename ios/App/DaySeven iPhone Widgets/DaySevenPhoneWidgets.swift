@@ -47,7 +47,8 @@ extension WidgetStreakData {
             WidgetActivity(name: "Cold Plunge", category: "recovery", date: "2026-03-18", duration: 5, calories: 0),
             WidgetActivity(name: "Pull Day", category: "lifting", date: "2026-03-17", duration: 48, calories: 290),
             WidgetActivity(name: "Yoga", category: "recovery", date: "2026-03-16", duration: 30, calories: 120)
-        ]
+        ],
+        weekSteps: 41200, weekStartDate: "", showCalories: false
     )
 }
 
@@ -61,7 +62,69 @@ struct WidgetColors {
     static let injury = Color(red: 0.655, green: 0.545, blue: 0.980) // #A78BFA — streak paused
     static let steps = Color.purple
     static let calories = Color.orange
+    static let behind = Color(red: 1.0, green: 0.784, blue: 0.0)     // #FFC800 — same amber as the app
     static let background = Color(red: 0.078, green: 0.078, blue: 0.078)
+}
+
+// MARK: - Week copy shared by every size ("win the week, not the day")
+
+enum WeekCopy {
+    static func formatK(_ n: Int) -> String {
+        let s = String(format: "%.1fk", Double(n) / 1000.0)
+        return s.replacingOccurrences(of: ".0k", with: "k")
+    }
+
+    static func streakTitle(_ data: WidgetStreakData) -> String {
+        if data.injuryModeActive { return "\(data.masterStreak) week streak · paused" }
+        return data.masterStreak == 1 ? "1 winning week" : "\(data.masterStreak) winning weeks"
+    }
+
+    /// "4 days left · 3.9k ahead on steps" — the days part is plain, the steps part colored.
+    static func footer(_ data: WidgetStreakData) -> Text {
+        let daysLeft = data.daysLeftThisWeek
+        let days = Text(daysLeft <= 1 ? "Last day!" : "\(daysLeft) days left")
+        let pace: Text?
+        if data.weekSteps >= data.weekStepsGoal {
+            pace = Text("steps done").foregroundColor(WidgetColors.strength.opacity(0.75))
+        } else if WidgetStreakData.finishedDaysThisWeek == 0 {
+            pace = nil // Sunday: nothing to be ahead or behind of yet
+        } else if abs(data.stepsAheadBy) < 500 {
+            pace = Text("on pace for steps").foregroundColor(WidgetColors.strength.opacity(0.75))
+        } else if data.stepsAheadBy > 0 {
+            pace = Text("\(formatK(data.stepsAheadBy)) ahead on steps").foregroundColor(WidgetColors.strength.opacity(0.75))
+        } else {
+            pace = Text("\(formatK(-data.stepsAheadBy)) behind on steps").foregroundColor(WidgetColors.behind.opacity(0.85))
+        }
+        guard let pace else { return days }
+        return days + Text(" · ") + pace
+    }
+}
+
+/// This week's steps out of the weekly goal, plus today's calories when the user shows them.
+struct WeekStepsStat: View {
+    let data: WidgetStreakData
+    let fontSize: CGFloat
+
+    var body: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 3) {
+                Image(systemName: "figure.walk")
+                    .font(.system(size: fontSize - 1))
+                (Text(WeekCopy.formatK(data.weekSteps)) + Text(" / \(WeekCopy.formatK(data.weekStepsGoal))").foregroundColor(WidgetColors.steps.opacity(0.55)))
+                    .font(.system(size: fontSize, weight: .medium, design: .rounded))
+            }
+            .foregroundColor(WidgetColors.steps)
+            if data.showCalories {
+                HStack(spacing: 3) {
+                    Image(systemName: "flame")
+                        .font(.system(size: fontSize - 1))
+                    Text("\(data.todayCalories)")
+                        .font(.system(size: fontSize, weight: .medium, design: .rounded))
+                }
+                .foregroundColor(WidgetColors.calories)
+            }
+        }
+    }
 }
 
 // MARK: - Progress Ring View (reusable)
@@ -132,7 +195,7 @@ struct SmallWidgetView: View {
                 Text("\(data.masterStreak)")
                     .font(.system(size: 12, weight: .black, design: .rounded))
                     .foregroundColor(data.injuryModeActive ? WidgetColors.injury : WidgetColors.streak)
-                Text(data.injuryModeActive ? "paused" : "weeks")
+                Text(data.injuryModeActive ? "paused" : (data.masterStreak == 1 ? "winning week" : "winning weeks"))
                     .font(.system(size: 9, weight: .medium))
                     .foregroundColor(.white.opacity(0.7))
             }
@@ -148,23 +211,8 @@ struct SmallWidgetView: View {
             }
             .frame(width: outerSize, height: outerSize)
 
-            // Steps and calories
-            HStack(spacing: 10) {
-                HStack(spacing: 2) {
-                    Image(systemName: "figure.walk")
-                        .font(.system(size: 10))
-                    Text(formatSteps(data.todaySteps))
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
-                }
-                .foregroundColor(WidgetColors.steps)
-                HStack(spacing: 2) {
-                    Image(systemName: "flame")
-                        .font(.system(size: 10))
-                    Text("\(data.todayCalories)")
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
-                }
-                .foregroundColor(WidgetColors.calories)
-            }
+            // This week's steps (and calories if shown)
+            WeekStepsStat(data: data, fontSize: 10)
             .offset(y: 5)
 
             Spacer(minLength: 0)
@@ -199,24 +247,11 @@ struct MediumWidgetView: View {
                     Image(systemName: data.injuryModeActive ? "bandage.fill" : "flame.fill")
                         .font(.system(size: 12))
                         .foregroundColor(data.injuryModeActive ? WidgetColors.injury : WidgetColors.streak)
-                    Text(data.injuryModeActive ? "\(data.masterStreak) week streak · paused" : "\(data.masterStreak) week hybrid streak")
+                    Text(WeekCopy.streakTitle(data))
                         .font(.system(size: 13, weight: .bold, design: .rounded))
                         .foregroundColor(data.injuryModeActive ? WidgetColors.injury : WidgetColors.streak)
                     Spacer()
-                    HStack(spacing: 3) {
-                        Image(systemName: "figure.walk")
-                            .font(.system(size: 10))
-                        Text(formatSteps(data.todaySteps))
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
-                    }
-                    .foregroundColor(WidgetColors.steps)
-                    HStack(spacing: 3) {
-                        Image(systemName: "flame")
-                            .font(.system(size: 10))
-                        Text("\(data.todayCalories)")
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
-                    }
-                    .foregroundColor(WidgetColors.calories)
+                    WeekStepsStat(data: data, fontSize: 11)
                 }
 
                 Spacer(minLength: 12)
@@ -258,9 +293,11 @@ struct MediumWidgetView: View {
                 Spacer(minLength: 8)
 
                 // Days left
-                Text(data.daysLeftInWeek <= 1 ? "Last day!" : "\(data.daysLeftInWeek) days left")
+                WeekCopy.footer(data)
                     .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundColor(.white.opacity(0.35))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .padding(.horizontal, 4)
             .padding(.vertical, -4)
@@ -294,24 +331,11 @@ struct LargeWidgetView: View {
                 Image(systemName: data.injuryModeActive ? "bandage.fill" : "flame.fill")
                     .font(.system(size: 13))
                     .foregroundColor(data.injuryModeActive ? WidgetColors.injury : WidgetColors.streak)
-                Text(data.injuryModeActive ? "\(data.masterStreak) week streak · paused" : "\(data.masterStreak) week hybrid streak")
+                Text(WeekCopy.streakTitle(data))
                     .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundColor(data.injuryModeActive ? WidgetColors.injury : WidgetColors.streak)
                 Spacer()
-                HStack(spacing: 3) {
-                    Image(systemName: "figure.walk")
-                        .font(.system(size: 10))
-                    Text(formatNumber(data.todaySteps))
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                }
-                .foregroundColor(WidgetColors.steps)
-                HStack(spacing: 3) {
-                    Image(systemName: "flame")
-                        .font(.system(size: 10))
-                    Text("\(data.todayCalories)")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                }
-                .foregroundColor(WidgetColors.calories)
+                WeekStepsStat(data: data, fontSize: 11)
             }
 
             Spacer().frame(height: 6)
@@ -351,9 +375,10 @@ struct LargeWidgetView: View {
             }
 
             // Days left
-            Text(data.daysLeftInWeek <= 1 ? "Last day!" : "\(data.daysLeftInWeek) days left")
+            WeekCopy.footer(data)
                 .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundColor(.white.opacity(0.4))
+                .lineLimit(1)
 
             // Divider
             Rectangle()

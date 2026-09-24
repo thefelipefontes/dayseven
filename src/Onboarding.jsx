@@ -518,7 +518,6 @@ const STRENGTH_OPTIONS = [2, 3, 4, 5];
 const CARDIO_OPTIONS = [1, 2, 3, 4];
 const RECOVERY_OPTIONS = [1, 2];
 const STEPS_OPTIONS = [6000, 8000, 10000, 12000, 15000];
-const CALORIES_OPTIONS = [300, 400, 500, 600, 750, 1000, 1250, 1500, 1750, 2000];
 
 // Results hero — pure conviction moment. Personalized message + timeframe +
 // animated rings + closing line. No editors competing for attention; the
@@ -682,7 +681,8 @@ function CustomizeWeekScreen({ weeklyGoals, onUpdateGoals, onBack, onContinue })
 }
 
 // ============================================================================
-// Daily Targets screen — steps + calories baselines (don't affect rings)
+// Steps screen — the weekly steps goal (the third ring). No calorie target: calories burned
+// is tracked as a stat, not set as a goal.
 // ============================================================================
 
 function DailyTargetsScreen({ weeklyGoals, onUpdateGoals, distanceUnit, onUpdateDistanceUnit, onContinue, onBack }) {
@@ -705,9 +705,9 @@ function DailyTargetsScreen({ weeklyGoals, onUpdateGoals, distanceUnit, onUpdate
 
       <div className="flex-1 px-6 pb-32 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
         <div className="max-w-md mx-auto">
-          <h2 className="text-2xl font-bold mb-2">Set your steps and calories.</h2>
+          <h2 className="text-2xl font-bold mb-2">Set your steps.</h2>
           <p className="text-gray-400 text-[14px] leading-relaxed mb-3">
-            A step target for the week and a daily active-calorie floor.
+            Your step target for the week.
           </p>
           <div className="rounded-xl p-3 mb-7 flex items-start gap-2" style={{ backgroundColor: 'rgba(0,209,255,0.08)', border: '1px solid rgba(0,209,255,0.2)' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00D1FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginTop: 1, flexShrink: 0 }}>
@@ -716,7 +716,7 @@ function DailyTargetsScreen({ weeklyGoals, onUpdateGoals, distanceUnit, onUpdate
               <line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
             <p className="text-[12px] leading-snug" style={{ color: '#E0F7FF' }}>
-              Steps are your third ring and count across the whole week — a slow day just means a bigger one later. Calories are only a daily floor.
+              Steps are your third ring and count across the whole week — a slow day just means a bigger one later.
             </p>
           </div>
 
@@ -735,19 +735,6 @@ function DailyTargetsScreen({ weeklyGoals, onUpdateGoals, distanceUnit, onUpdate
             />
           </div>
 
-          <div className="mb-7">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: RING_COLORS.cardio }} />
-              <label className="text-[14px] font-semibold">Active calories / day</label>
-            </div>
-            <p className="text-xs text-gray-500 mb-3 ml-4">Calories burned through exercise only. 400–600 is typical.</p>
-            <GoalChips
-              color={RING_COLORS.cardio}
-              value={weeklyGoals.caloriesPerDay}
-              options={CALORIES_OPTIONS}
-              onChange={(v) => setField('caloriesPerDay', v)}
-            />
-          </div>
 
           <div className="mb-6">
             <div className="flex items-center gap-2 mb-2">

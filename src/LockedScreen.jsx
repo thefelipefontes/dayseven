@@ -19,7 +19,7 @@ import { ImpactStyle } from '@capacitor/haptics';
 //   onSignOut    () => void            sign out (escape hatch — never trap the user)
 //   userProfile  object                used only for a light personalized greeting
 const BENEFITS = [
-  'Strength, cardio and recovery streak tracking',
+  'Strength, cardio, steps and recovery streak tracking',
   'Full workout history & detailed stats + trends',
   'Challenge friends head-to-head',
   'Compete on leaderboards',

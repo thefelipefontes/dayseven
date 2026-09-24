@@ -110,7 +110,8 @@ struct WeekStepsStat: View {
             HStack(spacing: 3) {
                 Image(systemName: "figure.walk")
                     .font(.system(size: fontSize - 1))
-                (Text(WeekCopy.formatK(data.weekSteps)) + Text(" / \(WeekCopy.formatK(data.weekStepsGoal))").foregroundColor(WidgetColors.steps.opacity(0.55)))
+                // The Steps ring carries the week; the corner shows today.
+                (Text(WeekCopy.formatK(data.todaySteps)) + Text(" today").foregroundColor(WidgetColors.steps.opacity(0.55)))
                     .font(.system(size: fontSize, weight: .medium, design: .rounded))
             }
             .foregroundColor(WidgetColors.steps)
@@ -157,6 +158,7 @@ struct CategoryRingView: View {
     let color: Color
     let size: CGFloat
     let lineWidth: CGFloat
+    var centerText: String? = nil   // overrides "completed/goal" (the Steps ring shows "34k")
 
     var body: some View {
         ZStack {
@@ -166,7 +168,7 @@ struct CategoryRingView: View {
                 .trim(from: 0, to: min(progress, 1.0))
                 .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-            Text("\(completed)/\(goal)")
+            Text(centerText ?? "\(completed)/\(goal)")
                 .font(.system(size: size * 0.22, weight: .bold, design: .rounded))
                 .foregroundColor(.white)
         }
@@ -206,8 +208,8 @@ struct SmallWidgetView: View {
                 ProgressRingView(progress: data.liftsProgress, color: WidgetColors.strength, lineWidth: ringWidth, diameter: outerSize)
                 // Middle ring - Cardio
                 ProgressRingView(progress: data.cardioProgress, color: WidgetColors.cardio, lineWidth: ringWidth, diameter: outerSize - (ringWidth + ringGap) * 2)
-                // Inner ring - Recovery
-                ProgressRingView(progress: data.recoveryProgress, color: WidgetColors.recovery, lineWidth: ringWidth, diameter: outerSize - (ringWidth + ringGap) * 4)
+                // Inner ring - weekly Steps (Recovery is a bonus now, not a goal ring)
+                ProgressRingView(progress: data.weekStepsProgress, color: WidgetColors.steps, lineWidth: ringWidth, diameter: outerSize - (ringWidth + ringGap) * 4)
             }
             .frame(width: outerSize, height: outerSize)
 
@@ -279,13 +281,13 @@ struct MediumWidgetView: View {
                         }
                     }
                     VStack(spacing: 7) {
-                        CategoryRingView(completed: data.recoveryCompleted, goal: data.recoveryGoal, progress: data.recoveryProgress, color: WidgetColors.recovery, size: ringSize, lineWidth: lineWidth)
+                        CategoryRingView(completed: data.weekSteps, goal: data.weekStepsGoal, progress: data.weekStepsProgress, color: WidgetColors.steps, size: ringSize, lineWidth: lineWidth, centerText: "\(Int((Double(data.weekSteps) / 1000).rounded()))k")
                         HStack(spacing: 2) {
-                            Text("\u{1F9CA}")
+                            Text("\u{1F45F}")
                                 .font(.system(size: 11))
-                            Text("Recovery")
+                            Text("Steps")
                                 .font(.system(size: 11, weight: .semibold, design: .rounded))
-                                .foregroundColor(WidgetColors.recovery)
+                                .foregroundColor(WidgetColors.steps)
                         }
                     }
                 }
@@ -363,13 +365,13 @@ struct LargeWidgetView: View {
                     }
                 }
                 VStack(spacing: 6) {
-                    CategoryRingView(completed: data.recoveryCompleted, goal: data.recoveryGoal, progress: data.recoveryProgress, color: WidgetColors.recovery, size: ringSize, lineWidth: lineWidth)
+                    CategoryRingView(completed: data.weekSteps, goal: data.weekStepsGoal, progress: data.weekStepsProgress, color: WidgetColors.steps, size: ringSize, lineWidth: lineWidth, centerText: "\(Int((Double(data.weekSteps) / 1000).rounded()))k")
                     HStack(spacing: 3) {
-                        Text("\u{1F9CA}")
+                        Text("\u{1F45F}")
                             .font(.system(size: 11))
-                        Text("Recovery")
+                        Text("Steps")
                             .font(.system(size: 11, weight: .semibold, design: .rounded))
-                            .foregroundColor(WidgetColors.recovery)
+                            .foregroundColor(WidgetColors.steps)
                     }
                 }
             }

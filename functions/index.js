@@ -394,6 +394,82 @@ function getActivityCategoryForGoals(activity) {
   return null;
 }
 
+// ==========================================
+// WEEK RULE — mirrors src/utils/weekGoals.js (keep in sync)
+// ==========================================
+//
+// The Winning Streak rule is per user and per week:
+//   • before the user's `winningRuleFrom` week (or with no such field — an app version
+//     that predates the steps rule): Strength + Cardio + Recovery
+//   • from that week on: Strength + Cardio + weekly Steps (stepsPerDay × 7), or Strength +
+//     Cardio when the user has no step data in the last four weeks (no Apple Health).
+// Daily steps come from users/{uid}/dailyHealth, which the app backfills from HealthKit
+// for this week and last week whenever it opens.
+
+const addDaysToDateStr = (dateStr, days) => {
+  const d = new Date(`${dateStr}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().split('T')[0];
+};
+
+/** Goal-slot counts; a Circuit / 'lifting+cardio' session fills both, as on the client. */
+function countWeekForGoals(activities) {
+  const counts = { lifts: 0, cardio: 0, recovery: 0 };
+  (activities || []).forEach((a) => {
+    const dual = a.countToward === 'lifting+cardio' || a.customActivityCategory === 'lifting+cardio' ||
+      (!a.countToward && !a.customActivityCategory && a.type === 'Circuit');
+    if (dual) { counts.lifts++; counts.cardio++; return; }
+    const cat = getActivityCategoryForGoals(a);
+    if (cat === 'lifting') counts.lifts++;
+    else if (cat === 'cardio') counts.cardio++;
+    else if (cat === 'recovery') counts.recovery++;
+  });
+  return counts;
+}
+
+/**
+ * Judge the week starting `weekStartStr` (a Sunday, 'YYYY-MM-DD') for a user.
+ * @returns {{ counts, steps, stepsGoal, goals, stepsRule, required: string[],
+ *             met: {lifts,cardio,recovery,steps}, all: boolean }}
+ */
+async function judgeUserWeek(userId, userData, weekStartStr) {
+  const g = userData.goals || {};
+  const goals = {
+    lifts: g.liftsPerWeek ?? 3,
+    cardio: g.cardioPerWeek ?? 2,
+    recovery: g.recoveryPerWeek ?? 2,
+    stepsPerDay: g.stepsPerDay ?? 10000,
+  };
+  const weekEndStr = addDaysToDateStr(weekStartStr, 6);
+  const counts = countWeekForGoals((userData.activities || []).filter((a) => a.date >= weekStartStr && a.date <= weekEndStr));
+  const stepsRule = !!userData.winningRuleFrom && weekStartStr >= userData.winningRuleFrom;
+
+  let steps = 0;
+  let stepsTracked = false;
+  if (stepsRule) {
+    const snap = await db.collection('users').doc(userId).collection('dailyHealth')
+      .where('date', '>=', addDaysToDateStr(weekEndStr, -27)).get();
+    snap.forEach((doc) => {
+      const d = doc.data() || {};
+      if (!d.date || d.date > weekEndStr) return;
+      if ((d.steps || 0) > 0) stepsTracked = true;
+      if (d.date >= weekStartStr) steps += d.steps || 0;
+    });
+  }
+
+  const stepsGoal = goals.stepsPerDay * 7;
+  const met = {
+    lifts: counts.lifts >= goals.lifts,
+    cardio: counts.cardio >= goals.cardio,
+    recovery: counts.recovery >= goals.recovery,
+    steps: steps >= stepsGoal,
+  };
+  const required = !stepsRule ? ['lifts', 'cardio', 'recovery'] : stepsTracked ? ['lifts', 'cardio', 'steps'] : ['lifts', 'cardio'];
+  return { counts, steps, stepsGoal, goals, stepsRule, required, met, all: required.every((c) => met[c]) };
+}
+
+const formatStepsK = (n) => `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+
 /**
  * Helper: Check if current time is within quiet hours (timezone-aware)
  */
@@ -1063,43 +1139,19 @@ exports.sendGoalReminder = onSchedule(
       localToday.setDate(localToday.getDate() - dayOfWeek);
       const weekStartStr = localToday.toISOString().split('T')[0];
 
-      // Get user's goals
-      const goals = userData.goals || { liftsPerWeek: 3, cardioPerWeek: 2, recoveryPerWeek: 2 };
-
-      // Count activities this week by category from user's activities array
-      const activities = userData.activities || [];
-      const thisWeekActivities = activities.filter(a => a.date >= weekStartStr);
-
-      let strength = 0;
-      let cardio = 0;
-      let recovery = 0;
-
-      thisWeekActivities.forEach(activity => {
-        const category = getActivityCategoryForGoals(activity);
-        if (category === 'lifting') {
-          strength++;
-        } else if (category === 'cardio') {
-          cardio++;
-        } else if (category === 'recovery') {
-          recovery++;
-        }
-      });
-
-      // Calculate remaining
-      const strengthRemaining = Math.max(0, goals.liftsPerWeek - strength);
-      const cardioRemaining = Math.max(0, goals.cardioPerWeek - cardio);
-      const recoveryRemaining = Math.max(0, goals.recoveryPerWeek - recovery);
-
+      // This week so far, judged by the user's Winning Streak rule (judgeUserWeek).
+      const week = await judgeUserWeek(userId, userData, weekStartStr);
+      const { counts, goals } = week;
       const daysLeft = 7 - dayOfWeek; // Days until end of week (Saturday)
-      const totalGoals = goals.liftsPerWeek + goals.cardioPerWeek + goals.recoveryPerWeek;
-      const totalDone = Math.min(strength, goals.liftsPerWeek) + Math.min(cardio, goals.cardioPerWeek) + Math.min(recovery, goals.recoveryPerWeek);
+      const doneCount = week.required.filter((c) => week.met[c]).length;
 
-      // Check if all goals are met
-      if (strengthRemaining === 0 && cardioRemaining === 0 && recoveryRemaining === 0) {
+      if (week.all) {
         await sendNotificationToUser(
           userId,
-          'Goals Complete! 🎯',
-          `You've hit all ${totalGoals} activities this week with ${daysLeft} days to spare. Amazing!`,
+          'Week Won Early! 🏆',
+          week.stepsRule
+            ? `Strength, cardio and steps are done with ${daysLeft} days to spare. Everything from here is extra.`
+            : `You've hit all your goals this week with ${daysLeft} days to spare. Amazing!`,
           {
             type: NotificationType.GOAL_REMINDER,
             allGoalsMet: 'true',
@@ -1108,37 +1160,33 @@ exports.sendGoalReminder = onSchedule(
         continue;
       }
 
-      // Build completed summary (what they've done so far)
-      const completed = [];
-      if (strength > 0) completed.push(`${strength}/${goals.liftsPerWeek} strength`);
-      if (cardio > 0) completed.push(`${cardio}/${goals.cardioPerWeek} cardio`);
-      if (recovery > 0) completed.push(`${recovery}/${goals.recoveryPerWeek} recovery`);
-
-      // Build remaining summary (only categories still needed)
-      const remaining = [];
-      if (strengthRemaining > 0) remaining.push(`${strengthRemaining} strength`);
-      if (cardioRemaining > 0) remaining.push(`${cardioRemaining} cardio`);
-      if (recoveryRemaining > 0) remaining.push(`${recoveryRemaining} recovery`);
+      // What's left for the Winning Streak (recovery only under the original rule)
+      const remainingFor = {
+        lifts: Math.max(0, goals.lifts - counts.lifts),
+        cardio: Math.max(0, goals.cardio - counts.cardio),
+        recovery: Math.max(0, goals.recovery - counts.recovery),
+        steps: Math.max(0, week.stepsGoal - week.steps),
+      };
+      const label = { lifts: 'strength', cardio: 'cardio', recovery: 'recovery' };
+      const remaining = week.required
+        .filter((c) => !week.met[c])
+        .map((c) => (c === 'steps' ? `${formatStepsK(remainingFor.steps)} steps` : `${remainingFor[c]} ${label[c]}`));
       const remainingStr = remaining.join(', ');
 
-      // Personalize the message based on progress
-      let body;
-      if (totalDone === 0) {
-        body = `You still need ${remainingStr} to hit your goals. ${daysLeft} days left — time to get moving! 💪`;
-      } else {
-        const completedStr = completed.join(', ');
-        body = `You've done ${completedStr} so far. Still need ${remainingStr} — ${daysLeft} days left! 💪`;
-      }
+      const body = doneCount === 0
+        ? `You still need ${remainingStr} to win the week. ${daysLeft} days left — time to get moving! 💪`
+        : `Still need ${remainingStr} to win the week — ${daysLeft} days left! 💪`;
 
       await sendNotificationToUser(
         userId,
-        `${totalDone}/${totalGoals} Activities Done — ${daysLeft} Days Left`,
+        `${doneCount}/${week.required.length} Goals Done — ${daysLeft} Days Left`,
         body,
         {
           type: NotificationType.GOAL_REMINDER,
-          strengthRemaining: strengthRemaining.toString(),
-          cardioRemaining: cardioRemaining.toString(),
-          recoveryRemaining: recoveryRemaining.toString(),
+          strengthRemaining: remainingFor.lifts.toString(),
+          cardioRemaining: remainingFor.cardio.toString(),
+          recoveryRemaining: (week.stepsRule ? 0 : remainingFor.recovery).toString(),
+          stepsRemaining: (week.stepsRule ? remainingFor.steps : 0).toString(),
           daysLeft: daysLeft.toString(),
         }
       );
@@ -1172,7 +1220,7 @@ exports.sendWeeklySummary = onSchedule(
       if (!hasAppAccess(userData)) continue;
 
       // Fire Sunday 10 AM in the USER's local timezone (hourly job, gated per user).
-      const { time: localTime, dayOfWeek } = getUserLocalTime(userData.notificationPreferences?.timezone);
+      const { time: localTime, dayOfWeek, dateStr: localToday } = getUserLocalTime(userData.notificationPreferences?.timezone);
       if (dayOfWeek !== 0 || localTime !== '10:00') continue;
 
       // Skip recap while healing — a "you crushed it / nothing logged" summary
@@ -1182,8 +1230,6 @@ exports.sendWeeklySummary = onSchedule(
       const prefs = await getUserPreferences(userId);
       if (!prefs.weeklySummary) continue;
 
-      // Get user's goals
-      const goals = userData.goals || { liftsPerWeek: 3, cardioPerWeek: 2, recoveryPerWeek: 2 };
 
       // Count activities this week by category from user's activities array
       const activities = userData.activities || [];
@@ -1209,10 +1255,14 @@ exports.sendWeeklySummary = onSchedule(
       const workouts = strength + cardio; // Combined strength and cardio
       const totalCount = thisWeekActivities.length;
 
-      // Check if all goals were met
-      const allGoalsMet = strength >= goals.liftsPerWeek &&
-                          cardio >= goals.cardioPerWeek &&
-                          recovery >= goals.recoveryPerWeek;
+      // The week that just ended (last Sunday → yesterday), judged by the user's Winning
+      // Streak rule (judgeUserWeek) — steps from their start week, recovery before it.
+      const lastWeek = await judgeUserWeek(userId, userData, addDaysToDateStr(localToday, -7));
+      const allGoalsMet = lastWeek.all;
+      const caloriesLabel = totalCalories >= 1000 ? `${(totalCalories / 1000).toFixed(1)}k` : totalCalories.toString();
+      const weekLine = lastWeek.stepsRule
+        ? `${workouts} workouts, ${formatStepsK(lastWeek.steps)} steps, ${caloriesLabel} cal.`
+        : `${workouts} workouts, ${recovery} recovery sessions, ${caloriesLabel} cal.`;
 
       if (totalCount === 0) {
         await sendNotificationToUser(
@@ -1228,11 +1278,10 @@ exports.sendWeeklySummary = onSchedule(
         );
       } else if (allGoalsMet) {
         // All goals met - celebrate!
-        const caloriesStr = totalCalories >= 1000 ? `${(totalCalories / 1000).toFixed(1)}k` : totalCalories.toString();
         await sendNotificationToUser(
           userId,
-          'You Crushed Your Week! 🔥',
-          `${workouts} workouts, ${recovery} recovery sessions, ${caloriesStr} cal. Tap to share with friends!`,
+          'You Won the Week! 🔥',
+          `${weekLine} Tap to share with friends!`,
           {
             type: NotificationType.WEEKLY_SUMMARY,
             workouts: workouts.toString(),
@@ -1248,11 +1297,10 @@ exports.sendWeeklySummary = onSchedule(
         });
       } else {
         // Regular summary
-        const caloriesStr = totalCalories >= 1000 ? `${(totalCalories / 1000).toFixed(1)}k` : totalCalories.toString();
         await sendNotificationToUser(
           userId,
           'Your Week in Review',
-          `${workouts} workouts, ${recovery} recovery sessions, ${caloriesStr} cal. Tap to share with friends!`,
+          `${weekLine} Tap to share with friends!`,
           {
             type: NotificationType.WEEKLY_SUMMARY,
             workouts: workouts.toString(),
@@ -1763,20 +1811,12 @@ exports.sendActivationReminders = onSchedule(
 
       // Finish-the-week nudge — once, from ~day 3, when started but goals unmet.
       if (age >= 3 && !userData.activationWeekNudge) {
-        const goals = userData.goals || { liftsPerWeek: 3, cardioPerWeek: 2, recoveryPerWeek: 2 };
-        const oneWeekAgo = new Date();
-        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-        const weekAgoStr = oneWeekAgo.toISOString().split('T')[0];
-        let strength = 0, cardio = 0, recovery = 0;
-        activities.filter((a) => a.date >= weekAgoStr).forEach((a) => {
-          const cat = getActivityCategoryForGoals(a);
-          if (cat === 'lifting') strength++;
-          else if (cat === 'cardio') cardio++;
-          else if (cat === 'recovery') recovery++;
-        });
-        const done = strength >= goals.liftsPerWeek && cardio >= goals.cardioPerWeek && recovery >= goals.recoveryPerWeek;
-        if (!done) {
-          const completed = strength + cardio + recovery;
+        // This calendar week (Sunday start, UTC), judged by the user's Winning Streak rule.
+        const now = new Date();
+        const weekStartStr = addDaysToDateStr(now.toISOString().split('T')[0], -now.getUTCDay());
+        const week = await judgeUserWeek(userId, userData, weekStartStr);
+        if (!week.all) {
+          const completed = week.counts.lifts + week.counts.cardio + week.counts.recovery;
           await sendNotificationToUser(
             userId,
             "You're building something 💪",
@@ -1987,7 +2027,9 @@ exports.onFriendActivityLogged = onDocumentUpdated(
 // ==========================================
 
 /**
- * Notify user when ALL three weekly goals (strength, cardio, recovery) are complete.
+ * Notify user when the week is won — weekCelebrations.master, set by the phone under the
+ * user's Winning Streak rule (Strength + Cardio + Steps from their winningRuleFrom week;
+ * Strength + Cardio + Recovery on app versions before it).
  *
  * Detection strategy: watch for weekCelebrations.master going from false → true.
  * Both the phone and watch set this flag when all goals are met.
@@ -2049,10 +2091,14 @@ exports.onGoalAchieved = onDocumentUpdated(
     // Mark timestamp before sending (prevents race between duplicate triggers)
     await userRef.set({ lastGoalAchievedNotifAt: new Date().toISOString() }, { merge: true });
 
+    // The phone sets weekCelebrations.master when the week is won under the user's rule
+    // (steps from their winningRuleFrom week; recovery on app versions before it).
     await sendNotificationToUser(
       userId,
-      'All Weekly Goals Complete! 🏆',
-      'You\'ve hit all your strength, cardio, and recovery goals this week!',
+      'Week Won! 🏆',
+      after.winningRuleFrom
+        ? 'Strength, cardio and steps — done. Your winning streak just grew.'
+        : 'You\'ve hit all your strength, cardio, and recovery goals this week!',
       {
         type: NotificationType.GOAL_ACHIEVED,
       }

@@ -29,6 +29,9 @@ class AppViewModel: ObservableObject {
     /// Categories frozen by the active injury pause. The watch must not advance these when a
     /// workout is saved (a partial injury keeps non-frozen categories counting). Phone-owned.
     @Published var injuryFrozenCats: [String] = []
+    /// This week's celebration flags as last read from Firestore. `steps` and `master` are set
+    /// only by the phone (they need weekly steps); saves carry them over for the same week.
+    private var loadedWeekCelebrations: [String: Any] = [:]
     @Published var personalRecords: PersonalRecords = .defaults
     @Published var weeklyProgress: WeeklyProgress = .empty
     @Published var weeklyStats: WeeklyStats = WeeklyStats(totalWorkouts: 0, totalCalories: 0, totalMiles: 0, strengthCount: 0, cardioCount: 0, recoveryCount: 0)
@@ -41,6 +44,8 @@ class AppViewModel: ObservableObject {
 
     // Health data
     @Published var todaySteps: Int = 0
+    /// Sunday → now, for the Steps ring. Refreshed whenever today's steps update.
+    @Published var weekSteps: Int = 0
     @Published var todayCalories: Int = 0
     @Published var todayDistance: Double = 0
 
@@ -119,6 +124,7 @@ class AppViewModel: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
                 self.todaySteps = steps
+                self.weekSteps = await self.fetchWeekStepsSafe()
                 self.checkDailyGoalCelebrations(isBackground: false)
                 self.pushDataToWidget()
             }
@@ -220,6 +226,7 @@ class AppViewModel: ObservableObject {
             streaks = userData.streaks
             injuryModeActive = userData.injuryActive
             injuryFrozenCats = userData.injuryFrozen
+            loadedWeekCelebrations = userData.weekCelebrations
             personalRecords = userData.personalRecords
             distanceUnit = userData.distanceUnit
             SharedDefaults.writeDistanceUnit(userData.distanceUnit)
@@ -236,6 +243,7 @@ class AppViewModel: ObservableObject {
 
             // Health data
             todaySteps = await steps
+            weekSteps = await fetchWeekStepsSafe()
             todayCalories = await calories
             todayDistance = await distance
 
@@ -314,6 +322,7 @@ class AppViewModel: ObservableObject {
 
     func refreshHealthData() async {
         todaySteps = await fetchStepsSafe()
+        weekSteps = await fetchWeekStepsSafe()
         todayCalories = await fetchCaloriesSafe()
         todayDistance = await fetchDistanceSafe()
 
@@ -325,6 +334,10 @@ class AppViewModel: ObservableObject {
 
     private func fetchStepsSafe() async -> Int {
         return (try? await healthKitService.fetchTodaySteps()) ?? 0
+    }
+
+    private func fetchWeekStepsSafe() async -> Int {
+        return (try? await healthKitService.fetchWeekSteps()) ?? weekSteps
     }
 
     private func fetchCaloriesSafe() async -> Int {
@@ -359,6 +372,7 @@ class AppViewModel: ObservableObject {
             streaks = freshData.streaks
             injuryModeActive = freshData.injuryActive
             injuryFrozenCats = freshData.injuryFrozen
+            loadedWeekCelebrations = freshData.weekCelebrations
             personalRecords = freshData.personalRecords
             print("[SaveActivity] Refreshed \(activities.count) activities from Firestore before save")
         } catch {
@@ -408,7 +422,8 @@ class AppViewModel: ObservableObject {
                 "lifts": completed.lifts || newProgress.lifts.completed >= goals.liftsPerWeek,
                 "cardio": completed.cardio || newProgress.cardio.completed >= goals.cardioPerWeek,
                 "recovery": completed.recovery || newProgress.recovery.completed >= goals.recoveryPerWeek,
-                "master": completed.master
+                "steps": phoneWeekFlag("steps", week: weekKey),
+                "master": phoneWeekFlag("master", week: weekKey)
             ]
         }
 
@@ -535,6 +550,7 @@ class AppViewModel: ObservableObject {
             activities = mergedActivities
             goals = freshData.goals
             streaks = freshData.streaks
+            loadedWeekCelebrations = freshData.weekCelebrations
             personalRecords = freshData.personalRecords
             weeklyProgress = calculateWeeklyProgress(activities: mergedActivities, goals: freshData.goals)
             weeklyStats = calculateWeeklyStats(activities: mergedActivities)
@@ -596,8 +612,9 @@ class AppViewModel: ObservableObject {
                 streaks.recovery = max(0, streaks.recovery - 1)
                 celebrationManager.clearCelebration(.recovery)
             }
+            // The Winning Streak count itself is the phone's (it needs weekly steps); the
+            // watch only clears its own celebration flag.
             if wasAllMet {
-                streaks.master = max(0, streaks.master - 1)
                 celebrationManager.clearCelebration(.master)
             }
 
@@ -608,7 +625,10 @@ class AppViewModel: ObservableObject {
                 "lifts": !liftsDropped && newProgress.lifts.completed >= goals.liftsPerWeek,
                 "cardio": !cardioDropped && newProgress.cardio.completed >= goals.cardioPerWeek,
                 "recovery": !recoveryDropped && newProgress.recovery.completed >= goals.recoveryPerWeek,
-                "master": false
+                "steps": phoneWeekFlag("steps", week: weekKey),
+                // Strength and Cardio are part of every Winning Streak rule; the phone
+                // re-judges the week (and its recovery/steps parts) on its next recalculation.
+                "master": (liftsDropped || cardioDropped) ? false : phoneWeekFlag("master", week: weekKey)
             ]
         }
 
@@ -665,11 +685,12 @@ class AppViewModel: ObservableObject {
         recordUpdates: inout [String: Any]?
     ) -> (lifts: Bool, cardio: Bool, recovery: Bool, master: Bool) {
         // Check if individual goals were just completed
-        let justCompletedLifts = category == "lifting" &&
+        // (lifting+cardio counts toward both, matching calculateWeeklyProgress and the phone's countsAsLifting/countsAsCardio)
+        let justCompletedLifts = (category == "lifting" || category == "lifting+cardio") &&
             oldProgress.lifts.completed < goals.liftsPerWeek &&
             newProgress.lifts.completed >= goals.liftsPerWeek
 
-        let justCompletedCardio = category == "cardio" &&
+        let justCompletedCardio = (category == "cardio" || category == "lifting+cardio") &&
             oldProgress.cardio.completed < goals.cardioPerWeek &&
             newProgress.cardio.completed >= goals.cardioPerWeek
 
@@ -712,24 +733,23 @@ class AppViewModel: ObservableObject {
             }
         }
 
-        // Check master streak (all three goals met) — frozen during any injury pause.
-        let allGoalsMet = newProgress.allGoalsMet
-        let wasAllGoalsMet = oldProgress.allGoalsMet
-        var justCompletedWeek = false
-
-        if allGoalsMet && !wasAllGoalsMet && !injuryModeActive {
-            streaks.master += 1
-            justCompletedWeek = true
-            if streaks.master > (personalRecords.longestMasterStreak ?? 0) {
-                personalRecords.longestMasterStreak = streaks.master
-                updates["longestMasterStreak"] = streaks.master
-            }
-        }
+        // The Winning Streak (master) is no longer advanced here. From each user's rule start it
+        // needs weekly steps (Strength + Cardio + Steps), which the watch doesn't track yet, so
+        // the phone owns the count, the record and the week celebration — it recalculates
+        // after every watch save (watchActivitySaved). Advancing it here with the old
+        // three-category rule used to overwrite the phone's value.
+        let justCompletedWeek = false
 
         if !updates.isEmpty {
             recordUpdates = updates
         }
         return (lifts: creditLifts, cardio: creditCardio, recovery: creditRecovery, master: justCompletedWeek)
+    }
+
+    /// A flag only the phone sets (steps, master), carried over when it belongs to `week`.
+    private func phoneWeekFlag(_ key: String, week: String) -> Bool {
+        guard (loadedWeekCelebrations["week"] as? String) == week else { return false }
+        return loadedWeekCelebrations[key] as? Bool ?? false
     }
 
     /// Returns the current week key (Sunday start date as "yyyy-MM-dd")
@@ -763,11 +783,10 @@ class AppViewModel: ObservableObject {
     }
 
     private func checkDailyGoalCelebrations(isBackground: Bool) {
-        guard goals.stepsPerDay > 0, goals.caloriesPerDay > 0 else { return }
+        guard goals.caloriesPerDay > 0 else { return }
 
-        if todaySteps >= goals.stepsPerDay {
-            celebrationManager.triggerCelebration(.steps, isBackground: isBackground)
-        }
+        // No daily steps celebration: steps are a weekly goal now (win the week, not the
+        // day); the phone celebrates the week's total.
         if todayCalories >= goals.caloriesPerDay {
             celebrationManager.triggerCelebration(.calories, isBackground: isBackground)
         }
@@ -815,6 +834,7 @@ class AppViewModel: ObservableObject {
             todaySteps: todaySteps,
             stepsGoal: goals.stepsPerDay,
             todayCalories: todayCalories,
+            weekSteps: weekSteps,
             injuryModeActive: injuryModeActive
         )
         WidgetCenter.shared.reloadAllTimelines()

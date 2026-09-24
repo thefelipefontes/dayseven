@@ -23,7 +23,7 @@ import { getFriends, getReactions, getFriendRequests, getComments, addReply, get
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
-import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, fetchHealthDataForDate, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, pushDistanceUnitToWatch, fetchWorkoutRoute, updateWidgetData, updateLiveActivityState, startWatchWorkoutLiveActivity, endAllLiveActivities, checkActiveLiveActivity, showLocationDeniedDialog, getHealthConnectionStatus, backfillHkCalories, isHealthKitReadAuthorized } from './services/healthService';
+import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, fetchHealthDataForDate, fetchDailyHealthRange, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, pushDistanceUnitToWatch, fetchWorkoutRoute, updateWidgetData, updateLiveActivityState, startWatchWorkoutLiveActivity, endAllLiveActivities, checkActiveLiveActivity, showLocationDeniedDialog, getHealthConnectionStatus, backfillHkCalories, isHealthKitReadAuthorized } from './services/healthService';
 import NotificationSettings from './NotificationSettings';
 import { initializePushNotifications, handleNotificationNavigation, removeFCMToken, clearBadge, clearAllNotifications, shouldShowNotification, getNotificationPreferences, logNotificationOpen, getNotificationPermissionStatus, requestNotificationPermission } from './services/notificationService';
 import { initializeRevenueCat, loginRevenueCat, checkProStatus, getPlanType, addCustomerInfoListener, logoutRevenueCat, presentPaywall, presentCustomerCenter, restorePurchases, setDevAuthEmail, getOfferings } from './services/subscriptionService';
@@ -39,6 +39,7 @@ import { FOCUS_AREA_GROUPS, ALL_FOCUS_AREAS, FOCUS_AREA_MIGRATION, normalizeFocu
 import { initialUserData } from './utils/initialUserData';
 import { getDefaultCountToward, getActivityCategory, countsAsLifting, countsAsCardio, countsAsRecovery } from './utils/activityCategory';
 import { computeStreaks } from './utils/streaks';
+import { judgeWeekFromActivities, judgeWeek, countWeekActivities, weekGoalsResolver, weekKeyFromDateStr, weekContext, stepsByDateFrom, weekStepsTotal, winningCategories } from './utils/weekGoals';
 import { manualCaloriesForDate, needsHkCaloriesBackfill } from './utils/calories';
 import { reverseGeocode, formatLocation } from './utils/geocode';
 import SectionIcon from './components/SectionIcon';
@@ -49,6 +50,7 @@ import WeekStatsModal from './components/WeekStatsModal';
 import MonthStatsModal from './components/MonthStatsModal';
 import ActivityDetailModal from './components/ActivityDetailModal';
 import TrendsView from './components/TrendsView';
+import { resolveUnit, formatDistance, formatPaceFromMinutesAndMiles } from './utils/distance';
 
 // Flag to suppress foreground refresh while photo picker is open
 // (prevents re-render glitch when returning from iOS photo picker)
@@ -349,10 +351,11 @@ const INJURY_YEARLY_CAP = 16;     // soft cap on total frozen weeks per calendar
 
 // Which category streaks an injury pause freezes. A partial injury (e.g. a bad shoulder)
 // freezes only the affected categories; the rest keep counting normally. Missing/empty =
-// all three (a full injury, the default). Master is treated as frozen whenever *any*
-// category is frozen, since you can't complete a full week with one paused.
-const INJURY_ALL_CATEGORIES = ['lifts', 'cardio', 'recovery'];
-const INJURY_CATEGORY_LABELS = { lifts: 'Strength', cardio: 'Cardio', recovery: 'Recovery' };
+// all of them (a full injury, the default). The Winning Streak is held when a category it
+// needs is frozen — under the steps rule a recovery-only injury doesn't hold it
+// (utils/streaks). Older injuries stored without 'steps' simply don't freeze it.
+const INJURY_ALL_CATEGORIES = ['lifts', 'cardio', 'steps', 'recovery'];
+const INJURY_CATEGORY_LABELS = { lifts: 'Strength', cardio: 'Cardio', steps: 'Steps', recovery: 'Recovery' };
 const injuryFrozenCategories = (injuryMode) => {
   const fc = injuryMode?.frozenCategories;
   return (Array.isArray(fc) && fc.length > 0) ? fc : INJURY_ALL_CATEGORIES;
@@ -360,7 +363,7 @@ const injuryFrozenCategories = (injuryMode) => {
 // "All streaks paused" / "Strength & Cardio paused" — describes which categories are frozen.
 const formatInjuryPausedLabel = (injuryMode) => {
   const fc = injuryFrozenCategories(injuryMode);
-  if (fc.length >= 3) return 'All streaks paused';
+  if (INJURY_ALL_CATEGORIES.every(c => fc.includes(c))) return 'All streaks paused';
   return fc.map(c => INJURY_CATEGORY_LABELS[c] || c).join(' & ') + ' paused';
 };
 
@@ -386,7 +389,7 @@ const accumulateInjuryFrozenWeeks = (existing, startWeek, endWeekExclusive, froz
 };
 
 // Default empty week celebration state
-const emptyWeekCelebrations = { week: '', lifts: false, cardio: false, recovery: false, master: false };
+const emptyWeekCelebrations = { week: '', lifts: false, cardio: false, recovery: false, steps: false, master: false };
 
 // Check if the phone has already shown the master celebration this week (local-only, not synced to Firestore)
 const getPhoneCelebrationShown = () => {
@@ -421,6 +424,7 @@ const initialPersonalRecords = {
   longestMasterStreak: 0,
   longestWorkoutStreak: 0,
   longestRecoveryStreak: 0,
+  longestStepsStreak: 0,
   mostLiftsWeek: 0,
   longestLiftStreak: 0,
   highestLiftCalories: 0,
@@ -484,7 +488,7 @@ const AppTour = ({ step, onNext, onBack, onSkip, targetRef, onSwitchTab, homeTab
     },
     {
       title: 'Weekly Goals',
-      description: 'Track your weekly progress here. Hit all three goals to earn your streak! Your latest sessions appear below.',
+      description: 'Track your weekly progress here. Hit Strength, Cardio and your weekly Steps to win the week and grow your streak. Recovery is a bonus.',
       position: 'below',
       tab: 'home',
       features: null
@@ -3393,6 +3397,18 @@ const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!", type
       confettiColors: ['#00D1FF', '#00FF94', '#87CEEB', '#4FC3F7', '#29B6F6', '#03A9F4'],
       subtext: 'Stay consistent!'
     },
+    // Weekly steps goal (stepsPerDay × 7) — its own category since steps count toward the
+    // Winning Streak. Purple = steps everywhere else in the app.
+    'steps': {
+      primary: '#BF5AF2',
+      bgGradient: 'radial-gradient(circle at center, rgba(191,90,242,0.45) 0%, rgba(191,90,242,0.15) 50%, transparent 80%)',
+      bgOverlay: 'rgba(0,0,0,0.55)',
+      ringColor1: 'rgba(191,90,242,0.5)',
+      ringColor2: 'rgba(191,90,242,0.3)',
+      emoji: '👟',
+      confettiColors: ['#BF5AF2', '#00FF94', '#00D1FF', '#FFD700', '#FF9500', '#E0AAFF'],
+      subtext: 'Week of steps, done!'
+    },
     'daily-steps': {
       primary: '#00D1FF',
       bgGradient: 'radial-gradient(circle at center, rgba(0,209,255,0.2) 0%, transparent 70%)',
@@ -4090,13 +4106,25 @@ const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1, goals 
                 {weekCounts.cardio || 0}/{goals.cardioPerWeek || 3}
               </span>
             </div>
-            <div className="flex flex-col items-center">
-              <div className="w-3 h-3 rounded-full mb-1" style={{ backgroundColor: COLORS.recovery, boxShadow: `0 0 8px ${COLORS.recovery}` }} />
-              <span className="text-[11px] text-gray-400">Recovery</span>
-              <span className="text-base font-bold" style={{ color: COLORS.recovery }}>
-                {weekCounts.recovery || 0}/{goals.recoveryPerWeek || 2}
-              </span>
-            </div>
+            {/* Third column is what this week's Winning Streak needed: Steps from the user's
+                start week (utils/weekGoals), Recovery before it. */}
+            {weekCounts.stepsRule ? (
+              <div className="flex flex-col items-center">
+                <div className="w-3 h-3 rounded-full mb-1" style={{ backgroundColor: '#BF5AF2', boxShadow: '0 0 8px #BF5AF2' }} />
+                <span className="text-[11px] text-gray-400">Steps</span>
+                <span className="text-base font-bold" style={{ color: '#BF5AF2' }}>
+                  {Math.round((weekCounts.steps || 0) / 1000)}k/{Math.round((goals.stepsPerDay || 10000) * 7 / 1000)}k
+                </span>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center">
+                <div className="w-3 h-3 rounded-full mb-1" style={{ backgroundColor: COLORS.recovery, boxShadow: `0 0 8px ${COLORS.recovery}` }} />
+                <span className="text-[11px] text-gray-400">Recovery</span>
+                <span className="text-base font-bold" style={{ color: COLORS.recovery }}>
+                  {weekCounts.recovery || 0}/{goals.recoveryPerWeek || 2}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Buttons */}
@@ -4780,6 +4808,10 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                     <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>Cardio</div>
                   </div>
                   <div className="text-center">
+                    <div className={`${isPostFormat ? 'text-base' : 'text-lg'} font-black`} style={{ color: '#BF5AF2' }}>{records.longestStepsStreak || 0}</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>Steps</div>
+                  </div>
+                  <div className="text-center">
                     <div className={`${isPostFormat ? 'text-base' : 'text-lg'} font-black`} style={{ color: '#00D1FF' }}>{records.longestRecoveryStreak || 0}</div>
                     <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>Recovery</div>
                   </div>
@@ -4837,20 +4869,27 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
         const liftsGoal = stats?.liftsGoal || 4;
         const cardioGoal = stats?.cardioGoal || 3;
         const recoveryGoal = stats?.recoveryGoal || 2;
-        const liftsGoalMet = weeklyLifts >= liftsGoal;
-        const cardioGoalMet = weeklyCardio >= cardioGoal;
-        const recoveryGoalMet = weeklyRecovery >= recoveryGoal;
-        const allGoalsMet = liftsGoalMet && cardioGoalMet && recoveryGoalMet;
+        // Judged by the shared rule in the stats builder (utils/weekGoals).
+        const weekJudged = stats?.weekJudged || { lifts: weeklyLifts >= liftsGoal, cardio: weeklyCardio >= cardioGoal, recovery: weeklyRecovery >= recoveryGoal };
+        const liftsGoalMet = weekJudged.lifts;
+        const cardioGoalMet = weekJudged.cardio;
+        const recoveryGoalMet = weekJudged.recovery;
+        const allGoalsMet = weekJudged.all ?? (liftsGoalMet && cardioGoalMet && recoveryGoalMet);
 
         // Calculate percentages for rings (cap at 100%)
         const liftsPercent = liftsGoal > 0 ? Math.min((weeklyLifts / liftsGoal) * 100, 100) : 0;
         const cardioPercent = cardioGoal > 0 ? Math.min((weeklyCardio / cardioGoal) * 100, 100) : 0;
         const recoveryPercent = recoveryGoal > 0 ? Math.min((weeklyRecovery / recoveryGoal) * 100, 100) : 0;
 
-        // Calculate overall progress (same as home page - cap each at goal)
-        const totalGoals = liftsGoal + cardioGoal + recoveryGoal;
-        const totalCompleted = Math.min(weeklyLifts, liftsGoal) + Math.min(weeklyCardio, cardioGoal) + Math.min(weeklyRecovery, recoveryGoal);
-        const overallPercent = totalGoals > 0 ? Math.round((totalCompleted / totalGoals) * 100) : 0;
+        // The third ring is always Steps — the app's rings are Strength, Cardio, Steps for every
+        // week. Whether a week counted still follows the rule it was judged by (weekJudged,
+        // utils/weekGoals), so weeks before the user's start week keep their original verdict.
+        const weeklySteps = stats?.weeklySteps || 0;
+        const weeklyStepsGoal = stats?.weeklyStepsGoal || 70000;
+        const third = { percent: Math.min((weeklySteps / weeklyStepsGoal) * 100, 100), color: '#BF5AF2', text: `${Math.round(weeklySteps / 1000)}k`, category: 'steps', label: 'Steps' };
+
+        // Overall progress, same as Home: the average completion of the three rings.
+        const overallPercent = Math.round((liftsPercent + cardioPercent + third.percent) / 3);
 
         // Ring dimensions for share card
         const ringSize = isPostFormat ? 56 : 64;
@@ -4904,14 +4943,14 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                 {/* Progress bar */}
                 <div className={`w-full ${isPostFormat ? 'mb-4' : 'mb-5'}`}>
                   <div className={`${isPostFormat ? 'h-2' : 'h-2'} rounded-full overflow-hidden flex`} style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                    {weeklyLifts > 0 && (
-                      <div className="h-full transition-all duration-500" style={{ width: `${(Math.min(weeklyLifts, liftsGoal) / totalGoals) * 100}%`, backgroundColor: '#00FF94' }} />
+                    {liftsPercent > 0 && (
+                      <div className="h-full transition-all duration-500" style={{ width: `${liftsPercent / 3}%`, backgroundColor: '#00FF94' }} />
                     )}
-                    {weeklyCardio > 0 && (
-                      <div className="h-full transition-all duration-500" style={{ width: `${(Math.min(weeklyCardio, cardioGoal) / totalGoals) * 100}%`, backgroundColor: '#FF9500' }} />
+                    {cardioPercent > 0 && (
+                      <div className="h-full transition-all duration-500" style={{ width: `${cardioPercent / 3}%`, backgroundColor: '#FF9500' }} />
                     )}
-                    {weeklyRecovery > 0 && (
-                      <div className="h-full transition-all duration-500" style={{ width: `${(Math.min(weeklyRecovery, recoveryGoal) / totalGoals) * 100}%`, backgroundColor: '#00D1FF' }} />
+                    {third.percent > 0 && (
+                      <div className="h-full transition-all duration-500" style={{ width: `${third.percent / 3}%`, backgroundColor: third.color }} />
                     )}
                   </div>
                 </div>
@@ -4948,14 +4987,14 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                     <div className="relative">
                       <svg width={ringSize} height={ringSize} className="transform -rotate-90 block">
                         <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={ringStroke} />
-                        <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="#00D1FF" strokeWidth={ringStroke} strokeLinecap="round"
-                          strokeDasharray={ringCircumference} strokeDashoffset={ringCircumference - (recoveryPercent / 100) * ringCircumference} />
+                        <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke={third.color} strokeWidth={ringStroke} strokeLinecap="round"
+                          strokeDasharray={ringCircumference} strokeDashoffset={ringCircumference - (third.percent / 100) * ringCircumference} />
                       </svg>
                       <div className="absolute inset-0 flex items-center justify-center" data-ring-text="true" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`} style={{ lineHeight: 1 }}>{weeklyRecovery}/{recoveryGoal}</span>
+                        <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`} style={{ lineHeight: 1 }}>{third.text}</span>
                       </div>
                     </div>
-                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><CategoryIcon category="recovery" size={11} /><span>Recovery</span></div>
+                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><CategoryIcon category={third.category} size={11} /><span>{third.label}</span></div>
                   </div>
                 </div>
 
@@ -4964,7 +5003,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                   <div className="w-full" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
                     <span className={isPostFormat ? 'text-lg' : 'text-xl'} style={{ lineHeight: '1.2' }}>🔥</span>
                     <span className={`${isPostFormat ? 'text-xl' : 'text-2xl'} font-black`} style={{ color: '#00FF94', lineHeight: '1.2' }}>{stats?.streak || 0}</span>
-                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-xs'} text-gray-400`} style={{ lineHeight: '1.2' }}>weeks hitting all goals</span>
+                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-xs'} text-gray-400`} style={{ lineHeight: '1.2' }}>week winning streak</span>
                   </div>
                   {(() => {
                     const segments = [];
@@ -5150,7 +5189,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                   {stats?.streak || 0}
                 </div>
                 <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} font-semibold tracking-widest text-gray-400 uppercase mt-1`}>🔥 Winning Streak</div>
-                <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500`}>weeks hitting all goals</div>
+                <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500`}>weeks won in a row</div>
               </div>
 
               {/* Active Streaks */}
@@ -5167,6 +5206,10 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                   <div className="text-center">
                     <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#FF9500' }}>{stats?.cardioStreak || 0}</div>
                     <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}><CategoryIcon category="cardio" size={9} className="inline align-[-2px] mr-1" />weeks</div>
+                  </div>
+                  <div className="text-center">
+                    <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#BF5AF2' }}>{stats?.stepsStreak || 0}</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}><CategoryIcon category="steps" size={9} className="inline align-[-2px] mr-1" />weeks</div>
                   </div>
                   <div className="text-center">
                     <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#00D1FF' }}>{stats?.recoveryStreak || 0}</div>
@@ -5189,6 +5232,10 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                   <div className="text-center">
                     <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#FF9500' }}>{stats?.longestCardioStreak || 0}</div>
                     <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}><CategoryIcon category="cardio" size={9} className="inline align-[-2px] mr-1" />weeks</div>
+                  </div>
+                  <div className="text-center">
+                    <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#BF5AF2' }}>{stats?.longestStepsStreak || 0}</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}><CategoryIcon category="steps" size={9} className="inline align-[-2px] mr-1" />weeks</div>
                   </div>
                   <div className="text-center">
                     <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#00D1FF' }}>{stats?.longestRecoveryStreak || 0}</div>
@@ -5314,7 +5361,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                   <span className={`${isPostFormat ? 'text-xl' : 'text-2xl'} font-black`} style={{ color: '#FFD700' }}>
                     {stats?.monthAllGoalsWeeksHit || 0}/4
                   </span>
-                  <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>weeks hitting all goals</span>
+                  <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>weeks won</span>
                 </div>
               </div>
             </div>
@@ -7605,7 +7652,7 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
             />
             <GoalSelector
               label="Recovery"
-              subtitle="Cold plunge, sauna, yoga, pilates"
+              subtitle="Cold plunge, sauna, yoga, pilates · a bonus with its own streak"
               color="#00D1FF"
               goalKey="recoveryPerWeek"
               options={[1, 2, 3, 4]}
@@ -7642,7 +7689,7 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
             {((isEditing && isSundayToday()) || (!isEditing && (!fitnessGoal || goalsManuallySet.current))) && <div className="mb-4" />}
             <GoalSelector
               label="Daily Steps"
-              subtitle="Recommended: 10k+ for general health"
+              subtitle="Counted across the week (× 7) toward your winning streak"
               color="#00FF94"
               goalKey="stepsPerDay"
               options={[6000, 8000, 10000, 12000, 15000]}
@@ -11418,7 +11465,6 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
     };
   }, [activities, userData?.goals, healthKitData.todaySteps, healthKitData.todayCalories, healthKitData.isConnected]);
 
-  const stepsPercent = weekProgress.steps?.goal > 0 ? Math.min((weekProgress.steps.today / weekProgress.steps.goal) * 100, 100) : 0;
   // Week view under today's steps: "win the week, not the day". The weekly goal is the daily
   // goal × 7. Pace compares the week's total with the daily goal × days already finished, so
   // today can only put you ahead, never behind — a Monday morning never opens in the red.
@@ -11447,6 +11493,33 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
     };
   }, [healthHistory, weekProgress.steps?.today, weekProgress.steps?.goal]);
   const formatK = (n) => `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  const recoveryChip = (
+    <button
+      onClick={() => { triggerHaptic(ImpactStyle.Light); setShowRecoveryBreakdown(!showRecoveryBreakdown); }}
+      className="flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] active:opacity-70 transition-opacity"
+      style={{ backgroundColor: 'rgba(0,209,255,0.08)', border: '1px solid rgba(0,209,255,0.18)' }}
+    >
+      <CategoryIcon category="recovery" size={12} />
+      <span className="text-white">Recovery</span>
+      <span style={{ color: '#aaa' }}>{weekProgress.recovery?.completed || 0}/{weekProgress.recovery?.goal || 0}</span>
+      {(userData.streaks?.recovery || 0) > 0 && (
+        <span className="font-bold" style={{ color: '#00D1FF' }}>🔥 {userData.streaks.recovery}w</span>
+      )}
+    </button>
+  );
+  // "Win the week, not the day": turns the weekly gap into one small daily number. Pace
+  // only counts finished days, so today can put you ahead but never behind.
+  const stepsPaceSentence = weekSteps.total >= weekSteps.goal ? (
+    <><span className="font-semibold" style={{ color: '#00FF94' }}>Steps done.</span> {formatK(weekSteps.goal)} for the week — everything from here is extra.</>
+  ) : weekSteps.dayIndex === 0 ? (
+    <><span className="font-semibold text-white">New week.</span> {formatK(weekSteps.perDayToFinish)} a day wins it.</>
+  ) : Math.abs(weekSteps.aheadBy) < 500 ? (
+    <><span className="font-semibold" style={{ color: '#00FF94' }}>Right on pace.</span> {formatK(weekSteps.perDayToFinish)} a day finishes the week.</>
+  ) : weekSteps.aheadBy > 0 ? (
+    <><span className="font-semibold" style={{ color: '#00FF94' }}>{formatK(weekSteps.aheadBy)} ahead of pace.</span> {formatK(weekSteps.perDayToFinish)} a day finishes the week.</>
+  ) : (
+    <><span className="font-semibold" style={{ color: '#FFC800' }}>{formatK(-weekSteps.aheadBy)} to make up.</span> {formatK(weekSteps.perDayToFinish)} a day still wins the week.</>
+  );
   const showCaloriesOnHome = userProfile?.privacySettings?.showCaloriesOnHome === true;
 
   const caloriesPercent = weekProgress.calories.goal > 0 ? Math.min((weekProgress.calories.burned / weekProgress.calories.goal) * 100, 100) : 0;
@@ -11479,10 +11552,25 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
   // goal this week already reads as streak 1. Since the current week can only
   // ever add 1, subtracting it back out for any category already met recovers
   // what the user actually walked in with.
-  const metThisWeek = (cat) => {
-    const p = weekProgress?.[cat];
-    return !!p && (p.goal || 0) > 0 && (p.completed || 0) >= p.goal;
-  };
+  // This week judged by the shared rule (utils/weekGoals) — the same answer the streak
+  // walk and the celebration use.
+  const homeWeekCtx = useMemo(() => weekContext({
+    goals: userData?.goals,
+    goalHistory: userData?.goalHistory || [],
+    winningRuleFrom: userData?.winningRuleFrom || null,
+    stepsByDate: stepsByDateFrom(healthHistory, healthKitData?.todaySteps || 0, getTodayDate()),
+  }), [userData?.goals, userData?.goalHistory, userData?.winningRuleFrom, healthHistory, healthKitData?.todaySteps]);
+  const thisWeekJudged = useMemo(
+    () => judgeWeekFromActivities(activities, getCurrentWeekKey(), homeWeekCtx),
+    [activities, homeWeekCtx]
+  );
+  const metThisWeek = (cat) => !!thisWeekJudged[cat];
+  // What the Winning Streak still needs this week, for the at-risk banner: recovery only
+  // under the original rule, weekly steps under the steps rule (utils/weekGoals).
+  const recoveryNeeded = thisWeekJudged.required.includes('recovery');
+  const stepsRemaining = thisWeekJudged.required.includes('steps') && !injuryFrozen.includes('steps')
+    ? Math.max(0, weekSteps.goal - weekSteps.total)
+    : 0;
   const priorStreak = (cat) => {
     const current = userData?.streaks?.[cat] || 0;
     // A frozen category is held during an injury pause — the current week
@@ -11491,7 +11579,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
     return Math.max(0, current - (metThisWeek(cat) ? 1 : 0));
   };
   const hasExistingStreak =
-    priorStreak('lifts') > 0 || priorStreak('cardio') > 0 || priorStreak('recovery') > 0;
+    priorStreak('lifts') > 0 || priorStreak('cardio') > 0 || priorStreak('recovery') > 0 || priorStreak('steps') > 0;
 
   // This banner is about the winning (master) streak specifically — it lists every
   // category still outstanding, and only the master streak requires all three.
@@ -11503,8 +11591,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
   const priorMaster = (() => {
     const current = userData?.streaks?.master || 0;
     if (injuryFrozen.length > 0) return current; // held during an injury pause
-    const allMet = metThisWeek('lifts') && metThisWeek('cardio') && metThisWeek('recovery');
-    return Math.max(0, current - (allMet ? 1 : 0));
+    return Math.max(0, current - (thisWeekJudged.all ? 1 : 0));
   })();
   const streakStakes = priorMaster > 0
     ? 'to keep your winning streak'
@@ -11525,7 +11612,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
   const weekComplete =
     !userData?.vacationMode?.isActive &&
     !userData?.injuryMode?.isActive &&
-    metThisWeek('lifts') && metThisWeek('cardio') && metThisWeek('recovery');
+    thisWeekJudged.all;
 
   // Persist warning dismissal for the day — reappears next day if still needed
   const warningKey = new Date().toDateString();
@@ -11536,17 +11623,22 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
     ? new Date(userProfile.createdAt).toDateString() === warningKey
     : false;
 
-  // Calculate overall weekly progress (cap each category at its goal - extra doesn't count toward Week Progress)
-  const totalGoals = weekProgress.lifts.goal + (weekProgress.cardio?.goal || 0) + (weekProgress.recovery?.goal || 0);
-  const totalCompleted = Math.min(weekProgress.lifts.completed, weekProgress.lifts.goal) + 
-    Math.min(weekProgress.cardio?.completed || 0, weekProgress.cardio?.goal || 0) + 
-    Math.min(weekProgress.recovery?.completed || 0, weekProgress.recovery?.goal || 0);
-  const overallPercent = totalGoals > 0 ? Math.round((totalCompleted / totalGoals) * 100) : 0;
+  // Week Progress: the average completion of what this week's Winning Streak needs (utils/
+  // weekGoals — Strength + Cardio + Steps, or Recovery under the original rule). Each part is
+  // capped at its goal, so extra doesn't count; steps is one part like the others.
+  const partDone = (done, goal) => (goal > 0 ? Math.min(done / goal, 1) : 1);
+  const progressParts = thisWeekJudged.required.map((c) =>
+    c === 'steps' ? partDone(weekSteps.total, weekSteps.goal)
+      : partDone(weekProgress[c]?.completed || 0, weekProgress[c]?.goal || 0));
+  const overallPercent = progressParts.length > 0
+    ? Math.round((progressParts.reduce((a, b) => a + b, 0) / progressParts.length) * 100)
+    : 0;
 
   // State for expanding breakdowns
   const [showStrengthBreakdown, setShowStrengthBreakdown] = useState(false);
   const [showCardioBreakdown, setShowCardioBreakdown] = useState(false);
   const [showRecoveryBreakdown, setShowRecoveryBreakdown] = useState(false);
+  const [showStepsBreakdown, setShowStepsBreakdown] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState(null);
   const [needsDetailsExpanded, setNeedsDetailsExpanded] = useState(false);
 
@@ -11587,8 +11679,13 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
       return 0;
     })
     .slice(0, 10); // Cap at 10 total
-  // Home shows the 3 most recent — full log lives on the Profile tab.
-  const latestActivities = allLatestActivities.slice(0, 3);
+  // Today's goal workouts (strength, cardio, recovery) show in Today's Activity, so Recent
+  // Activity starts from what's left: the 3 most recent that aren't already up top.
+  // Full log lives on the Profile tab.
+  const homeTodayKey = getTodayDate();
+  const countsTowardAGoal = (a) => ['lifting', 'cardio', 'recovery', 'lifting+cardio'].includes(getActivityCategory(a));
+  const todaysWorkouts = allLatestActivities.filter(a => a.date === homeTodayKey && countsTowardAGoal(a));
+  const latestActivities = allLatestActivities.filter(a => !todaysWorkouts.includes(a)).slice(0, 3);
 
   // Fetch reactions and comments for user's activities
   useEffect(() => {
@@ -11981,97 +12078,111 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
     );
   };
 
-  return (
-    <div className="pb-32">
-      {/* Daily Stats - Single Card */}
-      <div className="px-4 mb-4">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <SectionIcon type="activity" />
-              <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Today's Activity</span>
-            </div>
-            <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Synced from Apple Health</p>
+  // Today's Activity: today's steps (a count) and today's workouts. Sits under This Week's
+  // Goals — the week is the headline ("win the week, not the day").
+  const todayActivitySection = (
+    <>
+    {/* Daily Stats - Single Card */}
+    <div className="px-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <SectionIcon type="activity" />
+            <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Today's Activity</span>
           </div>
-        </div>
-        
-        <div className="p-4 rounded-2xl space-y-3" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-          {/* Steps */}
-          <div className="flex items-center gap-3">
-            <span className="text-lg"><CategoryIcon category="steps" size={18} /></span>
-            <div className="flex-1">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs text-gray-400">Steps</span>
-                <span className="text-xs font-bold">{(weekProgress.steps?.today || 0).toLocaleString()} / {((weekProgress.steps?.goal || 10000)/1000).toFixed(0)}k</span>
-              </div>
-              <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
-                <div
-                  className="h-full rounded-full transition-all duration-1000"
-                  style={{
-                    width: `${Math.min(stepsPercent, 100)}%`,
-                    backgroundColor: '#BF5AF2'
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* This week — lines up under the steps bar (18px icon + 12px gap) */}
-          <div className="pl-[30px] pt-0.5">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-gray-400">This week</span>
-              <span className="text-xs font-bold">{formatK(weekSteps.total)} <span className="font-medium" style={{ color: '#777' }}>/ {formatK(weekSteps.goal)}</span></span>
-            </div>
-            <div className="h-1.5 rounded-full relative" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
-              <div
-                className="h-full rounded-full transition-all duration-1000"
-                style={{ width: `${Math.min((weekSteps.total / weekSteps.goal) * 100, 100)}%`, backgroundColor: 'rgba(191,90,242,0.5)' }}
-              />
-              {/* Pace tick: where the daily goal × finished days would put you */}
-              {weekSteps.dayIndex > 0 && weekSteps.total < weekSteps.goal && (
-                <div className="absolute rounded-full" style={{ left: `calc(${weekSteps.pacePercent}% - 1px)`, top: '-4px', width: '2px', height: '14px', backgroundColor: '#fff' }} />
-              )}
-            </div>
-            <p className="text-[12.5px] mt-2 leading-snug" style={{ color: '#bbb' }}>
-              {weekSteps.total >= weekSteps.goal ? (
-                <><span className="font-semibold" style={{ color: '#00FF94' }}>Week won.</span> {formatK(weekSteps.goal)} done. Everything from here is extra.</>
-              ) : weekSteps.dayIndex === 0 ? (
-                <><span className="font-semibold text-white">New week.</span> {formatK(weekSteps.perDayToFinish)} a day wins it.</>
-              ) : Math.abs(weekSteps.aheadBy) < 500 ? (
-                <><span className="font-semibold" style={{ color: '#00FF94' }}>Right on pace.</span> {formatK(weekSteps.perDayToFinish)} a day finishes the week.</>
-              ) : weekSteps.aheadBy > 0 ? (
-                <><span className="font-semibold" style={{ color: '#00FF94' }}>{formatK(weekSteps.aheadBy)} ahead of pace.</span> {formatK(weekSteps.perDayToFinish)} a day finishes the week.</>
-              ) : (
-                <><span className="font-semibold" style={{ color: '#FFC800' }}>{formatK(-weekSteps.aheadBy)} to make up.</span> {formatK(weekSteps.perDayToFinish)} a day still wins the week.</>
-              )}
-            </p>
-          </div>
-
-          {/* Calories — optional (Settings → Health) */}
-          {showCaloriesOnHome && (<>
-          <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
-          <div className="flex items-center gap-3">
-            <CategoryIcon category="calories" size={18} />
-            <div className="flex-1">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs text-gray-400">Active Calories</span>
-                <span className="text-xs font-bold">{weekProgress.calories.burned.toLocaleString()} / {(weekProgress.calories.goal || 500).toLocaleString()}</span>
-              </div>
-              <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
-                <div 
-                  className="h-full rounded-full transition-all duration-1000"
-                  style={{ 
-                    width: `${Math.min(caloriesPercent, 100)}%`,
-                    backgroundColor: '#FF6B6B'
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-          </>)}
+          <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Synced from Apple Health</p>
         </div>
       </div>
+      
+      <div className="p-4 rounded-2xl space-y-3" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+        {/* Steps today — a count, not a daily goal ("win the week, not the day"). The
+            target lives on the Steps ring below, which tracks the week. */}
+        <div className="flex items-center gap-3">
+          <span className="text-lg"><CategoryIcon category="steps" size={18} /></span>
+          <div className="flex-1 flex items-baseline justify-between">
+            <span className="text-xs text-gray-400">Steps today</span>
+            <span className="text-[13.5px] font-semibold">{(weekProgress.steps?.today || 0).toLocaleString()}</span>
+          </div>
+        </div>
 
+        {/* Today's workouts (strength, cardio, recovery), one compact row each. The weekly
+            steps and pace now live on the Steps ring in This Week's Goals. */}
+        <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
+        {todaysWorkouts.length > 0 ? (
+          <div className="space-y-1">
+            {todaysWorkouts.map((act, i) => {
+              const cat = getActivityCategory(act);
+              const tint = cat === 'recovery' ? '0,209,255' : cat === 'cardio' ? '255,149,0' : '0,255,148';
+              const name = act.type === 'Other' ? (act.subtype || 'Other')
+                : act.type === 'Strength Training' ? (() => {
+                  const st = act.strengthType || 'Strength Training';
+                  const areas = normalizeFocusAreas(act.focusAreas || (act.focusArea ? [act.focusArea] : []));
+                  return areas.length > 0 ? `${st} · ${areas.join(', ')}` : (act.subtype || st);
+                })()
+                : (act.subtype ? `${act.type} · ${act.subtype}` : act.type);
+              const unit = resolveUnit(userProfile);
+              const miles = parseFloat(act.distance);
+              const details = [
+                act.time || null,
+                miles > 0 ? formatDistance(miles, unit, 1) : null,
+                act.duration ? `${act.duration} min` : null,
+                miles > 0 && act.duration && cat !== 'lifting' ? formatPaceFromMinutesAndMiles(act.duration, miles, unit) : null,
+                !(miles > 0) && act.calories ? `${act.calories} cal` : null,
+                !(miles > 0) && act.avgHr ? `♥ ${act.avgHr}` : null,
+              ].filter(Boolean);
+              return (
+                <button
+                  key={act.id || i}
+                  onClick={() => { triggerHaptic(ImpactStyle.Light); setSelectedActivity(act); }}
+                  className="w-full flex items-center gap-3 py-1.5 text-left active:opacity-70 transition-opacity"
+                >
+                  <div className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `rgba(${tint},0.1)` }}>
+                    <ActivityIcon type={act.type} subtype={act.subtype} size={17} sportEmoji={act.sportEmoji} customEmoji={act.customEmoji} customIcon={act.customIcon} countToward={act.countToward} customActivityCategory={act.customActivityCategory} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13.5px] font-semibold truncate">{name}</div>
+                    <div className="text-[11.5px] text-gray-400 truncate">{details.join('  ·  ')}</div>
+                  </div>
+                  <span className="text-gray-600 text-xs">›</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-[12.5px] leading-snug" style={{ color: '#9ca3af' }}>
+            <span className="font-semibold" style={{ color: '#ddd' }}>No workout yet today.</span> A rest day still counts toward a winning week.
+          </p>
+        )}
+
+        {/* Calories — optional (Settings → Health) */}
+        {showCaloriesOnHome && (<>
+        <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
+        <div className="flex items-center gap-3">
+          <CategoryIcon category="calories" size={18} />
+          <div className="flex-1">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-gray-400">Active Calories</span>
+              <span className="text-xs font-bold">{weekProgress.calories.burned.toLocaleString()} / {(weekProgress.calories.goal || 500).toLocaleString()}</span>
+            </div>
+            <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
+              <div 
+                className="h-full rounded-full transition-all duration-1000"
+                style={{ 
+                  width: `${Math.min(caloriesPercent, 100)}%`,
+                  backgroundColor: '#FF6B6B'
+                }}
+              />
+            </div>
+          </div>
+        </div>
+        </>)}
+      </div>
+    </div>
+    </>
+  );
+
+  return (
+    <div className="pb-32">
       {/* Auto-Imported Summary Banner - Shows after onboarding auto-import */}
       {autoImportedCount > 0 && (
         <div className="mx-4 mb-4">
@@ -12432,11 +12543,6 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         </div>
       )}
 
-      {/* Section Divider */}
-      <div className="mx-4 mb-4">
-        <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
-      </div>
-
       {/* Weekly Goals - Hero Section */}
       <div className="mx-4 mb-4">
         {/* Vacation Mode Active Banner */}
@@ -12747,7 +12853,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         })()}
 
         {/* Streak at Risk Warning - hidden during vacation */}
-        {!userData.vacationMode?.isActive && !streakWarningDismissed && !joinedToday && daysLeft <= 3 && (liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0) && (
+        {!userData.vacationMode?.isActive && !streakWarningDismissed && !joinedToday && daysLeft <= 3 && (liftsRemaining > 0 || cardioRemaining > 0 || (recoveryNeeded && recoveryRemaining > 0) || stepsRemaining > 0) && (
           <div
             className="relative p-3 rounded-xl mb-3 flex items-center gap-3"
             style={{
@@ -12764,7 +12870,8 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                 {[
                   liftsRemaining > 0 ? `${liftsRemaining} strength` : null,
                   cardioRemaining > 0 ? `${cardioRemaining} cardio` : null,
-                  recoveryRemaining > 0 ? `${recoveryRemaining} recovery` : null
+                  recoveryNeeded && recoveryRemaining > 0 ? `${recoveryRemaining} recovery` : null,
+                  stepsRemaining > 0 ? `${formatK(stepsRemaining)} steps` : null
                 ].filter(Boolean).join(', ')} remaining {streakStakes}
               </div>
             </div>
@@ -12784,7 +12891,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         {!userData.vacationMode?.isActive && !userData.injuryMode?.isActive && (() => {
           const currentWeek = getCurrentWeekKey();
           const previousWeek = getPreviousWeekKey();
-          const hasActiveStreak = userData.streaks.master > 0 || userData.streaks.lifts > 0 || userData.streaks.cardio > 0 || userData.streaks.recovery > 0;
+          const hasActiveStreak = userData.streaks.master > 0 || userData.streaks.lifts > 0 || userData.streaks.cardio > 0 || userData.streaks.recovery > 0 || (userData.streaks.steps || 0) > 0;
 
           // Determine if this is a retroactive shield (Sunday/Monday, saving last week)
           const isRetroactive = dayOfWeek <= 1;
@@ -12795,34 +12902,14 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
           // last week by checking the week before last hit at least one goal.
           let showRetroactive = false;
           if (isRetroactive) {
-            const prevWeekStart = new Date(previousWeek + 'T00:00:00');
-            const prevWeekEnd = new Date(prevWeekStart);
-            prevWeekEnd.setDate(prevWeekEnd.getDate() + 6);
-            const prevWeekStartStr = previousWeek;
-            const prevWeekEndStr = `${prevWeekEnd.getFullYear()}-${String(prevWeekEnd.getMonth() + 1).padStart(2, '0')}-${String(prevWeekEnd.getDate()).padStart(2, '0')}`;
-            const prevActivities = activities.filter(a => a.date >= prevWeekStartStr && a.date <= prevWeekEndStr);
-            const goals = userData?.goals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2 };
-            const prevLifts = prevActivities.filter(countsAsLifting).length;
-            const prevCardio = prevActivities.filter(countsAsCardio).length;
-            const prevRecovery = prevActivities.filter(countsAsRecovery).length;
-            const prevIncomplete = prevLifts < goals.liftsPerWeek || prevCardio < (goals.cardioPerWeek || 2) || prevRecovery < (goals.recoveryPerWeek || 2);
+            // Both weeks judged by the shared rule, against the goals in force then.
+            const judgePast = (weekKey) => judgeWeekFromActivities(activities, weekKey, homeWeekCtx);
+            const prevIncomplete = !judgePast(previousWeek).all;
             const prevAlreadyShielded = (userData.streakShield?.shieldedWeeks || []).includes(previousWeek);
 
             // Week before last: did at least one category hit its goal? If so, a streak was alive.
-            const wblStart = new Date(prevWeekStart);
-            wblStart.setDate(wblStart.getDate() - 7);
-            const wblEnd = new Date(wblStart);
-            wblEnd.setDate(wblEnd.getDate() + 6);
-            const wblStartStr = `${wblStart.getFullYear()}-${String(wblStart.getMonth() + 1).padStart(2, '0')}-${String(wblStart.getDate()).padStart(2, '0')}`;
-            const wblEndStr = `${wblEnd.getFullYear()}-${String(wblEnd.getMonth() + 1).padStart(2, '0')}-${String(wblEnd.getDate()).padStart(2, '0')}`;
-            const wblActivities = activities.filter(a => a.date >= wblStartStr && a.date <= wblEndStr);
-            const wblLifts = wblActivities.filter(countsAsLifting).length;
-            const wblCardio = wblActivities.filter(countsAsCardio).length;
-            const wblRecovery = wblActivities.filter(countsAsRecovery).length;
-            const hadStreakBeforeLastWeek = hasActiveStreak ||
-              wblLifts >= goals.liftsPerWeek ||
-              wblCardio >= (goals.cardioPerWeek || 2) ||
-              wblRecovery >= (goals.recoveryPerWeek || 2);
+            const wbl = judgePast(addWeeksToWeekKey(previousWeek, -1));
+            const hadStreakBeforeLastWeek = hasActiveStreak || wbl.lifts || wbl.cardio || wbl.recovery;
 
             showRetroactive = hadStreakBeforeLastWeek && prevIncomplete && !prevAlreadyShielded;
           }
@@ -12839,7 +12926,8 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             (liftsRemaining > 0 && userData.streaks.lifts > 0) ||
             (cardioRemaining > 0 && userData.streaks.cardio > 0) ||
             (recoveryRemaining > 0 && userData.streaks.recovery > 0) ||
-            (userData.streaks.master > 0 && (liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0));
+            (!thisWeekJudged.steps && !injuryFrozen.includes('steps') && (userData.streaks.steps || 0) > 0) ||
+            (userData.streaks.master > 0 && !thisWeekJudged.all);
 
           const showCurrentWeek = daysLeft <= 3 && atRiskStreak;
 
@@ -13207,10 +13295,11 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
               <RingStreak weeks={userData.streaks?.cardio} color="#FF9500" paused={streakPaused('cardio')} />
             </button>
             
-            {/* Recovery */}
+            {/* Steps — the week's steps against stepsPerDay × 7. Counts toward the Winning
+                Streak (utils/weekGoals); Recovery moved to the bonus row below. */}
             <button
               className="text-center transition-all duration-150"
-              onClick={() => setShowRecoveryBreakdown(!showRecoveryBreakdown)}
+              onClick={() => setShowStepsBreakdown(!showStepsBreakdown)}
               onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.93)'; triggerHaptic(ImpactStyle.Light); }}
               onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
               onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.93)'}
@@ -13218,16 +13307,70 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
               onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
             >
               <div className="relative inline-block">
-                <ProgressRing progress={recoveryPercent} size={72} strokeWidth={6} color="#00D1FF" />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-xl font-black"><AnimatedCounter value={weekProgress.recovery?.completed || 0} />/{weekProgress.recovery?.goal || 0}</span>
+                <ProgressRing progress={Math.min((weekSteps.total / weekSteps.goal) * 100, 100)} size={72} strokeWidth={6} color="#BF5AF2" />
+                {/* Pace tick: where the daily goal × finished days would put the ring */}
+                {weekSteps.dayIndex > 0 && weekSteps.total < weekSteps.goal && (() => {
+                  const a = (weekSteps.dayIndex / 7) * 2 * Math.PI - Math.PI / 2;
+                  const r = (72 - 6) / 2;
+                  return (
+                    <svg width={72} height={72} className="absolute inset-0 pointer-events-none">
+                      <line
+                        x1={36 + (r - 4) * Math.cos(a)} y1={36 + (r - 4) * Math.sin(a)}
+                        x2={36 + (r + 4) * Math.cos(a)} y2={36 + (r + 4) * Math.sin(a)}
+                        stroke="#fff" strokeWidth={2} strokeLinecap="round"
+                      />
+                    </svg>
+                  );
+                })()}
+                <div className="absolute inset-0 flex flex-col items-center justify-center leading-none">
+                  <span className="text-lg font-black">{Math.round(weekSteps.total / 1000)}k</span>
+                  <span className="text-[9px] mt-0.5" style={{ color: '#777' }}>/ {formatK(weekSteps.goal)}</span>
                 </div>
               </div>
-              <RingLabel category="recovery" label="Recovery" expanded={showRecoveryBreakdown} />
-              <RingStreak weeks={userData.streaks?.recovery} color="#00D1FF" paused={streakPaused('recovery')} />
+              <RingLabel category="steps" label="Steps" expanded={showStepsBreakdown} />
+              <RingStreak weeks={userData.streaks?.steps} color="#BF5AF2" paused={streakPaused('steps')} />
             </button>
           </div>
-          
+
+          {/* Steps pace — always visible under the rings (the most useful line on Monday) */}
+          <div className="mt-4 pt-3 border-t border-white/10 flex items-start gap-2">
+            <span className="mt-[1px]"><CategoryIcon category="steps" size={14} /></span>
+            <p className="text-[12.5px] leading-snug" style={{ color: '#bbb' }}>{stepsPaceSentence}</p>
+          </div>
+
+          {/* Steps breakdown — Sun–Sat day strip (tap the Steps ring) */}
+          {showStepsBreakdown && (
+            <div className="mt-4 pt-4 border-t border-white/10">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-xs text-gray-400">Steps this week</div>
+                <div className="text-xs font-bold">{formatK(weekSteps.total)} <span className="font-medium" style={{ color: '#777' }}>/ {formatK(weekSteps.goal)}</span></div>
+              </div>
+              <div className="flex gap-[5px] items-end">
+                {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((label, i) => {
+                  const d = new Date();
+                  d.setHours(12, 0, 0, 0);
+                  d.setDate(d.getDate() - weekSteps.dayIndex + i);
+                  const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                  const isFuture = i > weekSteps.dayIndex;
+                  const isToday = i === weekSteps.dayIndex;
+                  const daySteps = isFuture ? 0 : (homeWeekCtx.stepsByDate[key] || 0);
+                  const dailyGoal = weekSteps.goal / 7;
+                  return (
+                    <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                      <div className="text-[9px]" style={{ color: isFuture ? 'transparent' : '#888' }}>{isFuture ? '·' : formatK(daySteps)}</div>
+                      <div className="w-full h-[34px] rounded-[5px] flex items-end overflow-hidden" style={{ backgroundColor: isFuture ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.06)' }}>
+                        <div className="w-full rounded-[5px]" style={{ height: `${Math.min(100, (daySteps / dailyGoal) * 100)}%`, backgroundColor: daySteps >= dailyGoal ? '#BF5AF2' : 'rgba(191,90,242,0.55)' }} />
+                      </div>
+                      <div className="text-[9px]" style={{ color: isToday ? '#fff' : '#666', fontWeight: isToday ? 700 : 400 }}>{label}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="text-[10px] text-gray-500 mt-2 text-center">A full bar is {formatK(weekSteps.goal / 7)} — short days are fine, it's the week that counts.</div>
+            </div>
+          )}
+
+
           {/* Strength Breakdown - Expandable */}
           {showStrengthBreakdown && (
             <div className="mt-4 pt-4 border-t border-white/10">
@@ -13338,9 +13481,11 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
 
           {/* Overall Progress Bar */}
           <div className="mt-4 pt-4 border-t border-white/10">
+            {/* Recovery sits on the Week Progress line: a bonus with its own streak, not part of
+                winning the week, so it doesn't get its own row (tap for the breakdown). */}
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-gray-400">Week Progress</span>
-              <span className="text-xs font-bold" style={{ color: overallPercent >= 100 ? '#00FF94' : 'white' }}><AnimatedCounter value={overallPercent} />%</span>
+              <span className="text-xs text-gray-400">Week Progress <span className="font-bold ml-1" style={{ color: overallPercent >= 100 ? '#00FF94' : 'white' }}><AnimatedCounter value={overallPercent} />%</span></span>
+              <span className="flex items-center gap-1.5"><span className="text-[10px] text-gray-500">Bonus</span>{recoveryChip}</span>
             </div>
             <ProgressBar progress={overallPercent} height={4} color={overallPercent >= 100 ? '#00FF94' : '#00FF94'} />
           </div>
@@ -13348,6 +13493,8 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         </div>
         {/* End of weeklyGoalsRef wrapper */}
       </div>
+
+      {todayActivitySection}
 
       {/* Weekly Planner — collapsible; sits directly under This Week's Goals */}
       <WeeklyPlanner
@@ -13376,7 +13523,9 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
       </div>
 
-      {/* Recent Activity — up to 3 most recent; full log lives on the Profile tab */}
+      {/* Recent Activity — up to 3 most recent; full log lives on the Profile tab. Hidden when
+          today's workouts (shown in Today's Activity) are the only ones there are. */}
+      {!(latestActivities.length === 0 && todaysWorkouts.length > 0) && (
       <div className="mx-4 mb-4">
         <SwipeableProvider>
           <div ref={latestActivityRef}>
@@ -13450,6 +13599,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
           </div>
         </SwipeableProvider>
       </div>
+      )}
 
       {/* Activity Detail Modal */}
       <ActivityDetailModal
@@ -13875,41 +14025,85 @@ export default function DaySevenApp() {
     syncToFirestore();
   }, [user?.uid, healthKitData.todaySteps, healthKitData.todayCalories]);
 
-  // Backfill yesterday's health data on app open
-  // The daily sync only writes while the app is open, so if the user closes
-  // the app mid-day, the final calorie/step totals are never captured.
-  // On next app open, query HealthKit for yesterday's complete data and update Firestore.
+  // Backfill the recent days' health totals from HealthKit.
+  //
+  // The daily sync only writes while the app is open, so a day's stored steps/calories are
+  // whatever the app last saw — and a day the app was never opened has no record at all.
+  // That used to be patched for yesterday only. Weekly steps now count toward the goals, so
+  // every day of this week AND last week (last week is still being judged on Sunday) gets
+  // its final total straight from HealthKit: at most 13 cheap aggregate queries.
+  //
+  // Writes a day only when HealthKit's total differs from what's stored, and merges the
+  // result into healthHistory in place instead of re-reading 365 days.
+  const lastHealthBackfillRef = useRef(0);
+  const backfillRecentHealthDays = async () => {
+    const uid = userRef.current?.uid;
+    if (!uid || !Capacitor.isNativePlatform()) return;
+    if (isDemoAccount(userProfileRef.current, userRef.current)) return;
+    // Resume fires often; a day's totals don't change that fast.
+    if (Date.now() - lastHealthBackfillRef.current < 10 * 60 * 1000) return;
+    lastHealthBackfillRef.current = Date.now();
+
+    const dateKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    const daysBack = today.getDay() + 7; // back to last week's Sunday
+    const days = [];
+    for (let i = 1; i <= daysBack; i++) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      days.push(d);
+    }
+
+    try {
+      const stored = {};
+      (healthHistoryRef.current || []).forEach(e => { if (e?.date) stored[e.date] = e; });
+      // One ranged query (see fetchDailyHealthRange for why not one query per day).
+      const byDay = await fetchDailyHealthRange(days[days.length - 1], days[0]);
+      if (!byDay) return;
+      const results = days.map(d => byDay[dateKey(d)] || null);
+      const updates = [];
+      results.forEach((data, i) => {
+        if (!data || (data.steps <= 0 && data.calories <= 0)) return;
+        const key = dateKey(days[i]);
+        // Finished days: HealthKit is the source of truth, so replace any stored value that
+        // differs (not just lower ones). The stored value came from a live read taken while
+        // the app was open that day, and the old per-day query could over-count a sample
+        // that crossed midnight into the next day.
+        // A metric HealthKit returned nothing for (e.g. calories without that permission)
+        // keeps its stored value rather than being zeroed.
+        const prev = stored[key] || {};
+        const steps = data.steps > 0 ? data.steps : (prev.steps || 0);
+        const calories = data.calories > 0 ? data.calories : (prev.calories || 0);
+        if (steps !== (prev.steps || 0) || calories !== (prev.calories || 0)) {
+          updates.push({ ...prev, date: key, steps, calories });
+        }
+      });
+      if (updates.length === 0) return;
+      // Visible in KEEP_CONSOLE=1 debug builds (vite.config.js); stripped from releases.
+      console.log(`[Backfill] corrected ${updates.map(u => `${u.date}: ${stored[u.date]?.steps ?? 0} → ${u.steps} steps`).join(', ')}`);
+
+      await Promise.all(updates.map(u => saveDailyHealthData(uid, u.date, u.steps, u.calories).catch(() => {})));
+      setHealthHistory(prev => {
+        const byDate = {};
+        (prev || []).forEach(e => { if (e?.date) byDate[e.date] = e; });
+        updates.forEach(u => { byDate[u.date] = { ...(byDate[u.date] || {}), ...u }; });
+        return Object.values(byDate).sort((a, b) => b.date.localeCompare(a.date));
+      });
+    } catch (e) {
+      // The next open or resume retries.
+      console.log('[Backfill] failed:', e?.message || e);
+    }
+  };
+
+  // Re-run on resume: the app is often left open in the background across days.
   useEffect(() => {
     if (!user?.uid || !Capacitor.isNativePlatform()) return;
-
-    const backfillYesterday = async () => {
-      try {
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const dateStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
-
-        const data = await fetchHealthDataForDate(yesterday);
-        if (data && (data.steps > 0 || data.calories > 0)) {
-          // Only update if HealthKit has more data than what's stored
-          const existing = await getDailyHealthData(user.uid, dateStr);
-          const existingCals = existing?.calories || 0;
-          const existingSteps = existing?.steps || 0;
-          if (data.calories > existingCals || data.steps > existingSteps) {
-            await saveDailyHealthData(user.uid, dateStr,
-              Math.max(data.steps, existingSteps),
-              Math.max(data.calories, existingCals)
-            );
-            // Refresh health history so the UI reflects the updated data
-            const refreshed = await getDailyHealthHistory(user.uid, 365);
-            setHealthHistory(refreshed);
-          }
-        }
-      } catch (e) {
-        // Silently fail
-      }
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') backfillRecentHealthDays();
     };
-
-    backfillYesterday();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
   }, [user?.uid]);
 
   // Live-subscribe to the current user's challengeStats. The cloud function increments
@@ -14122,6 +14316,7 @@ export default function DaySevenApp() {
               lifts: freshProfile.streaks.lifts ?? prev.streaks.lifts,
               cardio: freshProfile.streaks.cardio ?? prev.streaks.cardio,
               recovery: freshProfile.streaks.recovery ?? prev.streaks.recovery,
+              steps: freshProfile.streaks.steps ?? prev.streaks.steps, // weekly steps streak (counts toward the Winning Streak)
               stepsGoal: freshProfile.streaks.stepsGoal ?? prev.streaks.stepsGoal
             }
           }));
@@ -14148,10 +14343,7 @@ export default function DaySevenApp() {
         // because watch may have stale data (e.g., phone deleted an activity the watch doesn't know about)
         const phoneShown = getPhoneCelebrationShown();
         if (!phoneShown.master) {
-          const goals = userDataRef.current?.goals || freshProfile?.goals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2 };
-          const allGoalsMet = freshProgress.lifts.completed >= goals.liftsPerWeek &&
-            freshProgress.cardio.completed >= goals.cardioPerWeek &&
-            freshProgress.recovery.completed >= goals.recoveryPerWeek;
+          const allGoalsMet = judgeWeekFor(freshActivities, currentWeekKey, userDataRef.current?.goals || freshProfile?.goals, freshProfile?.goalHistory).all;
           if (allGoalsMet) {
             const newWC = { week: currentWeekKey, lifts: true, cardio: true, recovery: true, master: true };
             setWeekCelebrations(newWC);
@@ -14827,6 +15019,8 @@ export default function DaySevenApp() {
       vacationWeeks: protections.vacationWeeks || [],
       injuryFrozenWeeks: protections.injuryFrozenWeeks || {},
       goalHistory: existingRecords?._goalHistory || [],
+      winningRuleFrom: existingRecords?._winningRuleFrom || null,
+      stepsByDate: stepsByDateFrom(healthHistoryData || []),
     });
     const longest = walked.longest;
 
@@ -14840,6 +15034,7 @@ export default function DaySevenApp() {
       longestStrengthStreak: Math.max(longest.lifts, existingRecords?.longestStrengthStreak || 0, cur.lifts || 0),
       longestCardioStreak: Math.max(longest.cardio, existingRecords?.longestCardioStreak || 0, cur.cardio || 0),
       longestRecoveryStreak: Math.max(longest.recovery, existingRecords?.longestRecoveryStreak || 0, cur.recovery || 0),
+      longestStepsStreak: Math.max(longest.steps || 0, existingRecords?.longestStepsStreak || 0, cur.steps || 0),
     };
   };
 
@@ -15023,6 +15218,7 @@ export default function DaySevenApp() {
                 lifts: profileForStreaks.streaks.lifts ?? prev.streaks.lifts,
                 cardio: profileForStreaks.streaks.cardio ?? prev.streaks.cardio,
                 recovery: profileForStreaks.streaks.recovery ?? prev.streaks.recovery,
+                steps: profileForStreaks.streaks.steps ?? prev.streaks.steps, // weekly steps streak (counts toward the Winning Streak)
                 stepsGoal: profileForStreaks.streaks.stepsGoal ?? prev.streaks.stepsGoal
               }
             }));
@@ -15036,6 +15232,18 @@ export default function DaySevenApp() {
           // goal can't retroactively mark earlier weeks as met (see utils/streaks).
           if (profileForStreaks?.goalHistory) {
             setUserData(prev => ({ ...prev, goalHistory: profileForStreaks.goalHistory }));
+          }
+          // First week this user's Winning Streak is judged by the steps rule (Strength +
+          // Cardio + weekly Steps; utils/weekGoals). Set once, the first time a build with the
+          // rule loads for them, so earlier weeks keep the rule they were earned under.
+          // Written to the ref synchronously so the load-time recalc below sees it.
+          {
+            const ruleFrom = profileForStreaks?.winningRuleFrom || getCurrentWeekKey();
+            userDataRef.current = { ...(userDataRef.current || {}), winningRuleFrom: ruleFrom };
+            setUserData(prev => ({ ...prev, winningRuleFrom: ruleFrom }));
+            if (!profileForStreaks?.winningRuleFrom && user?.uid && !isDemoAccount(profileForStreaks, user)) {
+              updateUserProfile(user.uid, { winningRuleFrom: ruleFrom }).catch(() => {});
+            }
           }
           // Load streak shield data
           if (profileForStreaks?.streakShield) {
@@ -15123,8 +15331,19 @@ export default function DaySevenApp() {
             }
           }
 
-          // Load user's activities from Firestore (force refresh to pick up watch-saved activities)
-          const userActivities = await getUserActivities(user.uid, true);
+          // Load user's activities from Firestore (force refresh to pick up watch-saved activities),
+          // and daily health history (365 days for the full-year Trends view) alongside it.
+          // History has to land BEFORE the streak recalc below: weekly steps are part of
+          // judging a week, and this recalc used to run with no step data at all.
+          const [userActivities, healthHistoryData] = await Promise.all([
+            getUserActivities(user.uid, true),
+            getDailyHealthHistory(user.uid, 365),
+          ]);
+          healthHistoryRef.current = healthHistoryData; // visible to the recalc synchronously
+          setHealthHistory(healthHistoryData);
+          // Fill in any days this week / last week the app wasn't open for (runs in the
+          // background; merges into healthHistory when it lands).
+          backfillRecentHealthDays();
           lastFirestoreActivityCount.current = userActivities.length;
           if (userActivities.length > 0) {
             activitiesFromFirestore.current = true; // Skip debounced save — data is already in Firestore
@@ -15163,7 +15382,8 @@ export default function DaySevenApp() {
               if (recalculated.master !== (storedStreaks.master || 0) ||
                   recalculated.lifts !== (storedStreaks.lifts || 0) ||
                   recalculated.cardio !== (storedStreaks.cardio || 0) ||
-                  recalculated.recovery !== (storedStreaks.recovery || 0)) {
+                  recalculated.recovery !== (storedStreaks.recovery || 0) ||
+                  recalculated.steps !== (storedStreaks.steps || 0)) {
                 console.log('[App] Streak mismatch detected, recalculating:', { stored: storedStreaks, recalculated });
                 setUserData(prev => ({
                   ...prev,
@@ -15185,11 +15405,7 @@ export default function DaySevenApp() {
             const currentWeekKey = getCurrentWeekKey();
             const phoneShown = getPhoneCelebrationShown();
             if (!phoneShown.master) {
-              const loadedProgress = calculateWeeklyProgress(userActivities);
-              const goals = userGoals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2 };
-              const allGoalsMet = loadedProgress.lifts.completed >= goals.liftsPerWeek &&
-                loadedProgress.cardio.completed >= goals.cardioPerWeek &&
-                loadedProgress.recovery.completed >= goals.recoveryPerWeek;
+              const allGoalsMet = judgeWeekFor(userActivities, currentWeekKey, userGoals, profileForStreaks?.goalHistory).all;
               if (allGoalsMet) {
                 // Update weekCelebrations (streak tracking) if not already set
                 const newWC = { week: currentWeekKey, lifts: true, cardio: true, recovery: true, master: true };
@@ -15223,10 +15439,6 @@ export default function DaySevenApp() {
               setShowHealthReconnect(true);
             }
           }
-
-          // Load daily health history for trends (365 days for full year view)
-          const healthHistoryData = await getDailyHealthHistory(user.uid, 365);
-          setHealthHistory(healthHistoryData);
 
           // Load friends list
           const friendsList = await getFriends(user.uid);
@@ -15268,6 +15480,7 @@ export default function DaySevenApp() {
                 ...userRecords,
                 _goals: userGoals || {},
                 _goalHistory: profileForStreaks?.goalHistory || [],
+                _winningRuleFrom: userDataRef.current?.winningRuleFrom || null,
                 _currentStreaks: recordsResult?.streaks || {},
                 // Read straight off the profile: the userData state hydrated from it a few
                 // awaits ago may not have landed in the ref yet, and without these the
@@ -16060,6 +16273,7 @@ export default function DaySevenApp() {
                     lifts: freshProfile.streaks.lifts ?? prev.streaks.lifts,
                     cardio: freshProfile.streaks.cardio ?? prev.streaks.cardio,
                     recovery: freshProfile.streaks.recovery ?? prev.streaks.recovery,
+                    steps: freshProfile.streaks.steps ?? prev.streaks.steps, // weekly steps streak (counts toward the Winning Streak)
                     stepsGoal: freshProfile.streaks.stepsGoal ?? prev.streaks.stepsGoal
                   }
                 }));
@@ -16075,11 +16289,7 @@ export default function DaySevenApp() {
               // ALWAYS verify actual activity counts — never trust firestoreSaysMaster alone
               // because watch may have stale data (e.g., phone deleted an activity the watch doesn't know about)
               if (!phoneShown.master) {
-                const goals = userDataRef.current?.goals || freshProfile?.goals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2 };
-                const freshProgress = calculateWeeklyProgress(freshActivities);
-                const allGoalsMet = freshProgress.lifts.completed >= goals.liftsPerWeek &&
-                  freshProgress.cardio.completed >= goals.cardioPerWeek &&
-                  freshProgress.recovery.completed >= goals.recoveryPerWeek;
+                const allGoalsMet = judgeWeekFor(freshActivities, currentWeekKey, userDataRef.current?.goals || freshProfile?.goals, freshProfile?.goalHistory).all;
 
                 if (allGoalsMet) {
                   const newWC = { week: currentWeekKey, lifts: true, cardio: true, recovery: true, master: true };
@@ -16352,6 +16562,7 @@ export default function DaySevenApp() {
     if ((streaks.lifts || 0) > (records.longestStrengthStreak || 0)) bumped.longestStrengthStreak = streaks.lifts;
     if ((streaks.cardio || 0) > (records.longestCardioStreak || 0)) bumped.longestCardioStreak = streaks.cardio;
     if ((streaks.recovery || 0) > (records.longestRecoveryStreak || 0)) bumped.longestRecoveryStreak = streaks.recovery;
+    if ((streaks.steps || 0) > (records.longestStepsStreak || 0)) bumped.longestStepsStreak = streaks.steps;
     if (Object.keys(bumped).length === 0) return;
 
     setUserData(prev => ({
@@ -16486,6 +16697,20 @@ export default function DaySevenApp() {
   }, [userData?.healthKitTypePreferences, user]);
 
   // Calculate weekly progress from activities
+  // "Did this week count?" for the app shell — the shared rule in utils/weekGoals, judged
+  // against the goals in force that week. Pass goals/goalHistory when they were just loaded
+  // and userDataRef hasn't caught up yet.
+  // Everything needed to judge a week, from the live refs: goals, goal history, the user's
+  // steps-rule start week, and daily steps (stored history + today's live reading).
+  const buildWeekCtx = (goals = null, goalHistory = null) => weekContext({
+    goals: goals || userDataRef.current?.goals,
+    goalHistory: goalHistory || userDataRef.current?.goalHistory || [],
+    winningRuleFrom: userDataRef.current?.winningRuleFrom || null,
+    stepsByDate: stepsByDateFrom(healthHistoryRef.current || [], healthKitDataRef.current?.todaySteps || 0, getTodayDate()),
+  });
+  const judgeWeekFor = (activitiesList, weekKey = getCurrentWeekKey(), goals = null, goalHistory = null) =>
+    judgeWeekFromActivities(activitiesList, weekKey, buildWeekCtx(goals, goalHistory));
+
   const calculateWeeklyProgress = (allActivities) => {
     const today = new Date();
     today.setHours(23, 59, 59, 999); // End of today to include activities from today
@@ -16662,6 +16887,8 @@ export default function DaySevenApp() {
   // Shared entry point: applies the demo-account guard and pulls shield / vacation / injury
   // state off the live ref, then runs the walk. Returns { current, longest } or null.
   const computeStreakHistory = (allActivities, goals, overrides = null) => {
+    // An empty list is treated as "not loaded": a transient empty read must never persist
+    // zeroed streaks over real ones.
     if (!goals || !allActivities || allActivities.length === 0) return null;
     // Demo accounts: streak values are seeded per-persona in getDemoUserData() and
     // must not be derived from the mock activity history. The mocks span only 12
@@ -16678,6 +16905,8 @@ export default function DaySevenApp() {
       vacationWeeks: src.vacationMode?.vacationWeeks || [],
       injuryFrozenWeeks: src.injuryMode?.frozenWeeks || {},
       goalHistory: src.goalHistory || [],
+      winningRuleFrom: src.winningRuleFrom || userDataRef.current?.winningRuleFrom || null,
+      stepsByDate: stepsByDateFrom(healthHistoryRef.current || [], healthKitDataRef.current?.todaySteps || 0, getTodayDate()),
     });
   };
 
@@ -16765,15 +16994,8 @@ export default function DaySevenApp() {
     // Snapshot which goals were ALREADY met this week at the moment of activation. A frozen
     // category only keeps its activation-week credit if it's in here — training a frozen
     // category *after* going on injury must not advance its streak.
-    const g = userData.goals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2 };
-    const cwActsSnap = (activities || []).filter(a => a.date >= startWeek);
-    const snapLifts = cwActsSnap.filter(a => { const c = getActivityCategory(a); return c === 'lifting' || c === 'lifting+cardio'; }).length;
-    const snapCardio = cwActsSnap.filter(a => { const c = getActivityCategory(a); return c === 'cardio' || c === 'lifting+cardio'; }).length;
-    const snapRecovery = cwActsSnap.filter(a => getActivityCategory(a) === 'recovery').length;
-    const completedAtActivation = [];
-    if (snapLifts >= g.liftsPerWeek) completedAtActivation.push('lifts');
-    if (snapCardio >= g.cardioPerWeek) completedAtActivation.push('cardio');
-    if (snapRecovery >= g.recoveryPerWeek) completedAtActivation.push('recovery');
+    const snap = judgeWeekFor(activities || [], startWeek);
+    const completedAtActivation = INJURY_ALL_CATEGORIES.filter(c => snap[c]);
     const updatedIm = {
       isActive: true,
       startDate: toLocalDateStr(new Date()),
@@ -17161,8 +17383,6 @@ export default function DaySevenApp() {
 
     // Trigger celebration for completing a goal
     const goals = userData.goals;
-    // Calculate prev progress directly from activities state (not weeklyProgress which can be stale)
-    const prevProgress = calculateWeeklyProgress(activities);
     // Use ref to get latest records (avoids stale closure issues)
     const records = userDataRef.current.personalRecords;
     
@@ -17367,18 +17587,18 @@ export default function DaySevenApp() {
       return { message: `${countWord} New Records!\n${recordsBroken.join('\n')}` };
     };
 
-    // Check if this activity just completed a goal (wasn't complete before, is now)
+    // Check if this activity just completed a goal (wasn't complete before, is now).
+    // This week, before and after the save, judged by the shared rule (utils/weekGoals).
+    const prevJudged = judgeWeekFor(activities);
+    const newJudged = judgeWeekFor(updatedActivities);
     const justCompletedLifts = (activityCategory === 'lifting' || activityCategory === 'lifting+cardio') &&
-      prevProgress.lifts.completed < goals.liftsPerWeek &&
-      newProgress.lifts.completed >= goals.liftsPerWeek;
+      !prevJudged.lifts && newJudged.lifts;
 
     const justCompletedCardio = (activityCategory === 'cardio' || activityCategory === 'lifting+cardio') &&
-      prevProgress.cardio.completed < goals.cardioPerWeek &&
-      newProgress.cardio.completed >= goals.cardioPerWeek;
+      !prevJudged.cardio && newJudged.cardio;
 
     const justCompletedRecovery = activityCategory === 'recovery' &&
-      prevProgress.recovery.completed < goals.recoveryPerWeek &&
-      newProgress.recovery.completed >= goals.recoveryPerWeek;
+      !prevJudged.recovery && newJudged.recovery;
     
     // Check for streak milestones (every 5 weeks)
     const checkStreakMilestone = (currentStreak) => {
@@ -17392,13 +17612,8 @@ export default function DaySevenApp() {
     };
 
     // Check if all goals will be met after this activity (for week streak priority)
-    const willCompleteAllGoals = newProgress.lifts.completed >= goals.liftsPerWeek &&
-        newProgress.cardio.completed >= goals.cardioPerWeek &&
-        newProgress.recovery.completed >= goals.recoveryPerWeek;
-
-    const wasAllGoalsMet = prevProgress.lifts.completed >= goals.liftsPerWeek &&
-        prevProgress.cardio.completed >= goals.cardioPerWeek &&
-        prevProgress.recovery.completed >= goals.recoveryPerWeek;
+    const willCompleteAllGoals = newJudged.all;
+    const wasAllGoalsMet = prevJudged.all;
 
     // Get current week celebration state — only increment streaks if not already celebrated this week for that category
     const currentWeekKey = getCurrentWeekKey();
@@ -17733,43 +17948,22 @@ export default function DaySevenApp() {
       personalRecords: updatedRecords
     }));
 
-    // Check if deleting this activity drops any category below its goal
-    // If so, clear the celebrated flag and decrement the streak (since it was wrongly incremented)
+    // Check if deleting this activity drops any category below its goal. If so, clear that
+    // category's celebrated flag (and master's) so re-completing celebrates again. Streak
+    // counts themselves come from the full recalculation below.
     const goals = userData.goals;
-    const oldProgress = weeklyProgress; // progress before deletion
+    const oldJudged = judgeWeekFor(activities);          // this week before the delete
+    const newJudged = judgeWeekFor(updatedActivities);   // and after
     const currentWeekKey = getCurrentWeekKey();
     const wc = weekCelebrations.week === currentWeekKey ? { ...weekCelebrations } : { ...emptyWeekCelebrations, week: currentWeekKey };
     let wcChanged = false;
-    let streakChanges = {};
-
-    // Check each category: was it at/above goal before, and now below?
-    if (wc.lifts && oldProgress.lifts.completed >= goals.liftsPerWeek && newProgress.lifts.completed < goals.liftsPerWeek) {
-      wc.lifts = false;
-      wc.master = false; // master can't be valid if a category is incomplete
-      streakChanges.lifts = userData.streaks.lifts - 1;
-      if (wc.master === false && oldProgress.lifts.completed >= goals.liftsPerWeek && oldProgress.cardio.completed >= goals.cardioPerWeek && oldProgress.recovery.completed >= goals.recoveryPerWeek) {
-        streakChanges.master = userData.streaks.master - 1;
+    ['lifts', 'cardio', 'recovery'].forEach((c) => {
+      if (wc[c] && oldJudged[c] && !newJudged[c]) {
+        wc[c] = false;
+        wc.master = false; // master can't be valid if a category is incomplete
+        wcChanged = true;
       }
-      wcChanged = true;
-    }
-    if (wc.cardio && (oldProgress.cardio?.completed || 0) >= goals.cardioPerWeek && (newProgress.cardio?.completed || 0) < goals.cardioPerWeek) {
-      wc.cardio = false;
-      wc.master = false;
-      streakChanges.cardio = userData.streaks.cardio - 1;
-      if (!('master' in streakChanges) && oldProgress.lifts.completed >= goals.liftsPerWeek && (oldProgress.cardio?.completed || 0) >= goals.cardioPerWeek && (oldProgress.recovery?.completed || 0) >= goals.recoveryPerWeek) {
-        streakChanges.master = userData.streaks.master - 1;
-      }
-      wcChanged = true;
-    }
-    if (wc.recovery && (oldProgress.recovery?.completed || 0) >= goals.recoveryPerWeek && (newProgress.recovery?.completed || 0) < goals.recoveryPerWeek) {
-      wc.recovery = false;
-      wc.master = false;
-      streakChanges.recovery = userData.streaks.recovery - 1;
-      if (!('master' in streakChanges) && oldProgress.lifts.completed >= goals.liftsPerWeek && (oldProgress.cardio?.completed || 0) >= goals.cardioPerWeek && (oldProgress.recovery?.completed || 0) >= goals.recoveryPerWeek) {
-        streakChanges.master = userData.streaks.master - 1;
-      }
-      wcChanged = true;
-    }
+    });
 
     if (wcChanged) {
       setWeekCelebrations(wc);
@@ -17821,7 +18015,6 @@ export default function DaySevenApp() {
   useEffect(() => {
     if (!userData?.goals) return;
 
-    const stepsGoal = userData.goals.stepsPerDay || 10000;
     const caloriesGoal = userData.goals.caloriesPerDay || 500;
     const today = getTodayDate();
 
@@ -17836,19 +18029,12 @@ export default function DaySevenApp() {
     // doesn't already know about.
     const todayCalories = (healthKitData.todayCalories || 0) + manualCaloriesForDate(activities, today);
 
-    // Check steps goal
-    if (!dailyGoalsCelebrated.steps && healthKitData.todaySteps >= stepsGoal && healthKitData.todaySteps > 0) {
-      setCelebrationMessage('Steps Goal Hit!');
-      setCelebrationType('daily-steps');
-      setShowCelebration(true);
-      triggerHaptic(ImpactStyle.Medium);
-      const updated = { ...dailyGoalsCelebrated, steps: true };
-      setDailyGoalsCelebrated(updated);
-      localStorage.setItem('dailyGoalsCelebrated', JSON.stringify(updated));
-    }
-    // Check calories goal (only if steps celebration isn't showing)
+    // No daily steps celebration: steps are a weekly goal now ("win the week, not the day"),
+    // celebrated once when the week's total crosses stepsPerDay × 7 (see the weekly-steps
+    // effect below).
+    // Check calories goal
     // (skipped when the user has hidden calories from Home — no celebrating a number they chose not to see)
-    else if (userProfile?.privacySettings?.showCaloriesOnHome === true && !dailyGoalsCelebrated.calories && todayCalories >= caloriesGoal && todayCalories > 0 && !showCelebration) {
+    if (userProfile?.privacySettings?.showCaloriesOnHome === true && !dailyGoalsCelebrated.calories && todayCalories >= caloriesGoal && todayCalories > 0 && !showCelebration) {
       setCelebrationMessage('Calories Goal Hit!');
       setCelebrationType('daily-calories');
       setShowCelebration(true);
@@ -17858,6 +18044,54 @@ export default function DaySevenApp() {
       localStorage.setItem('dailyGoalsCelebrated', JSON.stringify(updated));
     }
   }, [healthKitData.todaySteps, healthKitData.todayCalories, activities, userData?.goals, dailyGoalsCelebrated, showCelebration, userProfile?.privacySettings?.showCaloriesOnHome]);
+
+  // Weekly steps can finish a week on their own — no activity is logged, so the add-activity
+  // path never sees it. Watch the week as steps arrive: if steps just completed the Winning
+  // Streak week, show the week celebration; if they just hit the weekly steps goal, show the
+  // steps one. Each fires once per week (weekCelebrations), one celebration at a time.
+  useEffect(() => {
+    if (!user?.uid || !recordsLoaded || healthHistory.length === 0) return;
+    if (showCelebration || showWeekStreakCelebration) return; // re-runs when they close
+    if (isDemoAccount(userProfileRef.current, userRef.current)) return;
+
+    const currentWeekKey = getCurrentWeekKey();
+    const judged = judgeWeekFor(activities, currentWeekKey);
+    const wc = weekCelebrations.week === currentWeekKey ? weekCelebrations : { ...emptyWeekCelebrations, week: currentWeekKey };
+    const im = userData?.injuryMode;
+    const frozen = im?.isActive ? injuryFrozenCategories(im) : [];
+
+    const masterNew = judged.all && !wc.master && !getPhoneCelebrationShown().master &&
+      !frozen.some(c => judged.required.includes(c));
+    const stepsNew = judged.steps && !wc.steps && !frozen.includes('steps');
+    if (!masterNew && !stepsNew) return;
+
+    const newWC = { ...wc, steps: wc.steps || judged.steps, master: wc.master || masterNew };
+    // Streaks come from the full walk (it now includes this week's steps).
+    const recalculated = recalculateStreaksFromHistory(activities, userData.goals);
+    if (recalculated) {
+      setUserData(prev => ({ ...prev, streaks: { ...prev.streaks, ...recalculated } }));
+    }
+    setWeekCelebrations(newWC);
+    localStorage.setItem('weekCelebrations', JSON.stringify(newWC));
+    updateUserProfile(user.uid, {
+      weekCelebrations: newWC,
+      ...(recalculated ? { streaks: { ...(userDataRef.current?.streaks || {}), ...recalculated } } : {}),
+    }).catch(() => {});
+
+    if (masterNew) {
+      markPhoneCelebrationShown();
+      triggerHaptic(ImpactStyle.Heavy);
+      setShowWeekStreakCelebration(true);
+    } else if (wc.master) {
+      // The week was already won and celebrated (e.g. by the workout that finished it);
+      // record the steps goal quietly rather than stacking a second celebration.
+    } else {
+      setCelebrationMessage('Weekly Steps Goal Hit!');
+      setCelebrationType('steps');
+      triggerHaptic(ImpactStyle.Medium);
+      setShowCelebration(true);
+    }
+  }, [user?.uid, recordsLoaded, healthHistory, healthKitData.todaySteps, activities, weekCelebrations, showCelebration, showWeekStreakCelebration, userData?.injuryMode?.isActive]);
 
   // Show loading spinner while checking auth
   if (authLoading) {
@@ -19256,6 +19490,22 @@ export default function DaySevenApp() {
           const countsCardio = countsAsCardio;
           const countsRecovery = countsAsRecovery;
 
+          // Every week on the card is judged by the shared rule (utils/weekGoals), against
+          // the goals in force that week — not today's goals.
+          const shareGoalsForWeek = weekGoalsResolver(userData.goals, userData?.goalHistory || []);
+          const shareWeekCtx = weekContext({
+            goals: userData.goals,
+            goalHistory: userData?.goalHistory || [],
+            winningRuleFrom: userData?.winningRuleFrom || null,
+            stepsByDate: stepsByDateFrom(healthHistory || [], healthKitData?.todaySteps || 0, getTodayDate()),
+          });
+          const judgeShareWeek = (weekKey) => judgeWeekFromActivities(activities, weekKey, shareWeekCtx);
+          const judgeCounts = (counts, weekKey) => judgeWeek(counts, shareGoalsForWeek(weekKey), {
+            weekSteps: weekStepsTotal(shareWeekCtx.stepsByDate, weekKey),
+            required: winningCategories(weekKey, shareWeekCtx),
+          });
+          const selectedWeekGoals = shareGoalsForWeek(weekRange.startStr);
+
           // Shielded / vacation weeks are also read directly by last4Weeks and weeksWon below.
           const shieldedWeeks = userData?.streakShield?.shieldedWeeks || [];
           const vacationWeeks = userData?.vacationMode?.vacationWeeks || [];
@@ -19269,6 +19519,8 @@ export default function DaySevenApp() {
             vacationWeeks,
             injuryFrozenWeeks: userData?.injuryMode?.frozenWeeks || {},
             goalHistory: userData?.goalHistory || [],
+            winningRuleFrom: userData?.winningRuleFrom || null,
+            stepsByDate: stepsByDateFrom(healthHistory || [], healthKitData?.todaySteps || 0, getTodayDate()),
             asOf: new Date(`${weekRange.startStr}T12:00:00`),
           });
           const historicalStreaks = {
@@ -19276,6 +19528,7 @@ export default function DaySevenApp() {
             strengthStreak: historicalWalk.current.lifts,
             cardioStreak: historicalWalk.current.cardio,
             recoveryStreak: historicalWalk.current.recovery,
+            stepsStreak: historicalWalk.current.steps,
           };
 
           return {
@@ -19285,13 +19538,14 @@ export default function DaySevenApp() {
           strengthStreak: historicalStreaks.strengthStreak,
           cardioStreak: historicalStreaks.cardioStreak,
           recoveryStreak: historicalStreaks.recoveryStreak,
+          stepsStreak: historicalStreaks.stepsStreak || 0,
+          longestStepsStreak: Math.max(userData.personalRecords.longestStepsStreak || 0, historicalWalk.longest.steps || 0),
           longestStrengthStreak: Math.max(userData.personalRecords.longestStrengthStreak || 0, historicalWalk.longest.lifts),
           longestCardioStreak: Math.max(userData.personalRecords.longestCardioStreak || 0, historicalWalk.longest.cardio),
           longestRecoveryStreak: Math.max(userData.personalRecords.longestRecoveryStreak || 0, historicalWalk.longest.recovery),
           // Last 4 weeks history relative to selected week (true = won, false = missed)
           last4Weeks: (() => {
             const weeks = [];
-            const goals = userData.goals;
 
             // Use the selected week as reference instead of today
             const selectedWeekStart = new Date(weekRange.startStr + 'T12:00:00');
@@ -19310,16 +19564,7 @@ export default function DaySevenApp() {
                 weeks.push(true); // vacation freezes — render as won so the strip doesn't read as a miss
                 continue;
               }
-              const weekActivities = activities.filter(a => a.date >= weekStartStr && a.date <= weekEndStr);
-              const lifts = weekActivities.filter(countsLifts).length;
-              const cardio = weekActivities.filter(countsCardio).length;
-              const recovery = weekActivities.filter(countsRecovery).length;
-
-              const won = isShielded || (
-                lifts >= goals.liftsPerWeek &&
-                cardio >= goals.cardioPerWeek &&
-                recovery >= goals.recoveryPerWeek
-              );
+              const won = isShielded || judgeShareWeek(weekStartStr).all;
               weeks.push(won);
             }
             return weeks.reverse(); // oldest to newest
@@ -19327,7 +19572,6 @@ export default function DaySevenApp() {
           // Total weeks won (up to and including selected week). Shielded weeks
           // count as won; vacation weeks are excluded from the count entirely.
           weeksWon: (() => {
-            const goals = userData.goals;
             const weekMap = {};
 
             // Only count activities up to the selected week
@@ -19357,11 +19601,7 @@ export default function DaySevenApp() {
               if (weekKey > weekRange.endStr) return; // never count weeks past selected
               if (shieldedWeeks.includes(weekKey)) { count++; return; }
               const w = weekMap[weekKey] || { lifts: 0, cardio: 0, recovery: 0 };
-              if (
-                w.lifts >= goals.liftsPerWeek &&
-                w.cardio >= goals.cardioPerWeek &&
-                w.recovery >= goals.recoveryPerWeek
-              ) count++;
+              if (judgeCounts(w, weekKey).all) count++;
             });
             return count;
           })(),
@@ -19369,9 +19609,13 @@ export default function DaySevenApp() {
           weeklyLifts: weekActivitiesForShare.filter(countsLifts).length,
           weeklyCardio: weekActivitiesForShare.filter(countsCardio).length,
           weeklyRecovery: weekActivitiesForShare.filter(countsRecovery).length,
-          liftsGoal: userData.goals.liftsPerWeek,
-          cardioGoal: userData.goals.cardioPerWeek,
-          recoveryGoal: userData.goals.recoveryPerWeek,
+          // The selected week's goals, and whether that week counted (shared rule).
+          liftsGoal: selectedWeekGoals.lifts,
+          cardioGoal: selectedWeekGoals.cardio,
+          recoveryGoal: selectedWeekGoals.recovery,
+          weekJudged: judgeShareWeek(weekRange.startStr),
+          weeklySteps: weekStepsTotal(shareWeekCtx.stepsByDate, weekRange.startStr),
+          weeklyStepsGoal: (selectedWeekGoals.stepsPerDay || 10000) * 7,
           weeklyCalories: weekActivitiesForShare.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0),
           weeklyMiles: weekActivitiesForShare.filter(a => a.distance).reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0),
           // Weekly activities for analysis
@@ -19463,7 +19707,6 @@ export default function DaySevenApp() {
             };
 
             const weeksInMonth = getWeeksInMonth();
-            const goals = userData.goals;
 
             // Count weeks where each goal was met
             let liftWeeksHit = 0;
@@ -19473,16 +19716,11 @@ export default function DaySevenApp() {
 
             weeksInMonth.forEach(week => {
               const weekActivities = activities.filter(a => a.date >= week.startStr && a.date <= week.endStr);
-              const lifts = weekActivities.filter(countsLifts).length;
-              const cardio = weekActivities.filter(countsCardio).length;
-              const recovery = weekActivities.filter(countsRecovery).length;
-
-              if (lifts >= goals.liftsPerWeek) liftWeeksHit++;
-              if (cardio >= goals.cardioPerWeek) cardioWeeksHit++;
-              if (recovery >= goals.recoveryPerWeek) recoveryWeeksHit++;
-              if (lifts >= goals.liftsPerWeek && cardio >= goals.cardioPerWeek && recovery >= goals.recoveryPerWeek) {
-                allGoalsWeeksHit++;
-              }
+              const judged = judgeCounts(countWeekActivities(weekActivities), weekKeyFromDateStr(week.startStr));
+              if (judged.lifts) liftWeeksHit++;
+              if (judged.cardio) cardioWeeksHit++;
+              if (judged.recovery) recoveryWeeksHit++;
+              if (judged.all) allGoalsWeeksHit++;
             });
 
             // Find highest calorie session this month
@@ -19559,9 +19797,9 @@ export default function DaySevenApp() {
               monthRecoveryWeeksHit: recoveryWeeksHit,
               monthAllGoalsWeeksHit: allGoalsWeeksHit,
               // User goals for context
-              liftsGoalMonthly: goals.liftsPerWeek,
-              cardioGoalMonthly: goals.cardioPerWeek,
-              recoveryGoalMonthly: goals.recoveryPerWeek,
+              liftsGoalMonthly: userData.goals.liftsPerWeek,
+              cardioGoalMonthly: userData.goals.cardioPerWeek,
+              recoveryGoalMonthly: userData.goals.recoveryPerWeek,
               // Highlights
               monthlyHighestCalorieSession: highestCalorieSession,
               monthlyLongestSession: longestSession,
@@ -19609,11 +19847,18 @@ export default function DaySevenApp() {
         show={showWeekStreakCelebration && !challengeModalActivity}
         streakCount={userData?.streaks?.master || 1}
         goals={userData?.goals || {}}
-        weekCounts={{
-          strength: calculateWeeklyProgress(activities)?.lifts?.completed || 0,
-          cardio: calculateWeeklyProgress(activities)?.cardio?.completed || 0,
-          recovery: calculateWeeklyProgress(activities)?.recovery?.completed || 0
-        }}
+        weekCounts={(() => {
+          const progress = calculateWeeklyProgress(activities);
+          const ctx = buildWeekCtx();
+          const weekKey = getCurrentWeekKey();
+          return {
+            strength: progress?.lifts?.completed || 0,
+            cardio: progress?.cardio?.completed || 0,
+            recovery: progress?.recovery?.completed || 0,
+            steps: weekStepsTotal(ctx.stepsByDate, weekKey),
+            stepsRule: winningCategories(weekKey, ctx).includes('steps'),
+          };
+        })()}
         onClose={() => {
           setShowWeekStreakCelebration(false);
           // Show pending toast after week streak celebration closes

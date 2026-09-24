@@ -39,10 +39,16 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
     a.type === 'Walking' && !a.countToward
   ) || [];
 
-  const goals = userData?.goals || initialUserData.goals;
-  const liftsGoalMet = (weekData?.lifts || 0) >= goals.liftsPerWeek;
-  const cardioGoalMet = (weekData?.cardio || 0) >= goals.cardioPerWeek;
-  const recoveryGoalMet = (weekData?.recovery || 0) >= goals.recoveryPerWeek;
+  // The goals in force THAT week and the verdict both come from the shared rule
+  // (utils/weekGoals, via Profile's weekData); current goals are only a fallback.
+  const baseGoals = userData?.goals || initialUserData.goals;
+  const wg = weekData?.weekGoals;
+  const goals = wg
+    ? { ...baseGoals, liftsPerWeek: wg.lifts, cardioPerWeek: wg.cardio, recoveryPerWeek: wg.recovery, stepsPerDay: wg.stepsPerDay }
+    : baseGoals;
+  const liftsGoalMet = weekData?.weekJudged ? weekData.weekJudged.lifts : (weekData?.lifts || 0) >= goals.liftsPerWeek;
+  const cardioGoalMet = weekData?.weekJudged ? weekData.weekJudged.cardio : (weekData?.cardio || 0) >= goals.cardioPerWeek;
+  const recoveryGoalMet = weekData?.weekJudged ? weekData.weekJudged.recovery : (weekData?.recovery || 0) >= goals.recoveryPerWeek;
 
   // The week that's still happening reads as in progress, not failed: unmet goals show a
   // count instead of a red ✗, and steps get Home's pace view (see HomeTab's weekSteps).
@@ -53,6 +59,13 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
   const weekStepsTotal = weekData?.steps || 0;
   const formatK = (n) => `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
 
+  // Every week shows Strength, Cardio, Steps with Recovery as the bonus. Whether the week
+  // counted still follows the rule it was judged by (utils/weekGoals): weeks before the
+  // user's start week needed Recovery instead of Steps, and the "Week won" row says so.
+  const weekRequired = weekData?.weekJudged?.required || ['lifts', 'cardio', 'recovery'];
+  const originalRuleWeek = weekRequired.includes('recovery');
+  const stepsGoalMet = weekData?.weekJudged ? !!weekData.weekJudged.steps : weekStepsTotal >= weekStepsGoal;
+
   // Vacation/shield weeks keep streaks alive without hitting the goals, so the
   // streak rows show 🌴/🛡️ rather than a red ✗ (mirrors the Activity Calendar cells).
   const isVacation = !!weekData?.isVacation;
@@ -60,8 +73,12 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
   const isInjury = !!weekData?.isInjury;
   const injuryFrozenCats = weekData?.injuryFrozenCats || [];
   // A category row is injury-frozen if injury was active that week and the category was paused.
-  // Master ('master') is always frozen during any injury.
-  const injuryFrozenRow = (cat) => isInjury && (cat === 'master' || injuryFrozenCats.includes(cat));
+  // The Winning Streak ('master') is frozen when a category it needs that week is paused
+  // (under the original rule, any injury).
+  const masterNeeds = weekData?.weekJudged?.required || ['lifts', 'cardio', 'recovery'];
+  const injuryFrozenRow = (cat) => isInjury && (cat === 'master'
+    ? (masterNeeds.includes('recovery') || injuryFrozenCats.some(c => masterNeeds.includes(c)))
+    : injuryFrozenCats.includes(cat));
   const streakIcon = (met, color, cat, count, goal) => {
     if (isVacation) return <span style={{ fontSize: '13px', lineHeight: 1 }}>🌴</span>;
     if (injuryFrozenRow(cat)) return <span style={{ fontSize: '13px', lineHeight: 1 }}>🩹</span>;
@@ -164,9 +181,9 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
             <div className="text-2xl font-black" style={{ color: '#FF9500' }}>{weekData?.cardio || 0}<span className="text-[13px] font-semibold" style={{ opacity: 0.55 }}>/{goals.cardioPerWeek}</span></div>
             <div className="text-[10px] text-gray-400"><CategoryIcon category="cardio" size={11} className="inline align-[-2px] mr-1" />Cardio</div>
           </div>
-          <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
-            <div className="text-2xl font-black" style={{ color: '#00D1FF' }}>{weekData?.recovery || 0}<span className="text-[13px] font-semibold" style={{ opacity: 0.55 }}>/{goals.recoveryPerWeek}</span></div>
-            <div className="text-[10px] text-gray-400"><CategoryIcon category="recovery" size={11} className="inline align-[-2px] mr-1" />Recovery</div>
+          <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(191,90,242,0.1)' }}>
+            <div className="text-2xl font-black" style={{ color: '#BF5AF2' }}>{Math.round(weekStepsTotal / 1000)}k<span className="text-[13px] font-semibold" style={{ opacity: 0.55 }}>/{formatK(weekStepsGoal)}</span></div>
+            <div className="text-[10px] text-gray-400"><CategoryIcon category="steps" size={11} className="inline align-[-2px] mr-1" />Steps</div>
           </div>
         </div>
 
@@ -176,7 +193,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
           if (isVacation) {
             bg = 'rgba(255,149,0,0.1)'; border = 'rgba(255,149,0,0.3)'; color = '#FF9500'; label = '🌴 Vacation Week';
           } else if (isInjury) {
-            bg = 'rgba(167,139,250,0.1)'; border = 'rgba(167,139,250,0.3)'; color = '#A78BFA'; label = injuryFrozenCats.length >= 3 ? '🩹 Injury Mode' : '🩹 Injury Mode · partial';
+            bg = 'rgba(167,139,250,0.1)'; border = 'rgba(167,139,250,0.3)'; color = '#A78BFA'; label = ['lifts', 'cardio', 'steps', 'recovery'].every(c => injuryFrozenCats.includes(c)) ? '🩹 Injury Mode' : '🩹 Injury Mode · partial';
           } else if (isShielded) {
             bg = 'rgba(0,209,255,0.1)'; border = 'rgba(0,209,255,0.3)'; color = '#00D1FF'; label = '🛡️ Shield Used';
           } else if (weekData?.goalsMet) {
@@ -272,20 +289,32 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
               </div>
               {streakIcon(cardioGoalMet, '#FF9500', 'cardio', weekData?.cardio || 0, goals.cardioPerWeek)}
             </div>
-            <div className="p-3 rounded-xl flex items-center justify-between" style={streakRowStyle(recoveryGoalMet, '0,209,255', 'recovery')}>
+            <div className="p-3 rounded-xl flex items-center justify-between" style={streakRowStyle(stepsGoalMet, '191,90,242', 'steps')}>
               <div>
-                <span className="text-xs"><CategoryIcon category="recovery" size={12} className="inline align-[-2px] mr-1" />Recovery</span>
-                <div className="text-[10px] text-gray-500">{goals.recoveryPerWeek}+ per week</div>
+                <span className="text-xs"><CategoryIcon category="steps" size={12} className="inline align-[-2px] mr-1" />Steps</span>
+                <div className="text-[10px] text-gray-500">{formatK(weekStepsGoal)} per week</div>
               </div>
-              {streakIcon(recoveryGoalMet, '#00D1FF', 'recovery', weekData?.recovery || 0, goals.recoveryPerWeek)}
+              {streakIcon(stepsGoalMet, '#BF5AF2', 'steps', formatK(weekStepsTotal), formatK(weekStepsGoal))}
             </div>
             <div className="p-3 rounded-xl flex items-center justify-between" style={streakRowStyle(!!weekData?.goalsMet, '255,215,0', 'master')}>
               <div>
                 <span className="text-xs">🏆 Week won</span>
-                <div className="text-[10px] text-gray-500">All goals hit</div>
+                <div className="text-[10px] text-gray-500">{originalRuleWeek ? 'Strength + Cardio + Recovery' : weekRequired.includes('steps') ? 'Strength + Cardio + Steps' : 'Strength + Cardio'}</div>
               </div>
               {streakIcon(!!weekData?.goalsMet, '#FFD700', 'master')}
             </div>
+          </div>
+          {/* Recovery: its own streak. A bonus from the user's start week; before it, it was
+              part of the win, so no Bonus tag there. */}
+          <div className="mt-2 p-3 rounded-xl flex items-center justify-between" style={streakRowStyle(recoveryGoalMet, '0,209,255', 'recovery')}>
+            <div className="flex items-center gap-2">
+              <span className="text-xs"><CategoryIcon category="recovery" size={12} className="inline align-[-2px] mr-1" />Recovery</span>
+              <span className="text-[10px] text-gray-500">{goals.recoveryPerWeek}+ per week</span>
+              {!originalRuleWeek && (
+                <span className="text-[8px] font-bold tracking-wider uppercase px-1.5 py-[1px] rounded-full" style={{ backgroundColor: 'rgba(0,209,255,0.12)', color: '#00D1FF' }}>Bonus</span>
+              )}
+            </div>
+            {streakIcon(recoveryGoalMet, '#00D1FF', 'recovery', weekData?.recovery || 0, goals.recoveryPerWeek)}
           </div>
         </div>
 

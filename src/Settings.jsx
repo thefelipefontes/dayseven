@@ -55,7 +55,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
   const [injuryWeeks, setInjuryWeeks] = useState(4);
   // Which category streaks the injury freezes. Defaults to all three (a full injury);
   // deselecting some makes it a partial injury where the rest keep counting.
-  const [injuryCats, setInjuryCats] = useState(['lifts', 'cardio', 'recovery']);
+  const [injuryCats, setInjuryCats] = useState(['lifts', 'cardio', 'steps', 'recovery']);
   // Play a fade/scale-out before unmounting the injury modals, so tapping out animates
   // away instead of flashing. Mirrors the run-an-optional-callback-after-close pattern.
   const [injuryConfirmClosing, setInjuryConfirmClosing] = useState(false);
@@ -1427,9 +1427,10 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                 <p className="text-[11px] text-gray-500 ml-4">
                   {(() => {
                     const im = userData.injuryMode || {};
-                    const labels = { lifts: 'Strength', cardio: 'Cardio', recovery: 'Recovery' };
-                    const fc = (Array.isArray(im.frozenCategories) && im.frozenCategories.length > 0) ? im.frozenCategories : ['lifts', 'cardio', 'recovery'];
-                    const paused = fc.length >= 3 ? 'All streaks paused' : `${fc.map(c => labels[c] || c).join(' & ')} paused`;
+                    const labels = { lifts: 'Strength', cardio: 'Cardio', steps: 'Steps', recovery: 'Recovery' };
+                    const all = ['lifts', 'cardio', 'steps', 'recovery'];
+                    const fc = (Array.isArray(im.frozenCategories) && im.frozenCategories.length > 0) ? im.frozenCategories : all;
+                    const paused = all.every(c => fc.includes(c)) ? 'All streaks paused' : `${fc.map(c => labels[c] || c).join(' & ')} paused`;
                     if (!im.estimatedEndWeek) return `${paused} while you heal`;
                     const end = new Date(im.estimatedEndWeek + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
                     return `${paused} · auto-resumes around ${end}`;
@@ -2734,6 +2735,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                   {[
                     { id: 'lifts', label: 'Strength', color: '#00FF94' },
                     { id: 'cardio', label: 'Cardio', color: '#FF9500' },
+                    { id: 'steps', label: 'Steps', color: '#BF5AF2' },
                     { id: 'recovery', label: 'Recovery', color: '#00D1FF' },
                   ].map(cat => {
                     const paused = injuryCats.includes(cat.id);
@@ -2756,10 +2758,12 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                   })}
                 </div>
 
-                {/* Clarify the hybrid-streak behavior whenever it's a partial injury (some active). */}
-                {injuryCats.length > 0 && injuryCats.length < 3 && (
+                {/* Clarify the winning-streak behavior whenever it's a partial injury (some active). */}
+                {injuryCats.length > 0 && injuryCats.length < 4 && (
                   <p className="text-[11px] text-center mb-5 leading-snug" style={{ color: '#A78BFA' }}>
-                    Your winning streak stays paused while any area is healing — even as an active one keeps climbing.
+                    {injuryCats.some(c => c !== 'recovery')
+                      ? 'Your winning streak stays paused while Strength, Cardio or Steps is healing — even as an active one keeps climbing.'
+                      : 'Recovery doesn\'t count toward your winning streak, so it keeps running while Recovery is paused.'}
                   </p>
                 )}
 

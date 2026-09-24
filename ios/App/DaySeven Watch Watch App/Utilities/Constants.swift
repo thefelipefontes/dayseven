@@ -6,6 +6,7 @@ struct AppColors {
     static let strength = Color(red: 0.0, green: 1.0, blue: 0.58)    // #00FF94 green
     static let cardio = Color(red: 1.0, green: 0.58, blue: 0.0)      // #FF9500 orange
     static let recovery = Color(red: 0.0, green: 0.82, blue: 1.0)    // #00D1FF blue
+    static let steps = Color(red: 0.749, green: 0.353, blue: 0.949) // #BF5AF2 purple (weekly steps ring)
     static let streak = Color.yellow
     static let background = Color.black
     static let cardBackground = Color(white: 0.12)

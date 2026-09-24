@@ -20,7 +20,8 @@ import ActivityDetailModal from './components/ActivityDetailModal';
 import TrendsView from './components/TrendsView';
 import OwnProfileModal from './components/OwnProfileModal';
 import { resolveUnit, unitLabel, formatDistanceValue, milesToDisplay, formatPace } from './utils/distance';
-import { getActivityCategory } from './utils/activityCategory';
+import { getActivityCategory, countsAsLifting, countsAsCardio } from './utils/activityCategory';
+import { judgeWeekFromActivities, judgeWeek, countWeekActivities, weekGoalsResolver, weekContext, stepsByDateFrom, weekStepsTotal, winningCategories } from './utils/weekGoals';
 import { manualCaloriesForDate } from './utils/calories';
 
 
@@ -39,7 +40,7 @@ const injuryCalendarCats = (weekKey, injuryMode) => {
     if (end && weekKey >= injuryMode.startWeek && weekKey < end) {
       return (Array.isArray(injuryMode.frozenCategories) && injuryMode.frozenCategories.length > 0)
         ? injuryMode.frozenCategories
-        : ['lifts', 'cardio', 'recovery'];
+        : ['lifts', 'cardio', 'steps', 'recovery'];
     }
   }
   return null;
@@ -183,6 +184,15 @@ export default function ProfilePage(props) {
   const records = userData?.personalRecords || initialUserData.personalRecords;
   const streaks = userData?.streaks || initialUserData.streaks;
   const goals = userData?.goals || initialUserData.goals;
+
+  // Everything needed to judge a week (shared rule, utils/weekGoals): goals, goal history,
+  // the user's steps-rule start week, and daily steps with today's live reading.
+  const profileWeekCtx = useMemo(() => weekContext({
+    goals,
+    goalHistory: userData?.goalHistory || [],
+    winningRuleFrom: userData?.winningRuleFrom || null,
+    stepsByDate: stepsByDateFrom(healthHistory, healthKitData.todaySteps || 0, todayStr),
+  }), [goals, userData?.goalHistory, userData?.winningRuleFrom, healthHistory, healthKitData.todaySteps, todayStr]);
 
   // Helper to safely get record value (handles both old number format and new object format)
   // Returns null if no record exists (0 or null values)
@@ -398,11 +408,8 @@ export default function ProfilePage(props) {
         result[week.id] = false;
         return;
       }
-      const weekActivities = activities.filter(a => a.date >= startStr && a.date <= endStr);
-      const lifts = weekActivities.filter(a => { const c = getActivityCategory(a); return c === 'lifting' || c === 'lifting+cardio'; }).length;
-      const cardio = weekActivities.filter(a => { const c = getActivityCategory(a); return c === 'cardio' || c === 'lifting+cardio'; }).length;
-      const recovery = weekActivities.filter(a => getActivityCategory(a) === 'recovery').length;
-      result[week.id] = lifts >= goals.liftsPerWeek && cardio >= goals.cardioPerWeek && recovery >= goals.recoveryPerWeek;
+      // Shared rule (utils/weekGoals), against the goals in force that week.
+      result[week.id] = judgeWeekFromActivities(activities, startStr, profileWeekCtx).all;
     });
     return result;
   })();
@@ -546,9 +553,10 @@ export default function ProfilePage(props) {
       return actDate >= startOfWeek && actDate <= today;
     });
 
-    const lifts = weekActivities.filter(a => getActivityCategory(a) === 'lifting').length;
-    const cardio = weekActivities.filter(a => getActivityCategory(a) === 'cardio').length;
-    const recovery = weekActivities.filter(a => getActivityCategory(a) === 'recovery').length;
+    // Goal-slot counts (a Circuit-style 'lifting+cardio' session fills both) and the verdict
+    // come from the shared rule in utils/weekGoals.
+    const { lifts, cardio, recovery } = countWeekActivities(weekActivities);
+    const workouts = weekActivities.filter(a => countsAsLifting(a) || countsAsCardio(a)).length;
     const miles = weekActivities.reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
 
     // Calculate calories and steps for the week from healthDataByDate
@@ -568,14 +576,14 @@ export default function ProfilePage(props) {
     }
 
     return {
-      workouts: lifts + cardio,
+      workouts,
       lifts,
       cardio,
       recovery,
       calories: weekCalories,
       steps: weekSteps,
       miles,
-      goalsMet: lifts >= goals.liftsPerWeek && cardio >= goals.cardioPerWeek && recovery >= goals.recoveryPerWeek
+      goalsMet: judgeWeekFromActivities(activities, toLocalDateStr(startOfWeek), profileWeekCtx).all
     };
   };
   
@@ -861,15 +869,7 @@ export default function ProfilePage(props) {
           cwStart.setHours(0, 0, 0, 0);
           const cwStartStr = `${cwStart.getFullYear()}-${String(cwStart.getMonth() + 1).padStart(2, '0')}-${String(cwStart.getDate()).padStart(2, '0')}`;
 
-          const cwActs = activities.filter(a => a.date >= cwStartStr);
-          const liftsCount = cwActs.filter(a => { const c = getActivityCategory(a); return c === 'lifting' || c === 'lifting+cardio'; }).length;
-          const cardioCount = cwActs.filter(a => { const c = getActivityCategory(a); return c === 'cardio' || c === 'lifting+cardio'; }).length;
-          const recoveryCount = cwActs.filter(a => getActivityCategory(a) === 'recovery').length;
-
-          const liftsRemaining = Math.max(0, goals.liftsPerWeek - liftsCount);
-          const cardioRemaining = Math.max(0, goals.cardioPerWeek - cardioCount);
-          const recoveryRemaining = Math.max(0, goals.recoveryPerWeek - recoveryCount);
-          const anyRemaining = liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0;
+          const anyRemaining = !judgeWeekFromActivities(activities, cwStartStr, profileWeekCtx).all;
 
           const hasActiveStreak = (userData?.streaks?.master || 0) > 0
             || (userData?.streaks?.lifts || 0) > 0
@@ -940,13 +940,10 @@ export default function ProfilePage(props) {
           cwStart.setDate(todayDate.getDate() - todayDate.getDay());
           cwStart.setHours(0, 0, 0, 0);
           const cwStartStr = `${cwStart.getFullYear()}-${String(cwStart.getMonth() + 1).padStart(2, '0')}-${String(cwStart.getDate()).padStart(2, '0')}`;
-          const cwEnd = new Date(cwStart);
-          cwEnd.setDate(cwEnd.getDate() + 6);
-          const cwEndStr = `${cwEnd.getFullYear()}-${String(cwEnd.getMonth() + 1).padStart(2, '0')}-${String(cwEnd.getDate()).padStart(2, '0')}`;
-          const cwActs = activities.filter(a => a.date >= cwStartStr && a.date <= cwEndStr);
-          const cwLiftsOk = cwActs.filter(a => { const c = getActivityCategory(a); return c === 'lifting' || c === 'lifting+cardio'; }).length >= goals.liftsPerWeek;
-          const cwCardioOk = cwActs.filter(a => { const c = getActivityCategory(a); return c === 'cardio' || c === 'lifting+cardio'; }).length >= goals.cardioPerWeek;
-          const cwRecoveryOk = cwActs.filter(a => getActivityCategory(a) === 'recovery').length >= goals.recoveryPerWeek;
+          const cwJudged = judgeWeekFromActivities(activities, cwStartStr, profileWeekCtx);
+          const cwLiftsOk = cwJudged.lifts;
+          const cwCardioOk = cwJudged.cardio;
+          const cwRecoveryOk = cwJudged.recovery;
 
           const CheckBadge = ({ met, color }) => met ? (
             <div className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full flex items-center justify-center" style={{ backgroundColor: color }}>
@@ -955,6 +952,7 @@ export default function ProfilePage(props) {
           ) : null;
 
           return (
+            <>
             <div className="grid grid-cols-3 gap-2">
               {/* Strength Streak */}
               <div className="px-2.5 py-2 rounded-xl bg-zinc-800/60 relative overflow-hidden">
@@ -980,18 +978,31 @@ export default function ProfilePage(props) {
                 <span className="text-[10px] text-gray-500 block">{goals.cardioPerWeek}+/week</span>
               </div>
 
-              {/* Recovery Streak */}
+              {/* Steps Streak — weekly steps goal (stepsPerDay × 7); counts toward the Winning Streak */}
               <div className="px-2.5 py-2 rounded-xl bg-zinc-800/60 relative overflow-hidden">
-                <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ backgroundColor: '#00D1FF' }}></div>
-                <CheckBadge met={cwRecoveryOk} color="#00D1FF" />
+                <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ backgroundColor: '#BF5AF2' }}></div>
+                <CheckBadge met={cwJudged.steps} color="#BF5AF2" />
                 <div className="flex items-center gap-1.5">
-                  <span className="text-sm"><CategoryIcon category="recovery" size={14} /></span>
-                  <span className="text-lg font-bold leading-tight" style={{ color: '#00D1FF' }}>{streaks.recovery}</span>
+                  <span className="text-sm"><CategoryIcon category="steps" size={14} /></span>
+                  <span className="text-lg font-bold leading-tight" style={{ color: '#BF5AF2' }}>{streaks.steps || 0}</span>
                 </div>
-                <span className="text-[11px] text-gray-400">Recovery</span>
-                <span className="text-[10px] text-gray-500 block">{goals.recoveryPerWeek}+/week</span>
+                <span className="text-[11px] text-gray-400">Steps</span>
+                <span className="text-[10px] text-gray-500 block">{Math.round((goals.stepsPerDay || 10000) * 7 / 1000)}k/week</span>
               </div>
             </div>
+
+            {/* Recovery — its own streak, a bonus: it doesn't count toward the Winning Streak */}
+            <div className="mt-2 px-3 py-2 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(0,209,255,0.06)', border: '1px solid rgba(0,209,255,0.15)' }}>
+              <span className="flex items-center gap-2 text-xs">
+                <CategoryIcon category="recovery" size={13} />
+                <span className="text-white">Recovery</span>
+                <span className="font-bold" style={{ color: '#00D1FF' }}>{streaks.recovery || 0}w</span>
+                <span className="text-gray-500">{goals.recoveryPerWeek}+/week</span>
+                {cwRecoveryOk && <span className="text-[10px] font-bold" style={{ color: '#00D1FF' }}>✓</span>}
+              </span>
+              <span className="text-[8px] font-bold tracking-wider uppercase px-1.5 py-[1px] rounded-full" style={{ backgroundColor: 'rgba(0,209,255,0.12)', color: '#00D1FF' }}>Bonus</span>
+            </div>
+            </>
           );
         })()}
       </div>
@@ -2157,7 +2168,7 @@ export default function ProfilePage(props) {
                   </div>
 
                   {/* Other Streaks */}
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-4 gap-2">
                     <div>
                       <div className="text-[10px] text-gray-600 mb-1"><CategoryIcon category="lifts" size={11} className="inline align-[-2px] mr-1" />Strength</div>
                       <div className="text-lg font-bold text-white">
@@ -2168,6 +2179,12 @@ export default function ProfilePage(props) {
                       <div className="text-[10px] text-gray-600 mb-1"><CategoryIcon category="cardio" size={11} className="inline align-[-2px] mr-1" />Cardio</div>
                       <div className="text-lg font-bold text-white">
                         {records.longestCardioStreak ? `${records.longestCardioStreak}w` : '—'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-gray-600 mb-1"><CategoryIcon category="steps" size={11} className="inline align-[-2px] mr-1" />Steps</div>
+                      <div className="text-lg font-bold text-white">
+                        {records.longestStepsStreak ? `${records.longestStepsStreak}w` : '—'}
                       </div>
                     </div>
                     <div>
@@ -3315,9 +3332,10 @@ export default function ProfilePage(props) {
             return 0;
           });
 
-          const lifts = weekActivities.filter(a => getActivityCategory(a) === 'lifting');
-          const cardioArr = weekActivities.filter(a => getActivityCategory(a) === 'cardio');
-          const recoveryArr = weekActivities.filter(a => getActivityCategory(a) === 'recovery');
+          // Shared rule (utils/weekGoals): dual-counts 'lifting+cardio' and judges against the
+          // goals in force that week.
+          const weekCounts = countWeekActivities(weekActivities);
+          const weekVerdict = judgeWeekFromActivities(activities, weekDates[0], profileWeekCtx);
           const miles = weekActivities.filter(a => a.type === 'Running' || a.type === 'Cycle' || a.type === 'Walking').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
 
           // Calculate calories: HealthKit active calories + manually logged (not from/linked to HealthKit)
@@ -3345,16 +3363,18 @@ export default function ProfilePage(props) {
           const daysElapsed = Math.max(1, weekDates.filter(d => d <= todayKey).length);
 
           return {
-            lifts: lifts.length,
-            cardio: cardioArr.length,
-            recovery: recoveryArr.length,
+            lifts: weekCounts.lifts,
+            cardio: weekCounts.cardio,
+            recovery: weekCounts.recovery,
+            weekGoals: weekGoalsResolver(goals, userData?.goalHistory || [])(weekDates[0]),
             calories: weekCalories,
             steps: weekSteps,
             daysElapsed,
             isCurrentWeek: weekDates.includes(todayKey),
             miles: miles,
             activities: weekActivities,
-            goalsMet: lifts.length >= goals.liftsPerWeek && cardioArr.length >= goals.cardioPerWeek && recoveryArr.length >= goals.recoveryPerWeek,
+            goalsMet: weekVerdict.all,
+            weekJudged: weekVerdict,
             isVacation,
             isShielded,
             isInjury,

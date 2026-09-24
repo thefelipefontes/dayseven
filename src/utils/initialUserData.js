@@ -18,7 +18,8 @@ export const initialUserData = {
     lifts: 0,
     cardio: 0,
     recovery: 0,
-    stepsGoal: 0
+    steps: 0,      // weekly steps goal met (stepsPerDay × 7) — counts toward the Winning Streak
+    stepsGoal: 0   // legacy, never computed; the Watch still round-trips it
   },
   streakShield: {
     lastUsedWeek: null,    // Week key when shield was last used (e.g., "2026-03-02")
@@ -49,6 +50,7 @@ export const initialUserData = {
     longestMasterStreak: 0,
     longestStrengthStreak: 0,
     longestCardioStreak: 0,
-    longestRecoveryStreak: 0
+    longestRecoveryStreak: 0,
+    longestStepsStreak: 0
   }
 };

@@ -127,6 +127,7 @@ const calculateLeaderboardStats = (rawActivities, healthHistory, recordsData) =>
     strengthStreak: activeStreaks?.lifts ?? personalRecords?.longestStrengthStreak ?? 0,
     cardioStreak: activeStreaks?.cardio ?? personalRecords?.longestCardioStreak ?? 0,
     recoveryStreak: activeStreaks?.recovery ?? personalRecords?.longestRecoveryStreak ?? 0,
+    stepsStreak: activeStreaks?.steps ?? personalRecords?.longestStepsStreak ?? 0,
     totalWorkouts,
     stats: {
       calories: { week: weekStats.calories, month: monthStats.calories, year: yearStats.calories, all: allStats.calories },
@@ -1044,7 +1045,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   const [leaderboardData, setLeaderboardData] = useState([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [leaderboardSection, setLeaderboardSection] = useState('activity'); // 'activity', 'streak', or 'challenges'
-  const [leaderboardCategory, setLeaderboardCategory] = useState('calories'); // Activity: 'calories', 'steps', 'workouts' | Streak: 'master', 'strength', 'cardio', 'recovery' | Challenges: 'wins', 'currentStreak', 'longestStreak'
+  const [leaderboardCategory, setLeaderboardCategory] = useState('calories'); // Activity: 'calories', 'steps', 'workouts' | Streak: 'master', 'strength', 'cardio', 'stepsStreak', 'recovery' | Challenges: 'wins', 'currentStreak', 'longestStreak'
   const [leaderboardTimeRange, setLeaderboardTimeRange] = useState('week'); // Activity: 'week', 'month', 'year', 'all' | Streak/Challenges: 'all'
   const [selectedFriend, setSelectedFriend] = useState(null); // For viewing friend profile
 
@@ -1067,6 +1068,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         strengthStreak: activeStreaks?.lifts ?? 0,
         cardioStreak: activeStreaks?.cardio ?? 0,
         recoveryStreak: activeStreaks?.recovery ?? 0,
+        stepsStreak: activeStreaks?.steps ?? 0,
       });
     } catch (e) {
       // On failure, show with zeros rather than not showing at all
@@ -2122,6 +2124,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         case 'strength': return userData.strengthStreak || 0;
         case 'cardio': return userData.cardioStreak || 0;
         case 'recovery': return userData.recoveryStreak || 0;
+        case 'stepsStreak': return userData.stepsStreak || 0;
         case 'calories': return userData.stats?.calories?.[tr] || 0;
         case 'steps': return userData.stats?.steps?.[tr] || 0;
         case 'workouts': {
@@ -2229,6 +2232,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         case 'cardioSessions': return '#FF9500';
         case 'recovery': return '#00D1FF';
         case 'recoverySessions': return '#00D1FF';
+        case 'stepsStreak': return '#BF5AF2';
         case 'calories': return '#FF6B6B';
         case 'steps': return '#BF5AF2';
         case 'workouts': return '#FFD60A';
@@ -2310,6 +2314,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         case 'strength': return userData.strengthStreak || 0;
         case 'cardio': return userData.cardioStreak || 0;
         case 'recovery': return userData.recoveryStreak || 0;
+        case 'stepsStreak': return userData.stepsStreak || 0;
         case 'calories': return userData.stats?.calories?.[timeRange] || 0;
         case 'steps': return userData.stats?.steps?.[timeRange] || 0;
         case 'workouts': {
@@ -2596,6 +2601,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           case 'strength': return userData.strengthStreak || 0;
           case 'cardio': return userData.cardioStreak || 0;
           case 'recovery': return userData.recoveryStreak || 0;
+          case 'stepsStreak': return userData.stepsStreak || 0;
           default: return userData.masterStreak || 0;
         }
       }
@@ -2636,7 +2642,8 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           case 'strength': return <>{mark('lifts')}Strength Streak</>;
           case 'cardio': return <>{mark('cardio')}Cardio Streak</>;
           case 'recovery': return <>{mark('recovery')}Recovery Streak</>;
-          default: return <>{mark('overall')}Overall Streak</>;
+          case 'stepsStreak': return <>{mark('steps')}Steps Streak</>;
+          default: return <>{mark('overall')}Winning Streak</>;
         }
       }
     };
@@ -2798,6 +2805,8 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                 { key: 'master', cat: 'overall', label: 'Overall', color: '#FFD700' },
                 { key: 'strength', cat: 'lifts', label: 'Strength', color: '#00FF94' },
                 { key: 'cardio', cat: 'cardio', label: 'Cardio', color: '#FF9500' },
+                // 'stepsStreak', not 'steps': that key is the activity-steps leaderboard.
+                { key: 'stepsStreak', cat: 'steps', label: 'Steps', color: '#BF5AF2' },
                 { key: 'recovery', cat: 'recovery', label: 'Recovery', color: '#00D1FF' }
               ].map((cat) => (
                 <ScrollablePill

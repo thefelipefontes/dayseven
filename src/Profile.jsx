@@ -1039,7 +1039,9 @@ export default function ProfilePage(props) {
               </div>
             </div>
 
-            {/* Recovery — its own streak, a bonus: it doesn't count toward the Winning Streak */}
+            {/* Recovery — its own streak, a bonus: it doesn't count toward the Winning Streak.
+                Hidden when Recovery is off (goal 0). */}
+            {(goals.recoveryPerWeek ?? 2) > 0 && (
             <div className="mt-2 px-3 py-2 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(0,209,255,0.06)', border: '1px solid rgba(0,209,255,0.18)' }}>
               <span className="flex items-center gap-2 text-xs">
                 <CategoryIcon category="recovery" size={13} />
@@ -1050,6 +1052,7 @@ export default function ProfilePage(props) {
               </span>
               <span className="text-[8px] font-bold tracking-wider uppercase px-1.5 py-[1px] rounded-full" style={{ backgroundColor: 'rgba(0,209,255,0.12)', color: '#00D1FF' }}>Bonus</span>
             </div>
+            )}
             </>
           );
         })()}

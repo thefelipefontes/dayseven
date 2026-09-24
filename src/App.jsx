@@ -4099,7 +4099,7 @@ const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1, goals 
                 <div className="w-3 h-3 rounded-full mb-1" style={{ backgroundColor: COLORS.recovery, boxShadow: `0 0 8px ${COLORS.recovery}` }} />
                 <span className="text-[11px] text-gray-400">Recovery</span>
                 <span className="text-base font-bold" style={{ color: COLORS.recovery }}>
-                  {weekCounts.recovery || 0}/{goals.recoveryPerWeek || 2}
+                  {weekCounts.recovery || 0}/{goals.recoveryPerWeek ?? 2}
                 </span>
               </div>
             )}
@@ -7667,7 +7667,8 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
               subtitle="Cold plunge, sauna, yoga, pilates · its own streak, doesn't affect your winning streak"
               color="#00D1FF"
               goalKey="recoveryPerWeek"
-              options={[1, 2, 3, 4]}
+              options={[0, 1, 2, 3, 4]}
+              fmt={(v) => (v === 0 ? 'Off' : `${v}`)}
               badge={<span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(0,209,255,0.12)', color: '#00D1FF' }}>BONUS</span>}
             />
           </div>
@@ -13498,7 +13499,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
           )}
           
           {/* Recovery Breakdown - Expandable */}
-          {showRecoveryBreakdown && (
+          {showRecoveryBreakdown && (userData?.goals?.recoveryPerWeek ?? 2) > 0 && (
             <div className="mt-4 pt-4 border-t border-white/10">
               <div className="text-xs text-gray-400 mb-2">Recovery Breakdown</div>
               <div className="grid grid-cols-2 gap-2 text-center">
@@ -13559,7 +13560,8 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                 winning the week, so it doesn't get its own row (tap for the breakdown). */}
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-gray-400">Week Progress <span className="font-bold ml-1" style={{ color: overallPercent >= 100 ? '#00FF94' : 'white' }}><AnimatedCounter value={overallPercent} />%</span></span>
-              <span className="flex items-center gap-1.5"><span className="text-[10px] text-gray-500">Bonus</span>{recoveryChip}</span>
+              {/* Recovery off (goal 0): no bonus chip */}
+              {(userData?.goals?.recoveryPerWeek ?? 2) > 0 && <span className="flex items-center gap-1.5"><span className="text-[10px] text-gray-500">Bonus</span>{recoveryChip}</span>}
             </div>
             <ProgressBar progress={overallPercent} height={4} color={overallPercent >= 100 ? '#00FF94' : '#00FF94'} />
           </div>
@@ -16829,7 +16831,7 @@ export default function DaySevenApp() {
       cardioCompleted: p?.cardio?.completed || 0,
       cardioGoal: g.cardioPerWeek || 3,
       recoveryCompleted: p?.recovery?.completed || 0,
-      recoveryGoal: g.recoveryPerWeek || 2,
+      recoveryGoal: g.recoveryPerWeek ?? 2,
       todaySteps: hk.todaySteps || 0,
       stepsGoal: g.stepsPerDay || 10000,
       // Match the in-app ring: HealthKit active energy + hand-entered calories it
@@ -20312,3 +20314,4 @@ export default function DaySevenApp() {
     </div>
   );
 }
+

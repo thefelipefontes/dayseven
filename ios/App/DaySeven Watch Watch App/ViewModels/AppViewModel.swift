@@ -421,7 +421,8 @@ class AppViewModel: ObservableObject {
                 "week": weekKey,
                 "lifts": completed.lifts || newProgress.lifts.completed >= goals.liftsPerWeek,
                 "cardio": completed.cardio || newProgress.cardio.completed >= goals.cardioPerWeek,
-                "recovery": completed.recovery || newProgress.recovery.completed >= goals.recoveryPerWeek,
+                // A recovery goal of 0 means Recovery is off — never "met"
+                "recovery": completed.recovery || (goals.recoveryPerWeek > 0 && newProgress.recovery.completed >= goals.recoveryPerWeek),
                 "steps": phoneWeekFlag("steps", week: weekKey),
                 "master": phoneWeekFlag("master", week: weekKey)
             ]
@@ -624,7 +625,7 @@ class AppViewModel: ObservableObject {
                 "week": weekKey,
                 "lifts": !liftsDropped && newProgress.lifts.completed >= goals.liftsPerWeek,
                 "cardio": !cardioDropped && newProgress.cardio.completed >= goals.cardioPerWeek,
-                "recovery": !recoveryDropped && newProgress.recovery.completed >= goals.recoveryPerWeek,
+                "recovery": !recoveryDropped && goals.recoveryPerWeek > 0 && newProgress.recovery.completed >= goals.recoveryPerWeek,
                 "steps": phoneWeekFlag("steps", week: weekKey),
                 // Strength and Cardio are part of every Winning Streak rule; the phone
                 // re-judges the week (and its recovery/steps parts) on its next recalculation.

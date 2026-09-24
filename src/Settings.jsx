@@ -337,7 +337,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
     liftsPerWeek: { label: 'Strength', category: 'lifts', suffix: '/week' },
     cardioPerWeek: { label: 'Cardio', category: 'cardio', suffix: '/week' },
     stepsPerDay: { label: 'Steps', category: 'steps', suffix: '/week', format: (v) => `${v * 7 / 1000}k`, sub: (v) => `≈ ${v / 1000}k a day` },
-    recoveryPerWeek: { label: 'Recovery', category: 'recovery', suffix: '/week', bonus: true, sub: () => "Own streak · doesn't affect Winning" },
+    recoveryPerWeek: { label: 'Recovery', category: 'recovery', suffix: '/week', bonus: true, format: (v) => (v === 0 ? 'Off' : v), sub: (v) => (v === 0 ? 'No recovery goal' : "Own streak · doesn't affect Winning") },
   };
 
   // Sunday = immediate save. Other days = queue into pendingGoals, applied on
@@ -1127,7 +1127,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                       <div className="min-w-0">
                         <div className="text-[14px] text-white flex items-center gap-1.5">
                           {label}
-                          {bonus && <span className="text-[9.5px] font-semibold px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(0,209,255,0.12)', color: '#00D1FF' }}>BONUS</span>}
+                          {bonus && current > 0 && <span className="text-[9.5px] font-semibold px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(0,209,255,0.12)', color: '#00D1FF' }}>BONUS</span>}
                         </div>
                         {sub && <div className="text-[11px] text-gray-500">{sub(current)}</div>}
                       </div>
@@ -1135,7 +1135,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                     <div className="text-right flex-shrink-0">
                       <span className="text-[15px] font-bold text-white">
                         {format ? format(current) : current}
-                        <span className="text-xs text-gray-500 font-normal ml-1">{suffix}</span>
+                        {!(key === 'recoveryPerWeek' && current === 0) && <span className="text-xs text-gray-500 font-normal ml-1">{suffix}</span>}
                       </span>
                       {hasChange && (
                         <div className="text-[10px] mt-0.5" style={{ color: '#00D1FF' }}>

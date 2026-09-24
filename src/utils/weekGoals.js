@@ -156,7 +156,8 @@ export const judgeWeek = (counts, weekGoals, { weekSteps = 0, required = ['lifts
   const met = {
     lifts: (counts?.lifts || 0) >= weekGoals.lifts,
     cardio: (counts?.cardio || 0) >= weekGoals.cardio,
-    recovery: (counts?.recovery || 0) >= weekGoals.recovery,
+    // A recovery goal of 0 means Recovery is off: never "met", so its streak doesn't count up on its own.
+    recovery: weekGoals.recovery > 0 && (counts?.recovery || 0) >= weekGoals.recovery,
     steps: weekSteps >= (weekGoals.stepsPerDay ?? DEFAULTS.stepsPerDay) * 7,
   };
   return { ...met, all: required.every((c) => met[c]), required };

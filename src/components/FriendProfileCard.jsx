@@ -269,7 +269,10 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
               </div>
               {/* Recovery is a bonus (its own streak, doesn't win the week): one slim row with
                   current and best, instead of a pill in each section */}
-              <RecoveryBonusRow><span className="font-bold" style={{ color: '#00D1FF' }}>{recoveryStreak}w</span><span className="text-gray-500">· best {bestRecovery}w</span></RecoveryBonusRow>
+              {/* Hidden when this person has Recovery off (goal 0) */}
+              {(profile?.goals?.recoveryPerWeek ?? 2) > 0 && (
+                <RecoveryBonusRow><span className="font-bold" style={{ color: '#00D1FF' }}>{recoveryStreak}w</span><span className="text-gray-500">· best {bestRecovery}w</span></RecoveryBonusRow>
+              )}
             </div>
           </div>
 

@@ -72,12 +72,6 @@ const Q4_GOAL = [
   { value: 'both',        emoji: '🎯', label: "Both. That's the whole point." },
 ];
 
-const Q5_RECOVERY = [
-  { value: 'sleep_rest',          emoji: '😴', label: 'I prioritize sleep and rest days' },
-  { value: 'mobility_stretching', emoji: '🧘', label: 'I do mobility or stretching work' },
-  { value: 'cold_plunge_sauna',   emoji: '🧊', label: 'Cold plunge / sauna / contrast therapy' },
-  { value: 'no_routine',          emoji: '🤔', label: "I don't really have a recovery routine" },
-];
 
 // ============================================================================
 // Goal computation (spec formula)
@@ -95,9 +89,8 @@ const Q5_RECOVERY = [
 //   - Q2 (obstacle) and Q4 (physique/performance/both) are collected for
 //     analytics + future personalization but don't influence the recommendation
 //     today — Q1 + Q3 are the only signals that meaningfully change the plan.
-//   - Q5 (recovery routine) drives credit-card labels and copy elsewhere; the
-//     recovery goal itself is capped at 2 regardless of answers.
-export function computeWeeklyGoals({ origin = null, daysPerWeek, recovery = [] } = {}) {
+//   - The recovery goal is capped at 2 (it's a bonus); there's no recovery question.
+export function computeWeeklyGoals({ origin = null, daysPerWeek } = {}) {
   // Per-origin defaults (the 3–4 days case).
   let strength, cardio, recoveryGoal;
   if (origin === 'starting_from_scratch') {
@@ -156,12 +149,6 @@ function primaryOrigin(origin) {
   return known.includes(value) ? value : 'already_hybrid';
 }
 
-function closingLine(recovery = []) {
-  if (recovery.includes('no_routine') && !recovery.some(r => r !== 'no_routine')) {
-    return "Recovery is a bonus — an easy habit to add once your week is rolling.";
-  }
-  return 'Set your standard. Earn your streaks.';
-}
 
 // ============================================================================
 // Credit card labels (spec — labels vary by survey answers)
@@ -287,7 +274,7 @@ function WelcomeScreen({ onGetStarted, onSignIn }) {
           <img src="/icon-transparent.png" alt="" className="h-20 mx-auto mb-2" />
           <img src="/wordmark.png" alt="Day Seven" className="h-12 mx-auto mb-2" />
           <p className="text-gray-400 text-xl leading-relaxed">
-            Set Your Standards.<br />Earn Your Streaks.
+            Win the week,<br />not the day.
           </p>
         </div>
       </div>
@@ -312,9 +299,9 @@ function WelcomeScreen({ onGetStarted, onSignIn }) {
 // Survey screen — 5 questions per spec
 // ============================================================================
 
-function SurveyScreen({ initialAnswers, onComplete, onBack }) {
-  const TOTAL_STEPS = 5;
-  const [step, setStep] = useState(1);
+function SurveyScreen({ initialAnswers, onComplete, onBack, initialStep = 1 }) {
+  const TOTAL_STEPS = 4;
+  const [step, setStep] = useState(initialStep);
   const [direction, setDirection] = useState('forward');
   // Q1 origin is single-select — the four options are mutually exclusive
   // identities ("I lift but want cardio" vs "starting from scratch"). Despite
@@ -328,7 +315,6 @@ function SurveyScreen({ initialAnswers, onComplete, onBack }) {
   const [obstacle, setObstacle] = useState(initialAnswers?.obstacle || null);
   const [daysPerWeek, setDaysPerWeek] = useState(initialAnswers?.daysPerWeek || null);
   const [goal, setGoal] = useState(initialAnswers?.goal || null);
-  const [recovery, setRecovery] = useState(initialAnswers?.recovery || []);
 
   const canContinue = (() => {
     switch (step) {
@@ -336,7 +322,6 @@ function SurveyScreen({ initialAnswers, onComplete, onBack }) {
       case 2: return obstacle !== null;
       case 3: return daysPerWeek !== null;
       case 4: return goal !== null;
-      case 5: return recovery.length > 0;
       default: return false;
     }
   })();
@@ -350,11 +335,7 @@ function SurveyScreen({ initialAnswers, onComplete, onBack }) {
   };
 
   const handleSubmit = () => {
-    onComplete({ origin, obstacle, daysPerWeek, goal, recovery });
-  };
-
-  const toggleMulti = (set, setter, value) => {
-    setter(set.includes(value) ? set.filter(v => v !== value) : [...set, value]);
+    onComplete({ origin, obstacle, daysPerWeek, goal });
   };
 
   const renderOptionRow = ({ key, emoji, label, selected, onTap }) => (
@@ -434,20 +415,6 @@ function SurveyScreen({ initialAnswers, onComplete, onBack }) {
             }))}
           </div>
         );
-      case 5:
-        return (
-          <div className="space-y-3">
-            <h2 className="text-2xl font-bold mb-1">What do you currently do for training recovery?</h2>
-            <p className="text-gray-500 text-sm mb-6">Select all that fit.</p>
-            {Q5_RECOVERY.map(opt => renderOptionRow({
-              key: opt.value,
-              emoji: opt.emoji,
-              label: opt.label,
-              selected: recovery.includes(opt.value),
-              onTap: () => toggleMulti(recovery, setRecovery, opt.value),
-            }))}
-          </div>
-        );
       default:
         return null;
     }
@@ -522,7 +489,7 @@ const STEPS_OPTIONS = [6000, 8000, 10000, 12000, 15000];
 // Results hero — pure conviction moment. Personalized message + timeframe +
 // animated rings + closing line. No editors competing for attention; the
 // user customizes goals on the next screen.
-function ResultsScreen({ answers, weeklyGoals, onContinue }) {
+function ResultsScreen({ answers, weeklyGoals, onContinue, onBack }) {
   // 0 → 8% pulse to show rings are alive (spec: animateRingTo 0.08, 1200ms easeOut)
   const [progress, setProgress] = useState(0);
   useEffect(() => {
@@ -533,10 +500,22 @@ function ResultsScreen({ answers, weeklyGoals, onContinue }) {
   const originKey = primaryOrigin(answers.origin);
   const message = ORIGIN_MESSAGE[originKey];
   const timeframe = ORIGIN_TIMEFRAME[originKey];
-  const closing = closingLine(answers.recovery);
 
   return (
     <div className="fixed inset-0 z-50 bg-black text-white flex flex-col overflow-hidden">
+      {/* Back to the last survey question (answers are kept) */}
+      <div className="flex-shrink-0 px-6 pb-2" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)' }}>
+        <button
+          onClick={onBack}
+          className="text-gray-400 flex items-center gap-1 transition-all duration-150 px-2 py-1 rounded-lg -ml-2"
+          {...pressProps}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+          <span className="text-sm">Back</span>
+        </button>
+      </div>
       {/* Outer scroll container — overflow-y-auto so very tall messages still
           fit on small devices. Inner flex column with min-height 100% +
           justify-center centers content vertically when it fits, and falls
@@ -546,7 +525,7 @@ function ResultsScreen({ answers, weeklyGoals, onContinue }) {
           className="px-6 flex flex-col justify-center items-stretch"
           style={{
             minHeight: '100%',
-            paddingTop: 'calc(env(safe-area-inset-top, 0px) + 32px)',
+            paddingTop: 16,
             paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 140px)',
           }}
         >
@@ -1568,6 +1547,8 @@ export default function OnboardingFlow({ onComplete, onSignIn }) {
   const goBack    = (next) => { setDirection('back');    setStep(next); };
 
   const [answers, setAnswers] = useState(null); // survey answers
+  // Back from the suggested-week screen lands on the last question, not the first.
+  const [surveyReturnToEnd, setSurveyReturnToEnd] = useState(false);
   // weeklyGoals: editable on the results screen. Holds ring goals (strength/
   // cardio/recovery) + daily targets (stepsPerDay/caloriesPerDay). null until
   // the survey completes.
@@ -1670,7 +1651,8 @@ export default function OnboardingFlow({ onComplete, onSignIn }) {
       return (
         <SurveyScreen
           initialAnswers={answers}
-          onBack={() => goBack('welcome')}
+          initialStep={surveyReturnToEnd ? 4 : 1}
+          onBack={() => { setSurveyReturnToEnd(false); goBack('welcome'); }}
           onComplete={(a) => {
             setAnswers(a);
             // Initialize goals from the new answers, but preserve any prior
@@ -1694,6 +1676,7 @@ export default function OnboardingFlow({ onComplete, onSignIn }) {
           answers={answers}
           weeklyGoals={weeklyGoals}
           onContinue={() => goForward('customize')}
+          onBack={() => { setSurveyReturnToEnd(true); goBack('survey'); }}
         />
       );
     }

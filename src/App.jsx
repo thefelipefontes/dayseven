@@ -12087,7 +12087,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
           <span className="text-lg"><CategoryIcon category="steps" size={18} /></span>
           <div className="flex-1 flex items-baseline justify-between">
             <span className="text-xs text-gray-400">Steps today</span>
-            <span className="text-[22px] font-extrabold" style={{ letterSpacing: '-0.3px' }}>{(weekProgress.steps?.today || 0).toLocaleString()}</span>
+            <span className="text-[13.5px] font-semibold">{(weekProgress.steps?.today || 0).toLocaleString()}</span>
           </div>
         </div>
 

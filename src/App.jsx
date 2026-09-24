@@ -11639,6 +11639,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
   const [showCardioBreakdown, setShowCardioBreakdown] = useState(false);
   const [showRecoveryBreakdown, setShowRecoveryBreakdown] = useState(false);
   const [showStepsBreakdown, setShowStepsBreakdown] = useState(false);
+  const [showRecentActivity, setShowRecentActivity] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState(null);
   const [needsDetailsExpanded, setNeedsDetailsExpanded] = useState(false);
 
@@ -12094,98 +12095,12 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         </div>
       </div>
       
-      <div className="p-4 rounded-2xl space-y-3" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-        {/* Steps today — a count, not a daily goal ("win the week, not the day"). The
-            target lives on the Steps ring below, which tracks the week. */}
-        <div className="flex items-center gap-3">
-          <span className="text-lg"><CategoryIcon category="steps" size={18} /></span>
-          <div className="flex-1 flex items-baseline justify-between">
-            <span className="text-xs text-gray-400">Steps today</span>
-            <span className="text-[13.5px] font-semibold">{(weekProgress.steps?.today || 0).toLocaleString()}</span>
-          </div>
-        </div>
-
-        {/* Today's workouts (strength, cardio, recovery), one compact row each. The weekly
-            steps and pace now live on the Steps ring in This Week's Goals. */}
-        <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
-        {todaysWorkouts.length > 0 ? (
-          <div className="space-y-1">
-            {todaysWorkouts.map((act, i) => {
-              const cat = getActivityCategory(act);
-              const tint = cat === 'recovery' ? '0,209,255' : cat === 'cardio' ? '255,149,0' : '0,255,148';
-              const name = act.type === 'Other' ? (act.subtype || 'Other')
-                : act.type === 'Strength Training' ? (() => {
-                  const st = act.strengthType || 'Strength Training';
-                  const areas = normalizeFocusAreas(act.focusAreas || (act.focusArea ? [act.focusArea] : []));
-                  return areas.length > 0 ? `${st} · ${areas.join(', ')}` : (act.subtype || st);
-                })()
-                : (act.subtype ? `${act.type} · ${act.subtype}` : act.type);
-              const unit = resolveUnit(userProfile);
-              const miles = parseFloat(act.distance);
-              const details = [
-                act.time || null,
-                miles > 0 ? formatDistance(miles, unit, 1) : null,
-                act.duration ? `${act.duration} min` : null,
-                miles > 0 && act.duration && cat !== 'lifting' ? formatPaceFromMinutesAndMiles(act.duration, miles, unit) : null,
-                !(miles > 0) && act.calories ? `${act.calories} cal` : null,
-                !(miles > 0) && act.avgHr ? `♥ ${act.avgHr}` : null,
-              ].filter(Boolean);
-              return (
-                <button
-                  key={act.id || i}
-                  onClick={() => { triggerHaptic(ImpactStyle.Light); setSelectedActivity(act); }}
-                  className="w-full flex items-center gap-3 py-1.5 text-left active:opacity-70 transition-opacity"
-                >
-                  <div className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `rgba(${tint},0.1)` }}>
-                    <ActivityIcon type={act.type} subtype={act.subtype} size={17} sportEmoji={act.sportEmoji} customEmoji={act.customEmoji} customIcon={act.customIcon} countToward={act.countToward} customActivityCategory={act.customActivityCategory} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[13.5px] font-semibold truncate">{name}</div>
-                    <div className="text-[11.5px] text-gray-400 truncate">{details.join('  ·  ')}</div>
-                  </div>
-                  <span className="text-gray-600 text-xs">›</span>
-                </button>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="text-[12.5px] leading-snug" style={{ color: '#9ca3af' }}>
-            <span className="font-semibold" style={{ color: '#ddd' }}>No workout yet today.</span> A rest day still counts toward a winning week.
-          </p>
-        )}
-
-        {/* Calories — optional (Settings → Health) */}
-        {showCaloriesOnHome && (<>
-        <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
-        <div className="flex items-center gap-3">
-          <CategoryIcon category="calories" size={18} />
-          <div className="flex-1">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-gray-400">Active Calories</span>
-              <span className="text-xs font-bold">{weekProgress.calories.burned.toLocaleString()} / {(weekProgress.calories.goal || 500).toLocaleString()}</span>
-            </div>
-            <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
-              <div 
-                className="h-full rounded-full transition-all duration-1000"
-                style={{ 
-                  width: `${Math.min(caloriesPercent, 100)}%`,
-                  backgroundColor: '#FF6B6B'
-                }}
-              />
-            </div>
-          </div>
-        </div>
-        </>)}
-      </div>
-    </div>
-    </>
-  );
-
-  return (
-    <div className="pb-32">
+      {/* Banners about logging — workouts detected or imported from Apple Health, strength
+          sessions missing muscle groups, Health/notification access — sit with Today's
+          Activity, where those workouts land. */}
       {/* Auto-Imported Summary Banner - Shows after onboarding auto-import */}
       {autoImportedCount > 0 && (
-        <div className="mx-4 mb-4">
+        <div className="mb-3">
           <div
             className="w-full p-3 rounded-xl flex items-center gap-3"
             style={{ backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.3)' }}
@@ -12269,7 +12184,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             : (isUncategorized ? 'Needs details to count towards goals' : 'Tap to view and add');
 
           return (
-            <div className="mx-4 mb-4" key={isUncategorized ? 'uncategorized' : 'categorized'}>
+            <div className="mb-3" key={isUncategorized ? 'uncategorized' : 'categorized'}>
               <button
                 onClick={() => {
                   if (workouts.length === 1) {
@@ -12365,6 +12280,406 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         );
       })()}
 
+        {/* Incomplete-strength banner — single parent that expands to reveal
+            individual workouts when there are multiple. Keeps the home screen
+            uncluttered while still surfacing each entry for editing. */}
+        {(() => {
+          const needsDetailsList = (activities || []).filter(a => a.needsDetails);
+          if (needsDetailsList.length === 0) return null;
+          const sorted = [...needsDetailsList].sort((a, b) => {
+            const d = (b.date || '').localeCompare(a.date || '');
+            if (d !== 0) return d;
+            return (b.time || '').localeCompare(a.time || '');
+          });
+
+          const formatRow = (item) => {
+            const durationLabel = item.duration
+              ? (item.duration >= 60
+                  ? `${Math.floor(item.duration / 60)}h ${item.duration % 60}m`
+                  : `${item.duration} min`)
+              : null;
+            return [item.strengthType || item.subtype, durationLabel, item.time]
+              .filter(Boolean)
+              .join(' · ');
+          };
+
+          // Single entry — render the specific row directly, no expand toggle.
+          if (sorted.length === 1) {
+            const head = sorted[0];
+            return (
+              <SwipeableProvider>
+                <div className="mb-3">
+                  <SwipeableActivityItem
+                    activity={head}
+                    onDelete={(a) => onDeleteActivity && onDeleteActivity(a.id)}
+                    onEdit={onEditActivity}
+                  >
+                    <div
+                      onClick={() => { triggerHaptic(ImpactStyle.Light); setSelectedActivity(head); }}
+                      className="w-full p-3 flex items-center gap-3 text-left cursor-pointer"
+                      style={{ backgroundColor: 'rgba(0,209,255,0.10)', border: '1px solid rgba(0,209,255,0.3)' }}
+                    >
+                      <span className="text-xl">💪</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-semibold" style={{ color: '#00D1FF' }}>
+                          Add muscle groups to your strength workout
+                        </div>
+                        <div className="text-[10px] text-gray-400 mt-0.5 truncate">
+                          {formatRow(head)}
+                        </div>
+                        {(head.calories || head.avgHr || head.maxHr) && (
+                          <div className="flex items-center gap-2 text-[10px] text-gray-400 mt-1">
+                            {head.calories && (
+                              <span className="flex items-center gap-1">
+                                <span className="text-orange-400">🔥</span>
+                                <span>{head.calories} cal</span>
+                              </span>
+                            )}
+                            {(head.avgHr || head.maxHr) && (
+                              <span className="flex items-center gap-1">
+                                <span className="text-red-400">♥</span>
+                                {head.avgHr && <span>{head.avgHr} avg</span>}
+                                {head.avgHr && head.maxHr && <span className="text-gray-600">•</span>}
+                                {head.maxHr && <span>{head.maxHr} max</span>}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <svg className="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                      </svg>
+                    </div>
+                  </SwipeableActivityItem>
+                </div>
+              </SwipeableProvider>
+            );
+          }
+
+          // Multi entry — parent banner that toggles to reveal the rows.
+          return (
+            <SwipeableProvider>
+              <div className="mb-3">
+                <button
+                  onClick={() => {
+                    triggerHaptic(ImpactStyle.Light);
+                    setNeedsDetailsExpanded(prev => !prev);
+                  }}
+                  className="relative w-full p-3 rounded-xl flex items-center gap-3 text-left"
+                  style={{
+                    backgroundColor: 'rgba(0,209,255,0.10)',
+                    border: '1px solid rgba(0,209,255,0.3)',
+                  }}
+                >
+                  <span className="text-xl">💪</span>
+                  <div className="flex-1">
+                    <div className="text-xs font-semibold" style={{ color: '#00D1FF' }}>
+                      {sorted.length} strength workouts need details
+                    </div>
+                    <div className="text-[10px] text-gray-400 mt-0.5">
+                      Tap to {needsDetailsExpanded ? 'hide' : 'pick which to edit'} · swipe a row to delete
+                    </div>
+                  </div>
+                  <svg
+                    className="w-4 h-4 text-gray-500 flex-shrink-0 transition-transform duration-200"
+                    style={{ transform: needsDetailsExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                  </svg>
+                </button>
+                {needsDetailsExpanded && (
+                  <div className="space-y-2 mt-2">
+                    {sorted.map((item) => {
+                      const durationLabel = item.duration
+                        ? (item.duration >= 60
+                            ? `${Math.floor(item.duration / 60)}h ${item.duration % 60}m`
+                            : `${item.duration} min`)
+                        : null;
+                      return (
+                        <SwipeableActivityItem
+                          key={item.id}
+                          activity={item}
+                          onDelete={(a) => onDeleteActivity && onDeleteActivity(a.id)}
+                          onEdit={onEditActivity}
+                        >
+                          <div
+                            onClick={() => { triggerHaptic(ImpactStyle.Light); setSelectedActivity(item); }}
+                            className="w-full px-3 py-2.5 flex items-center gap-3 text-left cursor-pointer"
+                            style={{ backgroundColor: 'rgba(0,209,255,0.08)', border: '1px solid rgba(0,209,255,0.2)' }}
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="text-xs text-white truncate">
+                                {item.strengthType || item.subtype || 'Strength Training'}
+                              </div>
+                              <div className="text-[10px] text-gray-500 mt-0.5 truncate">
+                                {[durationLabel, item.time].filter(Boolean).join(' · ')}
+                              </div>
+                              {(item.calories || item.avgHr || item.maxHr) && (
+                                <div className="flex items-center gap-2 text-[10px] text-gray-400 mt-1">
+                                  {item.calories && (
+                                    <span className="flex items-center gap-1">
+                                      <span className="text-orange-400">🔥</span>
+                                      <span>{item.calories} cal</span>
+                                    </span>
+                                  )}
+                                  {(item.avgHr || item.maxHr) && (
+                                    <span className="flex items-center gap-1">
+                                      <span className="text-red-400">♥</span>
+                                      {item.avgHr && <span>{item.avgHr} avg</span>}
+                                      {item.avgHr && item.maxHr && <span className="text-gray-600">•</span>}
+                                      {item.maxHr && <span>{item.maxHr} max</span>}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                            <svg className="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                            </svg>
+                          </div>
+                        </SwipeableActivityItem>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </SwipeableProvider>
+          );
+        })()}
+
+        {/* Apple Health empty-state hint — surfaces once for users who granted
+            HK permission but have nothing flowing in (typical Garmin/Whoop/
+            Polar setup gap). Dismissible; persisted on the profile so we don't
+            re-nag. */}
+        {showHkEmptyHint && (
+          <div
+            onClick={onOpenHealthSettings}
+            className="relative p-3 rounded-xl mb-3 flex items-start gap-3 transition-all duration-150"
+            style={{
+              backgroundColor: 'rgba(0,209,255,0.08)',
+              border: '1px solid rgba(0,209,255,0.25)'
+            }}
+            onTouchStart={(e) => { e.currentTarget.style.opacity = '0.7'; }}
+            onTouchEnd={(e) => { e.currentTarget.style.opacity = '1'; }}
+            onTouchCancel={(e) => { e.currentTarget.style.opacity = '1'; }}
+          >
+            <span className="text-xl">{hkAccessBlocked ? '❤️' : '🩺'}</span>
+            <div className="flex-1 pr-6">
+              <div className="text-xs font-semibold flex items-center gap-1" style={{ color: '#00D1FF' }}>
+                {hkAccessBlocked ? 'Apple Health isn’t connected' : 'No workouts found in Apple Health'}
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </div>
+              <div className="text-[10px] text-gray-400 mt-0.5 leading-snug">
+                {hkAccessBlocked
+                  ? 'We can’t see your workouts, so nothing will auto-log. Tap to turn it back on.'
+                  : 'If you use Garmin, Whoop, or Polar, enable Apple Health sync inside their companion app and your workouts will start flowing in. Tap to check your Apple Health settings.'}
+              </div>
+            </div>
+            <button
+              onClick={(e) => { e.stopPropagation(); onDismissHkEmptyHint(); }}
+              className="absolute flex items-center justify-center"
+              style={{ top: 4, right: 4, width: 44, height: 44, color: 'rgba(0,209,255,0.6)' }}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M3 3L11 11M11 3L3 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+              </svg>
+            </button>
+          </div>
+        )}
+
+        {/* Notification re-ask — only ever shown when the system prompt is still
+            unspent (see maybeOfferNotifReask). Tapping it is what presents the
+            prompt; nothing here auto-fires, so the user is never ambushed. */}
+        {showNotifReask && (
+          <div
+            onClick={onAcceptNotifReask}
+            className="relative p-3 rounded-xl mb-3 flex items-start gap-3 transition-all duration-150"
+            style={{
+              backgroundColor: 'rgba(0,255,148,0.08)',
+              border: '1px solid rgba(0,255,148,0.25)'
+            }}
+            onTouchStart={(e) => { e.currentTarget.style.opacity = '0.7'; }}
+            onTouchEnd={(e) => { e.currentTarget.style.opacity = '1'; }}
+            onTouchCancel={(e) => { e.currentTarget.style.opacity = '1'; }}
+          >
+            <span className="text-xl">🔔</span>
+            <div className="flex-1 pr-6">
+              <div className="text-xs font-semibold flex items-center gap-1" style={{ color: '#00FF94' }}>
+                Nice work — want a nudge next time?
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </div>
+              <div className="text-[10px] text-gray-400 mt-0.5 leading-snug">
+                We'll tell you when a ring is still open — before the week closes. Tap to turn on reminders.
+              </div>
+            </div>
+            <button
+              onClick={(e) => { e.stopPropagation(); onDismissNotifReask(); }}
+              className="absolute flex items-center justify-center"
+              style={{ top: 4, right: 4, width: 44, height: 44, color: 'rgba(0,255,148,0.6)' }}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M3 3L11 11M11 3L3 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+              </svg>
+            </button>
+          </div>
+        )}
+
+      <div className="p-4 rounded-2xl space-y-3" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+        {/* Steps today — a count, not a daily goal ("win the week, not the day"). The
+            target lives on the Steps ring below, which tracks the week. */}
+        <div className="flex items-center gap-3">
+          <span className="text-lg"><CategoryIcon category="steps" size={18} /></span>
+          <div className="flex-1 flex items-baseline justify-between">
+            <span className="text-xs text-gray-400">Steps today</span>
+            <span className="text-[13.5px] font-semibold">{(weekProgress.steps?.today || 0).toLocaleString()}</span>
+          </div>
+        </div>
+
+        {/* Today's workouts (strength, cardio, recovery), one compact row each. The weekly
+            steps and pace now live on the Steps ring in This Week's Goals. */}
+        <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
+        {todaysWorkouts.length > 0 ? (
+          <div className="space-y-1">
+            {todaysWorkouts.map((act, i) => {
+              const cat = getActivityCategory(act);
+              const tint = cat === 'recovery' ? '0,209,255' : cat === 'cardio' ? '255,149,0' : '0,255,148';
+              const name = act.type === 'Other' ? (act.subtype || 'Other')
+                : act.type === 'Strength Training' ? (() => {
+                  const st = act.strengthType || 'Strength Training';
+                  const areas = normalizeFocusAreas(act.focusAreas || (act.focusArea ? [act.focusArea] : []));
+                  return areas.length > 0 ? `${st} · ${areas.join(', ')}` : (act.subtype || st);
+                })()
+                : (act.subtype ? `${act.type} · ${act.subtype}` : act.type);
+              const unit = resolveUnit(userProfile);
+              const miles = parseFloat(act.distance);
+              const details = [
+                act.time || null,
+                miles > 0 ? formatDistance(miles, unit, 1) : null,
+                act.duration ? `${act.duration} min` : null,
+                miles > 0 && act.duration && cat !== 'lifting' ? formatPaceFromMinutesAndMiles(act.duration, miles, unit) : null,
+                !(miles > 0) && act.calories ? `${act.calories} cal` : null,
+                !(miles > 0) && act.avgHr ? `♥ ${act.avgHr}` : null,
+              ].filter(Boolean);
+              return (
+                <button
+                  key={act.id || i}
+                  onClick={() => { triggerHaptic(ImpactStyle.Light); setSelectedActivity(act); }}
+                  className="w-full flex items-center gap-3 py-1.5 text-left active:opacity-70 transition-opacity"
+                >
+                  <div className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `rgba(${tint},0.1)` }}>
+                    <ActivityIcon type={act.type} subtype={act.subtype} size={17} sportEmoji={act.sportEmoji} customEmoji={act.customEmoji} customIcon={act.customIcon} countToward={act.countToward} customActivityCategory={act.customActivityCategory} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13.5px] font-semibold truncate">{name}</div>
+                    <div className="text-[11.5px] text-gray-400 truncate">{details.join('  ·  ')}</div>
+                  </div>
+                  <span className="text-gray-600 text-xs">›</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-[12.5px] leading-snug" style={{ color: '#9ca3af' }}>
+            <span className="font-semibold" style={{ color: '#ddd' }}>No workout yet today.</span> A rest day still counts toward a winning week.
+          </p>
+        )}
+
+        {/* Calories — optional (Settings → Health) */}
+        {showCaloriesOnHome && (<>
+        <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
+        <div className="flex items-center gap-3">
+          <CategoryIcon category="calories" size={18} />
+          <div className="flex-1">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-gray-400">Active Calories</span>
+              <span className="text-xs font-bold">{weekProgress.calories.burned.toLocaleString()} / {(weekProgress.calories.goal || 500).toLocaleString()}</span>
+            </div>
+            <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
+              <div 
+                className="h-full rounded-full transition-all duration-1000"
+                style={{ 
+                  width: `${Math.min(caloriesPercent, 100)}%`,
+                  backgroundColor: '#FF6B6B'
+                }}
+              />
+            </div>
+          </div>
+        </div>
+        </>)}
+
+        {/* Recent Activity — folded into Today's card: the last few workouts from earlier
+            days, behind a dropdown. Full log lives on the Profile tab (See all). */}
+        {latestActivities.length > 0 && (
+          <div ref={latestActivityRef}>
+            <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
+            <button
+              onClick={() => { triggerHaptic(ImpactStyle.Light); setShowRecentActivity(v => !v); }}
+              className="w-full flex items-center justify-between pt-3 text-left"
+            >
+              <span className="text-xs text-gray-400">Recent activity</span>
+              <span className="text-[10px] text-gray-500">{showRecentActivity ? '▲' : '▼'}</span>
+            </button>
+            {showRecentActivity && (
+              <SwipeableProvider>
+                <div className="mt-2 space-y-1">
+                  {latestActivities.map((act) => (
+                    <SwipeableActivityItem
+                      key={act.id}
+                      activity={act}
+                      onDelete={(a) => onDeleteActivity && onDeleteActivity(a.id)}
+                      onEdit={onEditActivity}
+                    >
+                      <div
+                        onClick={() => { triggerHaptic(ImpactStyle.Light); setSelectedActivity(act); }}
+                        className="w-full py-1.5 flex items-center gap-3 text-left cursor-pointer active:opacity-70 transition-opacity"
+                        style={{ backgroundColor: '#080808' }}
+                      >
+                        <div className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                          <ActivityIcon type={act.type} subtype={act.subtype} size={17} sportEmoji={act.sportEmoji} customEmoji={act.customEmoji} customIcon={act.customIcon} countToward={act.countToward} customActivityCategory={act.customActivityCategory} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[13.5px] font-semibold truncate">{
+                            act.type === 'Other' ? (act.subtype || 'Other')
+                            : act.type === 'Strength Training' ? (() => {
+                              const st = act.strengthType || 'Strength Training';
+                              const areas = normalizeFocusAreas(act.focusAreas || (act.focusArea ? [act.focusArea] : []));
+                              return areas.length > 0 ? `${st} · ${areas.join(', ')}` : (act.subtype || st);
+                            })()
+                            : (act.subtype ? `${act.type} · ${act.subtype}` : act.type)
+                          }</div>
+                          <div className="text-[11.5px] text-gray-400 truncate">
+                            {formatFriendlyDate(act.date)}{act.time ? ` · ${act.time}` : ''}{act.duration ? ` · ${act.duration} min` : ''}
+                          </div>
+                        </div>
+                        <span className="text-gray-600 text-xs">›</span>
+                      </div>
+                    </SwipeableActivityItem>
+                  ))}
+                </div>
+              </SwipeableProvider>
+            )}
+            {showRecentActivity && onNavigateToHistory && (
+              <button
+                onClick={() => { triggerHaptic(ImpactStyle.Light); onNavigateToHistory(); }}
+                className="w-full text-center text-xs text-gray-400 pt-2"
+              >
+                See all activity ›
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+    </>
+  );
+
+  return (
+    <div className="pb-32">
       {/* Workout Picker Modal - Shows when multiple workouts detected */}
       {showWorkoutPicker && (
         <div
@@ -12545,480 +12860,6 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
 
       {/* Weekly Goals - Hero Section */}
       <div className="mx-4 mb-4">
-        {/* Vacation Mode Active Banner */}
-        {userData.vacationMode?.isActive && (
-          <div className="p-3 rounded-xl mb-3 flex items-center gap-3" style={{ backgroundColor: 'rgba(0,209,255,0.08)', border: '1px solid rgba(0,209,255,0.2)' }}>
-            <span className="text-lg">✈️</span>
-            <div className="flex-1">
-              <div className="text-xs font-semibold" style={{ color: '#00D1FF' }}>Vacation Mode Active</div>
-              <div className="text-[10px] text-gray-400 mt-0.5">
-                Your streaks are frozen until you deactivate
-                {userData.vacationMode.startDate && (() => {
-                  const start = new Date(userData.vacationMode.startDate + 'T12:00:00');
-                  const now = new Date();
-                  const daysUsed = Math.floor((now - start) / (24 * 60 * 60 * 1000));
-                  const daysRemaining = Math.max(0, 14 - daysUsed);
-                  return <span> · {daysRemaining} day{daysRemaining !== 1 ? 's' : ''} remaining</span>;
-                })()}
-              </div>
-            </div>
-            <button
-              onClick={() => setShowVacationDeactivateConfirm(true)}
-              className="px-3 py-1.5 rounded-lg text-[11px] font-semibold"
-              style={{ backgroundColor: 'rgba(0,209,255,0.15)', color: '#00D1FF' }}
-            >
-              Deactivate
-            </button>
-          </div>
-        )}
-
-        {/* Injury Mode status — streak frozen while healing. The card is always present
-            while active, so the option to resume (once unlocked) is available every week
-            — that standing weekly option is the check-in. */}
-        {userData.injuryMode?.isActive && (
-          <div className="p-3 rounded-xl mb-3 flex items-center gap-3" style={{ backgroundColor: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.2)' }}>
-            <span className="text-lg">🩹</span>
-            <div className="flex-1">
-              <div className="text-xs font-semibold" style={{ color: '#A78BFA' }}>Injury Mode · {formatInjuryPausedLabel(userData.injuryMode)}</div>
-              <div className="text-[10px] text-gray-400 mt-0.5">
-                Take the time you need to heal
-                {userData.injuryMode.estimatedEndWeek && (() => {
-                  const end = new Date(userData.injuryMode.estimatedEndWeek + 'T12:00:00');
-                  return <span> · auto-resumes {end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>;
-                })()}
-              </div>
-            </div>
-            {canResumeInjury && (
-              <button
-                onClick={() => {
-                  triggerHaptic(ImpactStyle.Light);
-                  onRequestResumeInjury?.();
-                }}
-                className="px-3 py-1.5 rounded-lg text-[11px] font-semibold"
-                style={{ backgroundColor: 'rgba(167,139,250,0.15)', color: '#A78BFA' }}
-              >
-                I'm back
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Apple Health empty-state hint — surfaces once for users who granted
-            HK permission but have nothing flowing in (typical Garmin/Whoop/
-            Polar setup gap). Dismissible; persisted on the profile so we don't
-            re-nag. */}
-        {showHkEmptyHint && (
-          <div
-            onClick={onOpenHealthSettings}
-            className="relative p-3 rounded-xl mb-3 flex items-start gap-3 transition-all duration-150"
-            style={{
-              backgroundColor: 'rgba(0,209,255,0.08)',
-              border: '1px solid rgba(0,209,255,0.25)'
-            }}
-            onTouchStart={(e) => { e.currentTarget.style.opacity = '0.7'; }}
-            onTouchEnd={(e) => { e.currentTarget.style.opacity = '1'; }}
-            onTouchCancel={(e) => { e.currentTarget.style.opacity = '1'; }}
-          >
-            <span className="text-xl">{hkAccessBlocked ? '❤️' : '🩺'}</span>
-            <div className="flex-1 pr-6">
-              <div className="text-xs font-semibold flex items-center gap-1" style={{ color: '#00D1FF' }}>
-                {hkAccessBlocked ? 'Apple Health isn’t connected' : 'No workouts found in Apple Health'}
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="9 18 15 12 9 6" />
-                </svg>
-              </div>
-              <div className="text-[10px] text-gray-400 mt-0.5 leading-snug">
-                {hkAccessBlocked
-                  ? 'We can’t see your workouts, so nothing will auto-log. Tap to turn it back on.'
-                  : 'If you use Garmin, Whoop, or Polar, enable Apple Health sync inside their companion app and your workouts will start flowing in. Tap to check your Apple Health settings.'}
-              </div>
-            </div>
-            <button
-              onClick={(e) => { e.stopPropagation(); onDismissHkEmptyHint(); }}
-              className="absolute flex items-center justify-center"
-              style={{ top: 4, right: 4, width: 44, height: 44, color: 'rgba(0,209,255,0.6)' }}
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                <path d="M3 3L11 11M11 3L3 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-              </svg>
-            </button>
-          </div>
-        )}
-
-        {/* Notification re-ask — only ever shown when the system prompt is still
-            unspent (see maybeOfferNotifReask). Tapping it is what presents the
-            prompt; nothing here auto-fires, so the user is never ambushed. */}
-        {showNotifReask && (
-          <div
-            onClick={onAcceptNotifReask}
-            className="relative p-3 rounded-xl mb-3 flex items-start gap-3 transition-all duration-150"
-            style={{
-              backgroundColor: 'rgba(0,255,148,0.08)',
-              border: '1px solid rgba(0,255,148,0.25)'
-            }}
-            onTouchStart={(e) => { e.currentTarget.style.opacity = '0.7'; }}
-            onTouchEnd={(e) => { e.currentTarget.style.opacity = '1'; }}
-            onTouchCancel={(e) => { e.currentTarget.style.opacity = '1'; }}
-          >
-            <span className="text-xl">🔔</span>
-            <div className="flex-1 pr-6">
-              <div className="text-xs font-semibold flex items-center gap-1" style={{ color: '#00FF94' }}>
-                Nice work — want a nudge next time?
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="9 18 15 12 9 6" />
-                </svg>
-              </div>
-              <div className="text-[10px] text-gray-400 mt-0.5 leading-snug">
-                We'll tell you when a ring is still open — before the week closes. Tap to turn on reminders.
-              </div>
-            </div>
-            <button
-              onClick={(e) => { e.stopPropagation(); onDismissNotifReask(); }}
-              className="absolute flex items-center justify-center"
-              style={{ top: 4, right: 4, width: 44, height: 44, color: 'rgba(0,255,148,0.6)' }}
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                <path d="M3 3L11 11M11 3L3 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-              </svg>
-            </button>
-          </div>
-        )}
-
-        {/* Incomplete-strength banner — single parent that expands to reveal
-            individual workouts when there are multiple. Keeps the home screen
-            uncluttered while still surfacing each entry for editing. */}
-        {(() => {
-          const needsDetailsList = (activities || []).filter(a => a.needsDetails);
-          if (needsDetailsList.length === 0) return null;
-          const sorted = [...needsDetailsList].sort((a, b) => {
-            const d = (b.date || '').localeCompare(a.date || '');
-            if (d !== 0) return d;
-            return (b.time || '').localeCompare(a.time || '');
-          });
-
-          const formatRow = (item) => {
-            const durationLabel = item.duration
-              ? (item.duration >= 60
-                  ? `${Math.floor(item.duration / 60)}h ${item.duration % 60}m`
-                  : `${item.duration} min`)
-              : null;
-            return [item.strengthType || item.subtype, durationLabel, item.time]
-              .filter(Boolean)
-              .join(' · ');
-          };
-
-          // Single entry — render the specific row directly, no expand toggle.
-          if (sorted.length === 1) {
-            const head = sorted[0];
-            return (
-              <SwipeableProvider>
-                <div className="mb-3">
-                  <SwipeableActivityItem
-                    activity={head}
-                    onDelete={(a) => onDeleteActivity && onDeleteActivity(a.id)}
-                    onEdit={onEditActivity}
-                  >
-                    <div
-                      onClick={() => { triggerHaptic(ImpactStyle.Light); setSelectedActivity(head); }}
-                      className="w-full p-3 flex items-center gap-3 text-left cursor-pointer"
-                      style={{ backgroundColor: 'rgba(0,209,255,0.10)', border: '1px solid rgba(0,209,255,0.3)' }}
-                    >
-                      <span className="text-xl">💪</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-semibold" style={{ color: '#00D1FF' }}>
-                          Add muscle groups to your strength workout
-                        </div>
-                        <div className="text-[10px] text-gray-400 mt-0.5 truncate">
-                          {formatRow(head)}
-                        </div>
-                        {(head.calories || head.avgHr || head.maxHr) && (
-                          <div className="flex items-center gap-2 text-[10px] text-gray-400 mt-1">
-                            {head.calories && (
-                              <span className="flex items-center gap-1">
-                                <span className="text-orange-400">🔥</span>
-                                <span>{head.calories} cal</span>
-                              </span>
-                            )}
-                            {(head.avgHr || head.maxHr) && (
-                              <span className="flex items-center gap-1">
-                                <span className="text-red-400">♥</span>
-                                {head.avgHr && <span>{head.avgHr} avg</span>}
-                                {head.avgHr && head.maxHr && <span className="text-gray-600">•</span>}
-                                {head.maxHr && <span>{head.maxHr} max</span>}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      <svg className="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-                      </svg>
-                    </div>
-                  </SwipeableActivityItem>
-                </div>
-              </SwipeableProvider>
-            );
-          }
-
-          // Multi entry — parent banner that toggles to reveal the rows.
-          return (
-            <SwipeableProvider>
-              <div className="mb-3">
-                <button
-                  onClick={() => {
-                    triggerHaptic(ImpactStyle.Light);
-                    setNeedsDetailsExpanded(prev => !prev);
-                  }}
-                  className="relative w-full p-3 rounded-xl flex items-center gap-3 text-left"
-                  style={{
-                    backgroundColor: 'rgba(0,209,255,0.10)',
-                    border: '1px solid rgba(0,209,255,0.3)',
-                  }}
-                >
-                  <span className="text-xl">💪</span>
-                  <div className="flex-1">
-                    <div className="text-xs font-semibold" style={{ color: '#00D1FF' }}>
-                      {sorted.length} strength workouts need details
-                    </div>
-                    <div className="text-[10px] text-gray-400 mt-0.5">
-                      Tap to {needsDetailsExpanded ? 'hide' : 'pick which to edit'} · swipe a row to delete
-                    </div>
-                  </div>
-                  <svg
-                    className="w-4 h-4 text-gray-500 flex-shrink-0 transition-transform duration-200"
-                    style={{ transform: needsDetailsExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
-                    fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-                  </svg>
-                </button>
-                {needsDetailsExpanded && (
-                  <div className="space-y-2 mt-2">
-                    {sorted.map((item) => {
-                      const durationLabel = item.duration
-                        ? (item.duration >= 60
-                            ? `${Math.floor(item.duration / 60)}h ${item.duration % 60}m`
-                            : `${item.duration} min`)
-                        : null;
-                      return (
-                        <SwipeableActivityItem
-                          key={item.id}
-                          activity={item}
-                          onDelete={(a) => onDeleteActivity && onDeleteActivity(a.id)}
-                          onEdit={onEditActivity}
-                        >
-                          <div
-                            onClick={() => { triggerHaptic(ImpactStyle.Light); setSelectedActivity(item); }}
-                            className="w-full px-3 py-2.5 flex items-center gap-3 text-left cursor-pointer"
-                            style={{ backgroundColor: 'rgba(0,209,255,0.08)', border: '1px solid rgba(0,209,255,0.2)' }}
-                          >
-                            <div className="flex-1 min-w-0">
-                              <div className="text-xs text-white truncate">
-                                {item.strengthType || item.subtype || 'Strength Training'}
-                              </div>
-                              <div className="text-[10px] text-gray-500 mt-0.5 truncate">
-                                {[durationLabel, item.time].filter(Boolean).join(' · ')}
-                              </div>
-                              {(item.calories || item.avgHr || item.maxHr) && (
-                                <div className="flex items-center gap-2 text-[10px] text-gray-400 mt-1">
-                                  {item.calories && (
-                                    <span className="flex items-center gap-1">
-                                      <span className="text-orange-400">🔥</span>
-                                      <span>{item.calories} cal</span>
-                                    </span>
-                                  )}
-                                  {(item.avgHr || item.maxHr) && (
-                                    <span className="flex items-center gap-1">
-                                      <span className="text-red-400">♥</span>
-                                      {item.avgHr && <span>{item.avgHr} avg</span>}
-                                      {item.avgHr && item.maxHr && <span className="text-gray-600">•</span>}
-                                      {item.maxHr && <span>{item.maxHr} max</span>}
-                                    </span>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                            <svg className="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-                            </svg>
-                          </div>
-                        </SwipeableActivityItem>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </SwipeableProvider>
-          );
-        })()}
-
-        {/* Streak at Risk Warning - hidden during vacation */}
-        {!userData.vacationMode?.isActive && !streakWarningDismissed && !joinedToday && daysLeft <= 3 && (liftsRemaining > 0 || cardioRemaining > 0 || (recoveryNeeded && recoveryRemaining > 0) || stepsRemaining > 0) && (
-          <div
-            className="relative p-3 rounded-xl mb-3 flex items-center gap-3"
-            style={{
-              backgroundColor: 'rgba(255,69,58,0.15)',
-              border: '1px solid rgba(255,69,58,0.3)'
-            }}
-          >
-            <span className="text-xl">⚠️</span>
-            <div className="flex-1 pr-6">
-              <div className="text-xs font-semibold" style={{ color: '#FF453A' }}>
-                {daysLeft === 1 ? 'Last day to hit your goals!' : `${daysLeft} days left (including today)!`}
-              </div>
-              <div className="text-[10px] text-gray-400 mt-0.5">
-                {[
-                  liftsRemaining > 0 ? `${liftsRemaining} strength` : null,
-                  cardioRemaining > 0 ? `${cardioRemaining} cardio` : null,
-                  recoveryNeeded && recoveryRemaining > 0 ? `${recoveryRemaining} recovery` : null,
-                  stepsRemaining > 0 ? `${formatK(stepsRemaining)} steps` : null
-                ].filter(Boolean).join(', ')} remaining {streakStakes}
-              </div>
-            </div>
-            <button
-              onClick={() => { localStorage.setItem('dismissedStreakWarning', warningKey); setDismissedWarningKey(warningKey); }}
-              className="absolute flex items-center justify-center"
-              style={{ top: 4, right: 4, width: 44, height: 44, color: 'rgba(255,69,58,0.6)' }}
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                <path d="M3 3L11 11M11 3L3 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-              </svg>
-            </button>
-          </div>
-        )}
-
-        {/* Streak Shield Button - hidden during vacation */}
-        {!userData.vacationMode?.isActive && !userData.injuryMode?.isActive && (() => {
-          const currentWeek = getCurrentWeekKey();
-          const previousWeek = getPreviousWeekKey();
-          const hasActiveStreak = userData.streaks.master > 0 || userData.streaks.lifts > 0 || userData.streaks.cardio > 0 || userData.streaks.recovery > 0 || (userData.streaks.steps || 0) > 0;
-
-          // Determine if this is a retroactive shield (Sunday/Monday, saving last week)
-          const isRetroactive = dayOfWeek <= 1;
-
-          // For retroactive: check if previous week goals were incomplete.
-          // Don't require hasActiveStreak — by Monday, a missed week has already
-          // reset streaks to 0. Instead, verify the user had a streak going INTO
-          // last week by checking the week before last hit at least one goal.
-          let showRetroactive = false;
-          if (isRetroactive) {
-            // Both weeks judged by the shared rule, against the goals in force then.
-            const judgePast = (weekKey) => judgeWeekFromActivities(activities, weekKey, homeWeekCtx);
-            const prevIncomplete = !judgePast(previousWeek).all;
-            const prevAlreadyShielded = (userData.streakShield?.shieldedWeeks || []).includes(previousWeek);
-
-            // Week before last: did at least one category hit its goal? If so, a streak was alive.
-            const wbl = judgePast(addWeeksToWeekKey(previousWeek, -1));
-            const hadStreakBeforeLastWeek = hasActiveStreak || wbl.lifts || wbl.cardio || wbl.recovery;
-
-            showRetroactive = hadStreakBeforeLastWeek && prevIncomplete && !prevAlreadyShielded;
-          }
-
-          // Current week shield (Thu/Fri/Sat as before).
-          //
-          // hasActiveStreak alone isn't a good enough gate: computeStreaks lets the
-          // in-progress week extend a streak, so a user with no history who simply
-          // met one goal this week reads as streak 1 and gets offered a shield that
-          // would protect nothing. What actually makes the shield worth offering is
-          // a category the user has NOT yet met this week that is carrying a streak
-          // into it — that's the run a missed week would break.
-          const atRiskStreak =
-            (liftsRemaining > 0 && userData.streaks.lifts > 0) ||
-            (cardioRemaining > 0 && userData.streaks.cardio > 0) ||
-            (recoveryRemaining > 0 && userData.streaks.recovery > 0) ||
-            (!thisWeekJudged.steps && !injuryFrozen.includes('steps') && (userData.streaks.steps || 0) > 0) ||
-            (userData.streaks.master > 0 && !thisWeekJudged.all);
-
-          const showCurrentWeek = daysLeft <= 3 && atRiskStreak;
-
-          if (!showRetroactive && !showCurrentWeek) return null;
-
-          // Determine which week the shield applies to
-          const shieldWeekKey = showRetroactive ? previousWeek : currentWeek;
-          const isShielded = (userData.streakShield?.shieldedWeeks || []).includes(shieldWeekKey);
-
-          // Calculate 6-week cooldown from last use
-          const SHIELD_COOLDOWN_WEEKS = 6;
-          const lastUsedWeek = userData.streakShield?.lastUsedWeek;
-          let weeksUntilAvailable = 0;
-          let onCooldown = false;
-
-          if (lastUsedWeek && lastUsedWeek !== shieldWeekKey) {
-            const lastUsedDate = new Date(lastUsedWeek + 'T12:00:00');
-            const shieldWeekDate = new Date(shieldWeekKey + 'T12:00:00');
-            const weeksSinceUsed = Math.floor((shieldWeekDate - lastUsedDate) / (7 * 24 * 60 * 60 * 1000));
-            if (weeksSinceUsed < SHIELD_COOLDOWN_WEEKS) {
-              onCooldown = true;
-              weeksUntilAvailable = SHIELD_COOLDOWN_WEEKS - weeksSinceUsed;
-            }
-          }
-
-          const shieldAvailable = isPro && !isShielded && !onCooldown;
-
-          // Hide on cooldown — purely informational, not actionable from home.
-          // Status is visible on the Profile page and full management in Settings.
-          if (isPro && onCooldown && !isShielded) return null;
-
-          if (isShielded) {
-            return (
-              <div className="p-3 rounded-xl mb-3 flex items-center gap-3" style={{ backgroundColor: 'rgba(0,255,148,0.08)', border: '1px solid rgba(0,255,148,0.2)' }}>
-                <span className="text-lg">🛡️</span>
-                <div className="flex-1">
-                  <div className="text-xs font-semibold" style={{ color: '#00FF94' }}>Streak Shield Active</div>
-                  <div className="text-[10px] text-gray-400 mt-0.5">{showRetroactive ? "Last week's streaks are protected" : 'Your streaks are protected this week'}</div>
-                </div>
-                <button onClick={(e) => { e.stopPropagation(); setShowShieldInfo(true); }} className="w-6 h-6 flex items-center justify-center rounded-full" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
-                  <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
-                  </svg>
-                </button>
-              </div>
-            );
-          }
-
-          return (
-            <button
-              onClick={async () => {
-                if (!isPro) {
-                  onPresentPaywall?.();
-                  return;
-                }
-                if (onCooldown) return;
-                if (shieldAvailable) {
-                  triggerHaptic(ImpactStyle.Medium);
-                  setShowShieldConfirm(true);
-                }
-              }}
-              className="w-full p-3 rounded-xl mb-3 flex items-center gap-3 transition-all duration-150"
-              style={{
-                backgroundColor: !isPro ? 'rgba(255,255,255,0.03)' : onCooldown ? 'rgba(255,255,255,0.03)' : 'rgba(0,209,255,0.08)',
-                border: !isPro ? '1px solid rgba(255,255,255,0.06)' : onCooldown ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,209,255,0.2)',
-                opacity: onCooldown ? 0.6 : 1
-              }}
-              onTouchStart={(e) => { if (!onCooldown) e.currentTarget.style.opacity = '0.7'; }}
-              onTouchEnd={(e) => { e.currentTarget.style.opacity = onCooldown ? '0.6' : '1'; }}
-            >
-              <span className="text-lg">🛡️</span>
-              <div className="flex-1 text-left">
-                <div className="text-xs font-semibold" style={{ color: !isPro ? '#9ca3af' : onCooldown ? '#9ca3af' : '#00D1FF' }}>
-                  {!isPro ? 'Streak Shield' : onCooldown ? 'Streak Shield on Cooldown' : showRetroactive ? 'Revive Last Week\'s Broken Streak' : 'Use Streak Shield'}
-                  {!isPro && <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(255,149,0,0.15)', color: '#FF9500' }}>PRO</span>}
-                </div>
-                <div className="text-[10px] text-gray-400 mt-0.5">
-                  {!isPro ? 'Protect your streaks when life gets busy' : onCooldown ? `Available again in ${weeksUntilAvailable} week${weeksUntilAvailable === 1 ? '' : 's'}` : showRetroactive ? 'You missed last week — shield it before Monday ends' : 'Protect your streaks for this week (1 per 6 weeks)'}
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); setShowShieldInfo(true); }} className="w-6 h-6 flex items-center justify-center rounded-full" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
-                  <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
-                  </svg>
-                </button>
-              </div>
-            </button>
-          );
-        })()}
-
         {/* Streak Shield Info Modal */}
         {showShieldInfo && (
           <div className="fixed inset-0 z-[9999] flex items-end justify-center" onClick={() => setShowShieldInfo(false)}>
@@ -13219,6 +13060,233 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                 ? `${daysLeft} day${daysLeft !== 1 ? 's' : ''} left in the week`
                 : `${hasExistingStreak ? 'Hit these to keep your streaks alive' : 'Hit these to start your first streak'} · ${daysLeft} day${daysLeft !== 1 ? 's' : ''} left`}</p>
           </div>
+
+          {/* Banners about the week — status, risk and the shield offer — sit with the
+              week's goals, under its title, rather than stacked above the page. */}
+        {/* Vacation Mode Active Banner */}
+        {userData.vacationMode?.isActive && (
+          <div className="p-3 rounded-xl mb-3 flex items-center gap-3" style={{ backgroundColor: 'rgba(0,209,255,0.08)', border: '1px solid rgba(0,209,255,0.2)' }}>
+            <span className="text-lg">✈️</span>
+            <div className="flex-1">
+              <div className="text-xs font-semibold" style={{ color: '#00D1FF' }}>Vacation Mode Active</div>
+              <div className="text-[10px] text-gray-400 mt-0.5">
+                Your streaks are frozen until you deactivate
+                {userData.vacationMode.startDate && (() => {
+                  const start = new Date(userData.vacationMode.startDate + 'T12:00:00');
+                  const now = new Date();
+                  const daysUsed = Math.floor((now - start) / (24 * 60 * 60 * 1000));
+                  const daysRemaining = Math.max(0, 14 - daysUsed);
+                  return <span> · {daysRemaining} day{daysRemaining !== 1 ? 's' : ''} remaining</span>;
+                })()}
+              </div>
+            </div>
+            <button
+              onClick={() => setShowVacationDeactivateConfirm(true)}
+              className="px-3 py-1.5 rounded-lg text-[11px] font-semibold"
+              style={{ backgroundColor: 'rgba(0,209,255,0.15)', color: '#00D1FF' }}
+            >
+              Deactivate
+            </button>
+          </div>
+        )}
+
+        {/* Injury Mode status — streak frozen while healing. The card is always present
+            while active, so the option to resume (once unlocked) is available every week
+            — that standing weekly option is the check-in. */}
+        {userData.injuryMode?.isActive && (
+          <div className="p-3 rounded-xl mb-3 flex items-center gap-3" style={{ backgroundColor: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.2)' }}>
+            <span className="text-lg">🩹</span>
+            <div className="flex-1">
+              <div className="text-xs font-semibold" style={{ color: '#A78BFA' }}>Injury Mode · {formatInjuryPausedLabel(userData.injuryMode)}</div>
+              <div className="text-[10px] text-gray-400 mt-0.5">
+                Take the time you need to heal
+                {userData.injuryMode.estimatedEndWeek && (() => {
+                  const end = new Date(userData.injuryMode.estimatedEndWeek + 'T12:00:00');
+                  return <span> · auto-resumes {end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>;
+                })()}
+              </div>
+            </div>
+            {canResumeInjury && (
+              <button
+                onClick={() => {
+                  triggerHaptic(ImpactStyle.Light);
+                  onRequestResumeInjury?.();
+                }}
+                className="px-3 py-1.5 rounded-lg text-[11px] font-semibold"
+                style={{ backgroundColor: 'rgba(167,139,250,0.15)', color: '#A78BFA' }}
+              >
+                I'm back
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Streak at Risk Warning - hidden during vacation */}
+        {!userData.vacationMode?.isActive && !streakWarningDismissed && !joinedToday && daysLeft <= 3 && (liftsRemaining > 0 || cardioRemaining > 0 || (recoveryNeeded && recoveryRemaining > 0) || stepsRemaining > 0) && (
+          <div
+            className="relative p-3 rounded-xl mb-3 flex items-center gap-3"
+            style={{
+              backgroundColor: 'rgba(255,69,58,0.15)',
+              border: '1px solid rgba(255,69,58,0.3)'
+            }}
+          >
+            <span className="text-xl">⚠️</span>
+            <div className="flex-1 pr-6">
+              <div className="text-xs font-semibold" style={{ color: '#FF453A' }}>
+                {daysLeft === 1 ? 'Last day to hit your goals!' : `${daysLeft} days left (including today)!`}
+              </div>
+              <div className="text-[10px] text-gray-400 mt-0.5">
+                {[
+                  liftsRemaining > 0 ? `${liftsRemaining} strength` : null,
+                  cardioRemaining > 0 ? `${cardioRemaining} cardio` : null,
+                  recoveryNeeded && recoveryRemaining > 0 ? `${recoveryRemaining} recovery` : null,
+                  stepsRemaining > 0 ? `${formatK(stepsRemaining)} steps` : null
+                ].filter(Boolean).join(', ')} remaining {streakStakes}
+              </div>
+            </div>
+            <button
+              onClick={() => { localStorage.setItem('dismissedStreakWarning', warningKey); setDismissedWarningKey(warningKey); }}
+              className="absolute flex items-center justify-center"
+              style={{ top: 4, right: 4, width: 44, height: 44, color: 'rgba(255,69,58,0.6)' }}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M3 3L11 11M11 3L3 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+              </svg>
+            </button>
+          </div>
+        )}
+
+        {/* Streak Shield Button - hidden during vacation */}
+        {!userData.vacationMode?.isActive && !userData.injuryMode?.isActive && (() => {
+          const currentWeek = getCurrentWeekKey();
+          const previousWeek = getPreviousWeekKey();
+          const hasActiveStreak = userData.streaks.master > 0 || userData.streaks.lifts > 0 || userData.streaks.cardio > 0 || userData.streaks.recovery > 0 || (userData.streaks.steps || 0) > 0;
+
+          // Determine if this is a retroactive shield (Sunday/Monday, saving last week)
+          const isRetroactive = dayOfWeek <= 1;
+
+          // For retroactive: check if previous week goals were incomplete.
+          // Don't require hasActiveStreak — by Monday, a missed week has already
+          // reset streaks to 0. Instead, verify the user had a streak going INTO
+          // last week by checking the week before last hit at least one goal.
+          let showRetroactive = false;
+          if (isRetroactive) {
+            // Both weeks judged by the shared rule, against the goals in force then.
+            const judgePast = (weekKey) => judgeWeekFromActivities(activities, weekKey, homeWeekCtx);
+            const prevIncomplete = !judgePast(previousWeek).all;
+            const prevAlreadyShielded = (userData.streakShield?.shieldedWeeks || []).includes(previousWeek);
+
+            // Week before last: did at least one category hit its goal? If so, a streak was alive.
+            const wbl = judgePast(addWeeksToWeekKey(previousWeek, -1));
+            const hadStreakBeforeLastWeek = hasActiveStreak || wbl.lifts || wbl.cardio || wbl.recovery;
+
+            showRetroactive = hadStreakBeforeLastWeek && prevIncomplete && !prevAlreadyShielded;
+          }
+
+          // Current week shield (Thu/Fri/Sat as before).
+          //
+          // hasActiveStreak alone isn't a good enough gate: computeStreaks lets the
+          // in-progress week extend a streak, so a user with no history who simply
+          // met one goal this week reads as streak 1 and gets offered a shield that
+          // would protect nothing. What actually makes the shield worth offering is
+          // a category the user has NOT yet met this week that is carrying a streak
+          // into it — that's the run a missed week would break.
+          const atRiskStreak =
+            (liftsRemaining > 0 && userData.streaks.lifts > 0) ||
+            (cardioRemaining > 0 && userData.streaks.cardio > 0) ||
+            (recoveryRemaining > 0 && userData.streaks.recovery > 0) ||
+            (!thisWeekJudged.steps && !injuryFrozen.includes('steps') && (userData.streaks.steps || 0) > 0) ||
+            (userData.streaks.master > 0 && !thisWeekJudged.all);
+
+          const showCurrentWeek = daysLeft <= 3 && atRiskStreak;
+
+          if (!showRetroactive && !showCurrentWeek) return null;
+
+          // Determine which week the shield applies to
+          const shieldWeekKey = showRetroactive ? previousWeek : currentWeek;
+          const isShielded = (userData.streakShield?.shieldedWeeks || []).includes(shieldWeekKey);
+
+          // Calculate 6-week cooldown from last use
+          const SHIELD_COOLDOWN_WEEKS = 6;
+          const lastUsedWeek = userData.streakShield?.lastUsedWeek;
+          let weeksUntilAvailable = 0;
+          let onCooldown = false;
+
+          if (lastUsedWeek && lastUsedWeek !== shieldWeekKey) {
+            const lastUsedDate = new Date(lastUsedWeek + 'T12:00:00');
+            const shieldWeekDate = new Date(shieldWeekKey + 'T12:00:00');
+            const weeksSinceUsed = Math.floor((shieldWeekDate - lastUsedDate) / (7 * 24 * 60 * 60 * 1000));
+            if (weeksSinceUsed < SHIELD_COOLDOWN_WEEKS) {
+              onCooldown = true;
+              weeksUntilAvailable = SHIELD_COOLDOWN_WEEKS - weeksSinceUsed;
+            }
+          }
+
+          const shieldAvailable = isPro && !isShielded && !onCooldown;
+
+          // Hide on cooldown — purely informational, not actionable from home.
+          // Status is visible on the Profile page and full management in Settings.
+          if (isPro && onCooldown && !isShielded) return null;
+
+          if (isShielded) {
+            return (
+              <div className="p-3 rounded-xl mb-3 flex items-center gap-3" style={{ backgroundColor: 'rgba(0,255,148,0.08)', border: '1px solid rgba(0,255,148,0.2)' }}>
+                <span className="text-lg">🛡️</span>
+                <div className="flex-1">
+                  <div className="text-xs font-semibold" style={{ color: '#00FF94' }}>Streak Shield Active</div>
+                  <div className="text-[10px] text-gray-400 mt-0.5">{showRetroactive ? "Last week's streaks are protected" : 'Your streaks are protected this week'}</div>
+                </div>
+                <button onClick={(e) => { e.stopPropagation(); setShowShieldInfo(true); }} className="w-6 h-6 flex items-center justify-center rounded-full" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
+                  <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+                  </svg>
+                </button>
+              </div>
+            );
+          }
+
+          return (
+            <button
+              onClick={async () => {
+                if (!isPro) {
+                  onPresentPaywall?.();
+                  return;
+                }
+                if (onCooldown) return;
+                if (shieldAvailable) {
+                  triggerHaptic(ImpactStyle.Medium);
+                  setShowShieldConfirm(true);
+                }
+              }}
+              className="w-full p-3 rounded-xl mb-3 flex items-center gap-3 transition-all duration-150"
+              style={{
+                backgroundColor: !isPro ? 'rgba(255,255,255,0.03)' : onCooldown ? 'rgba(255,255,255,0.03)' : 'rgba(0,209,255,0.08)',
+                border: !isPro ? '1px solid rgba(255,255,255,0.06)' : onCooldown ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,209,255,0.2)',
+                opacity: onCooldown ? 0.6 : 1
+              }}
+              onTouchStart={(e) => { if (!onCooldown) e.currentTarget.style.opacity = '0.7'; }}
+              onTouchEnd={(e) => { e.currentTarget.style.opacity = onCooldown ? '0.6' : '1'; }}
+            >
+              <span className="text-lg">🛡️</span>
+              <div className="flex-1 text-left">
+                <div className="text-xs font-semibold" style={{ color: !isPro ? '#9ca3af' : onCooldown ? '#9ca3af' : '#00D1FF' }}>
+                  {!isPro ? 'Streak Shield' : onCooldown ? 'Streak Shield on Cooldown' : showRetroactive ? 'Revive Last Week\'s Broken Streak' : 'Use Streak Shield'}
+                  {!isPro && <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(255,149,0,0.15)', color: '#FF9500' }}>PRO</span>}
+                </div>
+                <div className="text-[10px] text-gray-400 mt-0.5">
+                  {!isPro ? 'Protect your streaks when life gets busy' : onCooldown ? `Available again in ${weeksUntilAvailable} week${weeksUntilAvailable === 1 ? '' : 's'}` : showRetroactive ? 'You missed last week — shield it before Monday ends' : 'Protect your streaks for this week (1 per 6 weeks)'}
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); setShowShieldInfo(true); }} className="w-6 h-6 flex items-center justify-center rounded-full" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
+                  <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+                  </svg>
+                </button>
+              </div>
+            </button>
+          );
+        })()}
 
           {/* Week Won — the mirror of the "streak at risk" warning above. That banner
               only exists while categories are still outstanding; this one takes over the
@@ -13494,8 +13562,6 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         {/* End of weeklyGoalsRef wrapper */}
       </div>
 
-      {todayActivitySection}
-
       {/* Weekly Planner — collapsible; sits directly under This Week's Goals */}
       <WeeklyPlanner
         goals={userData?.goals}
@@ -13505,6 +13571,8 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         onSave={onSaveWeeklyPlan}
         onLogActivity={onAddActivity}
       />
+
+      {todayActivitySection}
 
       <ChallengesSection
         user={user}
@@ -13517,89 +13585,6 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         onApplyPastActivityToChallenge={onApplyPastActivityToChallenge}
         onDetailOpenChange={onChallengeDetailOpenChange}
       />
-
-      {/* Section Divider */}
-      <div className="mx-4 mb-4">
-        <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
-      </div>
-
-      {/* Recent Activity — up to 3 most recent; full log lives on the Profile tab. Hidden when
-          today's workouts (shown in Today's Activity) are the only ones there are. */}
-      {!(latestActivities.length === 0 && todaysWorkouts.length > 0) && (
-      <div className="mx-4 mb-4">
-        <SwipeableProvider>
-          <div ref={latestActivityRef}>
-            <div className="flex items-center justify-between mb-2 px-1">
-              <span className="text-xs text-gray-500 uppercase tracking-wider">
-                {latestActivities.length > 1 ? 'Recent Activity' : 'Last Workout'}
-              </span>
-              {onNavigateToHistory && (
-                <button
-                  onClick={() => { triggerHaptic(ImpactStyle.Light); onNavigateToHistory(); }}
-                  className="text-xs text-gray-400"
-                >
-                  See all ›
-                </button>
-              )}
-            </div>
-            {latestActivities.length > 0 ? (
-              <div className="space-y-2">
-                {latestActivities.map((act) => (
-                  <SwipeableActivityItem
-                    key={act.id}
-                    activity={act}
-                    onDelete={(a) => onDeleteActivity && onDeleteActivity(a.id)}
-                    onEdit={onEditActivity}
-                  >
-                    <div
-                      onClick={() => {
-                        triggerHaptic(ImpactStyle.Light);
-                        setSelectedActivity(act);
-                      }}
-                      className="w-full p-3 flex items-center gap-3 text-left cursor-pointer active:opacity-70 transition-opacity"
-                      style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
-                    >
-                      <ActivityIcon type={act.type} subtype={act.subtype} size={20} sportEmoji={act.sportEmoji} customEmoji={act.customEmoji} customIcon={act.customIcon} countToward={act.countToward} customActivityCategory={act.customActivityCategory} />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-semibold truncate">{
-                          act.type === 'Other' ? (act.subtype || 'Other')
-                          : act.type === 'Strength Training' ? (() => {
-                            const st = act.strengthType || 'Strength Training';
-                            const areas = normalizeFocusAreas(act.focusAreas || (act.focusArea ? [act.focusArea] : []));
-                            if (areas.length > 0) return `${st} - ${areas.join(', ')}`;
-                            return act.subtype || st;
-                          })()
-                          : (act.subtype ? `${act.type} • ${act.subtype}` : act.type)
-                        }</div>
-                        <div className="text-xs text-gray-400 flex items-center gap-2">
-                          <span>{formatFriendlyDate(act.date)}{act.time ? ` at ${act.time}` : ''}{act.duration ? ` (${act.duration} min)` : ''}</span>
-                          {(act.healthKitUUID || act.linkedHealthKitUUID || act.source === 'healthkit' || act.fromAppleHealth) && (
-                            <span className="flex items-center gap-1 text-cyan-400">
-                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                              </svg>
-                              <span className="text-[10px]">{act.sourceDevice || 'Apple Health'}</span>
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <span className="text-gray-600 text-xs">›</span>
-                    </div>
-                  </SwipeableActivityItem>
-                ))}
-              </div>
-            ) : (
-              <div className="p-6 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                <div className="text-4xl mb-3">💪</div>
-                <p className="text-white font-medium text-sm">Your first workout is waiting!</p>
-                <p className="text-gray-500 text-xs mt-1">Tap the + button to log an activity</p>
-              </div>
-            )}
-          </div>
-        </SwipeableProvider>
-      </div>
-      )}
 
       {/* Activity Detail Modal */}
       <ActivityDetailModal

@@ -39,6 +39,7 @@ extension WidgetStreakData {
         cardioCompleted: 2, cardioGoal: 3,
         recoveryCompleted: 2, recoveryGoal: 2,
         todaySteps: 8432, stepsGoal: 10000, todayCalories: 347,
+        weekSteps: 41200,
         lastUpdated: Date().timeIntervalSince1970,
         injuryModeActive: false
     )
@@ -65,10 +66,10 @@ struct CircularComplicationView: View {
         ZStack {
             AccessoryWidgetBackground()
 
-            // Recovery ring (outermost)
+            // Steps ring (outermost) — the week's steps against stepsGoal × 7
             Circle()
-                .trim(from: 0, to: data.recoveryProgress)
-                .stroke(WidgetColors.recovery, style: StrokeStyle(lineWidth: 4.5, lineCap: .round))
+                .trim(from: 0, to: data.weekStepsProgress)
+                .stroke(WidgetColors.steps, style: StrokeStyle(lineWidth: 4.5, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .padding(1.5)
 
@@ -110,8 +111,8 @@ struct CornerComplicationView: View {
 
     var body: some View {
         ZStack {
-            // Recovery (outermost)
-            ringView(progress: data.recoveryProgress, color: WidgetColors.recovery, diameter: ringSize)
+            // Weekly steps (outermost)
+            ringView(progress: data.weekStepsProgress, color: WidgetColors.steps, diameter: ringSize)
             // Cardio (middle)
             ringView(progress: data.cardioProgress, color: WidgetColors.cardio, diameter: ringSize - ringSpacing * 2)
             // Strength (innermost)
@@ -184,11 +185,12 @@ struct RectangularComplicationView: View {
                     color: WidgetColors.cardio
                 )
                 CategoryBarView(
-                    label: "REC",
-                    completed: data.recoveryCompleted,
-                    goal: data.recoveryGoal,
-                    progress: data.recoveryProgress,
-                    color: WidgetColors.recovery
+                    label: "STP",
+                    completed: data.weekSteps,
+                    goal: data.weekStepsGoal,
+                    progress: data.weekStepsProgress,
+                    color: WidgetColors.steps,
+                    valueText: "\(Int((Double(data.weekSteps) / 1000).rounded()))k"
                 )
             }
         }
@@ -201,6 +203,7 @@ struct CategoryBarView: View {
     let goal: Int
     let progress: Double
     let color: Color
+    var valueText: String? = nil   // overrides "completed/goal" (the steps bar shows "34k")
 
     var body: some View {
         HStack(spacing: 3) {
@@ -222,7 +225,7 @@ struct CategoryBarView: View {
             }
             .frame(height: 7)
 
-            Text("\(completed)/\(goal)")
+            Text(valueText ?? "\(completed)/\(goal)")
                 .font(.system(size: 8, weight: .medium, design: .rounded))
                 .foregroundColor(completed >= goal ? color : .secondary)
                 .frame(width: 18, alignment: .trailing)

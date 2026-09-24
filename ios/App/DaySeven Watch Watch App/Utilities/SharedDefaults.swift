@@ -17,6 +17,7 @@ struct SharedDefaults {
     static let recoveryCompletedKey = "recoveryCompleted"
     static let recoveryGoalKey = "recoveryGoal"
     static let todayStepsKey = "todaySteps"
+    static let weekStepsKey = "weekSteps"
     static let stepsGoalKey = "stepsGoal"
     static let todayCaloriesKey = "todayCalories"
     static let lastUpdatedKey = "lastUpdated"
@@ -56,6 +57,7 @@ struct SharedDefaults {
         cardioCompleted: Int, cardioGoal: Int,
         recoveryCompleted: Int, recoveryGoal: Int,
         todaySteps: Int, stepsGoal: Int, todayCalories: Int,
+        weekSteps: Int = 0,
         injuryModeActive: Bool = false
     ) {
         guard let defaults = shared else { return }
@@ -73,6 +75,7 @@ struct SharedDefaults {
         defaults.set(todaySteps, forKey: todayStepsKey)
         defaults.set(stepsGoal, forKey: stepsGoalKey)
         defaults.set(todayCalories, forKey: todayCaloriesKey)
+        defaults.set(weekSteps, forKey: weekStepsKey)
         defaults.set(Date().timeIntervalSince1970, forKey: lastUpdatedKey)
     }
 
@@ -94,6 +97,7 @@ struct SharedDefaults {
             todaySteps: defaults.integer(forKey: todayStepsKey),
             stepsGoal: defaults.integer(forKey: stepsGoalKey) > 0 ? defaults.integer(forKey: stepsGoalKey) : 10000,
             todayCalories: defaults.integer(forKey: todayCaloriesKey),
+            weekSteps: defaults.integer(forKey: weekStepsKey),
             lastUpdated: defaults.double(forKey: lastUpdatedKey),
             injuryModeActive: defaults.bool(forKey: injuryModeActiveKey)
         )
@@ -116,8 +120,15 @@ struct WidgetStreakData {
     let todaySteps: Int
     let stepsGoal: Int
     let todayCalories: Int
+    let weekSteps: Int          // Sunday → now; the Steps ring (stepsGoal × 7)
     let lastUpdated: Double
     let injuryModeActive: Bool
+
+    var weekStepsGoal: Int { stepsGoal * 7 }
+
+    var weekStepsProgress: Double {
+        weekStepsGoal > 0 ? min(Double(weekSteps) / Double(weekStepsGoal), 1.0) : 0
+    }
 
     var stepsProgress: Double {
         min(Double(todaySteps) / Double(stepsGoal), 1.0)
@@ -135,14 +146,15 @@ struct WidgetStreakData {
         min(Double(recoveryCompleted) / Double(recoveryGoal), 1.0)
     }
 
+    // The three goal rings: Strength, Cardio, weekly Steps (Recovery is a bonus, not a ring).
     var totalCategoriesCompleted: Int {
         (liftsCompleted >= liftsGoal ? 1 : 0) +
         (cardioCompleted >= cardioGoal ? 1 : 0) +
-        (recoveryCompleted >= recoveryGoal ? 1 : 0)
+        (weekSteps >= weekStepsGoal ? 1 : 0)
     }
 
     var overallProgress: Double {
-        (liftsProgress + cardioProgress + recoveryProgress) / 3.0
+        (liftsProgress + cardioProgress + weekStepsProgress) / 3.0
     }
 
     static let empty = WidgetStreakData(
@@ -151,6 +163,7 @@ struct WidgetStreakData {
         cardioCompleted: 0, cardioGoal: 3,
         recoveryCompleted: 0, recoveryGoal: 2,
         todaySteps: 0, stepsGoal: 10000, todayCalories: 0,
+        weekSteps: 0,
         lastUpdated: 0,
         injuryModeActive: false
     )

@@ -159,6 +159,45 @@ class HealthKitService {
         return result
     }
 
+    // MARK: - This Week's Steps
+
+    /// Steps from Sunday midnight to now — the Steps ring (stepsPerDay × 7).
+    ///
+    /// Runs a day-bucketed statistics collection starting a day early (Saturday) and drops
+    /// that lead-in day, so a sample that crossed Saturday→Sunday midnight is split between
+    /// the days the way the Health app splits it. A single query from Sunday with
+    /// .strictStartDate would drop it entirely (the phone saw ~850-900 steps lost that way).
+    func fetchWeekSteps() async throws -> Int {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let weekday = calendar.component(.weekday, from: today) // 1 = Sunday
+        guard let sunday = calendar.date(byAdding: .day, value: -(weekday - 1), to: today),
+              let leadIn = calendar.date(byAdding: .day, value: -1, to: sunday) else { return 0 }
+
+        let predicate = HKQuery.predicateForSamples(withStart: leadIn, end: Date(), options: .strictStartDate)
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int, Error>) in
+            let query = HKStatisticsCollectionQuery(
+                quantityType: HKQuantityType(.stepCount),
+                quantitySamplePredicate: predicate,
+                options: .cumulativeSum,
+                anchorDate: leadIn,
+                intervalComponents: DateComponents(day: 1)
+            )
+            query.initialResultsHandler = { _, collection, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                var total = 0.0
+                collection?.enumerateStatistics(from: sunday, to: Date()) { stats, _ in
+                    total += stats.sumQuantity()?.doubleValue(for: .count()) ?? 0
+                }
+                continuation.resume(returning: Int(total))
+            }
+            healthStore.execute(query)
+        }
+    }
+
     // MARK: - Today's Calories
 
     func fetchTodayCalories() async throws -> Int {

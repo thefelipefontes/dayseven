@@ -23,8 +23,11 @@ struct WeeklyProgress {
     var cardio: CategoryProgress
     var recovery: CategoryProgress
 
+    /// Strength and Cardio are both met. They're part of every Winning Streak rule; the rest
+    /// (weekly steps from the user's start week, recovery before it) is judged on the phone,
+    /// which owns the Winning Streak. Used only to clear the watch's own celebration flags.
     var allGoalsMet: Bool {
-        lifts.isComplete && cardio.isComplete && recovery.isComplete
+        lifts.isComplete && cardio.isComplete
     }
 
     static let empty = WeeklyProgress(

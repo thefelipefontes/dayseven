@@ -94,6 +94,7 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
   const liftsStreak = streaks.lifts ?? friend?.strengthStreak ?? 0;
   const cardioStreak = streaks.cardio ?? friend?.cardioStreak ?? 0;
   const recoveryStreak = streaks.recovery ?? friend?.recoveryStreak ?? 0;
+  const stepsStreak = streaks.steps ?? friend?.stepsStreak ?? 0;
 
   // Records should never read lower than the current streak — that's a data invariant
   // (a "longest ever" can't be less than what's happening right now). Clamp on display
@@ -102,6 +103,7 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
   const bestStrength = Math.max(records.longestStrengthStreak || 0, liftsStreak);
   const bestCardio = Math.max(records.longestCardioStreak || 0, cardioStreak);
   const bestRecovery = Math.max(records.longestRecoveryStreak || 0, recoveryStreak);
+  const bestSteps = Math.max(records.longestStepsStreak || 0, stepsStreak);
 
   const wins = challengeStats.wins || 0;
   const losses = challengeStats.losses || 0;
@@ -219,12 +221,13 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
             {/* 🔥 Streak Records — longest streaks ever in each category */}
             <SectionHeader emoji="🔥" label="Streak Records" />
             <div
-              className="rounded-xl p-2.5 mb-3 grid grid-cols-4 gap-1"
+              className="rounded-xl p-2.5 mb-3 grid grid-cols-5 gap-1"
               style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
             >
               <StreakPill value={bestMaster} label="Winning" color="#FFD60A" />
               <StreakPill value={bestStrength} label="Strength" color="#00FF94" />
               <StreakPill value={bestCardio} label="Cardio" color="#FF9500" />
+              <StreakPill value={bestSteps} label="Steps" color="#BF5AF2" />
               <StreakPill value={bestRecovery} label="Recovery" color="#00D1FF" />
             </div>
 
@@ -244,11 +247,12 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
                 Master is already in the headline triplet, so this only shows category breakdowns. */}
             <SectionHeader emoji="📈" label="Current Streaks" />
             <div
-              className="rounded-xl p-2.5 grid grid-cols-3 gap-1"
+              className="rounded-xl p-2.5 grid grid-cols-4 gap-1"
               style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
             >
               <StreakPill value={liftsStreak} label="Strength" color="#00FF94" />
               <StreakPill value={cardioStreak} label="Cardio" color="#FF9500" />
+              <StreakPill value={stepsStreak} label="Steps" color="#BF5AF2" />
               <StreakPill value={recoveryStreak} label="Recovery" color="#00D1FF" />
             </div>
           </div>

@@ -50,6 +50,7 @@ import WeekStatsModal from './components/WeekStatsModal';
 import MonthStatsModal from './components/MonthStatsModal';
 import ActivityDetailModal from './components/ActivityDetailModal';
 import TrendsView from './components/TrendsView';
+import { resolveUnit, formatDistance, formatPaceFromMinutesAndMiles } from './utils/distance';
 
 // Flag to suppress foreground refresh while photo picker is open
 // (prevents re-render glitch when returning from iOS photo picker)
@@ -487,7 +488,7 @@ const AppTour = ({ step, onNext, onBack, onSkip, targetRef, onSwitchTab, homeTab
     },
     {
       title: 'Weekly Goals',
-      description: 'Track your weekly progress here. Hit all three goals to earn your streak! Your latest sessions appear below.',
+      description: 'Track your weekly progress here. Hit Strength, Cardio and your weekly Steps to win the week and grow your streak. Recovery is a bonus.',
       position: 'below',
       tab: 'home',
       features: null
@@ -4105,13 +4106,25 @@ const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1, goals 
                 {weekCounts.cardio || 0}/{goals.cardioPerWeek || 3}
               </span>
             </div>
-            <div className="flex flex-col items-center">
-              <div className="w-3 h-3 rounded-full mb-1" style={{ backgroundColor: COLORS.recovery, boxShadow: `0 0 8px ${COLORS.recovery}` }} />
-              <span className="text-[11px] text-gray-400">Recovery</span>
-              <span className="text-base font-bold" style={{ color: COLORS.recovery }}>
-                {weekCounts.recovery || 0}/{goals.recoveryPerWeek || 2}
-              </span>
-            </div>
+            {/* Third column is what this week's Winning Streak needed: Steps from the user's
+                start week (utils/weekGoals), Recovery before it. */}
+            {weekCounts.stepsRule ? (
+              <div className="flex flex-col items-center">
+                <div className="w-3 h-3 rounded-full mb-1" style={{ backgroundColor: '#BF5AF2', boxShadow: '0 0 8px #BF5AF2' }} />
+                <span className="text-[11px] text-gray-400">Steps</span>
+                <span className="text-base font-bold" style={{ color: '#BF5AF2' }}>
+                  {Math.round((weekCounts.steps || 0) / 1000)}k/{Math.round((goals.stepsPerDay || 10000) * 7 / 1000)}k
+                </span>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center">
+                <div className="w-3 h-3 rounded-full mb-1" style={{ backgroundColor: COLORS.recovery, boxShadow: `0 0 8px ${COLORS.recovery}` }} />
+                <span className="text-[11px] text-gray-400">Recovery</span>
+                <span className="text-base font-bold" style={{ color: COLORS.recovery }}>
+                  {weekCounts.recovery || 0}/{goals.recoveryPerWeek || 2}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Buttons */}
@@ -4795,6 +4808,10 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                     <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>Cardio</div>
                   </div>
                   <div className="text-center">
+                    <div className={`${isPostFormat ? 'text-base' : 'text-lg'} font-black`} style={{ color: '#BF5AF2' }}>{records.longestStepsStreak || 0}</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>Steps</div>
+                  </div>
+                  <div className="text-center">
                     <div className={`${isPostFormat ? 'text-base' : 'text-lg'} font-black`} style={{ color: '#00D1FF' }}>{records.longestRecoveryStreak || 0}</div>
                     <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>Recovery</div>
                   </div>
@@ -4864,10 +4881,15 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
         const cardioPercent = cardioGoal > 0 ? Math.min((weeklyCardio / cardioGoal) * 100, 100) : 0;
         const recoveryPercent = recoveryGoal > 0 ? Math.min((weeklyRecovery / recoveryGoal) * 100, 100) : 0;
 
-        // Calculate overall progress (same as home page - cap each at goal)
-        const totalGoals = liftsGoal + cardioGoal + recoveryGoal;
-        const totalCompleted = Math.min(weeklyLifts, liftsGoal) + Math.min(weeklyCardio, cardioGoal) + Math.min(weeklyRecovery, recoveryGoal);
-        const overallPercent = totalGoals > 0 ? Math.round((totalCompleted / totalGoals) * 100) : 0;
+        // The third ring is always Steps — the app's rings are Strength, Cardio, Steps for every
+        // week. Whether a week counted still follows the rule it was judged by (weekJudged,
+        // utils/weekGoals), so weeks before the user's start week keep their original verdict.
+        const weeklySteps = stats?.weeklySteps || 0;
+        const weeklyStepsGoal = stats?.weeklyStepsGoal || 70000;
+        const third = { percent: Math.min((weeklySteps / weeklyStepsGoal) * 100, 100), color: '#BF5AF2', text: `${Math.round(weeklySteps / 1000)}k`, category: 'steps', label: 'Steps' };
+
+        // Overall progress, same as Home: the average completion of the three rings.
+        const overallPercent = Math.round((liftsPercent + cardioPercent + third.percent) / 3);
 
         // Ring dimensions for share card
         const ringSize = isPostFormat ? 56 : 64;
@@ -4921,14 +4943,14 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                 {/* Progress bar */}
                 <div className={`w-full ${isPostFormat ? 'mb-4' : 'mb-5'}`}>
                   <div className={`${isPostFormat ? 'h-2' : 'h-2'} rounded-full overflow-hidden flex`} style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                    {weeklyLifts > 0 && (
-                      <div className="h-full transition-all duration-500" style={{ width: `${(Math.min(weeklyLifts, liftsGoal) / totalGoals) * 100}%`, backgroundColor: '#00FF94' }} />
+                    {liftsPercent > 0 && (
+                      <div className="h-full transition-all duration-500" style={{ width: `${liftsPercent / 3}%`, backgroundColor: '#00FF94' }} />
                     )}
-                    {weeklyCardio > 0 && (
-                      <div className="h-full transition-all duration-500" style={{ width: `${(Math.min(weeklyCardio, cardioGoal) / totalGoals) * 100}%`, backgroundColor: '#FF9500' }} />
+                    {cardioPercent > 0 && (
+                      <div className="h-full transition-all duration-500" style={{ width: `${cardioPercent / 3}%`, backgroundColor: '#FF9500' }} />
                     )}
-                    {weeklyRecovery > 0 && (
-                      <div className="h-full transition-all duration-500" style={{ width: `${(Math.min(weeklyRecovery, recoveryGoal) / totalGoals) * 100}%`, backgroundColor: '#00D1FF' }} />
+                    {third.percent > 0 && (
+                      <div className="h-full transition-all duration-500" style={{ width: `${third.percent / 3}%`, backgroundColor: third.color }} />
                     )}
                   </div>
                 </div>
@@ -4965,14 +4987,14 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                     <div className="relative">
                       <svg width={ringSize} height={ringSize} className="transform -rotate-90 block">
                         <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={ringStroke} />
-                        <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="#00D1FF" strokeWidth={ringStroke} strokeLinecap="round"
-                          strokeDasharray={ringCircumference} strokeDashoffset={ringCircumference - (recoveryPercent / 100) * ringCircumference} />
+                        <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke={third.color} strokeWidth={ringStroke} strokeLinecap="round"
+                          strokeDasharray={ringCircumference} strokeDashoffset={ringCircumference - (third.percent / 100) * ringCircumference} />
                       </svg>
                       <div className="absolute inset-0 flex items-center justify-center" data-ring-text="true" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`} style={{ lineHeight: 1 }}>{weeklyRecovery}/{recoveryGoal}</span>
+                        <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`} style={{ lineHeight: 1 }}>{third.text}</span>
                       </div>
                     </div>
-                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><CategoryIcon category="recovery" size={11} /><span>Recovery</span></div>
+                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><CategoryIcon category={third.category} size={11} /><span>{third.label}</span></div>
                   </div>
                 </div>
 
@@ -4981,7 +5003,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                   <div className="w-full" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
                     <span className={isPostFormat ? 'text-lg' : 'text-xl'} style={{ lineHeight: '1.2' }}>🔥</span>
                     <span className={`${isPostFormat ? 'text-xl' : 'text-2xl'} font-black`} style={{ color: '#00FF94', lineHeight: '1.2' }}>{stats?.streak || 0}</span>
-                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-xs'} text-gray-400`} style={{ lineHeight: '1.2' }}>weeks hitting all goals</span>
+                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-xs'} text-gray-400`} style={{ lineHeight: '1.2' }}>week winning streak</span>
                   </div>
                   {(() => {
                     const segments = [];
@@ -5167,7 +5189,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                   {stats?.streak || 0}
                 </div>
                 <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} font-semibold tracking-widest text-gray-400 uppercase mt-1`}>🔥 Winning Streak</div>
-                <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500`}>weeks hitting all goals</div>
+                <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500`}>weeks won in a row</div>
               </div>
 
               {/* Active Streaks */}
@@ -5184,6 +5206,10 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                   <div className="text-center">
                     <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#FF9500' }}>{stats?.cardioStreak || 0}</div>
                     <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}><CategoryIcon category="cardio" size={9} className="inline align-[-2px] mr-1" />weeks</div>
+                  </div>
+                  <div className="text-center">
+                    <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#BF5AF2' }}>{stats?.stepsStreak || 0}</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}><CategoryIcon category="steps" size={9} className="inline align-[-2px] mr-1" />weeks</div>
                   </div>
                   <div className="text-center">
                     <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#00D1FF' }}>{stats?.recoveryStreak || 0}</div>
@@ -5206,6 +5232,10 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                   <div className="text-center">
                     <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#FF9500' }}>{stats?.longestCardioStreak || 0}</div>
                     <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}><CategoryIcon category="cardio" size={9} className="inline align-[-2px] mr-1" />weeks</div>
+                  </div>
+                  <div className="text-center">
+                    <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#BF5AF2' }}>{stats?.longestStepsStreak || 0}</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}><CategoryIcon category="steps" size={9} className="inline align-[-2px] mr-1" />weeks</div>
                   </div>
                   <div className="text-center">
                     <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#00D1FF' }}>{stats?.longestRecoveryStreak || 0}</div>
@@ -5331,7 +5361,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                   <span className={`${isPostFormat ? 'text-xl' : 'text-2xl'} font-black`} style={{ color: '#FFD700' }}>
                     {stats?.monthAllGoalsWeeksHit || 0}/4
                   </span>
-                  <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>weeks hitting all goals</span>
+                  <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>weeks won</span>
                 </div>
               </div>
             </div>
@@ -7622,7 +7652,7 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
             />
             <GoalSelector
               label="Recovery"
-              subtitle="Cold plunge, sauna, yoga, pilates"
+              subtitle="Cold plunge, sauna, yoga, pilates · a bonus with its own streak"
               color="#00D1FF"
               goalKey="recoveryPerWeek"
               options={[1, 2, 3, 4]}
@@ -7659,7 +7689,7 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
             {((isEditing && isSundayToday()) || (!isEditing && (!fitnessGoal || goalsManuallySet.current))) && <div className="mb-4" />}
             <GoalSelector
               label="Daily Steps"
-              subtitle="Recommended: 10k+ for general health"
+              subtitle="Counted across the week (× 7) toward your winning streak"
               color="#00FF94"
               goalKey="stepsPerDay"
               options={[6000, 8000, 10000, 12000, 15000]}
@@ -11464,6 +11494,19 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
     };
   }, [healthHistory, weekProgress.steps?.today, weekProgress.steps?.goal]);
   const formatK = (n) => `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  // "Win the week, not the day": turns the weekly gap into one small daily number. Pace
+  // only counts finished days, so today can put you ahead but never behind.
+  const stepsPaceSentence = weekSteps.total >= weekSteps.goal ? (
+    <><span className="font-semibold" style={{ color: '#00FF94' }}>Steps done.</span> {formatK(weekSteps.goal)} for the week — everything from here is extra.</>
+  ) : weekSteps.dayIndex === 0 ? (
+    <><span className="font-semibold text-white">New week.</span> {formatK(weekSteps.perDayToFinish)} a day wins it.</>
+  ) : Math.abs(weekSteps.aheadBy) < 500 ? (
+    <><span className="font-semibold" style={{ color: '#00FF94' }}>Right on pace.</span> {formatK(weekSteps.perDayToFinish)} a day finishes the week.</>
+  ) : weekSteps.aheadBy > 0 ? (
+    <><span className="font-semibold" style={{ color: '#00FF94' }}>{formatK(weekSteps.aheadBy)} ahead of pace.</span> {formatK(weekSteps.perDayToFinish)} a day finishes the week.</>
+  ) : (
+    <><span className="font-semibold" style={{ color: '#FFC800' }}>{formatK(-weekSteps.aheadBy)} to make up.</span> {formatK(weekSteps.perDayToFinish)} a day still wins the week.</>
+  );
   const showCaloriesOnHome = userProfile?.privacySettings?.showCaloriesOnHome === true;
 
   const caloriesPercent = weekProgress.calories.goal > 0 ? Math.min((weekProgress.calories.burned / weekProgress.calories.goal) * 100, 100) : 0;
@@ -11567,17 +11610,22 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
     ? new Date(userProfile.createdAt).toDateString() === warningKey
     : false;
 
-  // Calculate overall weekly progress (cap each category at its goal - extra doesn't count toward Week Progress)
-  const totalGoals = weekProgress.lifts.goal + (weekProgress.cardio?.goal || 0) + (weekProgress.recovery?.goal || 0);
-  const totalCompleted = Math.min(weekProgress.lifts.completed, weekProgress.lifts.goal) + 
-    Math.min(weekProgress.cardio?.completed || 0, weekProgress.cardio?.goal || 0) + 
-    Math.min(weekProgress.recovery?.completed || 0, weekProgress.recovery?.goal || 0);
-  const overallPercent = totalGoals > 0 ? Math.round((totalCompleted / totalGoals) * 100) : 0;
+  // Week Progress: the average completion of what this week's Winning Streak needs (utils/
+  // weekGoals — Strength + Cardio + Steps, or Recovery under the original rule). Each part is
+  // capped at its goal, so extra doesn't count; steps is one part like the others.
+  const partDone = (done, goal) => (goal > 0 ? Math.min(done / goal, 1) : 1);
+  const progressParts = thisWeekJudged.required.map((c) =>
+    c === 'steps' ? partDone(weekSteps.total, weekSteps.goal)
+      : partDone(weekProgress[c]?.completed || 0, weekProgress[c]?.goal || 0));
+  const overallPercent = progressParts.length > 0
+    ? Math.round((progressParts.reduce((a, b) => a + b, 0) / progressParts.length) * 100)
+    : 0;
 
   // State for expanding breakdowns
   const [showStrengthBreakdown, setShowStrengthBreakdown] = useState(false);
   const [showCardioBreakdown, setShowCardioBreakdown] = useState(false);
   const [showRecoveryBreakdown, setShowRecoveryBreakdown] = useState(false);
+  const [showStepsBreakdown, setShowStepsBreakdown] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState(null);
   const [needsDetailsExpanded, setNeedsDetailsExpanded] = useState(false);
 
@@ -11618,8 +11666,13 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
       return 0;
     })
     .slice(0, 10); // Cap at 10 total
-  // Home shows the 3 most recent — full log lives on the Profile tab.
-  const latestActivities = allLatestActivities.slice(0, 3);
+  // Today's goal workouts (strength, cardio, recovery) show in Today's Activity, so Recent
+  // Activity starts from what's left: the 3 most recent that aren't already up top.
+  // Full log lives on the Profile tab.
+  const homeTodayKey = getTodayDate();
+  const countsTowardAGoal = (a) => ['lifting', 'cardio', 'recovery', 'lifting+cardio'].includes(getActivityCategory(a));
+  const todaysWorkouts = allLatestActivities.filter(a => a.date === homeTodayKey && countsTowardAGoal(a));
+  const latestActivities = allLatestActivities.filter(a => !todaysWorkouts.includes(a)).slice(0, 3);
 
   // Fetch reactions and comments for user's activities
   useEffect(() => {
@@ -12047,36 +12100,54 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             </div>
           </div>
 
-          {/* This week — lines up under the steps bar (18px icon + 12px gap) */}
-          <div className="pl-[30px] pt-0.5">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-gray-400">This week</span>
-              <span className="text-xs font-bold">{formatK(weekSteps.total)} <span className="font-medium" style={{ color: '#777' }}>/ {formatK(weekSteps.goal)}</span></span>
+          {/* Today's workouts (strength, cardio, recovery), one compact row each. The weekly
+              steps and pace now live on the Steps ring in This Week's Goals. */}
+          <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
+          {todaysWorkouts.length > 0 ? (
+            <div className="space-y-1">
+              {todaysWorkouts.map((act, i) => {
+                const cat = getActivityCategory(act);
+                const tint = cat === 'recovery' ? '0,209,255' : cat === 'cardio' ? '255,149,0' : '0,255,148';
+                const name = act.type === 'Other' ? (act.subtype || 'Other')
+                  : act.type === 'Strength Training' ? (() => {
+                    const st = act.strengthType || 'Strength Training';
+                    const areas = normalizeFocusAreas(act.focusAreas || (act.focusArea ? [act.focusArea] : []));
+                    return areas.length > 0 ? `${st} · ${areas.join(', ')}` : (act.subtype || st);
+                  })()
+                  : (act.subtype ? `${act.type} · ${act.subtype}` : act.type);
+                const unit = resolveUnit(userProfile);
+                const miles = parseFloat(act.distance);
+                const details = [
+                  act.time || null,
+                  miles > 0 ? formatDistance(miles, unit, 1) : null,
+                  act.duration ? `${act.duration} min` : null,
+                  miles > 0 && act.duration && cat !== 'lifting' ? formatPaceFromMinutesAndMiles(act.duration, miles, unit) : null,
+                  !(miles > 0) && act.calories ? `${act.calories} cal` : null,
+                  !(miles > 0) && act.avgHr ? `♥ ${act.avgHr}` : null,
+                ].filter(Boolean);
+                return (
+                  <button
+                    key={act.id || i}
+                    onClick={() => { triggerHaptic(ImpactStyle.Light); setSelectedActivity(act); }}
+                    className="w-full flex items-center gap-3 py-1.5 text-left active:opacity-70 transition-opacity"
+                  >
+                    <div className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `rgba(${tint},0.1)` }}>
+                      <ActivityIcon type={act.type} subtype={act.subtype} size={17} sportEmoji={act.sportEmoji} customEmoji={act.customEmoji} customIcon={act.customIcon} countToward={act.countToward} customActivityCategory={act.customActivityCategory} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13.5px] font-semibold truncate">{name}</div>
+                      <div className="text-[11.5px] text-gray-400 truncate">{details.join('  ·  ')}</div>
+                    </div>
+                    <span className="text-gray-600 text-xs">›</span>
+                  </button>
+                );
+              })}
             </div>
-            <div className="h-1.5 rounded-full relative" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
-              <div
-                className="h-full rounded-full transition-all duration-1000"
-                style={{ width: `${Math.min((weekSteps.total / weekSteps.goal) * 100, 100)}%`, backgroundColor: 'rgba(191,90,242,0.5)' }}
-              />
-              {/* Pace tick: where the daily goal × finished days would put you */}
-              {weekSteps.dayIndex > 0 && weekSteps.total < weekSteps.goal && (
-                <div className="absolute rounded-full" style={{ left: `calc(${weekSteps.pacePercent}% - 1px)`, top: '-4px', width: '2px', height: '14px', backgroundColor: '#fff' }} />
-              )}
-            </div>
-            <p className="text-[12.5px] mt-2 leading-snug" style={{ color: '#bbb' }}>
-              {weekSteps.total >= weekSteps.goal ? (
-                <><span className="font-semibold" style={{ color: '#00FF94' }}>Week won.</span> {formatK(weekSteps.goal)} done. Everything from here is extra.</>
-              ) : weekSteps.dayIndex === 0 ? (
-                <><span className="font-semibold text-white">New week.</span> {formatK(weekSteps.perDayToFinish)} a day wins it.</>
-              ) : Math.abs(weekSteps.aheadBy) < 500 ? (
-                <><span className="font-semibold" style={{ color: '#00FF94' }}>Right on pace.</span> {formatK(weekSteps.perDayToFinish)} a day finishes the week.</>
-              ) : weekSteps.aheadBy > 0 ? (
-                <><span className="font-semibold" style={{ color: '#00FF94' }}>{formatK(weekSteps.aheadBy)} ahead of pace.</span> {formatK(weekSteps.perDayToFinish)} a day finishes the week.</>
-              ) : (
-                <><span className="font-semibold" style={{ color: '#FFC800' }}>{formatK(-weekSteps.aheadBy)} to make up.</span> {formatK(weekSteps.perDayToFinish)} a day still wins the week.</>
-              )}
+          ) : (
+            <p className="text-[12.5px] leading-snug" style={{ color: '#9ca3af' }}>
+              <span className="font-semibold" style={{ color: '#ddd' }}>No workout yet today.</span> A rest day still counts toward a winning week.
             </p>
-          </div>
+          )}
 
           {/* Calories — optional (Settings → Health) */}
           {showCaloriesOnHome && (<>
@@ -13220,10 +13291,11 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
               <RingStreak weeks={userData.streaks?.cardio} color="#FF9500" paused={streakPaused('cardio')} />
             </button>
             
-            {/* Recovery */}
+            {/* Steps — the week's steps against stepsPerDay × 7. Counts toward the Winning
+                Streak (utils/weekGoals); Recovery moved to the bonus row below. */}
             <button
               className="text-center transition-all duration-150"
-              onClick={() => setShowRecoveryBreakdown(!showRecoveryBreakdown)}
+              onClick={() => setShowStepsBreakdown(!showStepsBreakdown)}
               onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.93)'; triggerHaptic(ImpactStyle.Light); }}
               onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
               onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.93)'}
@@ -13231,16 +13303,90 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
               onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
             >
               <div className="relative inline-block">
-                <ProgressRing progress={recoveryPercent} size={72} strokeWidth={6} color="#00D1FF" />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-xl font-black"><AnimatedCounter value={weekProgress.recovery?.completed || 0} />/{weekProgress.recovery?.goal || 0}</span>
+                <ProgressRing progress={Math.min((weekSteps.total / weekSteps.goal) * 100, 100)} size={72} strokeWidth={6} color="#BF5AF2" />
+                {/* Pace tick: where the daily goal × finished days would put the ring */}
+                {weekSteps.dayIndex > 0 && weekSteps.total < weekSteps.goal && (() => {
+                  const a = (weekSteps.dayIndex / 7) * 2 * Math.PI - Math.PI / 2;
+                  const r = (72 - 6) / 2;
+                  return (
+                    <svg width={72} height={72} className="absolute inset-0 pointer-events-none">
+                      <line
+                        x1={36 + (r - 4) * Math.cos(a)} y1={36 + (r - 4) * Math.sin(a)}
+                        x2={36 + (r + 4) * Math.cos(a)} y2={36 + (r + 4) * Math.sin(a)}
+                        stroke="#fff" strokeWidth={2} strokeLinecap="round"
+                      />
+                    </svg>
+                  );
+                })()}
+                <div className="absolute inset-0 flex flex-col items-center justify-center leading-none">
+                  <span className="text-lg font-black">{Math.round(weekSteps.total / 1000)}k</span>
+                  <span className="text-[9px] mt-0.5" style={{ color: '#777' }}>/ {formatK(weekSteps.goal)}</span>
                 </div>
               </div>
-              <RingLabel category="recovery" label="Recovery" expanded={showRecoveryBreakdown} />
-              <RingStreak weeks={userData.streaks?.recovery} color="#00D1FF" paused={streakPaused('recovery')} />
+              <RingLabel category="steps" label="Steps" expanded={showStepsBreakdown} />
+              <RingStreak weeks={userData.streaks?.steps} color="#BF5AF2" paused={streakPaused('steps')} />
             </button>
           </div>
-          
+
+          {/* Steps pace — always visible under the rings (the most useful line on Monday) */}
+          <div className="mt-4 pt-3 border-t border-white/10 flex items-start gap-2">
+            <span className="mt-[1px]"><CategoryIcon category="steps" size={14} /></span>
+            <p className="text-[12.5px] leading-snug" style={{ color: '#bbb' }}>{stepsPaceSentence}</p>
+          </div>
+
+          {/* Steps breakdown — Sun–Sat day strip (tap the Steps ring) */}
+          {showStepsBreakdown && (
+            <div className="mt-4 pt-4 border-t border-white/10">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-xs text-gray-400">Steps this week</div>
+                <div className="text-xs font-bold">{formatK(weekSteps.total)} <span className="font-medium" style={{ color: '#777' }}>/ {formatK(weekSteps.goal)}</span></div>
+              </div>
+              <div className="flex gap-[5px] items-end">
+                {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((label, i) => {
+                  const d = new Date();
+                  d.setHours(12, 0, 0, 0);
+                  d.setDate(d.getDate() - weekSteps.dayIndex + i);
+                  const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                  const isFuture = i > weekSteps.dayIndex;
+                  const isToday = i === weekSteps.dayIndex;
+                  const daySteps = isFuture ? 0 : (homeWeekCtx.stepsByDate[key] || 0);
+                  const dailyGoal = weekSteps.goal / 7;
+                  return (
+                    <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                      <div className="text-[9px]" style={{ color: isFuture ? 'transparent' : '#888' }}>{isFuture ? '·' : formatK(daySteps)}</div>
+                      <div className="w-full h-[34px] rounded-[5px] flex items-end overflow-hidden" style={{ backgroundColor: isFuture ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.06)' }}>
+                        <div className="w-full rounded-[5px]" style={{ height: `${Math.min(100, (daySteps / dailyGoal) * 100)}%`, backgroundColor: daySteps >= dailyGoal ? '#BF5AF2' : 'rgba(191,90,242,0.55)' }} />
+                      </div>
+                      <div className="text-[9px]" style={{ color: isToday ? '#fff' : '#666', fontWeight: isToday ? 700 : 400 }}>{label}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="text-[10px] text-gray-500 mt-2 text-center">A full bar is {formatK(weekSteps.goal / 7)} — short days are fine, it's the week that counts.</div>
+            </div>
+          )}
+
+          {/* Recovery — a bonus: it keeps its own streak but doesn't count toward the Winning
+              Streak. Tap for the same breakdown the Recovery ring used to open. */}
+          <button
+            onClick={() => { triggerHaptic(ImpactStyle.Light); setShowRecoveryBreakdown(!showRecoveryBreakdown); }}
+            className="w-full mt-3 px-3 py-2.5 rounded-xl flex items-center justify-between text-left active:opacity-70 transition-opacity"
+            style={{ backgroundColor: 'rgba(0,209,255,0.06)', border: '1px solid rgba(0,209,255,0.15)' }}
+          >
+            <span className="flex items-center gap-2 text-xs">
+              <CategoryIcon category="recovery" size={14} />
+              <span className="text-white">Recovery</span>
+              <span style={{ color: '#888' }}>{weekProgress.recovery?.completed || 0}/{weekProgress.recovery?.goal || 0} this week</span>
+              {(userData.streaks?.recovery || 0) > 0 && (
+                <span className="font-bold" style={{ color: streakPaused('recovery') ? '#A78BFA' : '#00D1FF' }}>{streakPaused('recovery') ? '🩹' : '🔥'} {userData.streaks.recovery}w</span>
+              )}
+            </span>
+            <span className="flex items-center gap-2">
+              <span className="text-[8px] font-bold tracking-wider uppercase px-1.5 py-[1px] rounded-full" style={{ backgroundColor: 'rgba(0,209,255,0.12)', color: '#00D1FF' }}>Bonus</span>
+              <span className="text-[10px] text-gray-500">{showRecoveryBreakdown ? '▲' : '▼'}</span>
+            </span>
+          </button>
+
           {/* Strength Breakdown - Expandable */}
           {showStrengthBreakdown && (
             <div className="mt-4 pt-4 border-t border-white/10">
@@ -13389,7 +13535,9 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
       </div>
 
-      {/* Recent Activity — up to 3 most recent; full log lives on the Profile tab */}
+      {/* Recent Activity — up to 3 most recent; full log lives on the Profile tab. Hidden when
+          today's workouts (shown in Today's Activity) are the only ones there are. */}
+      {!(latestActivities.length === 0 && todaysWorkouts.length > 0) && (
       <div className="mx-4 mb-4">
         <SwipeableProvider>
           <div ref={latestActivityRef}>
@@ -13463,6 +13611,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
           </div>
         </SwipeableProvider>
       </div>
+      )}
 
       {/* Activity Detail Modal */}
       <ActivityDetailModal
@@ -19407,6 +19556,8 @@ export default function DaySevenApp() {
           strengthStreak: historicalStreaks.strengthStreak,
           cardioStreak: historicalStreaks.cardioStreak,
           recoveryStreak: historicalStreaks.recoveryStreak,
+          stepsStreak: historicalStreaks.stepsStreak || 0,
+          longestStepsStreak: Math.max(userData.personalRecords.longestStepsStreak || 0, historicalWalk.longest.steps || 0),
           longestStrengthStreak: Math.max(userData.personalRecords.longestStrengthStreak || 0, historicalWalk.longest.lifts),
           longestCardioStreak: Math.max(userData.personalRecords.longestCardioStreak || 0, historicalWalk.longest.cardio),
           longestRecoveryStreak: Math.max(userData.personalRecords.longestRecoveryStreak || 0, historicalWalk.longest.recovery),
@@ -19481,6 +19632,8 @@ export default function DaySevenApp() {
           cardioGoal: selectedWeekGoals.cardio,
           recoveryGoal: selectedWeekGoals.recovery,
           weekJudged: judgeShareWeek(weekRange.startStr),
+          weeklySteps: weekStepsTotal(shareWeekCtx.stepsByDate, weekRange.startStr),
+          weeklyStepsGoal: (selectedWeekGoals.stepsPerDay || 10000) * 7,
           weeklyCalories: weekActivitiesForShare.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0),
           weeklyMiles: weekActivitiesForShare.filter(a => a.distance).reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0),
           // Weekly activities for analysis
@@ -19712,11 +19865,18 @@ export default function DaySevenApp() {
         show={showWeekStreakCelebration && !challengeModalActivity}
         streakCount={userData?.streaks?.master || 1}
         goals={userData?.goals || {}}
-        weekCounts={{
-          strength: calculateWeeklyProgress(activities)?.lifts?.completed || 0,
-          cardio: calculateWeeklyProgress(activities)?.cardio?.completed || 0,
-          recovery: calculateWeeklyProgress(activities)?.recovery?.completed || 0
-        }}
+        weekCounts={(() => {
+          const progress = calculateWeeklyProgress(activities);
+          const ctx = buildWeekCtx();
+          const weekKey = getCurrentWeekKey();
+          return {
+            strength: progress?.lifts?.completed || 0,
+            cardio: progress?.cardio?.completed || 0,
+            recovery: progress?.recovery?.completed || 0,
+            steps: weekStepsTotal(ctx.stepsByDate, weekKey),
+            stepsRule: winningCategories(weekKey, ctx).includes('steps'),
+          };
+        })()}
         onClose={() => {
           setShowWeekStreakCelebration(false);
           // Show pending toast after week streak celebration closes

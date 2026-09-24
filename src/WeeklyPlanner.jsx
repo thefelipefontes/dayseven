@@ -208,7 +208,7 @@ export const plannedTodayFromPlan = (weeklyPlan, activities, now = new Date()) =
 // is undefined until the profile fetch lands while the planner is already on screen and
 // interactive. Saving in that window used to write `repeatWeekly: false` + `template: null`
 // and permanently wipe the user's recurring plan.
-export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSave, onLogActivity, planLoaded = true, initiallyExpanded = false, asPage = false, onEditGoals = null, stepsByDate = null, stepsPerDay = 10000 }) {
+export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSave, onLogActivity, planLoaded = true, initiallyExpanded = false, asPage = false, onEditGoals = null, stepsByDate = null, stepsPerDay = 10000, showSuggest = asPage, suggestWholeWeek = false }) {
   // --- Week boundaries (Sunday-based) ---------------------------------------
   // Recomputed on a clock tick, not frozen at mount: phones sit open across
   // midnight, and nothing remounts this component (the foreground resync in
@@ -652,10 +652,12 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
   const fmtK = (n) => `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
 
   // Suggest from today through Saturday. Days already behind us keep what's on them,
-  // and their sessions come off the counts still to place.
-  const remainingIdxs = DAYS.map((_, i) => i).filter(i => i >= todayIdx);
+  // and their sessions come off the counts still to place. In onboarding
+  // (suggestWholeWeek) it lays out a full Sunday–Saturday week instead — the pattern that
+  // repeats — so signing up late in the week doesn't cram every session into a few days.
+  const remainingIdxs = suggestWholeWeek ? DAYS.map((_, i) => i) : DAYS.map((_, i) => i).filter(i => i >= todayIdx);
   const toPlace = { ...goalCount };
-  DAYS.forEach((d, i) => { if (i < todayIdx) plan[d.key].forEach(p => { toPlace[p.cat] = Math.max(0, toPlace[p.cat] - 1); }); });
+  if (!suggestWholeWeek) DAYS.forEach((d, i) => { if (i < todayIdx) plan[d.key].forEach(p => { toPlace[p.cat] = Math.max(0, toPlace[p.cat] - 1); }); });
   // Up top while sessions are still unplaced (an empty week is when it helps most),
   // at the bottom once everything's placed. Undo stays where the tap happened.
   const suggestAtTop = undoPlan ? undoPlan.top : trayByCat.length > 0;
@@ -663,6 +665,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
     triggerHaptic(ImpactStyle.Medium);
     markEdited();
     setUndoPlan({ plan, top: suggestAtTop });
+    if (suggestWholeWeek) promoteToTemplate.current = true; // the built week is the one that repeats
     const suggested = suggestPlan(toPlace, remainingIdxs);
     setPlan(prev => {
       const next = { ...prev };
@@ -673,6 +676,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
   const undoSuggestion = () => {
     triggerHaptic(ImpactStyle.Light);
     markEdited();
+    if (suggestWholeWeek) promoteToTemplate.current = true;
     setPlan(undoPlan.plan);
     setUndoPlan(null);
   };
@@ -681,7 +685,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
   const suggestBlock = (
     undoPlan ? (
       <div className={`${suggestAtTop ? 'mb-3' : 'mt-3'} p-3 rounded-xl flex items-center justify-between gap-3`} style={{ backgroundColor: 'rgba(255,255,255,0.04)' }}>
-        <span className="text-[12.5px]" style={{ color: '#bbb' }}>Plan suggested · drag anything to adjust</span>
+        <span className="text-[12.5px]" style={{ color: '#bbb' }}>{suggestWholeWeek ? 'Week built' : 'Plan suggested'} · drag anything to adjust</span>
         <button onClick={undoSuggestion} className="shrink-0 px-3 py-1 rounded-full text-[12px] font-semibold active:scale-95 transition-transform" style={{ backgroundColor: 'rgba(255,255,255,0.08)', color: '#fff' }}>Undo</button>
       </div>
     ) : (
@@ -692,9 +696,11 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
       >
         <span className="text-lg">✨</span>
         <div className="flex-1">
-          <div className="text-[13px] font-semibold" style={{ color: '#00FF94' }}>Suggest a plan</div>
+          <div className="text-[13px] font-semibold" style={{ color: '#00FF94' }}>{suggestWholeWeek ? 'Build my week for me' : 'Suggest a plan'}</div>
           <div className="text-[11px]" style={{ color: '#999' }}>
-            Spreads your sessions across {todayIdx === 0 ? 'the week' : 'the rest of the week'}, with rest between lifting days
+            {suggestWholeWeek
+              ? 'Spreads your sessions across the week, with rest between lifting days'
+              : `Spreads your sessions across ${todayIdx === 0 ? 'the week' : 'the rest of the week'}, with rest between lifting days`}
           </div>
         </div>
         <span className="text-[13px]" style={{ color: '#777' }}>›</span>
@@ -801,7 +807,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
         </div>
       )}
 
-      {asPage && suggestAtTop && suggestBlock}
+      {showSuggest && suggestAtTop && suggestBlock}
 
       {/* Collapsed: at-a-glance week strip (dots colored by category, dimmed = not yet done) */}
       {!expanded && (
@@ -998,7 +1004,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
       </div>
       )}
 
-      {asPage && !suggestAtTop && suggestBlock}
+      {showSuggest && !suggestAtTop && suggestBlock}
 
       {/* Drag ghost — portalled to body so a transformed ancestor (e.g. the
           onboarding slide wrapper) can't offset its fixed positioning. */}

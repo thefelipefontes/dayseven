@@ -92,20 +92,21 @@ struct DailyDetailView: View {
                 )
             }
 
+            // Calories burned is a stat, not a goal: today's count, no target or bar
             statRow(
                 icon: "flame.fill",
                 iconColor: .orange,
-                title: "Calories",
+                title: "Active calories",
                 value: "\(appVM.todayCalories)",
-                goal: "/ \(appVM.goals.caloriesPerDay)",
-                progress: Double(appVM.todayCalories) / Double(max(appVM.goals.caloriesPerDay, 1))
+                goal: "today",
+                progress: nil
             )
         }
     }
 
     // MARK: - Stat Row (minimal, no card)
 
-    private func statRow(icon: String, iconColor: Color, title: String, value: String, goal: String, progress: Double) -> some View {
+    private func statRow(icon: String, iconColor: Color, title: String, value: String, goal: String, progress: Double?) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 4) {
                 Image(systemName: icon)
@@ -125,17 +126,19 @@ struct DailyDetailView: View {
                     .foregroundColor(.gray)
             }
 
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(Color(white: 0.2))
-                        .frame(height: 3)
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(iconColor)
-                        .frame(width: geo.size.width * min(progress, 1.0), height: 3)
+            if let progress {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color(white: 0.2))
+                            .frame(height: 3)
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(iconColor)
+                            .frame(width: geo.size.width * min(progress, 1.0), height: 3)
+                    }
                 }
+                .frame(height: 3)
             }
-            .frame(height: 3)
         }
         .padding(.horizontal, 4)
     }

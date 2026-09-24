@@ -3357,7 +3357,6 @@ const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!", type
   useEffect(() => { onCompleteRef.current = onComplete; });
 
   // Different styles based on celebration type
-  const isDaily = type === 'daily-calories';
   const colorConfig = {
     'weekly': {
       primary: '#00FF94',
@@ -3410,15 +3409,6 @@ const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!", type
       confettiColors: ['#BF5AF2', '#00FF94', '#00D1FF', '#FFD700', '#FF9500', '#E0AAFF'],
       subtext: 'Week of steps, done!'
     },
-    'daily-calories': {
-      primary: '#FF6B6B',
-      bgGradient: 'radial-gradient(circle at center, rgba(255,107,107,0.2) 0%, transparent 70%)',
-      ringColor1: 'rgba(255,107,107,0.3)',
-      ringColor2: 'rgba(255,107,107,0.2)',
-      emoji: '🔥',
-      confettiColors: ['#FF9500', '#FFD700', '#FF6B00', '#FFAB00', '#FFC107', '#FF453A'],
-      subtext: 'Crushing it!'
-    }
   };
   const config = colorConfig[type] || colorConfig['weekly'];
 
@@ -3482,45 +3472,41 @@ const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!", type
       </div>
 
       {/* Confetti particles - only for weekly celebrations */}
-      {!isDaily && (
-        <div className="absolute inset-0 overflow-hidden">
-          {[...Array(20)].map((_, i) => (
-            <div
-              key={i}
-              className="absolute animate-confetti"
-              style={{
-                width: `${6 + Math.random() * 8}px`,
-                height: `${6 + Math.random() * 8}px`,
-                borderRadius: Math.random() > 0.5 ? '50%' : '2px',
-                backgroundColor: config.confettiColors[i % config.confettiColors.length],
-                left: `${Math.random() * 100}%`,
-                top: '-20px',
-                animationDelay: `${Math.random() * 0.3}s`,
-                animationDuration: `${1 + Math.random() * 0.8}s`
-              }}
-            />
-          ))}
-        </div>
-      )}
+      <div className="absolute inset-0 overflow-hidden">
+        {[...Array(20)].map((_, i) => (
+          <div
+            key={i}
+            className="absolute animate-confetti"
+            style={{
+              width: `${6 + Math.random() * 8}px`,
+              height: `${6 + Math.random() * 8}px`,
+              borderRadius: Math.random() > 0.5 ? '50%' : '2px',
+              backgroundColor: config.confettiColors[i % config.confettiColors.length],
+              left: `${Math.random() * 100}%`,
+              top: '-20px',
+              animationDelay: `${Math.random() * 0.3}s`,
+              animationDuration: `${1 + Math.random() * 0.8}s`
+            }}
+          />
+        ))}
+      </div>
 
       {/* Sparkles - only for weekly celebrations */}
-      {!isDaily && (
-        <div className="absolute inset-0 overflow-hidden">
-          {[...Array(8)].map((_, i) => (
-            <div
-              key={`sparkle-${i}`}
-              className="absolute text-xl animate-sparkle"
-              style={{
-                left: `${10 + Math.random() * 80}%`,
-                top: `${10 + Math.random() * 80}%`,
-                animationDelay: `${Math.random() * 0.5}s`
-              }}
-            >
-              ✨
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="absolute inset-0 overflow-hidden">
+        {[...Array(8)].map((_, i) => (
+          <div
+            key={`sparkle-${i}`}
+            className="absolute text-xl animate-sparkle"
+            style={{
+              left: `${10 + Math.random() * 80}%`,
+              top: `${10 + Math.random() * 80}%`,
+              animationDelay: `${Math.random() * 0.5}s`
+            }}
+          >
+            ✨
+          </div>
+        ))}
+      </div>
       
       <style>{`
         @keyframes bounceIn {
@@ -7247,9 +7233,12 @@ const SmartSaveExplainModal = ({ onClose, onDisable }) => {
 // user's profile after they create an account.
 const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, currentPrivacy = null, preSignup = false }) => {
   const isEditing = currentGoals !== null;
+  // Step 6 (a daily calorie target) is gone: calories burned is an output of training, not a
+  // goal, and it never fed a streak. Editing is now the single Weekly Goals screen.
   const startStep = isEditing ? 5 : 1;
-  const endStep = isEditing ? 6 : 7;
-  const totalSteps = endStep - startStep + 1;
+  const endStep = isEditing ? 5 : 7;
+  const SKIPPED_STEPS = [6];
+  const totalSteps = endStep - startStep + 1 - SKIPPED_STEPS.filter(n => n > startStep && n < endStep).length;
 
   const [currentStep, setCurrentStep] = useState(startStep);
   const [direction, setDirection] = useState('forward');
@@ -7314,8 +7303,8 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
   });
 
   const canGoBack = currentStep > startStep;
-  const goNext = () => { setDirection('forward'); setCurrentStep(s => s + 1); };
-  const goBack = () => { setDirection('back'); setCurrentStep(s => s - 1); };
+  const goNext = () => { setDirection('forward'); setCurrentStep(s => (SKIPPED_STEPS.includes(s + 1) ? s + 2 : s + 1)); };
+  const goBack = () => { setDirection('back'); setCurrentStep(s => (SKIPPED_STEPS.includes(s - 1) ? s - 2 : s - 1)); };
 
   // Check if current step can proceed
   const canContinue = (() => {
@@ -7337,7 +7326,7 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
   };
 
   const isLastStep = currentStep === endStep;
-  const progressIndex = currentStep - startStep;
+  const progressIndex = currentStep - startStep - SKIPPED_STEPS.filter(n => n > startStep && n < currentStep).length;
 
   // Reusable press animation props
   const pressProps = {
@@ -7681,63 +7670,6 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
               options={[1, 2, 3, 4]}
               badge={<span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(0,209,255,0.12)', color: '#00D1FF' }}>BONUS</span>}
             />
-          </div>
-        );
-
-      // Step 6: Daily Goals
-      case 6:
-        return (
-          <div>
-            <h2 className="text-2xl font-bold mb-1">{isEditing ? 'Edit Daily Goals' : 'Set your daily goals'}</h2>
-            <p className="text-gray-500 text-sm mb-2">Your daily active calorie target.</p>
-            {!isEditing && fitnessGoal && !goalsManuallySet.current && (
-              <p className="text-xs mb-4 flex items-center gap-1.5" style={{ color: '#00FF94' }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                Suggested based on your goal — adjust anytime
-              </p>
-            )}
-            {isEditing && !isSundayToday() && (
-              <div
-                className="rounded-xl p-3 mb-4 flex items-start gap-2"
-                style={{ backgroundColor: 'rgba(0,209,255,0.08)', border: '1px solid rgba(0,209,255,0.25)' }}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00D1FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginTop: 1, flexShrink: 0 }}>
-                  <circle cx="12" cy="12" r="10" />
-                  <polyline points="12 6 12 12 16 14" />
-                </svg>
-                <div className="text-[12px] leading-snug" style={{ color: '#E0F7FF' }}>
-                  Goals are locked mid-week to keep streaks honest. Your changes will queue and take effect <span className="font-semibold">{formatApplyOn(nextSundayDateStr())}</span>.
-                </div>
-              </div>
-            )}
-            {((isEditing && isSundayToday()) || (!isEditing && (!fitnessGoal || goalsManuallySet.current))) && <div className="mb-4" />}
-            <div className="mb-5">
-              <div className="flex items-center gap-2 mb-1">
-                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#FF6B6B' }} />
-                <label className="text-sm font-semibold">Active Calories</label>
-              </div>
-              <p className="text-xs text-gray-500 mb-2 ml-4">Calories burned from exercise only. Recommended: 400-600/day.</p>
-              <div
-                className="flex gap-2 overflow-x-auto pb-2 -mx-6 px-6"
-                style={{ WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none', touchAction: 'pan-x' }}
-              >
-                {[300, 400, 500, 600, 750, 1000, 1250, 1500, 1750, 2000].map((option) => (
-                  <div
-                    key={option}
-                    onClick={() => { goalsManuallySet.current = true; setGoals({ ...goals, caloriesPerDay: option }); }}
-                    className="py-3 rounded-xl text-center border-2 flex-shrink-0 px-4 min-w-[70px] cursor-pointer select-none"
-                    style={{
-                      backgroundColor: goals.caloriesPerDay === option ? 'rgba(255,107,107,0.2)' : 'rgba(255,255,255,0.05)',
-                      borderColor: goals.caloriesPerDay === option ? '#FF6B6B' : 'transparent',
-                    }}
-                  >
-                    <span className="font-bold" style={{ color: goals.caloriesPerDay === option ? '#FF6B6B' : 'white' }}>
-                      {option}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
         );
 
@@ -11545,7 +11477,6 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
   );
   const showCaloriesOnHome = userProfile?.privacySettings?.showCaloriesOnHome === true;
 
-  const caloriesPercent = weekProgress.calories.goal > 0 ? Math.min((weekProgress.calories.burned / weekProgress.calories.goal) * 100, 100) : 0;
   const liftsPercent = weekProgress.lifts.goal > 0 ? Math.min((weekProgress.lifts.completed / weekProgress.lifts.goal) * 100, 100) : 0;
   const cardioPercent = weekProgress.cardio?.goal > 0 ? Math.min((weekProgress.cardio.completed / weekProgress.cardio.goal) * 100, 100) : 0;
   const recoveryPercent = weekProgress.recovery?.goal > 0 ? Math.min((weekProgress.recovery.completed / weekProgress.recovery.goal) * 100, 100) : 0;
@@ -12674,25 +12605,15 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
           </p>
         )}
 
-        {/* Calories — optional (Settings → Health) */}
+        {/* Calories burned today — optional (Settings → Health). A stat, not a goal: no target,
+            no bar, same row style as Steps today. */}
         {showCaloriesOnHome && (<>
         <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
         <div className="flex items-center gap-3">
-          <CategoryIcon category="calories" size={18} />
-          <div className="flex-1">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-gray-400">Active Calories</span>
-              <span className="text-xs font-bold">{weekProgress.calories.burned.toLocaleString()} / {(weekProgress.calories.goal || 500).toLocaleString()}</span>
-            </div>
-            <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
-              <div 
-                className="h-full rounded-full transition-all duration-1000"
-                style={{ 
-                  width: `${Math.min(caloriesPercent, 100)}%`,
-                  backgroundColor: '#FF6B6B'
-                }}
-              />
-            </div>
+          <span className="text-lg"><CategoryIcon category="calories" size={18} /></span>
+          <div className="flex-1 flex items-baseline justify-between">
+            <span className="text-xs text-gray-400">Active calories today</span>
+            <span className="text-[13.5px] font-semibold">{weekProgress.calories.burned.toLocaleString()}</span>
           </div>
         </div>
         </>)}
@@ -13832,7 +13753,7 @@ export default function DaySevenApp() {
   const [isChallengeDetailOpen, setIsChallengeDetailOpen] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
   const [celebrationMessage, setCelebrationMessage] = useState('');
-  const [celebrationType, setCelebrationType] = useState('weekly'); // 'weekly', 'recovery', 'daily-calories', …
+  const [celebrationType, setCelebrationType] = useState('weekly'); // 'weekly', 'recovery', …
   const [showWeekStreakCelebration, setShowWeekStreakCelebration] = useState(false);
   const [showToast, setShowToast] = useState(false);
   // When a vacation carries past its starting week, ending it pops a choice:
@@ -13886,21 +13807,6 @@ export default function DaySevenApp() {
   // Count of workouts auto-imported from Apple Health during onboarding (for summary banner)
   const [autoImportedCount, setAutoImportedCount] = useState(0);
 
-  // Track daily goals celebrated (resets each day)
-  const [dailyGoalsCelebrated, setDailyGoalsCelebrated] = useState(() => {
-    try {
-      const saved = localStorage.getItem('dailyGoalsCelebrated');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // Check if it's from today
-        const today = getTodayDate();
-        if (parsed.date === today) {
-          return parsed;
-        }
-      }
-    } catch {}
-    return { date: getTodayDate(), steps: false, calories: false };
-  });
 
   // Track dismissed workout UUIDs (to not show them again)
   const [dismissedWorkoutUUIDs, setDismissedWorkoutUUIDs] = useState(() => {
@@ -18098,39 +18004,8 @@ export default function DaySevenApp() {
 
   };
 
-  // Check for daily steps/calories goal completion and celebrate
-  useEffect(() => {
-    if (!userData?.goals) return;
-
-    const caloriesGoal = userData.goals.caloriesPerDay || 500;
-    const today = getTodayDate();
-
-    // Reset if it's a new day
-    if (dailyGoalsCelebrated.date !== today) {
-      setDailyGoalsCelebrated({ date: today, steps: false, calories: false });
-      localStorage.setItem('dailyGoalsCelebrated', JSON.stringify({ date: today, steps: false, calories: false }));
-      return;
-    }
-
-    // Same total the ring shows: HealthKit active energy + hand-entered calories it
-    // doesn't already know about.
-    const todayCalories = (healthKitData.todayCalories || 0) + manualCaloriesForDate(activities, today);
-
-    // No daily steps celebration: steps are a weekly goal now ("win the week, not the day"),
-    // celebrated once when the week's total crosses stepsPerDay × 7 (see the weekly-steps
-    // effect below).
-    // Check calories goal
-    // (skipped when the user has hidden calories from Home — no celebrating a number they chose not to see)
-    if (userProfile?.privacySettings?.showCaloriesOnHome === true && !dailyGoalsCelebrated.calories && todayCalories >= caloriesGoal && todayCalories > 0 && !showCelebration) {
-      setCelebrationMessage('Calories Goal Hit!');
-      setCelebrationType('daily-calories');
-      setShowCelebration(true);
-      triggerHaptic(ImpactStyle.Medium);
-      const updated = { ...dailyGoalsCelebrated, calories: true };
-      setDailyGoalsCelebrated(updated);
-      localStorage.setItem('dailyGoalsCelebrated', JSON.stringify(updated));
-    }
-  }, [healthKitData.todaySteps, healthKitData.todayCalories, activities, userData?.goals, dailyGoalsCelebrated, showCelebration, userProfile?.privacySettings?.showCaloriesOnHome]);
+  // No daily celebrations: steps are celebrated when the week's total is hit (below), and
+  // calories burned is tracked as a stat, not a goal.
 
   // Weekly steps can finish a week on their own — no activity is logged, so the add-activity
   // path never sees it. Watch the week as steps arrive: if steps just completed the Winning

@@ -357,7 +357,7 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
                 </div>
               ))}
             </div>
-            <div className="mt-2"><RecoveryBonusRow count={`${weeksData.recovery}/${weeksData.total}`} suffix="weeks" /></div>
+            {(goals.recoveryPerWeek ?? 2) > 0 && <div className="mt-2"><RecoveryBonusRow count={`${weeksData.recovery}/${weeksData.total}`} suffix="weeks" /></div>}
           </div>
         </div>
       </div>

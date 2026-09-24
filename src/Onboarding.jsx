@@ -483,7 +483,8 @@ function SurveyScreen({ initialAnswers, onComplete, onBack, initialStep = 1 }) {
 
 const STRENGTH_OPTIONS = [2, 3, 4, 5];
 const CARDIO_OPTIONS = [1, 2, 3, 4];
-const RECOVERY_OPTIONS = [1, 2];
+// 0 = no recovery goal (Recovery off: no bonus streak or rows)
+const RECOVERY_OPTIONS = [0, 1, 2, 3];
 const STEPS_OPTIONS = [6000, 8000, 10000, 12000, 15000];
 
 // Results hero — pure conviction moment. Personalized message + timeframe +
@@ -635,11 +636,18 @@ function CustomizeWeekScreen({ weeklyGoals, onUpdateGoals, onBack, onContinue })
               <label className="text-[14px] font-semibold">Recovery sessions / week</label>
               <span className="text-[9px] font-bold tracking-wider uppercase px-1.5 py-[1px] rounded-full" style={{ backgroundColor: 'rgba(0,209,255,0.12)', color: RING_COLORS.recovery }}>Bonus</span>
             </div>
+            {/* What counts as recovery, so the number means something */}
+            <div className="flex flex-wrap gap-1.5 mb-2 ml-4">
+              {['🧖 Sauna', '🧊 Cold plunge', '🧘 Yoga', '🤸 Stretching', '💆 Massage'].map(t => (
+                <span key={t} className="text-[11px] px-2 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(0,209,255,0.08)', color: '#9adcee' }}>{t}</span>
+              ))}
+            </div>
             <p className="text-xs text-gray-500 mb-3 ml-4">Its own streak — it doesn't count toward winning the week. Your steps goal is on the next screen.</p>
             <GoalChips
               color={RING_COLORS.recovery}
               value={weeklyGoals.recovery}
               options={RECOVERY_OPTIONS}
+              formatLabel={(v) => (v === 0 ? 'None' : `${v}`)}
               onChange={(v) => setField('recovery', v)}
             />
           </div>
@@ -1805,5 +1813,7 @@ export default function OnboardingFlow({ onComplete, onSignIn }) {
     </div>
   );
 }
+
+
 
 

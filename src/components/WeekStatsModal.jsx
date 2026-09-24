@@ -306,6 +306,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
           </div>
           {/* Recovery: its own streak. A bonus from the user's start week; before it, it was
               part of the win, so no Bonus tag there. */}
+          {(goals.recoveryPerWeek ?? 2) > 0 && (
           <div className={`mt-2 ${originalRuleWeek ? 'p-3' : 'px-3 py-2'} rounded-xl flex items-center justify-between`} style={originalRuleWeek ? streakRowStyle(recoveryGoalMet, '0,209,255', 'recovery') : { backgroundColor: 'rgba(0,209,255,0.06)', border: '1px solid rgba(0,209,255,0.18)' }}>
             <div className="flex items-center gap-2">
               <span className="text-xs"><CategoryIcon category="recovery" size={12} className="inline align-[-2px] mr-1" />Recovery</span>
@@ -316,6 +317,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
             </div>
             {streakIcon(recoveryGoalMet, '#00D1FF', 'recovery', weekData?.recovery || 0, goals.recoveryPerWeek)}
           </div>
+          )}
         </div>
 
         {/* Activities Completed Header */}

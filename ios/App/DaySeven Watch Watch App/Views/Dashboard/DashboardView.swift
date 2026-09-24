@@ -116,11 +116,12 @@ struct DashboardView: View {
                 label: "Cardio",
                 count: "\(appVM.weeklyProgress.cardio.completed)/\(appVM.weeklyProgress.cardio.goal)"
             )
+            // Steps — the week's steps against stepsPerDay × 7 (Recovery is a bonus now)
             ProgressRingView(
-                progress: appVM.weeklyProgress.recovery.progress,
-                color: AppColors.recovery,
-                label: "Recovery",
-                count: "\(appVM.weeklyProgress.recovery.completed)/\(appVM.weeklyProgress.recovery.goal)"
+                progress: min(Double(appVM.weekSteps) / Double(max(appVM.goals.stepsPerDay * 7, 1)), 1.0),
+                color: AppColors.steps,
+                label: "Steps",
+                count: "\(Int((Double(appVM.weekSteps) / 1000).rounded()))k"
             )
         }
     }

@@ -11465,7 +11465,6 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
     };
   }, [activities, userData?.goals, healthKitData.todaySteps, healthKitData.todayCalories, healthKitData.isConnected]);
 
-  const stepsPercent = weekProgress.steps?.goal > 0 ? Math.min((weekProgress.steps.today / weekProgress.steps.goal) * 100, 100) : 0;
   // Week view under today's steps: "win the week, not the day". The weekly goal is the daily
   // goal × 7. Pace compares the week's total with the daily goal × days already finished, so
   // today can only put you ahead, never behind — a Monday morning never opens in the red.
@@ -12080,23 +12079,13 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         </div>
         
         <div className="p-4 rounded-2xl space-y-3" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-          {/* Steps */}
+          {/* Steps today — a count, not a daily goal ("win the week, not the day"). The
+              target lives on the Steps ring below, which tracks the week. */}
           <div className="flex items-center gap-3">
             <span className="text-lg"><CategoryIcon category="steps" size={18} /></span>
-            <div className="flex-1">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs text-gray-400">Steps</span>
-                <span className="text-xs font-bold">{(weekProgress.steps?.today || 0).toLocaleString()} / {((weekProgress.steps?.goal || 10000)/1000).toFixed(0)}k</span>
-              </div>
-              <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
-                <div
-                  className="h-full rounded-full transition-all duration-1000"
-                  style={{
-                    width: `${Math.min(stepsPercent, 100)}%`,
-                    backgroundColor: '#BF5AF2'
-                  }}
-                />
-              </div>
+            <div className="flex-1 flex items-baseline justify-between">
+              <span className="text-xs text-gray-400">Steps today</span>
+              <span className="text-[22px] font-extrabold" style={{ letterSpacing: '-0.3px' }}>{(weekProgress.steps?.today || 0).toLocaleString()}</span>
             </div>
           </div>
 
@@ -18025,7 +18014,6 @@ export default function DaySevenApp() {
   useEffect(() => {
     if (!userData?.goals) return;
 
-    const stepsGoal = userData.goals.stepsPerDay || 10000;
     const caloriesGoal = userData.goals.caloriesPerDay || 500;
     const today = getTodayDate();
 
@@ -18040,19 +18028,12 @@ export default function DaySevenApp() {
     // doesn't already know about.
     const todayCalories = (healthKitData.todayCalories || 0) + manualCaloriesForDate(activities, today);
 
-    // Check steps goal
-    if (!dailyGoalsCelebrated.steps && healthKitData.todaySteps >= stepsGoal && healthKitData.todaySteps > 0) {
-      setCelebrationMessage('Steps Goal Hit!');
-      setCelebrationType('daily-steps');
-      setShowCelebration(true);
-      triggerHaptic(ImpactStyle.Medium);
-      const updated = { ...dailyGoalsCelebrated, steps: true };
-      setDailyGoalsCelebrated(updated);
-      localStorage.setItem('dailyGoalsCelebrated', JSON.stringify(updated));
-    }
-    // Check calories goal (only if steps celebration isn't showing)
+    // No daily steps celebration: steps are a weekly goal now ("win the week, not the day"),
+    // celebrated once when the week's total crosses stepsPerDay × 7 (see the weekly-steps
+    // effect below).
+    // Check calories goal
     // (skipped when the user has hidden calories from Home — no celebrating a number they chose not to see)
-    else if (userProfile?.privacySettings?.showCaloriesOnHome === true && !dailyGoalsCelebrated.calories && todayCalories >= caloriesGoal && todayCalories > 0 && !showCelebration) {
+    if (userProfile?.privacySettings?.showCaloriesOnHome === true && !dailyGoalsCelebrated.calories && todayCalories >= caloriesGoal && todayCalories > 0 && !showCelebration) {
       setCelebrationMessage('Calories Goal Hit!');
       setCelebrationType('daily-calories');
       setShowCelebration(true);

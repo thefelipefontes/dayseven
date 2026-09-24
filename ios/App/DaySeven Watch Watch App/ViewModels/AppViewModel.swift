@@ -44,6 +44,8 @@ class AppViewModel: ObservableObject {
 
     // Health data
     @Published var todaySteps: Int = 0
+    /// Sunday → now, for the Steps ring. Refreshed whenever today's steps update.
+    @Published var weekSteps: Int = 0
     @Published var todayCalories: Int = 0
     @Published var todayDistance: Double = 0
 
@@ -122,6 +124,7 @@ class AppViewModel: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
                 self.todaySteps = steps
+                self.weekSteps = await self.fetchWeekStepsSafe()
                 self.checkDailyGoalCelebrations(isBackground: false)
                 self.pushDataToWidget()
             }
@@ -240,6 +243,7 @@ class AppViewModel: ObservableObject {
 
             // Health data
             todaySteps = await steps
+            weekSteps = await fetchWeekStepsSafe()
             todayCalories = await calories
             todayDistance = await distance
 
@@ -318,6 +322,7 @@ class AppViewModel: ObservableObject {
 
     func refreshHealthData() async {
         todaySteps = await fetchStepsSafe()
+        weekSteps = await fetchWeekStepsSafe()
         todayCalories = await fetchCaloriesSafe()
         todayDistance = await fetchDistanceSafe()
 
@@ -329,6 +334,10 @@ class AppViewModel: ObservableObject {
 
     private func fetchStepsSafe() async -> Int {
         return (try? await healthKitService.fetchTodaySteps()) ?? 0
+    }
+
+    private func fetchWeekStepsSafe() async -> Int {
+        return (try? await healthKitService.fetchWeekSteps()) ?? weekSteps
     }
 
     private func fetchCaloriesSafe() async -> Int {
@@ -773,11 +782,10 @@ class AppViewModel: ObservableObject {
     }
 
     private func checkDailyGoalCelebrations(isBackground: Bool) {
-        guard goals.stepsPerDay > 0, goals.caloriesPerDay > 0 else { return }
+        guard goals.caloriesPerDay > 0 else { return }
 
-        if todaySteps >= goals.stepsPerDay {
-            celebrationManager.triggerCelebration(.steps, isBackground: isBackground)
-        }
+        // No daily steps celebration: steps are a weekly goal now (win the week, not the
+        // day); the phone celebrates the week's total.
         if todayCalories >= goals.caloriesPerDay {
             celebrationManager.triggerCelebration(.calories, isBackground: isBackground)
         }
@@ -825,6 +833,7 @@ class AppViewModel: ObservableObject {
             todaySteps: todaySteps,
             stepsGoal: goals.stepsPerDay,
             todayCalories: todayCalories,
+            weekSteps: weekSteps,
             injuryModeActive: injuryModeActive
         )
         WidgetCenter.shared.reloadAllTimelines()

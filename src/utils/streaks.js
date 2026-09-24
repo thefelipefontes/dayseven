@@ -14,8 +14,14 @@
 //   • Shielded week → every category counts as met, so the streak advances.
 //   • Vacation week → skipped entirely: neither advances nor breaks anything.
 //   • Injury week   → the frozen categories are held (no advance, no break); categories
-//                     outside the frozen set run normally; master is always held.
-//   • Master (the "hybrid" streak) advances only on weeks where all three goals are met.
+//                     outside the frozen set run normally. Master is held when the injury
+//                     freezes a category that week's Winning Streak needs (under the
+//                     original rule that's every injury week, as before).
+//   • Master (the Winning Streak) advances only on weeks that meet the Winning Streak rule
+//     (utils/weekGoals): Strength + Cardio + Recovery before the user's winningRuleFrom
+//     week, Strength + Cardio + weekly Steps from it (Strength + Cardio without step data).
+//   • Steps has its own streak (weekly steps ≥ stepsPerDay × 7), tracked only for users
+//     with step data.
 //   • The current / as-of week is still in progress: it can extend a streak but never
 //     break one.
 //
@@ -29,14 +35,14 @@
 // can't be reconstructed, only kept honest from here on.
 
 import { countsAsLifting, countsAsCardio, countsAsRecovery } from './activityCategory';
-import { weekGoalsResolver, judgeWeek, weekKeyFromDate, weekKeyFromDateStr } from './weekGoals';
+import { weekGoalsResolver, judgeWeek, weekKeyFromDate, weekKeyFromDateStr, usesStepsRule, winningCategories, weekStepsTotal, hasRecentSteps } from './weekGoals';
 
-const CATEGORIES = ['lifts', 'cardio', 'recovery'];
+const ACTIVITY_CATEGORIES = ['lifts', 'cardio', 'recovery'];
 
 // Week keys live with the week rules; re-exported so existing imports keep working.
 export { weekKeyFromDate, weekKeyFromDateStr };
 
-const zero = () => ({ master: 0, lifts: 0, cardio: 0, recovery: 0 });
+const zero = () => ({ master: 0, lifts: 0, cardio: 0, recovery: 0, steps: 0 });
 
 /**
  * Walk the full week history forward and return both the running streaks and the
@@ -55,7 +61,7 @@ const zero = () => ({ master: 0, lifts: 0, cardio: 0, recovery: 0 });
  */
 export function computeStreaks(activities, goals, options = {}) {
   const result = { current: zero(), longest: zero() };
-  if (!goals || !Array.isArray(activities) || activities.length === 0) return result;
+  if (!goals || !Array.isArray(activities)) return result;
 
   const {
     shieldedWeeks = [],
@@ -63,7 +69,13 @@ export function computeStreaks(activities, goals, options = {}) {
     injuryFrozenWeeks = {},
     goalHistory = [],
     asOf = new Date(),
+    stepsByDate = {},        // 'YYYY-MM-DD' → steps (utils/weekGoals stepsByDateFrom)
+    winningRuleFrom = null,  // first week judged by the steps rule (per user)
+    stepsTracked = hasRecentSteps(stepsByDate, asOf),
   } = options;
+  const ctx = { winningRuleFrom, stepsTracked };
+  // Steps only gets a streak when the user has step data at all.
+  const CATEGORIES = stepsTracked ? [...ACTIVITY_CATEGORIES, 'steps'] : ACTIVITY_CATEGORIES;
 
   // Each week is judged against the goals in force that week (utils/weekGoals).
   const goalsForWeek = weekGoalsResolver(goals, goalHistory);
@@ -84,6 +96,12 @@ export function computeStreaks(activities, goals, options = {}) {
     if (countsAsCardio(a)) week.cardio++;
     if (countsAsRecovery(a)) week.recovery++;
   });
+  // Step history can start before the first logged activity; walk from whichever is first.
+  if (stepsTracked) {
+    Object.keys(stepsByDate).forEach((d) => {
+      if ((stepsByDate[d] || 0) > 0 && (!earliestDate || d < earliestDate)) earliestDate = d;
+    });
+  }
   if (!earliestDate) return result;
 
   const currentWeekKey = weekKeyFromDate(asOf);
@@ -111,7 +129,8 @@ export function computeStreaks(activities, goals, options = {}) {
       const goalFor = goalsForWeek(weekKey);
       const shielded = shieldedWeeks.includes(weekKey);
       // A shielded week counts as met across the board.
-      const judged = judgeWeek(counts, goalFor);
+      const required = winningCategories(weekKey, ctx);
+      const judged = judgeWeek(counts, goalFor, { weekSteps: weekStepsTotal(stepsByDate, weekKey), required });
       const met = {};
       CATEGORIES.forEach((c) => { met[c] = shielded || judged[c]; });
       const allMet = shielded || judged.all;
@@ -125,8 +144,11 @@ export function computeStreaks(activities, goals, options = {}) {
         else if (!isCurrentWeek) current[c] = 0;        // in-progress week never breaks
       });
 
-      // Master is held for the whole of an injury week.
-      if (!isInjury) {
+      // Master is held when the injury froze something this week's Winning Streak needs.
+      // Under the original rule that's any injury week (unchanged); under the steps rule a
+      // recovery-only injury no longer holds it, since recovery doesn't count toward it.
+      const masterHeld = isInjury && (!usesStepsRule(weekKey, winningRuleFrom) || frozen.some((c) => required.includes(c)));
+      if (!masterHeld) {
         if (allMet) current.master++;
         else if (!isCurrentWeek) current.master = 0;
       }

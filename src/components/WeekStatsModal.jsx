@@ -66,8 +66,12 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
   const isInjury = !!weekData?.isInjury;
   const injuryFrozenCats = weekData?.injuryFrozenCats || [];
   // A category row is injury-frozen if injury was active that week and the category was paused.
-  // Master ('master') is always frozen during any injury.
-  const injuryFrozenRow = (cat) => isInjury && (cat === 'master' || injuryFrozenCats.includes(cat));
+  // The Winning Streak ('master') is frozen when a category it needs that week is paused
+  // (under the original rule, any injury).
+  const masterNeeds = weekData?.weekJudged?.required || ['lifts', 'cardio', 'recovery'];
+  const injuryFrozenRow = (cat) => isInjury && (cat === 'master'
+    ? (masterNeeds.includes('recovery') || injuryFrozenCats.some(c => masterNeeds.includes(c)))
+    : injuryFrozenCats.includes(cat));
   const streakIcon = (met, color, cat, count, goal) => {
     if (isVacation) return <span style={{ fontSize: '13px', lineHeight: 1 }}>🌴</span>;
     if (injuryFrozenRow(cat)) return <span style={{ fontSize: '13px', lineHeight: 1 }}>🩹</span>;
@@ -182,7 +186,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
           if (isVacation) {
             bg = 'rgba(255,149,0,0.1)'; border = 'rgba(255,149,0,0.3)'; color = '#FF9500'; label = '🌴 Vacation Week';
           } else if (isInjury) {
-            bg = 'rgba(167,139,250,0.1)'; border = 'rgba(167,139,250,0.3)'; color = '#A78BFA'; label = injuryFrozenCats.length >= 3 ? '🩹 Injury Mode' : '🩹 Injury Mode · partial';
+            bg = 'rgba(167,139,250,0.1)'; border = 'rgba(167,139,250,0.3)'; color = '#A78BFA'; label = ['lifts', 'cardio', 'steps', 'recovery'].every(c => injuryFrozenCats.includes(c)) ? '🩹 Injury Mode' : '🩹 Injury Mode · partial';
           } else if (isShielded) {
             bg = 'rgba(0,209,255,0.1)'; border = 'rgba(0,209,255,0.3)'; color = '#00D1FF'; label = '🛡️ Shield Used';
           } else if (weekData?.goalsMet) {

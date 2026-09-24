@@ -21,7 +21,7 @@ import TrendsView from './components/TrendsView';
 import OwnProfileModal from './components/OwnProfileModal';
 import { resolveUnit, unitLabel, formatDistanceValue, milesToDisplay, formatPace } from './utils/distance';
 import { getActivityCategory, countsAsLifting, countsAsCardio } from './utils/activityCategory';
-import { judgeWeekFromActivities, judgeWeek, countWeekActivities, weekGoalsResolver } from './utils/weekGoals';
+import { judgeWeekFromActivities, judgeWeek, countWeekActivities, weekGoalsResolver, weekContext, stepsByDateFrom, weekStepsTotal, winningCategories } from './utils/weekGoals';
 import { manualCaloriesForDate } from './utils/calories';
 
 
@@ -40,7 +40,7 @@ const injuryCalendarCats = (weekKey, injuryMode) => {
     if (end && weekKey >= injuryMode.startWeek && weekKey < end) {
       return (Array.isArray(injuryMode.frozenCategories) && injuryMode.frozenCategories.length > 0)
         ? injuryMode.frozenCategories
-        : ['lifts', 'cardio', 'recovery'];
+        : ['lifts', 'cardio', 'steps', 'recovery'];
     }
   }
   return null;
@@ -184,6 +184,15 @@ export default function ProfilePage(props) {
   const records = userData?.personalRecords || initialUserData.personalRecords;
   const streaks = userData?.streaks || initialUserData.streaks;
   const goals = userData?.goals || initialUserData.goals;
+
+  // Everything needed to judge a week (shared rule, utils/weekGoals): goals, goal history,
+  // the user's steps-rule start week, and daily steps with today's live reading.
+  const profileWeekCtx = useMemo(() => weekContext({
+    goals,
+    goalHistory: userData?.goalHistory || [],
+    winningRuleFrom: userData?.winningRuleFrom || null,
+    stepsByDate: stepsByDateFrom(healthHistory, healthKitData.todaySteps || 0, todayStr),
+  }), [goals, userData?.goalHistory, userData?.winningRuleFrom, healthHistory, healthKitData.todaySteps, todayStr]);
 
   // Helper to safely get record value (handles both old number format and new object format)
   // Returns null if no record exists (0 or null values)
@@ -400,7 +409,7 @@ export default function ProfilePage(props) {
         return;
       }
       // Shared rule (utils/weekGoals), against the goals in force that week.
-      result[week.id] = judgeWeekFromActivities(activities, startStr, goals, userData.goalHistory || []).all;
+      result[week.id] = judgeWeekFromActivities(activities, startStr, profileWeekCtx).all;
     });
     return result;
   })();
@@ -574,7 +583,7 @@ export default function ProfilePage(props) {
       calories: weekCalories,
       steps: weekSteps,
       miles,
-      goalsMet: judgeWeek({ lifts, cardio, recovery }, weekGoalsResolver(goals, userData.goalHistory || [])(toLocalDateStr(startOfWeek))).all
+      goalsMet: judgeWeekFromActivities(activities, toLocalDateStr(startOfWeek), profileWeekCtx).all
     };
   };
   
@@ -860,7 +869,7 @@ export default function ProfilePage(props) {
           cwStart.setHours(0, 0, 0, 0);
           const cwStartStr = `${cwStart.getFullYear()}-${String(cwStart.getMonth() + 1).padStart(2, '0')}-${String(cwStart.getDate()).padStart(2, '0')}`;
 
-          const anyRemaining = !judgeWeekFromActivities(activities, cwStartStr, goals, userData?.goalHistory || []).all;
+          const anyRemaining = !judgeWeekFromActivities(activities, cwStartStr, profileWeekCtx).all;
 
           const hasActiveStreak = (userData?.streaks?.master || 0) > 0
             || (userData?.streaks?.lifts || 0) > 0
@@ -931,7 +940,7 @@ export default function ProfilePage(props) {
           cwStart.setDate(todayDate.getDate() - todayDate.getDay());
           cwStart.setHours(0, 0, 0, 0);
           const cwStartStr = `${cwStart.getFullYear()}-${String(cwStart.getMonth() + 1).padStart(2, '0')}-${String(cwStart.getDate()).padStart(2, '0')}`;
-          const cwJudged = judgeWeekFromActivities(activities, cwStartStr, goals, userData?.goalHistory || []);
+          const cwJudged = judgeWeekFromActivities(activities, cwStartStr, profileWeekCtx);
           const cwLiftsOk = cwJudged.lifts;
           const cwCardioOk = cwJudged.cardio;
           const cwRecoveryOk = cwJudged.recovery;
@@ -3306,7 +3315,7 @@ export default function ProfilePage(props) {
           // Shared rule (utils/weekGoals): dual-counts 'lifting+cardio' and judges against the
           // goals in force that week.
           const weekCounts = countWeekActivities(weekActivities);
-          const weekVerdict = judgeWeekFromActivities(activities, weekDates[0], goals, userData?.goalHistory || []);
+          const weekVerdict = judgeWeekFromActivities(activities, weekDates[0], profileWeekCtx);
           const miles = weekActivities.filter(a => a.type === 'Running' || a.type === 'Cycle' || a.type === 'Walking').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
 
           // Calculate calories: HealthKit active calories + manually logged (not from/linked to HealthKit)

@@ -4,7 +4,7 @@ import CategoryIcon from './CategoryIcon';
 import { normalizeFocusAreas } from '../utils/focusAreas';
 import { initialUserData } from '../utils/initialUserData';
 import { countsAsLifting, countsAsCardio, countsAsRecovery } from '../utils/activityCategory';
-import { judgeWeek, countWeekActivities, weekGoalsResolver } from '../utils/weekGoals';
+import { judgeWeek, countWeekActivities, weekGoalsResolver, weekContext, stepsByDateFrom, weekStepsTotal, winningCategories } from '../utils/weekGoals';
 
 const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, userData, activities, healthHistory }) => {
   const [isAnimating, setIsAnimating] = useState(false);
@@ -74,9 +74,13 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
 
     // Shared rule (utils/weekGoals), against the goals in force each week.
     const goalsForWeek = weekGoalsResolver(goals, userData?.goalHistory || []);
+    const ctx = weekContext({ goals, goalHistory: userData?.goalHistory || [], winningRuleFrom: userData?.winningRuleFrom || null, stepsByDate: stepsByDateFrom(healthHistory || []) });
     Object.entries(weekMap).forEach(([weekKey, weekDates]) => {
       const weekActivities = monthActivities.filter(a => weekDates.includes(a.date));
-      const judged = judgeWeek(countWeekActivities(weekActivities), goalsForWeek(weekKey));
+      const judged = judgeWeek(countWeekActivities(weekActivities), goalsForWeek(weekKey), {
+        weekSteps: weekStepsTotal(ctx.stepsByDate, weekKey),
+        required: winningCategories(weekKey, ctx),
+      });
       if (judged.lifts) liftWeeks++;
       if (judged.cardio) cardioWeeks++;
       if (judged.recovery) recoveryWeeks++;

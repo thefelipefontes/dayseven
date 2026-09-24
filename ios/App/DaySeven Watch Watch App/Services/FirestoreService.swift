@@ -20,7 +20,7 @@ class FirestoreService {
 
     // MARK: - Fetch User Data
 
-    func getUserData(uid: String) async throws -> (goals: UserGoals, streaks: UserStreaks, activities: [Activity], personalRecords: PersonalRecords, distanceUnit: String, injuryActive: Bool, injuryFrozen: [String]) {
+    func getUserData(uid: String) async throws -> (goals: UserGoals, streaks: UserStreaks, activities: [Activity], personalRecords: PersonalRecords, distanceUnit: String, injuryActive: Bool, injuryFrozen: [String], weekCelebrations: [String: Any]) {
         let data = try await getDocument("users/\(uid)")
 
         // Distance unit ('mi' default | 'km')
@@ -108,7 +108,20 @@ class FirestoreService {
             }
         }
 
-        return (goals, streaks, activities, personalRecords, distanceUnit, injuryActive, injuryFrozen)
+        // This week's celebration flags as the phone left them. The watch rewrites the map on
+        // save, so it carries over the flags only the phone sets (steps, master) for the same
+        // week instead of wiping them.
+        var weekCelebrations: [String: Any] = [:]
+        if let wcWrapper = data["weekCelebrations"] as? [String: Any],
+           let wcMapValue = wcWrapper["mapValue"] as? [String: Any],
+           let wcMap = wcMapValue["fields"] as? [String: Any] {
+            if let week = stringFromFirestore(wcMap["week"]) { weekCelebrations["week"] = week }
+            for key in ["lifts", "cardio", "recovery", "steps", "master"] {
+                if let flag = boolFromFirestore(wcMap[key]) { weekCelebrations[key] = flag }
+            }
+        }
+
+        return (goals, streaks, activities, personalRecords, distanceUnit, injuryActive, injuryFrozen, weekCelebrations)
     }
 
     // MARK: - Save Activities
@@ -121,20 +134,28 @@ class FirestoreService {
 
     // MARK: - Update Streaks
 
-    func updateStreaks(uid: String, streaks: UserStreaks) async throws {
-        try await updateDocument("users/\(uid)", fields: [
+    // The watch writes only the three activity streaks, as nested field paths. The Winning
+    // Streak (`master`) needs weekly steps, which the watch doesn't have, and `steps` is a
+    // phone-computed streak — so both are owned by the phone and must never be overwritten
+    // here (writing the whole `streaks` map used to replace them).
+    private func activityStreakFields(_ streaks: UserStreaks) -> (fields: [String: Any], mask: [String]) {
+        let fields: [String: Any] = [
             "streaks": [
                 "mapValue": [
                     "fields": [
-                        "master": ["integerValue": String(streaks.master)],
                         "lifts": ["integerValue": String(streaks.lifts)],
                         "cardio": ["integerValue": String(streaks.cardio)],
-                        "recovery": ["integerValue": String(streaks.recovery)],
-                        "stepsGoal": ["integerValue": String(streaks.stepsGoal)]
+                        "recovery": ["integerValue": String(streaks.recovery)]
                     ]
                 ]
             ]
-        ], fieldMask: ["streaks"])
+        ]
+        return (fields, ["streaks.lifts", "streaks.cardio", "streaks.recovery"])
+    }
+
+    func updateStreaks(uid: String, streaks: UserStreaks) async throws {
+        let s = activityStreakFields(streaks)
+        try await updateDocument("users/\(uid)", fields: s.fields, fieldMask: s.mask)
     }
 
     // MARK: - Update Personal Records
@@ -154,22 +175,11 @@ class FirestoreService {
     // MARK: - Batch Save (activity + streaks + records in one write)
 
     func batchSave(uid: String, activities: [Activity], streaks: UserStreaks, recordUpdates: [String: Any]?, weekCelebrations: [String: Any]? = nil) async throws {
-        var fields: [String: Any] = [
-            "activities": encodeActivitiesArray(activities),
-            "streaks": [
-                "mapValue": [
-                    "fields": [
-                        "master": ["integerValue": String(streaks.master)],
-                        "lifts": ["integerValue": String(streaks.lifts)],
-                        "cardio": ["integerValue": String(streaks.cardio)],
-                        "recovery": ["integerValue": String(streaks.recovery)],
-                        "stepsGoal": ["integerValue": String(streaks.stepsGoal)]
-                    ]
-                ]
-            ]
-        ]
+        let streakWrite = activityStreakFields(streaks)
+        var fields: [String: Any] = streakWrite.fields
+        fields["activities"] = encodeActivitiesArray(activities)
 
-        var fieldMask = ["activities", "streaks"]
+        var fieldMask = ["activities"] + streakWrite.mask
 
         if let records = recordUpdates {
             var prFields: [String: Any] = [:]
@@ -178,8 +188,12 @@ class FirestoreService {
                     prFields[key] = ["integerValue": String(intVal)]
                 }
             }
-            fields["personalRecords"] = ["mapValue": ["fields": prFields]]
-            fieldMask.append("personalRecords")
+            // Mask each record by its nested path: masking "personalRecords" as a whole replaced
+            // the entire map with just these keys, wiping every other record.
+            if !prFields.isEmpty {
+                fields["personalRecords"] = ["mapValue": ["fields": prFields]]
+                fieldMask.append(contentsOf: prFields.keys.map { "personalRecords.\($0)" })
+            }
         }
 
         if let wc = weekCelebrations {
@@ -188,6 +202,7 @@ class FirestoreService {
             if let lifts = wc["lifts"] as? Bool { wcFields["lifts"] = ["booleanValue": lifts] }
             if let cardio = wc["cardio"] as? Bool { wcFields["cardio"] = ["booleanValue": cardio] }
             if let recovery = wc["recovery"] as? Bool { wcFields["recovery"] = ["booleanValue": recovery] }
+            if let steps = wc["steps"] as? Bool { wcFields["steps"] = ["booleanValue": steps] }
             if let master = wc["master"] as? Bool { wcFields["master"] = ["booleanValue": master] }
             fields["weekCelebrations"] = ["mapValue": ["fields": wcFields]]
             fieldMask.append("weekCelebrations")

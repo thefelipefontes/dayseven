@@ -39,7 +39,7 @@ import { FOCUS_AREA_GROUPS, ALL_FOCUS_AREAS, FOCUS_AREA_MIGRATION, normalizeFocu
 import { initialUserData } from './utils/initialUserData';
 import { getDefaultCountToward, getActivityCategory, countsAsLifting, countsAsCardio, countsAsRecovery } from './utils/activityCategory';
 import { computeStreaks } from './utils/streaks';
-import { judgeWeekFromActivities, judgeWeek, countWeekActivities, weekGoalsResolver, weekKeyFromDateStr } from './utils/weekGoals';
+import { judgeWeekFromActivities, judgeWeek, countWeekActivities, weekGoalsResolver, weekKeyFromDateStr, weekContext, stepsByDateFrom, weekStepsTotal, winningCategories } from './utils/weekGoals';
 import { manualCaloriesForDate, needsHkCaloriesBackfill } from './utils/calories';
 import { reverseGeocode, formatLocation } from './utils/geocode';
 import SectionIcon from './components/SectionIcon';
@@ -350,10 +350,11 @@ const INJURY_YEARLY_CAP = 16;     // soft cap on total frozen weeks per calendar
 
 // Which category streaks an injury pause freezes. A partial injury (e.g. a bad shoulder)
 // freezes only the affected categories; the rest keep counting normally. Missing/empty =
-// all three (a full injury, the default). Master is treated as frozen whenever *any*
-// category is frozen, since you can't complete a full week with one paused.
-const INJURY_ALL_CATEGORIES = ['lifts', 'cardio', 'recovery'];
-const INJURY_CATEGORY_LABELS = { lifts: 'Strength', cardio: 'Cardio', recovery: 'Recovery' };
+// all of them (a full injury, the default). The Winning Streak is held when a category it
+// needs is frozen — under the steps rule a recovery-only injury doesn't hold it
+// (utils/streaks). Older injuries stored without 'steps' simply don't freeze it.
+const INJURY_ALL_CATEGORIES = ['lifts', 'cardio', 'steps', 'recovery'];
+const INJURY_CATEGORY_LABELS = { lifts: 'Strength', cardio: 'Cardio', steps: 'Steps', recovery: 'Recovery' };
 const injuryFrozenCategories = (injuryMode) => {
   const fc = injuryMode?.frozenCategories;
   return (Array.isArray(fc) && fc.length > 0) ? fc : INJURY_ALL_CATEGORIES;
@@ -361,7 +362,7 @@ const injuryFrozenCategories = (injuryMode) => {
 // "All streaks paused" / "Strength & Cardio paused" — describes which categories are frozen.
 const formatInjuryPausedLabel = (injuryMode) => {
   const fc = injuryFrozenCategories(injuryMode);
-  if (fc.length >= 3) return 'All streaks paused';
+  if (INJURY_ALL_CATEGORIES.every(c => fc.includes(c))) return 'All streaks paused';
   return fc.map(c => INJURY_CATEGORY_LABELS[c] || c).join(' & ') + ' paused';
 };
 
@@ -387,7 +388,7 @@ const accumulateInjuryFrozenWeeks = (existing, startWeek, endWeekExclusive, froz
 };
 
 // Default empty week celebration state
-const emptyWeekCelebrations = { week: '', lifts: false, cardio: false, recovery: false, master: false };
+const emptyWeekCelebrations = { week: '', lifts: false, cardio: false, recovery: false, steps: false, master: false };
 
 // Check if the phone has already shown the master celebration this week (local-only, not synced to Firestore)
 const getPhoneCelebrationShown = () => {
@@ -422,6 +423,7 @@ const initialPersonalRecords = {
   longestMasterStreak: 0,
   longestWorkoutStreak: 0,
   longestRecoveryStreak: 0,
+  longestStepsStreak: 0,
   mostLiftsWeek: 0,
   longestLiftStreak: 0,
   highestLiftCalories: 0,
@@ -3393,6 +3395,18 @@ const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!", type
       emoji: '🧊',
       confettiColors: ['#00D1FF', '#00FF94', '#87CEEB', '#4FC3F7', '#29B6F6', '#03A9F4'],
       subtext: 'Stay consistent!'
+    },
+    // Weekly steps goal (stepsPerDay × 7) — its own category since steps count toward the
+    // Winning Streak. Purple = steps everywhere else in the app.
+    'steps': {
+      primary: '#BF5AF2',
+      bgGradient: 'radial-gradient(circle at center, rgba(191,90,242,0.45) 0%, rgba(191,90,242,0.15) 50%, transparent 80%)',
+      bgOverlay: 'rgba(0,0,0,0.55)',
+      ringColor1: 'rgba(191,90,242,0.5)',
+      ringColor2: 'rgba(191,90,242,0.3)',
+      emoji: '👟',
+      confettiColors: ['#BF5AF2', '#00FF94', '#00D1FF', '#FFD700', '#FF9500', '#E0AAFF'],
+      subtext: 'Week of steps, done!'
     },
     'daily-steps': {
       primary: '#00D1FF',
@@ -11484,11 +11498,23 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
   // what the user actually walked in with.
   // This week judged by the shared rule (utils/weekGoals) — the same answer the streak
   // walk and the celebration use.
+  const homeWeekCtx = useMemo(() => weekContext({
+    goals: userData?.goals,
+    goalHistory: userData?.goalHistory || [],
+    winningRuleFrom: userData?.winningRuleFrom || null,
+    stepsByDate: stepsByDateFrom(healthHistory, healthKitData?.todaySteps || 0, getTodayDate()),
+  }), [userData?.goals, userData?.goalHistory, userData?.winningRuleFrom, healthHistory, healthKitData?.todaySteps]);
   const thisWeekJudged = useMemo(
-    () => judgeWeekFromActivities(activities, getCurrentWeekKey(), userData?.goals, userData?.goalHistory || []),
-    [activities, userData?.goals, userData?.goalHistory]
+    () => judgeWeekFromActivities(activities, getCurrentWeekKey(), homeWeekCtx),
+    [activities, homeWeekCtx]
   );
   const metThisWeek = (cat) => !!thisWeekJudged[cat];
+  // What the Winning Streak still needs this week, for the at-risk banner: recovery only
+  // under the original rule, weekly steps under the steps rule (utils/weekGoals).
+  const recoveryNeeded = thisWeekJudged.required.includes('recovery');
+  const stepsRemaining = thisWeekJudged.required.includes('steps') && !injuryFrozen.includes('steps')
+    ? Math.max(0, weekSteps.goal - weekSteps.total)
+    : 0;
   const priorStreak = (cat) => {
     const current = userData?.streaks?.[cat] || 0;
     // A frozen category is held during an injury pause — the current week
@@ -11497,7 +11523,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
     return Math.max(0, current - (metThisWeek(cat) ? 1 : 0));
   };
   const hasExistingStreak =
-    priorStreak('lifts') > 0 || priorStreak('cardio') > 0 || priorStreak('recovery') > 0;
+    priorStreak('lifts') > 0 || priorStreak('cardio') > 0 || priorStreak('recovery') > 0 || priorStreak('steps') > 0;
 
   // This banner is about the winning (master) streak specifically — it lists every
   // category still outstanding, and only the master streak requires all three.
@@ -12752,7 +12778,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         })()}
 
         {/* Streak at Risk Warning - hidden during vacation */}
-        {!userData.vacationMode?.isActive && !streakWarningDismissed && !joinedToday && daysLeft <= 3 && (liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0) && (
+        {!userData.vacationMode?.isActive && !streakWarningDismissed && !joinedToday && daysLeft <= 3 && (liftsRemaining > 0 || cardioRemaining > 0 || (recoveryNeeded && recoveryRemaining > 0) || stepsRemaining > 0) && (
           <div
             className="relative p-3 rounded-xl mb-3 flex items-center gap-3"
             style={{
@@ -12769,7 +12795,8 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                 {[
                   liftsRemaining > 0 ? `${liftsRemaining} strength` : null,
                   cardioRemaining > 0 ? `${cardioRemaining} cardio` : null,
-                  recoveryRemaining > 0 ? `${recoveryRemaining} recovery` : null
+                  recoveryNeeded && recoveryRemaining > 0 ? `${recoveryRemaining} recovery` : null,
+                  stepsRemaining > 0 ? `${formatK(stepsRemaining)} steps` : null
                 ].filter(Boolean).join(', ')} remaining {streakStakes}
               </div>
             </div>
@@ -12789,7 +12816,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         {!userData.vacationMode?.isActive && !userData.injuryMode?.isActive && (() => {
           const currentWeek = getCurrentWeekKey();
           const previousWeek = getPreviousWeekKey();
-          const hasActiveStreak = userData.streaks.master > 0 || userData.streaks.lifts > 0 || userData.streaks.cardio > 0 || userData.streaks.recovery > 0;
+          const hasActiveStreak = userData.streaks.master > 0 || userData.streaks.lifts > 0 || userData.streaks.cardio > 0 || userData.streaks.recovery > 0 || (userData.streaks.steps || 0) > 0;
 
           // Determine if this is a retroactive shield (Sunday/Monday, saving last week)
           const isRetroactive = dayOfWeek <= 1;
@@ -12801,7 +12828,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
           let showRetroactive = false;
           if (isRetroactive) {
             // Both weeks judged by the shared rule, against the goals in force then.
-            const judgePast = (weekKey) => judgeWeekFromActivities(activities, weekKey, userData?.goals, userData?.goalHistory || []);
+            const judgePast = (weekKey) => judgeWeekFromActivities(activities, weekKey, homeWeekCtx);
             const prevIncomplete = !judgePast(previousWeek).all;
             const prevAlreadyShielded = (userData.streakShield?.shieldedWeeks || []).includes(previousWeek);
 
@@ -12824,6 +12851,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             (liftsRemaining > 0 && userData.streaks.lifts > 0) ||
             (cardioRemaining > 0 && userData.streaks.cardio > 0) ||
             (recoveryRemaining > 0 && userData.streaks.recovery > 0) ||
+            (!thisWeekJudged.steps && !injuryFrozen.includes('steps') && (userData.streaks.steps || 0) > 0) ||
             (userData.streaks.master > 0 && !thisWeekJudged.all);
 
           const showCurrentWeek = daysLeft <= 3 && atRiskStreak;
@@ -14853,6 +14881,8 @@ export default function DaySevenApp() {
       vacationWeeks: protections.vacationWeeks || [],
       injuryFrozenWeeks: protections.injuryFrozenWeeks || {},
       goalHistory: existingRecords?._goalHistory || [],
+      winningRuleFrom: existingRecords?._winningRuleFrom || null,
+      stepsByDate: stepsByDateFrom(healthHistoryData || []),
     });
     const longest = walked.longest;
 
@@ -14866,6 +14896,7 @@ export default function DaySevenApp() {
       longestStrengthStreak: Math.max(longest.lifts, existingRecords?.longestStrengthStreak || 0, cur.lifts || 0),
       longestCardioStreak: Math.max(longest.cardio, existingRecords?.longestCardioStreak || 0, cur.cardio || 0),
       longestRecoveryStreak: Math.max(longest.recovery, existingRecords?.longestRecoveryStreak || 0, cur.recovery || 0),
+      longestStepsStreak: Math.max(longest.steps || 0, existingRecords?.longestStepsStreak || 0, cur.steps || 0),
     };
   };
 
@@ -15063,6 +15094,18 @@ export default function DaySevenApp() {
           if (profileForStreaks?.goalHistory) {
             setUserData(prev => ({ ...prev, goalHistory: profileForStreaks.goalHistory }));
           }
+          // First week this user's Winning Streak is judged by the steps rule (Strength +
+          // Cardio + weekly Steps; utils/weekGoals). Set once, the first time a build with the
+          // rule loads for them, so earlier weeks keep the rule they were earned under.
+          // Written to the ref synchronously so the load-time recalc below sees it.
+          {
+            const ruleFrom = profileForStreaks?.winningRuleFrom || getCurrentWeekKey();
+            userDataRef.current = { ...(userDataRef.current || {}), winningRuleFrom: ruleFrom };
+            setUserData(prev => ({ ...prev, winningRuleFrom: ruleFrom }));
+            if (!profileForStreaks?.winningRuleFrom && user?.uid && !isDemoAccount(profileForStreaks, user)) {
+              updateUserProfile(user.uid, { winningRuleFrom: ruleFrom }).catch(() => {});
+            }
+          }
           // Load streak shield data
           if (profileForStreaks?.streakShield) {
             setUserData(prev => ({
@@ -15200,7 +15243,8 @@ export default function DaySevenApp() {
               if (recalculated.master !== (storedStreaks.master || 0) ||
                   recalculated.lifts !== (storedStreaks.lifts || 0) ||
                   recalculated.cardio !== (storedStreaks.cardio || 0) ||
-                  recalculated.recovery !== (storedStreaks.recovery || 0)) {
+                  recalculated.recovery !== (storedStreaks.recovery || 0) ||
+                  recalculated.steps !== (storedStreaks.steps || 0)) {
                 console.log('[App] Streak mismatch detected, recalculating:', { stored: storedStreaks, recalculated });
                 setUserData(prev => ({
                   ...prev,
@@ -15298,6 +15342,7 @@ export default function DaySevenApp() {
                 ...userRecords,
                 _goals: userGoals || {},
                 _goalHistory: profileForStreaks?.goalHistory || [],
+                _winningRuleFrom: userDataRef.current?.winningRuleFrom || null,
                 _currentStreaks: recordsResult?.streaks || {},
                 // Read straight off the profile: the userData state hydrated from it a few
                 // awaits ago may not have landed in the ref yet, and without these the
@@ -16378,6 +16423,7 @@ export default function DaySevenApp() {
     if ((streaks.lifts || 0) > (records.longestStrengthStreak || 0)) bumped.longestStrengthStreak = streaks.lifts;
     if ((streaks.cardio || 0) > (records.longestCardioStreak || 0)) bumped.longestCardioStreak = streaks.cardio;
     if ((streaks.recovery || 0) > (records.longestRecoveryStreak || 0)) bumped.longestRecoveryStreak = streaks.recovery;
+    if ((streaks.steps || 0) > (records.longestStepsStreak || 0)) bumped.longestStepsStreak = streaks.steps;
     if (Object.keys(bumped).length === 0) return;
 
     setUserData(prev => ({
@@ -16515,13 +16561,16 @@ export default function DaySevenApp() {
   // "Did this week count?" for the app shell — the shared rule in utils/weekGoals, judged
   // against the goals in force that week. Pass goals/goalHistory when they were just loaded
   // and userDataRef hasn't caught up yet.
+  // Everything needed to judge a week, from the live refs: goals, goal history, the user's
+  // steps-rule start week, and daily steps (stored history + today's live reading).
+  const buildWeekCtx = (goals = null, goalHistory = null) => weekContext({
+    goals: goals || userDataRef.current?.goals,
+    goalHistory: goalHistory || userDataRef.current?.goalHistory || [],
+    winningRuleFrom: userDataRef.current?.winningRuleFrom || null,
+    stepsByDate: stepsByDateFrom(healthHistoryRef.current || [], healthKitDataRef.current?.todaySteps || 0, getTodayDate()),
+  });
   const judgeWeekFor = (activitiesList, weekKey = getCurrentWeekKey(), goals = null, goalHistory = null) =>
-    judgeWeekFromActivities(
-      activitiesList,
-      weekKey,
-      goals || userDataRef.current?.goals,
-      goalHistory || userDataRef.current?.goalHistory || []
-    );
+    judgeWeekFromActivities(activitiesList, weekKey, buildWeekCtx(goals, goalHistory));
 
   const calculateWeeklyProgress = (allActivities) => {
     const today = new Date();
@@ -16699,6 +16748,8 @@ export default function DaySevenApp() {
   // Shared entry point: applies the demo-account guard and pulls shield / vacation / injury
   // state off the live ref, then runs the walk. Returns { current, longest } or null.
   const computeStreakHistory = (allActivities, goals, overrides = null) => {
+    // An empty list is treated as "not loaded": a transient empty read must never persist
+    // zeroed streaks over real ones.
     if (!goals || !allActivities || allActivities.length === 0) return null;
     // Demo accounts: streak values are seeded per-persona in getDemoUserData() and
     // must not be derived from the mock activity history. The mocks span only 12
@@ -16715,6 +16766,8 @@ export default function DaySevenApp() {
       vacationWeeks: src.vacationMode?.vacationWeeks || [],
       injuryFrozenWeeks: src.injuryMode?.frozenWeeks || {},
       goalHistory: src.goalHistory || [],
+      winningRuleFrom: src.winningRuleFrom || userDataRef.current?.winningRuleFrom || null,
+      stepsByDate: stepsByDateFrom(healthHistoryRef.current || [], healthKitDataRef.current?.todaySteps || 0, getTodayDate()),
     });
   };
 
@@ -16802,15 +16855,8 @@ export default function DaySevenApp() {
     // Snapshot which goals were ALREADY met this week at the moment of activation. A frozen
     // category only keeps its activation-week credit if it's in here — training a frozen
     // category *after* going on injury must not advance its streak.
-    const g = userData.goals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2 };
-    const cwActsSnap = (activities || []).filter(a => a.date >= startWeek);
-    const snapLifts = cwActsSnap.filter(a => { const c = getActivityCategory(a); return c === 'lifting' || c === 'lifting+cardio'; }).length;
-    const snapCardio = cwActsSnap.filter(a => { const c = getActivityCategory(a); return c === 'cardio' || c === 'lifting+cardio'; }).length;
-    const snapRecovery = cwActsSnap.filter(a => getActivityCategory(a) === 'recovery').length;
-    const completedAtActivation = [];
-    if (snapLifts >= g.liftsPerWeek) completedAtActivation.push('lifts');
-    if (snapCardio >= g.cardioPerWeek) completedAtActivation.push('cardio');
-    if (snapRecovery >= g.recoveryPerWeek) completedAtActivation.push('recovery');
+    const snap = judgeWeekFor(activities || [], startWeek);
+    const completedAtActivation = INJURY_ALL_CATEGORIES.filter(c => snap[c]);
     const updatedIm = {
       isActive: true,
       startDate: toLocalDateStr(new Date()),
@@ -17867,6 +17913,54 @@ export default function DaySevenApp() {
       localStorage.setItem('dailyGoalsCelebrated', JSON.stringify(updated));
     }
   }, [healthKitData.todaySteps, healthKitData.todayCalories, activities, userData?.goals, dailyGoalsCelebrated, showCelebration, userProfile?.privacySettings?.showCaloriesOnHome]);
+
+  // Weekly steps can finish a week on their own — no activity is logged, so the add-activity
+  // path never sees it. Watch the week as steps arrive: if steps just completed the Winning
+  // Streak week, show the week celebration; if they just hit the weekly steps goal, show the
+  // steps one. Each fires once per week (weekCelebrations), one celebration at a time.
+  useEffect(() => {
+    if (!user?.uid || !recordsLoaded || healthHistory.length === 0) return;
+    if (showCelebration || showWeekStreakCelebration) return; // re-runs when they close
+    if (isDemoAccount(userProfileRef.current, userRef.current)) return;
+
+    const currentWeekKey = getCurrentWeekKey();
+    const judged = judgeWeekFor(activities, currentWeekKey);
+    const wc = weekCelebrations.week === currentWeekKey ? weekCelebrations : { ...emptyWeekCelebrations, week: currentWeekKey };
+    const im = userData?.injuryMode;
+    const frozen = im?.isActive ? injuryFrozenCategories(im) : [];
+
+    const masterNew = judged.all && !wc.master && !getPhoneCelebrationShown().master &&
+      !frozen.some(c => judged.required.includes(c));
+    const stepsNew = judged.steps && !wc.steps && !frozen.includes('steps');
+    if (!masterNew && !stepsNew) return;
+
+    const newWC = { ...wc, steps: wc.steps || judged.steps, master: wc.master || masterNew };
+    // Streaks come from the full walk (it now includes this week's steps).
+    const recalculated = recalculateStreaksFromHistory(activities, userData.goals);
+    if (recalculated) {
+      setUserData(prev => ({ ...prev, streaks: { ...prev.streaks, ...recalculated } }));
+    }
+    setWeekCelebrations(newWC);
+    localStorage.setItem('weekCelebrations', JSON.stringify(newWC));
+    updateUserProfile(user.uid, {
+      weekCelebrations: newWC,
+      ...(recalculated ? { streaks: { ...(userDataRef.current?.streaks || {}), ...recalculated } } : {}),
+    }).catch(() => {});
+
+    if (masterNew) {
+      markPhoneCelebrationShown();
+      triggerHaptic(ImpactStyle.Heavy);
+      setShowWeekStreakCelebration(true);
+    } else if (wc.master) {
+      // The week was already won and celebrated (e.g. by the workout that finished it);
+      // record the steps goal quietly rather than stacking a second celebration.
+    } else {
+      setCelebrationMessage('Weekly Steps Goal Hit!');
+      setCelebrationType('steps');
+      triggerHaptic(ImpactStyle.Medium);
+      setShowCelebration(true);
+    }
+  }, [user?.uid, recordsLoaded, healthHistory, healthKitData.todaySteps, activities, weekCelebrations, showCelebration, showWeekStreakCelebration, userData?.injuryMode?.isActive]);
 
   // Show loading spinner while checking auth
   if (authLoading) {
@@ -19268,7 +19362,17 @@ export default function DaySevenApp() {
           // Every week on the card is judged by the shared rule (utils/weekGoals), against
           // the goals in force that week — not today's goals.
           const shareGoalsForWeek = weekGoalsResolver(userData.goals, userData?.goalHistory || []);
-          const judgeShareWeek = (weekKey) => judgeWeekFromActivities(activities, weekKey, userData.goals, userData?.goalHistory || []);
+          const shareWeekCtx = weekContext({
+            goals: userData.goals,
+            goalHistory: userData?.goalHistory || [],
+            winningRuleFrom: userData?.winningRuleFrom || null,
+            stepsByDate: stepsByDateFrom(healthHistory || [], healthKitData?.todaySteps || 0, getTodayDate()),
+          });
+          const judgeShareWeek = (weekKey) => judgeWeekFromActivities(activities, weekKey, shareWeekCtx);
+          const judgeCounts = (counts, weekKey) => judgeWeek(counts, shareGoalsForWeek(weekKey), {
+            weekSteps: weekStepsTotal(shareWeekCtx.stepsByDate, weekKey),
+            required: winningCategories(weekKey, shareWeekCtx),
+          });
           const selectedWeekGoals = shareGoalsForWeek(weekRange.startStr);
 
           // Shielded / vacation weeks are also read directly by last4Weeks and weeksWon below.
@@ -19284,6 +19388,8 @@ export default function DaySevenApp() {
             vacationWeeks,
             injuryFrozenWeeks: userData?.injuryMode?.frozenWeeks || {},
             goalHistory: userData?.goalHistory || [],
+            winningRuleFrom: userData?.winningRuleFrom || null,
+            stepsByDate: stepsByDateFrom(healthHistory || [], healthKitData?.todaySteps || 0, getTodayDate()),
             asOf: new Date(`${weekRange.startStr}T12:00:00`),
           });
           const historicalStreaks = {
@@ -19291,6 +19397,7 @@ export default function DaySevenApp() {
             strengthStreak: historicalWalk.current.lifts,
             cardioStreak: historicalWalk.current.cardio,
             recoveryStreak: historicalWalk.current.recovery,
+            stepsStreak: historicalWalk.current.steps,
           };
 
           return {
@@ -19361,7 +19468,7 @@ export default function DaySevenApp() {
               if (weekKey > weekRange.endStr) return; // never count weeks past selected
               if (shieldedWeeks.includes(weekKey)) { count++; return; }
               const w = weekMap[weekKey] || { lifts: 0, cardio: 0, recovery: 0 };
-              if (judgeWeek(w, shareGoalsForWeek(weekKey)).all) count++;
+              if (judgeCounts(w, weekKey).all) count++;
             });
             return count;
           })(),
@@ -19474,7 +19581,7 @@ export default function DaySevenApp() {
 
             weeksInMonth.forEach(week => {
               const weekActivities = activities.filter(a => a.date >= week.startStr && a.date <= week.endStr);
-              const judged = judgeWeek(countWeekActivities(weekActivities), shareGoalsForWeek(weekKeyFromDateStr(week.startStr)));
+              const judged = judgeCounts(countWeekActivities(weekActivities), weekKeyFromDateStr(week.startStr));
               if (judged.lifts) liftWeeksHit++;
               if (judged.cardio) cardioWeeksHit++;
               if (judged.recovery) recoveryWeeksHit++;

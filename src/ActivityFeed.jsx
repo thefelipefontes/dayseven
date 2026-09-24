@@ -31,10 +31,9 @@ const calculateLeaderboardStats = (rawActivities, healthHistory, recordsData) =>
   // Onboarding credits are synthetic ring-fillers granted during signup —
   // they count toward weekly rings but never toward stats/leaderboards.
   const activities = (rawActivities || []).filter(a => a.source !== 'onboarding_credit');
-  // Support both old format (just personalRecords) and new format ({ personalRecords, streaks, weeksWon })
+  // Support both old format (just personalRecords) and new format ({ personalRecords, streaks })
   const personalRecords = recordsData?.personalRecords ?? recordsData;
   const activeStreaks = recordsData?.streaks || null;
-  const weeksWonCount = recordsData?.weeksWon || 0;
   const now = new Date();
   const today = toLocalDateStr(now);
 
@@ -129,7 +128,6 @@ const calculateLeaderboardStats = (rawActivities, healthHistory, recordsData) =>
     cardioStreak: activeStreaks?.cardio ?? personalRecords?.longestCardioStreak ?? 0,
     recoveryStreak: activeStreaks?.recovery ?? personalRecords?.longestRecoveryStreak ?? 0,
     stepsStreak: activeStreaks?.steps ?? personalRecords?.longestStepsStreak ?? 0,
-    weeksWon: weeksWonCount,
     totalWorkouts,
     stats: {
       calories: { week: weekStats.calories, month: monthStats.calories, year: yearStats.calories, all: allStats.calories },
@@ -1064,7 +1062,6 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     try {
       const recordsResult = await getPersonalRecords(friend.uid);
       const activeStreaks = recordsResult?.streaks || null;
-      const weeksWon = recordsResult?.weeksWon || 0;
       setSelectedFriend({
         ...friend,
         masterStreak: activeStreaks?.master ?? 0,
@@ -1072,7 +1069,6 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         cardioStreak: activeStreaks?.cardio ?? 0,
         recoveryStreak: activeStreaks?.recovery ?? 0,
         stepsStreak: activeStreaks?.steps ?? 0,
-        weeksWon,
       });
     } catch (e) {
       // On failure, show with zeros rather than not showing at all
@@ -1710,7 +1706,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         const demoUserStats = calculateLeaderboardStats(
           demoActivities,
           demoHealthHistory,
-          { personalRecords: demoUserData.personalRecords, streaks: demoUserData.streaks, weeksWon: demoUserData.personalRecords?.longestMasterStreak || 0 }
+          { personalRecords: demoUserData.personalRecords, streaks: demoUserData.streaks }
         );
         const leaderboardOverride = getDemoUserLeaderboardOverride(userProfile?.username);
         const demoUserEntry = {
@@ -1802,7 +1798,6 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               strengthStreak: 0,
               cardioStreak: 0,
               recoveryStreak: 0,
-              weeksWon: 0,
               totalWorkouts: 0,
               stats: {
                 calories: { week: 0, month: 0, year: 0, all: 0 },
@@ -1842,7 +1837,6 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         strengthStreak: 0,
         cardioStreak: 0,
         recoveryStreak: 0,
-        weeksWon: 0,
         totalWorkouts: 0,
         stats: {
           calories: { week: 0, month: 0, year: 0, all: 0 },

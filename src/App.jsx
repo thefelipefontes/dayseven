@@ -15468,7 +15468,6 @@ export default function DaySevenApp() {
           // Load user's personal records, then recalculate from activities to ensure accuracy
           const recordsResult = await getPersonalRecords(user.uid);
           const userRecords = recordsResult?.personalRecords ?? recordsResult;
-          const userWeeksWon = recordsResult?.weeksWon || 0;
 
           // Recalculate records from activities and health history to ensure they're accurate
           // This fixes any corruption from race conditions or data issues. Pass current
@@ -15497,7 +15496,7 @@ export default function DaySevenApp() {
 
             setUserData(prev => ({
               ...prev,
-              personalRecords: { ...prev.personalRecords, ...recalculatedRecords, weeksWon: userWeeksWon }
+              personalRecords: { ...prev.personalRecords, ...recalculatedRecords }
             }));
 
             // Save recalculated records if they differ from stored records
@@ -15509,7 +15508,7 @@ export default function DaySevenApp() {
             if (userRecords) {
               setUserData(prev => ({
                 ...prev,
-                personalRecords: { ...prev.personalRecords, ...userRecords, weeksWon: userWeeksWon }
+                personalRecords: { ...prev.personalRecords, ...userRecords }
               }));
             }
           }

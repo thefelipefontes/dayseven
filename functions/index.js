@@ -916,7 +916,7 @@ exports.sendStreakReminders = onSchedule(
 
     // Get users with active streaks who want reminders
     const usersSnapshot = await db.collection('users')
-      .where('streak', '>', 0)
+      .where('streaks.master', '>', 0)
       .get();
 
     for (const userDoc of usersSnapshot.docs) {
@@ -947,10 +947,10 @@ exports.sendStreakReminders = onSchedule(
       await sendNotificationToUser(
         userId,
         'Missing You! 👋',
-        `It's been a couple days. Your ${userData.streak}-week streak is waiting for you!`,
+        `It's been a couple days. Your ${userData.streaks.master}-week Winning Streak is waiting for you!`,
         {
           type: NotificationType.STREAK_REMINDER,
-          streak: userData.streak.toString(),
+          streak: userData.streaks.master.toString(),
         }
       );
     }
@@ -1379,7 +1379,7 @@ exports.sendMonthlySummary = onSchedule(
         lastMonthMinutes += Math.round((activity.duration || 0) / 60);
       });
 
-      const currentStreak = userData.streak || 0;
+      const currentStreak = userData.streaks?.master || 0;
 
       // Determine comparison message
       let comparisonText = '';
@@ -1628,12 +1628,12 @@ exports.sendTrialEndingReminders = onSchedule(
       // Day-before nudge (~24h), once.
       if (hoursLeft >= 22 && hoursLeft < 26 && !userData.trialEndingNotified) {
         const { workouts, recovery } = weekRecap(userData);
-        const streak = userData.streak || 0;
+        const streak = userData.streaks?.master || 0;
         const built = workouts > 0 || recovery > 0 || streak > 0;
         const recapStr = built
           ? `Your week: ${workouts} workout${workouts === 1 ? '' : 's'}` +
             (recovery > 0 ? `, ${recovery} recovery` : '') +
-            (streak > 0 ? `, a ${streak}-week streak` : '') + '.'
+            (streak > 0 ? `, a ${streak}-week Winning Streak` : '') + '.'
           : 'Keep your plan, streaks, and challenges.';
         await sendNotificationToUser(
           userId,
@@ -1729,7 +1729,7 @@ exports.sendWinbackReminders = onSchedule(
         stages = NEVER_SUBSCRIBED;
       } else {
         const realActivities = (userData.activities || []).filter((a) => a.source !== 'onboarding_credit');
-        const hasProgress = (userData.streak || 0) > 0 || realActivities.length > 0;
+        const hasProgress = (userData.streaks?.master || 0) > 0 || realActivities.length > 0;
         stages = hasProgress ? LAPSED_WITH_PROGRESS : LAPSED_NO_PROGRESS;
       }
 
@@ -1782,7 +1782,7 @@ exports.sendActivationReminders = onSchedule(
       if (!userData.username) continue;             // still mid-onboarding
       if (userData.demoMode === true) continue;
       if (userData.injuryMode?.isActive || userData.vacationMode?.isActive) continue;
-      if ((userData.streak || 0) > 0) continue;     // past their first completed week
+      if ((userData.streaks?.master || 0) > 0) continue;     // past their first completed week
       if (daysSince(userData.createdAt) >= 7) continue; // week-one only
 
       // Fire at 5 PM in the USER's local timezone (hourly job, gated per user).
@@ -1894,17 +1894,25 @@ exports.onStreakMilestone = onDocumentUpdated(
     const after = event.data.after.data();
 
     const userId = event.params.userId;
-    const oldStreak = before.streak || 0;
-    const newStreak = after.streak || 0;
+    const oldStreak = before.streaks?.master || 0;
+    const newStreak = after.streaks?.master || 0;
 
-    // Check if they just hit a milestone (weeks)
+    // Highest milestone (weeks) crossed by this write — a recalculation can jump
+    // several at once, and we only want to celebrate the top one.
     const milestones = [5, 10, 25, 52, 78, 104];
-    const hitMilestone = milestones.find(m => newStreak >= m && oldStreak < m);
+    const hitMilestone = milestones.filter(m => newStreak >= m && oldStreak < m).pop();
 
     if (!hitMilestone) return;
 
     // Don't fire celebratory milestones while the streak is paused for injury.
     if (after.injuryMode?.isActive) return;
+
+    // streaks.master is written by both the phone and the Watch and gets
+    // recalculated (e.g. goal-history fixes), so it can dip and recover. A
+    // genuine repeat of an N-week milestone needs at least N weeks of a fresh
+    // streak, so anything sooner is a flip-flop — don't send it twice.
+    const lastSentAt = after.streakMilestoneNotifiedAt?.[hitMilestone];
+    if (lastSentAt && Date.now() - new Date(lastSentAt).getTime() < hitMilestone * 7 * 24 * 60 * 60 * 1000) return;
 
     const prefs = await getUserPreferences(userId);
     if (!prefs.streakMilestones) return;
@@ -1919,15 +1927,15 @@ exports.onStreakMilestone = onDocumentUpdated(
     };
 
     const titles = {
-      5: '5-Week Streak! 💪',
-      10: '10-Week Streak! 🔥',
-      25: '25-Week Streak! 🏆',
-      52: '1 Year Streak! 👑',
-      78: '1.5 Year Streak! 🌟',
-      104: '2 Year Streak! 🎉',
+      5: '5-Week Winning Streak! 💪',
+      10: '10-Week Winning Streak! 🔥',
+      25: '25-Week Winning Streak! 🏆',
+      52: '1 Year Winning Streak! 👑',
+      78: '1.5 Year Winning Streak! 🌟',
+      104: '2 Year Winning Streak! 🎉',
     };
 
-    await sendNotificationToUser(
+    const result = await sendNotificationToUser(
       userId,
       titles[hitMilestone],
       messages[hitMilestone],
@@ -1937,6 +1945,11 @@ exports.onStreakMilestone = onDocumentUpdated(
         streak: newStreak.toString(),
       }
     );
+    if (result.success) {
+      await db.collection('users').doc(userId).set({
+        streakMilestoneNotifiedAt: { [hitMilestone]: new Date().toISOString() },
+      }, { merge: true });
+    }
   }
 );
 
@@ -2014,7 +2027,9 @@ exports.onFriendActivityLogged = onDocumentUpdated(
 // ==========================================
 
 /**
- * Notify user when ALL three weekly goals (strength, cardio, recovery) are complete.
+ * Notify user when the week is won — weekCelebrations.master, set by the phone under the
+ * user's Winning Streak rule (Strength + Cardio + Steps from their winningRuleFrom week;
+ * Strength + Cardio + Recovery on app versions before it).
  *
  * Detection strategy: watch for weekCelebrations.master going from false → true.
  * Both the phone and watch set this flag when all goals are met.

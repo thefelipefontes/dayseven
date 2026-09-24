@@ -963,12 +963,11 @@ export async function getPersonalRecords(uid) {
   const path = `users/${uid}`;
 
   try {
-    let personalRecords, streaks, weeksWon;
+    let personalRecords, streaks;
     if (isNative) {
       const { snapshot } = await withTimeout(FirebaseFirestore.getDocument({ reference: path }));
       personalRecords = snapshot?.data?.personalRecords || null;
       streaks = snapshot?.data?.streaks || null;
-      weeksWon = snapshot?.data?.weeksWon || 0;
     } else {
       const userRef = doc(db, 'users', uid);
       const userDoc = await withTimeout(getDoc(userRef));
@@ -976,13 +975,12 @@ export async function getPersonalRecords(uid) {
         const data = userDoc.data();
         personalRecords = data.personalRecords || null;
         streaks = data.streaks || null;
-        weeksWon = data.weeksWon || 0;
       }
     }
 
-    return { personalRecords, streaks, weeksWon };
+    return { personalRecords, streaks };
   } catch (error) {
-    return { personalRecords: null, streaks: null, weeksWon: 0 };
+    return { personalRecords: null, streaks: null };
   }
 }
 

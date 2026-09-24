@@ -685,11 +685,12 @@ class AppViewModel: ObservableObject {
         recordUpdates: inout [String: Any]?
     ) -> (lifts: Bool, cardio: Bool, recovery: Bool, master: Bool) {
         // Check if individual goals were just completed
-        let justCompletedLifts = category == "lifting" &&
+        // (lifting+cardio counts toward both, matching calculateWeeklyProgress and the phone's countsAsLifting/countsAsCardio)
+        let justCompletedLifts = (category == "lifting" || category == "lifting+cardio") &&
             oldProgress.lifts.completed < goals.liftsPerWeek &&
             newProgress.lifts.completed >= goals.liftsPerWeek
 
-        let justCompletedCardio = category == "cardio" &&
+        let justCompletedCardio = (category == "cardio" || category == "lifting+cardio") &&
             oldProgress.cardio.completed < goals.cardioPerWeek &&
             newProgress.cardio.completed >= goals.cardioPerWeek
 

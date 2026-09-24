@@ -31,7 +31,7 @@ import ActivityIcon, { ICON_PICKER_CATEGORIES, CATEGORY_COLORS as ICON_CATEGORY_
 import RouteMapView, { ll2px, bestFit, makeTiles, RouteOverlay, TileLayer, TILE } from './components/RouteMapView';
 import MuscleBodyMap from './components/MuscleBodyMap';
 import { isDemoAccount, getDemoActivities, getDemoUserData, getDemoProfileOverride, getDemoHealthKitData, getDemoHealthHistory, getDemoCalendarData, getDemoFriends, getDemoChallengeStats } from './demoData';
-import { Dumbbell } from 'lucide-react';
+import { Dumbbell, Footprints } from 'lucide-react';
 import { IconRun, IconSnowflake } from '@tabler/icons-react';
 import { triggerHaptic } from './utils/haptics';
 import { toLocalDateStr, getTodayDate, getCurrentYear, parseLocalDate, formatFriendlyDate } from './utils/dateHelpers';
@@ -39,7 +39,7 @@ import { FOCUS_AREA_GROUPS, ALL_FOCUS_AREAS, FOCUS_AREA_MIGRATION, normalizeFocu
 import { initialUserData } from './utils/initialUserData';
 import { getDefaultCountToward, getActivityCategory, countsAsLifting, countsAsCardio, countsAsRecovery } from './utils/activityCategory';
 import { computeStreaks } from './utils/streaks';
-import { judgeWeekFromActivities, judgeWeek, countWeekActivities, weekGoalsResolver, weekKeyFromDateStr, weekContext, stepsByDateFrom, weekStepsTotal, winningCategories } from './utils/weekGoals';
+import { judgeWeekFromActivities, judgeWeek, countWeekActivities, weekGoalsResolver, weekKeyFromDateStr, weekContext, stepsByDateFrom, weekStepsTotal, winningCategories, hasRecentSteps } from './utils/weekGoals';
 import { manualCaloriesForDate, needsHkCaloriesBackfill } from './utils/calories';
 import { reverseGeocode, formatLocation } from './utils/geocode';
 import SectionIcon from './components/SectionIcon';
@@ -500,9 +500,9 @@ const AppTour = ({ step, onNext, onBack, onSkip, targetRef, onSwitchTab, homeTab
       tab: 'plan',
       features: [
         { emoji: '🗓️', text: 'Drag sessions onto days' },
-        { emoji: '🔁', text: 'Repeat a plan weekly' },
-        { emoji: '✅', text: 'Tap to log a planned session' },
-        { emoji: '⚡', text: 'Challenges now live in Friends' }
+        { emoji: '✨', text: 'Suggest a plan in one tap' },
+        { emoji: '👟', text: 'See the steps each day needs' },
+        { emoji: '✅', text: 'Tap to log a planned session' }
       ]
     },
     {
@@ -514,6 +514,7 @@ const AppTour = ({ step, onNext, onBack, onSkip, targetRef, onSwitchTab, homeTab
         { emoji: '👥', text: 'See friend activity' },
         { emoji: '🎉', text: 'React & comment' },
         { emoji: '🏅', text: 'Leaderboard (streaks and activities)' },
+        { emoji: '⚡', text: 'Challenge friends head-to-head' },
         { emoji: '➕', text: 'Add new friends' }
       ]
     },
@@ -3356,7 +3357,7 @@ const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!", type
   useEffect(() => { onCompleteRef.current = onComplete; });
 
   // Different styles based on celebration type
-  const isDaily = type === 'daily-steps' || type === 'daily-calories';
+  const isDaily = type === 'daily-calories';
   const colorConfig = {
     'weekly': {
       primary: '#00FF94',
@@ -3408,15 +3409,6 @@ const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!", type
       emoji: '👟',
       confettiColors: ['#BF5AF2', '#00FF94', '#00D1FF', '#FFD700', '#FF9500', '#E0AAFF'],
       subtext: 'Week of steps, done!'
-    },
-    'daily-steps': {
-      primary: '#00D1FF',
-      bgGradient: 'radial-gradient(circle at center, rgba(0,209,255,0.2) 0%, transparent 70%)',
-      ringColor1: 'rgba(0,209,255,0.3)',
-      ringColor2: 'rgba(0,209,255,0.2)',
-      emoji: '👟',
-      confettiColors: ['#00D1FF', '#00FF94', '#87CEEB', '#4FC3F7', '#29B6F6', '#03A9F4'],
-      subtext: 'Way to move!'
     },
     'daily-calories': {
       primary: '#FF6B6B',
@@ -4028,7 +4020,7 @@ const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1, goals 
             <AnimatedRing
               animate={ringStates[2].animate}
               hasAnimated={ringStates[2].hasAnimated}
-              color={COLORS.recovery}
+              color={weekCounts.stepsRule ? '#BF5AF2' : COLORS.recovery}
               size={100}
               strokeWidth={8}
               scale={ringStates[2].converged ? 0.5 : 1}
@@ -4605,7 +4597,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
 
   // Dynamic motivational taglines
   const getMotivationalTagline = (streak, allGoalsMet) => {
-    if (allGoalsMet) return "All goals complete ✓";
+    if (allGoalsMet) return "Week won ✓";
     if (streak >= 52) return "Legend status achieved!";
     if (streak >= 26) return "Half-year warrior!";
     if (streak >= 12) return "Consistency is key!";
@@ -4811,10 +4803,10 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                     <div className={`${isPostFormat ? 'text-base' : 'text-lg'} font-black`} style={{ color: '#BF5AF2' }}>{records.longestStepsStreak || 0}</div>
                     <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>Steps</div>
                   </div>
-                  <div className="text-center">
-                    <div className={`${isPostFormat ? 'text-base' : 'text-lg'} font-black`} style={{ color: '#00D1FF' }}>{records.longestRecoveryStreak || 0}</div>
-                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>Recovery</div>
-                  </div>
+                </div>
+                {/* Recovery is a bonus, not one of the goals that win the week */}
+                <div className={`${isPostFormat ? 'text-[8px] mt-1' : 'text-[9px] mt-1.5'} text-center text-gray-500`}>
+                  <CategoryIcon category="recovery" size={9} className="inline align-[-2px] mr-1" />Recovery best <span className="font-bold" style={{ color: '#00D1FF' }}>{records.longestRecoveryStreak || 0}</span> · bonus
                 </div>
               </div>
 
@@ -4839,8 +4831,8 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                     <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{records.mostWorkoutsWeek || 0}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}><CategoryIcon category="recovery" size={11} className="inline align-[-2px] mr-1" />Most Recovery/Week</span>
-                    <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{records.mostRecoveryWeek || 0}</span>
+                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}><CategoryIcon category="steps" size={11} className="inline align-[-2px] mr-1" />Most Steps/Week</span>
+                    <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{records.mostStepsWeek ? `${(records.mostStepsWeek / 1000).toFixed(1).replace(/\.0$/, '')}k` : '--'}</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}><CategoryIcon category="calories" size={11} className="inline align-[-2px] mr-1" />Most Calories/Workout</span>
@@ -4902,7 +4894,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
 
         // Build achievements list
         const achievements = [];
-        if (allGoalsMet) achievements.push({ emoji: '🏆', text: 'All goals completed!' });
+        if (allGoalsMet) achievements.push({ emoji: '🏆', text: 'Won the week!' });
         if (weeklyAnalysis?.uniqueDays >= 5) achievements.push({ emoji: '📅', text: `Worked out ${weeklyAnalysis.uniqueDays} days` });
         if (stats?.streak >= 2) achievements.push({ emoji: '🔥', text: `${stats.streak} week winning streak!` });
         // Show total distance if > 0
@@ -5211,10 +5203,6 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                     <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#BF5AF2' }}>{stats?.stepsStreak || 0}</div>
                     <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}><CategoryIcon category="steps" size={9} className="inline align-[-2px] mr-1" />weeks</div>
                   </div>
-                  <div className="text-center">
-                    <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#00D1FF' }}>{stats?.recoveryStreak || 0}</div>
-                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}><CategoryIcon category="recovery" size={9} className="inline align-[-2px] mr-1" />weeks</div>
-                  </div>
                 </div>
               </div>
 
@@ -5237,11 +5225,12 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                     <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#BF5AF2' }}>{stats?.longestStepsStreak || 0}</div>
                     <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}><CategoryIcon category="steps" size={9} className="inline align-[-2px] mr-1" />weeks</div>
                   </div>
-                  <div className="text-center">
-                    <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-bold`} style={{ color: '#00D1FF' }}>{stats?.longestRecoveryStreak || 0}</div>
-                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}><CategoryIcon category="recovery" size={9} className="inline align-[-2px] mr-1" />weeks</div>
-                  </div>
                 </div>
+              </div>
+
+              {/* Recovery: a bonus streak, kept off the two goal rows above */}
+              <div className={`${isPostFormat ? 'text-[8px] mt-1.5' : 'text-[9px] mt-2'} text-center text-gray-500`}>
+                <CategoryIcon category="recovery" size={9} className="inline align-[-2px] mr-1" />Recovery <span className="font-bold" style={{ color: '#00D1FF' }}>{stats?.recoveryStreak || 0}</span> weeks · best {stats?.longestRecoveryStreak || 0} · bonus
               </div>
             </div>
 
@@ -5282,9 +5271,6 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                     🏃 {_shareMilesToUnit(stats?.monthlyMiles || 0).toFixed(1)} {_shareUnitLabel}
                   </span>
                   <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>
-                    <CategoryIcon category="steps" size={9} className="inline align-[-2px] mr-1" />{((stats?.monthlySteps || 0) / 1000).toFixed(0)}k steps
-                  </span>
-                  <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>
                     📅 {stats?.monthlyDaysActive || 0} days active
                   </span>
                 </div>
@@ -5294,7 +5280,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
               <div className={`w-full ${isPostFormat ? 'space-y-2' : 'space-y-2.5'}`}>
                 {/* Total Sessions in grey box */}
                 <div className={`${isPostFormat ? 'p-2' : 'p-2.5'} rounded-xl`} style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500 uppercase tracking-wider text-center mb-1.5`}>Total Sessions</div>
+                  <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500 uppercase tracking-wider text-center mb-1.5`}>This Month</div>
                   <div className="grid grid-cols-3 w-full">
                     <div className="text-center">
                       <div className={`${isPostFormat ? 'text-lg' : 'text-xl'} font-black`} style={{ color: '#00FF94' }}>{stats?.monthlyLifts || 0}</div>
@@ -5305,9 +5291,13 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                       <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}><CategoryIcon category="cardio" size={9} className="inline align-[-2px] mr-1" />cardio</div>
                     </div>
                     <div className="text-center">
-                      <div className={`${isPostFormat ? 'text-lg' : 'text-xl'} font-black`} style={{ color: '#00D1FF' }}>{stats?.monthlyRecovery || 0}</div>
-                      <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>❄️ recovery</div>
+                      <div className={`${isPostFormat ? 'text-lg' : 'text-xl'} font-black`} style={{ color: '#BF5AF2' }}>{((stats?.monthlySteps || 0) / 1000).toFixed(0)}k</div>
+                      <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}><CategoryIcon category="steps" size={9} className="inline align-[-2px] mr-1" />steps</div>
                     </div>
+                  </div>
+                  {/* Recovery: a bonus alongside the three goals that win the week */}
+                  <div className={`${isPostFormat ? 'text-[8px] mt-1' : 'text-[9px] mt-1.5'} text-center text-gray-500`}>
+                    <CategoryIcon category="recovery" size={9} className="inline align-[-2px] mr-1" /><span className="font-bold" style={{ color: '#00D1FF' }}>{stats?.monthlyRecovery || 0}</span> recovery · bonus
                   </div>
 
                   {/* Divider line */}
@@ -5359,7 +5349,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                 <div className={`${isPostFormat ? 'p-2' : 'p-2.5'} rounded-xl flex items-center justify-center gap-2`} style={{ backgroundColor: 'rgba(255,215,0,0.1)' }}>
                   <span className={isPostFormat ? 'text-sm' : 'text-base'}>🏆</span>
                   <span className={`${isPostFormat ? 'text-xl' : 'text-2xl'} font-black`} style={{ color: '#FFD700' }}>
-                    {stats?.monthAllGoalsWeeksHit || 0}/4
+                    {stats?.monthAllGoalsWeeksHit || 0}/{stats?.monthWeeksTotal || 4}
                   </span>
                   <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>weeks won</span>
                 </div>
@@ -5753,7 +5743,8 @@ const RouteShape = ({ maxWidth, maxHeight, coords }) => {
 };
 
 // ─── Activity Stamp Modal ─────────────────────────────────────────────────────
-const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCoords = [], getActivityCategory, userProfile }) => {
+const fmtStampK = (n) => `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSteps = null, routeCoords = [], getActivityCategory, userProfile }) => {
   const cardRef = useRef(null);
   const nameTextRef = useRef(null);
   const [stampMode, setStampMode] = useState('dark'); // 'dark' or 'transparent'
@@ -5868,7 +5859,11 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
     const rings = [
       { progress: weeklyProgress?.lifts ? Math.min(weeklyProgress.lifts.completed / weeklyProgress.lifts.goal, 1) : 0, color: '#00FF94', label: 'S' },
       { progress: weeklyProgress?.cardio ? Math.min(weeklyProgress.cardio.completed / weeklyProgress.cardio.goal, 1) : 0, color: '#FF9500', label: 'C' },
-      { progress: weeklyProgress?.recovery ? Math.min(weeklyProgress.recovery.completed / weeklyProgress.recovery.goal, 1) : 0, color: '#00D1FF', label: 'R' },
+      // Third ring is the week's steps (one of the three goals that win the week); Recovery is a
+      // bonus and stays off the stamp. Falls back to Recovery only when no step data was passed.
+      weekSteps?.goal
+        ? { progress: Math.min(weekSteps.total / weekSteps.goal, 1), color: '#BF5AF2', label: 'St' }
+        : { progress: weeklyProgress?.recovery ? Math.min(weeklyProgress.recovery.completed / weeklyProgress.recovery.goal, 1) : 0, color: '#00D1FF', label: 'R' },
     ];
     const cx = size / 2, cy = size / 2;
     const strokeWidth = 3.5;
@@ -6253,7 +6248,14 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
                       </span>
                     </div>
                   )}
-                  {weeklyProgress?.recovery && (
+                  {weekSteps?.goal ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                      <Footprints size={10} color="#BF5AF2" strokeWidth={2.5} />
+                      <span style={{ fontSize: 11, fontWeight: 600, color: '#fff', textShadow: tShadow }}>
+                        {fmtStampK(weekSteps.total)}/{fmtStampK(weekSteps.goal)}
+                      </span>
+                    </div>
+                  ) : weeklyProgress?.recovery && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
                       <IconSnowflake size={10} color="#00D1FF" strokeWidth={2.5} />
                       <span style={{ fontSize: 11, fontWeight: 600, color: '#fff', textShadow: tShadow }}>
@@ -6575,7 +6577,14 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, routeCo
                     </span>
                   </div>
                 )}
-                {weeklyProgress?.recovery && (
+                {weekSteps?.goal ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                    <Footprints size={11} color="#BF5AF2" strokeWidth={2.5} />
+                    <span style={{ fontSize: 12, fontWeight: 600, color: isTransparent ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.5)', textShadow: tShadow }}>
+                      {fmtStampK(weekSteps.total)}/{fmtStampK(weekSteps.goal)}
+                    </span>
+                  </div>
+                ) : weeklyProgress?.recovery && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
                     <IconSnowflake size={11} color="#00D1FF" strokeWidth={2.5} />
                     <span style={{ fontSize: 12, fontWeight: 600, color: isTransparent ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.5)', textShadow: tShadow }}>
@@ -12702,7 +12711,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             </button>
             {showRecentActivity && (
               <SwipeableProvider>
-                <div className="mt-2 space-y-1">
+                <div className="mt-2 space-y-1.5">
                   {latestActivities.map((act) => (
                     <SwipeableActivityItem
                       key={act.id}
@@ -12712,7 +12721,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                     >
                       <div
                         onClick={() => { triggerHaptic(ImpactStyle.Light); setSelectedActivity(act); }}
-                        className="w-full py-1.5 flex items-center gap-3 text-left cursor-pointer active:opacity-70 transition-opacity"
+                        className="w-full px-3 py-2.5 flex items-center gap-3 text-left cursor-pointer active:opacity-70 transition-opacity"
                         style={{ backgroundColor: '#080808' }}
                       >
                         <div className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
@@ -12732,7 +12741,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                             {formatFriendlyDate(act.date)}{act.time ? ` · ${act.time}` : ''}{act.duration ? ` · ${act.duration} min` : ''}
                           </div>
                         </div>
-                        <span className="text-gray-600 text-xs">›</span>
+                        <span className="text-gray-600 text-xs pl-1">›</span>
                       </div>
                     </SwipeableActivityItem>
                   ))}
@@ -13823,7 +13832,7 @@ export default function DaySevenApp() {
   const [isChallengeDetailOpen, setIsChallengeDetailOpen] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
   const [celebrationMessage, setCelebrationMessage] = useState('');
-  const [celebrationType, setCelebrationType] = useState('weekly'); // 'weekly', 'daily-steps', 'daily-calories'
+  const [celebrationType, setCelebrationType] = useState('weekly'); // 'weekly', 'recovery', 'daily-calories', …
   const [showWeekStreakCelebration, setShowWeekStreakCelebration] = useState(false);
   const [showToast, setShowToast] = useState(false);
   // When a vacation carries past its starting week, ending it pops a choice:
@@ -14914,6 +14923,7 @@ export default function DaySevenApp() {
       mostRunsWeek: 0,
       mostLiftsWeek: 0,
       mostRecoveryWeek: 0,
+      mostStepsWeek: 0,
     };
 
     const recoveryTypes = ['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic'];
@@ -15067,6 +15077,20 @@ export default function DaySevenApp() {
       if (week.runs > newRecords.mostRunsWeek) newRecords.mostRunsWeek = week.runs;
       if (week.lifts > newRecords.mostLiftsWeek) newRecords.mostLiftsWeek = week.lifts;
       if (week.recovery > newRecords.mostRecoveryWeek) newRecords.mostRecoveryWeek = week.recovery;
+    });
+
+    // Most steps in a week (Sunday–Saturday) from Apple Health history — steps are one of the
+    // three goals that win the week, so they get a weekly best like lifts and runs do.
+    const stepsByWeek = {};
+    Object.values(healthDataByDate).forEach(entry => {
+      if (!entry?.date || !entry.steps) return;
+      const d = new Date(entry.date + 'T12:00:00');
+      d.setDate(d.getDate() - d.getDay());
+      const wk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      stepsByWeek[wk] = (stepsByWeek[wk] || 0) + entry.steps;
+    });
+    Object.values(stepsByWeek).forEach(total => {
+      if (total > newRecords.mostStepsWeek) newRecords.mostStepsWeek = total;
     });
 
     // Longest historical streaks come from the same walk that produces the live streak
@@ -17759,14 +17783,15 @@ export default function DaySevenApp() {
       // Only show individual celebration if NOT about to streak the week
       if (!willStreakWeek) {
         if (isNewRecord) {
-          setCelebrationMessage(`New Record: ${newStreak} Week Recovery Streak! 🏆`);
+          setCelebrationMessage(`New Record: ${newStreak} Week Recovery Bonus Streak! 🏆`);
         } else if (checkStreakMilestone(newStreak)) {
           setCelebrationMessage(`${newStreak} Week Recovery Streak! ❄️`);
         } else {
-          setCelebrationMessage('Recovery goal complete! 🧊');
+          setCelebrationMessage('Recovery bonus complete! 🧊');
         }
         setCelebrationType('recovery');
-        triggerHaptic(ImpactStyle.Heavy);
+        // Lighter than Strength/Cardio: Recovery is a bonus, not one of the goals that win the week
+        triggerHaptic(ImpactStyle.Medium);
         setShowCelebration(true);
       }
     } else {
@@ -19871,6 +19896,7 @@ export default function DaySevenApp() {
               monthCardioWeeksHit: cardioWeeksHit,
               monthRecoveryWeeksHit: recoveryWeeksHit,
               monthAllGoalsWeeksHit: allGoalsWeeksHit,
+              monthWeeksTotal: weeksInMonth.length,
               // User goals for context
               liftsGoalMonthly: userData.goals.liftsPerWeek,
               cardioGoalMonthly: userData.goals.cardioPerWeek,
@@ -19962,6 +19988,13 @@ export default function DaySevenApp() {
         }}
         activity={stampActivity}
         weeklyProgress={showStampModal ? calculateWeeklyProgress(activities) : weeklyProgress}
+        weekSteps={showStampModal ? (() => {
+          // Third ring on the stamp: this week's steps against the weekly goal. Users with no
+          // step data keep Recovery there (their week is judged on Strength + Cardio only).
+          const byDate = stepsByDateFrom(healthHistory || [], healthKitData?.todaySteps || 0, getTodayDate());
+          if (!hasRecentSteps(byDate)) return null;
+          return { total: weekStepsTotal(byDate, getCurrentWeekKey()), goal: (userData?.goals?.stepsPerDay || 10000) * 7 };
+        })() : null}
         routeCoords={stampRouteCoords}
         getActivityCategory={getActivityCategory}
         userProfile={userProfile}

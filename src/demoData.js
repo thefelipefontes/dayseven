@@ -241,6 +241,7 @@ const DEMO_USER_OVERRIDES = {
       mostWorkoutsWeek: 12,
       mostCaloriesWeek: 6500,
       mostMilesWeek: 42,
+      mostStepsWeek: 84210,
       longestMasterStreak: 33,
       longestStrengthStreak: 35,
       longestCardioStreak: 34,
@@ -267,6 +268,7 @@ const DEMO_USER_OVERRIDES = {
       mostWorkoutsWeek: 12,
       mostCaloriesWeek: 6700,
       mostMilesWeek: 42,
+      mostStepsWeek: 84210,
       longestMasterStreak: 33,
       longestStrengthStreak: 40,
       longestCardioStreak: 35,
@@ -339,6 +341,7 @@ export const getDemoUserData = (username) => {
       mostWorkoutsWeek: 8,
       mostCaloriesWeek: 3200,
       mostMilesWeek: 22.5,
+      mostStepsWeek: 84210,
       // Personal bests must stay >= the current streaks above.
       longestMasterStreak: 12,
       longestStrengthStreak: 16,
@@ -427,7 +430,7 @@ const DEMO_FRIEND_PROFILES = [
   // 1) Alex — balanced hybrid, mid-pack across the board.
   { uid: 'dummy1', username: 'alex_fitness', displayName: 'Alex Thompson',
     photoURL: 'https://randomuser.me/api/portraits/men/32.jpg',
-    streaks: { master: 8, strength: 10, cardio: 6, recovery: 5, longestMaster: 12 },
+    streaks: { master: 6, strength: 10, cardio: 6, steps: 9, recovery: 5, longestMaster: 12 },
     challengeStats: { accepted: 16, wins: 12, losses: 4, currentWinStreak: 2, longestWinStreak: 5 },
     weeksWon: 6,
     weekly: { calories: 3400, steps: 62000, runs: 2, miles: 12, runMinutes: 105, strengthSessions: 3, liftingMinutes: 180, recoverySessions: 2, coldPlunges: 1, saunaSessions: 1, yogaSessions: 0, rides: 1, cycleMiles: 16, cycleMinutes: 55 } },
@@ -435,7 +438,7 @@ const DEMO_FRIEND_PROFILES = [
   // 2) Sarah — runner + challenge winner. #1 in challenge wins / longest win streak.
   { uid: 'dummy2', username: 'sarah_runs', displayName: 'Sarah Chen',
     photoURL: 'https://randomuser.me/api/portraits/women/44.jpg',
-    streaks: { master: 24, strength: 6, cardio: 28, recovery: 9, longestMaster: 30 },
+    streaks: { master: 12, strength: 12, cardio: 28, steps: 20, recovery: 9, longestMaster: 30 },
     challengeStats: { accepted: 22, wins: 15, losses: 7, currentWinStreak: 4, longestWinStreak: 8 },
     weeksWon: 14,
     weekly: { calories: 3100, steps: 78000, runs: 3, miles: 22, runMinutes: 200, strengthSessions: 1, liftingMinutes: 45, recoverySessions: 1, coldPlunges: 0, saunaSessions: 0, yogaSessions: 1, rides: 1, cycleMiles: 14, cycleMinutes: 45 } },
@@ -443,7 +446,7 @@ const DEMO_FRIEND_PROFILES = [
   // 3) Mike — lifter. #1 in strengthSessions / liftingMinutes.
   { uid: 'dummy3', username: 'mike_lifts', displayName: 'Mike Johnson',
     photoURL: 'https://randomuser.me/api/portraits/men/59.jpg',
-    streaks: { master: 14, strength: 22, cardio: 4, recovery: 8, longestMaster: 18 },
+    streaks: { master: 9, strength: 22, cardio: 9, steps: 11, recovery: 8, longestMaster: 18 },
     challengeStats: { accepted: 20, wins: 14, losses: 6, currentWinStreak: 3, longestWinStreak: 6 },
     weeksWon: 9,
     weekly: { calories: 2900, steps: 34000, runs: 0, miles: 0, runMinutes: 0, strengthSessions: 5, liftingMinutes: 300, recoverySessions: 1, coldPlunges: 1, saunaSessions: 0, yogaSessions: 0, rides: 0, cycleMiles: 0, cycleMinutes: 0 } },
@@ -451,7 +454,7 @@ const DEMO_FRIEND_PROFILES = [
   // 4) Emma — yogi. #1 in master streak / yogaSessions.
   { uid: 'dummy4', username: 'emma_yoga', displayName: 'Emma Williams',
     photoURL: '/demo-avatars/emma.png',
-    streaks: { master: 32, strength: 8, cardio: 14, recovery: 28, longestMaster: 35 },
+    streaks: { master: 14, strength: 14, cardio: 16, steps: 18, recovery: 28, longestMaster: 35 },
     challengeStats: { accepted: 14, wins: 9, losses: 5, currentWinStreak: 1, longestWinStreak: 4 },
     weeksWon: 18,
     weekly: { calories: 2600, steps: 48000, runs: 1, miles: 4, runMinutes: 38, strengthSessions: 2, liftingMinutes: 90, recoverySessions: 3, coldPlunges: 0, saunaSessions: 0, yogaSessions: 3, rides: 1, cycleMiles: 12, cycleMinutes: 40 } },
@@ -459,7 +462,7 @@ const DEMO_FRIEND_PROFILES = [
   // 5) Jake — overall powerhouse. #1 in calories.
   { uid: 'dummy5', username: 'jake_athlete', displayName: 'Jake Martinez',
     photoURL: 'https://randomuser.me/api/portraits/men/53.jpg',
-    streaks: { master: 18, strength: 16, cardio: 18, recovery: 6, longestMaster: 22 },
+    streaks: { master: 16, strength: 16, cardio: 18, steps: 17, recovery: 6, longestMaster: 22 },
     challengeStats: { accepted: 24, wins: 16, losses: 8, currentWinStreak: 2, longestWinStreak: 7 },
     weeksWon: 11,
     weekly: { calories: 4200, steps: 72000, runs: 3, miles: 18, runMinutes: 165, strengthSessions: 3, liftingMinutes: 195, recoverySessions: 2, coldPlunges: 1, saunaSessions: 1, yogaSessions: 0, rides: 1, cycleMiles: 18, cycleMinutes: 60 } },
@@ -467,7 +470,7 @@ const DEMO_FRIEND_PROFILES = [
   // 6) Lisa — runner + step queen. #1 in steps / runs / miles / cardioStreak.
   { uid: 'dummy6', username: 'lisa_cardio', displayName: 'Lisa Park',
     photoURL: 'https://randomuser.me/api/portraits/women/22.jpg',
-    streaks: { master: 20, strength: 4, cardio: 32, recovery: 5, longestMaster: 24 },
+    streaks: { master: 8, strength: 8, cardio: 32, steps: 25, recovery: 5, longestMaster: 24 },
     challengeStats: { accepted: 14, wins: 10, losses: 4, currentWinStreak: 1, longestWinStreak: 5 },
     weeksWon: 10,
     weekly: { calories: 3600, steps: 88000, runs: 4, miles: 30, runMinutes: 270, strengthSessions: 1, liftingMinutes: 40, recoverySessions: 1, coldPlunges: 0, saunaSessions: 0, yogaSessions: 1, rides: 0, cycleMiles: 0, cycleMinutes: 0 } },
@@ -475,7 +478,7 @@ const DEMO_FRIEND_PROFILES = [
   // 7) Noah — recovery specialist. #1 in recoverySessions / coldPlunges / saunaSessions.
   { uid: 'dummy7', username: 'noah_climbs', displayName: 'Noah Reyes',
     photoURL: 'https://randomuser.me/api/portraits/men/72.jpg',
-    streaks: { master: 11, strength: 12, cardio: 9, recovery: 18, longestMaster: 14 },
+    streaks: { master: 9, strength: 12, cardio: 9, steps: 10, recovery: 18, longestMaster: 14 },
     challengeStats: { accepted: 12, wins: 8, losses: 4, currentWinStreak: 0, longestWinStreak: 3 },
     weeksWon: 5,
     weekly: { calories: 2400, steps: 42000, runs: 0, miles: 0, runMinutes: 0, strengthSessions: 1, liftingMinutes: 60, recoverySessions: 4, coldPlunges: 2, saunaSessions: 2, yogaSessions: 0, rides: 1, cycleMiles: 12, cycleMinutes: 40 } },
@@ -483,7 +486,7 @@ const DEMO_FRIEND_PROFILES = [
   // 8) Maya — strength runner-up. Tied for #1 currentWinStreak.
   { uid: 'dummy8', username: 'maya_lifts', displayName: 'Maya Patel',
     photoURL: 'https://randomuser.me/api/portraits/women/79.jpg',
-    streaks: { master: 12, strength: 18, cardio: 7, recovery: 12, longestMaster: 14 },
+    streaks: { master: 7, strength: 18, cardio: 7, steps: 8, recovery: 12, longestMaster: 14 },
     challengeStats: { accepted: 18, wins: 12, losses: 6, currentWinStreak: 5, longestWinStreak: 6 },
     weeksWon: 8,
     weekly: { calories: 3300, steps: 50000, runs: 1, miles: 4, runMinutes: 38, strengthSessions: 4, liftingMinutes: 260, recoverySessions: 1, coldPlunges: 1, saunaSessions: 0, yogaSessions: 0, rides: 0, cycleMiles: 0, cycleMinutes: 0 } },
@@ -491,7 +494,7 @@ const DEMO_FRIEND_PROFILES = [
   // 9) Leo — cyclist. #1 in rides / cycleMiles / cycleMinutes. Tied for #1 currentWinStreak.
   { uid: 'dummy9', username: 'leo_runner', displayName: 'Leo Hernandez',
     photoURL: 'https://randomuser.me/api/portraits/men/15.jpg',
-    streaks: { master: 16, strength: 5, cardio: 22, recovery: 7, longestMaster: 19 },
+    streaks: { master: 5, strength: 5, cardio: 22, steps: 15, recovery: 7, longestMaster: 19 },
     challengeStats: { accepted: 19, wins: 11, losses: 8, currentWinStreak: 5, longestWinStreak: 4 },
     weeksWon: 7,
     weekly: { calories: 3500, steps: 54000, runs: 1, miles: 5, runMinutes: 45, strengthSessions: 1, liftingMinutes: 45, recoverySessions: 1, coldPlunges: 0, saunaSessions: 1, yogaSessions: 0, rides: 3, cycleMiles: 52, cycleMinutes: 175 } },
@@ -499,7 +502,7 @@ const DEMO_FRIEND_PROFILES = [
   // 10) Kai — well-rounded #2 across multiple. High master streak.
   { uid: 'dummy10', username: 'kai_movement', displayName: 'Kai Nguyen',
     photoURL: 'https://randomuser.me/api/portraits/men/85.jpg',
-    streaks: { master: 22, strength: 10, cardio: 12, recovery: 14, longestMaster: 26 },
+    streaks: { master: 10, strength: 10, cardio: 12, steps: 11, recovery: 14, longestMaster: 26 },
     challengeStats: { accepted: 16, wins: 10, losses: 6, currentWinStreak: 3, longestWinStreak: 4 },
     weeksWon: 12,
     weekly: { calories: 3000, steps: 58000, runs: 2, miles: 8, runMinutes: 75, strengthSessions: 2, liftingMinutes: 120, recoverySessions: 1, coldPlunges: 0, saunaSessions: 1, yogaSessions: 0, rides: 1, cycleMiles: 14, cycleMinutes: 45 } },

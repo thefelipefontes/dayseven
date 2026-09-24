@@ -81,7 +81,7 @@ struct StartActivityView: View {
                         activityRowWithPlay(
                             symbol: activityType.sfSymbol,
                             name: activityType.displayName,
-                            color: .purple,
+                            color: .gray,
                             activityType: activityType.name,
                             strengthType: nil,
                             hasDetails: true
@@ -89,7 +89,7 @@ struct StartActivityView: View {
                     }
                 }
             } header: {
-                sectionHeader("Hybrid", symbol: "wind", color: .purple)
+                sectionHeader("Hybrid", symbol: "wind", color: .gray)
             }
 
             // MARK: Recovery
@@ -234,7 +234,7 @@ struct StartActivityView: View {
                 HStack(spacing: 8) {
                     Image(systemName: symbol)
                         .font(.system(size: 20))
-                        .foregroundColor(isWorkoutActive ? Color.purple.opacity(0.3) : .purple)
+                        .foregroundColor(isWorkoutActive ? Color.gray.opacity(0.3) : .gray)
                         .frame(width: 28)
                     Text(name)
                         .font(.system(size: 16, weight: .medium))

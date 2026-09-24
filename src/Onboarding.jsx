@@ -158,7 +158,7 @@ function primaryOrigin(origin) {
 
 function closingLine(recovery = []) {
   if (recovery.includes('no_routine') && !recovery.some(r => r !== 'no_routine')) {
-    return "Recovery is your third ring — and right now it's your biggest unlock.";
+    return "Recovery is a bonus — an easy habit to add once your week is rolling.";
   }
   return 'Set your standard. Earn your streaks.';
 }
@@ -871,7 +871,7 @@ function ScheduleScreen({ goals, initialPlan, onChange, onBack, onContinue, onSk
           <div className="px-4">
             <h2 className="text-2xl font-bold mb-2">Plan your week.</h2>
             <p className="text-gray-400 text-[14px] leading-relaxed mb-4">
-              We've placed a couple to get you started — drag the rest from the tray onto the days you'll actually train. Tap any session to pick a specific workout (e.g. Cardio → Run). You can change all of this anytime.
+              We've placed a couple to get you started — drag the rest from the tray onto the days you'll actually train. Tap any session to pick a specific workout (e.g. Cardio → Run). You can change all of this anytime on the Plan tab.
             </p>
           </div>
           <WeeklyPlanner

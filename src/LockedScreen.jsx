@@ -19,7 +19,7 @@ import { ImpactStyle } from '@capacitor/haptics';
 //   onSignOut    () => void            sign out (escape hatch — never trap the user)
 //   userProfile  object                used only for a light personalized greeting
 const BENEFITS = [
-  'Strength, cardio, steps and recovery streak tracking',
+  'Winning Streak plus Strength, Cardio and Steps streaks',
   'Full workout history & detailed stats + trends',
   'Challenge friends head-to-head',
   'Compete on leaderboards',
@@ -142,13 +142,14 @@ export default function LockedScreen({ onSubscribe, onRestore, onSignOut, userPr
               <circle cx="100" cy="100" r="86" fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="11" />
               <circle cx="100" cy="100" r="68" fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="11" />
               <circle cx="100" cy="100" r="50" fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="11" />
-              {/* progress arcs — recovery (blue) fully closed, cardio (orange) 60%,
-                  strength (green) 75%. Circumferences: r86≈540, r68≈427, r50≈314. */}
+              {/* progress arcs — the three goals that win the week: steps (purple) 85%,
+                  cardio (orange) 60%, strength (green) 75%. Circumferences: r86≈540, r68≈427, r50≈314. */}
               <circle cx="100" cy="100" r="86" fill="none" stroke="#00FF94" strokeWidth="11"
                 strokeLinecap="round" strokeDasharray="405 540" />
               <circle cx="100" cy="100" r="68" fill="none" stroke="#FF9500" strokeWidth="11"
                 strokeLinecap="round" strokeDasharray="256 428" />
-              <circle cx="100" cy="100" r="50" fill="none" stroke="#00D1FF" strokeWidth="11" />
+              <circle cx="100" cy="100" r="50" fill="none" stroke="#BF5AF2" strokeWidth="11"
+                strokeLinecap="round" strokeDasharray="267 314" />
             </svg>
             {/* Streak in the center */}
             <div className="absolute inset-0 flex flex-col items-center justify-center">

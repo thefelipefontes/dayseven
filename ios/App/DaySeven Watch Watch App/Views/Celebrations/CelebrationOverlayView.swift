@@ -66,7 +66,7 @@ struct CelebrationOverlayView: View {
 
                 // Streak count (for category/master celebrations)
                 if let streak = celebration.streakCount, streak > 0 {
-                    Text("\(streak) week streak")
+                    Text(celebration.type == .master ? "\(streak) week winning streak" : "\(streak) week streak")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.white.opacity(0.7))
                         .opacity(isAnimating ? 1.0 : 0)

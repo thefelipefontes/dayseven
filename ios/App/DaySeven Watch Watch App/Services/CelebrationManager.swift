@@ -14,7 +14,7 @@ enum CelebrationType: String, CaseIterable {
 
     var color: Color {
         switch self {
-        case .steps: return .green
+        case .steps: return AppColors.steps
         case .calories: return .orange
         case .strength: return AppColors.strength
         case .cardio: return AppColors.cardio
@@ -40,8 +40,8 @@ enum CelebrationType: String, CaseIterable {
         case .calories: return "Calories Goal!"
         case .strength: return "Strength Goal!"
         case .cardio: return "Cardio Goal!"
-        case .recovery: return "Recovery Goal!"
-        case .master: return "Week Complete!"
+        case .recovery: return "Recovery Bonus!"
+        case .master: return "Week Won!"
         }
     }
 

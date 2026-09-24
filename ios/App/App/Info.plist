@@ -57,7 +57,7 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>This app accesses your photo library to select photos for your profile and activities.</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>DaySeven reads your workout data from Apple Health to automatically track your fitness activities and show your daily progress.</string>
+	<string>DaySeven reads your workout data from Apple Health to automatically track your fitness activities and show your weekly progress.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>DaySeven may write workout data to Apple Health to keep your fitness records synchronized.</string>
 	<key>UILaunchStoryboardName</key>

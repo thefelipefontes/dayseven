@@ -437,6 +437,7 @@ export default function ProfilePage(props) {
 
     // Calculate last week calories from healthDataByDate
     let lastWeekCalories = 0;
+    let lastWeekSteps = 0;
     for (let d = 0; d < 7; d++) {
       const date = new Date(lastWeekStart);
       date.setDate(lastWeekStart.getDate() + d);
@@ -444,10 +445,11 @@ export default function ProfilePage(props) {
       const healthData = healthDataByDate[dateStr];
       // HealthKit active energy + hand-entered calories it doesn't know about
       lastWeekCalories += (healthData?.calories || 0) + manualCaloriesForDate(activities, dateStr);
+      lastWeekSteps += healthData?.steps || 0;
     }
 
     // Calculate average from first activity to now
-    let avgLifts = 0, avgCardio = 0, avgRecovery = 0, avgMiles = 0, avgCalories = 0;
+    let avgLifts = 0, avgCardio = 0, avgRecovery = 0, avgMiles = 0, avgCalories = 0, avgSteps = 0;
     
     if (activities.length > 0) {
       // Find the earliest activity date
@@ -481,6 +483,7 @@ export default function ProfilePage(props) {
 
         // Calculate total calories from healthDataByDate for all past weeks
         let totalCalories = 0;
+        let totalSteps = 0;
         for (let d = 0; d < weeksBetween * 7; d++) {
           const date = new Date(firstWeekStart);
           date.setDate(firstWeekStart.getDate() + d);
@@ -489,6 +492,7 @@ export default function ProfilePage(props) {
           const healthData = healthDataByDate[dateStr];
           // HealthKit active energy + hand-entered calories it doesn't know about
           totalCalories += (healthData?.calories || 0) + manualCaloriesForDate(activities, dateStr);
+          totalSteps += healthData?.steps || 0;
         }
 
         avgLifts = Math.round((totalLifts / weeksBetween) * 10) / 10;
@@ -496,6 +500,7 @@ export default function ProfilePage(props) {
         avgRecovery = Math.round((totalRecovery / weeksBetween) * 10) / 10;
         avgMiles = Math.round((totalMiles / weeksBetween) * 10) / 10;
         avgCalories = Math.round(totalCalories / weeksBetween);
+        avgSteps = Math.round(totalSteps / weeksBetween);
       }
     }
     
@@ -505,14 +510,16 @@ export default function ProfilePage(props) {
         cardio: lastWeekCardio,
         recovery: lastWeekRecovery,
         miles: lastWeekMiles,
-        calories: lastWeekCalories
+        calories: lastWeekCalories,
+        steps: lastWeekSteps
       },
       'average': {
         lifts: avgLifts,
         cardio: avgCardio,
         recovery: avgRecovery,
         miles: avgMiles,
-        calories: avgCalories
+        calories: avgCalories,
+        steps: avgSteps
       }
     };
   };
@@ -733,6 +740,47 @@ export default function ProfilePage(props) {
   };
 
   const totalsData = getTotalsData();
+  // Steps for the Stats overview's selected period (healthHistory), for the Steps tile.
+  const periodSteps = (() => {
+    // Sum steps from healthHistory for the selected period
+    const today = new Date();
+    const thisMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const lastMonthStr = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}`;
+    const currentYearStr = String(getCurrentYear());
+
+    let filteredHistory = healthHistory || [];
+    if (totalsView === 'this-week') {
+      const dayOfWeek = today.getDay();
+      const sunday = new Date(today);
+      sunday.setDate(today.getDate() - dayOfWeek);
+      const sundayStr = `${sunday.getFullYear()}-${String(sunday.getMonth() + 1).padStart(2, '0')}-${String(sunday.getDate()).padStart(2, '0')}`;
+      const saturday = new Date(sunday);
+      saturday.setDate(sunday.getDate() + 6);
+      const saturdayStr = `${saturday.getFullYear()}-${String(saturday.getMonth() + 1).padStart(2, '0')}-${String(saturday.getDate()).padStart(2, '0')}`;
+      filteredHistory = filteredHistory.filter(h => h.date >= sundayStr && h.date <= saturdayStr);
+    } else if (totalsView === 'last-7-days') {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 7);
+      const cutoffStr = cutoff.toISOString().split('T')[0];
+      filteredHistory = filteredHistory.filter(h => h.date >= cutoffStr);
+    } else if (totalsView === 'last-30-days') {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 30);
+      const cutoffStr = cutoff.toISOString().split('T')[0];
+      filteredHistory = filteredHistory.filter(h => h.date >= cutoffStr);
+    } else if (totalsView === 'this-month') {
+      filteredHistory = filteredHistory.filter(h => h.date?.startsWith(thisMonthStr));
+    } else if (totalsView === 'last-month') {
+      filteredHistory = filteredHistory.filter(h => h.date?.startsWith(lastMonthStr));
+    } else if (totalsView.match(/^\d{4}-\d{2}$/)) {
+      filteredHistory = filteredHistory.filter(h => h.date?.startsWith(totalsView));
+    } else if (totalsView === currentYearStr) {
+      filteredHistory = filteredHistory.filter(h => h.date?.startsWith(currentYearStr));
+    }
+
+    return filteredHistory.reduce((sum, h) => sum + (h.steps || 0), 0);
+  })();
 
   // Group calendar days by week for the new layout
   const getWeekForDay = (day) => {
@@ -992,7 +1040,7 @@ export default function ProfilePage(props) {
             </div>
 
             {/* Recovery — its own streak, a bonus: it doesn't count toward the Winning Streak */}
-            <div className="mt-2 px-3 py-2 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(0,209,255,0.06)', border: '1px solid rgba(0,209,255,0.15)' }}>
+            <div className="mt-2 px-3 py-2 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(0,209,255,0.06)', border: '1px solid rgba(0,209,255,0.18)' }}>
               <span className="flex items-center gap-2 text-xs">
                 <CategoryIcon category="recovery" size={13} />
                 <span className="text-white">Recovery</span>
@@ -1343,12 +1391,12 @@ export default function ProfilePage(props) {
                   })()}
                 </div>
                 <div>
-                  <div className="text-lg font-black text-white">{currentWeekStats.recovery}</div>
-                  <div className="text-[10px] text-gray-400 whitespace-nowrap"><CategoryIcon category="recovery" size={11} className="inline align-[-2px] mr-1" />Recov</div>
+                  <div className="text-lg font-black text-white">{(currentWeekStats.steps/1000).toFixed(1)}k</div>
+                  <div className="text-[10px] text-gray-400 whitespace-nowrap"><CategoryIcon category="steps" size={11} className="inline align-[-2px] mr-1" />Steps</div>
                   {(() => {
-                    const compare = compareWeek === 'average' ? weeklyStats['average']?.recovery || 0 : weeklyStats['week-2']?.recovery || 0;
-                    if (currentWeekStats.recovery > compare) return <div className="text-[10px] mt-1" style={{ color: '#00FF94' }}>↑</div>;
-                    if (currentWeekStats.recovery < compare) return <div className="text-[10px] mt-1" style={{ color: '#FF453A' }}>↓</div>;
+                    const compare = compareWeek === 'average' ? weeklyStats['average']?.steps || 0 : weeklyStats['week-2']?.steps || 0;
+                    if (currentWeekStats.steps > compare) return <div className="text-[10px] mt-1" style={{ color: '#00FF94' }}>↑</div>;
+                    if (currentWeekStats.steps < compare) return <div className="text-[10px] mt-1" style={{ color: '#FF453A' }}>↓</div>;
                     return <div className="text-[10px] mt-1 opacity-0">-</div>;
                   })()}
                 </div>
@@ -1392,8 +1440,8 @@ export default function ProfilePage(props) {
                   <div className="text-[10px] mt-1 opacity-0">-</div>
                 </div>
                 <div>
-                  <div className="text-lg font-black">{compareWeek === 'average' ? weeklyStats['average']?.recovery || 0 : weeklyStats['week-2']?.recovery || 0}</div>
-                  <div className="text-[10px] text-gray-400 whitespace-nowrap"><CategoryIcon category="recovery" size={11} className="inline align-[-2px] mr-1" />Recov</div>
+                  <div className="text-lg font-black">{(((compareWeek === 'average' ? weeklyStats['average']?.steps : weeklyStats['week-2']?.steps) || 0)/1000).toFixed(1)}k</div>
+                  <div className="text-[10px] text-gray-400 whitespace-nowrap"><CategoryIcon category="steps" size={11} className="inline align-[-2px] mr-1" />Steps</div>
                   <div className="text-[10px] mt-1 opacity-0">-</div>
                 </div>
                 <div>
@@ -1592,10 +1640,20 @@ export default function ProfilePage(props) {
                   <div className="text-2xl font-black" style={{ color: '#FF9500' }}>{cardioActivities.length}</div>
                   <div className="text-[10px] text-gray-400"><CategoryIcon category="cardio" size={11} className="inline align-[-2px] mr-1" />Cardio</div>
                 </div>
-                <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
-                  <div className="text-2xl font-black" style={{ color: '#00D1FF' }}>{recoveryActivities.length}</div>
-                  <div className="text-[10px] text-gray-400"><CategoryIcon category="recovery" size={11} className="inline align-[-2px] mr-1" />Recovery</div>
+                <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(191,90,242,0.1)' }}>
+                  <div className="text-2xl font-black" style={{ color: '#BF5AF2' }}>{daySteps >= 10000 ? `${(daySteps / 1000).toFixed(1)}k` : daySteps.toLocaleString()}</div>
+                  <div className="text-[10px] text-gray-400"><CategoryIcon category="steps" size={11} className="inline align-[-2px] mr-1" />Steps</div>
                 </div>
+              </div>
+
+              {/* Recovery: a bonus, same slim row as Stats and Settings */}
+              <div className="-mt-2 mb-4 px-3 py-2 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(0,209,255,0.06)', border: '1px solid rgba(0,209,255,0.18)' }}>
+                <div className="flex items-center gap-2">
+                  <CategoryIcon category="recovery" size={13} />
+                  <span className="text-xs text-white">Recovery</span>
+                  <span className="text-xs font-bold" style={{ color: '#00D1FF' }}>{recoveryActivities.length}</span>
+                </div>
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ color: '#00D1FF', backgroundColor: 'rgba(0,209,255,0.12)', letterSpacing: '0.04em' }}>BONUS</span>
               </div>
 
               {/* Daily Totals */}
@@ -1604,14 +1662,10 @@ export default function ProfilePage(props) {
                   <SectionIcon type="chart" />
                   <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Daily Totals</span>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,107,107,0.1)' }}>
                     <div className="text-lg font-black" style={{ color: '#FF6B6B' }}>{dayCalories.toLocaleString()}</div>
                     <div className="text-[10px] text-gray-400">Calories Burned</div>
-                  </div>
-                  <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,107,157,0.1)' }}>
-                    <div className="text-lg font-black" style={{ color: '#FF6B9D' }}>{daySteps.toLocaleString()}</div>
-                    <div className="text-[10px] text-gray-400">Steps</div>
                   </div>
                   <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                     <div className="text-lg font-black">{dayMiles ? formatDistanceValue(dayMiles, distanceUnit, 1) : 0} {distanceUnitText}</div>
@@ -1943,7 +1997,7 @@ export default function ProfilePage(props) {
           {statsSubView === 'overview' && (
             <>
 
-              {/* Main Stats Row - Strength / Cardio / Recovery */}
+              {/* Main Stats Row - Strength / Cardio / Steps (the three goals that win the week) */}
               <div className="grid grid-cols-3 gap-2.5 mb-3">
                 <div className="p-3.5 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(0, 255, 148, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
                   <div className="text-3xl font-black" style={{ color: '#00FF94' }}>{totalsData.liftingCount || 0}</div>
@@ -1959,17 +2013,28 @@ export default function ProfilePage(props) {
                     <span>Cardio</span>
                   </div>
                 </div>
-                <div className="p-3.5 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(0, 209, 255, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
-                  <div className="text-3xl font-black" style={{ color: '#00D1FF' }}>{totalsData.recovery}</div>
+                <div className="p-3.5 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(191, 90, 242, 0.08) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
+                  <div className={`${periodSteps >= 10000 ? 'text-[26px] leading-9' : 'text-3xl'} font-black`} style={{ color: '#BF5AF2' }}>{(periodSteps >= 1000000 ? `${(periodSteps / 1000000).toFixed(1)}M` : periodSteps >= 1000 ? `${(periodSteps / 1000).toFixed(1)}K` : periodSteps.toLocaleString())}</div>
                   <div className="text-xs text-gray-400 flex items-center gap-1 mt-1">
-                    <span><CategoryIcon category="recovery" size={14} /></span>
-                    <span>Recovery</span>
+                    <span><CategoryIcon category="steps" size={14} /></span>
+                    <span>Steps</span>
                   </div>
                 </div>
               </div>
 
-              {/* Distance & Steps Row */}
-              <div className="grid grid-cols-2 gap-2.5 mb-4">
+              {/* Recovery: a bonus, not one of the three goals that win the week */}
+              <div className="mb-3 px-3.5 py-2.5 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(0,209,255,0.06)', border: '1px solid rgba(0,209,255,0.18)' }}>
+                <div className="flex items-center gap-2">
+                  <CategoryIcon category="recovery" size={14} />
+                  <span className="text-sm text-white">Recovery</span>
+                  <span className="text-sm font-bold" style={{ color: '#00D1FF' }}>{totalsData.recovery}</span>
+                  <span className="text-xs text-gray-400">sessions</span>
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ color: '#00D1FF', backgroundColor: 'rgba(0,209,255,0.12)', letterSpacing: '0.04em' }}>BONUS</span>
+              </div>
+
+              {/* Distance */}
+              <div className="grid grid-cols-1 gap-2.5 mb-4">
                 {/* Total Distance with breakdown */}
                 <div className="p-3.5 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(255, 87, 87, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
                   <div className="text-2xl font-black" style={{ color: '#FF5757' }}>{milesToDisplay(totalsData.miles, distanceUnit).toFixed(1)}</div>
@@ -1999,69 +2064,6 @@ export default function ProfilePage(props) {
                       )}
                     </div>
                   )}
-                </div>
-                {/* Steps */}
-                <div className="p-3.5 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(168, 130, 255, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
-                  {(() => {
-                    // Sum steps from healthHistory for the selected period
-                    const today = new Date();
-                    const thisMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-                    const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-                    const lastMonthStr = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}`;
-                    const currentYearStr = String(getCurrentYear());
-
-                    let filteredHistory = healthHistory || [];
-                    if (totalsView === 'this-week') {
-                      const dayOfWeek = today.getDay();
-                      const sunday = new Date(today);
-                      sunday.setDate(today.getDate() - dayOfWeek);
-                      const sundayStr = `${sunday.getFullYear()}-${String(sunday.getMonth() + 1).padStart(2, '0')}-${String(sunday.getDate()).padStart(2, '0')}`;
-                      const saturday = new Date(sunday);
-                      saturday.setDate(sunday.getDate() + 6);
-                      const saturdayStr = `${saturday.getFullYear()}-${String(saturday.getMonth() + 1).padStart(2, '0')}-${String(saturday.getDate()).padStart(2, '0')}`;
-                      filteredHistory = filteredHistory.filter(h => h.date >= sundayStr && h.date <= saturdayStr);
-                    } else if (totalsView === 'last-7-days') {
-                      const cutoff = new Date();
-                      cutoff.setDate(cutoff.getDate() - 7);
-                      const cutoffStr = cutoff.toISOString().split('T')[0];
-                      filteredHistory = filteredHistory.filter(h => h.date >= cutoffStr);
-                    } else if (totalsView === 'last-30-days') {
-                      const cutoff = new Date();
-                      cutoff.setDate(cutoff.getDate() - 30);
-                      const cutoffStr = cutoff.toISOString().split('T')[0];
-                      filteredHistory = filteredHistory.filter(h => h.date >= cutoffStr);
-                    } else if (totalsView === 'this-month') {
-                      filteredHistory = filteredHistory.filter(h => h.date?.startsWith(thisMonthStr));
-                    } else if (totalsView === 'last-month') {
-                      filteredHistory = filteredHistory.filter(h => h.date?.startsWith(lastMonthStr));
-                    } else if (totalsView.match(/^\d{4}-\d{2}$/)) {
-                      filteredHistory = filteredHistory.filter(h => h.date?.startsWith(totalsView));
-                    } else if (totalsView === currentYearStr) {
-                      filteredHistory = filteredHistory.filter(h => h.date?.startsWith(currentYearStr));
-                    }
-
-                    const totalSteps = filteredHistory.reduce((sum, h) => sum + (h.steps || 0), 0);
-                    const stepsDisplay = totalSteps >= 1000000 ? `${(totalSteps / 1000000).toFixed(1)}M` : totalSteps >= 1000 ? `${(totalSteps / 1000).toFixed(1)}K` : totalSteps.toLocaleString();
-                    const estMiles = totalSteps / 2100;
-
-                    return (
-                      <>
-                        <div className="text-2xl font-black" style={{ color: '#A882FF' }}>{stepsDisplay}</div>
-                        <div className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
-                          <span><CategoryIcon category="steps" size={14} /></span>
-                          <span>Steps</span>
-                        </div>
-                        {estMiles >= 0.1 && (
-                          <div className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                            <div className="flex items-center justify-between text-[10px]">
-                              <span className="text-gray-500">📍 Est. distance</span>
-                              <span className="text-gray-400 font-medium">{formatDistanceValue(estMiles, distanceUnit, 1)} {distanceUnitText}</span>
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    );
-                  })()}
                 </div>
               </div>
 
@@ -2373,6 +2375,19 @@ export default function ProfilePage(props) {
                     </div>
                     <div className="text-base font-bold text-white">
                       {records.mostMilesWeek ? `${formatDistanceValue(records.mostMilesWeek, distanceUnit, 1)} ${distanceUnitText}` : '—'}
+                    </div>
+                  </div>
+
+                  <div className="border-t border-white/5" />
+
+                  {/* Most Steps */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <CategoryIcon category="steps" size={14} />
+                      <div className="text-xs text-gray-500">Most Steps</div>
+                    </div>
+                    <div className="text-base font-bold" style={{ color: records.mostStepsWeek ? '#BF5AF2' : 'white' }}>
+                      {records.mostStepsWeek ? records.mostStepsWeek.toLocaleString() : '—'}
                     </div>
                   </div>
                 </div>
@@ -2907,6 +2922,11 @@ export default function ProfilePage(props) {
               const strengthSessions = activitiesBetween.filter(a => getActivityCategory(a) === 'lifting').length;
               const cardioSessions = activitiesBetween.filter(a => getActivityCategory(a) === 'cardio').length;
               const recoverySessions = activitiesBetween.filter(a => getActivityCategory(a) === 'recovery').length;
+              // Steps between the two photos (Apple Health). Steps are one of the three goals that
+              // win the week, so they take the fourth tile; Recovery moves to a slim bonus row.
+              // Without step data the old four tiles (Recovery included) stay.
+              const totalSteps = (healthHistory || []).reduce((sum, h) => (h?.date >= before.date && h?.date <= after.date ? sum + (h.steps || 0) : sum), 0);
+              const showSteps = totalSteps > 0;
 
               return (
                 <div
@@ -2979,7 +2999,7 @@ export default function ProfilePage(props) {
                         <div className="grid grid-cols-2 gap-3">
                           {/* All four tiles take their mark and colour from CategoryIcon /
                               CATEGORY_COLORS, so this card matches Home and the leaderboard:
-                              calories red, strength green, cardio orange, recovery cyan. */}
+                              calories red, strength green, cardio orange, steps purple. */}
                           {/* Calories */}
                           <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,107,107,0.1)' }}>
                             <p className="text-xl flex justify-center" data-share-icon="calories"><CategoryIcon category="calories" size={20} /></p>
@@ -3001,13 +3021,35 @@ export default function ProfilePage(props) {
                             <p className="text-xs text-gray-400 mt-1">cardio sessions</p>
                           </div>
 
-                          {/* Recovery */}
-                          <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
-                            <p className="text-xl flex justify-center" data-share-icon="recovery"><CategoryIcon category="recovery" size={20} /></p>
-                            <p className="text-2xl font-bold" style={{ color: '#00D1FF' }}>{recoverySessions}</p>
-                            <p className="text-xs text-gray-400 mt-1">recovery sessions</p>
-                          </div>
+                          {showSteps ? (
+                            /* Steps */
+                            <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(191,90,242,0.1)' }}>
+                              <p className="text-xl flex justify-center" data-share-icon="steps"><CategoryIcon category="steps" size={20} /></p>
+                              <p className="text-2xl font-bold" style={{ color: '#BF5AF2' }}>{totalSteps.toLocaleString()}</p>
+                              <p className="text-xs text-gray-400 mt-1">steps walked</p>
+                            </div>
+                          ) : (
+                            /* Recovery (no step data) */
+                            <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
+                              <p className="text-xl flex justify-center" data-share-icon="recovery"><CategoryIcon category="recovery" size={20} /></p>
+                              <p className="text-2xl font-bold" style={{ color: '#00D1FF' }}>{recoverySessions}</p>
+                              <p className="text-xs text-gray-400 mt-1">recovery sessions</p>
+                            </div>
+                          )}
                         </div>
+
+                        {/* Recovery as a bonus, same slim row as Profile and Settings */}
+                        {showSteps && (
+                          <div className="mt-3 px-3 py-2.5 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(0,209,255,0.06)', border: '1px solid rgba(0,209,255,0.18)' }}>
+                            <div className="flex items-center gap-2">
+                              <CategoryIcon category="recovery" size={15} />
+                              <span className="text-sm text-white">Recovery</span>
+                              <span className="text-sm font-bold" style={{ color: '#00D1FF' }}>{recoverySessions}</span>
+                              <span className="text-xs text-gray-400">sessions</span>
+                            </div>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ color: '#00D1FF', backgroundColor: 'rgba(0,209,255,0.12)', letterSpacing: '0.04em' }}>BONUS</span>
+                          </div>
+                        )}
                       </div>
 
                       {/* Branding for share image */}
@@ -3146,7 +3188,9 @@ export default function ProfilePage(props) {
                               { icon: 'calories', value: totalCalories.toLocaleString(), label: 'calories burned', color: '#FF6B6B', bg: 'rgba(255,107,107,0.15)' },
                               { icon: 'lifts', value: strengthSessions.toString(), label: 'strength sessions', color: '#00FF94', bg: 'rgba(0,255,148,0.15)' },
                               { icon: 'cardio', value: cardioSessions.toString(), label: 'cardio sessions', color: '#FF9500', bg: 'rgba(255,149,0,0.15)' },
-                              { icon: 'recovery', value: recoverySessions.toString(), label: 'recovery sessions', color: '#00D1FF', bg: 'rgba(0,209,255,0.15)' }
+                              showSteps
+                                ? { icon: 'steps', value: totalSteps.toLocaleString(), label: 'steps walked', color: '#BF5AF2', bg: 'rgba(191,90,242,0.15)' }
+                                : { icon: 'recovery', value: recoverySessions.toString(), label: 'recovery sessions', color: '#00D1FF', bg: 'rgba(0,209,255,0.15)' }
                             ];
 
                             // Serialise a tile's <svg> into an Image the canvas can draw.

@@ -18,6 +18,17 @@ import ZoomablePhoto from './ZoomablePhoto';
  * (Challenge / Remove Friend / Send Request / Close) since friendship-state logic lives
  * outside this component.
  */
+const RecoveryBonusRow = ({ children }) => (
+  <div className="mt-2 px-2.5 py-2 rounded-lg flex items-center justify-between" style={{ backgroundColor: 'rgba(0,209,255,0.06)', border: '1px solid rgba(0,209,255,0.18)' }}>
+    <div className="flex items-center gap-1.5 text-xs">
+      <CategoryIcon category="recovery" size={12} />
+      <span className="text-white">Recovery</span>
+      {children}
+    </div>
+    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ color: '#00D1FF', backgroundColor: 'rgba(0,209,255,0.12)', letterSpacing: '0.04em' }}>BONUS</span>
+  </div>
+);
+
 export default function FriendProfileCard({ friend, onClose, actions = null, preloadedProfile = null }) {
   const [isAnimating, setIsAnimating] = useState(false);
   // When `preloadedProfile` is provided (e.g., the current user's own card — App already
@@ -221,14 +232,15 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
             {/* 🔥 Streak Records — longest streaks ever in each category */}
             <SectionHeader emoji="🔥" label="Streak Records" />
             <div
-              className="rounded-xl p-2.5 mb-3 grid grid-cols-5 gap-1"
+              className="rounded-xl p-2.5 mb-3"
               style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
             >
-              <StreakPill value={bestMaster} label="Winning" color="#FFD60A" />
-              <StreakPill value={bestStrength} label="Strength" color="#00FF94" />
-              <StreakPill value={bestCardio} label="Cardio" color="#FF9500" />
-              <StreakPill value={bestSteps} label="Steps" color="#BF5AF2" />
-              <StreakPill value={bestRecovery} label="Recovery" color="#00D1FF" />
+              <div className="grid grid-cols-4 gap-1">
+                <StreakPill value={bestMaster} label="Winning" color="#FFD60A" />
+                <StreakPill value={bestStrength} label="Strength" color="#00FF94" />
+                <StreakPill value={bestCardio} label="Cardio" color="#FF9500" />
+                <StreakPill value={bestSteps} label="Steps" color="#BF5AF2" />
+              </div>
             </div>
 
             {/* 🏆 All-Time Bests */}
@@ -243,17 +255,21 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
               <BestRow icon="📍" label="Most Miles in a Week" value={mostMilesWeek ? `${mostMilesWeek.toFixed(1)} mi` : '—'} />
             </div>
 
-            {/* Current Streaks — compact 3-up row matching Streak Records visual rhythm.
-                Master is already in the headline triplet, so this only shows category breakdowns. */}
+            {/* Current Streaks — the three goals that win the week, then Recovery as a bonus row.
+                Winning is already in the headline triplet. */}
             <SectionHeader emoji="📈" label="Current Streaks" />
             <div
-              className="rounded-xl p-2.5 grid grid-cols-4 gap-1"
+              className="rounded-xl p-2.5"
               style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
             >
-              <StreakPill value={liftsStreak} label="Strength" color="#00FF94" />
-              <StreakPill value={cardioStreak} label="Cardio" color="#FF9500" />
-              <StreakPill value={stepsStreak} label="Steps" color="#BF5AF2" />
-              <StreakPill value={recoveryStreak} label="Recovery" color="#00D1FF" />
+              <div className="grid grid-cols-3 gap-1">
+                <StreakPill value={liftsStreak} label="Strength" color="#00FF94" />
+                <StreakPill value={cardioStreak} label="Cardio" color="#FF9500" />
+                <StreakPill value={stepsStreak} label="Steps" color="#BF5AF2" />
+              </div>
+              {/* Recovery is a bonus (its own streak, doesn't win the week): one slim row with
+                  current and best, instead of a pill in each section */}
+              <RecoveryBonusRow><span className="font-bold" style={{ color: '#00D1FF' }}>{recoveryStreak}w</span><span className="text-gray-500">· best {bestRecovery}w</span></RecoveryBonusRow>
             </div>
           </div>
 

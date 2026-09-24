@@ -339,7 +339,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
 
   const metricConfig = {
     calories: { label: 'Calories', cat: 'calories', unit: 'cal', color: '#FF6B6B' },
-    steps: { label: 'Steps', cat: 'steps', unit: 'steps', color: '#00D1FF' },
+    steps: { label: 'Steps', cat: 'steps', unit: 'steps', color: '#BF5AF2' },
     miles: { label: 'Miles', icon: '📍', unit: 'mi', color: '#00FF94' }
   };
 
@@ -678,7 +678,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
 
             {rangeActivities.length > 0 ? (
               <div className="space-y-3">
-                {/* Summary Stats */}
+                {/* Summary Stats — the three goals that win the week */}
                 <div className="grid grid-cols-3 gap-2">
                   <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
                     <div className="text-lg font-black" style={{ color: '#00FF94' }}>{lifts.length}</div>
@@ -688,21 +688,27 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
                     <div className="text-lg font-black" style={{ color: '#FF9500' }}>{cardioActivities.length}</div>
                     <div className="text-[9px] text-gray-400"><CategoryIcon category="cardio" size={10} className="inline align-[-2px] mr-1" />Cardio</div>
                   </div>
-                  <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
-                    <div className="text-lg font-black" style={{ color: '#00D1FF' }}>{recoveryActivities.length}</div>
-                    <div className="text-[9px] text-gray-400"><CategoryIcon category="recovery" size={10} className="inline align-[-2px] mr-1" />Recovery</div>
+                  <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(191,90,242,0.1)' }}>
+                    <div className="text-lg font-black" style={{ color: '#BF5AF2' }}>{daySteps >= 10000 ? `${Math.round(daySteps / 1000)}k` : daySteps.toLocaleString()}</div>
+                    <div className="text-[9px] text-gray-400"><CategoryIcon category="steps" size={10} className="inline align-[-2px] mr-1" />Steps</div>
                   </div>
                 </div>
 
-                {/* Daily Totals */}
-                <div className="grid grid-cols-4 gap-2">
+                {/* Recovery as a bonus, same slim row as Profile and Settings */}
+                <div className="px-3 py-2 rounded-lg flex items-center justify-between" style={{ backgroundColor: 'rgba(0,209,255,0.06)', border: '1px solid rgba(0,209,255,0.18)' }}>
+                  <div className="flex items-center gap-1.5">
+                    <CategoryIcon category="recovery" size={12} />
+                    <span className="text-xs text-white">Recovery</span>
+                    <span className="text-xs font-bold" style={{ color: '#00D1FF' }}>{recoveryActivities.length}</span>
+                  </div>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ color: '#00D1FF', backgroundColor: 'rgba(0,209,255,0.12)', letterSpacing: '0.04em' }}>BONUS</span>
+                </div>
+
+                {/* Totals */}
+                <div className="grid grid-cols-3 gap-2">
                   <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,107,107,0.1)' }}>
                     <div className="text-sm font-bold" style={{ color: '#FF6B6B' }}>{dayCalories.toLocaleString()}</div>
                     <div className="text-[9px] text-gray-400">Calories</div>
-                  </div>
-                  <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,107,157,0.1)' }}>
-                    <div className="text-sm font-bold" style={{ color: '#FF6B9D' }}>{daySteps.toLocaleString()}</div>
-                    <div className="text-[9px] text-gray-400">Steps</div>
                   </div>
                   <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                     <div className="text-sm font-bold text-white">{dayMiles.toFixed(1)}</div>

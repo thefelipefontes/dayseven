@@ -94,7 +94,7 @@ struct DashboardView: View {
             Text("\(appVM.streaks.master)")
                 .font(.system(size: 28, weight: .black, design: .rounded))
                 .foregroundColor(.white)
-            Text(appVM.injuryModeActive ? "streak · paused" : "week streak")
+            Text(appVM.injuryModeActive ? "streak · paused" : "winning streak")
                 .font(.system(size: 11))
                 .foregroundColor(appVM.injuryModeActive ? Color(red: 0.655, green: 0.545, blue: 0.980) : .gray)
         }
@@ -133,7 +133,7 @@ struct DashboardView: View {
             HStack(spacing: 3) {
                 Image(systemName: "figure.walk")
                     .font(.system(size: 10))
-                    .foregroundColor(.green)
+                    .foregroundColor(AppColors.steps)
                 Text(formatNumber(appVM.todaySteps))
                     .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundColor(.white)

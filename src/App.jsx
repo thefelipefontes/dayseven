@@ -12064,105 +12064,111 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
     );
   };
 
-  return (
-    <div className="pb-32">
-      {/* Daily Stats - Single Card */}
-      <div className="px-4 mb-4">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <SectionIcon type="activity" />
-              <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Today's Activity</span>
-            </div>
-            <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Synced from Apple Health</p>
+  // Today's Activity: today's steps (a count) and today's workouts. Sits under This Week's
+  // Goals — the week is the headline ("win the week, not the day").
+  const todayActivitySection = (
+    <>
+    {/* Daily Stats - Single Card */}
+    <div className="px-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <SectionIcon type="activity" />
+            <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Today's Activity</span>
           </div>
-        </div>
-        
-        <div className="p-4 rounded-2xl space-y-3" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-          {/* Steps today — a count, not a daily goal ("win the week, not the day"). The
-              target lives on the Steps ring below, which tracks the week. */}
-          <div className="flex items-center gap-3">
-            <span className="text-lg"><CategoryIcon category="steps" size={18} /></span>
-            <div className="flex-1 flex items-baseline justify-between">
-              <span className="text-xs text-gray-400">Steps today</span>
-              <span className="text-[22px] font-extrabold" style={{ letterSpacing: '-0.3px' }}>{(weekProgress.steps?.today || 0).toLocaleString()}</span>
-            </div>
-          </div>
-
-          {/* Today's workouts (strength, cardio, recovery), one compact row each. The weekly
-              steps and pace now live on the Steps ring in This Week's Goals. */}
-          <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
-          {todaysWorkouts.length > 0 ? (
-            <div className="space-y-1">
-              {todaysWorkouts.map((act, i) => {
-                const cat = getActivityCategory(act);
-                const tint = cat === 'recovery' ? '0,209,255' : cat === 'cardio' ? '255,149,0' : '0,255,148';
-                const name = act.type === 'Other' ? (act.subtype || 'Other')
-                  : act.type === 'Strength Training' ? (() => {
-                    const st = act.strengthType || 'Strength Training';
-                    const areas = normalizeFocusAreas(act.focusAreas || (act.focusArea ? [act.focusArea] : []));
-                    return areas.length > 0 ? `${st} · ${areas.join(', ')}` : (act.subtype || st);
-                  })()
-                  : (act.subtype ? `${act.type} · ${act.subtype}` : act.type);
-                const unit = resolveUnit(userProfile);
-                const miles = parseFloat(act.distance);
-                const details = [
-                  act.time || null,
-                  miles > 0 ? formatDistance(miles, unit, 1) : null,
-                  act.duration ? `${act.duration} min` : null,
-                  miles > 0 && act.duration && cat !== 'lifting' ? formatPaceFromMinutesAndMiles(act.duration, miles, unit) : null,
-                  !(miles > 0) && act.calories ? `${act.calories} cal` : null,
-                  !(miles > 0) && act.avgHr ? `♥ ${act.avgHr}` : null,
-                ].filter(Boolean);
-                return (
-                  <button
-                    key={act.id || i}
-                    onClick={() => { triggerHaptic(ImpactStyle.Light); setSelectedActivity(act); }}
-                    className="w-full flex items-center gap-3 py-1.5 text-left active:opacity-70 transition-opacity"
-                  >
-                    <div className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `rgba(${tint},0.1)` }}>
-                      <ActivityIcon type={act.type} subtype={act.subtype} size={17} sportEmoji={act.sportEmoji} customEmoji={act.customEmoji} customIcon={act.customIcon} countToward={act.countToward} customActivityCategory={act.customActivityCategory} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[13.5px] font-semibold truncate">{name}</div>
-                      <div className="text-[11.5px] text-gray-400 truncate">{details.join('  ·  ')}</div>
-                    </div>
-                    <span className="text-gray-600 text-xs">›</span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-[12.5px] leading-snug" style={{ color: '#9ca3af' }}>
-              <span className="font-semibold" style={{ color: '#ddd' }}>No workout yet today.</span> A rest day still counts toward a winning week.
-            </p>
-          )}
-
-          {/* Calories — optional (Settings → Health) */}
-          {showCaloriesOnHome && (<>
-          <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
-          <div className="flex items-center gap-3">
-            <CategoryIcon category="calories" size={18} />
-            <div className="flex-1">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs text-gray-400">Active Calories</span>
-                <span className="text-xs font-bold">{weekProgress.calories.burned.toLocaleString()} / {(weekProgress.calories.goal || 500).toLocaleString()}</span>
-              </div>
-              <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
-                <div 
-                  className="h-full rounded-full transition-all duration-1000"
-                  style={{ 
-                    width: `${Math.min(caloriesPercent, 100)}%`,
-                    backgroundColor: '#FF6B6B'
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-          </>)}
+          <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Synced from Apple Health</p>
         </div>
       </div>
+      
+      <div className="p-4 rounded-2xl space-y-3" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+        {/* Steps today — a count, not a daily goal ("win the week, not the day"). The
+            target lives on the Steps ring below, which tracks the week. */}
+        <div className="flex items-center gap-3">
+          <span className="text-lg"><CategoryIcon category="steps" size={18} /></span>
+          <div className="flex-1 flex items-baseline justify-between">
+            <span className="text-xs text-gray-400">Steps today</span>
+            <span className="text-[22px] font-extrabold" style={{ letterSpacing: '-0.3px' }}>{(weekProgress.steps?.today || 0).toLocaleString()}</span>
+          </div>
+        </div>
 
+        {/* Today's workouts (strength, cardio, recovery), one compact row each. The weekly
+            steps and pace now live on the Steps ring in This Week's Goals. */}
+        <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
+        {todaysWorkouts.length > 0 ? (
+          <div className="space-y-1">
+            {todaysWorkouts.map((act, i) => {
+              const cat = getActivityCategory(act);
+              const tint = cat === 'recovery' ? '0,209,255' : cat === 'cardio' ? '255,149,0' : '0,255,148';
+              const name = act.type === 'Other' ? (act.subtype || 'Other')
+                : act.type === 'Strength Training' ? (() => {
+                  const st = act.strengthType || 'Strength Training';
+                  const areas = normalizeFocusAreas(act.focusAreas || (act.focusArea ? [act.focusArea] : []));
+                  return areas.length > 0 ? `${st} · ${areas.join(', ')}` : (act.subtype || st);
+                })()
+                : (act.subtype ? `${act.type} · ${act.subtype}` : act.type);
+              const unit = resolveUnit(userProfile);
+              const miles = parseFloat(act.distance);
+              const details = [
+                act.time || null,
+                miles > 0 ? formatDistance(miles, unit, 1) : null,
+                act.duration ? `${act.duration} min` : null,
+                miles > 0 && act.duration && cat !== 'lifting' ? formatPaceFromMinutesAndMiles(act.duration, miles, unit) : null,
+                !(miles > 0) && act.calories ? `${act.calories} cal` : null,
+                !(miles > 0) && act.avgHr ? `♥ ${act.avgHr}` : null,
+              ].filter(Boolean);
+              return (
+                <button
+                  key={act.id || i}
+                  onClick={() => { triggerHaptic(ImpactStyle.Light); setSelectedActivity(act); }}
+                  className="w-full flex items-center gap-3 py-1.5 text-left active:opacity-70 transition-opacity"
+                >
+                  <div className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `rgba(${tint},0.1)` }}>
+                    <ActivityIcon type={act.type} subtype={act.subtype} size={17} sportEmoji={act.sportEmoji} customEmoji={act.customEmoji} customIcon={act.customIcon} countToward={act.countToward} customActivityCategory={act.customActivityCategory} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13.5px] font-semibold truncate">{name}</div>
+                    <div className="text-[11.5px] text-gray-400 truncate">{details.join('  ·  ')}</div>
+                  </div>
+                  <span className="text-gray-600 text-xs">›</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-[12.5px] leading-snug" style={{ color: '#9ca3af' }}>
+            <span className="font-semibold" style={{ color: '#ddd' }}>No workout yet today.</span> A rest day still counts toward a winning week.
+          </p>
+        )}
+
+        {/* Calories — optional (Settings → Health) */}
+        {showCaloriesOnHome && (<>
+        <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
+        <div className="flex items-center gap-3">
+          <CategoryIcon category="calories" size={18} />
+          <div className="flex-1">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-gray-400">Active Calories</span>
+              <span className="text-xs font-bold">{weekProgress.calories.burned.toLocaleString()} / {(weekProgress.calories.goal || 500).toLocaleString()}</span>
+            </div>
+            <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
+              <div 
+                className="h-full rounded-full transition-all duration-1000"
+                style={{ 
+                  width: `${Math.min(caloriesPercent, 100)}%`,
+                  backgroundColor: '#FF6B6B'
+                }}
+              />
+            </div>
+          </div>
+        </div>
+        </>)}
+      </div>
+    </div>
+    </>
+  );
+
+  return (
+    <div className="pb-32">
       {/* Auto-Imported Summary Banner - Shows after onboarding auto-import */}
       {autoImportedCount > 0 && (
         <div className="mx-4 mb-4">
@@ -12522,11 +12528,6 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
           </div>
         </div>
       )}
-
-      {/* Section Divider */}
-      <div className="mx-4 mb-4">
-        <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
-      </div>
 
       {/* Weekly Goals - Hero Section */}
       <div className="mx-4 mb-4">
@@ -13497,6 +13498,8 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         {/* End of weeklyGoalsRef wrapper */}
       </div>
 
+      {todayActivitySection}
+
       {/* Weekly Planner — collapsible; sits directly under This Week's Goals */}
       <WeeklyPlanner
         goals={userData?.goals}
@@ -14317,6 +14320,7 @@ export default function DaySevenApp() {
               lifts: freshProfile.streaks.lifts ?? prev.streaks.lifts,
               cardio: freshProfile.streaks.cardio ?? prev.streaks.cardio,
               recovery: freshProfile.streaks.recovery ?? prev.streaks.recovery,
+              steps: freshProfile.streaks.steps ?? prev.streaks.steps, // weekly steps streak (counts toward the Winning Streak)
               stepsGoal: freshProfile.streaks.stepsGoal ?? prev.streaks.stepsGoal
             }
           }));
@@ -15218,6 +15222,7 @@ export default function DaySevenApp() {
                 lifts: profileForStreaks.streaks.lifts ?? prev.streaks.lifts,
                 cardio: profileForStreaks.streaks.cardio ?? prev.streaks.cardio,
                 recovery: profileForStreaks.streaks.recovery ?? prev.streaks.recovery,
+                steps: profileForStreaks.streaks.steps ?? prev.streaks.steps, // weekly steps streak (counts toward the Winning Streak)
                 stepsGoal: profileForStreaks.streaks.stepsGoal ?? prev.streaks.stepsGoal
               }
             }));
@@ -16273,6 +16278,7 @@ export default function DaySevenApp() {
                     lifts: freshProfile.streaks.lifts ?? prev.streaks.lifts,
                     cardio: freshProfile.streaks.cardio ?? prev.streaks.cardio,
                     recovery: freshProfile.streaks.recovery ?? prev.streaks.recovery,
+                    steps: freshProfile.streaks.steps ?? prev.streaks.steps, // weekly steps streak (counts toward the Winning Streak)
                     stepsGoal: freshProfile.streaks.stepsGoal ?? prev.streaks.stepsGoal
                   }
                 }));

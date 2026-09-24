@@ -12229,18 +12229,28 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
               ? `${workouts[0].time} • ${workouts[0].duration} min • Needs details to count towards goals`
               : `${workouts[0].appleWorkoutName || workouts[0].subtype || workouts[0].type} • ${workouts[0].time} • ${workouts[0].duration} min`)
             : (isUncategorized ? 'Needs details to count towards goals' : 'Tap to view and add');
+          const openPending = () => {
+            if (workouts.length === 1) {
+              onAddActivity(workouts[0]);
+            } else {
+              setShowWorkoutPicker(true);
+            }
+          };
 
           return (
             <div className="mb-3" key={isUncategorized ? 'uncategorized' : 'categorized'}>
-              <button
-                onClick={() => {
-                  if (workouts.length === 1) {
-                    onAddActivity(workouts[0]);
-                  } else {
-                    setShowWorkoutPicker(true);
+              {/* A div, not a <button>: the dismiss × below is a real button, and buttons can't nest */}
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={openPending}
+                onKeyDown={(e) => {
+                  if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault();
+                    openPending();
                   }
                 }}
-                className="w-full p-3 rounded-xl flex items-center gap-3 transition-all duration-150"
+                className="w-full p-3 rounded-xl flex items-center gap-3 transition-all duration-150 cursor-pointer"
                 style={{ backgroundColor: `rgba(${rgb},0.1)`, border: `1px solid rgba(${rgb},0.3)` }}
                 onTouchStart={(e) => {
                   e.currentTarget.style.transform = 'scale(0.98)';
@@ -12314,7 +12324,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                 >
                   <span className="text-gray-400 text-xs">✕</span>
                 </button>
-              </button>
+              </div>
             </div>
           );
         };

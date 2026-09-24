@@ -166,6 +166,9 @@ struct WidgetStreakData {
 
     var weekStepsGoal: Int { stepsGoal * 7 }
 
+    /// The Steps ring: this week's steps against the weekly goal.
+    var weekStepsProgress: Double { weekStepsGoal > 0 ? min(Double(weekSteps) / Double(weekStepsGoal), 1.0) : 0 }
+
     /// Week steps vs. the daily goal × finished days. Today can only put you ahead.
     var stepsAheadBy: Int { weekSteps - stepsGoal * Self.finishedDaysThisWeek }
 
@@ -201,14 +204,15 @@ struct WidgetStreakData {
         min(Double(recoveryCompleted) / Double(recoveryGoal), 1.0)
     }
 
+    // The three goal rings: Strength, Cardio, weekly Steps (Recovery is a bonus, not a ring).
     var totalCategoriesCompleted: Int {
         (liftsCompleted >= liftsGoal ? 1 : 0) +
         (cardioCompleted >= cardioGoal ? 1 : 0) +
-        (recoveryCompleted >= recoveryGoal ? 1 : 0)
+        (weekSteps >= weekStepsGoal ? 1 : 0)
     }
 
     var overallProgress: Double {
-        (liftsProgress + cardioProgress + recoveryProgress) / 3.0
+        (liftsProgress + cardioProgress + weekStepsProgress) / 3.0
     }
 
     static let empty = WidgetStreakData(

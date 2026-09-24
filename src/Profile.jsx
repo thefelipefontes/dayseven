@@ -952,6 +952,7 @@ export default function ProfilePage(props) {
           ) : null;
 
           return (
+            <>
             <div className="grid grid-cols-3 gap-2">
               {/* Strength Streak */}
               <div className="px-2.5 py-2 rounded-xl bg-zinc-800/60 relative overflow-hidden">
@@ -977,18 +978,31 @@ export default function ProfilePage(props) {
                 <span className="text-[10px] text-gray-500 block">{goals.cardioPerWeek}+/week</span>
               </div>
 
-              {/* Recovery Streak */}
+              {/* Steps Streak — weekly steps goal (stepsPerDay × 7); counts toward the Winning Streak */}
               <div className="px-2.5 py-2 rounded-xl bg-zinc-800/60 relative overflow-hidden">
-                <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ backgroundColor: '#00D1FF' }}></div>
-                <CheckBadge met={cwRecoveryOk} color="#00D1FF" />
+                <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ backgroundColor: '#BF5AF2' }}></div>
+                <CheckBadge met={cwJudged.steps} color="#BF5AF2" />
                 <div className="flex items-center gap-1.5">
-                  <span className="text-sm"><CategoryIcon category="recovery" size={14} /></span>
-                  <span className="text-lg font-bold leading-tight" style={{ color: '#00D1FF' }}>{streaks.recovery}</span>
+                  <span className="text-sm"><CategoryIcon category="steps" size={14} /></span>
+                  <span className="text-lg font-bold leading-tight" style={{ color: '#BF5AF2' }}>{streaks.steps || 0}</span>
                 </div>
-                <span className="text-[11px] text-gray-400">Recovery</span>
-                <span className="text-[10px] text-gray-500 block">{goals.recoveryPerWeek}+/week</span>
+                <span className="text-[11px] text-gray-400">Steps</span>
+                <span className="text-[10px] text-gray-500 block">{Math.round((goals.stepsPerDay || 10000) * 7 / 1000)}k/week</span>
               </div>
             </div>
+
+            {/* Recovery — its own streak, a bonus: it doesn't count toward the Winning Streak */}
+            <div className="mt-2 px-3 py-2 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(0,209,255,0.06)', border: '1px solid rgba(0,209,255,0.15)' }}>
+              <span className="flex items-center gap-2 text-xs">
+                <CategoryIcon category="recovery" size={13} />
+                <span className="text-white">Recovery</span>
+                <span className="font-bold" style={{ color: '#00D1FF' }}>{streaks.recovery || 0}w</span>
+                <span className="text-gray-500">{goals.recoveryPerWeek}+/week</span>
+                {cwRecoveryOk && <span className="text-[10px] font-bold" style={{ color: '#00D1FF' }}>✓</span>}
+              </span>
+              <span className="text-[8px] font-bold tracking-wider uppercase px-1.5 py-[1px] rounded-full" style={{ backgroundColor: 'rgba(0,209,255,0.12)', color: '#00D1FF' }}>Bonus</span>
+            </div>
+            </>
           );
         })()}
       </div>
@@ -2154,7 +2168,7 @@ export default function ProfilePage(props) {
                   </div>
 
                   {/* Other Streaks */}
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-4 gap-2">
                     <div>
                       <div className="text-[10px] text-gray-600 mb-1"><CategoryIcon category="lifts" size={11} className="inline align-[-2px] mr-1" />Strength</div>
                       <div className="text-lg font-bold text-white">
@@ -2165,6 +2179,12 @@ export default function ProfilePage(props) {
                       <div className="text-[10px] text-gray-600 mb-1"><CategoryIcon category="cardio" size={11} className="inline align-[-2px] mr-1" />Cardio</div>
                       <div className="text-lg font-bold text-white">
                         {records.longestCardioStreak ? `${records.longestCardioStreak}w` : '—'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-gray-600 mb-1"><CategoryIcon category="steps" size={11} className="inline align-[-2px] mr-1" />Steps</div>
+                      <div className="text-lg font-bold text-white">
+                        {records.longestStepsStreak ? `${records.longestStepsStreak}w` : '—'}
                       </div>
                     </div>
                     <div>

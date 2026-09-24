@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { fetchHealthKitWorkouts, requestHealthKitAuthorization, getHealthConnectionStatus, openHealthSettings } from './services/healthService';
+import { fetchHealthKitWorkouts, fetchDailyHealthRange, requestHealthKitAuthorization, getHealthConnectionStatus, openHealthSettings } from './services/healthService';
 import { requestNotificationPermission } from './services/notificationService';
 import WeeklyPlanner from './WeeklyPlanner';
 
@@ -16,8 +16,14 @@ import WeeklyPlanner from './WeeklyPlanner';
 export const RING_COLORS = {
   strength: '#00FF94',
   cardio: '#FF9500',
+  steps: '#BF5AF2',
   recovery: '#00D1FF',
 };
+
+// The third ring is weekly Steps (stepsPerDay × 7) — it counts toward winning the week;
+// Recovery is a bonus with its own streak (utils/weekGoals).
+const weekStepsGoalOf = (weeklyGoals) => (weeklyGoals?.stepsPerDay || 10000) * 7;
+const formatStepsK = (n) => `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
 
 const pressProps = {
   onTouchStart: (e) => { e.currentTarget.style.transform = 'scale(0.95)'; },
@@ -172,11 +178,6 @@ function strengthCreditLabel(origin) {
 function cardioCreditLabel(origin) {
   if (origin === 'lifter_adding_cardio') return 'Cycling';
   return 'Running';
-}
-
-function recoveryCreditLabel(recovery = []) {
-  if (recovery.includes('cold_plunge_sauna')) return 'Cold Plunge';
-  return 'Yoga';
 }
 
 // Map a credit ring → activity-shaped fields so it integrates with the
@@ -561,7 +562,7 @@ function ResultsScreen({ answers, weeklyGoals, onContinue }) {
             <div className="flex items-start justify-around mb-4">
               <Ring color={RING_COLORS.strength} progress={progress} size={104} stroke={10} label="Strength" goal={weeklyGoals.strength} goalOnly />
               <Ring color={RING_COLORS.cardio}   progress={progress} size={104} stroke={10} label="Cardio"   goal={weeklyGoals.cardio}   goalOnly />
-              <Ring color={RING_COLORS.recovery} progress={progress} size={104} stroke={10} label="Recovery" goal={weeklyGoals.recovery} goalOnly />
+              <Ring color={RING_COLORS.steps} progress={progress} size={104} stroke={10} label="Steps" goal={formatStepsK(weekStepsGoalOf(weeklyGoals))} goalOnly />
             </div>
 
             {/* Suggestion caption — signals these are derived from the survey
@@ -620,7 +621,7 @@ function CustomizeWeekScreen({ weeklyGoals, onUpdateGoals, onBack, onContinue })
           <div className="flex items-start justify-around mb-8">
             <Ring color={RING_COLORS.strength} progress={0.08} size={68} stroke={7} label="Strength" goal={weeklyGoals.strength} goalOnly />
             <Ring color={RING_COLORS.cardio}   progress={0.08} size={68} stroke={7} label="Cardio"   goal={weeklyGoals.cardio}   goalOnly />
-            <Ring color={RING_COLORS.recovery} progress={0.08} size={68} stroke={7} label="Recovery" goal={weeklyGoals.recovery} goalOnly />
+            <Ring color={RING_COLORS.steps} progress={0.08} size={68} stroke={7} label="Steps" goal={formatStepsK(weekStepsGoalOf(weeklyGoals))} goalOnly />
           </div>
 
           <div className="mb-5">
@@ -653,7 +654,9 @@ function CustomizeWeekScreen({ weeklyGoals, onUpdateGoals, onBack, onContinue })
             <div className="flex items-center gap-2 mb-2">
               <div className="w-2 h-2 rounded-full" style={{ backgroundColor: RING_COLORS.recovery }} />
               <label className="text-[14px] font-semibold">Recovery sessions / week</label>
+              <span className="text-[9px] font-bold tracking-wider uppercase px-1.5 py-[1px] rounded-full" style={{ backgroundColor: 'rgba(0,209,255,0.12)', color: RING_COLORS.recovery }}>Bonus</span>
             </div>
+            <p className="text-xs text-gray-500 mb-3 ml-4">Its own streak — it doesn't count toward winning the week. Your steps goal is on the next screen.</p>
             <GoalChips
               color={RING_COLORS.recovery}
               value={weeklyGoals.recovery}
@@ -704,7 +707,7 @@ function DailyTargetsScreen({ weeklyGoals, onUpdateGoals, distanceUnit, onUpdate
         <div className="max-w-md mx-auto">
           <h2 className="text-2xl font-bold mb-2">Set your daily baseline.</h2>
           <p className="text-gray-400 text-[14px] leading-relaxed mb-3">
-            Two floors to hit every day — a step count and an active calorie burn.
+            A step target and a daily active-calorie floor.
           </p>
           <div className="rounded-xl p-3 mb-7 flex items-start gap-2" style={{ backgroundColor: 'rgba(0,209,255,0.08)', border: '1px solid rgba(0,209,255,0.2)' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00D1FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginTop: 1, flexShrink: 0 }}>
@@ -713,18 +716,18 @@ function DailyTargetsScreen({ weeklyGoals, onUpdateGoals, distanceUnit, onUpdate
               <line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
             <p className="text-[12px] leading-snug" style={{ color: '#E0F7FF' }}>
-              These don't count toward your weekly rings — they're a daily movement floor to keep you honest on rest days.
+              Steps are your third ring, counted across the week (× 7) — a slow day just means a bigger one later. Calories are only a daily floor.
             </p>
           </div>
 
           <div className="mb-7">
             <div className="flex items-center gap-2 mb-2">
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: RING_COLORS.strength }} />
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: RING_COLORS.steps }} />
               <label className="text-[14px] font-semibold">Steps / day</label>
             </div>
-            <p className="text-xs text-gray-500 mb-3 ml-4">10k+ is the standard for general health.</p>
+            <p className="text-xs text-gray-500 mb-3 ml-4">10k a day is 70k for the week.</p>
             <GoalChips
-              color={RING_COLORS.strength}
+              color={RING_COLORS.steps}
               value={weeklyGoals.stepsPerDay}
               options={STEPS_OPTIONS}
               onChange={(v) => setField('stepsPerDay', v)}
@@ -1058,6 +1061,23 @@ function LinkingScreen({ weeklyGoals, hkAuthorized, answers, initialLinked, init
     return () => { cancelled = true; document.removeEventListener('visibilitychange', check); };
   }, []);
 
+  // This week's steps so far (Sunday → today) for the Steps ring. Needs Apple Health; without
+  // it the ring reads 0 and the line under the rings explains where steps come from.
+  const [weekSteps, setWeekSteps] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    if (!hkAuthorized || !Capacitor.isNativePlatform()) return () => { cancelled = true; };
+    (async () => {
+      const today = new Date();
+      const sunday = new Date(today);
+      sunday.setDate(today.getDate() - today.getDay());
+      const byDay = await fetchDailyHealthRange(sunday, today);
+      if (!cancelled && byDay) setWeekSteps(Object.values(byDay).reduce((sum, d) => sum + (d.steps || 0), 0));
+    })();
+    return () => { cancelled = true; };
+  }, [hkAuthorized, hkRefresh]);
+  const weekStepsGoal = weekStepsGoalOf(weeklyGoals);
+
   // Build the credit pool based on what's needed AFTER counting linked HK workouts.
   // We compute the *full* credit pool (max possible), then cap by what's claimed.
   const todayStr = useMemo(() => {
@@ -1085,8 +1105,9 @@ function LinkingScreen({ weeklyGoals, hkAuthorized, answers, initialLinked, init
   const creditPool = useMemo(() => ([
     { id: 'credit_strength', ring: 'strength', label: strengthCreditLabel(answers.origin) },
     { id: 'credit_cardio',   ring: 'cardio',   label: cardioCreditLabel(answers.origin) },
-    { id: 'credit_recovery', ring: 'recovery', label: recoveryCreditLabel(answers.recovery) },
-  ]), [answers.origin, answers.recovery]);
+    // No Recovery credit: Recovery is a bonus now, and the third ring (Steps) fills from
+    // Apple Health rather than from a claimed session.
+  ]), [answers.origin]);
 
   // No per-ring rationing anymore — show all three credits so the user can
   // pick whichever feels honest.
@@ -1130,17 +1151,15 @@ function LinkingScreen({ weeklyGoals, hkAuthorized, answers, initialLinked, init
     const credits = creditPool
       .filter(c => claimedCreditIds.has(c.id))
       .map(c => buildCreditActivity({ ring: c.ring, label: c.label, dateStr: todayStr }));
-    onContinue({ linkedWorkouts, onboardingCredits: credits });
+    onContinue({ linkedWorkouts, onboardingCredits: credits, weekSteps });
   };
 
   const hasAnyHK = hkWorkouts.length > 0;
   const hasAnyCredit = visibleCredits.length > 0;
 
-  // Aggregate progress across all three rings — drives the under-rings
-  // progress bar so users see total momentum, not just per-ring fill.
-  const totalGoal = (weeklyGoals.strength || 0) + (weeklyGoals.cardio || 0) + (weeklyGoals.recovery || 0);
-  const totalDone = ringTotals.strength + ringTotals.cardio + ringTotals.recovery;
-  const totalPct = totalGoal ? Math.min(100, (totalDone / totalGoal) * 100) : 0;
+  // Aggregate progress across the three rings (Strength, Cardio, Steps) — the average of
+  // each ring's fill, same as Home's Week Progress.
+  const totalPct = ((ringProgress('strength') + ringProgress('cardio') + Math.min(1, weekSteps / weekStepsGoal)) / 3) * 100;
 
   return (
     <div className="fixed inset-0 z-50 bg-black text-white flex flex-col overflow-hidden">
@@ -1151,8 +1170,11 @@ function LinkingScreen({ weeklyGoals, hkAuthorized, answers, initialLinked, init
         <div className="flex items-start justify-around">
           <Ring size={72} stroke={8} color={RING_COLORS.strength} progress={ringProgress('strength')} label="Strength" count={ringTotals.strength} goal={weeklyGoals.strength} />
           <Ring size={72} stroke={8} color={RING_COLORS.cardio}   progress={ringProgress('cardio')}   label="Cardio"   count={ringTotals.cardio}   goal={weeklyGoals.cardio} />
-          <Ring size={72} stroke={8} color={RING_COLORS.recovery} progress={ringProgress('recovery')} label="Recovery" count={ringTotals.recovery} goal={weeklyGoals.recovery} />
+          <Ring size={72} stroke={8} color={RING_COLORS.steps} progress={Math.min(1, weekSteps / weekStepsGoal)} label="Steps" count={`${Math.round(weekSteps / 1000)}k`} goal={formatStepsK(weekStepsGoal)} />
         </div>
+        <p className="text-[11px] text-center text-gray-500 mt-2">
+          {hkAuthorized ? 'Steps fill in from Apple Health.' : 'Steps fill in once Apple Health is connected.'}
+        </p>
 
         {/* Aggregate progress bar — mirrors the home tab's overall progress
             pattern so users feel forward motion across all three rings as
@@ -1329,7 +1351,7 @@ function LinkingScreen({ weeklyGoals, hkAuthorized, answers, initialLinked, init
 // when the user claimed zero credits / linked nothing.
 // ============================================================================
 
-function CelebrateScreen({ weeklyGoals, linkedWorkouts, onboardingCredits, onContinue }) {
+function CelebrateScreen({ weeklyGoals, linkedWorkouts, onboardingCredits, weekSteps = 0, onContinue }) {
   // Animate rings from 0 → current as the screen mounts.
   const [progressed, setProgressed] = useState(false);
   useEffect(() => {
@@ -1346,14 +1368,16 @@ function CelebrateScreen({ weeklyGoals, linkedWorkouts, onboardingCredits, onCon
     return c;
   }, [linkedWorkouts, onboardingCredits]);
 
+  const weekStepsGoal = weekStepsGoalOf(weeklyGoals);
   const remaining = {
     strength: Math.max(0, (weeklyGoals.strength || 0) - totals.strength),
     cardio:   Math.max(0, (weeklyGoals.cardio   || 0) - totals.cardio),
-    recovery: Math.max(0, (weeklyGoals.recovery || 0) - totals.recovery),
+    steps:    Math.max(0, weekStepsGoal - weekSteps),
   };
-  const allDone = remaining.strength === 0 && remaining.cardio === 0 && remaining.recovery === 0;
+  const allDone = remaining.strength === 0 && remaining.cardio === 0 && remaining.steps === 0;
 
   const ringProgress = (ring) => {
+    if (ring === 'steps') return progressed ? Math.min(1, weekSteps / weekStepsGoal) : 0;
     const goal = weeklyGoals[ring];
     if (!goal) return 0;
     return progressed ? Math.min(1, totals[ring] / goal) : 0;
@@ -1386,8 +1410,8 @@ function CelebrateScreen({ weeklyGoals, linkedWorkouts, onboardingCredits, onCon
           </span>
         ) : (
           <span className="text-[14px] font-semibold text-white tabular-nums">
-            <span style={{ color }}>{rem}</span>
-            <span className="text-gray-500 font-medium"> more</span>
+            <span style={{ color }}>{ring === 'steps' ? formatStepsK(rem) : rem}</span>
+            <span className="text-gray-500 font-medium">{ring === 'steps' ? ' steps to go' : ' more'}</span>
           </span>
         )}
       </div>
@@ -1412,14 +1436,14 @@ function CelebrateScreen({ weeklyGoals, linkedWorkouts, onboardingCredits, onCon
             <div className="flex items-start justify-around mb-8">
               <Ring color={RING_COLORS.strength} progress={ringProgress('strength')} size={96} stroke={9} label="Strength" count={totals.strength} goal={weeklyGoals.strength} />
               <Ring color={RING_COLORS.cardio}   progress={ringProgress('cardio')}   size={96} stroke={9} label="Cardio"   count={totals.cardio}   goal={weeklyGoals.cardio} />
-              <Ring color={RING_COLORS.recovery} progress={ringProgress('recovery')} size={96} stroke={9} label="Recovery" count={totals.recovery} goal={weeklyGoals.recovery} />
+              <Ring color={RING_COLORS.steps} progress={ringProgress('steps')} size={96} stroke={9} label="Steps" count={formatStepsK(weekSteps)} goal={formatStepsK(weekStepsGoal)} />
             </div>
 
             {!allDone && (
               <div className="rounded-2xl px-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
                 {breakdownRow('strength', 'Strength', false)}
                 {breakdownRow('cardio',   'Cardio',   false)}
-                {breakdownRow('recovery', 'Recovery', true)}
+                {breakdownRow('steps', 'Steps', true)}
               </div>
             )}
           </div>
@@ -1558,6 +1582,7 @@ export default function OnboardingFlow({ onComplete, onSignIn }) {
   const [distanceUnit, setDistanceUnit] = useState('mi');
   const [hkAuthorized, setHkAuthorized] = useState(false);
   const [linkedWorkouts, setLinkedWorkouts] = useState([]);
+  const [onboardingWeekSteps, setOnboardingWeekSteps] = useState(0);
   const [onboardingCredits, setOnboardingCredits] = useState([]);
   const [weeklyPlan, setWeeklyPlan] = useState(null); // set on the schedule step
 
@@ -1743,9 +1768,10 @@ export default function OnboardingFlow({ onComplete, onSignIn }) {
           answers={answers}
           initialLinked={linkedWorkouts}
           initialCredits={onboardingCredits}
-          onContinue={({ linkedWorkouts: lw, onboardingCredits: cr }) => {
+          onContinue={({ linkedWorkouts: lw, onboardingCredits: cr, weekSteps: ws }) => {
             setLinkedWorkouts(lw);
             setOnboardingCredits(cr);
+            setOnboardingWeekSteps(ws || 0);
             persistInProgress({ linkedWorkouts: lw, onboardingCredits: cr });
             goForward('celebrate');
           }}
@@ -1759,6 +1785,7 @@ export default function OnboardingFlow({ onComplete, onSignIn }) {
           weeklyGoals={weeklyGoals}
           linkedWorkouts={linkedWorkouts}
           onboardingCredits={onboardingCredits}
+          weekSteps={onboardingWeekSteps}
           onContinue={() => goForward('notif')}
         />
       );

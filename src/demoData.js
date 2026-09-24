@@ -231,11 +231,11 @@ const DEMO_USER_OVERRIDES = {
   // weeks so the live profile reads as a long-tenured "well-rounded athlete"
   // story; leaderboardBoost overrides the per-week computed totals so volume
   // categories (calories/steps/lifting/cycling/yoga/etc.) also show her #1.
-  // Component streaks must all be ≥ master since hybrid only increments on
-  // weeks where all three goals are met.
+  // Strength, Cardio and Steps streaks must all be ≥ master since the Winning
+  // Streak only increments on weeks where all three are met.
   milahart: {
     goals: { liftsPerWeek: 3 },
-    streaks: { master: 33, lifts: 35, cardio: 34, recovery: 35 },
+    streaks: { master: 33, lifts: 35, cardio: 34, steps: 36, recovery: 35 },
     personalRecords: {
       longestStrength: { value: 90, activityType: 'Strength Training' },
       mostWorkoutsWeek: 12,
@@ -245,6 +245,7 @@ const DEMO_USER_OVERRIDES = {
       longestStrengthStreak: 35,
       longestCardioStreak: 34,
       longestRecoveryStreak: 35,
+      longestStepsStreak: 36,
     },
     leaderboardBoost: {
       // Per-week totals — exceed every dummy friend except recoverySessions
@@ -259,7 +260,7 @@ const DEMO_USER_OVERRIDES = {
   // feels distinct (heavier lifting, slightly higher mileage).
   jacemiller: {
     goals: { liftsPerWeek: 4 },
-    streaks: { master: 33, lifts: 40, cardio: 35, recovery: 33 },
+    streaks: { master: 33, lifts: 40, cardio: 35, steps: 34, recovery: 33 },
     personalRecords: {
       highestCalories: { value: 740, activityType: 'Running' },
       longestStrength: { value: 105, activityType: 'Strength Training' },
@@ -270,6 +271,7 @@ const DEMO_USER_OVERRIDES = {
       longestStrengthStreak: 40,
       longestCardioStreak: 35,
       longestRecoveryStreak: 33,
+      longestStepsStreak: 34,
     },
     leaderboardBoost: {
       weekly: { calories: 6700, steps: 108000, runs: 8, miles: 42, runMinutes: 420, strengthSessions: 8, liftingMinutes: 480, recoverySessions: 6, coldPlunges: 5, saunaSessions: 5, yogaSessions: 5, rides: 9, cycleMiles: 140, cycleMinutes: 470 },
@@ -301,17 +303,20 @@ export const getDemoUserData = (username) => {
       stepsPerDay: 10000,
       caloriesPerDay: 500
     },
-    // The hybrid (master) streak only increments on weeks where ALL three goals
-    // were met, so every component streak must be >= master or the profile
-    // contradicts itself — a 12-week hybrid streak alongside a 5-week recovery
-    // streak claims six weeks that recovery never hit.
+    // The Winning Streak (master) only increments on weeks where Strength, Cardio
+    // and weekly Steps were all met, so those streaks must be >= master or the
+    // profile contradicts itself. Recovery is a bonus now, but kept >= too.
     streaks: {
       master: 12,
       lifts: 14,
       cardio: 12,
+      steps: 13,
       recovery: 12,
       stepsGoal: 3
     },
+    // Demo weeks are all judged by the steps rule (utils/weekGoals); the real
+    // per-user start is written at load, which demo accounts skip.
+    winningRuleFrom: '2020-01-05',
     streakShield: {
       lastUsedWeek: null,
       shieldedWeeks: []
@@ -338,7 +343,8 @@ export const getDemoUserData = (username) => {
       longestMasterStreak: 12,
       longestStrengthStreak: 16,
       longestCardioStreak: 14,
-      longestRecoveryStreak: 12
+      longestRecoveryStreak: 12,
+      longestStepsStreak: 15
     }
   };
 
@@ -522,6 +528,8 @@ export const getDemoFriends = () => {
     strengthStreak: p.streaks.strength,
     cardioStreak: p.streaks.cardio,
     recoveryStreak: p.streaks.recovery,
+    // Steps must be >= the Winning Streak it's part of.
+    stepsStreak: p.streaks.steps ?? p.streaks.master,
     longestMasterStreak: p.streaks.longestMaster,
     challengeStats: p.challengeStats,
   }));
@@ -539,6 +547,7 @@ export const getDemoLeaderboardFriends = () => {
       strengthStreak: p.streaks.strength,
       cardioStreak: p.streaks.cardio,
       recoveryStreak: p.streaks.recovery,
+      stepsStreak: p.streaks.steps ?? p.streaks.master,
       longestMasterStreak: p.streaks.longestMaster,
       weeksWon: p.weeksWon,
       totalWorkouts: totalWorkoutsWeek * PERIOD_MULTIPLIERS.all,

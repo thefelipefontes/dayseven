@@ -58,16 +58,39 @@ struct DailyDetailView: View {
 
     // MARK: - Health Stats
 
+    // Today's step target, same rule as the phone's Plan tab: what the week still needed at the
+    // start of today, split over the days left (today included). Steps are a weekly goal, so
+    // there's no fixed daily number; the target moves with how the week is going.
+    private var todayStepTarget: Int {
+        let dayIndex = Calendar.current.component(.weekday, from: Date()) - 1 // 0 = Sunday
+        let daysLeft = max(7 - dayIndex, 1)
+        let weekGoal = appVM.goals.stepsPerDay * 7
+        let beforeToday = max(appVM.weekSteps - appVM.todaySteps, 0)
+        let needed = max(weekGoal - beforeToday, 0)
+        return Int((Double(needed) / Double(daysLeft) / 100).rounded(.up)) * 100
+    }
+
     private var healthStatsSection: some View {
         VStack(spacing: 12) {
-            statRow(
-                icon: "figure.walk",
-                iconColor: .green,
-                title: "Steps",
-                value: formatNumber(appVM.todaySteps),
-                goal: "/ \(formatNumber(appVM.goals.stepsPerDay))",
-                progress: Double(appVM.todaySteps) / Double(max(appVM.goals.stepsPerDay, 1))
-            )
+            if appVM.weekSteps >= appVM.goals.stepsPerDay * 7 {
+                statRow(
+                    icon: "figure.walk",
+                    iconColor: AppColors.steps,
+                    title: "Steps · week won",
+                    value: formatNumber(appVM.todaySteps),
+                    goal: "today",
+                    progress: 1
+                )
+            } else {
+                statRow(
+                    icon: "figure.walk",
+                    iconColor: AppColors.steps,
+                    title: "Steps · today's target",
+                    value: formatNumber(appVM.todaySteps),
+                    goal: "/ \(formatNumber(todayStepTarget))",
+                    progress: Double(appVM.todaySteps) / Double(max(todayStepTarget, 1))
+                )
+            }
 
             statRow(
                 icon: "flame.fill",

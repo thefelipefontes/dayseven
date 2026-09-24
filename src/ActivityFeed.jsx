@@ -2830,7 +2830,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               ))
             ) : (
               [
-                { key: 'master', cat: 'overall', label: 'Overall', color: '#FFD700' },
+                { key: 'master', cat: 'overall', label: 'Winning', color: '#FFD700' },
                 { key: 'strength', cat: 'lifts', label: 'Strength', color: '#00FF94' },
                 { key: 'cardio', cat: 'cardio', label: 'Cardio', color: '#FF9500' },
                 // 'stepsStreak', not 'steps': that key is the activity-steps leaderboard.

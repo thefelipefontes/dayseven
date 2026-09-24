@@ -956,7 +956,7 @@ function PerspectivePill({ isChallenger }) {
   );
 }
 
-export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid = {}, compact = false, onSeeDetails, onAccept, onDecline, onCancel, onRequestCancel, onRespondCancel, onStartWorkout, onApplyPastActivity, onOpenProfile }) {
+export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid = {}, onSeeDetails, onAccept, onDecline, onCancel, onRequestCancel, onRespondCancel, onStartWorkout, onApplyPastActivity, onOpenProfile }) {
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [confirmRequestCancel, setConfirmRequestCancel] = useState(false);
   const isChallenger = challenge.challengerUid === currentUid;
@@ -1053,17 +1053,15 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
   const isCancelRequester = cancelRequest && cancelRequest.requestedBy === currentUid;
   const isCancelResponder = cancelRequest && !isCancelRequester && myStatus === 'accepted';
 
-  // In compact mode (Home tab), all action UI is hidden — users get a "See details ›"
-  // link that hops them to the Challenges tab where the full action surface lives.
-  const showAcceptDecline = !compact && !isChallenger && myStatus === 'pending';
+  const showAcceptDecline = !isChallenger && myStatus === 'pending';
   // "Start workout" CTA: only for accepters on an active challenge. Stamps `intendedChallengeIds`
   // on the resulting activity so the cloud function fulfills this specific challenge (instead of
   // the multi-match deferral path).
-  const showStartWorkout = !compact && !isChallenger && myStatus === 'accepted' && challenge.status === 'active' && !cancelRequest;
-  const showCancel = !compact && isChallenger && challenge.status === 'pending';
+  const showStartWorkout = !isChallenger && myStatus === 'accepted' && challenge.status === 'active' && !cancelRequest;
+  const showCancel = isChallenger && challenge.status === 'pending';
   // Sender can request cancel of an active 1v1 (group cancel unsupported in v1)
-  const showRequestCancel = !compact && isChallenger && challenge.status === 'active' && !isGroup && !cancelRequest;
-  const showCancelBanner = !compact && cancelRequest;
+  const showRequestCancel = isChallenger && challenge.status === 'active' && !isGroup && !cancelRequest;
+  const showCancelBanner = cancelRequest;
   // Pending shows accept-window countdown (visible to both sides);
   // active shows workout countdown to challenger always, and accepter once they've accepted.
   // Resolved challenges (completed/expired) suppress the chip — the Won/Lost result pill
@@ -1088,7 +1086,7 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
   const chipColor = isExpired ? '#FF453A' : (isUrgent ? '#FF453A' : 'rgba(255,255,255,0.65)');
   const chipBg = (isExpired || isUrgent) ? 'rgba(255,69,58,0.12)' : 'rgba(255,255,255,0.06)';
 
-  // The entire card is tappable in both modes when onSeeDetails is wired —
+  // The entire card is tappable when onSeeDetails is wired —
   // opens the ChallengeDetailModal. Inline action buttons (Accept/Decline/Cancel/
   // Start workout) all stopPropagation so they don't double-fire the modal.
   // The avatar stack already stopPropagation in ChallengeIcon, so avatar→profile
@@ -1210,8 +1208,7 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
 
       {/* Mutual-cancel banner: shown when there's an open request, instead of the
           regular request-cancel button. Both sides see context; only the responder
-          gets Accept/Decline buttons. Hidden in compact mode (Home) — Challenges tab
-          handles all action UI. */}
+          gets Accept/Decline buttons. */}
       {showCancelBanner && (
         <div
           className="mt-3 p-2.5 rounded-lg"

@@ -705,9 +705,9 @@ function DailyTargetsScreen({ weeklyGoals, onUpdateGoals, distanceUnit, onUpdate
 
       <div className="flex-1 px-6 pb-32 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
         <div className="max-w-md mx-auto">
-          <h2 className="text-2xl font-bold mb-2">Set your daily baseline.</h2>
+          <h2 className="text-2xl font-bold mb-2">Set your steps and calories.</h2>
           <p className="text-gray-400 text-[14px] leading-relaxed mb-3">
-            A step target and a daily active-calorie floor.
+            A step target for the week and a daily active-calorie floor.
           </p>
           <div className="rounded-xl p-3 mb-7 flex items-start gap-2" style={{ backgroundColor: 'rgba(0,209,255,0.08)', border: '1px solid rgba(0,209,255,0.2)' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00D1FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginTop: 1, flexShrink: 0 }}>
@@ -716,22 +716,22 @@ function DailyTargetsScreen({ weeklyGoals, onUpdateGoals, distanceUnit, onUpdate
               <line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
             <p className="text-[12px] leading-snug" style={{ color: '#E0F7FF' }}>
-              Steps are your third ring, counted across the week (× 7) — a slow day just means a bigger one later. Calories are only a daily floor.
+              Steps are your third ring and count across the whole week — a slow day just means a bigger one later. Calories are only a daily floor.
             </p>
           </div>
 
           <div className="mb-7">
             <div className="flex items-center gap-2 mb-2">
               <div className="w-2 h-2 rounded-full" style={{ backgroundColor: RING_COLORS.steps }} />
-              <label className="text-[14px] font-semibold">Steps / day</label>
+              <label className="text-[14px] font-semibold">Steps / week</label>
             </div>
-            <p className="text-xs text-gray-500 mb-3 ml-4">10k a day is 70k for the week.</p>
+            <p className="text-xs mb-3 ml-4 font-medium" style={{ color: RING_COLORS.steps }}>{weeklyGoals.stepsPerDay * 7 / 1000}k ≈ {weeklyGoals.stepsPerDay / 1000}k a day</p>
             <GoalChips
               color={RING_COLORS.steps}
               value={weeklyGoals.stepsPerDay}
               options={STEPS_OPTIONS}
               onChange={(v) => setField('stepsPerDay', v)}
-              formatLabel={(v) => `${v / 1000}k`}
+              formatLabel={(v) => `${v * 7 / 1000}k`}
             />
           </div>
 

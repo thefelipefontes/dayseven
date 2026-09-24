@@ -39,7 +39,7 @@ const SEGMENTS = [
   { key: 'completed', label: 'Completed' },
 ];
 
-export default function ChallengesTab({ user, userProfile, userData, activities = [], friends = [], isPro = false, onChallengeCountsChange, navTarget = null, onStartChallengeWorkout, onApplyPastActivityToChallenge, optimisticCompletions = new Map(), embedded = false }) {
+export default function ChallengesTab({ user, userProfile, userData, activities = [], friends = [], isPro = false, onChallengeCountsChange, navTarget = null, onStartChallengeWorkout, onApplyPastActivityToChallenge, optimisticCompletions = new Map(), embedded = false, sharedChallenges }) {
   const [challenges, setChallenges] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [segment, setSegment] = useState('active');
@@ -91,12 +91,18 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
       setIsLoading(false);
       return;
     }
+    // App keeps an always-on listener and passes its list in (null while it loads), so we
+    // don't open a second one. Only subscribe ourselves when used without it.
+    if (sharedChallenges !== undefined) {
+      if (sharedChallenges) { setChallenges(sharedChallenges); setIsLoading(false); }
+      return;
+    }
     const unsub = subscribeToChallenges(user.uid, (list) => {
       setChallenges(list);
       setIsLoading(false);
     });
     return () => { try { unsub?.(); } catch {} };
-  }, [user?.uid, userProfile?.username, user?.email]);
+  }, [user?.uid, userProfile?.username, user?.email, sharedChallenges]);
 
   const friendsByUid = useMemo(() => {
     const map = {};

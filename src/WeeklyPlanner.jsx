@@ -1,9 +1,11 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
+import SectionIcon from './components/SectionIcon';
 import { createPortal } from 'react-dom';
 import CategoryIcon from './components/CategoryIcon';
 import { triggerHaptic, ImpactStyle } from './utils/haptics';
 import { toLocalDateStr } from './utils/dateHelpers';
 import { getActivityCategory } from './utils/activityCategory';
+import { hasRecentSteps } from './utils/weekGoals';
 
 // ---------------------------------------------------------------------------
 // Weekly Planner
@@ -84,6 +86,36 @@ const pillToActivity = (pill, date) => {
 
 const emptyPlan = () => DAYS.reduce((acc, d) => { acc[d.key] = []; return acc; }, {});
 
+// Pick k of the candidate day indices, evenly spaced (3 of 7 → Mon/Wed/Fri). More
+// sessions than candidates wraps around and doubles up.
+const spreadPick = (candidates, k) => {
+  const n = candidates.length;
+  if (k <= 0 || n === 0) return [];
+  return Array.from({ length: k }, (_, i) => candidates[k <= n ? Math.floor((i + 0.5) * n / k) : i % n]);
+};
+
+// "Suggest a plan": lay out the week's goal sessions over the given days. Lifts go
+// first, evenly spaced so there's rest between them; cardio takes the non-lifting
+// days; recovery fills whatever's lightest. Pills are generic — the user taps one to
+// give it a type.
+const suggestPlan = (counts, dayIdxs) => {
+  const load = {};
+  dayIdxs.forEach(i => { load[i] = []; });
+  const place = (cat, k, preferred) => {
+    const pref = preferred.filter(i => load[i] !== undefined);
+    const first = spreadPick(pref, Math.min(k, pref.length));
+    const rest = k - first.length;
+    // Not enough preferred days: the extras go on the least-loaded remaining days.
+    const others = dayIdxs.filter(i => !pref.includes(i)).sort((a, b) => load[a].length - load[b].length);
+    const extra = rest > 0 ? spreadPick(others.length ? others : dayIdxs, rest) : [];
+    [...first, ...extra].forEach(i => load[i].push({ cat, type: null }));
+  };
+  place('strength', counts.strength, dayIdxs);
+  place('cardio', counts.cardio, dayIdxs.filter(i => load[i].length === 0));
+  place('recovery', counts.recovery, dayIdxs.filter(i => load[i].length === 0));
+  return load;
+};
+
 // Upgrade a stored entry (bare string OR {cat,type}) to a normalized pill,
 // dropping unknown categories/types. Returns null if unusable.
 const normalizePill = (raw) => {
@@ -117,13 +149,66 @@ const plansEqual = (a, b) => DAYS.every(d => {
 // 'lifting' | 'cardio' | 'recovery' | 'lifting+cardio' | 'other'
 const activityCat = getActivityCategory;
 
+// Logged sessions per day of the given week (dayDates = Sun..Sat 'YYYY-MM-DD'), per category.
+export const loggedByDayFor = (activities, dayDates) => {
+  const map = {};
+  DAYS.forEach(d => { map[d.key] = { strength: 0, cardio: 0, recovery: 0 }; });
+  (activities || []).forEach(a => {
+    if (!a.date) return;
+    const idx = dayDates.indexOf(a.date);
+    if (idx < 0) return;
+    const c = activityCat(a);
+    const day = map[DAYS[idx].key];
+    if (c === 'lifting' || c === 'lifting+cardio') day.strength++;
+    if (c === 'cardio' || c === 'lifting+cardio') day.cardio++;
+    if (c === 'recovery') day.recovery++;
+  });
+  return map;
+};
+
+// Mark each planned pill done or not. The plan is a guide for the WEEK, so a session
+// done on a different day than planned still counts: logs first check off pills on
+// their own day, then whatever's left over checks off the earliest open pills of the
+// same category anywhere in the week. Returns one array of { cat, type, done } per day.
+export const reconcilePlan = (plan, loggedByDay) => {
+  const spare = { strength: 0, cardio: 0, recovery: 0 };
+  const out = DAYS.map(d => {
+    const logged = { ...loggedByDay[d.key] };
+    const pills = (plan[d.key] || []).map(p => {
+      const done = logged[p.cat] > 0;
+      if (done) logged[p.cat]--;
+      return { ...p, done };
+    });
+    CAT_ORDER.forEach(c => { spare[c] += logged[c]; });
+    return pills;
+  });
+  out.forEach(pills => pills.forEach(p => {
+    if (!p.done && spare[p.cat] > 0) { p.done = true; spare[p.cat]--; }
+  }));
+  return out;
+};
+
+// Today's planned sessions for Home, reconciled the same way as the Plan tab.
+export const plannedTodayFromPlan = (weeklyPlan, activities, now = new Date()) => {
+  const start = new Date(now);
+  start.setDate(now.getDate() - now.getDay());
+  start.setHours(0, 0, 0, 0);
+  const weekKey = toLocalDateStr(start);
+  const dayDates = DAYS.map((_, i) => { const dt = new Date(start); dt.setDate(start.getDate() + i); return toLocalDateStr(dt); });
+  const wp = weeklyPlan || {};
+  const raw = wp.weeks?.[weekKey] || (wp.repeatWeekly ? wp.template : null);
+  if (!raw) return [];
+  return reconcilePlan(normalizePlan(raw), loggedByDayFor(activities, dayDates))[now.getDay()]
+    .map(p => ({ ...p, label: p.type || CATS[p.cat].label }));
+};
+
 // `planLoaded` tells us the saved plan has been resolved (loaded, or confirmed absent).
 // Defaults to true for callers that hand us a plan synchronously — e.g. Onboarding, which
 // passes a seed built on mount. Home passes it explicitly, because there `userData.weeklyPlan`
 // is undefined until the profile fetch lands while the planner is already on screen and
 // interactive. Saving in that window used to write `repeatWeekly: false` + `template: null`
 // and permanently wipe the user's recurring plan.
-export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSave, onLogActivity, planLoaded = true }) {
+export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSave, onLogActivity, planLoaded = true, initiallyExpanded = false, asPage = false, onEditGoals = null, stepsByDate = null, stepsPerDay = 10000 }) {
   // --- Week boundaries (Sunday-based) ---------------------------------------
   // Recomputed on a clock tick, not frozen at mount: phones sit open across
   // midnight, and nothing remounts this component (the foreground resync in
@@ -296,21 +381,8 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
   }, []);
 
   // --- Reconciliation: logged sessions per day, per category ----------------
-  const loggedByDay = useMemo(() => {
-    const map = {};
-    DAYS.forEach(d => { map[d.key] = { strength: 0, cardio: 0, recovery: 0 }; });
-    (activities || []).forEach(a => {
-      if (!a.date) return;
-      const idx = dayDates.indexOf(a.date);
-      if (idx < 0) return;
-      const c = activityCat(a);
-      const day = map[DAYS[idx].key];
-      if (c === 'lifting' || c === 'lifting+cardio') day.strength++;
-      if (c === 'cardio' || c === 'lifting+cardio') day.cardio++;
-      if (c === 'recovery') day.recovery++;
-    });
-    return map;
-  }, [activities, dayDates]);
+  const loggedByDay = useMemo(() => loggedByDayFor(activities, dayDates), [activities, dayDates]);
+  const pillStatus = useMemo(() => reconcilePlan(plan, loggedByDay), [plan, loggedByDay]);
 
   // Placed counts + one tray entry per category with its remaining count.
   const placedByCat = { strength: 0, cardio: 0, recovery: 0 };
@@ -329,7 +401,10 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
   const [hoverKey, setHoverKey] = useState(null);
   const [selected, setSelected] = useState(null); // tap-to-place a tray pill { cat }
   const [picker, setPicker] = useState(null);      // type picker { day, index, cat }
-  const [expanded, setExpanded] = useState(false); // collapsible dropdown
+  const [undoPlan, setUndoPlan] = useState(null);  // { plan, top } before "Suggest a plan", for Undo
+  // Collapsible when embedded; on the Plan tab (asPage) it's always open.
+  const [expandedState, setExpanded] = useState(initiallyExpanded);
+  const expanded = asPage || expandedState;
 
   const registerZone = (key) => (el) => {
     if (el) zonesRef.current[key] = el;
@@ -341,6 +416,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
   const movePill = useCallback((pill, from, fromIndex, to) => {
     if (from === to) return;
     markEdited();
+    setUndoPlan(null); // a hand edit after "Suggest a plan" keeps the suggestion
     setPlan(prev => {
       const next = { ...prev };
       let moving = { cat: pill.cat, type: pill.type ?? null };
@@ -360,6 +436,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
 
   const setPillType = (day, index, type) => {
     markEdited();
+    setUndoPlan(null);
     setPlan(prev => {
       const arr = [...(prev[day] || [])];
       if (!arr[index]) return prev;
@@ -543,19 +620,124 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
     );
   };
 
+  // --- Plan tab: week summary + suggest -----------------------------------
+  const todayIdx = DAYS.findIndex(d => d.key === todayKey);
+  const doneByCat = { strength: 0, cardio: 0, recovery: 0 };
+  pillStatus.flat().forEach(p => { if (p.done) doneByCat[p.cat]++; });
+  const doneTotal = doneByCat.strength + doneByCat.cardio + doneByCat.recovery;
+  const daysLeft = 7 - todayIdx;
+  // Up next: the first day from today on that still has an undone session.
+  let upNext = null;
+  for (let i = todayIdx; i < 7 && !upNext; i++) {
+    const left = pillStatus[i].filter(p => !p.done);
+    if (left.length) upNext = { pills: left, when: i === todayIdx ? 'today' : i === todayIdx + 1 ? 'tomorrow' : DAYS[i].label };
+  }
+
+  // Steps for the week (Plan tab only). Hidden for users with no step data, whose
+  // Winning Streak doesn't include steps (see hasRecentSteps in utils/weekGoals).
+  const showSteps = asPage && !!stepsByDate && hasRecentSteps(stepsByDate);
+  const daySteps = dayDates.map(d => (stepsByDate?.[d] || 0));
+  const weekStepsTotal = daySteps.slice(0, todayIdx + 1).reduce((a, b) => a + b, 0);
+  const weekStepsGoal = (stepsPerDay || 10000) * 7;
+  // Daily step target from today on: what's still needed at the start of today, split evenly
+  // over the days left. If today already beats it, the days after today need less.
+  const roundUp100 = (n) => Math.ceil(Math.max(0, n) / 100) * 100;
+  const stepsBeforeToday = daySteps.slice(0, todayIdx).reduce((a, b) => a + b, 0);
+  const stepsToday = daySteps[todayIdx] || 0;
+  const todayStepTarget = roundUp100((weekStepsGoal - stepsBeforeToday) / daysLeft);
+  const laterStepTarget = daysLeft > 1
+    ? (stepsToday > todayStepTarget ? roundUp100((weekStepsGoal - weekStepsTotal) / (daysLeft - 1)) : todayStepTarget)
+    : 0;
+  const stepsPerDayToGo = stepsToday > todayStepTarget ? laterStepTarget : todayStepTarget;
+  const fmtK = (n) => `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+
+  // Suggest from today through Saturday. Days already behind us keep what's on them,
+  // and their sessions come off the counts still to place.
+  const remainingIdxs = DAYS.map((_, i) => i).filter(i => i >= todayIdx);
+  const toPlace = { ...goalCount };
+  DAYS.forEach((d, i) => { if (i < todayIdx) plan[d.key].forEach(p => { toPlace[p.cat] = Math.max(0, toPlace[p.cat] - 1); }); });
+  // Up top while sessions are still unplaced (an empty week is when it helps most),
+  // at the bottom once everything's placed. Undo stays where the tap happened.
+  const suggestAtTop = undoPlan ? undoPlan.top : trayByCat.length > 0;
+  const applySuggestion = () => {
+    triggerHaptic(ImpactStyle.Medium);
+    markEdited();
+    setUndoPlan({ plan, top: suggestAtTop });
+    const suggested = suggestPlan(toPlace, remainingIdxs);
+    setPlan(prev => {
+      const next = { ...prev };
+      remainingIdxs.forEach(i => { next[DAYS[i].key] = suggested[i]; });
+      return next;
+    });
+  };
+  const undoSuggestion = () => {
+    triggerHaptic(ImpactStyle.Light);
+    markEdited();
+    setPlan(undoPlan.plan);
+    setUndoPlan(null);
+  };
+
+  // Plan tab: fill the rest of the week from the goals in one tap (Undo right after).
+  const suggestBlock = (
+    undoPlan ? (
+      <div className={`${suggestAtTop ? 'mb-3' : 'mt-3'} p-3 rounded-xl flex items-center justify-between gap-3`} style={{ backgroundColor: 'rgba(255,255,255,0.04)' }}>
+        <span className="text-[12.5px]" style={{ color: '#bbb' }}>Plan suggested · drag anything to adjust</span>
+        <button onClick={undoSuggestion} className="shrink-0 px-3 py-1 rounded-full text-[12px] font-semibold active:scale-95 transition-transform" style={{ backgroundColor: 'rgba(255,255,255,0.08)', color: '#fff' }}>Undo</button>
+      </div>
+    ) : (
+      <button
+        onClick={applySuggestion}
+        className={`w-full ${suggestAtTop ? 'mb-3' : 'mt-3'} p-3 rounded-xl flex items-center gap-3 text-left active:scale-[0.98] transition-transform`}
+        style={{ backgroundColor: 'rgba(0,255,148,0.06)', border: '1px solid rgba(0,255,148,0.2)' }}
+      >
+        <span className="text-lg">✨</span>
+        <div className="flex-1">
+          <div className="text-[13px] font-semibold" style={{ color: '#00FF94' }}>Suggest a plan</div>
+          <div className="text-[11px]" style={{ color: '#999' }}>
+            Spreads your sessions across {todayIdx === 0 ? 'the week' : 'the rest of the week'}, with rest between lifting days
+          </div>
+        </div>
+        <span className="text-[13px]" style={{ color: '#777' }}>›</span>
+      </button>
+    )
+  );
+
+  const hideTray = asPage && trayByCat.length === 0;
   const pickerType = picker ? (plan[picker.day]?.[picker.index]?.type ?? null) : null;
   const placedTotal = placedByCat.strength + placedByCat.cardio + placedByCat.recovery;
 
   return (
     <div className="px-4 mb-4" ref={cardRef}>
-      {/* Header — tap to expand/collapse the planner */}
+      {/* Header — tap to expand/collapse the planner (a static page title on the Plan tab) */}
+      {asPage ? (
+        <div className="mb-3 flex items-start justify-between gap-2">
+          <div>
+            <div className="flex items-center gap-2">
+              <SectionIcon type="calendar" />
+              <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>This Week's Plan</span>
+            </div>
+            <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>
+              {placedTotal}/{totalGoal} sessions placed
+            </p>
+          </div>
+          {onEditGoals && (
+            <button
+              onClick={() => { triggerHaptic(ImpactStyle.Light); onEditGoals(); }}
+              className="shrink-0 mt-0.5 flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[12px] font-semibold active:scale-95 transition-transform"
+              style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: '#ccc' }}
+            >
+              <SectionIcon type="target" size={13} color="#ccc" /> Goals
+            </button>
+          )}
+        </div>
+      ) : (
       <button
         onClick={() => { triggerHaptic(ImpactStyle.Light); setExpanded(v => !v); }}
         className="w-full flex items-center justify-between mb-2 text-left"
       >
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-lg">🗓️</span>
+            <SectionIcon type="calendar" />
             <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>This Week's Plan</span>
           </div>
           <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>
@@ -564,6 +746,62 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
         </div>
         <span className="text-[13px] pr-1" style={{ color: '#777' }}>{expanded ? '▲' : '▼'}</span>
       </button>
+      )}
+
+      {/* Plan tab: how the plan is going — done vs placed per category, days left, what's next */}
+      {asPage && (placedTotal > 0 || showSteps) && (
+        <div className="mb-3 p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+          {placedTotal > 0 && (<>
+          <div className="flex items-baseline justify-between">
+            <span className="text-[14px] font-semibold text-white">{doneTotal} of {placedTotal} planned sessions done</span>
+            <span className="text-[12px]" style={{ color: '#777' }}>{daysLeft === 1 ? 'Last day' : `${daysLeft} days left`}</span>
+          </div>
+          <div className="flex gap-1 mt-2.5">
+            {CAT_ORDER.filter(cat => placedByCat[cat] > 0).map(cat => (
+              <div key={cat} className="flex gap-0.5" style={{ flex: placedByCat[cat] }}>
+                {Array.from({ length: placedByCat[cat] }).map((_, j) => (
+                  <div key={j} className="flex-1 h-1.5 rounded-full" style={{ backgroundColor: j < doneByCat[cat] ? CATS[cat].color : `${CATS[cat].color}33` }} />
+                ))}
+              </div>
+            ))}
+          </div>
+          </>)}
+          {showSteps && (
+            <div className={placedTotal > 0 ? 'mt-3' : ''}>
+              <div className="flex items-baseline justify-between text-[12px]">
+                <span className="flex items-center gap-1.5" style={{ color: '#BF5AF2' }}>
+                  <CategoryIcon category="steps" size={12} />
+                  <span className="font-semibold">{fmtK(weekStepsTotal)}</span>
+                  <span style={{ color: '#777' }}>of {fmtK(weekStepsGoal)} steps</span>
+                </span>
+                <span style={{ color: weekStepsTotal >= weekStepsGoal ? '#BF5AF2' : '#777' }}>
+                  {weekStepsTotal >= weekStepsGoal ? '✓ Goal hit' : `${fmtK(stepsPerDayToGo)}/day to go`}
+                </span>
+              </div>
+              <div className="h-1.5 rounded-full mt-1.5 overflow-hidden" style={{ backgroundColor: 'rgba(191,90,242,0.2)' }}>
+                <div className="h-full rounded-full" style={{ width: `${Math.min(100, (weekStepsTotal / weekStepsGoal) * 100)}%`, backgroundColor: '#BF5AF2' }} />
+              </div>
+            </div>
+          )}
+          {placedTotal > 0 && <div className="mt-3 pt-3 flex items-center flex-wrap gap-1.5 text-[12px]" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+            {upNext ? (
+              <>
+                <span className="mr-0.5" style={{ color: '#999' }}>Up next</span>
+                {upNext.pills.map((p, i) => (
+                  <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: CATS[p.cat].bg, color: CATS[p.cat].color }}>
+                    <CategoryIcon category={CATS[p.cat].cat} size={11} color="currentColor" />{chipLabel(p)}
+                  </span>
+                ))}
+                <span style={{ color: '#777' }}>· {upNext.when}</span>
+              </>
+            ) : (
+              <span style={{ color: '#30D158' }}>✓ Everything planned is done</span>
+            )}
+          </div>}
+        </div>
+      )}
+
+      {asPage && suggestAtTop && suggestBlock}
 
       {/* Collapsed: at-a-glance week strip (dots colored by category, dimmed = not yet done) */}
       {!expanded && (
@@ -573,21 +811,17 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
           style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
         >
           {DAYS.map(d => {
-            const pills = plan[d.key];
-            const logged = loggedByDay[d.key];
+            const pills = pillStatus[DAYS.indexOf(d)];
             const isToday = d.key === todayKey;
-            const usedDone = { strength: 0, cardio: 0, recovery: 0 };
             return (
               <div key={d.key} className="flex-1 flex flex-col items-center gap-1.5">
                 <span className="text-[10px] font-semibold" style={{ color: isToday ? '#fff' : '#666' }}>{d.label[0]}</span>
                 <div className="flex flex-col gap-0.5 items-center" style={{ minHeight: 6 }}>
                   {pills.length === 0
                     ? <span style={{ width: 4, height: 4, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.12)' }} />
-                    : pills.map((p, i) => {
-                        const done = usedDone[p.cat] < logged[p.cat];
-                        if (done) usedDone[p.cat]++;
-                        return <span key={i} style={{ width: 6, height: 6, borderRadius: 999, backgroundColor: CATS[p.cat].color, opacity: done ? 1 : 0.45 }} />;
-                      })}
+                    : pills.map((p, i) => (
+                        <span key={i} style={{ width: 6, height: 6, borderRadius: 999, backgroundColor: CATS[p.cat].color, opacity: p.done ? 1 : 0.45 }} />
+                      ))}
                 </div>
               </div>
             );
@@ -595,11 +829,42 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
         </button>
       )}
 
-      {/* Expanded: the full drag/tap planner */}
+      {/* Plan tab: splits the summary above from the day-by-day planner, and says which week this is */}
+      {asPage && (
+        <div className="mt-6 mb-2.5 flex items-center justify-between px-1">
+          <span className="text-[17px] font-semibold text-white">Your week</span>
+          <span className="text-[12px]" style={{ color: '#777' }}>{rangeLabel}</span>
+        </div>
+      )}
+      {asPage && showSteps && laterStepTarget > 0 && weekStepsTotal < weekStepsGoal && (
+        <div className="-mt-1 mb-2 px-1 flex justify-end text-[10.5px]" style={{ color: '#777' }}>
+          <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-2.5 rounded-sm" style={{ border: '1px dashed rgba(191,90,242,0.5)' }} /> steps needed each day to hit {fmtK(weekStepsGoal)}</span>
+        </div>
+      )}
       {expanded && (
-      <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+      <div className="p-4 rounded-2xl relative" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+        {/* Plan tab, everything placed: the "All placed" line would just repeat the header
+            count, so the tray is hidden. It's still where you drag a session to take it off
+            the plan, so it comes back as an overlay while a drag is on (an overlay, not an
+            inserted row, so the days don't shift under your finger) covering the "Your week"
+            header, never a day row. */}
+        {hideTray && ghost && (
+          <div
+            ref={registerZone('tray')}
+            className="absolute left-0 right-0 z-10 flex items-center justify-center rounded-xl text-[12px] font-semibold"
+            style={{
+              height: 44,
+              top: -52, // over the "Your week" header, clear of Sunday's row
+              color: hoverKey === 'tray' ? '#fff' : '#999',
+              backgroundColor: hoverKey === 'tray' ? 'rgba(255,69,58,0.25)' : 'rgba(30,30,30,0.95)',
+              border: `1px dashed ${hoverKey === 'tray' ? 'rgba(255,69,58,0.7)' : 'rgba(255,255,255,0.2)'}`,
+            }}
+          >
+            Drop here to remove
+          </div>
+        )}
         {/* Tray of unplaced pills */}
-        <div
+        {!hideTray && <div
           ref={registerZone('tray')}
           onClick={() => onZoneClick('tray')}
           className="flex flex-wrap gap-2 pb-3 mb-3 border-b transition-colors"
@@ -624,15 +889,14 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
               ))}
             </>
           )}
-        </div>
+        </div>}
 
         {/* Day rows */}
         <div className="space-y-1.5">
           {DAYS.map(d => {
             const dayPills = plan[d.key];
-            const logged = loggedByDay[d.key];
+            const dayStatus = pillStatus[DAYS.indexOf(d)];
             const isToday = d.key === todayKey;
-            const usedDone = { strength: 0, cardio: 0, recovery: 0 };
             return (
               <div
                 key={d.key}
@@ -655,13 +919,30 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
                   {dayPills.length === 0 ? (
                     <span className="text-[12px]" style={{ color: '#555' }}>Rest day</span>
                   ) : (
-                    dayPills.map((pill, i) => {
-                      const done = usedDone[pill.cat] < logged[pill.cat];
-                      if (done) usedDone[pill.cat]++;
-                      return <Pill key={`${d.key}-${i}`} pill={pill} from={d.key} index={i} done={done} />;
-                    })
+                    dayPills.map((pill, i) => (
+                      <Pill key={`${d.key}-${i}`} pill={pill} from={d.key} index={i} done={!!dayStatus[i]?.done} />
+                    ))
                   )}
                 </div>
+                {/* Steps: walked (past), walked/target (today), target to aim for (days ahead) */}
+                {showSteps && (() => {
+                  const i = DAYS.indexOf(d);
+                  const goalHit = weekStepsTotal >= weekStepsGoal;
+                  const icon = <CategoryIcon category="steps" size={10} color="currentColor" />;
+                  if (i < todayIdx) return (
+                    <span className="shrink-0 pt-1.5 flex items-center gap-1 text-[11px]" style={{ color: daySteps[i] >= stepsPerDay ? '#BF5AF2' : '#666' }}>{icon}{fmtK(daySteps[i])}</span>
+                  );
+                  if (i === todayIdx) return (
+                    <span className="shrink-0 pt-1.5 flex items-center gap-1 text-[11px]" style={{ color: goalHit || stepsToday >= todayStepTarget ? '#BF5AF2' : '#aaa' }}>
+                      {icon}{fmtK(stepsToday)}{!goalHit && <span style={{ color: '#666' }}>/{fmtK(todayStepTarget)}</span>}
+                    </span>
+                  );
+                  if (goalHit || !laterStepTarget) return null;
+                  // Days ahead: the target, in a dashed "slot to fill" (key under "Your week")
+                  return (
+                    <span className="shrink-0 mt-1 flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-md" style={{ color: '#9d7bb0', border: '1px dashed rgba(191,90,242,0.35)' }}>{icon}{fmtK(laterStepTarget)}</span>
+                  );
+                })()}
               </div>
             );
           })}
@@ -716,6 +997,8 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
         </div>
       </div>
       )}
+
+      {asPage && !suggestAtTop && suggestBlock}
 
       {/* Drag ghost — portalled to body so a transformed ancestor (e.g. the
           onboarding slide wrapper) can't offset its fixed positioning. */}

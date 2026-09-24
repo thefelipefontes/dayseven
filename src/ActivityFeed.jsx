@@ -488,7 +488,13 @@ const TouchButton = ({ onClick, disabled = false, className, style, children, to
 };
 
 // Segmented control component - defined outside ActivityFeed for stable reference (enables CSS animations)
-const SegmentedControl = ({ activeView, setActiveView }) => (
+// Friends has three views: Feed, Leaderboard and Challenges (moved here from its own tab).
+const FRIENDS_VIEWS = [
+  { key: 'feed', label: 'Feed' },
+  { key: 'leaderboard', label: 'Leaderboard' },
+  { key: 'challenges', label: 'Challenges' },
+];
+const SegmentedControl = ({ activeView, setActiveView, challengesBadge = 0 }) => (
   <div className="px-4 pb-4" style={{ touchAction: 'pan-y' }}>
     <div className="relative flex p-1 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)', touchAction: 'pan-y' }}>
       {/* Sliding pill indicator - uses transform for smooth hardware-accelerated animation */}
@@ -496,25 +502,30 @@ const SegmentedControl = ({ activeView, setActiveView }) => (
         className="absolute top-1 bottom-1 left-1 rounded-lg"
         style={{
           backgroundColor: 'rgba(255,255,255,0.1)',
-          width: 'calc(50% - 4px)',
-          transform: activeView === 'feed' ? 'translateX(0)' : 'translateX(100%)',
+          width: `calc((100% - 8px) / ${FRIENDS_VIEWS.length})`,
+          transform: `translateX(${Math.max(0, FRIENDS_VIEWS.findIndex(v => v.key === activeView)) * 100}%)`,
           transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
         }}
       />
-      {[
-        { key: 'feed', label: 'Feed' },
-        { key: 'leaderboard', label: 'Leaderboard' }
-      ].map((tab) => (
+      {FRIENDS_VIEWS.map((tab) => (
         <TouchButton
           key={tab.key}
           onClick={() => setActiveView(tab.key)}
-          className="flex-1 py-2 px-4 rounded-lg text-sm font-medium relative z-10 text-center"
+          className="flex-1 py-2 px-2 rounded-lg text-sm font-medium relative z-10 text-center flex items-center justify-center gap-1.5"
           style={{
             color: activeView === tab.key ? 'white' : 'rgba(255,255,255,0.5)',
             transition: 'color 0.2s ease-out'
           }}
         >
           {tab.label}
+          {tab.key === 'challenges' && challengesBadge > 0 && (
+            <span
+              className="text-[10px] px-1.5 rounded-full font-semibold"
+              style={{ backgroundColor: '#FFD60A', color: 'black', minWidth: 18, lineHeight: '16px' }}
+            >
+              {challengesBadge}
+            </span>
+          )}
         </TouchButton>
       ))}
     </div>
@@ -1011,7 +1022,7 @@ const MemoizedActivityCard = React.memo(({
   );
 });
 
-const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingRequestsCount = 0, onActiveViewChange, feedCacheRef, isPro = false, onPresentPaywall, onOpenChallenge, suppressPullToRefresh = false }) => {
+const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingRequestsCount = 0, onActiveViewChange, feedCacheRef, isPro = false, onPresentPaywall, onOpenChallenge, suppressPullToRefresh = false, challengesContent = null, challengesBadge = 0, viewRequest = null }) => {
   // Hydrate from the parent-owned cache when re-mounting on tab switch — skips
   // the spinner and renders the previously-loaded feed instantly. The background
   // loadFeed call still runs to refresh data. Cache is uid-tagged so it isn't
@@ -1041,7 +1052,12 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   }, []);
   const [isLoading, setIsLoading] = useState(() => !cachedFeed);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [activeView, setActiveView] = useState('feed'); // 'feed' or 'leaderboard'
+  const [activeView, setActiveView] = useState(viewRequest?.view || 'feed'); // 'feed' | 'leaderboard' | 'challenges'
+  // Parent asks for a view (e.g. a challenge notification or Home banner opens Challenges);
+  // a new nonce re-applies it even when the requested view didn't change.
+  useEffect(() => {
+    if (viewRequest?.view) setActiveView(viewRequest.view);
+  }, [viewRequest?.nonce]);
   const [leaderboardData, setLeaderboardData] = useState([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [leaderboardSection, setLeaderboardSection] = useState('activity'); // 'activity', 'streak', or 'challenges'
@@ -2529,11 +2545,23 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     </div>
   );
 
+  // Challenges view — its own data and empty states (ChallengesTab, passed in by App), so it
+  // renders ahead of the feed's loading / no-friends branches.
+  if (activeView === 'challenges' && challengesContent) {
+    return (
+      <div style={{ touchAction: 'pan-y' }}>
+        <FriendsHeaderTop />
+        <SegmentedControl activeView={activeView} setActiveView={setActiveView} challengesBadge={challengesBadge} />
+        {challengesContent}
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
       <div>
         <FriendsHeaderTop />
-        <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
+        <SegmentedControl activeView={activeView} setActiveView={setActiveView} challengesBadge={challengesBadge} />
         <div className="flex items-center justify-center py-12">
           <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
         </div>
@@ -2549,7 +2577,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     return (
       <div>
         <FriendsHeaderTop />
-        <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
+        <SegmentedControl activeView={activeView} setActiveView={setActiveView} challengesBadge={challengesBadge} />
         <div className="text-center py-12 px-6">
           <div className="text-5xl mb-4">👥</div>
           <p className="text-white font-medium mb-2">Find your workout buddies</p>
@@ -2654,7 +2682,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     return (
       <div style={{ touchAction: 'pan-y' }}>
         <FriendsHeaderTop />
-        <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
+        <SegmentedControl activeView={activeView} setActiveView={setActiveView} challengesBadge={challengesBadge} />
 
         {/* Leaderboard content */}
         <div className="px-4 pb-32">
@@ -3159,7 +3187,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       // (+1px is below iOS's rubber-band threshold and feels stuck; ~10px is above it.)
       <div style={{ minHeight: 'calc(100dvh - env(safe-area-inset-top, 0px) - 16px + 10px)' }}>
         <FriendsHeaderTop />
-        <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
+        <SegmentedControl activeView={activeView} setActiveView={setActiveView} challengesBadge={challengesBadge} />
         <div className="text-center py-12 px-6">
           <div className="text-5xl mb-4">📭</div>
           <p className="text-white font-medium mb-2">No activity yet</p>
@@ -3178,7 +3206,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     // iOS actually engages (a 1px overflow doesn't reliably trigger rubber-band).
     <div style={{ minHeight: 'calc(100dvh - env(safe-area-inset-top, 0px) - 16px + 60px)' }}>
       <FriendsHeaderTop />
-      <SegmentedControl activeView={activeView} setActiveView={setActiveView} />
+      <SegmentedControl activeView={activeView} setActiveView={setActiveView} challengesBadge={challengesBadge} />
 
       {/* Feed content */}
       <div className="px-4 pb-32">

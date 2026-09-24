@@ -39,13 +39,10 @@ const SEGMENTS = [
   { key: 'completed', label: 'Completed' },
 ];
 
-export default function ChallengesTab({ user, userProfile, userData, activities = [], friends = [], isPro = false, onChallengeCountsChange, navTarget = null, onStartChallengeWorkout, onApplyPastActivityToChallenge, optimisticCompletions = new Map() }) {
+export default function ChallengesTab({ user, userProfile, userData, activities = [], friends = [], isPro = false, onChallengeCountsChange, navTarget = null, onStartChallengeWorkout, onApplyPastActivityToChallenge, optimisticCompletions = new Map(), embedded = false }) {
   const [challenges, setChallenges] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [segment, setSegment] = useState('active');
-  // Shared across all three main segments — perspective (received/sent) is "sticky"
-  // so switching from Pending→Active keeps you on the same side you were looking at.
-  const [subSegment, setSubSegment] = useState('received');
   // Outcome filter on the Completed segment — 'all' | 'won' | 'lost'.
   // Lets users isolate just their wins or losses on either Sent or Received.
   const [resultFilter, setResultFilter] = useState('all');
@@ -58,13 +55,12 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
   useEffect(() => {
     if (!navTarget) return;
     if (navTarget.segment) setSegment(navTarget.segment);
-    if (navTarget.subSegment) setSubSegment(navTarget.subSegment);
   }, [navTarget]);
 
   // Measure the sticky header so the cards container can size itself to JUST barely
   // overflow the viewport — that's the minimum needed for iOS rubber-band to engage
   // without adding ugly empty space below the cards. Header height changes with segment
-  // (Completed shows ResultFilter; non-loading shows SubToggle), so re-measure on every
+  // (Completed shows ResultFilter), so re-measure on every
   // size change via ResizeObserver.
   const headerRef = useRef(null);
   const [headerHeight, setHeaderHeight] = useState(0);
@@ -132,17 +128,16 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
     return { activeReceived, activeSent, completedReceived, completedSent };
   }, [buckets.active, buckets.completed, user?.uid]);
 
-  // Won/lost counts within the current sub-segment (Received vs Sent), used to badge the filter chips.
-  const completedListForSub = subSegment === 'received' ? splits.completedReceived : splits.completedSent;
+  // Won/lost counts across completed challenges, used to badge the filter chips.
   const completedCounts = useMemo(() => {
     let won = 0, lost = 0;
-    for (const c of completedListForSub) {
+    for (const c of buckets.completed) {
       const o = getChallengeOutcome(c, user?.uid);
       if (o === 'won') won += 1;
       else if (o === 'lost') lost += 1;
     }
-    return { all: completedListForSub.length, won, lost };
-  }, [completedListForSub, user?.uid]);
+    return { all: buckets.completed.length, won, lost };
+  }, [buckets.completed, user?.uid]);
 
   // Mirror the home section's badge/cap accounting so counts stay in sync when the user
   // lands here first without mounting HomeTab.
@@ -185,55 +180,39 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
     setSegment(key);
   };
 
-  // Pick the list + empty copy for the current (segment, subSegment) combo.
-  // Lifted out of the JSX IIFE so the SubToggle / ResultFilter can render inside the
-  // sticky-top header (they need view counts) while the list itself stays below.
+  // One list per status (Active / Pending / Completed), both sides mixed. Each card gets the
+  // actions for its own side, and its "Your move" / "Their move" pill says whose turn it is —
+  // this replaced the Received / Sent toggle when Challenges moved into Friends.
+  const receivedHandlers = {
+    active: { onRespondCancel: handleRespondCancel, onStartWorkout: onStartChallengeWorkout, onApplyPastActivity: onApplyPastActivityToChallenge },
+    pending: { onAccept: handleAccept, onDecline: handleDecline },
+    completed: {},
+  };
+  const sentHandlers = {
+    active: { onRequestCancel: handleRequestCancel, onRespondCancel: handleRespondCancel },
+    pending: { onCancel: handleCancel },
+    completed: {},
+  };
+  const handlersFor = (c) => (c.challengerUid === user?.uid ? sentHandlers : receivedHandlers)[segment];
   const views = {
-    'active|received': {
-      list: splits.activeReceived,
-      emptyTitle: "Nothing for you to finish",
-      emptySubtitle: "Challenges you've accepted and still need to complete will show up here.",
-      onRespondCancel: handleRespondCancel,
-      onStartWorkout: onStartChallengeWorkout,
-      onApplyPastActivity: onApplyPastActivityToChallenge,
+    active: {
+      // Your move first: challenges you still have to finish sit above ones you're waiting on.
+      list: [...splits.activeReceived, ...splits.activeSent],
+      emptyTitle: "No active challenges",
+      emptySubtitle: "Accepted challenges show up here until they're finished.",
     },
-    'active|sent': {
-      list: splits.activeSent,
-      emptyTitle: "Nothing waiting on friends",
-      emptySubtitle: "Challenges you've sent that friends accepted will show up here until they finish.",
-      onRequestCancel: handleRequestCancel,
-      onRespondCancel: handleRespondCancel,
+    pending: {
+      list: [...buckets.pendingReceived, ...buckets.pendingSent],
+      emptyTitle: "No pending challenges",
+      emptySubtitle: "Invites you've received or sent show up here until they're accepted.",
     },
-    'pending|received': {
-      list: buckets.pendingReceived,
-      emptyTitle: "No received invites",
-      emptySubtitle: "Challenge requests from friends will show up here.",
-      onAccept: handleAccept,
-      onDecline: handleDecline,
-    },
-    'pending|sent': {
-      list: buckets.pendingSent,
-      emptyTitle: "No sent invites",
-      emptySubtitle: "Challenges you've sent waiting for a friend to accept will show up here.",
-      onCancel: handleCancel,
-    },
-    'completed|received': {
-      list: filterByResult(splits.completedReceived, resultFilter, user?.uid),
+    completed: {
+      list: filterByResult(buckets.completed, resultFilter, user?.uid),
       emptyTitle: emptyTitleForResult(resultFilter, "No completed challenges yet"),
-      emptySubtitle: emptySubtitleForResult(resultFilter, "Challenges you've accepted and finished will land here."),
-    },
-    'completed|sent': {
-      list: filterByResult(splits.completedSent, resultFilter, user?.uid),
-      emptyTitle: emptyTitleForResult(resultFilter, "No completed challenges yet"),
-      emptySubtitle: emptySubtitleForResult(resultFilter, "Challenges you sent that friends finished will land here."),
+      emptySubtitle: emptySubtitleForResult(resultFilter, "Finished challenges land here."),
     },
   };
-  const subCounts = {
-    active: { received: splits.activeReceived.length, sent: splits.activeSent.length },
-    pending: { received: buckets.pendingReceived.length, sent: buckets.pendingSent.length },
-    completed: { received: splits.completedReceived.length, sent: splits.completedSent.length },
-  }[segment];
-  const view = views[`${segment}|${subSegment}`];
+  const view = views[segment];
 
   return (
     // Fragment-style render: content lives in the App's outer body scroll so iOS
@@ -248,7 +227,7 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
           18px so cards dissolve into the header instead of meeting at a hard line. */}
       <div
         ref={headerRef}
-        className="sticky top-0 z-10 px-4 pb-2"
+        className={embedded ? 'px-4 pb-2' : 'sticky top-0 z-10 px-4 pb-2'}
         style={{
           background: 'linear-gradient(to bottom, rgba(10, 10, 10, 1) 0%, rgba(10, 10, 10, 1) 15%, rgba(10, 10, 10, 0.65) 90%, rgba(10, 10, 10, 0.65) 100%)',
           backdropFilter: 'blur(20px) saturate(180%)',
@@ -257,11 +236,13 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
           WebkitMaskImage: 'linear-gradient(to bottom, black calc(100% - 18px), transparent 100%)',
         }}
       >
-      {/* Header */}
+      {/* Header — Friends already has its own title and tabs when this is embedded there */}
+      {!embedded && (
       <div className="pt-2 pb-4">
         <h1 className="text-xl font-bold text-white">Challenges</h1>
         <p className="text-sm text-gray-500">Head-to-head bets with your friends.</p>
       </div>
+      )}
 
       {/* First-time intro — explains how challenges work. Dismissible; persisted in localStorage. */}
       {!introDismissed && (
@@ -343,23 +324,8 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
         </div>
       </div>
 
-      {/* Segmented control */}
-      <div
-        className="relative flex items-center p-1 rounded-xl mb-3"
-        style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
-      >
-        <div
-          className="absolute top-1 bottom-1 rounded-lg transition-all duration-300 ease-out"
-          style={{
-            backgroundColor: 'rgba(255,255,255,0.08)',
-            width: 'calc((100% - 8px) / 3)',
-            left: segment === 'active'
-              ? '4px'
-              : segment === 'pending'
-                ? 'calc(4px + (100% - 8px) / 3)'
-                : 'calc(4px + 2 * (100% - 8px) / 3)',
-          }}
-        />
+      {/* Status filter — one row of chips (the Received / Sent split lives on each card now) */}
+      <div className="flex gap-2 mb-3">
         {SEGMENTS.map(s => {
           const selected = segment === s.key;
           const badgeCount =
@@ -370,9 +336,10 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
             <button
               key={s.key}
               onClick={() => onSegment(s.key)}
-              className="flex-1 py-2 rounded-lg text-sm font-medium transition-colors duration-200 flex items-center justify-center gap-1.5 relative z-10"
+              className="px-3 py-1.5 rounded-full text-[13px] font-medium transition-colors duration-200 flex items-center gap-1.5"
               style={{
-                color: selected ? 'white' : 'rgba(255,255,255,0.5)',
+                backgroundColor: selected ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)',
+                color: selected ? 'white' : 'rgba(255,255,255,0.55)',
               }}
             >
               <span>{s.label}</span>
@@ -380,8 +347,8 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
                 <span
                   className="text-[10px] px-1.5 rounded-full font-semibold"
                   style={{
-                    backgroundColor: selected ? '#FFD60A' : 'rgba(255,255,255,0.1)',
-                    color: selected ? 'black' : 'rgba(255,255,255,0.6)',
+                    backgroundColor: s.key === 'pending' && buckets.pendingReceived.length > 0 ? '#FFD60A' : 'rgba(255,255,255,0.1)',
+                    color: s.key === 'pending' && buckets.pendingReceived.length > 0 ? 'black' : 'rgba(255,255,255,0.6)',
                     minWidth: 18,
                     lineHeight: '16px',
                   }}
@@ -394,16 +361,6 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
         })}
       </div>
 
-      {/* Sub-toggles live in the sticky header too — perspective + outcome filter follow
-          you as you scroll through cards. */}
-      {!isLoading && (
-        <SubToggle
-          value={subSegment}
-          onChange={(k) => { triggerHaptic(ImpactStyle.Light); setSubSegment(k); }}
-          receivedCount={subCounts.received}
-          sentCount={subCounts.sent}
-        />
-      )}
       {!isLoading && segment === 'completed' && (
         <ResultFilter
           value={resultFilter}
@@ -443,13 +400,7 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
                 currentUid={user.uid}
                 userProfile={userProfile}
                 friendsByUid={friendsByUid}
-                onAccept={view.onAccept}
-                onDecline={view.onDecline}
-                onCancel={view.onCancel}
-                onRequestCancel={view.onRequestCancel}
-                onRespondCancel={view.onRespondCancel}
-                onStartWorkout={view.onStartWorkout}
-                onApplyPastActivity={view.onApplyPastActivity}
+                {...handlersFor(c)}
                 onOpenProfile={(uid) => {
                   const f = friendsByUid[uid];
                   if (f) setSelectedFriend(f);
@@ -539,7 +490,7 @@ function emptySubtitleForResult(filter, fallback) {
 }
 
 // Outcome filter — All / Won / Lost — rendered on the Completed segment to make it
-// easy to scan just one side of the record. Styled like SubToggle but tinted by outcome.
+// easy to scan just one side of the record. Tinted by outcome.
 function ResultFilter({ value, onChange, allCount, wonCount, lostCount }) {
   const items = [
     { key: 'all', label: 'All', count: allCount, accent: '#FFFFFF' },
@@ -595,50 +546,3 @@ function ResultFilter({ value, onChange, allCount, wonCount, lostCount }) {
   );
 }
 
-function SubToggle({ value, onChange, receivedCount, sentCount }) {
-  const items = [
-    { key: 'received', label: 'Received', count: receivedCount },
-    { key: 'sent', label: 'Sent', count: sentCount },
-  ];
-  return (
-    <div
-      className="relative flex items-center p-1 rounded-lg mb-3 max-w-[240px] mx-auto"
-      style={{ backgroundColor: 'rgba(255,255,255,0.04)' }}
-    >
-      <div
-        className="absolute top-1 bottom-1 rounded-md transition-all duration-300 ease-out"
-        style={{
-          backgroundColor: 'rgba(255,255,255,0.08)',
-          width: 'calc((100% - 8px) / 2)',
-          left: value === 'received' ? '4px' : 'calc(4px + (100% - 8px) / 2)',
-        }}
-      />
-      {items.map(s => {
-        const selected = value === s.key;
-        return (
-          <button
-            key={s.key}
-            onClick={() => onChange(s.key)}
-            className="flex-1 py-1 rounded-md text-[11px] font-medium transition-colors duration-200 flex items-center justify-center gap-1.5 relative z-10"
-            style={{ color: selected ? 'white' : 'rgba(255,255,255,0.5)' }}
-          >
-            <span>{s.label}</span>
-            {s.count > 0 && (
-              <span
-                className="text-[9px] px-1.5 rounded-full font-semibold"
-                style={{
-                  backgroundColor: selected ? '#FFD60A' : 'rgba(255,255,255,0.1)',
-                  color: selected ? 'black' : 'rgba(255,255,255,0.6)',
-                  minWidth: 16,
-                  lineHeight: '14px',
-                }}
-              >
-                {s.count}
-              </span>
-            )}
-          </button>
-        );
-      })}
-    </div>
-  );
-}

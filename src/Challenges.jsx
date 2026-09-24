@@ -935,9 +935,12 @@ function StatePill({ state }) {
   );
 }
 
+// Whose turn it is, which is what matters at a glance: "Your move" when you still have to
+// accept or finish it, "Their move" when you're waiting on the other side. Replaced the
+// Sent / Received pill when Challenges moved into Friends with one list per status.
 function PerspectivePill({ isChallenger }) {
-  const label = isChallenger ? 'Sent' : 'Received';
-  const color = isChallenger ? '#FFD60A' : '#00D1FF';
+  const label = isChallenger ? 'Their move' : 'Your move';
+  const color = isChallenger ? '#9ca3af' : '#FFD60A';
   return (
     <span
       className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0"
@@ -1148,7 +1151,7 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
             onAvatarTap={handleOpenOpponentProfile}
           />
           <div className="flex items-center gap-1">
-            <PerspectivePill isChallenger={isChallenger} />
+            {!outcome && challenge.status !== 'completed' && <PerspectivePill isChallenger={isChallenger} />}
             {outcome ? (
               <ResultPill outcome={outcome} />
             ) : (
@@ -1324,152 +1327,6 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
         </div>
       )}
 
-    </div>
-  );
-}
-
-// =====================================================================
-// Section: rendered on the Home tab. Self-loads challenges + handles actions.
-// =====================================================================
-
-export function ChallengesSection({ user, userProfile, friends = [], onChallengeCountsChange, onSeeDetails, optimisticCompletions = new Map(), onStartChallengeWorkout, onApplyPastActivityToChallenge, onDetailOpenChange }) {
-  const [challenges, setChallenges] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  // Card tap opens the detail modal in-place; the "See all ›" link still navigates
-  // to the Challenges tab via onSeeDetails (called with no arg).
-  const [detailChallenge, setDetailChallenge] = useState(null);
-  // Mirror open state to the parent so the page-level pull-to-refresh (which has
-  // window/capture listeners that ignore the React subtree) can disable itself.
-  useEffect(() => {
-    onDetailOpenChange?.(!!detailChallenge);
-  }, [detailChallenge, onDetailOpenChange]);
-  const [opponentFriend, setOpponentFriend] = useState(null);
-  useTicker(60000);
-
-  // Real-time subscription: fires immediately on mount with current state,
-  // then pushes any update — create, accept, decline, complete, expire — within ms.
-  useEffect(() => {
-    if (!user?.uid) return;
-    // Demo mode: skip Firestore so the appreviewer Home card surfaces mock challenges
-    // (matches the same data the Challenges tab shows).
-    if (isDemoAccount(userProfile, user)) {
-      const name = userProfile?.displayName || userProfile?.username || 'You';
-      setChallenges(getDemoChallenges(user.uid, name));
-      setIsLoading(false);
-      return;
-    }
-    const unsub = subscribeToChallenges(user.uid, (list) => {
-      setChallenges(list);
-      setIsLoading(false);
-    });
-    return () => { try { unsub?.(); } catch {} };
-  }, [user?.uid, userProfile?.username, user?.email]);
-
-  // Hydrate friend names onto challenges (challenger snapshot already has challengerName,
-  // but for outgoing challenges we want to show the recipient's name)
-  const friendsByUid = React.useMemo(() => {
-    const map = {};
-    for (const f of friends) map[f.uid] = f;
-    return map;
-  }, [friends]);
-
-  // Apply optimistic completion overlay before bucketing — flips Active → Completed instantly
-  // when the user logs a fulfilling activity, without waiting on the cloud function trigger.
-  const overlaidChallenges = React.useMemo(
-    () => applyOptimisticChallengeCompletions(challenges, optimisticCompletions, user?.uid),
-    [challenges, optimisticCompletions, user?.uid]
-  );
-
-  const enriched = React.useMemo(() => overlaidChallenges.map(c => ({
-    ...c,
-    friendName: friendsByUid[c.friendUid]?.displayName || friendsByUid[c.friendUid]?.username || c.friendName || '',
-  })), [overlaidChallenges, friendsByUid]);
-
-  const buckets = React.useMemo(() => bucketChallenges(enriched, user?.uid), [enriched, user?.uid]);
-
-  // Notify parent of pending-received count for badging the home tab
-  useEffect(() => {
-    onChallengeCountsChange?.({
-      pendingReceivedCount: buckets.pendingReceived.length,
-      outgoingThisMonthCount: countOutgoingThisMonth(enriched, user?.uid),
-    });
-  }, [buckets.pendingReceived.length, enriched, user?.uid, onChallengeCountsChange]);
-
-  // Home only surfaces active challenges — pending/completed live on the Challenges tab.
-  // All actions (accept/decline/cancel/request-cancel) live there too; Home cards are
-  // read-only summaries with a "See details ›" link.
-  if (!isLoading && buckets.active.length === 0) return null;
-
-  return (
-    <div className="px-4 mb-4">
-      <div className="mb-3">
-        <div className="flex items-center gap-2">
-          <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="#04d1ff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
-          </svg>
-          <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Active Challenges</span>
-        </div>
-        <div className="flex items-center justify-between gap-3 -mt-1 pl-[30px]">
-          <p className="text-[13px]" style={{ color: '#777' }}>Bets in progress with your friends</p>
-          {!isLoading && buckets.active.length > 0 && (
-            <button
-              onClick={() => onSeeDetails?.()}
-              className="text-xs font-medium flex-shrink-0"
-              style={{ color: 'rgba(255,255,255,0.55)' }}
-            >
-              See all ›
-            </button>
-          )}
-        </div>
-      </div>
-
-      {isLoading ? (
-        <div className="py-6 flex justify-center">
-          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {buckets.active.map(c => (
-            <ChallengeCard
-              key={c.id}
-              challenge={c}
-              currentUid={user.uid}
-              userProfile={userProfile}
-              friendsByUid={friendsByUid}
-              compact
-              onSeeDetails={(ch) => setDetailChallenge(ch)}
-            />
-          ))}
-        </div>
-      )}
-
-      {detailChallenge && (
-        <ChallengeDetailModal
-          challenge={detailChallenge}
-          currentUid={user.uid}
-          userProfile={userProfile}
-          friendsByUid={friendsByUid}
-          onClose={() => setDetailChallenge(null)}
-          onOpenOpponentProfile={(uid) => {
-            const f = friendsByUid[uid];
-            if (f) setOpponentFriend(f);
-          }}
-          onStartWorkout={onStartChallengeWorkout}
-          onApplyPastActivity={onApplyPastActivityToChallenge}
-          onRequestCancel={(c) => { triggerHaptic(ImpactStyle.Light); return requestCancelChallenge(c.id, user.uid); }}
-          onRespondCancel={(c, accept) => {
-            triggerHaptic(accept ? ImpactStyle.Medium : ImpactStyle.Light);
-            return respondToCancelRequest(c.id, user.uid, accept);
-          }}
-        />
-      )}
-
-      {opponentFriend && (
-        <FriendProfileCard
-          friend={opponentFriend}
-          onClose={() => setOpponentFriend(null)}
-        />
-      )}
     </div>
   );
 }

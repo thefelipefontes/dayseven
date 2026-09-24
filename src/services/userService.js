@@ -795,6 +795,10 @@ export async function saveUserGoals(uid, goals) {
           liftsPerWeek: goals.liftsPerWeek ?? null,
           cardioPerWeek: goals.cardioPerWeek ?? null,
           recoveryPerWeek: goals.recoveryPerWeek ?? null,
+          // Weekly steps (stepsPerDay × 7) will count toward the Winning Streak, so past
+          // weeks need the steps goal in force then too. Entries written before this field
+          // existed fall back to current goals (utils/weekGoals).
+          stepsPerDay: goals.stepsPerDay ?? null,
         },
       ]
         .sort((a, b) => (a.fromWeek || '').localeCompare(b.fromWeek || ''))

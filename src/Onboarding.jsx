@@ -551,7 +551,9 @@ function ResultsScreen({ answers, weeklyGoals, onContinue }) {
           }}
         >
           <div className="max-w-md mx-auto w-full">
-            <p className="text-[18px] leading-snug mb-5 text-white font-medium">
+            {/* Header first, so it reads as our suggestion (editable next), not a verdict */}
+            <h2 className="text-[28px] font-bold leading-tight mb-4" style={{ letterSpacing: '-0.5px' }}>Here's the week<br />we suggest for you.</h2>
+            <p className="text-[16px] text-gray-300 leading-snug mb-5 font-medium">
               {message}
             </p>
             <p className="text-[15px] leading-relaxed mb-12 text-gray-400">
@@ -564,13 +566,12 @@ function ResultsScreen({ answers, weeklyGoals, onContinue }) {
               <Ring color={RING_COLORS.steps} progress={progress} size={104} stroke={10} label="Steps" goal={formatStepsK(weekStepsGoalOf(weeklyGoals))} goalOnly />
             </div>
 
-            {/* Suggestion caption — signals these are derived from the survey
-                answers (and implicitly: changeable on the next screen). */}
+            {/* Suggestion caption — derived from the survey answers, changeable on the next screen. */}
             <p className="text-center text-[12px] text-gray-500 flex items-center justify-center gap-1.5">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
               </svg>
-              Suggested from your answers
+              Based on your answers · you can change these next
             </p>
           </div>
         </div>
@@ -583,7 +584,7 @@ function ResultsScreen({ answers, weeklyGoals, onContinue }) {
           style={{ backgroundColor: '#00FF94', color: 'black' }}
           {...ctaPressProps(true)}
         >
-          Review my goals
+          Review &amp; edit my goals
         </button>
       </div>
     </div>
@@ -858,7 +859,7 @@ function ScheduleScreen({ goals, initialPlan, onChange, onBack, onContinue, onSk
           <div className="px-4">
             <h2 className="text-2xl font-bold mb-2">Plan your week.</h2>
             <p className="text-gray-400 text-[14px] leading-relaxed mb-4">
-              We've placed a couple to get you started — drag the rest from the tray onto the days you'll actually train. Tap any session to pick a specific workout (e.g. Cardio → Run). You can change all of this anytime on the Plan tab.
+              Drag your sessions onto the days you'll actually train, or let us build the week for you. Tap any session to pick a workout (e.g. Cardio → Run). You can change it anytime on the Plan tab.
             </p>
           </div>
           <WeeklyPlanner
@@ -866,6 +867,11 @@ function ScheduleScreen({ goals, initialPlan, onChange, onBack, onContinue, onSk
             activities={[]}
             weeklyPlan={seedRef.current}
             onSave={onChange}
+            // "Build my week for me": lays out a full Sunday–Saturday week from the goals
+            // (rest between lifting days) and makes it the repeating week, with Undo.
+            showSuggest
+            suggestWholeWeek
+            initiallyExpanded
           />
         </div>
       </div>
@@ -1816,3 +1822,5 @@ export default function OnboardingFlow({ onComplete, onSignIn }) {
     </div>
   );
 }
+
+

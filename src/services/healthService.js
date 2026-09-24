@@ -775,6 +775,53 @@ export async function fetchHealthDataForDate(date) {
   }
 }
 
+// Daily steps + active calories for every day from `startDate` through `endDate` (local days),
+// keyed 'YYYY-MM-DD'.
+//
+// One query per metric, bucketed by day, instead of one query per day. It also matches the
+// Health app's per-day totals: the plugin only counts samples that START inside the queried
+// range, so a per-day query drops the part of any sample that began before midnight — up to
+// ~850 steps on a day in testing. Starting the range a day early lets HealthKit's statistics
+// collection split a midnight-crossing sample between the two days, like the Health app does;
+// the extra leading day is dropped from the result.
+export async function fetchDailyHealthRange(startDate, endDate) {
+  if (!Capacitor.isNativePlatform()) return null;
+
+  const pad = (n) => String(n).padStart(2, '0');
+  const keyOf = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const from = new Date(startDate);
+  from.setHours(0, 0, 0, 0);
+  const queryFrom = new Date(from);
+  queryFrom.setDate(queryFrom.getDate() - 1); // lead-in day, discarded below
+  const to = new Date(endDate);
+  to.setHours(23, 59, 59, 999);
+  const firstKey = keyOf(from);
+
+  try {
+    const range = { startDate: queryFrom.toISOString(), endDate: to.toISOString(), bucket: 'day' };
+    const [stepsResult, calsResult] = await Promise.all([
+      Health.queryAggregated({ dataType: 'steps', ...range }),
+      Health.queryAggregated({ dataType: 'calories', ...range }),
+    ]);
+
+    const days = {};
+    const add = (result, field) => {
+      (result?.samples || []).forEach((sample) => {
+        const key = keyOf(new Date(sample.startDate)); // bucket starts at local midnight
+        if (key < firstKey) return;
+        if (!days[key]) days[key] = { steps: 0, calories: 0 };
+        days[key][field] = Math.round(sample.value || 0);
+      });
+    };
+    add(stepsResult, 'steps');
+    add(calsResult, 'calories');
+    return days;
+  } catch (error) {
+    console.warn('[HealthKit] fetchDailyHealthRange failed:', error);
+    return null;
+  }
+}
+
 // Main function to sync HealthKit data
 export async function syncHealthKitData() {
   // Check availability

@@ -39,10 +39,16 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
     a.type === 'Walking' && !a.countToward
   ) || [];
 
-  const goals = userData?.goals || initialUserData.goals;
-  const liftsGoalMet = (weekData?.lifts || 0) >= goals.liftsPerWeek;
-  const cardioGoalMet = (weekData?.cardio || 0) >= goals.cardioPerWeek;
-  const recoveryGoalMet = (weekData?.recovery || 0) >= goals.recoveryPerWeek;
+  // The goals in force THAT week and the verdict both come from the shared rule
+  // (utils/weekGoals, via Profile's weekData); current goals are only a fallback.
+  const baseGoals = userData?.goals || initialUserData.goals;
+  const wg = weekData?.weekGoals;
+  const goals = wg
+    ? { ...baseGoals, liftsPerWeek: wg.lifts, cardioPerWeek: wg.cardio, recoveryPerWeek: wg.recovery, stepsPerDay: wg.stepsPerDay }
+    : baseGoals;
+  const liftsGoalMet = weekData?.weekJudged ? weekData.weekJudged.lifts : (weekData?.lifts || 0) >= goals.liftsPerWeek;
+  const cardioGoalMet = weekData?.weekJudged ? weekData.weekJudged.cardio : (weekData?.cardio || 0) >= goals.cardioPerWeek;
+  const recoveryGoalMet = weekData?.weekJudged ? weekData.weekJudged.recovery : (weekData?.recovery || 0) >= goals.recoveryPerWeek;
 
   // The week that's still happening reads as in progress, not failed: unmet goals show a
   // count instead of a red ✗, and steps get Home's pace view (see HomeTab's weekSteps).

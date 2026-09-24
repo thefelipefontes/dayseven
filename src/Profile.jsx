@@ -20,7 +20,8 @@ import ActivityDetailModal from './components/ActivityDetailModal';
 import TrendsView from './components/TrendsView';
 import OwnProfileModal from './components/OwnProfileModal';
 import { resolveUnit, unitLabel, formatDistanceValue, milesToDisplay, formatPace } from './utils/distance';
-import { getActivityCategory } from './utils/activityCategory';
+import { getActivityCategory, countsAsLifting, countsAsCardio } from './utils/activityCategory';
+import { judgeWeekFromActivities, judgeWeek, countWeekActivities, weekGoalsResolver } from './utils/weekGoals';
 import { manualCaloriesForDate } from './utils/calories';
 
 
@@ -398,11 +399,8 @@ export default function ProfilePage(props) {
         result[week.id] = false;
         return;
       }
-      const weekActivities = activities.filter(a => a.date >= startStr && a.date <= endStr);
-      const lifts = weekActivities.filter(a => { const c = getActivityCategory(a); return c === 'lifting' || c === 'lifting+cardio'; }).length;
-      const cardio = weekActivities.filter(a => { const c = getActivityCategory(a); return c === 'cardio' || c === 'lifting+cardio'; }).length;
-      const recovery = weekActivities.filter(a => getActivityCategory(a) === 'recovery').length;
-      result[week.id] = lifts >= goals.liftsPerWeek && cardio >= goals.cardioPerWeek && recovery >= goals.recoveryPerWeek;
+      // Shared rule (utils/weekGoals), against the goals in force that week.
+      result[week.id] = judgeWeekFromActivities(activities, startStr, goals, userData.goalHistory || []).all;
     });
     return result;
   })();
@@ -546,9 +544,10 @@ export default function ProfilePage(props) {
       return actDate >= startOfWeek && actDate <= today;
     });
 
-    const lifts = weekActivities.filter(a => getActivityCategory(a) === 'lifting').length;
-    const cardio = weekActivities.filter(a => getActivityCategory(a) === 'cardio').length;
-    const recovery = weekActivities.filter(a => getActivityCategory(a) === 'recovery').length;
+    // Goal-slot counts (a Circuit-style 'lifting+cardio' session fills both) and the verdict
+    // come from the shared rule in utils/weekGoals.
+    const { lifts, cardio, recovery } = countWeekActivities(weekActivities);
+    const workouts = weekActivities.filter(a => countsAsLifting(a) || countsAsCardio(a)).length;
     const miles = weekActivities.reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
 
     // Calculate calories and steps for the week from healthDataByDate
@@ -568,14 +567,14 @@ export default function ProfilePage(props) {
     }
 
     return {
-      workouts: lifts + cardio,
+      workouts,
       lifts,
       cardio,
       recovery,
       calories: weekCalories,
       steps: weekSteps,
       miles,
-      goalsMet: lifts >= goals.liftsPerWeek && cardio >= goals.cardioPerWeek && recovery >= goals.recoveryPerWeek
+      goalsMet: judgeWeek({ lifts, cardio, recovery }, weekGoalsResolver(goals, userData.goalHistory || [])(toLocalDateStr(startOfWeek))).all
     };
   };
   
@@ -861,15 +860,7 @@ export default function ProfilePage(props) {
           cwStart.setHours(0, 0, 0, 0);
           const cwStartStr = `${cwStart.getFullYear()}-${String(cwStart.getMonth() + 1).padStart(2, '0')}-${String(cwStart.getDate()).padStart(2, '0')}`;
 
-          const cwActs = activities.filter(a => a.date >= cwStartStr);
-          const liftsCount = cwActs.filter(a => { const c = getActivityCategory(a); return c === 'lifting' || c === 'lifting+cardio'; }).length;
-          const cardioCount = cwActs.filter(a => { const c = getActivityCategory(a); return c === 'cardio' || c === 'lifting+cardio'; }).length;
-          const recoveryCount = cwActs.filter(a => getActivityCategory(a) === 'recovery').length;
-
-          const liftsRemaining = Math.max(0, goals.liftsPerWeek - liftsCount);
-          const cardioRemaining = Math.max(0, goals.cardioPerWeek - cardioCount);
-          const recoveryRemaining = Math.max(0, goals.recoveryPerWeek - recoveryCount);
-          const anyRemaining = liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0;
+          const anyRemaining = !judgeWeekFromActivities(activities, cwStartStr, goals, userData?.goalHistory || []).all;
 
           const hasActiveStreak = (userData?.streaks?.master || 0) > 0
             || (userData?.streaks?.lifts || 0) > 0
@@ -940,13 +931,10 @@ export default function ProfilePage(props) {
           cwStart.setDate(todayDate.getDate() - todayDate.getDay());
           cwStart.setHours(0, 0, 0, 0);
           const cwStartStr = `${cwStart.getFullYear()}-${String(cwStart.getMonth() + 1).padStart(2, '0')}-${String(cwStart.getDate()).padStart(2, '0')}`;
-          const cwEnd = new Date(cwStart);
-          cwEnd.setDate(cwEnd.getDate() + 6);
-          const cwEndStr = `${cwEnd.getFullYear()}-${String(cwEnd.getMonth() + 1).padStart(2, '0')}-${String(cwEnd.getDate()).padStart(2, '0')}`;
-          const cwActs = activities.filter(a => a.date >= cwStartStr && a.date <= cwEndStr);
-          const cwLiftsOk = cwActs.filter(a => { const c = getActivityCategory(a); return c === 'lifting' || c === 'lifting+cardio'; }).length >= goals.liftsPerWeek;
-          const cwCardioOk = cwActs.filter(a => { const c = getActivityCategory(a); return c === 'cardio' || c === 'lifting+cardio'; }).length >= goals.cardioPerWeek;
-          const cwRecoveryOk = cwActs.filter(a => getActivityCategory(a) === 'recovery').length >= goals.recoveryPerWeek;
+          const cwJudged = judgeWeekFromActivities(activities, cwStartStr, goals, userData?.goalHistory || []);
+          const cwLiftsOk = cwJudged.lifts;
+          const cwCardioOk = cwJudged.cardio;
+          const cwRecoveryOk = cwJudged.recovery;
 
           const CheckBadge = ({ met, color }) => met ? (
             <div className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full flex items-center justify-center" style={{ backgroundColor: color }}>
@@ -3315,9 +3303,10 @@ export default function ProfilePage(props) {
             return 0;
           });
 
-          const lifts = weekActivities.filter(a => getActivityCategory(a) === 'lifting');
-          const cardioArr = weekActivities.filter(a => getActivityCategory(a) === 'cardio');
-          const recoveryArr = weekActivities.filter(a => getActivityCategory(a) === 'recovery');
+          // Shared rule (utils/weekGoals): dual-counts 'lifting+cardio' and judges against the
+          // goals in force that week.
+          const weekCounts = countWeekActivities(weekActivities);
+          const weekVerdict = judgeWeekFromActivities(activities, weekDates[0], goals, userData?.goalHistory || []);
           const miles = weekActivities.filter(a => a.type === 'Running' || a.type === 'Cycle' || a.type === 'Walking').reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
 
           // Calculate calories: HealthKit active calories + manually logged (not from/linked to HealthKit)
@@ -3345,16 +3334,18 @@ export default function ProfilePage(props) {
           const daysElapsed = Math.max(1, weekDates.filter(d => d <= todayKey).length);
 
           return {
-            lifts: lifts.length,
-            cardio: cardioArr.length,
-            recovery: recoveryArr.length,
+            lifts: weekCounts.lifts,
+            cardio: weekCounts.cardio,
+            recovery: weekCounts.recovery,
+            weekGoals: weekGoalsResolver(goals, userData?.goalHistory || [])(weekDates[0]),
             calories: weekCalories,
             steps: weekSteps,
             daysElapsed,
             isCurrentWeek: weekDates.includes(todayKey),
             miles: miles,
             activities: weekActivities,
-            goalsMet: lifts.length >= goals.liftsPerWeek && cardioArr.length >= goals.cardioPerWeek && recoveryArr.length >= goals.recoveryPerWeek,
+            goalsMet: weekVerdict.all,
+            weekJudged: weekVerdict,
             isVacation,
             isShielded,
             isInjury,

@@ -4,6 +4,7 @@ import CategoryIcon from './CategoryIcon';
 import { normalizeFocusAreas } from '../utils/focusAreas';
 import { initialUserData } from '../utils/initialUserData';
 import { countsAsLifting, countsAsCardio, countsAsRecovery } from '../utils/activityCategory';
+import { judgeWeek, countWeekActivities, weekGoalsResolver } from '../utils/weekGoals';
 
 const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, userData, activities, healthHistory }) => {
   const [isAnimating, setIsAnimating] = useState(false);
@@ -71,21 +72,15 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
     let liftWeeks = 0, cardioWeeks = 0, recoveryWeeks = 0, allGoalsWeeks = 0;
     const totalWeeks = Object.keys(weekMap).length;
 
-    Object.values(weekMap).forEach(weekDates => {
+    // Shared rule (utils/weekGoals), against the goals in force each week.
+    const goalsForWeek = weekGoalsResolver(goals, userData?.goalHistory || []);
+    Object.entries(weekMap).forEach(([weekKey, weekDates]) => {
       const weekActivities = monthActivities.filter(a => weekDates.includes(a.date));
-
-      const weekLifts = weekActivities.filter(countsAsLifting).length;
-      const weekCardio = weekActivities.filter(countsAsCardio).length;
-      const weekRecovery = weekActivities.filter(countsAsRecovery).length;
-
-      const liftMet = weekLifts >= goals.liftsPerWeek;
-      const cardioMet = weekCardio >= goals.cardioPerWeek;
-      const recoveryMet = weekRecovery >= goals.recoveryPerWeek;
-
-      if (liftMet) liftWeeks++;
-      if (cardioMet) cardioWeeks++;
-      if (recoveryMet) recoveryWeeks++;
-      if (liftMet && cardioMet && recoveryMet) allGoalsWeeks++;
+      const judged = judgeWeek(countWeekActivities(weekActivities), goalsForWeek(weekKey));
+      if (judged.lifts) liftWeeks++;
+      if (judged.cardio) cardioWeeks++;
+      if (judged.recovery) recoveryWeeks++;
+      if (judged.all) allGoalsWeeks++;
     });
 
     return { lift: liftWeeks, cardio: cardioWeeks, recovery: recoveryWeeks, all: allGoalsWeeks, total: totalWeeks };

@@ -29,21 +29,12 @@
 // can't be reconstructed, only kept honest from here on.
 
 import { countsAsLifting, countsAsCardio, countsAsRecovery } from './activityCategory';
+import { weekGoalsResolver, judgeWeek, weekKeyFromDate, weekKeyFromDateStr } from './weekGoals';
 
 const CATEGORIES = ['lifts', 'cardio', 'recovery'];
 
-const pad = (n) => String(n).padStart(2, '0');
-
-/** Sunday-start week key ('YYYY-MM-DD') for a Date. */
-export const weekKeyFromDate = (date) => {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() - d.getDay());
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-};
-
-/** Sunday-start week key for a 'YYYY-MM-DD' activity date (noon avoids DST/TZ drift). */
-export const weekKeyFromDateStr = (dateStr) => weekKeyFromDate(new Date(`${dateStr}T12:00:00`));
+// Week keys live with the week rules; re-exported so existing imports keep working.
+export { weekKeyFromDate, weekKeyFromDateStr };
 
 const zero = () => ({ master: 0, lifts: 0, cardio: 0, recovery: 0 });
 
@@ -74,31 +65,8 @@ export function computeStreaks(activities, goals, options = {}) {
     asOf = new Date(),
   } = options;
 
-  const currentGoals = {
-    lifts: goals.liftsPerWeek,
-    cardio: goals.cardioPerWeek,
-    recovery: goals.recoveryPerWeek,
-  };
-
-  // Newest entry at or before the week wins. Sorted defensively — saveUserGoals writes
-  // these in order, but a hand-edited or partially-migrated doc shouldn't skew the walk.
-  const history = (Array.isArray(goalHistory) ? goalHistory : [])
-    .filter((h) => h && h.fromWeek)
-    .sort((a, b) => a.fromWeek.localeCompare(b.fromWeek));
-
-  const goalsForWeek = (weekKey) => {
-    let chosen = null;
-    for (const h of history) {
-      if (h.fromWeek > weekKey) break;
-      chosen = h;
-    }
-    if (!chosen) return currentGoals;
-    return {
-      lifts: chosen.liftsPerWeek ?? currentGoals.lifts,
-      cardio: chosen.cardioPerWeek ?? currentGoals.cardio,
-      recovery: chosen.recoveryPerWeek ?? currentGoals.recovery,
-    };
-  };
+  // Each week is judged against the goals in force that week (utils/weekGoals).
+  const goalsForWeek = weekGoalsResolver(goals, goalHistory);
 
   // Bucket every activity into its week.
   const weeks = new Map();
@@ -142,9 +110,11 @@ export function computeStreaks(activities, goals, options = {}) {
       const counts = weeks.get(weekKey) || { lifts: 0, cardio: 0, recovery: 0 };
       const goalFor = goalsForWeek(weekKey);
       const shielded = shieldedWeeks.includes(weekKey);
+      // A shielded week counts as met across the board.
+      const judged = judgeWeek(counts, goalFor);
       const met = {};
-      CATEGORIES.forEach((c) => { met[c] = shielded || counts[c] >= goalFor[c]; });
-      const allMet = met.lifts && met.cardio && met.recovery;
+      CATEGORIES.forEach((c) => { met[c] = shielded || judged[c]; });
+      const allMet = shielded || judged.all;
 
       const frozen = injuryFrozenWeeks[weekKey]; // array of frozen categories, or undefined
       const isInjury = frozen !== undefined;

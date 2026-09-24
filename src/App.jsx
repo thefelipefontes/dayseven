@@ -23,7 +23,7 @@ import { getFriends, getReactions, getFriendRequests, getComments, addReply, get
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
-import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, fetchHealthDataForDate, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, pushDistanceUnitToWatch, fetchWorkoutRoute, updateWidgetData, updateLiveActivityState, startWatchWorkoutLiveActivity, endAllLiveActivities, checkActiveLiveActivity, showLocationDeniedDialog, getHealthConnectionStatus, backfillHkCalories, isHealthKitReadAuthorized } from './services/healthService';
+import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, fetchHealthDataForDate, fetchDailyHealthRange, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, pushDistanceUnitToWatch, fetchWorkoutRoute, updateWidgetData, updateLiveActivityState, startWatchWorkoutLiveActivity, endAllLiveActivities, checkActiveLiveActivity, showLocationDeniedDialog, getHealthConnectionStatus, backfillHkCalories, isHealthKitReadAuthorized } from './services/healthService';
 import NotificationSettings from './NotificationSettings';
 import { initializePushNotifications, handleNotificationNavigation, removeFCMToken, clearBadge, clearAllNotifications, shouldShowNotification, getNotificationPreferences, logNotificationOpen, getNotificationPermissionStatus, requestNotificationPermission } from './services/notificationService';
 import { initializeRevenueCat, loginRevenueCat, checkProStatus, getPlanType, addCustomerInfoListener, logoutRevenueCat, presentPaywall, presentCustomerCenter, restorePurchases, setDevAuthEmail, getOfferings } from './services/subscriptionService';
@@ -39,6 +39,7 @@ import { FOCUS_AREA_GROUPS, ALL_FOCUS_AREAS, FOCUS_AREA_MIGRATION, normalizeFocu
 import { initialUserData } from './utils/initialUserData';
 import { getDefaultCountToward, getActivityCategory, countsAsLifting, countsAsCardio, countsAsRecovery } from './utils/activityCategory';
 import { computeStreaks } from './utils/streaks';
+import { judgeWeekFromActivities, judgeWeek, countWeekActivities, weekGoalsResolver, weekKeyFromDateStr } from './utils/weekGoals';
 import { manualCaloriesForDate, needsHkCaloriesBackfill } from './utils/calories';
 import { reverseGeocode, formatLocation } from './utils/geocode';
 import SectionIcon from './components/SectionIcon';
@@ -4837,10 +4838,12 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
         const liftsGoal = stats?.liftsGoal || 4;
         const cardioGoal = stats?.cardioGoal || 3;
         const recoveryGoal = stats?.recoveryGoal || 2;
-        const liftsGoalMet = weeklyLifts >= liftsGoal;
-        const cardioGoalMet = weeklyCardio >= cardioGoal;
-        const recoveryGoalMet = weeklyRecovery >= recoveryGoal;
-        const allGoalsMet = liftsGoalMet && cardioGoalMet && recoveryGoalMet;
+        // Judged by the shared rule in the stats builder (utils/weekGoals).
+        const weekJudged = stats?.weekJudged || { lifts: weeklyLifts >= liftsGoal, cardio: weeklyCardio >= cardioGoal, recovery: weeklyRecovery >= recoveryGoal };
+        const liftsGoalMet = weekJudged.lifts;
+        const cardioGoalMet = weekJudged.cardio;
+        const recoveryGoalMet = weekJudged.recovery;
+        const allGoalsMet = weekJudged.all ?? (liftsGoalMet && cardioGoalMet && recoveryGoalMet);
 
         // Calculate percentages for rings (cap at 100%)
         const liftsPercent = liftsGoal > 0 ? Math.min((weeklyLifts / liftsGoal) * 100, 100) : 0;
@@ -11479,10 +11482,13 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
   // goal this week already reads as streak 1. Since the current week can only
   // ever add 1, subtracting it back out for any category already met recovers
   // what the user actually walked in with.
-  const metThisWeek = (cat) => {
-    const p = weekProgress?.[cat];
-    return !!p && (p.goal || 0) > 0 && (p.completed || 0) >= p.goal;
-  };
+  // This week judged by the shared rule (utils/weekGoals) — the same answer the streak
+  // walk and the celebration use.
+  const thisWeekJudged = useMemo(
+    () => judgeWeekFromActivities(activities, getCurrentWeekKey(), userData?.goals, userData?.goalHistory || []),
+    [activities, userData?.goals, userData?.goalHistory]
+  );
+  const metThisWeek = (cat) => !!thisWeekJudged[cat];
   const priorStreak = (cat) => {
     const current = userData?.streaks?.[cat] || 0;
     // A frozen category is held during an injury pause — the current week
@@ -11503,8 +11509,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
   const priorMaster = (() => {
     const current = userData?.streaks?.master || 0;
     if (injuryFrozen.length > 0) return current; // held during an injury pause
-    const allMet = metThisWeek('lifts') && metThisWeek('cardio') && metThisWeek('recovery');
-    return Math.max(0, current - (allMet ? 1 : 0));
+    return Math.max(0, current - (thisWeekJudged.all ? 1 : 0));
   })();
   const streakStakes = priorMaster > 0
     ? 'to keep your winning streak'
@@ -11525,7 +11530,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
   const weekComplete =
     !userData?.vacationMode?.isActive &&
     !userData?.injuryMode?.isActive &&
-    metThisWeek('lifts') && metThisWeek('cardio') && metThisWeek('recovery');
+    thisWeekJudged.all;
 
   // Persist warning dismissal for the day — reappears next day if still needed
   const warningKey = new Date().toDateString();
@@ -12795,34 +12800,14 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
           // last week by checking the week before last hit at least one goal.
           let showRetroactive = false;
           if (isRetroactive) {
-            const prevWeekStart = new Date(previousWeek + 'T00:00:00');
-            const prevWeekEnd = new Date(prevWeekStart);
-            prevWeekEnd.setDate(prevWeekEnd.getDate() + 6);
-            const prevWeekStartStr = previousWeek;
-            const prevWeekEndStr = `${prevWeekEnd.getFullYear()}-${String(prevWeekEnd.getMonth() + 1).padStart(2, '0')}-${String(prevWeekEnd.getDate()).padStart(2, '0')}`;
-            const prevActivities = activities.filter(a => a.date >= prevWeekStartStr && a.date <= prevWeekEndStr);
-            const goals = userData?.goals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2 };
-            const prevLifts = prevActivities.filter(countsAsLifting).length;
-            const prevCardio = prevActivities.filter(countsAsCardio).length;
-            const prevRecovery = prevActivities.filter(countsAsRecovery).length;
-            const prevIncomplete = prevLifts < goals.liftsPerWeek || prevCardio < (goals.cardioPerWeek || 2) || prevRecovery < (goals.recoveryPerWeek || 2);
+            // Both weeks judged by the shared rule, against the goals in force then.
+            const judgePast = (weekKey) => judgeWeekFromActivities(activities, weekKey, userData?.goals, userData?.goalHistory || []);
+            const prevIncomplete = !judgePast(previousWeek).all;
             const prevAlreadyShielded = (userData.streakShield?.shieldedWeeks || []).includes(previousWeek);
 
             // Week before last: did at least one category hit its goal? If so, a streak was alive.
-            const wblStart = new Date(prevWeekStart);
-            wblStart.setDate(wblStart.getDate() - 7);
-            const wblEnd = new Date(wblStart);
-            wblEnd.setDate(wblEnd.getDate() + 6);
-            const wblStartStr = `${wblStart.getFullYear()}-${String(wblStart.getMonth() + 1).padStart(2, '0')}-${String(wblStart.getDate()).padStart(2, '0')}`;
-            const wblEndStr = `${wblEnd.getFullYear()}-${String(wblEnd.getMonth() + 1).padStart(2, '0')}-${String(wblEnd.getDate()).padStart(2, '0')}`;
-            const wblActivities = activities.filter(a => a.date >= wblStartStr && a.date <= wblEndStr);
-            const wblLifts = wblActivities.filter(countsAsLifting).length;
-            const wblCardio = wblActivities.filter(countsAsCardio).length;
-            const wblRecovery = wblActivities.filter(countsAsRecovery).length;
-            const hadStreakBeforeLastWeek = hasActiveStreak ||
-              wblLifts >= goals.liftsPerWeek ||
-              wblCardio >= (goals.cardioPerWeek || 2) ||
-              wblRecovery >= (goals.recoveryPerWeek || 2);
+            const wbl = judgePast(addWeeksToWeekKey(previousWeek, -1));
+            const hadStreakBeforeLastWeek = hasActiveStreak || wbl.lifts || wbl.cardio || wbl.recovery;
 
             showRetroactive = hadStreakBeforeLastWeek && prevIncomplete && !prevAlreadyShielded;
           }
@@ -12839,7 +12824,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             (liftsRemaining > 0 && userData.streaks.lifts > 0) ||
             (cardioRemaining > 0 && userData.streaks.cardio > 0) ||
             (recoveryRemaining > 0 && userData.streaks.recovery > 0) ||
-            (userData.streaks.master > 0 && (liftsRemaining > 0 || cardioRemaining > 0 || recoveryRemaining > 0));
+            (userData.streaks.master > 0 && !thisWeekJudged.all);
 
           const showCurrentWeek = daysLeft <= 3 && atRiskStreak;
 
@@ -13875,41 +13860,85 @@ export default function DaySevenApp() {
     syncToFirestore();
   }, [user?.uid, healthKitData.todaySteps, healthKitData.todayCalories]);
 
-  // Backfill yesterday's health data on app open
-  // The daily sync only writes while the app is open, so if the user closes
-  // the app mid-day, the final calorie/step totals are never captured.
-  // On next app open, query HealthKit for yesterday's complete data and update Firestore.
+  // Backfill the recent days' health totals from HealthKit.
+  //
+  // The daily sync only writes while the app is open, so a day's stored steps/calories are
+  // whatever the app last saw — and a day the app was never opened has no record at all.
+  // That used to be patched for yesterday only. Weekly steps now count toward the goals, so
+  // every day of this week AND last week (last week is still being judged on Sunday) gets
+  // its final total straight from HealthKit: at most 13 cheap aggregate queries.
+  //
+  // Writes a day only when HealthKit's total differs from what's stored, and merges the
+  // result into healthHistory in place instead of re-reading 365 days.
+  const lastHealthBackfillRef = useRef(0);
+  const backfillRecentHealthDays = async () => {
+    const uid = userRef.current?.uid;
+    if (!uid || !Capacitor.isNativePlatform()) return;
+    if (isDemoAccount(userProfileRef.current, userRef.current)) return;
+    // Resume fires often; a day's totals don't change that fast.
+    if (Date.now() - lastHealthBackfillRef.current < 10 * 60 * 1000) return;
+    lastHealthBackfillRef.current = Date.now();
+
+    const dateKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    const daysBack = today.getDay() + 7; // back to last week's Sunday
+    const days = [];
+    for (let i = 1; i <= daysBack; i++) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      days.push(d);
+    }
+
+    try {
+      const stored = {};
+      (healthHistoryRef.current || []).forEach(e => { if (e?.date) stored[e.date] = e; });
+      // One ranged query (see fetchDailyHealthRange for why not one query per day).
+      const byDay = await fetchDailyHealthRange(days[days.length - 1], days[0]);
+      if (!byDay) return;
+      const results = days.map(d => byDay[dateKey(d)] || null);
+      const updates = [];
+      results.forEach((data, i) => {
+        if (!data || (data.steps <= 0 && data.calories <= 0)) return;
+        const key = dateKey(days[i]);
+        // Finished days: HealthKit is the source of truth, so replace any stored value that
+        // differs (not just lower ones). The stored value came from a live read taken while
+        // the app was open that day, and the old per-day query could over-count a sample
+        // that crossed midnight into the next day.
+        // A metric HealthKit returned nothing for (e.g. calories without that permission)
+        // keeps its stored value rather than being zeroed.
+        const prev = stored[key] || {};
+        const steps = data.steps > 0 ? data.steps : (prev.steps || 0);
+        const calories = data.calories > 0 ? data.calories : (prev.calories || 0);
+        if (steps !== (prev.steps || 0) || calories !== (prev.calories || 0)) {
+          updates.push({ ...prev, date: key, steps, calories });
+        }
+      });
+      if (updates.length === 0) return;
+      // Visible in KEEP_CONSOLE=1 debug builds (vite.config.js); stripped from releases.
+      console.log(`[Backfill] corrected ${updates.map(u => `${u.date}: ${stored[u.date]?.steps ?? 0} → ${u.steps} steps`).join(', ')}`);
+
+      await Promise.all(updates.map(u => saveDailyHealthData(uid, u.date, u.steps, u.calories).catch(() => {})));
+      setHealthHistory(prev => {
+        const byDate = {};
+        (prev || []).forEach(e => { if (e?.date) byDate[e.date] = e; });
+        updates.forEach(u => { byDate[u.date] = { ...(byDate[u.date] || {}), ...u }; });
+        return Object.values(byDate).sort((a, b) => b.date.localeCompare(a.date));
+      });
+    } catch (e) {
+      // The next open or resume retries.
+      console.log('[Backfill] failed:', e?.message || e);
+    }
+  };
+
+  // Re-run on resume: the app is often left open in the background across days.
   useEffect(() => {
     if (!user?.uid || !Capacitor.isNativePlatform()) return;
-
-    const backfillYesterday = async () => {
-      try {
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const dateStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
-
-        const data = await fetchHealthDataForDate(yesterday);
-        if (data && (data.steps > 0 || data.calories > 0)) {
-          // Only update if HealthKit has more data than what's stored
-          const existing = await getDailyHealthData(user.uid, dateStr);
-          const existingCals = existing?.calories || 0;
-          const existingSteps = existing?.steps || 0;
-          if (data.calories > existingCals || data.steps > existingSteps) {
-            await saveDailyHealthData(user.uid, dateStr,
-              Math.max(data.steps, existingSteps),
-              Math.max(data.calories, existingCals)
-            );
-            // Refresh health history so the UI reflects the updated data
-            const refreshed = await getDailyHealthHistory(user.uid, 365);
-            setHealthHistory(refreshed);
-          }
-        }
-      } catch (e) {
-        // Silently fail
-      }
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') backfillRecentHealthDays();
     };
-
-    backfillYesterday();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
   }, [user?.uid]);
 
   // Live-subscribe to the current user's challengeStats. The cloud function increments
@@ -14148,10 +14177,7 @@ export default function DaySevenApp() {
         // because watch may have stale data (e.g., phone deleted an activity the watch doesn't know about)
         const phoneShown = getPhoneCelebrationShown();
         if (!phoneShown.master) {
-          const goals = userDataRef.current?.goals || freshProfile?.goals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2 };
-          const allGoalsMet = freshProgress.lifts.completed >= goals.liftsPerWeek &&
-            freshProgress.cardio.completed >= goals.cardioPerWeek &&
-            freshProgress.recovery.completed >= goals.recoveryPerWeek;
+          const allGoalsMet = judgeWeekFor(freshActivities, currentWeekKey, userDataRef.current?.goals || freshProfile?.goals, freshProfile?.goalHistory).all;
           if (allGoalsMet) {
             const newWC = { week: currentWeekKey, lifts: true, cardio: true, recovery: true, master: true };
             setWeekCelebrations(newWC);
@@ -15123,8 +15149,19 @@ export default function DaySevenApp() {
             }
           }
 
-          // Load user's activities from Firestore (force refresh to pick up watch-saved activities)
-          const userActivities = await getUserActivities(user.uid, true);
+          // Load user's activities from Firestore (force refresh to pick up watch-saved activities),
+          // and daily health history (365 days for the full-year Trends view) alongside it.
+          // History has to land BEFORE the streak recalc below: weekly steps are part of
+          // judging a week, and this recalc used to run with no step data at all.
+          const [userActivities, healthHistoryData] = await Promise.all([
+            getUserActivities(user.uid, true),
+            getDailyHealthHistory(user.uid, 365),
+          ]);
+          healthHistoryRef.current = healthHistoryData; // visible to the recalc synchronously
+          setHealthHistory(healthHistoryData);
+          // Fill in any days this week / last week the app wasn't open for (runs in the
+          // background; merges into healthHistory when it lands).
+          backfillRecentHealthDays();
           lastFirestoreActivityCount.current = userActivities.length;
           if (userActivities.length > 0) {
             activitiesFromFirestore.current = true; // Skip debounced save — data is already in Firestore
@@ -15185,11 +15222,7 @@ export default function DaySevenApp() {
             const currentWeekKey = getCurrentWeekKey();
             const phoneShown = getPhoneCelebrationShown();
             if (!phoneShown.master) {
-              const loadedProgress = calculateWeeklyProgress(userActivities);
-              const goals = userGoals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2 };
-              const allGoalsMet = loadedProgress.lifts.completed >= goals.liftsPerWeek &&
-                loadedProgress.cardio.completed >= goals.cardioPerWeek &&
-                loadedProgress.recovery.completed >= goals.recoveryPerWeek;
+              const allGoalsMet = judgeWeekFor(userActivities, currentWeekKey, userGoals, profileForStreaks?.goalHistory).all;
               if (allGoalsMet) {
                 // Update weekCelebrations (streak tracking) if not already set
                 const newWC = { week: currentWeekKey, lifts: true, cardio: true, recovery: true, master: true };
@@ -15223,10 +15256,6 @@ export default function DaySevenApp() {
               setShowHealthReconnect(true);
             }
           }
-
-          // Load daily health history for trends (365 days for full year view)
-          const healthHistoryData = await getDailyHealthHistory(user.uid, 365);
-          setHealthHistory(healthHistoryData);
 
           // Load friends list
           const friendsList = await getFriends(user.uid);
@@ -16076,11 +16105,7 @@ export default function DaySevenApp() {
               // ALWAYS verify actual activity counts — never trust firestoreSaysMaster alone
               // because watch may have stale data (e.g., phone deleted an activity the watch doesn't know about)
               if (!phoneShown.master) {
-                const goals = userDataRef.current?.goals || freshProfile?.goals || { liftsPerWeek: 4, cardioPerWeek: 3, recoveryPerWeek: 2 };
-                const freshProgress = calculateWeeklyProgress(freshActivities);
-                const allGoalsMet = freshProgress.lifts.completed >= goals.liftsPerWeek &&
-                  freshProgress.cardio.completed >= goals.cardioPerWeek &&
-                  freshProgress.recovery.completed >= goals.recoveryPerWeek;
+                const allGoalsMet = judgeWeekFor(freshActivities, currentWeekKey, userDataRef.current?.goals || freshProfile?.goals, freshProfile?.goalHistory).all;
 
                 if (allGoalsMet) {
                   const newWC = { week: currentWeekKey, lifts: true, cardio: true, recovery: true, master: true };
@@ -16487,6 +16512,17 @@ export default function DaySevenApp() {
   }, [userData?.healthKitTypePreferences, user]);
 
   // Calculate weekly progress from activities
+  // "Did this week count?" for the app shell — the shared rule in utils/weekGoals, judged
+  // against the goals in force that week. Pass goals/goalHistory when they were just loaded
+  // and userDataRef hasn't caught up yet.
+  const judgeWeekFor = (activitiesList, weekKey = getCurrentWeekKey(), goals = null, goalHistory = null) =>
+    judgeWeekFromActivities(
+      activitiesList,
+      weekKey,
+      goals || userDataRef.current?.goals,
+      goalHistory || userDataRef.current?.goalHistory || []
+    );
+
   const calculateWeeklyProgress = (allActivities) => {
     const today = new Date();
     today.setHours(23, 59, 59, 999); // End of today to include activities from today
@@ -17162,8 +17198,6 @@ export default function DaySevenApp() {
 
     // Trigger celebration for completing a goal
     const goals = userData.goals;
-    // Calculate prev progress directly from activities state (not weeklyProgress which can be stale)
-    const prevProgress = calculateWeeklyProgress(activities);
     // Use ref to get latest records (avoids stale closure issues)
     const records = userDataRef.current.personalRecords;
     
@@ -17368,18 +17402,18 @@ export default function DaySevenApp() {
       return { message: `${countWord} New Records!\n${recordsBroken.join('\n')}` };
     };
 
-    // Check if this activity just completed a goal (wasn't complete before, is now)
+    // Check if this activity just completed a goal (wasn't complete before, is now).
+    // This week, before and after the save, judged by the shared rule (utils/weekGoals).
+    const prevJudged = judgeWeekFor(activities);
+    const newJudged = judgeWeekFor(updatedActivities);
     const justCompletedLifts = (activityCategory === 'lifting' || activityCategory === 'lifting+cardio') &&
-      prevProgress.lifts.completed < goals.liftsPerWeek &&
-      newProgress.lifts.completed >= goals.liftsPerWeek;
+      !prevJudged.lifts && newJudged.lifts;
 
     const justCompletedCardio = (activityCategory === 'cardio' || activityCategory === 'lifting+cardio') &&
-      prevProgress.cardio.completed < goals.cardioPerWeek &&
-      newProgress.cardio.completed >= goals.cardioPerWeek;
+      !prevJudged.cardio && newJudged.cardio;
 
     const justCompletedRecovery = activityCategory === 'recovery' &&
-      prevProgress.recovery.completed < goals.recoveryPerWeek &&
-      newProgress.recovery.completed >= goals.recoveryPerWeek;
+      !prevJudged.recovery && newJudged.recovery;
     
     // Check for streak milestones (every 5 weeks)
     const checkStreakMilestone = (currentStreak) => {
@@ -17393,13 +17427,8 @@ export default function DaySevenApp() {
     };
 
     // Check if all goals will be met after this activity (for week streak priority)
-    const willCompleteAllGoals = newProgress.lifts.completed >= goals.liftsPerWeek &&
-        newProgress.cardio.completed >= goals.cardioPerWeek &&
-        newProgress.recovery.completed >= goals.recoveryPerWeek;
-
-    const wasAllGoalsMet = prevProgress.lifts.completed >= goals.liftsPerWeek &&
-        prevProgress.cardio.completed >= goals.cardioPerWeek &&
-        prevProgress.recovery.completed >= goals.recoveryPerWeek;
+    const willCompleteAllGoals = newJudged.all;
+    const wasAllGoalsMet = prevJudged.all;
 
     // Get current week celebration state — only increment streaks if not already celebrated this week for that category
     const currentWeekKey = getCurrentWeekKey();
@@ -17734,43 +17763,22 @@ export default function DaySevenApp() {
       personalRecords: updatedRecords
     }));
 
-    // Check if deleting this activity drops any category below its goal
-    // If so, clear the celebrated flag and decrement the streak (since it was wrongly incremented)
+    // Check if deleting this activity drops any category below its goal. If so, clear that
+    // category's celebrated flag (and master's) so re-completing celebrates again. Streak
+    // counts themselves come from the full recalculation below.
     const goals = userData.goals;
-    const oldProgress = weeklyProgress; // progress before deletion
+    const oldJudged = judgeWeekFor(activities);          // this week before the delete
+    const newJudged = judgeWeekFor(updatedActivities);   // and after
     const currentWeekKey = getCurrentWeekKey();
     const wc = weekCelebrations.week === currentWeekKey ? { ...weekCelebrations } : { ...emptyWeekCelebrations, week: currentWeekKey };
     let wcChanged = false;
-    let streakChanges = {};
-
-    // Check each category: was it at/above goal before, and now below?
-    if (wc.lifts && oldProgress.lifts.completed >= goals.liftsPerWeek && newProgress.lifts.completed < goals.liftsPerWeek) {
-      wc.lifts = false;
-      wc.master = false; // master can't be valid if a category is incomplete
-      streakChanges.lifts = userData.streaks.lifts - 1;
-      if (wc.master === false && oldProgress.lifts.completed >= goals.liftsPerWeek && oldProgress.cardio.completed >= goals.cardioPerWeek && oldProgress.recovery.completed >= goals.recoveryPerWeek) {
-        streakChanges.master = userData.streaks.master - 1;
+    ['lifts', 'cardio', 'recovery'].forEach((c) => {
+      if (wc[c] && oldJudged[c] && !newJudged[c]) {
+        wc[c] = false;
+        wc.master = false; // master can't be valid if a category is incomplete
+        wcChanged = true;
       }
-      wcChanged = true;
-    }
-    if (wc.cardio && (oldProgress.cardio?.completed || 0) >= goals.cardioPerWeek && (newProgress.cardio?.completed || 0) < goals.cardioPerWeek) {
-      wc.cardio = false;
-      wc.master = false;
-      streakChanges.cardio = userData.streaks.cardio - 1;
-      if (!('master' in streakChanges) && oldProgress.lifts.completed >= goals.liftsPerWeek && (oldProgress.cardio?.completed || 0) >= goals.cardioPerWeek && (oldProgress.recovery?.completed || 0) >= goals.recoveryPerWeek) {
-        streakChanges.master = userData.streaks.master - 1;
-      }
-      wcChanged = true;
-    }
-    if (wc.recovery && (oldProgress.recovery?.completed || 0) >= goals.recoveryPerWeek && (newProgress.recovery?.completed || 0) < goals.recoveryPerWeek) {
-      wc.recovery = false;
-      wc.master = false;
-      streakChanges.recovery = userData.streaks.recovery - 1;
-      if (!('master' in streakChanges) && oldProgress.lifts.completed >= goals.liftsPerWeek && (oldProgress.cardio?.completed || 0) >= goals.cardioPerWeek && (oldProgress.recovery?.completed || 0) >= goals.recoveryPerWeek) {
-        streakChanges.master = userData.streaks.master - 1;
-      }
-      wcChanged = true;
-    }
+    });
 
     if (wcChanged) {
       setWeekCelebrations(wc);
@@ -19257,6 +19265,12 @@ export default function DaySevenApp() {
           const countsCardio = countsAsCardio;
           const countsRecovery = countsAsRecovery;
 
+          // Every week on the card is judged by the shared rule (utils/weekGoals), against
+          // the goals in force that week — not today's goals.
+          const shareGoalsForWeek = weekGoalsResolver(userData.goals, userData?.goalHistory || []);
+          const judgeShareWeek = (weekKey) => judgeWeekFromActivities(activities, weekKey, userData.goals, userData?.goalHistory || []);
+          const selectedWeekGoals = shareGoalsForWeek(weekRange.startStr);
+
           // Shielded / vacation weeks are also read directly by last4Weeks and weeksWon below.
           const shieldedWeeks = userData?.streakShield?.shieldedWeeks || [];
           const vacationWeeks = userData?.vacationMode?.vacationWeeks || [];
@@ -19292,7 +19306,6 @@ export default function DaySevenApp() {
           // Last 4 weeks history relative to selected week (true = won, false = missed)
           last4Weeks: (() => {
             const weeks = [];
-            const goals = userData.goals;
 
             // Use the selected week as reference instead of today
             const selectedWeekStart = new Date(weekRange.startStr + 'T12:00:00');
@@ -19311,16 +19324,7 @@ export default function DaySevenApp() {
                 weeks.push(true); // vacation freezes — render as won so the strip doesn't read as a miss
                 continue;
               }
-              const weekActivities = activities.filter(a => a.date >= weekStartStr && a.date <= weekEndStr);
-              const lifts = weekActivities.filter(countsLifts).length;
-              const cardio = weekActivities.filter(countsCardio).length;
-              const recovery = weekActivities.filter(countsRecovery).length;
-
-              const won = isShielded || (
-                lifts >= goals.liftsPerWeek &&
-                cardio >= goals.cardioPerWeek &&
-                recovery >= goals.recoveryPerWeek
-              );
+              const won = isShielded || judgeShareWeek(weekStartStr).all;
               weeks.push(won);
             }
             return weeks.reverse(); // oldest to newest
@@ -19328,7 +19332,6 @@ export default function DaySevenApp() {
           // Total weeks won (up to and including selected week). Shielded weeks
           // count as won; vacation weeks are excluded from the count entirely.
           weeksWon: (() => {
-            const goals = userData.goals;
             const weekMap = {};
 
             // Only count activities up to the selected week
@@ -19358,11 +19361,7 @@ export default function DaySevenApp() {
               if (weekKey > weekRange.endStr) return; // never count weeks past selected
               if (shieldedWeeks.includes(weekKey)) { count++; return; }
               const w = weekMap[weekKey] || { lifts: 0, cardio: 0, recovery: 0 };
-              if (
-                w.lifts >= goals.liftsPerWeek &&
-                w.cardio >= goals.cardioPerWeek &&
-                w.recovery >= goals.recoveryPerWeek
-              ) count++;
+              if (judgeWeek(w, shareGoalsForWeek(weekKey)).all) count++;
             });
             return count;
           })(),
@@ -19370,9 +19369,11 @@ export default function DaySevenApp() {
           weeklyLifts: weekActivitiesForShare.filter(countsLifts).length,
           weeklyCardio: weekActivitiesForShare.filter(countsCardio).length,
           weeklyRecovery: weekActivitiesForShare.filter(countsRecovery).length,
-          liftsGoal: userData.goals.liftsPerWeek,
-          cardioGoal: userData.goals.cardioPerWeek,
-          recoveryGoal: userData.goals.recoveryPerWeek,
+          // The selected week's goals, and whether that week counted (shared rule).
+          liftsGoal: selectedWeekGoals.lifts,
+          cardioGoal: selectedWeekGoals.cardio,
+          recoveryGoal: selectedWeekGoals.recovery,
+          weekJudged: judgeShareWeek(weekRange.startStr),
           weeklyCalories: weekActivitiesForShare.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0),
           weeklyMiles: weekActivitiesForShare.filter(a => a.distance).reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0),
           // Weekly activities for analysis
@@ -19464,7 +19465,6 @@ export default function DaySevenApp() {
             };
 
             const weeksInMonth = getWeeksInMonth();
-            const goals = userData.goals;
 
             // Count weeks where each goal was met
             let liftWeeksHit = 0;
@@ -19474,16 +19474,11 @@ export default function DaySevenApp() {
 
             weeksInMonth.forEach(week => {
               const weekActivities = activities.filter(a => a.date >= week.startStr && a.date <= week.endStr);
-              const lifts = weekActivities.filter(countsLifts).length;
-              const cardio = weekActivities.filter(countsCardio).length;
-              const recovery = weekActivities.filter(countsRecovery).length;
-
-              if (lifts >= goals.liftsPerWeek) liftWeeksHit++;
-              if (cardio >= goals.cardioPerWeek) cardioWeeksHit++;
-              if (recovery >= goals.recoveryPerWeek) recoveryWeeksHit++;
-              if (lifts >= goals.liftsPerWeek && cardio >= goals.cardioPerWeek && recovery >= goals.recoveryPerWeek) {
-                allGoalsWeeksHit++;
-              }
+              const judged = judgeWeek(countWeekActivities(weekActivities), shareGoalsForWeek(weekKeyFromDateStr(week.startStr)));
+              if (judged.lifts) liftWeeksHit++;
+              if (judged.cardio) cardioWeeksHit++;
+              if (judged.recovery) recoveryWeeksHit++;
+              if (judged.all) allGoalsWeeksHit++;
             });
 
             // Find highest calorie session this month
@@ -19560,9 +19555,9 @@ export default function DaySevenApp() {
               monthRecoveryWeeksHit: recoveryWeeksHit,
               monthAllGoalsWeeksHit: allGoalsWeeksHit,
               // User goals for context
-              liftsGoalMonthly: goals.liftsPerWeek,
-              cardioGoalMonthly: goals.cardioPerWeek,
-              recoveryGoalMonthly: goals.recoveryPerWeek,
+              liftsGoalMonthly: userData.goals.liftsPerWeek,
+              cardioGoalMonthly: userData.goals.cardioPerWeek,
+              recoveryGoalMonthly: userData.goals.recoveryPerWeek,
               // Highlights
               monthlyHighestCalorieSession: highestCalorieSession,
               monthlyLongestSession: longestSession,

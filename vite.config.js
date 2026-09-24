@@ -33,6 +33,8 @@ export default defineConfig({
     },
   },
   esbuild: {
-    drop: ['console', 'debugger']
+    // Release builds strip console/debugger. KEEP_CONSOLE=1 keeps them for a device debug
+    // run — Capacitor forwards console output to Xcode's console as "⚡️ [log]" lines.
+    drop: process.env.KEEP_CONSOLE ? [] : ['console', 'debugger']
   }
 })

@@ -11493,6 +11493,20 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
     };
   }, [healthHistory, weekProgress.steps?.today, weekProgress.steps?.goal]);
   const formatK = (n) => `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  const recoveryChip = (
+    <button
+      onClick={() => { triggerHaptic(ImpactStyle.Light); setShowRecoveryBreakdown(!showRecoveryBreakdown); }}
+      className="flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] active:opacity-70 transition-opacity"
+      style={{ backgroundColor: 'rgba(0,209,255,0.08)', border: '1px solid rgba(0,209,255,0.18)' }}
+    >
+      <CategoryIcon category="recovery" size={12} />
+      <span className="text-white">Recovery</span>
+      <span style={{ color: '#aaa' }}>{weekProgress.recovery?.completed || 0}/{weekProgress.recovery?.goal || 0}</span>
+      {(userData.streaks?.recovery || 0) > 0 && (
+        <span className="font-bold" style={{ color: '#00D1FF' }}>🔥 {userData.streaks.recovery}w</span>
+      )}
+    </button>
+  );
   // "Win the week, not the day": turns the weekly gap into one small daily number. Pace
   // only counts finished days, so today can put you ahead but never behind.
   const stepsPaceSentence = weekSteps.total >= weekSteps.goal ? (
@@ -13356,26 +13370,6 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             </div>
           )}
 
-          {/* Recovery — a bonus: it keeps its own streak but doesn't count toward the Winning
-              Streak. Tap for the same breakdown the Recovery ring used to open. */}
-          <button
-            onClick={() => { triggerHaptic(ImpactStyle.Light); setShowRecoveryBreakdown(!showRecoveryBreakdown); }}
-            className="w-full mt-3 px-3 py-2.5 rounded-xl flex items-center justify-between text-left active:opacity-70 transition-opacity"
-            style={{ backgroundColor: 'rgba(0,209,255,0.06)', border: '1px solid rgba(0,209,255,0.15)' }}
-          >
-            <span className="flex items-center gap-2 text-xs">
-              <CategoryIcon category="recovery" size={14} />
-              <span className="text-white">Recovery</span>
-              <span style={{ color: '#888' }}>{weekProgress.recovery?.completed || 0}/{weekProgress.recovery?.goal || 0} this week</span>
-              {(userData.streaks?.recovery || 0) > 0 && (
-                <span className="font-bold" style={{ color: streakPaused('recovery') ? '#A78BFA' : '#00D1FF' }}>{streakPaused('recovery') ? '🩹' : '🔥'} {userData.streaks.recovery}w</span>
-              )}
-            </span>
-            <span className="flex items-center gap-2">
-              <span className="text-[8px] font-bold tracking-wider uppercase px-1.5 py-[1px] rounded-full" style={{ backgroundColor: 'rgba(0,209,255,0.12)', color: '#00D1FF' }}>Bonus</span>
-              <span className="text-[10px] text-gray-500">{showRecoveryBreakdown ? '▲' : '▼'}</span>
-            </span>
-          </button>
 
           {/* Strength Breakdown - Expandable */}
           {showStrengthBreakdown && (
@@ -13487,9 +13481,11 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
 
           {/* Overall Progress Bar */}
           <div className="mt-4 pt-4 border-t border-white/10">
+            {/* Recovery sits on the Week Progress line: a bonus with its own streak, not part of
+                winning the week, so it doesn't get its own row (tap for the breakdown). */}
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-gray-400">Week Progress</span>
-              <span className="text-xs font-bold" style={{ color: overallPercent >= 100 ? '#00FF94' : 'white' }}><AnimatedCounter value={overallPercent} />%</span>
+              <span className="text-xs text-gray-400">Week Progress <span className="font-bold ml-1" style={{ color: overallPercent >= 100 ? '#00FF94' : 'white' }}><AnimatedCounter value={overallPercent} />%</span></span>
+              <span className="flex items-center gap-1.5"><span className="text-[10px] text-gray-500">Bonus</span>{recoveryChip}</span>
             </div>
             <ProgressBar progress={overallPercent} height={4} color={overallPercent >= 100 ? '#00FF94' : '#00FF94'} />
           </div>

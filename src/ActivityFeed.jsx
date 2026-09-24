@@ -2835,7 +2835,8 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                 { key: 'cardio', cat: 'cardio', label: 'Cardio', color: '#FF9500' },
                 // 'stepsStreak', not 'steps': that key is the activity-steps leaderboard.
                 { key: 'stepsStreak', cat: 'steps', label: 'Steps', color: '#BF5AF2' },
-                { key: 'recovery', cat: 'recovery', label: 'Recovery', color: '#00D1FF' }
+                // Recovery is a bonus streak (doesn't count toward winning the week)
+                { key: 'recovery', cat: 'recovery', label: 'Recovery', color: '#00D1FF', bonus: true }
               ].map((cat) => (
                 <ScrollablePill
                   key={cat.key}
@@ -2845,6 +2846,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                   textColor={cat.key === 'master' ? 'black' : 'white'}
                 >
                   {cat.cat && <CategoryIcon category={cat.cat} size={12} color={leaderboardCategory === cat.key ? 'currentColor' : cat.color} className="inline align-[-2px] mr-1" />}{cat.label}
+                  {cat.bonus && <span className="ml-1 text-[9px] font-bold uppercase tracking-wide opacity-70">bonus</span>}
                 </ScrollablePill>
               ))
             )}
@@ -2955,7 +2957,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                   <div className="text-xs text-gray-400 uppercase tracking-wide mb-2"><ActivityIcon type="Running" size={12} className="inline align-[-2px] mr-1" />Running</div>
                   <div className="grid grid-cols-3 gap-2">
                     {/* Most Runs */}
-                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(78, 205, 196, 0.1)' }}>
+                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(255, 149, 0, 0.1)' }}>
                       <div className="text-[10px] text-gray-500 uppercase mb-1">Most Runs</div>
                       {[...sortedLeaderboard]
                         .sort((a, b) => (b.volume?.runs?.[leaderboardTimeRange] || 0) - (a.volume?.runs?.[leaderboardTimeRange] || 0))
@@ -2971,7 +2973,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                     </div>
 
                     {/* Most Distance */}
-                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(78, 205, 196, 0.1)' }}>
+                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(255, 149, 0, 0.1)' }}>
                       {(() => {
                         const u = resolveUnit(userProfile);
                         return (
@@ -2994,7 +2996,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                     </div>
 
                     {/* Most Time */}
-                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(78, 205, 196, 0.1)' }}>
+                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(255, 149, 0, 0.1)' }}>
                       <div className="text-[10px] text-gray-500 uppercase mb-1">Most Time</div>
                       {[...sortedLeaderboard]
                         .sort((a, b) => (b.volume?.runMinutes?.[leaderboardTimeRange] || 0) - (a.volume?.runMinutes?.[leaderboardTimeRange] || 0))
@@ -3020,7 +3022,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                   <div className="text-xs text-gray-400 uppercase tracking-wide mb-2"><CategoryIcon category="lifts" size={12} className="inline align-[-2px] mr-1" />Strength</div>
                   <div className="grid grid-cols-2 gap-2">
                     {/* Most Sessions */}
-                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(255, 107, 107, 0.1)' }}>
+                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(0, 255, 148, 0.1)' }}>
                       <div className="text-[10px] text-gray-500 uppercase mb-1">Most Sessions</div>
                       {[...sortedLeaderboard]
                         .sort((a, b) => (b.volume?.strengthSessions?.[leaderboardTimeRange] || 0) - (a.volume?.strengthSessions?.[leaderboardTimeRange] || 0))
@@ -3036,7 +3038,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                     </div>
 
                     {/* Most Time */}
-                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(255, 107, 107, 0.1)' }}>
+                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(0, 255, 148, 0.1)' }}>
                       <div className="text-[10px] text-gray-500 uppercase mb-1">Most Time</div>
                       {[...sortedLeaderboard]
                         .sort((a, b) => (b.volume?.liftingMinutes?.[leaderboardTimeRange] || 0) - (a.volume?.liftingMinutes?.[leaderboardTimeRange] || 0))
@@ -3059,10 +3061,10 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
 
                 {/* Recovery Leaders */}
                 <div className="mb-4">
-                  <div className="text-xs text-gray-400 uppercase tracking-wide mb-2">🧘 Recovery</div>
+                  <div className="text-xs text-gray-400 uppercase tracking-wide mb-2"><CategoryIcon category="recovery" size={12} className="inline align-[-2px] mr-1" />Recovery</div>
                   <div className="grid grid-cols-3 gap-2">
                     {/* Cold Plunge */}
-                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(155, 89, 182, 0.1)' }}>
+                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(0, 209, 255, 0.1)' }}>
                       <div className="text-[10px] text-gray-500 uppercase mb-1"><CategoryIcon category="recovery" size={11} className="inline align-[-2px] mr-1" />Cold Plunge</div>
                       {[...sortedLeaderboard]
                         .sort((a, b) => (b.volume?.coldPlunges?.[leaderboardTimeRange] || 0) - (a.volume?.coldPlunges?.[leaderboardTimeRange] || 0))
@@ -3072,13 +3074,13 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                             <span className="text-[10px] text-gray-500">{i + 1}.</span>
                             <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
                             <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
-                            <span className="text-[11px] font-bold" style={{ color: '#9B59B6' }}>{user.volume?.coldPlunges?.[leaderboardTimeRange] || 0}</span>
+                            <span className="text-[11px] font-bold" style={{ color: '#00D1FF' }}>{user.volume?.coldPlunges?.[leaderboardTimeRange] || 0}</span>
                           </div>
                         ))}
                     </div>
 
                     {/* Sauna */}
-                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(155, 89, 182, 0.1)' }}>
+                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(0, 209, 255, 0.1)' }}>
                       <div className="text-[10px] text-gray-500 uppercase mb-1"><ActivityIcon type="Sauna" size={11} className="inline align-[-2px] mr-1" />Sauna</div>
                       {[...sortedLeaderboard]
                         .sort((a, b) => (b.volume?.saunaSessions?.[leaderboardTimeRange] || 0) - (a.volume?.saunaSessions?.[leaderboardTimeRange] || 0))
@@ -3088,13 +3090,13 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                             <span className="text-[10px] text-gray-500">{i + 1}.</span>
                             <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
                             <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
-                            <span className="text-[11px] font-bold" style={{ color: '#9B59B6' }}>{user.volume?.saunaSessions?.[leaderboardTimeRange] || 0}</span>
+                            <span className="text-[11px] font-bold" style={{ color: '#00D1FF' }}>{user.volume?.saunaSessions?.[leaderboardTimeRange] || 0}</span>
                           </div>
                         ))}
                     </div>
 
                     {/* Yoga */}
-                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(155, 89, 182, 0.1)' }}>
+                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(0, 209, 255, 0.1)' }}>
                       <div className="text-[10px] text-gray-500 uppercase mb-1">🧘 Yoga</div>
                       {[...sortedLeaderboard]
                         .sort((a, b) => (b.volume?.yogaSessions?.[leaderboardTimeRange] || 0) - (a.volume?.yogaSessions?.[leaderboardTimeRange] || 0))
@@ -3104,7 +3106,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                             <span className="text-[10px] text-gray-500">{i + 1}.</span>
                             <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
                             <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
-                            <span className="text-[11px] font-bold" style={{ color: '#9B59B6' }}>{user.volume?.yogaSessions?.[leaderboardTimeRange] || 0}</span>
+                            <span className="text-[11px] font-bold" style={{ color: '#00D1FF' }}>{user.volume?.yogaSessions?.[leaderboardTimeRange] || 0}</span>
                           </div>
                         ))}
                     </div>
@@ -3126,7 +3128,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                             <span className="text-[10px] text-gray-500">{i + 1}.</span>
                             <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
                             <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
-                            <span className="text-[11px] font-bold" style={{ color: '#BF5AF2' }}>{user.volume?.rides?.[leaderboardTimeRange] || 0}</span>
+                            <span className="text-[11px] font-bold" style={{ color: '#FF9500' }}>{user.volume?.rides?.[leaderboardTimeRange] || 0}</span>
                           </div>
                         ))}
                     </div>
@@ -3142,7 +3144,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                             <span className="text-[10px] text-gray-500">{i + 1}.</span>
                             <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
                             <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
-                            <span className="text-[11px] font-bold" style={{ color: '#BF5AF2' }}>{user.volume?.cycleMiles?.[leaderboardTimeRange]?.toFixed(0) || 0}</span>
+                            <span className="text-[11px] font-bold" style={{ color: '#FF9500' }}>{user.volume?.cycleMiles?.[leaderboardTimeRange]?.toFixed(0) || 0}</span>
                           </div>
                         ))}
                     </div>
@@ -3161,7 +3163,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                               <span className="text-[10px] text-gray-500">{i + 1}.</span>
                               <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
                               <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
-                              <span className="text-[11px] font-bold" style={{ color: '#BF5AF2' }}>{hrs}h</span>
+                              <span className="text-[11px] font-bold" style={{ color: '#FF9500' }}>{hrs}h</span>
                             </div>
                           );
                         })}

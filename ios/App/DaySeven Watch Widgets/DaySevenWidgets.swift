@@ -53,7 +53,7 @@ struct WidgetColors {
     static let recovery = Color(red: 0.0, green: 0.82, blue: 1.0)    // #00D1FF
     static let streak = Color.yellow
     static let injury = Color(red: 0.655, green: 0.545, blue: 0.980) // #A78BFA — streak paused
-    static let steps = Color.purple
+    static let steps = Color(red: 0.749, green: 0.353, blue: 0.949) // #BF5AF2, same as the app (system purple shifts in light mode)
     static let calories = Color.orange
 }
 
@@ -245,7 +245,8 @@ struct InlineComplicationView: View {
             Image(systemName: data.injuryModeActive ? "bandage.fill" : "flame.fill")
             Text("\(data.totalCategoriesCompleted)/3 goals")
             Text("\u{00B7}")
-            Text("\(formatSteps(data.todaySteps)) steps")
+            // Weekly steps, like the rings: steps are a weekly goal
+            Text("\(formatSteps(data.weekSteps))/\(formatSteps(data.weekStepsGoal)) steps")
         }
     }
 

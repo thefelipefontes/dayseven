@@ -235,7 +235,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
               {(() => {
                 const perDayAvg = formatK(weekStepsTotal / daysElapsed);
                 if (weekStepsTotal >= weekStepsGoal) {
-                  return <><span className="font-semibold" style={{ color: '#00FF94' }}>Week won.</span> {formatK(weekStepsTotal)} steps, ~{perDayAvg} a day.</>;
+                  return <><span className="font-semibold" style={{ color: '#BF5AF2' }}>Steps goal hit.</span> {formatK(weekStepsTotal)} steps, ~{perDayAvg} a day.</>;
                 }
                 if (!isLiveWeek) {
                   return <><span className="font-semibold" style={{ color: '#ddd' }}>{formatK(weekStepsGoal - weekStepsTotal)} short.</span> ~{perDayAvg} a day.</>;
@@ -306,7 +306,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
           </div>
           {/* Recovery: its own streak. A bonus from the user's start week; before it, it was
               part of the win, so no Bonus tag there. */}
-          <div className="mt-2 p-3 rounded-xl flex items-center justify-between" style={streakRowStyle(recoveryGoalMet, '0,209,255', 'recovery')}>
+          <div className={`mt-2 ${originalRuleWeek ? 'p-3' : 'px-3 py-2'} rounded-xl flex items-center justify-between`} style={originalRuleWeek ? streakRowStyle(recoveryGoalMet, '0,209,255', 'recovery') : { backgroundColor: 'rgba(0,209,255,0.06)', border: '1px solid rgba(0,209,255,0.18)' }}>
             <div className="flex items-center gap-2">
               <span className="text-xs"><CategoryIcon category="recovery" size={12} className="inline align-[-2px] mr-1" />Recovery</span>
               <span className="text-[10px] text-gray-500">{goals.recoveryPerWeek}+ per week</span>

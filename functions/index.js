@@ -1627,12 +1627,12 @@ exports.sendTrialEndingReminders = onSchedule(
 
       // Day-before nudge (~24h), once.
       if (hoursLeft >= 22 && hoursLeft < 26 && !userData.trialEndingNotified) {
-        const { workouts, recovery } = weekRecap(userData);
+        // Recovery is a bonus now, so the recap sticks to workouts and the Winning Streak.
+        const { workouts } = weekRecap(userData);
         const streak = userData.streaks?.master || 0;
-        const built = workouts > 0 || recovery > 0 || streak > 0;
+        const built = workouts > 0 || streak > 0;
         const recapStr = built
           ? `Your week: ${workouts} workout${workouts === 1 ? '' : 's'}` +
-            (recovery > 0 ? `, ${recovery} recovery` : '') +
             (streak > 0 ? `, a ${streak}-week Winning Streak` : '') + '.'
           : 'Keep your plan, streaks, and challenges.';
         await sendNotificationToUser(
@@ -1816,7 +1816,8 @@ exports.sendActivationReminders = onSchedule(
         const weekStartStr = addDaysToDateStr(now.toISOString().split('T')[0], -now.getUTCDay());
         const week = await judgeUserWeek(userId, userData, weekStartStr);
         if (!week.all) {
-          const completed = week.counts.lifts + week.counts.cardio + week.counts.recovery;
+          // Workouts = strength + cardio sessions; recovery is a bonus, not a workout toward the week.
+          const completed = week.counts.lifts + week.counts.cardio;
           await sendNotificationToUser(
             userId,
             "You're building something 💪",

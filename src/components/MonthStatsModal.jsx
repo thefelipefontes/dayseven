@@ -6,6 +6,18 @@ import { initialUserData } from '../utils/initialUserData';
 import { countsAsLifting, countsAsCardio, countsAsRecovery } from '../utils/activityCategory';
 import { judgeWeek, countWeekActivities, weekGoalsResolver, weekContext, stepsByDateFrom, weekStepsTotal, winningCategories } from '../utils/weekGoals';
 
+const RecoveryBonusRow = ({ count, suffix = '' }) => (
+  <div className="px-3 py-2 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(0,209,255,0.06)', border: '1px solid rgba(0,209,255,0.18)' }}>
+    <div className="flex items-center gap-1.5 text-xs">
+      <CategoryIcon category="recovery" size={12} />
+      <span className="text-white">Recovery</span>
+      <span className="font-bold" style={{ color: '#00D1FF' }}>{count}</span>
+      {suffix && <span className="text-gray-500">{suffix}</span>}
+    </div>
+    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ color: '#00D1FF', backgroundColor: 'rgba(0,209,255,0.12)', letterSpacing: '0.04em' }}>BONUS</span>
+  </div>
+);
+
 const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, userData, activities, healthHistory }) => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
@@ -208,11 +220,12 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
               <div className="text-2xl font-black" style={{ color: '#FF9500' }}>{cardioCount}</div>
               <div className="text-[10px] text-gray-400"><CategoryIcon category="cardio" size={11} className="inline align-[-2px] mr-1" />Cardio</div>
             </div>
-            <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
-              <div className="text-2xl font-black" style={{ color: '#00D1FF' }}>{recoveryCount}</div>
-              <div className="text-[10px] text-gray-400"><CategoryIcon category="recovery" size={11} className="inline align-[-2px] mr-1" />Recovery</div>
+            <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(191,90,242,0.1)' }}>
+              <div className="text-2xl font-black" style={{ color: '#BF5AF2' }}>{(totalSteps / 1000).toFixed(0)}k</div>
+              <div className="text-[10px] text-gray-400"><CategoryIcon category="steps" size={11} className="inline align-[-2px] mr-1" />Steps</div>
             </div>
           </div>
+          <div className="-mt-2 mb-4"><RecoveryBonusRow count={recoveryCount} suffix="sessions" /></div>
 
           {/* Month Totals */}
           <div className="mb-4">
@@ -230,8 +243,8 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
                 <div className="text-[10px] text-gray-400"><CategoryIcon category="cardio" size={11} className="inline align-[-2px] mr-1" />Distance</div>
               </div>
               <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                <div className="text-lg font-black">{(totalSteps / 1000).toFixed(0)}k</div>
-                <div className="text-[10px] text-gray-400"><CategoryIcon category="steps" size={11} className="inline align-[-2px] mr-1" />Steps</div>
+                <div className="text-lg font-black">{monthActivities.reduce((sum, a) => sum + (parseInt(a.duration) || 0), 0).toLocaleString()}</div>
+                <div className="text-[10px] text-gray-400">⏱ Minutes</div>
               </div>
               <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                 <div className="text-lg font-black">{daysActive}</div>
@@ -344,13 +357,7 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
                 </div>
               ))}
             </div>
-            <div className="mt-2 px-1 flex items-center justify-between text-[12px]">
-              <span className="flex items-center gap-1.5 text-gray-400">
-                <CategoryIcon category="recovery" size={12} />Recovery
-                <span className="text-[9.5px] font-semibold px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(0,209,255,0.12)', color: '#00D1FF' }}>BONUS</span>
-              </span>
-              <span className="font-semibold" style={{ color: '#00D1FF' }}>{weeksData.recovery}/{weeksData.total} weeks</span>
-            </div>
+            <div className="mt-2"><RecoveryBonusRow count={`${weeksData.recovery}/${weeksData.total}`} suffix="weeks" /></div>
           </div>
         </div>
       </div>

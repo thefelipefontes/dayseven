@@ -119,9 +119,10 @@ struct CornerComplicationView: View {
             ringView(progress: data.liftsProgress, color: WidgetColors.strength, diameter: ringSize - ringSpacing * 4)
         }
         .frame(width: ringSize, height: ringSize)
+        // Label tracks the week's steps, same as the outer ring (steps are a weekly goal)
         .widgetLabel {
-            ProgressView(value: data.stepsProgress) {
-                Text("👟 \(formatSteps(data.todaySteps))")
+            ProgressView(value: data.weekStepsProgress) {
+                Text("👟 \(formatSteps(data.weekSteps))/\(formatSteps(data.weekStepsGoal))")
             }
         }
     }

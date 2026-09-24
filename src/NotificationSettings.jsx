@@ -453,13 +453,13 @@ const NotificationSettings = ({ userId, onClose }) => {
             />
             <SettingRow
               label="Goal Achievements"
-              description="When all weekly goals are complete"
+              description="When you win the week"
               enabled={preferences.goalAchievements}
               onToggle={() => handleToggle('goalAchievements')}
             />
             <SettingRow
               label="Weekly Summary"
-              description="Sunday recap with workouts, recovery, and calories"
+              description="Sunday recap with workouts, steps, and calories"
               enabled={preferences.weeklySummary}
               onToggle={() => handleToggle('weeklySummary')}
             />

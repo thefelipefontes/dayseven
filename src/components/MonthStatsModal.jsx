@@ -55,7 +55,7 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
 
   // Calculate weeks hitting goals
   const calculateWeeksHittingGoals = () => {
-    if (monthDates.length === 0) return { lift: 0, cardio: 0, recovery: 0, all: 0, total: 0 };
+    if (monthDates.length === 0) return { lift: 0, cardio: 0, recovery: 0, steps: 0, all: 0, total: 0, won: [], stepsTracked: false };
 
     // Group dates by week (Sunday-Saturday)
     const weekMap = {};
@@ -69,13 +69,14 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
       weekMap[weekKey].push(dateStr);
     });
 
-    let liftWeeks = 0, cardioWeeks = 0, recoveryWeeks = 0, allGoalsWeeks = 0;
+    let liftWeeks = 0, cardioWeeks = 0, recoveryWeeks = 0, stepsWeeks = 0, allGoalsWeeks = 0;
+    const won = []; // per week, oldest first — drives the little bars on the Weeks Won card
     const totalWeeks = Object.keys(weekMap).length;
 
     // Shared rule (utils/weekGoals), against the goals in force each week.
     const goalsForWeek = weekGoalsResolver(goals, userData?.goalHistory || []);
     const ctx = weekContext({ goals, goalHistory: userData?.goalHistory || [], winningRuleFrom: userData?.winningRuleFrom || null, stepsByDate: stepsByDateFrom(healthHistory || []) });
-    Object.entries(weekMap).forEach(([weekKey, weekDates]) => {
+    Object.entries(weekMap).sort(([a], [b]) => a.localeCompare(b)).forEach(([weekKey, weekDates]) => {
       const weekActivities = monthActivities.filter(a => weekDates.includes(a.date));
       const judged = judgeWeek(countWeekActivities(weekActivities), goalsForWeek(weekKey), {
         weekSteps: weekStepsTotal(ctx.stepsByDate, weekKey),
@@ -84,10 +85,12 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
       if (judged.lifts) liftWeeks++;
       if (judged.cardio) cardioWeeks++;
       if (judged.recovery) recoveryWeeks++;
+      if (judged.steps) stepsWeeks++;
       if (judged.all) allGoalsWeeks++;
+      won.push(!!judged.all);
     });
 
-    return { lift: liftWeeks, cardio: cardioWeeks, recovery: recoveryWeeks, all: allGoalsWeeks, total: totalWeeks };
+    return { lift: liftWeeks, cardio: cardioWeeks, recovery: recoveryWeeks, steps: stepsWeeks, all: allGoalsWeeks, total: totalWeeks, won, stepsTracked: ctx.stepsTracked };
   };
 
   const weeksData = calculateWeeksHittingGoals();
@@ -311,61 +314,42 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
             </div>
           </div>
 
-          {/* Weeks Hitting Goals */}
+          {/* Weeks Won — the headline is how many weeks met the Winning Streak rule (utils/weekGoals);
+              the three core goals sit under it and Recovery is a bonus line. */}
           <div className="mb-4">
             <div className="flex items-center gap-2 mb-3">
               <SectionIcon type="streak" />
-              <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Weeks Hitting Goals</span>
+              <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Weeks Won</span>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="p-3 rounded-xl flex items-center justify-between" style={{
-                backgroundColor: weeksData.lift === weeksData.total && weeksData.total > 0 ? 'rgba(0,255,148,0.1)' : 'rgba(255,255,255,0.05)',
-                border: weeksData.lift === weeksData.total && weeksData.total > 0 ? '1px solid rgba(0,255,148,0.2)' : 'none'
-              }}>
-                <div>
-                  <span className="text-xs"><CategoryIcon category="lifts" size={12} className="inline align-[-2px] mr-1" />Strength</span>
-                  <div className="text-[10px] text-gray-500">{goals.liftsPerWeek}+ per week</div>
-                </div>
-                <span className="text-sm font-bold" style={{ color: '#00FF94' }}>
-                  {weeksData.lift}/{weeksData.total}
-                </span>
+            <div className="p-4 rounded-xl flex items-center justify-between gap-3 mb-2" style={{ backgroundColor: 'rgba(255,215,0,0.08)', border: '1px solid rgba(255,215,0,0.2)' }}>
+              <div className="min-w-0">
+                <div className="text-[13px] font-semibold text-white">🏆 {weeksData.all} of {weeksData.total} {weeksData.total === 1 ? 'week' : 'weeks'} won</div>
+                <div className="text-[11px] text-gray-500">{weeksData.stepsTracked ? 'Strength + Cardio + Steps in the same week' : 'Strength + Cardio in the same week'}</div>
               </div>
-              <div className="p-3 rounded-xl flex items-center justify-between" style={{
-                backgroundColor: weeksData.cardio === weeksData.total && weeksData.total > 0 ? 'rgba(255,149,0,0.1)' : 'rgba(255,255,255,0.05)',
-                border: weeksData.cardio === weeksData.total && weeksData.total > 0 ? '1px solid rgba(255,149,0,0.2)' : 'none'
-              }}>
-                <div>
-                  <span className="text-xs"><CategoryIcon category="cardio" size={12} className="inline align-[-2px] mr-1" />Cardio</span>
-                  <div className="text-[10px] text-gray-500">{goals.cardioPerWeek}+ per week</div>
-                </div>
-                <span className="text-sm font-bold" style={{ color: '#FF9500' }}>
-                  {weeksData.cardio}/{weeksData.total}
-                </span>
+              <div className="flex gap-1 flex-shrink-0">
+                {weeksData.won.map((w, i) => (
+                  <div key={i} className="w-2.5 h-6 rounded-sm" style={{ backgroundColor: w ? '#FFD700' : 'rgba(255,215,0,0.15)' }} />
+                ))}
               </div>
-              <div className="p-3 rounded-xl flex items-center justify-between" style={{
-                backgroundColor: weeksData.recovery === weeksData.total && weeksData.total > 0 ? 'rgba(0,209,255,0.1)' : 'rgba(255,255,255,0.05)',
-                border: weeksData.recovery === weeksData.total && weeksData.total > 0 ? '1px solid rgba(0,209,255,0.2)' : 'none'
-              }}>
-                <div>
-                  <span className="text-xs"><CategoryIcon category="recovery" size={12} className="inline align-[-2px] mr-1" />Recovery</span>
-                  <div className="text-[10px] text-gray-500">{goals.recoveryPerWeek}+ per week</div>
+            </div>
+            <div className={`grid gap-2 ${weeksData.stepsTracked ? 'grid-cols-3' : 'grid-cols-2'}`}>
+              {[
+                { key: 'lift', cat: 'lifts', label: 'Strength', color: '#00FF94' },
+                { key: 'cardio', cat: 'cardio', label: 'Cardio', color: '#FF9500' },
+                ...(weeksData.stepsTracked ? [{ key: 'steps', cat: 'steps', label: 'Steps', color: '#BF5AF2' }] : []),
+              ].map(({ key, cat, label, color }) => (
+                <div key={key} className="p-2.5 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                  <div className="text-[11px] text-gray-400 flex items-center justify-center gap-1"><CategoryIcon category={cat} size={11} />{label}</div>
+                  <div className="text-[15px] font-bold mt-0.5" style={{ color }}>{weeksData[key]}/{weeksData.total}</div>
                 </div>
-                <span className="text-sm font-bold" style={{ color: '#00D1FF' }}>
-                  {weeksData.recovery}/{weeksData.total}
-                </span>
-              </div>
-              <div className="p-3 rounded-xl flex items-center justify-between" style={{
-                backgroundColor: weeksData.all === weeksData.total && weeksData.total > 0 ? 'rgba(255,215,0,0.1)' : 'rgba(255,255,255,0.05)',
-                border: weeksData.all === weeksData.total && weeksData.total > 0 ? '1px solid rgba(255,215,0,0.2)' : 'none'
-              }}>
-                <div>
-                  <span className="text-xs">🏆 All Goals</span>
-                  <div className="text-[10px] text-gray-500">Perfect weeks</div>
-                </div>
-                <span className="text-sm font-bold" style={{ color: '#FFD700' }}>
-                  {weeksData.all}/{weeksData.total}
-                </span>
-              </div>
+              ))}
+            </div>
+            <div className="mt-2 px-1 flex items-center justify-between text-[12px]">
+              <span className="flex items-center gap-1.5 text-gray-400">
+                <CategoryIcon category="recovery" size={12} />Recovery
+                <span className="text-[9.5px] font-semibold px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(0,209,255,0.12)', color: '#00D1FF' }}>BONUS</span>
+              </span>
+              <span className="font-semibold" style={{ color: '#00D1FF' }}>{weeksData.recovery}/{weeksData.total} weeks</span>
             </div>
           </div>
         </div>

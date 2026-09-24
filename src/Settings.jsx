@@ -331,11 +331,13 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
     }, 800);
   };
 
+  // Same order and wording as Edit Weekly Goals: the three that win the week, then Recovery
+  // as a bonus. Steps are stored per day but shown as the weekly total (× 7).
   const goalLabels = {
     liftsPerWeek: { label: 'Strength', category: 'lifts', suffix: '/week' },
     cardioPerWeek: { label: 'Cardio', category: 'cardio', suffix: '/week' },
-    recoveryPerWeek: { label: 'Recovery', category: 'recovery', suffix: '/week' },
-    stepsPerDay: { label: 'Steps', category: 'steps', suffix: '/day', format: (v) => `${(v/1000).toFixed(0)}k` }
+    stepsPerDay: { label: 'Steps', category: 'steps', suffix: '/week', format: (v) => `${v * 7 / 1000}k`, sub: (v) => `≈ ${v / 1000}k a day` },
+    recoveryPerWeek: { label: 'Recovery', category: 'recovery', suffix: '/week', bonus: true, sub: () => "Own streak · doesn't affect Winning" },
   };
 
   // Sunday = immediate save. Other days = queue into pendingGoals, applied on
@@ -1109,31 +1111,42 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
               </button>
             </div>
           )}
-          <div className="rounded-2xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-            <div className="grid grid-cols-2 gap-3">
-              {Object.entries(goalLabels).map(([key, { label, icon, category, suffix, format }]) => {
-                const current = userData?.goals?.[key] || 0;
-                const queued = pendingGoals?.[key];
-                const hasChange = pendingGoals && queued !== undefined && queued !== current;
-                return (
-                  <div key={key} className="bg-zinc-700/30 rounded-xl p-3">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span>{category ? <CategoryIcon category={category} size={14} /> : icon}</span>
-                      <span className="text-xs text-gray-400">{label}</span>
-                    </div>
-                    <div className="text-lg font-bold text-white">
-                      {format ? format(current) : current}
-                      <span className="text-xs text-gray-500 font-normal ml-1">{suffix}</span>
-                    </div>
-                    {hasChange && (
-                      <div className="text-[10px] mt-0.5" style={{ color: '#00D1FF' }}>
-                        → {format ? format(queued) : queued}{suffix}
+          <div className="rounded-2xl px-4 py-1.5" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+            {Object.entries(goalLabels).map(([key, { label, category, suffix, format, sub, bonus }]) => {
+              const current = userData?.goals?.[key] || 0;
+              const queued = pendingGoals?.[key];
+              const hasChange = pendingGoals && queued !== undefined && queued !== current;
+              return (
+                <React.Fragment key={key}>
+                  {bonus && <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />}
+                  <div className="flex items-center justify-between py-2.5">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                        <CategoryIcon category={category} size={15} />
                       </div>
-                    )}
+                      <div className="min-w-0">
+                        <div className="text-[14px] text-white flex items-center gap-1.5">
+                          {label}
+                          {bonus && <span className="text-[9.5px] font-semibold px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(0,209,255,0.12)', color: '#00D1FF' }}>BONUS</span>}
+                        </div>
+                        {sub && <div className="text-[11px] text-gray-500">{sub(current)}</div>}
+                      </div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <span className="text-[15px] font-bold text-white">
+                        {format ? format(current) : current}
+                        <span className="text-xs text-gray-500 font-normal ml-1">{suffix}</span>
+                      </span>
+                      {hasChange && (
+                        <div className="text-[10px] mt-0.5" style={{ color: '#00D1FF' }}>
+                          → {format ? format(queued) : queued}{suffix}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                );
-              })}
-            </div>
+                </React.Fragment>
+              );
+            })}
           </div>
         </div>
 

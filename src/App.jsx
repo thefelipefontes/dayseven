@@ -11319,7 +11319,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss, distanceUnit = 'mi
 
 // Home Tab - Simplified
 
-const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onSaveWeeklyPlan, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, healthHistory = [], onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeCountsChange, onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, optimisticChallengeCompletions = new Map(), onStartChallengeWorkout, onApplyPastActivityToChallenge, onChallengeDetailOpenChange, openActivityTarget = null, showHkEmptyHint = false, hkAccessBlocked = false, onDismissHkEmptyHint = () => {}, onOpenHealthSettings = () => {}, showNotifReask = false, onAcceptNotifReask = () => {}, onDismissNotifReask = () => {}, onReplayCelebration = () => {}, pendingChallenges = [], onOpenPlan = () => {} }) => {
+const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, healthHistory = [], onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, openActivityTarget = null, showHkEmptyHint = false, hkAccessBlocked = false, onDismissHkEmptyHint = () => {}, onOpenHealthSettings = () => {}, showNotifReask = false, onAcceptNotifReask = () => {}, onDismissNotifReask = () => {}, onReplayCelebration = () => {}, pendingChallenges = [], onOpenPlan = () => {} }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
   const [dismissConfirmWorkouts, setDismissConfirmWorkouts] = useState(null); // Workouts pending dismiss confirmation
@@ -13759,6 +13759,8 @@ export default function DaySevenApp() {
   const [friendsViewRequest, setFriendsViewRequest] = useState(null);
   // Challenges waiting on the user's answer — drives the Friends badge and the Home banner.
   const [pendingReceivedChallenges, setPendingReceivedChallenges] = useState([]);
+  // The full list from the listener below, shared with Friends → Challenges (null until loaded).
+  const [allChallenges, setAllChallenges] = useState(null);
   // Always-on challenge listener. Home's Challenges section used to be the one always-mounted
   // subscriber keeping the free-tier monthly send count (and pending count) fresh; with
   // Challenges inside Friends it's only mounted on demand, so the app keeps its own.
@@ -13766,6 +13768,7 @@ export default function DaySevenApp() {
     if (!user?.uid) return;
     if (isDemoAccount(userProfileRef.current, userRef.current)) return;
     const unsub = subscribeToChallenges(user.uid, (list) => {
+      setAllChallenges(list || []);
       const buckets = bucketChallenges(list || [], user.uid);
       setPendingReceivedChallenges(buckets.pendingReceived || []);
       setOutgoingThisMonthChallengeCount(countOutgoingThisMonth(list || [], user.uid));
@@ -18611,7 +18614,6 @@ export default function DaySevenApp() {
                   pendingChallenges={pendingReceivedChallenges}
                   onOpenPlan={() => switchTab('plan')}
                   onAddActivity={handleAddActivity}
-                  onSaveWeeklyPlan={handleSaveWeeklyPlan}
                   onCaptureLocation={handleCaptureLocation}
                   pendingSync={(healthKitData.pendingWorkouts || []).filter(w => {
                     // Filter out dismissed workouts
@@ -18686,7 +18688,6 @@ export default function DaySevenApp() {
                     setShowWeekStreakCelebration(true);
                   }}
                   friends={friends}
-                  onChallengeCountsChange={({ outgoingThisMonthCount }) => setOutgoingThisMonthChallengeCount(outgoingThisMonthCount)}
                   onChallengeActivity={(activity) => setChallengeModalActivity(activity)}
                   onNavigateToHistory={() => {
                     setActiveTab('profile');
@@ -18704,13 +18705,6 @@ export default function DaySevenApp() {
                     setFriendsViewRequest({ view: 'challenges', nonce: Date.now() });
                     switchTab('feed');
                   }}
-                  optimisticChallengeCompletions={optimisticChallengeCompletions}
-                  onStartChallengeWorkout={(challenge) => {
-                    const prefillType = challenge?.matchRule?.activityType || challenge?.challengerActivity?.type || null;
-                    handleAddActivity({ type: prefillType, intendedChallengeIds: [challenge.id], mode: 'start' });
-                  }}
-                  onApplyPastActivityToChallenge={(challenge) => setApplyPastActivityChallenge(challenge)}
-                  onChallengeDetailOpenChange={setIsChallengeDetailOpen}
                   isPro={isPro}
                   onPresentPaywall={async () => {
                     const { purchased } = await presentPaywall();
@@ -18809,6 +18803,7 @@ export default function DaySevenApp() {
                   }}
                   onApplyPastActivityToChallenge={(challenge) => setApplyPastActivityChallenge(challenge)}
                   onDetailOpenChange={setIsChallengeDetailOpen}
+                  sharedChallenges={allChallenges}
                 />
                   }
                   onOpenFriends={() => setShowFriends(true)}

@@ -9,12 +9,12 @@ import LockedScreen from './LockedScreen';
 import OnboardingFlow, { HKPrescreen } from './Onboarding';
 import Friends from './Friends';
 import ActivityFeed from './ActivityFeed';
-import { ChallengeFriendModal, ChallengesSection, ChallengeActivityPickerModal, ChallengeApplyPastActivityModal } from './Challenges';
+import { ChallengeFriendModal, ChallengeActivityPickerModal, ChallengeApplyPastActivityModal } from './Challenges';
 import ChallengesTab from './ChallengesTab';
-import WeeklyPlanner from './WeeklyPlanner';
+import WeeklyPlanner, { plannedTodayFromPlan } from './WeeklyPlanner';
 import SettingsPage from './Settings';
 import ProfilePage from './Profile';
-import { isChallengeable, getChallengesForUser, activityMatchesChallengeRule, describeMatchRule, evaluateActivityAgainstChallenge, applyOptimisticChallengeCompletions, applyChallengeIntent } from './services/challengeService';
+import { isChallengeable, getChallengesForUser, activityMatchesChallengeRule, describeMatchRule, evaluateActivityAgainstChallenge, applyOptimisticChallengeCompletions, applyChallengeIntent, subscribeToChallenges, bucketChallenges, countOutgoingThisMonth } from './services/challengeService';
 import ChallengeMatchChooser from './components/ChallengeMatchChooser';
 import { createUserProfile, getUserProfile, updateUserProfile, updateDisplayName, updateUsername, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, deleteActivityPhoto, saveUserGoals, getUserGoals, savePendingGoals, clearPendingGoals, setOnboardingComplete, setTourComplete, savePersonalRecords, getPersonalRecords, saveDailyHealthData, getDailyHealthData, getDailyHealthHistory, subscribeToUserChallengeStats } from './services/userService';
 import { isSundayToday, nextSundayDateStr, isPendingDue, formatApplyOn } from './utils/goalsSchedule';
@@ -494,15 +494,15 @@ const AppTour = ({ step, onNext, onBack, onSkip, targetRef, onSwitchTab, homeTab
       features: null
     },
     {
-      title: 'Challenges',
-      description: 'Head-to-head bets with your friends live here.',
+      title: 'Plan',
+      description: 'Plan your week: drop strength, cardio and recovery sessions onto the days you\'ll do them.',
       position: 'above',
-      tab: 'challenges',
+      tab: 'plan',
       features: [
-        { emoji: '⚡', text: 'Active challenges' },
-        { emoji: '⏳', text: 'Pending invites' },
-        { emoji: '✅', text: 'Completed history' },
-        { emoji: '👥', text: '1v1 or group mode' }
+        { emoji: '🗓️', text: 'Drag sessions onto days' },
+        { emoji: '🔁', text: 'Repeat a plan weekly' },
+        { emoji: '✅', text: 'Tap to log a planned session' },
+        { emoji: '⚡', text: 'Challenges now live in Friends' }
       ]
     },
     {
@@ -1476,9 +1476,9 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
     : (workout.subtype || '');
 
   // Position based on active tab:
-  // - Home, Profile, Challenges: top right
+  // - Home, Plan, Profile: top right
   // - Friends: top center
-  const useTopRight = activeTab === 'home' || activeTab === 'challenges' || activeTab === 'profile';
+  const useTopRight = activeTab === 'home' || activeTab === 'plan' || activeTab === 'profile';
 
   // Use frozen time when finishing, otherwise use live elapsed time
   const displayElapsed = frozenElapsed !== null ? frozenElapsed : elapsed;
@@ -7447,11 +7447,12 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
   ];
 
   // Goal selector row component
-  const GoalSelector = ({ label, subtitle, color, goalKey, options, isSteps, isCalories, isScrollable }) => (
+  const GoalSelector = ({ label, subtitle, color, goalKey, options, isSteps, isCalories, isScrollable, fmt = null, note = null, badge = null }) => (
     <div className="mb-5">
       <div className="flex items-center gap-2 mb-1">
         <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
         <label className="text-sm font-semibold">{label}</label>
+        {badge}
       </div>
       {subtitle && <p className="text-xs text-gray-500 mb-2 ml-4">{subtitle}</p>}
       <div
@@ -7474,12 +7475,13 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
               {...(isScrollable ? {} : pressProps)}
             >
               <span className="font-bold" style={{ color: isActive ? color : 'white' }}>
-                {isSteps ? `${option/1000}k` : `${option}`}
+                {fmt ? fmt(option) : isSteps ? `${option/1000}k` : `${option}`}
               </span>
             </Tag>
           );
         })}
       </div>
+      {note && <p className="text-[12px] font-medium mt-1.5 ml-4" style={{ color }}>{note}</p>}
     </div>
   );
 
@@ -7614,7 +7616,7 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
         return (
           <div>
             <h2 className="text-2xl font-bold mb-1">{isEditing ? 'Edit Weekly Goals' : 'Set your weekly goals'}</h2>
-            <p className="text-gray-500 text-sm mb-2">How many sessions per week for each category?</p>
+            <p className="text-gray-500 text-sm mb-2">What it takes to win your week.</p>
             {!isEditing && fitnessGoal && !goalsManuallySet.current && (
               <p className="text-xs mb-4 flex items-center gap-1.5" style={{ color: '#00FF94' }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
@@ -7650,12 +7652,25 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
               goalKey="cardioPerWeek"
               options={[1, 2, 3, 4, 5]}
             />
+            {/* Steps are chosen as a weekly total (the Steps ring is weekly) but stored as
+                stepsPerDay, which everything else (Watch, streaks, reminders) reads. */}
+            <GoalSelector
+              label="Steps per week"
+              subtitle="From Apple Health, walked any day of the week"
+              color="#BF5AF2"
+              goalKey="stepsPerDay"
+              options={[6000, 8000, 10000, 12000, 15000]}
+              fmt={(perDay) => `${perDay * 7 / 1000}k`}
+              note={goals.stepsPerDay ? `${goals.stepsPerDay * 7 / 1000}k ≈ ${goals.stepsPerDay / 1000}k a day` : null}
+            />
+            <div className="h-px mb-5" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }} />
             <GoalSelector
               label="Recovery"
-              subtitle="Cold plunge, sauna, yoga, pilates · a bonus with its own streak"
+              subtitle="Cold plunge, sauna, yoga, pilates · its own streak, doesn't affect your winning streak"
               color="#00D1FF"
               goalKey="recoveryPerWeek"
               options={[1, 2, 3, 4]}
+              badge={<span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(0,209,255,0.12)', color: '#00D1FF' }}>BONUS</span>}
             />
           </div>
         );
@@ -7665,7 +7680,7 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
         return (
           <div>
             <h2 className="text-2xl font-bold mb-1">{isEditing ? 'Edit Daily Goals' : 'Set your daily goals'}</h2>
-            <p className="text-gray-500 text-sm mb-2">Your daily movement targets.</p>
+            <p className="text-gray-500 text-sm mb-2">Your daily active calorie target.</p>
             {!isEditing && fitnessGoal && !goalsManuallySet.current && (
               <p className="text-xs mb-4 flex items-center gap-1.5" style={{ color: '#00FF94' }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
@@ -7687,14 +7702,6 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
               </div>
             )}
             {((isEditing && isSundayToday()) || (!isEditing && (!fitnessGoal || goalsManuallySet.current))) && <div className="mb-4" />}
-            <GoalSelector
-              label="Daily Steps"
-              subtitle="Counted across the week (× 7) toward your winning streak"
-              color="#00FF94"
-              goalKey="stepsPerDay"
-              options={[6000, 8000, 10000, 12000, 15000]}
-              isSteps
-            />
             <div className="mb-5">
               <div className="flex items-center gap-2 mb-1">
                 <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#FF6B6B' }} />
@@ -11312,7 +11319,7 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss, distanceUnit = 'mi
 
 // Home Tab - Simplified
 
-const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onSaveWeeklyPlan, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, healthHistory = [], onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeCountsChange, onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, optimisticChallengeCompletions = new Map(), onStartChallengeWorkout, onApplyPastActivityToChallenge, onChallengeDetailOpenChange, openActivityTarget = null, showHkEmptyHint = false, hkAccessBlocked = false, onDismissHkEmptyHint = () => {}, onOpenHealthSettings = () => {}, showNotifReask = false, onAcceptNotifReask = () => {}, onDismissNotifReask = () => {}, onReplayCelebration = () => {} }) => {
+const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onSaveWeeklyPlan, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, healthHistory = [], onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeCountsChange, onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, optimisticChallengeCompletions = new Map(), onStartChallengeWorkout, onApplyPastActivityToChallenge, onChallengeDetailOpenChange, openActivityTarget = null, showHkEmptyHint = false, hkAccessBlocked = false, onDismissHkEmptyHint = () => {}, onOpenHealthSettings = () => {}, showNotifReask = false, onAcceptNotifReask = () => {}, onDismissNotifReask = () => {}, onReplayCelebration = () => {}, pendingChallenges = [], onOpenPlan = () => {} }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
   const [dismissConfirmWorkouts, setDismissConfirmWorkouts] = useState(null); // Workouts pending dismiss confirmation
@@ -11488,7 +11495,14 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
       goal,
       dayIndex,
       aheadBy: total - dailyGoal * dayIndex,
-      perDayToFinish: Math.ceil(Math.max(0, goal - total) / daysLeft / 100) * 100,
+      // Same rule as the Plan tab's step targets (WeeklyPlanner): what was still needed at the
+      // start of today, split over the days left; once today beats that, what the days after need.
+      perDayToFinish: (() => {
+        const today = weekProgress.steps?.today || 0;
+        const up100 = (n) => Math.ceil(Math.max(0, n) / 100) * 100;
+        const todayTarget = up100((goal - (total - today)) / daysLeft);
+        return today > todayTarget && daysLeft > 1 ? up100((goal - total) / (daysLeft - 1)) : todayTarget;
+      })(),
       pacePercent: (dayIndex / 7) * 100,
     };
   }, [healthHistory, weekProgress.steps?.today, weekProgress.steps?.goal]);
@@ -11686,6 +11700,15 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
   const homeTodayKey = getTodayDate();
   const countsTowardAGoal = (a) => ['lifting', 'cardio', 'recovery', 'lifting+cardio'].includes(getActivityCategory(a));
   const todaysWorkouts = allLatestActivities.filter(a => a.date === homeTodayKey && countsTowardAGoal(a));
+  // Today's sessions from the weekly plan (Plan tab), so the plan still drives the day on Home.
+  // Today's sessions from the weekly plan. Done-ness is reconciled over the whole week,
+  // exactly like the Plan tab, so a session done on another day still checks off here.
+  const plannedTodayItems = plannedTodayFromPlan(userData?.weeklyPlan, activities);
+  const PLAN_CAT = {
+    strength: { color: '#00FF94', bg: 'rgba(0,255,148,0.14)', icon: 'lifts' },
+    cardio: { color: '#FF9500', bg: 'rgba(255,149,0,0.14)', icon: 'cardio' },
+    recovery: { color: '#00D1FF', bg: 'rgba(0,209,255,0.14)', icon: 'recovery' },
+  };
   const latestActivities = allLatestActivities.filter(a => !todaysWorkouts.includes(a)).slice(0, 3);
 
   // Fetch reactions and comments for user's activities
@@ -12095,6 +12118,30 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         </div>
       </div>
       
+      {/* Challenges waiting on the user's answer — Challenges live in Friends now, so Home
+          surfaces the ones that need a reply (tap opens Friends → Challenges → Pending). */}
+      {pendingChallenges.length > 0 && (
+        <button
+          onClick={() => { triggerHaptic(ImpactStyle.Light); onNavigateToChallenges?.({ status: 'pending' }); }}
+          className="w-full mb-3 p-3 rounded-xl flex items-center gap-3 text-left active:opacity-80 transition-opacity"
+          style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.3)' }}
+        >
+          <span className="text-lg">⚡</span>
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-semibold" style={{ color: '#FFD60A' }}>
+              {pendingChallenges.length === 1
+                ? `${pendingChallenges[0].challengerName || 'A friend'} challenged you`
+                : `${pendingChallenges.length} challenges waiting on you`}
+            </div>
+            <div className="text-[10px] text-gray-400 mt-0.5">
+              {pendingChallenges.length === 1 && pendingChallenges[0].respondByAt
+                ? `Respond by ${new Date(pendingChallenges[0].respondByAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+                : 'Tap to accept or decline'}
+            </div>
+          </div>
+          <span className="text-gray-500 text-xs">›</span>
+        </button>
+      )}
       {/* Banners about logging — workouts detected or imported from Apple Health, strength
           sessions missing muscle groups, Health/notification access — sit with Today's
           Activity, where those workouts land. */}
@@ -12543,6 +12590,25 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         {/* Today's workouts (strength, cardio, recovery), one compact row each. The weekly
             steps and pace now live on the Steps ring in This Week's Goals. */}
         <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
+        {/* Today's sessions from the weekly plan (Plan tab) */}
+        {plannedTodayItems.length > 0 && (
+          <button onClick={onOpenPlan} className="w-full flex items-center gap-3 text-left">
+            <span className="text-lg"><SectionIcon type="calendar" size={18} /></span>
+            <div className="flex-1 flex items-center justify-between gap-2">
+              <span className="text-xs text-gray-400">Planned today</span>
+              <div className="flex flex-wrap justify-end gap-1.5">
+                {plannedTodayItems.map((p, i) => (
+                  <span key={i} className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[12px] font-semibold"
+                    style={p.done
+                      ? { backgroundColor: PLAN_CAT[p.cat].color, color: '#000' }
+                      : { backgroundColor: PLAN_CAT[p.cat].bg, color: PLAN_CAT[p.cat].color }}>
+                    {p.done ? '✓' : <CategoryIcon category={PLAN_CAT[p.cat].icon} size={12} />} {p.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </button>
+        )}
         {todaysWorkouts.length > 0 ? (
           <div className="space-y-1">
             {todaysWorkouts.map((act, i) => {
@@ -13562,29 +13628,8 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         {/* End of weeklyGoalsRef wrapper */}
       </div>
 
-      {/* Weekly Planner — collapsible; sits directly under This Week's Goals */}
-      <WeeklyPlanner
-        goals={userData?.goals}
-        activities={activities}
-        weeklyPlan={userData?.weeklyPlan}
-        planLoaded={!!userData?.weeklyPlanLoaded}
-        onSave={onSaveWeeklyPlan}
-        onLogActivity={onAddActivity}
-      />
-
       {todayActivitySection}
 
-      <ChallengesSection
-        user={user}
-        userProfile={userProfile}
-        friends={friends}
-        onChallengeCountsChange={onChallengeCountsChange}
-        onSeeDetails={onNavigateToChallenges}
-        optimisticCompletions={optimisticChallengeCompletions}
-        onStartChallengeWorkout={onStartChallengeWorkout}
-        onApplyPastActivityToChallenge={onApplyPastActivityToChallenge}
-        onDetailOpenChange={onChallengeDetailOpenChange}
-      />
 
       {/* Activity Detail Modal */}
       <ActivityDetailModal
@@ -13709,6 +13754,24 @@ export default function DaySevenApp() {
   // Set when a challenge notification is tapped — tells ChallengesTab which segment/sub
   // to open. Includes a `nonce` so re-navigating to the same target still re-applies.
   const [challengesNavTarget, setChallengesNavTarget] = useState(null);
+  // Challenges live inside Friends (Feed / Leaderboard / Challenges). Bumping this opens that
+  // view; `nonce` re-applies it even when Friends is already showing Challenges.
+  const [friendsViewRequest, setFriendsViewRequest] = useState(null);
+  // Challenges waiting on the user's answer — drives the Friends badge and the Home banner.
+  const [pendingReceivedChallenges, setPendingReceivedChallenges] = useState([]);
+  // Always-on challenge listener. Home's Challenges section used to be the one always-mounted
+  // subscriber keeping the free-tier monthly send count (and pending count) fresh; with
+  // Challenges inside Friends it's only mounted on demand, so the app keeps its own.
+  useEffect(() => {
+    if (!user?.uid) return;
+    if (isDemoAccount(userProfileRef.current, userRef.current)) return;
+    const unsub = subscribeToChallenges(user.uid, (list) => {
+      const buckets = bucketChallenges(list || [], user.uid);
+      setPendingReceivedChallenges(buckets.pendingReceived || []);
+      setOutgoingThisMonthChallengeCount(countOutgoingThisMonth(list || [], user.uid));
+    });
+    return () => { try { unsub?.(); } catch {} };
+  }, [user?.uid]);
   // Set when an "add muscle groups" notification is tapped — HomeTab reads this
   // and opens the matching activity's detail modal. Shape: { activityId, nonce }.
   const [homeOpenActivityTarget, setHomeOpenActivityTarget] = useState(null);
@@ -14352,7 +14415,7 @@ export default function DaySevenApp() {
   // Tab order for direction detection
   // 'history' stays in the order so swipe-direction calc still works while History remains
   // reachable via backdoor (HomeTab's "see all" taps). It's removed once History merges into Profile.
-  const tabOrder = ['home', 'challenges', 'feed', 'profile'];
+  const tabOrder = ['home', 'plan', 'feed', 'profile'];
 
   // Custom tab switcher with direction tracking
   // Tapping the already-active tab scrolls to top (Instagram-style)
@@ -14524,7 +14587,7 @@ export default function DaySevenApp() {
     const refs = [
       logActivityRef,      // 0: Log Activity
       weeklyGoalsRef,      // 1: Weekly Goals
-      challengesTabRef,    // 2: Challenges Tab
+      challengesTabRef,    // 2: Plan tab (the ref kept its name; Challenges moved into Friends)
       friendsTabRef,       // 3: Friends Tab
       profileTabRef        // 4: Profile Tab
     ];
@@ -15692,12 +15755,13 @@ export default function DaySevenApp() {
               setFriendsInitialTab(opts.friendsView);
               setShowFriends(true);
             }
-            if (tab === 'challenges' && (opts?.challengesSegment || opts?.challengesSubSegment)) {
-              setChallengesNavTarget({
-                segment: opts.challengesSegment || null,
-                subSegment: opts.challengesSubSegment || null,
-                nonce: Date.now(),
-              });
+            if (tab === 'challenges') {
+              // Challenges moved into Friends — land on Friends → Challenges.
+              setActiveTab('feed');
+              setFriendsViewRequest({ view: 'challenges', nonce: Date.now() });
+              if (opts?.challengesSegment) {
+                setChallengesNavTarget({ segment: opts.challengesSegment, nonce: Date.now() });
+              }
             }
           }, {
             onOpenActivity: (activityId) => {
@@ -18544,6 +18608,8 @@ export default function DaySevenApp() {
               {activeTab === 'home' && (
                 <HomeTab
                   healthHistory={healthHistory}
+                  pendingChallenges={pendingReceivedChallenges}
+                  onOpenPlan={() => switchTab('plan')}
                   onAddActivity={handleAddActivity}
                   onSaveWeeklyPlan={handleSaveWeeklyPlan}
                   onCaptureLocation={handleCaptureLocation}
@@ -18632,15 +18698,11 @@ export default function DaySevenApp() {
                   onNavigateToChallenges={(challenge) => {
                     // Tapped a specific home card → jump to its segment + perspective.
                     // Section "See all" passes no challenge → just switch tab.
-                    if (challenge?.id) {
-                      const isMine = challenge.challengerUid === user?.uid;
-                      setChallengesNavTarget({
-                        segment: 'active',
-                        subSegment: isMine ? 'sent' : 'received',
-                        nonce: Date.now(),
-                      });
-                    }
-                    switchTab('challenges');
+                    // Challenges live in Friends now: open Friends → Challenges, on Pending when
+                    // the banner is about invites waiting on the user.
+                    setChallengesNavTarget({ segment: challenge?.status === 'pending' || !challenge ? 'pending' : 'active', nonce: Date.now() });
+                    setFriendsViewRequest({ view: 'challenges', nonce: Date.now() });
+                    switchTab('feed');
                   }}
                   optimisticChallengeCompletions={optimisticChallengeCompletions}
                   onStartChallengeWorkout={(challenge) => {
@@ -18694,8 +18756,36 @@ export default function DaySevenApp() {
                   }}
                 />
               )}
-              {activeTab === 'challenges' && (
+              {activeTab === 'plan' && (
+                // Plan tab — the weekly planner as a full page (it used to be a collapsible
+                // strip on Home). Home keeps a "Planned today" line from the same plan.
+                // minHeight: just past the visible area (same math as Challenges) so iOS
+                // rubber-band engages even when the plan is shorter than the screen.
+                <div className="pt-2 pb-32" style={{ minHeight: 'calc(100dvh - env(safe-area-inset-top, 0px) - 16px + 1px)' }}>
+                  <WeeklyPlanner
+                    asPage
+                    goals={userData?.goals}
+                    activities={activities}
+                    weeklyPlan={userData?.weeklyPlan}
+                    planLoaded={!!userData?.weeklyPlanLoaded}
+                    onSave={handleSaveWeeklyPlan}
+                    onLogActivity={handleAddActivity}
+                    onEditGoals={() => setShowEditGoals(true)}
+                    stepsByDate={stepsByDateFrom(healthHistory || [], healthKitData?.todaySteps || 0, getTodayDate())}
+                    stepsPerDay={userData?.goals?.stepsPerDay || 10000}
+                  />
+                </div>
+              )}
+              {activeTab === 'feed' && (
+                <ActivityFeed
+                  user={user}
+                  userProfile={userProfile}
+                  friends={friends}
+                  viewRequest={friendsViewRequest}
+                  challengesBadge={pendingReceivedChallenges.length}
+                  challengesContent={
                 <ChallengesTab
+                    embedded
                   user={user}
                   userProfile={userProfile}
                   userData={userData}
@@ -18720,12 +18810,7 @@ export default function DaySevenApp() {
                   onApplyPastActivityToChallenge={(challenge) => setApplyPastActivityChallenge(challenge)}
                   onDetailOpenChange={setIsChallengeDetailOpen}
                 />
-              )}
-              {activeTab === 'feed' && (
-                <ActivityFeed
-                  user={user}
-                  userProfile={userProfile}
-                  friends={friends}
+                  }
                   onOpenFriends={() => setShowFriends(true)}
                   pendingRequestsCount={pendingFriendRequests}
                   onActiveViewChange={setFeedActiveView}
@@ -19065,10 +19150,10 @@ export default function DaySevenApp() {
             <span className={`text-xs ${activeTab === 'home' ? 'text-white' : 'text-gray-500'}`}>Home</span>
           </button>
 
-          {/* Challenges */}
+          {/* Plan (Challenges moved into Friends) */}
           <button
             ref={challengesTabRef}
-            onClick={() => switchTab('challenges')}
+            onClick={() => switchTab('plan')}
             className="flex-1 py-3 flex flex-col items-center gap-1 transition-all duration-150 relative"
             style={{ transform: 'scale(1)' }}
             onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.92)'; triggerHaptic(ImpactStyle.Light); }}
@@ -19077,10 +19162,10 @@ export default function DaySevenApp() {
             onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
             onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
           >
-            <svg className="w-6 h-6" fill="none" stroke={activeTab === 'challenges' ? 'white' : '#6b7280'} viewBox="0 0 24 24" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+            <svg className="w-6 h-6" fill="none" stroke={activeTab === 'plan' ? 'white' : '#6b7280'} viewBox="0 0 24 24" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
             </svg>
-            <span className={`text-xs ${activeTab === 'challenges' ? 'text-white' : 'text-gray-500'}`}>Challenges</span>
+            <span className={`text-xs ${activeTab === 'plan' ? 'text-white' : 'text-gray-500'}`}>Plan</span>
           </button>
 
           {/* Center spacer for the floating button */}
@@ -19102,7 +19187,7 @@ export default function DaySevenApp() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" />
             </svg>
             <span className={`text-xs ${activeTab === 'feed' ? 'text-white' : 'text-gray-500'}`}>Friends</span>
-            {(pendingFriendRequests > 0 || unreadFeedCount > 0) && (
+            {(pendingFriendRequests > 0 || unreadFeedCount > 0 || pendingReceivedChallenges.length > 0) && (
               <span
                 className="absolute top-1 right-1/4 w-2 h-2 rounded-full"
                 style={{ backgroundColor: '#FF453A' }}

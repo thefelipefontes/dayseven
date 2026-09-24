@@ -1,8 +1,26 @@
 # DaySeven · App Store listing (rewrite, 2026-09-21)
 
-Positioning: **win the week, not the day.** For anyone who wants to be in shape without fitness running their life. The "hybrid athlete" identity language is gone, and the all-goals streak is now the "Winning Streak" (renamed 2026-09-23, see the end of this doc); lifting + cardio + recovery is simply what a complete week looks like.
+Positioning: **win the week, not the day.** For anyone who wants to be in shape without fitness running their life. The "hybrid athlete" identity language is gone, and the all-goals streak is now the "Winning Streak" (renamed 2026-09-23, see the end of this doc); since 1.8.0 a complete week is lifting + cardio + your weekly steps, with recovery as a bonus.
 
 Paste each field into App Store Connect → App Information / Version page. Limits are Apple's; counts are verified.
+
+**Updated for 1.8.0 (2026-09-24):** the Winning Streak is now Strength + Cardio + weekly Steps, and Recovery is a bonus with its own streak. There's a new Plan tab, and Challenges moved into Friends. The promo text, keywords, description and panel 2 caption below all reflect that.
+
+---
+
+## What's New in 1.8.0 (4000 max)
+
+```
+Win the week, now with a plan.
+
+• New Plan tab: lay out your week, see what's next, and tap Suggest a plan to space out your lifts with rest in between
+• Steps now count toward your Winning Streak: Strength, Cardio and weekly Steps. Recovery is a bonus with its own streak
+• Each day on the Plan tab shows the steps it needs to hit your week, and updates as you walk
+• Planned sessions check off even when you train on a different day
+• Challenges now live in Friends, next to your feed and leaderboard
+• Apple Watch: weekly steps on the corner complication and today's step target
+• Fixes and polish
+```
 
 ---
 
@@ -25,11 +43,11 @@ Current: `Accountability & Streaks`
 
 ## Promotional text (170 max · editable anytime without review)
 
-`Your body doesn't reset at midnight. Set weekly goals for lifting, cardio and recovery, miss a day without losing your streak, and win the week.` (144)
+`Your body doesn't reset at midnight. Set weekly goals for lifting, cardio and steps, plan the days around your life, and win the week without being perfect every day.` (166)
 
 ## Keywords (100 max · comma-separated, no spaces)
 
-`weekly,goals,habit,gym,lifting,running,cardio,strength,recovery,sauna,steps,log,consistency,friends` (99)
+`weekly,goals,habit,gym,lifting,running,cardio,strength,steps,planner,recovery,consistency,friends` (97)
 
 Words already in the name and subtitle (dayseven, workout, streaks, win, week, day) are indexed automatically, so they are left out here on purpose.
 
@@ -47,13 +65,18 @@ It's built for people with jobs, relationships, travel and dinner plans who stil
 SET YOUR WEEK
 • How many times you'll lift
 • How many cardio sessions you'll do
-• How many recovery sessions you'll take (sauna, cold plunge, yoga, stretching)
-• Optional daily step and calorie targets
+• How many steps you'll walk across the week
+• Bonus recovery sessions if you want them (sauna, cold plunge, yoga, stretching)
 
 Set a bar you can clear on a busy week. Raise it when you're ready.
 
+PLAN IT AROUND YOUR LIFE
+• Drag your sessions onto the days that fit
+• One tap suggests a plan with rest between lifting days
+• See what's up next and the steps each day needs to finish the week
+
 WIN THE WEEK, BUILD THE STREAK
-Hit all three goals by the end of the week and you build your Winning Streak: strength, cardio and recovery in the same week. A rough day never breaks it. Only an unfinished week does. Milestones at 1 month, 3 months, 6 months and beyond.
+Hit your strength, cardio and steps goals by the end of the week and you build your Winning Streak. A rough day never breaks it. Only an unfinished week does. Recovery is a bonus with its own streak. Milestones at 1 month, 3 months, 6 months and beyond.
 
 LOG ANYTHING IN SECONDS
 • Lifting, with the muscle groups you trained
@@ -100,10 +123,12 @@ Notes on the description
 
 **Decision (2026-09-21): keep the current captions for now.** The new set below is parked until the in-app "Winning Streak" rename (2026-09-23) ships and screenshots are re-captured anyway.
 
+**1.8.0 makes the current screenshots out of date:** Home's third ring is now Steps, the planner moved to its own tab, and Challenges sit inside Friends. Panel 2's live caption ("Strength. Cardio. Recovery.") no longer matches the app. Re-capture Home, Goals and Challenges (Friends → Challenges), and consider swapping one panel for the Plan tab (e.g. **Plan the week.** / **Then win it.** · "Your sessions, your days, one tap to suggest.").
+
 | # | Screen | Now | New headline | New subline |
 |---|---|---|---|---|
 | 1 | Home | Set Your Standards. / Earn Your Streaks. | **Win the week.** / **Not the day.** | Miss a day. Keep your streak. |
-| 2 | Goals | Three rings. One goal. | **Three rings.** / **One week.** | Strength. Cardio. Recovery. |
+| 2 | Goals | Three rings. One goal. | **Three rings.** / **One week.** | Strength. Cardio. Steps. |
 | 3 | Feed | Better with Friends. | **Better with friends.** | Share your wins. Hype each other up. |
 | 4 | History | Your Stats. Your Records. Your Proof. | **Proof you showed up.** | Streaks, personal bests and week-by-week history. |
 | 5 | Leaderboard | Compete. / Dominate. | **A little competition helps.** | Rankings across steps, workouts, calories & more. |

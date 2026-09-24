@@ -267,7 +267,7 @@ const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
               alt="Day Seven"
               className="h-10 mx-auto mb-4"
             />
-            <p className="text-gray-400 text-lg">Set Your Standards. Earn Your Streaks.</p>
+            <p className="text-gray-400 text-lg">Win the week, not the day.</p>
           </div>
         )}
 

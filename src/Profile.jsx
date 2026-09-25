@@ -973,6 +973,8 @@ export default function ProfilePage(props) {
             <div>
               <div className="text-3xl font-black" style={{ color: '#FFD700' }}>{streaks.master} Weeks</div>
               <div className="text-sm text-gray-300">Winning Streak</div>
+              {/* One-line definition, where people come to look at their streaks */}
+              <div className="text-xs text-gray-400 mt-0.5">Weeks in a row you hit all your weekly goals</div>
             </div>
           </div>
           <div className="text-xs text-gray-500 mt-2 pt-2 border-t border-white/10">

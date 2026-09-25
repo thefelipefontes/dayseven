@@ -11569,7 +11569,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
       className="flex items-center gap-1.5 text-[11px] active:opacity-70 transition-opacity"
     >
       <CategoryIcon category="recovery" size={12} />
-      <span className="text-white">Recovery</span>
+      <span style={{ color: '#aaa' }}>Recovery</span>
       <span style={{ color: '#aaa' }}>{weekProgress.recovery?.completed || 0}/{weekProgress.recovery?.goal || 0}</span>
       {(userData.streaks?.recovery || 0) > 0 && (
         <span className="font-bold" style={{ color: '#00D1FF' }}>🔥 {userData.streaks.recovery}w</span>
@@ -12653,15 +12653,16 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         {/* Today's sessions from the weekly plan (Plan tab) */}
         {plannedTodayItems.length > 0 && (
           <button onClick={onOpenPlan} className="w-full flex items-center gap-3 text-left">
-            <span className="text-lg"><SectionIcon type="calendar" size={18} /></span>
+            {/* Grey like the row label: the calendar isn't a goal category, so no colour */}
+            <span className="text-lg"><SectionIcon type="calendar" size={18} color="#9ca3af" /></span>
             <div className="flex-1 flex items-center justify-between gap-2">
               <span className="text-xs text-gray-400">Planned today</span>
               <div className="flex flex-wrap justify-end gap-1.5">
                 {plannedTodayItems.map((p, i) => (
-                  <span key={i} className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[12px] font-semibold"
-                    style={p.done
-                      ? { backgroundColor: PLAN_CAT[p.cat].color, color: '#000' }
-                      : { backgroundColor: PLAN_CAT[p.cat].bg, color: PLAN_CAT[p.cat].color }}>
+                  // Plain text, not a pill — only the icon carries colour (a done item turns
+                  // its label the category colour with a check).
+                  <span key={i} className="flex items-center gap-1 text-[12px] font-semibold"
+                    style={{ color: p.done ? PLAN_CAT[p.cat].color : '#ccc' }}>
                     {p.done ? '✓' : <CategoryIcon category={PLAN_CAT[p.cat].icon} size={12} />} {p.label}
                   </span>
                 ))}
@@ -13412,11 +13413,13 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             {/* Recovery sits on the Week Progress line: a bonus with its own streak, not part of
                 winning the week, so it doesn't get its own row (tap for the breakdown). */}
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-gray-400">Week Progress <span className="font-bold ml-1" style={{ color: overallPercent >= 100 ? '#00FF94' : 'white' }}><AnimatedCounter value={overallPercent} />%</span></span>
+              <span className="text-xs text-gray-400">Week Progress <span className="font-bold ml-1" style={{ color: overallPercent >= 100 ? '#FFD700' : 'white' }}><AnimatedCounter value={overallPercent} />%</span></span>
               {/* Recovery off (goal 0): no bonus chip */}
               {(userData?.goals?.recoveryPerWeek ?? 2) > 0 && <span className="flex items-center gap-1.5"><span className="text-[10px] text-gray-500">Bonus</span>{recoveryChip}</span>}
             </div>
-            <ProgressBar progress={overallPercent} height={4} color={overallPercent >= 100 ? '#00FF94' : '#00FF94'} />
+            {/* Gold like the winning-streak badge — finishing this bar is what extends that
+                streak. (Green read as part of the Strength ring right above it.) */}
+            <ProgressBar progress={overallPercent} height={4} color="#FFD700" />
           </div>
         </div>
 

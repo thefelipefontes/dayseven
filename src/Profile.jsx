@@ -11,7 +11,7 @@ import { triggerHaptic } from './utils/haptics';
 import { toLocalDateStr, getTodayDate, getCurrentYear, parseLocalDate, formatFriendlyDate } from './utils/dateHelpers';
 import { FOCUS_AREA_GROUPS, ALL_FOCUS_AREAS, FOCUS_AREA_MIGRATION, normalizeFocusAreas } from './utils/focusAreas';
 import { initialUserData } from './utils/initialUserData';
-import SectionIcon from './components/SectionIcon';
+import SectionIcon, { SECTION_ICON_TAPPABLE } from './components/SectionIcon';
 import LongPressMenu from './components/LongPressMenu';
 import { SwipeableProvider, SwipeableActivityItem, SwipeableContext, globalIsPulling } from './components/SwipeableActivityItem';
 import WeekStatsModal from './components/WeekStatsModal';
@@ -1163,7 +1163,7 @@ export default function ProfilePage(props) {
               style={{ color: isCurrentMonth ? 'white' : '#00FF94' }}
             >
               {new Date(displayedYear, displayedMonth).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-              <span className="opacity-60"><SectionIcon type="chart" size={14} /></span>
+              <span className="opacity-60"><SectionIcon type="chart" size={14} color={SECTION_ICON_TAPPABLE} /></span>
             </button>
             <button
               onClick={goToNextMonth}
@@ -1252,7 +1252,7 @@ export default function ProfilePage(props) {
                           <polyline points="20 6 9 17 4 12" />
                         </svg>
                       ) : (
-                        <SectionIcon type="chart" size={12} />
+                        <SectionIcon type="chart" size={12} color={SECTION_ICON_TAPPABLE} />
                       )}
                     </button>
                   );
@@ -1334,7 +1334,7 @@ export default function ProfilePage(props) {
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500 uppercase tracking-wider">How This Week Compares</span>
-                <SectionIcon type="compare" size={14} />
+                <SectionIcon type="compare" size={14} color={SECTION_ICON_TAPPABLE} />
               </div>
             </div>
             

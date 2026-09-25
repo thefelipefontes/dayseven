@@ -1,7 +1,10 @@
 import React from 'react';
 
-// Section header icon component - SVG line icons in brand cyan
-const SectionIcon = ({ type, size = 22, color = '#04d1ff' }) => {
+// Section header icon component - SVG line icons. White like the heading text rather
+// than brand cyan: colour on each page is kept for the rings, charts and categories.
+// Small in-row icons that act as buttons pass SECTION_ICON_TAPPABLE instead.
+export const SECTION_ICON_TAPPABLE = '#04d1ff';
+const SectionIcon = ({ type, size = 22, color = '#FFFFFF' }) => {
   const icons = {
     activity: (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

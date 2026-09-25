@@ -11551,17 +11551,10 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
       goal,
       dayIndex,
       aheadBy: total - dailyGoal * dayIndex,
-      // Same rule as the Plan tab's step targets (WeeklyPlanner): what was still needed at the
-      // start of today, split over the days left; once today beats that, what the days after need.
-      perDayToFinish: (() => {
-        const today = weekProgress.steps?.today || 0;
-        const up100 = (n) => Math.ceil(Math.max(0, n) / 100) * 100;
-        const todayTarget = up100((goal - (total - today)) / daysLeft);
-        return today > todayTarget && daysLeft > 1 ? up100((goal - total) / (daysLeft - 1)) : todayTarget;
-      })(),
-      // Today's full target, counted from the start of the day (what perDayToFinish returns
-      // until today beats it) — the status line subtracts today's steps from it.
-      todayTarget: Math.ceil(Math.max(0, (goal - (total - (weekProgress.steps?.today || 0))) / daysLeft) / 100) * 100,
+      // What's left right now, split evenly over the days left (today included). Same rule
+      // as the Plan tab's step targets and the week stats sheet, so every screen shows one
+      // number: 21.5k to go over 2 days reads 10.8k/day, i.e. 10.8k more today and tomorrow.
+      perDayToFinish: Math.ceil(Math.max(0, goal - total) / daysLeft / 100) * 100,
       pacePercent: (dayIndex / 7) * 100,
     };
   }, [healthHistory, weekProgress.steps?.today, weekProgress.steps?.goal]);
@@ -13261,15 +13254,9 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
               recoveryNeeded && recoveryRemaining > 0 ? `${recoveryRemaining} recovery` : null,
               stepsRemaining > 0 ? `${formatK(stepsRemaining)} steps` : null
             ].filter(Boolean);
-            // The steps figure in the list is what's left *now* (today's steps already taken
-            // off), so the note has to be too: "9.5k more today", not today's full 12.1k
-            // target, which read as contradicting 21.5k ÷ 2 days. Once today's share is done,
-            // it gives the per-day figure for the days after. None on the last day — the
-            // remaining total already is today's number.
-            const moreToday = Math.max(0, weekSteps.todayTarget - (weekProgress.steps?.today || 0));
-            const stepsNote = stepsRemaining > 0 && daysLeft > 1
-              ? (moreToday > 0 ? `${formatK(moreToday)} more today` : `${formatK(weekSteps.perDayToFinish)}/day after today`)
-              : null;
+            // Per day of what's left, so it agrees with the remaining total beside it
+            // (21.5k over 2 days → 10.8k/day). None on the last day — the total already is it.
+            const stepsNote = stepsRemaining > 0 && daysLeft > 1 ? `${formatK(weekSteps.perDayToFinish)}/day` : null;
             if (!joinedToday && daysLeft <= 3 && toGo.length > 0) {
               return row(
                 null,

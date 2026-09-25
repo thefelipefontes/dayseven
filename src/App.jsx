@@ -18456,7 +18456,7 @@ export default function DaySevenApp() {
                 >
                   <span style={{ fontSize: isCollapsed ? 12 : 14 }} className="transition-all duration-300">{injured ? '🩹' : '🔥'}</span>
                   <span className="font-bold transition-all duration-300" style={{ color: injured ? '#A78BFA' : '#FFD700', fontSize: isCollapsed ? 12 : 14 }}>{userData.streaks.master}</span>
-                  <span className="font-medium transition-all duration-300" style={{ color: injured ? 'rgba(167,139,250,0.7)' : 'rgba(255,215,0,0.7)', fontSize: isCollapsed ? 9 : 11 }}>{injured ? 'week streak · paused' : 'week winning streak'}</span>
+                  <span className="font-medium transition-all duration-300" style={{ color: injured ? 'rgba(167,139,250,0.7)' : 'rgba(255,215,0,0.7)', fontSize: isCollapsed ? 9 : 11 }}>{injured ? 'Week Streak · Paused' : 'Week Winning Streak'}</span>
                 </button>
                 );
               })()}

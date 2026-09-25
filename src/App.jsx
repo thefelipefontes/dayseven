@@ -11261,6 +11261,121 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss, distanceUnit = 'mi
 
 // Home Tab - Simplified
 
+// Streak Shield info — a bottom sheet with the same motion as ActivityDetailModal: slides
+// up on open, and slides back down (rather than vanishing) on "Got it", a backdrop tap, or
+// a drag down past the threshold.
+const ShieldInfoSheet = ({ isOpen, onClose }) => {
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const [dragY, setDragY] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const touchStartY = useRef(0);
+
+  useEffect(() => {
+    if (isOpen) {
+      setIsClosing(false);
+      setDragY(0);
+      setTimeout(() => setIsAnimating(true), 10);
+    } else {
+      setIsAnimating(false);
+    }
+  }, [isOpen]);
+
+  const handleClose = () => {
+    setIsAnimating(false);
+    setIsClosing(true);
+    setTimeout(() => {
+      setIsClosing(false);
+      onClose();
+    }, 300);
+  };
+
+  if (!isOpen && !isClosing) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[9999] flex items-end justify-center transition-all duration-300"
+      style={{ backgroundColor: isAnimating ? 'rgba(0,0,0,0.6)' : 'rgba(0,0,0,0)' }}
+      onClick={(e) => e.target === e.currentTarget && handleClose()}
+    >
+      <div
+        className="relative w-full max-w-lg rounded-t-2xl p-6 pb-10"
+        style={{
+          backgroundColor: '#1a1a1a',
+          transform: !isAnimating ? 'translateY(100%)' : `translateY(${dragY}px)`,
+          transition: isDragging ? 'none' : 'transform 300ms ease-out'
+        }}
+        onTouchStart={(e) => { touchStartY.current = e.touches[0].clientY; }}
+        onTouchMove={(e) => {
+          const delta = e.touches[0].clientY - touchStartY.current;
+          setIsDragging(true);
+          setDragY(Math.max(0, delta));
+        }}
+        onTouchEnd={() => {
+          setIsDragging(false);
+          if (dragY > 100) handleClose();
+          else setDragY(0);
+        }}
+      >
+        {/* Drag handle */}
+        <div className="flex justify-center mb-5">
+          <div className="w-10 h-1 rounded-full bg-gray-600" />
+        </div>
+
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
+            <span className="text-xl">🛡️</span>
+          </div>
+          <div>
+            <h3 className="text-white font-semibold text-base">Streak Shield</h3>
+            <p className="text-gray-400 text-xs">Pro Feature</p>
+          </div>
+        </div>
+
+        <div className="space-y-3 mb-5">
+          <div className="flex gap-3">
+            <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
+              <svg className="w-3 h-3" fill="none" stroke="#00FF94" viewBox="0 0 24 24" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
+            </div>
+            <div>
+              <p className="text-white text-sm font-medium">Protects your streaks</p>
+              <p className="text-gray-400 text-xs mt-0.5">If you can't complete your weekly goals, activate the shield to keep all your streaks from resetting.</p>
+            </div>
+          </div>
+
+          <div className="flex gap-3">
+            <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
+              <svg className="w-3 h-3" fill="none" stroke="#00D1FF" viewBox="0 0 24 24" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+            </div>
+            <div>
+              <p className="text-white text-sm font-medium">Available once every 6 weeks</p>
+              <p className="text-gray-400 text-xs mt-0.5">After using a shield, there's a 6-week cooldown before you can use another one. Use it wisely!</p>
+            </div>
+          </div>
+
+          <div className="flex gap-3">
+            <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
+              <svg className="w-3 h-3" fill="none" stroke="#FF9500" viewBox="0 0 24 24" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" /></svg>
+            </div>
+            <div>
+              <p className="text-white text-sm font-medium">Appears when you need it</p>
+              <p className="text-gray-400 text-xs mt-0.5">The shield shows up in the last days of the week when your goals are incomplete, or on Sunday/Monday to retroactively save last week's streak.</p>
+            </div>
+          </div>
+        </div>
+
+        <button
+          onClick={handleClose}
+          className="w-full py-3 rounded-xl text-sm font-semibold text-white"
+          style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+        >
+          Got it
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, healthHistory = [], onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, openActivityTarget = null, showHkEmptyHint = false, hkAccessBlocked = false, onDismissHkEmptyHint = () => {}, onOpenHealthSettings = () => {}, showNotifReask = false, onAcceptNotifReask = () => {}, onDismissNotifReask = () => {}, onReplayCelebration = () => {}, pendingChallenges = [], onOpenPlan = () => {} }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
@@ -11269,7 +11384,6 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
   const [showWorkoutPicker, setShowWorkoutPicker] = useState(false);
   const [workoutPickerDragY, setWorkoutPickerDragY] = useState(0);
   const [workoutPickerTouchStart, setWorkoutPickerTouchStart] = useState(null);
-  const [dismissedWarningKey, setDismissedWarningKey] = useState(() => localStorage.getItem('dismissedStreakWarning'));
   const [activityReactions, setActivityReactions] = useState({});
   const [activityComments, setActivityComments] = useState({});
   const [reactionDetailModal, setReactionDetailModal] = useState(null); // { activityId, reactions, selectedEmoji }
@@ -11437,14 +11551,10 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
       goal,
       dayIndex,
       aheadBy: total - dailyGoal * dayIndex,
-      // Same rule as the Plan tab's step targets (WeeklyPlanner): what was still needed at the
-      // start of today, split over the days left; once today beats that, what the days after need.
-      perDayToFinish: (() => {
-        const today = weekProgress.steps?.today || 0;
-        const up100 = (n) => Math.ceil(Math.max(0, n) / 100) * 100;
-        const todayTarget = up100((goal - (total - today)) / daysLeft);
-        return today > todayTarget && daysLeft > 1 ? up100((goal - total) / (daysLeft - 1)) : todayTarget;
-      })(),
+      // What's left right now, split evenly over the days left (today included). Same rule
+      // as the Plan tab's step targets and the week stats sheet, so every screen shows one
+      // number: 21.5k to go over 2 days reads 10.8k/day, i.e. 10.8k more today and tomorrow.
+      perDayToFinish: Math.ceil(Math.max(0, goal - total) / daysLeft / 100) * 100,
       pacePercent: (dayIndex / 7) * 100,
     };
   }, [healthHistory, weekProgress.steps?.today, weekProgress.steps?.goal]);
@@ -11452,11 +11562,10 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
   const recoveryChip = (
     <button
       onClick={() => { triggerHaptic(ImpactStyle.Light); setShowRecoveryBreakdown(!showRecoveryBreakdown); }}
-      className="flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] active:opacity-70 transition-opacity"
-      style={{ backgroundColor: 'rgba(0,209,255,0.08)', border: '1px solid rgba(0,209,255,0.18)' }}
+      className="flex items-center gap-1.5 text-[11px] active:opacity-70 transition-opacity"
     >
       <CategoryIcon category="recovery" size={12} />
-      <span className="text-white">Recovery</span>
+      <span style={{ color: '#aaa' }}>Recovery</span>
       <span style={{ color: '#aaa' }}>{weekProgress.recovery?.completed || 0}/{weekProgress.recovery?.goal || 0}</span>
       {(userData.streaks?.recovery || 0) > 0 && (
         <span className="font-bold" style={{ color: '#00D1FF' }}>🔥 {userData.streaks.recovery}w</span>
@@ -11569,13 +11678,9 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
     !userData?.injuryMode?.isActive &&
     thisWeekJudged.all;
 
-  // Persist warning dismissal for the day — reappears next day if still needed
-  const warningKey = new Date().toDateString();
-  const streakWarningDismissed = dismissedWarningKey === warningKey;
-
   // Suppress the streak warning on the user's signup day so day-one feels celebratory, not pressured
   const joinedToday = userProfile?.createdAt
-    ? new Date(userProfile.createdAt).toDateString() === warningKey
+    ? new Date(userProfile.createdAt).toDateString() === new Date().toDateString()
     : false;
 
   // Week Progress: the average completion of what this week's Winning Streak needs (utils/
@@ -12544,15 +12649,16 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         {/* Today's sessions from the weekly plan (Plan tab) */}
         {plannedTodayItems.length > 0 && (
           <button onClick={onOpenPlan} className="w-full flex items-center gap-3 text-left">
-            <span className="text-lg"><SectionIcon type="calendar" size={18} /></span>
+            {/* Grey like the row label: the calendar isn't a goal category, so no colour */}
+            <span className="text-lg"><SectionIcon type="calendar" size={18} color="#9ca3af" /></span>
             <div className="flex-1 flex items-center justify-between gap-2">
               <span className="text-xs text-gray-400">Planned today</span>
               <div className="flex flex-wrap justify-end gap-1.5">
                 {plannedTodayItems.map((p, i) => (
-                  <span key={i} className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[12px] font-semibold"
-                    style={p.done
-                      ? { backgroundColor: PLAN_CAT[p.cat].color, color: '#000' }
-                      : { backgroundColor: PLAN_CAT[p.cat].bg, color: PLAN_CAT[p.cat].color }}>
+                  // Plain text, not a pill — only the icon carries colour (a done item turns
+                  // its label the category colour with a check).
+                  <span key={i} className="flex items-center gap-1 text-[12px] font-semibold"
+                    style={{ color: p.done ? PLAN_CAT[p.cat].color : '#ccc' }}>
                     {p.done ? '✓' : <CategoryIcon category={PLAN_CAT[p.cat].icon} size={12} />} {p.label}
                   </span>
                 ))}
@@ -12686,7 +12792,10 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
   );
 
   return (
-    <div className="pb-32">
+    // minHeight: just past the visible area (same math as the Plan tab) so iOS rubber-band
+    // engages even when Home is shorter than the screen — otherwise it only bounces once
+    // something (like Recent Activity) is expanded.
+    <div className="pb-32" style={{ minHeight: 'calc(100dvh - env(safe-area-inset-top, 0px) - 16px + 1px)' }}>
       {/* Workout Picker Modal - Shows when multiple workouts detected */}
       {showWorkoutPicker && (
         <div
@@ -12867,72 +12976,8 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
 
       {/* Weekly Goals - Hero Section */}
       <div className="mx-4 mb-4">
-        {/* Streak Shield Info Modal */}
-        {showShieldInfo && (
-          <div className="fixed inset-0 z-[9999] flex items-end justify-center" onClick={() => setShowShieldInfo(false)}>
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-            <div
-              className="relative w-full max-w-lg rounded-t-2xl p-6 pb-10"
-              style={{ backgroundColor: '#1a1a1a' }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Drag handle */}
-              <div className="flex justify-center mb-5">
-                <div className="w-10 h-1 rounded-full bg-gray-600" />
-              </div>
-
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
-                  <span className="text-xl">🛡️</span>
-                </div>
-                <div>
-                  <h3 className="text-white font-semibold text-base">Streak Shield</h3>
-                  <p className="text-gray-400 text-xs">Pro Feature</p>
-                </div>
-              </div>
-
-              <div className="space-y-3 mb-5">
-                <div className="flex gap-3">
-                  <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
-                    <svg className="w-3 h-3" fill="none" stroke="#00FF94" viewBox="0 0 24 24" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
-                  </div>
-                  <div>
-                    <p className="text-white text-sm font-medium">Protects your streaks</p>
-                    <p className="text-gray-400 text-xs mt-0.5">If you can't complete your weekly goals, activate the shield to keep all your streaks from resetting.</p>
-                  </div>
-                </div>
-
-                <div className="flex gap-3">
-                  <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
-                    <svg className="w-3 h-3" fill="none" stroke="#00D1FF" viewBox="0 0 24 24" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
-                  </div>
-                  <div>
-                    <p className="text-white text-sm font-medium">Available once every 6 weeks</p>
-                    <p className="text-gray-400 text-xs mt-0.5">After using a shield, there's a 6-week cooldown before you can use another one. Use it wisely!</p>
-                  </div>
-                </div>
-
-                <div className="flex gap-3">
-                  <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
-                    <svg className="w-3 h-3" fill="none" stroke="#FF9500" viewBox="0 0 24 24" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" /></svg>
-                  </div>
-                  <div>
-                    <p className="text-white text-sm font-medium">Appears when you need it</p>
-                    <p className="text-gray-400 text-xs mt-0.5">The shield shows up in the last days of the week when your goals are incomplete, or on Sunday/Monday to retroactively save last week's streak.</p>
-                  </div>
-                </div>
-              </div>
-
-              <button
-                onClick={() => setShowShieldInfo(false)}
-                className="w-full py-3 rounded-xl text-sm font-semibold text-white"
-                style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
-              >
-                Got it
-              </button>
-            </div>
-          </div>
-        )}
+        {/* Streak Shield Info Sheet */}
+        <ShieldInfoSheet isOpen={showShieldInfo} onClose={() => setShowShieldInfo(false)} />
 
         {/* Streak Shield Confirmation Modal */}
         {showShieldConfirm && (() => {
@@ -13068,265 +13113,6 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                 : `${hasExistingStreak ? 'Hit these to keep your streaks alive' : 'Hit these to start your first streak'} · ${daysLeft} day${daysLeft !== 1 ? 's' : ''} left`}</p>
           </div>
 
-          {/* Banners about the week — status, risk and the shield offer — sit with the
-              week's goals, under its title, rather than stacked above the page. */}
-        {/* Vacation Mode Active Banner */}
-        {userData.vacationMode?.isActive && (
-          <div className="p-3 rounded-xl mb-3 flex items-center gap-3" style={{ backgroundColor: 'rgba(0,209,255,0.08)', border: '1px solid rgba(0,209,255,0.2)' }}>
-            <span className="text-lg">✈️</span>
-            <div className="flex-1">
-              <div className="text-xs font-semibold" style={{ color: '#00D1FF' }}>Vacation Mode Active</div>
-              <div className="text-[10px] text-gray-400 mt-0.5">
-                Your streaks are frozen until you deactivate
-                {userData.vacationMode.startDate && (() => {
-                  const start = new Date(userData.vacationMode.startDate + 'T12:00:00');
-                  const now = new Date();
-                  const daysUsed = Math.floor((now - start) / (24 * 60 * 60 * 1000));
-                  const daysRemaining = Math.max(0, 14 - daysUsed);
-                  return <span> · {daysRemaining} day{daysRemaining !== 1 ? 's' : ''} remaining</span>;
-                })()}
-              </div>
-            </div>
-            <button
-              onClick={() => setShowVacationDeactivateConfirm(true)}
-              className="px-3 py-1.5 rounded-lg text-[11px] font-semibold"
-              style={{ backgroundColor: 'rgba(0,209,255,0.15)', color: '#00D1FF' }}
-            >
-              Deactivate
-            </button>
-          </div>
-        )}
-
-        {/* Injury Mode status — streak frozen while healing. The card is always present
-            while active, so the option to resume (once unlocked) is available every week
-            — that standing weekly option is the check-in. */}
-        {userData.injuryMode?.isActive && (
-          <div className="p-3 rounded-xl mb-3 flex items-center gap-3" style={{ backgroundColor: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.2)' }}>
-            <span className="text-lg">🩹</span>
-            <div className="flex-1">
-              <div className="text-xs font-semibold" style={{ color: '#A78BFA' }}>Injury Mode · {formatInjuryPausedLabel(userData.injuryMode)}</div>
-              <div className="text-[10px] text-gray-400 mt-0.5">
-                Take the time you need to heal
-                {userData.injuryMode.estimatedEndWeek && (() => {
-                  const end = new Date(userData.injuryMode.estimatedEndWeek + 'T12:00:00');
-                  return <span> · auto-resumes {end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>;
-                })()}
-              </div>
-            </div>
-            {canResumeInjury && (
-              <button
-                onClick={() => {
-                  triggerHaptic(ImpactStyle.Light);
-                  onRequestResumeInjury?.();
-                }}
-                className="px-3 py-1.5 rounded-lg text-[11px] font-semibold"
-                style={{ backgroundColor: 'rgba(167,139,250,0.15)', color: '#A78BFA' }}
-              >
-                I'm back
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Streak at Risk Warning - hidden during vacation */}
-        {!userData.vacationMode?.isActive && !streakWarningDismissed && !joinedToday && daysLeft <= 3 && (liftsRemaining > 0 || cardioRemaining > 0 || (recoveryNeeded && recoveryRemaining > 0) || stepsRemaining > 0) && (
-          <div
-            className="relative p-3 rounded-xl mb-3 flex items-center gap-3"
-            style={{
-              backgroundColor: 'rgba(255,69,58,0.15)',
-              border: '1px solid rgba(255,69,58,0.3)'
-            }}
-          >
-            <span className="text-xl">⚠️</span>
-            <div className="flex-1 pr-6">
-              <div className="text-xs font-semibold" style={{ color: '#FF453A' }}>
-                {daysLeft === 1 ? 'Last day to hit your goals!' : `${daysLeft} days left (including today)!`}
-              </div>
-              <div className="text-[10px] text-gray-400 mt-0.5">
-                {[
-                  liftsRemaining > 0 ? `${liftsRemaining} strength` : null,
-                  cardioRemaining > 0 ? `${cardioRemaining} cardio` : null,
-                  recoveryNeeded && recoveryRemaining > 0 ? `${recoveryRemaining} recovery` : null,
-                  stepsRemaining > 0 ? `${formatK(stepsRemaining)} steps` : null
-                ].filter(Boolean).join(', ')} remaining {streakStakes}
-              </div>
-            </div>
-            <button
-              onClick={() => { localStorage.setItem('dismissedStreakWarning', warningKey); setDismissedWarningKey(warningKey); }}
-              className="absolute flex items-center justify-center"
-              style={{ top: 4, right: 4, width: 44, height: 44, color: 'rgba(255,69,58,0.6)' }}
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                <path d="M3 3L11 11M11 3L3 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-              </svg>
-            </button>
-          </div>
-        )}
-
-        {/* Streak Shield Button - hidden during vacation */}
-        {!userData.vacationMode?.isActive && !userData.injuryMode?.isActive && (() => {
-          const currentWeek = getCurrentWeekKey();
-          const previousWeek = getPreviousWeekKey();
-          const hasActiveStreak = userData.streaks.master > 0 || userData.streaks.lifts > 0 || userData.streaks.cardio > 0 || userData.streaks.recovery > 0 || (userData.streaks.steps || 0) > 0;
-
-          // Determine if this is a retroactive shield (Sunday/Monday, saving last week)
-          const isRetroactive = dayOfWeek <= 1;
-
-          // For retroactive: check if previous week goals were incomplete.
-          // Don't require hasActiveStreak — by Monday, a missed week has already
-          // reset streaks to 0. Instead, verify the user had a streak going INTO
-          // last week by checking the week before last hit at least one goal.
-          let showRetroactive = false;
-          if (isRetroactive) {
-            // Both weeks judged by the shared rule, against the goals in force then.
-            const judgePast = (weekKey) => judgeWeekFromActivities(activities, weekKey, homeWeekCtx);
-            const prevIncomplete = !judgePast(previousWeek).all;
-            const prevAlreadyShielded = (userData.streakShield?.shieldedWeeks || []).includes(previousWeek);
-
-            // Week before last: did at least one category hit its goal? If so, a streak was alive.
-            const wbl = judgePast(addWeeksToWeekKey(previousWeek, -1));
-            const hadStreakBeforeLastWeek = hasActiveStreak || wbl.lifts || wbl.cardio || wbl.recovery;
-
-            showRetroactive = hadStreakBeforeLastWeek && prevIncomplete && !prevAlreadyShielded;
-          }
-
-          // Current week shield (Thu/Fri/Sat as before).
-          //
-          // hasActiveStreak alone isn't a good enough gate: computeStreaks lets the
-          // in-progress week extend a streak, so a user with no history who simply
-          // met one goal this week reads as streak 1 and gets offered a shield that
-          // would protect nothing. What actually makes the shield worth offering is
-          // a category the user has NOT yet met this week that is carrying a streak
-          // into it — that's the run a missed week would break.
-          const atRiskStreak =
-            (liftsRemaining > 0 && userData.streaks.lifts > 0) ||
-            (cardioRemaining > 0 && userData.streaks.cardio > 0) ||
-            (recoveryRemaining > 0 && userData.streaks.recovery > 0) ||
-            (!thisWeekJudged.steps && !injuryFrozen.includes('steps') && (userData.streaks.steps || 0) > 0) ||
-            (userData.streaks.master > 0 && !thisWeekJudged.all);
-
-          const showCurrentWeek = daysLeft <= 3 && atRiskStreak;
-
-          if (!showRetroactive && !showCurrentWeek) return null;
-
-          // Determine which week the shield applies to
-          const shieldWeekKey = showRetroactive ? previousWeek : currentWeek;
-          const isShielded = (userData.streakShield?.shieldedWeeks || []).includes(shieldWeekKey);
-
-          // Calculate 6-week cooldown from last use
-          const SHIELD_COOLDOWN_WEEKS = 6;
-          const lastUsedWeek = userData.streakShield?.lastUsedWeek;
-          let weeksUntilAvailable = 0;
-          let onCooldown = false;
-
-          if (lastUsedWeek && lastUsedWeek !== shieldWeekKey) {
-            const lastUsedDate = new Date(lastUsedWeek + 'T12:00:00');
-            const shieldWeekDate = new Date(shieldWeekKey + 'T12:00:00');
-            const weeksSinceUsed = Math.floor((shieldWeekDate - lastUsedDate) / (7 * 24 * 60 * 60 * 1000));
-            if (weeksSinceUsed < SHIELD_COOLDOWN_WEEKS) {
-              onCooldown = true;
-              weeksUntilAvailable = SHIELD_COOLDOWN_WEEKS - weeksSinceUsed;
-            }
-          }
-
-          const shieldAvailable = isPro && !isShielded && !onCooldown;
-
-          // Hide on cooldown — purely informational, not actionable from home.
-          // Status is visible on the Profile page and full management in Settings.
-          if (isPro && onCooldown && !isShielded) return null;
-
-          if (isShielded) {
-            return (
-              <div className="p-3 rounded-xl mb-3 flex items-center gap-3" style={{ backgroundColor: 'rgba(0,255,148,0.08)', border: '1px solid rgba(0,255,148,0.2)' }}>
-                <span className="text-lg">🛡️</span>
-                <div className="flex-1">
-                  <div className="text-xs font-semibold" style={{ color: '#00FF94' }}>Streak Shield Active</div>
-                  <div className="text-[10px] text-gray-400 mt-0.5">{showRetroactive ? "Last week's streaks are protected" : 'Your streaks are protected this week'}</div>
-                </div>
-                <button onClick={(e) => { e.stopPropagation(); setShowShieldInfo(true); }} className="w-6 h-6 flex items-center justify-center rounded-full" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
-                  <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
-                  </svg>
-                </button>
-              </div>
-            );
-          }
-
-          return (
-            <button
-              onClick={async () => {
-                if (!isPro) {
-                  onPresentPaywall?.();
-                  return;
-                }
-                if (onCooldown) return;
-                if (shieldAvailable) {
-                  triggerHaptic(ImpactStyle.Medium);
-                  setShowShieldConfirm(true);
-                }
-              }}
-              className="w-full p-3 rounded-xl mb-3 flex items-center gap-3 transition-all duration-150"
-              style={{
-                backgroundColor: !isPro ? 'rgba(255,255,255,0.03)' : onCooldown ? 'rgba(255,255,255,0.03)' : 'rgba(0,209,255,0.08)',
-                border: !isPro ? '1px solid rgba(255,255,255,0.06)' : onCooldown ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,209,255,0.2)',
-                opacity: onCooldown ? 0.6 : 1
-              }}
-              onTouchStart={(e) => { if (!onCooldown) e.currentTarget.style.opacity = '0.7'; }}
-              onTouchEnd={(e) => { e.currentTarget.style.opacity = onCooldown ? '0.6' : '1'; }}
-            >
-              <span className="text-lg">🛡️</span>
-              <div className="flex-1 text-left">
-                <div className="text-xs font-semibold" style={{ color: !isPro ? '#9ca3af' : onCooldown ? '#9ca3af' : '#00D1FF' }}>
-                  {!isPro ? 'Streak Shield' : onCooldown ? 'Streak Shield on Cooldown' : showRetroactive ? 'Revive Last Week\'s Broken Streak' : 'Use Streak Shield'}
-                  {!isPro && <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(255,149,0,0.15)', color: '#FF9500' }}>PRO</span>}
-                </div>
-                <div className="text-[10px] text-gray-400 mt-0.5">
-                  {!isPro ? 'Protect your streaks when life gets busy' : onCooldown ? `Available again in ${weeksUntilAvailable} week${weeksUntilAvailable === 1 ? '' : 's'}` : showRetroactive ? 'You missed last week — shield it before Monday ends' : 'Protect your streaks for this week (1 per 6 weeks)'}
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                <button onClick={(e) => { e.stopPropagation(); e.preventDefault(); setShowShieldInfo(true); }} className="w-6 h-6 flex items-center justify-center rounded-full" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
-                  <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
-                  </svg>
-                </button>
-              </div>
-            </button>
-          );
-        })()}
-
-          {/* Week Won — the mirror of the "streak at risk" warning above. That banner
-              only exists while categories are still outstanding; this one takes over the
-              moment all three land, and stays put for the rest of the week so the tap
-              back into the celebration is always reachable. Not dismissible: dismissing
-              it would take the only replay affordance with it. */}
-          {weekComplete && (
-            <button
-              onClick={onReplayCelebration}
-              className="w-full p-3 rounded-xl mb-3 flex items-center gap-3 text-left transition-all duration-150"
-              style={{
-                backgroundColor: 'rgba(0,255,148,0.12)',
-                border: '1px solid rgba(0,255,148,0.3)'
-              }}
-              onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.98)'}
-              onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
-              onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.98)'}
-              onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
-              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-            >
-              <span className="text-xl">🏆</span>
-              <div className="flex-1">
-                <div className="text-xs font-semibold" style={{ color: '#00FF94' }}>
-                  Week complete — winning streak is safe
-                </div>
-                <div className="text-[10px] text-gray-400 mt-0.5">Tap to replay the celebration</div>
-              </div>
-              <svg width="7" height="12" viewBox="0 0 7 12" fill="none" style={{ color: '#00FF94', flexShrink: 0 }}>
-                <path d="M1 1L6 6L1 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </button>
-          )}
-
           {/* Individual Goals - The Main Event */}
           <div className="p-5 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
           <div className="flex items-center justify-around">
@@ -13407,11 +13193,79 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             </button>
           </div>
 
-          {/* Steps pace — always visible under the rings (the most useful line on Monday) */}
-          <div className="mt-4 pt-3 border-t border-white/10 flex items-start gap-2">
-            <span className="mt-[1px]"><CategoryIcon category="steps" size={14} /></span>
-            <p className="text-[12.5px] leading-snug" style={{ color: '#bbb' }}>{stepsPaceSentence}</p>
-          </div>
+          {/* Status line — one slot under the rings for the week's single most important
+              message. It replaced the stack of banners (vacation, injury, week won, streak at
+              risk) that used to sit above the card; in order of priority, the first that
+              applies wins, and the steps pace sentence is the everyday fallback. The status
+              rows carry no icon: the bold coloured label already says what they are. */}
+          {(() => {
+            const row = (icon, body, action) => (
+              <div className="mt-4 pt-3 border-t border-white/10 flex items-center gap-2">
+                {icon && <span className="self-start mt-[1px] flex-shrink-0">{icon}</span>}
+                <p className="flex-1 text-[12.5px] leading-snug" style={{ color: '#bbb' }}>{body}</p>
+                {action}
+              </div>
+            );
+            const smallButton = (label, color, onClick) => (
+              <button onClick={onClick} className="flex-shrink-0 px-3 py-1.5 rounded-lg text-[11px] font-semibold" style={{ backgroundColor: `${color}26`, color }}>{label}</button>
+            );
+
+            if (userData.vacationMode?.isActive) {
+              const start = userData.vacationMode.startDate && new Date(userData.vacationMode.startDate + 'T12:00:00');
+              const daysRemaining = start ? Math.max(0, 14 - Math.floor((new Date() - start) / (24 * 60 * 60 * 1000))) : null;
+              return row(
+                null,
+                <><span className="font-semibold" style={{ color: '#00D1FF' }}>Vacation mode.</span> Streaks are frozen{daysRemaining !== null && <> · {daysRemaining} day{daysRemaining !== 1 ? 's' : ''} remaining</>}</>,
+                smallButton('Deactivate', '#00D1FF', () => setShowVacationDeactivateConfirm(true))
+              );
+            }
+
+            // Injury: the row is always present while active, so the option to resume
+            // (once unlocked) is available every week — that standing option is the check-in.
+            if (userData.injuryMode?.isActive) {
+              const end = userData.injuryMode.estimatedEndWeek && new Date(userData.injuryMode.estimatedEndWeek + 'T12:00:00');
+              return row(
+                null,
+                <><span className="font-semibold" style={{ color: '#A78BFA' }}>Injury mode · {formatInjuryPausedLabel(userData.injuryMode)}.</span> Take the time you need{end && <> · auto-resumes {end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</>}</>,
+                canResumeInjury && smallButton("I'm back", '#A78BFA', () => { triggerHaptic(ImpactStyle.Light); onRequestResumeInjury?.(); })
+              );
+            }
+
+            // Week won: stays for the rest of the week so the replay is always reachable.
+            if (weekComplete) {
+              return (
+                <button onClick={onReplayCelebration} className="w-full text-left active:opacity-70 transition-opacity">
+                  {row(
+                    null,
+                    <><span className="font-semibold" style={{ color: '#00FF94' }}>Week won.</span> Your winning streak is safe · tap to replay</>,
+                    <svg width="7" height="12" viewBox="0 0 7 12" fill="none" style={{ color: '#00FF94', flexShrink: 0 }}>
+                      <path d="M1 1L6 6L1 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  )}
+                </button>
+              );
+            }
+
+            // Streak at risk: the last three days, if anything is still outstanding. Not on the
+            // signup day, so day one feels celebratory rather than pressured.
+            const toGo = [
+              liftsRemaining > 0 ? `${liftsRemaining} strength` : null,
+              cardioRemaining > 0 ? `${cardioRemaining} cardio` : null,
+              recoveryNeeded && recoveryRemaining > 0 ? `${recoveryRemaining} recovery` : null,
+              stepsRemaining > 0 ? `${formatK(stepsRemaining)} steps` : null
+            ].filter(Boolean);
+            // Per day of what's left, so it agrees with the remaining total beside it
+            // (21.5k over 2 days → 10.8k/day). None on the last day — the total already is it.
+            const stepsNote = stepsRemaining > 0 && daysLeft > 1 ? `${formatK(weekSteps.perDayToFinish)}/day` : null;
+            if (!joinedToday && daysLeft <= 3 && toGo.length > 0) {
+              return row(
+                null,
+                <><span className="font-semibold" style={{ color: '#FF6B5E' }}>{daysLeft === 1 ? 'Last day:' : 'To go:'}</span> {toGo.join(', ')}{stepsNote && <span style={{ color: '#777' }}> ({stepsNote})</span>}</>
+              );
+            }
+
+            return row(<CategoryIcon category="steps" size={14} />, stepsPaceSentence);
+          })()}
 
           {/* Steps breakdown — Sun–Sat day strip (tap the Steps ring) */}
           {showStepsBreakdown && (
@@ -13559,13 +13413,131 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             {/* Recovery sits on the Week Progress line: a bonus with its own streak, not part of
                 winning the week, so it doesn't get its own row (tap for the breakdown). */}
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-gray-400">Week Progress <span className="font-bold ml-1" style={{ color: overallPercent >= 100 ? '#00FF94' : 'white' }}><AnimatedCounter value={overallPercent} />%</span></span>
+              <span className="text-xs text-gray-400">Week Progress <span className="font-bold ml-1" style={{ color: overallPercent >= 100 ? '#FFD700' : 'white' }}><AnimatedCounter value={overallPercent} />%</span></span>
               {/* Recovery off (goal 0): no bonus chip */}
               {(userData?.goals?.recoveryPerWeek ?? 2) > 0 && <span className="flex items-center gap-1.5"><span className="text-[10px] text-gray-500">Bonus</span>{recoveryChip}</span>}
             </div>
-            <ProgressBar progress={overallPercent} height={4} color={overallPercent >= 100 ? '#00FF94' : '#00FF94'} />
+            {/* Gold like the winning-streak badge — finishing this bar is what extends that
+                streak. (Green read as part of the Strength ring right above it.) */}
+            <ProgressBar progress={overallPercent} height={4} color="#FFD700" />
           </div>
         </div>
+
+        {/* Streak Shield — a quiet grey text link under the card rather than a banner above it
+            (the week's status now lives in the card's status line). Grey on purpose: colour on
+            Home is kept for the rings. Hidden during vacation. */}
+        {!userData.vacationMode?.isActive && !userData.injuryMode?.isActive && (() => {
+          const currentWeek = getCurrentWeekKey();
+          const previousWeek = getPreviousWeekKey();
+          const hasActiveStreak = userData.streaks.master > 0 || userData.streaks.lifts > 0 || userData.streaks.cardio > 0 || userData.streaks.recovery > 0 || (userData.streaks.steps || 0) > 0;
+
+          // Determine if this is a retroactive shield (Sunday/Monday, saving last week)
+          const isRetroactive = dayOfWeek <= 1;
+
+          // For retroactive: check if previous week goals were incomplete.
+          // Don't require hasActiveStreak — by Monday, a missed week has already
+          // reset streaks to 0. Instead, verify the user had a streak going INTO
+          // last week by checking the week before last hit at least one goal.
+          let showRetroactive = false;
+          if (isRetroactive) {
+            // Both weeks judged by the shared rule, against the goals in force then.
+            const judgePast = (weekKey) => judgeWeekFromActivities(activities, weekKey, homeWeekCtx);
+            const prevIncomplete = !judgePast(previousWeek).all;
+            const prevAlreadyShielded = (userData.streakShield?.shieldedWeeks || []).includes(previousWeek);
+
+            // Week before last: did at least one category hit its goal? If so, a streak was alive.
+            const wbl = judgePast(addWeeksToWeekKey(previousWeek, -1));
+            const hadStreakBeforeLastWeek = hasActiveStreak || wbl.lifts || wbl.cardio || wbl.recovery;
+
+            showRetroactive = hadStreakBeforeLastWeek && prevIncomplete && !prevAlreadyShielded;
+          }
+
+          // Current week shield (Thu/Fri/Sat as before).
+          //
+          // hasActiveStreak alone isn't a good enough gate: computeStreaks lets the
+          // in-progress week extend a streak, so a user with no history who simply
+          // met one goal this week reads as streak 1 and gets offered a shield that
+          // would protect nothing. What actually makes the shield worth offering is
+          // a category the user has NOT yet met this week that is carrying a streak
+          // into it — that's the run a missed week would break.
+          const atRiskStreak =
+            (liftsRemaining > 0 && userData.streaks.lifts > 0) ||
+            (cardioRemaining > 0 && userData.streaks.cardio > 0) ||
+            (recoveryRemaining > 0 && userData.streaks.recovery > 0) ||
+            (!thisWeekJudged.steps && !injuryFrozen.includes('steps') && (userData.streaks.steps || 0) > 0) ||
+            (userData.streaks.master > 0 && !thisWeekJudged.all);
+
+          const showCurrentWeek = daysLeft <= 3 && atRiskStreak;
+
+          if (!showRetroactive && !showCurrentWeek) return null;
+
+          // Determine which week the shield applies to
+          const shieldWeekKey = showRetroactive ? previousWeek : currentWeek;
+          const isShielded = (userData.streakShield?.shieldedWeeks || []).includes(shieldWeekKey);
+
+          // Calculate 6-week cooldown from last use
+          const SHIELD_COOLDOWN_WEEKS = 6;
+          const lastUsedWeek = userData.streakShield?.lastUsedWeek;
+          let onCooldown = false;
+
+          if (lastUsedWeek && lastUsedWeek !== shieldWeekKey) {
+            const lastUsedDate = new Date(lastUsedWeek + 'T12:00:00');
+            const shieldWeekDate = new Date(shieldWeekKey + 'T12:00:00');
+            const weeksSinceUsed = Math.floor((shieldWeekDate - lastUsedDate) / (7 * 24 * 60 * 60 * 1000));
+            if (weeksSinceUsed < SHIELD_COOLDOWN_WEEKS) {
+              onCooldown = true;
+            }
+          }
+
+          const shieldAvailable = isPro && !isShielded && !onCooldown;
+
+          // Hide on cooldown — purely informational, not actionable from home.
+          // Status is visible on the Profile page and full management in Settings.
+          if (isPro && onCooldown && !isShielded) return null;
+
+          const infoButton = (
+            <button onClick={(e) => { e.stopPropagation(); setShowShieldInfo(true); }} className="w-6 h-6 flex items-center justify-center rounded-full flex-shrink-0" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
+              <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+              </svg>
+            </button>
+          );
+
+          if (isShielded) {
+            return (
+              <div className="mt-3 flex items-center justify-center gap-2 text-[12px]">
+                <span className="font-semibold text-gray-300">Streak Shield active</span>
+                <span className="text-gray-500">{showRetroactive ? "· last week's streaks are protected" : '· streaks protected this week'}</span>
+                {infoButton}
+              </div>
+            );
+          }
+
+          return (
+            <div className="mt-3 flex items-center justify-center gap-2">
+              <button
+                onClick={() => {
+                  if (!isPro) {
+                    onPresentPaywall?.();
+                    return;
+                  }
+                  if (shieldAvailable) {
+                    triggerHaptic(ImpactStyle.Medium);
+                    setShowShieldConfirm(true);
+                  }
+                }}
+                className="flex items-center gap-1.5 text-[12px] font-semibold active:opacity-60 transition-opacity"
+                style={{ color: '#9ca3af' }}
+              >
+                {!isPro
+                  ? <>Streak Shield <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(255,149,0,0.15)', color: '#FF9500' }}>PRO</span></>
+                  : showRetroactive ? "Revive last week's streak · before Monday ends ›" : 'Use Streak Shield this week ›'}
+              </button>
+              {infoButton}
+            </div>
+          );
+        })()}
+
         </div>
         {/* End of weeklyGoalsRef wrapper */}
       </div>
@@ -18482,7 +18454,7 @@ export default function DaySevenApp() {
                 >
                   <span style={{ fontSize: isCollapsed ? 12 : 14 }} className="transition-all duration-300">{injured ? '🩹' : '🔥'}</span>
                   <span className="font-bold transition-all duration-300" style={{ color: injured ? '#A78BFA' : '#FFD700', fontSize: isCollapsed ? 12 : 14 }}>{userData.streaks.master}</span>
-                  <span className="font-medium transition-all duration-300" style={{ color: injured ? 'rgba(167,139,250,0.7)' : 'rgba(255,215,0,0.7)', fontSize: isCollapsed ? 9 : 11 }}>{injured ? 'week streak · paused' : 'week winning streak'}</span>
+                  <span className="font-medium transition-all duration-300" style={{ color: injured ? 'rgba(167,139,250,0.7)' : 'rgba(255,215,0,0.7)', fontSize: isCollapsed ? 9 : 11 }}>{injured ? 'Week Streak · Paused' : 'Week Winning Streak'}</span>
                 </button>
                 );
               })()}

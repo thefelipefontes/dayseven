@@ -639,16 +639,11 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
   const daySteps = dayDates.map(d => (stepsByDate?.[d] || 0));
   const weekStepsTotal = daySteps.slice(0, todayIdx + 1).reduce((a, b) => a + b, 0);
   const weekStepsGoal = (stepsPerDay || 10000) * 7;
-  // Daily step target from today on: what's still needed at the start of today, split evenly
-  // over the days left. If today already beats it, the days after today need less.
-  const roundUp100 = (n) => Math.ceil(Math.max(0, n) / 100) * 100;
-  const stepsBeforeToday = daySteps.slice(0, todayIdx).reduce((a, b) => a + b, 0);
+  // Daily step target from today on: what's left right now, split evenly over the days left
+  // (today included) — the same number Home and the week stats sheet show. Today's row adds
+  // it on top of what's already walked ("2.6k +10.8k"), and each day ahead aims for it.
   const stepsToday = daySteps[todayIdx] || 0;
-  const todayStepTarget = roundUp100((weekStepsGoal - stepsBeforeToday) / daysLeft);
-  const laterStepTarget = daysLeft > 1
-    ? (stepsToday > todayStepTarget ? roundUp100((weekStepsGoal - weekStepsTotal) / (daysLeft - 1)) : todayStepTarget)
-    : 0;
-  const stepsPerDayToGo = stepsToday > todayStepTarget ? laterStepTarget : todayStepTarget;
+  const stepsPerDayToGo = Math.ceil(Math.max(0, weekStepsGoal - weekStepsTotal) / daysLeft / 100) * 100;
   const fmtK = (n) => `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
 
   // Suggest from today through Saturday. Days already behind us keep what's on them,
@@ -842,7 +837,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
           <span className="text-[12px]" style={{ color: '#777' }}>{rangeLabel}</span>
         </div>
       )}
-      {asPage && showSteps && laterStepTarget > 0 && weekStepsTotal < weekStepsGoal && (
+      {asPage && showSteps && daysLeft > 1 && weekStepsTotal < weekStepsGoal && (
         <div className="-mt-1 mb-2 px-1 flex justify-end text-[10.5px]" style={{ color: '#777' }}>
           <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-2.5 rounded-sm" style={{ border: '1px dashed rgba(191,90,242,0.5)' }} /> steps needed each day to hit {fmtK(weekStepsGoal)}</span>
         </div>
@@ -930,7 +925,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
                     ))
                   )}
                 </div>
-                {/* Steps: walked (past), walked/target (today), target to aim for (days ahead) */}
+                {/* Steps: walked (past), walked + still to add (today), target to aim for (days ahead) */}
                 {showSteps && (() => {
                   const i = DAYS.indexOf(d);
                   const goalHit = weekStepsTotal >= weekStepsGoal;
@@ -939,14 +934,14 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
                     <span className="shrink-0 pt-1.5 flex items-center gap-1 text-[11px]" style={{ color: daySteps[i] >= stepsPerDay ? '#BF5AF2' : '#666' }}>{icon}{fmtK(daySteps[i])}</span>
                   );
                   if (i === todayIdx) return (
-                    <span className="shrink-0 pt-1.5 flex items-center gap-1 text-[11px]" style={{ color: goalHit || stepsToday >= todayStepTarget ? '#BF5AF2' : '#aaa' }}>
-                      {icon}{fmtK(stepsToday)}{!goalHit && <span style={{ color: '#666' }}>/{fmtK(todayStepTarget)}</span>}
+                    <span className="shrink-0 pt-1.5 flex items-center gap-1 text-[11px]" style={{ color: goalHit ? '#BF5AF2' : '#aaa' }}>
+                      {icon}{fmtK(stepsToday)}{!goalHit && <span style={{ color: '#666' }}>+{fmtK(stepsPerDayToGo)}</span>}
                     </span>
                   );
-                  if (goalHit || !laterStepTarget) return null;
+                  if (goalHit) return null;
                   // Days ahead: the target, in a dashed "slot to fill" (key under "Your week")
                   return (
-                    <span className="shrink-0 mt-1 flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-md" style={{ color: '#9d7bb0', border: '1px dashed rgba(191,90,242,0.35)' }}>{icon}{fmtK(laterStepTarget)}</span>
+                    <span className="shrink-0 mt-1 flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-md" style={{ color: '#9d7bb0', border: '1px dashed rgba(191,90,242,0.35)' }}>{icon}{fmtK(stepsPerDayToGo)}</span>
                   );
                 })()}
               </div>

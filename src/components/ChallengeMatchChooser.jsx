@@ -92,7 +92,7 @@ export default function ChallengeMatchChooser({ isOpen, onClose, activity, candi
               || 'Friend';
             const ruleLabel = describeMatchRule(c.matchRule);
             const cat = c.matchRule?.category;
-            const color = CATEGORY_COLOR[cat] || '#888';
+            const color = CATEGORY_COLOR[cat] || '#777';
             return (
               <button
                 key={c.id}

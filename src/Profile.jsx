@@ -1313,7 +1313,7 @@ export default function ProfilePage(props) {
                               : cat === 'recovery' ? '#00D1FF'
                               : cat === 'lifting+cardio' ? '#C4B5FD'
                               : cat === 'warmup' ? '#FFD60A'
-                              : '#9CA3AF';
+                              : '#aaa';
                             return (
                               <div key={i} className="w-1 h-1 rounded-full"
                                 style={{ backgroundColor: dotColor }}
@@ -3111,7 +3111,7 @@ export default function ProfilePage(props) {
 
                             // Before/After labels
                             ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, sans-serif';
-                            ctx.fillStyle = '#888888';
+                            ctx.fillStyle = '#777';
                             ctx.fillText('BEFORE', width * 0.25, 95);
                             ctx.fillStyle = '#00FF94';
                             ctx.fillText('AFTER', width * 0.75, 95);
@@ -3170,7 +3170,7 @@ export default function ProfilePage(props) {
                             drawPhoto(afterImg, width - 15 - photoWidth, photoY, photoWidth, photoHeight);
 
                             // Dates
-                            ctx.fillStyle = '#888888';
+                            ctx.fillStyle = '#777';
                             ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
                             ctx.fillText(formatDate(before.date), 15 + photoWidth / 2, photoY + photoHeight + 18);
                             ctx.fillText(formatDate(after.date), width - 15 - photoWidth / 2, photoY + photoHeight + 18);
@@ -3248,7 +3248,7 @@ export default function ProfilePage(props) {
                               ctx.fillText(stat.value, x + cellWidth / 2, y + 52);
 
                               ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
-                              ctx.fillStyle = '#888888';
+                              ctx.fillStyle = '#777';
                               ctx.fillText(stat.label, x + cellWidth / 2, y + 72);
                             });
 

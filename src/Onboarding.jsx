@@ -1208,7 +1208,7 @@ function LinkingScreen({ weeklyGoals, hkAuthorized, answers, initialLinked, init
             <div className="space-y-2">
               {hkWorkouts.map(w => {
                 const ring = activityRing(w);
-                const color = ring ? RING_COLORS[ring] : '#888';
+                const color = ring ? RING_COLORS[ring] : '#777';
                 const linked = linkedIds.has(w.id);
                 return (
                   <button

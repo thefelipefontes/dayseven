@@ -5781,7 +5781,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
   if (!activity) return null;
 
   const category = getActivityCategory(activity);
-  const categoryColor = category === 'lifting' ? '#00FF94' : category === 'cardio' ? '#FF9500' : category === 'recovery' ? '#00D1FF' : '#9CA3AF';
+  const categoryColor = category === 'lifting' ? '#00FF94' : category === 'cardio' ? '#FF9500' : category === 'recovery' ? '#00D1FF' : '#aaa';
   const isTransparent = stampMode === 'transparent';
 
   // Format duration
@@ -7365,7 +7365,7 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
 
   // Wearable icon helper
   const getWearableIcon = (value, selected) => {
-    const c = selected ? '#00FF94' : '#999';
+    const c = selected ? '#00FF94' : '#aaa';
     switch(value) {
       case 'apple-watch':
         return (
@@ -10154,7 +10154,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                                 border: customActivityIcon === name ? '1px solid #00FF94' : '1px solid transparent'
                               }}
                             >
-                              <Icon size={20} color={customActivityIcon === name ? '#00FF94' : '#9CA3AF'} strokeWidth={2} />
+                              <Icon size={20} color={customActivityIcon === name ? '#00FF94' : '#aaa'} strokeWidth={2} />
                             </button>
                           ))}
                         </div>
@@ -12650,7 +12650,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         {plannedTodayItems.length > 0 && (
           <button onClick={onOpenPlan} className="w-full flex items-center gap-3 text-left">
             {/* Grey like the row label: the calendar isn't a goal category, so no colour */}
-            <span className="text-lg"><SectionIcon type="calendar" size={18} color="#9ca3af" /></span>
+            <span className="text-lg"><SectionIcon type="calendar" size={18} color="#aaa" /></span>
             <div className="flex-1 flex items-center justify-between gap-2">
               <span className="text-xs text-gray-400">Planned today</span>
               <div className="flex flex-wrap justify-end gap-1.5">
@@ -12707,8 +12707,8 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             })}
           </div>
         ) : (
-          <p className="text-[12.5px] leading-snug" style={{ color: '#9ca3af' }}>
-            <span className="font-semibold" style={{ color: '#ddd' }}>No workout yet today.</span> A rest day still counts toward a winning week.
+          <p className="text-[12.5px] leading-snug" style={{ color: '#aaa' }}>
+            <span className="font-semibold" style={{ color: '#ccc' }}>No workout yet today.</span> A rest day still counts toward a winning week.
           </p>
         )}
 
@@ -13202,7 +13202,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             const row = (icon, body, action) => (
               <div className="mt-4 pt-3 border-t border-white/10 flex items-center gap-2">
                 {icon && <span className="self-start mt-[1px] flex-shrink-0">{icon}</span>}
-                <p className="flex-1 text-[12.5px] leading-snug" style={{ color: '#bbb' }}>{body}</p>
+                <p className="flex-1 text-[12.5px] leading-snug" style={{ color: '#ccc' }}>{body}</p>
                 {action}
               </div>
             );
@@ -13286,11 +13286,11 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                   const dailyGoal = weekSteps.goal / 7;
                   return (
                     <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                      <div className="text-[9px]" style={{ color: isFuture ? 'transparent' : '#888' }}>{isFuture ? '·' : formatK(daySteps)}</div>
+                      <div className="text-[9px]" style={{ color: isFuture ? 'transparent' : '#777' }}>{isFuture ? '·' : formatK(daySteps)}</div>
                       <div className="w-full h-[34px] rounded-[5px] flex items-end overflow-hidden" style={{ backgroundColor: isFuture ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.06)' }}>
                         <div className="w-full rounded-[5px]" style={{ height: `${Math.min(100, (daySteps / dailyGoal) * 100)}%`, backgroundColor: daySteps >= dailyGoal ? '#BF5AF2' : 'rgba(191,90,242,0.55)' }} />
                       </div>
-                      <div className="text-[9px]" style={{ color: isToday ? '#fff' : '#666', fontWeight: isToday ? 700 : 400 }}>{label}</div>
+                      <div className="text-[9px]" style={{ color: isToday ? '#fff' : '#777', fontWeight: isToday ? 700 : 400 }}>{label}</div>
                     </div>
                   );
                 })}
@@ -13527,7 +13527,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                   }
                 }}
                 className="flex items-center gap-1.5 text-[12px] font-semibold active:opacity-60 transition-opacity"
-                style={{ color: '#9ca3af' }}
+                style={{ color: '#aaa' }}
               >
                 {!isPro
                   ? <>Streak Shield <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(255,149,0,0.15)', color: '#FF9500' }}>PRO</span></>
@@ -19023,7 +19023,7 @@ export default function DaySevenApp() {
             onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
             onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
           >
-            <svg className="w-6 h-6" fill="none" stroke={activeTab === 'home' ? 'white' : '#6b7280'} viewBox="0 0 24 24" strokeWidth={1.5}>
+            <svg className="w-6 h-6" fill="none" stroke={activeTab === 'home' ? 'white' : '#777'} viewBox="0 0 24 24" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
             </svg>
             <span className={`text-xs ${activeTab === 'home' ? 'text-white' : 'text-gray-500'}`}>Home</span>
@@ -19041,7 +19041,7 @@ export default function DaySevenApp() {
             onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
             onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
           >
-            <svg className="w-6 h-6" fill="none" stroke={activeTab === 'plan' ? 'white' : '#6b7280'} viewBox="0 0 24 24" strokeWidth={1.5}>
+            <svg className="w-6 h-6" fill="none" stroke={activeTab === 'plan' ? 'white' : '#777'} viewBox="0 0 24 24" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
             </svg>
             <span className={`text-xs ${activeTab === 'plan' ? 'text-white' : 'text-gray-500'}`}>Plan</span>
@@ -19062,7 +19062,7 @@ export default function DaySevenApp() {
             onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
             onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
           >
-            <svg className="w-6 h-6" fill="none" stroke={activeTab === 'feed' ? 'white' : '#6b7280'} viewBox="0 0 24 24" strokeWidth={1.5}>
+            <svg className="w-6 h-6" fill="none" stroke={activeTab === 'feed' ? 'white' : '#777'} viewBox="0 0 24 24" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" />
             </svg>
             <span className={`text-xs ${activeTab === 'feed' ? 'text-white' : 'text-gray-500'}`}>Friends</span>
@@ -19086,7 +19086,7 @@ export default function DaySevenApp() {
             onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
             onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
           >
-            <svg className="w-6 h-6" fill="none" stroke={activeTab === 'profile' ? 'white' : '#6b7280'} viewBox="0 0 24 24" strokeWidth={1.5}>
+            <svg className="w-6 h-6" fill="none" stroke={activeTab === 'profile' ? 'white' : '#777'} viewBox="0 0 24 24" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
             </svg>
             <span className={`text-xs ${activeTab === 'profile' ? 'text-white' : 'text-gray-500'}`}>Profile</span>

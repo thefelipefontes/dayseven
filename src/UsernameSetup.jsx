@@ -127,7 +127,7 @@ const UsernameSetup = ({ user, onComplete }) => {
           className={`w-full py-4 rounded-xl font-semibold transition-all duration-200 ${
             canSubmit
               ? 'bg-white text-black active:scale-95'
-              : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
+              : 'bg-zinc-800 text-gray-500 cursor-not-allowed'
           }`}
         >
           {isSaving ? (

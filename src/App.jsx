@@ -11261,10 +11261,10 @@ const SwipeableWorkoutItem = ({ workout, onSelect, onDismiss, distanceUnit = 'mi
 
 // Home Tab - Simplified
 
-// Streak Shield info — a bottom sheet with the same motion as ActivityDetailModal: slides
-// up on open, and slides back down (rather than vanishing) on "Got it", a backdrop tap, or
-// a drag down past the threshold.
-const ShieldInfoSheet = ({ isOpen, onClose }) => {
+// Bottom sheet with the same motion as ActivityDetailModal: slides up on open, and slides
+// back down (rather than vanishing) on a button, a backdrop tap, or a drag down past the
+// threshold. `children` is a function given `close`, so buttons inside animate out too.
+const SlideUpSheet = ({ isOpen, onClose, children }) => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [dragY, setDragY] = useState(0);
@@ -11317,6 +11317,17 @@ const ShieldInfoSheet = ({ isOpen, onClose }) => {
           else setDragY(0);
         }}
       >
+        {children(handleClose)}
+      </div>
+    </div>
+  );
+};
+
+// Streak Shield info (the ⓘ next to the shield link on Home).
+const ShieldInfoSheet = ({ isOpen, onClose }) => (
+  <SlideUpSheet isOpen={isOpen} onClose={onClose}>
+    {(close) => (
+      <>
         {/* Drag handle */}
         <div className="flex justify-center mb-5">
           <div className="w-10 h-1 rounded-full bg-gray-600" />
@@ -11365,14 +11376,71 @@ const ShieldInfoSheet = ({ isOpen, onClose }) => {
         </div>
 
         <button
-          onClick={handleClose}
+          onClick={close}
           className="w-full py-3 rounded-xl text-sm font-semibold text-white"
           style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
         >
           Got it
         </button>
-      </div>
-    </div>
+      </>
+    )}
+  </SlideUpSheet>
+);
+
+// Winning Streak explainer — opened by tapping the gold streak badge in the Home header.
+// Names the user's own required goals (utils/weekGoals winningCategories: Strength + Cardio +
+// Steps, or without step data Strength + Cardio, or Strength + Cardio + Recovery under the
+// original rule), so the definition is never wrong for them.
+const WINNING_GOAL_NAMES = { lifts: 'Strength', cardio: 'Cardio', steps: 'Steps', recovery: 'Recovery' };
+const WinningStreakInfoSheet = ({ isOpen, onClose, required = ['lifts', 'cardio', 'steps'], recoveryIsBonus = true, streak = 0, onSeeStreaks }) => {
+  const names = required.map((c) => WINNING_GOAL_NAMES[c] || c);
+  const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0];
+  const all = names.length === 2 ? 'both' : `all ${names.length === 3 ? 'three' : names.length}`;
+  return (
+    <SlideUpSheet isOpen={isOpen} onClose={onClose}>
+      {(close) => (
+        <>
+          {/* Drag handle */}
+          <div className="flex justify-center mb-5">
+            <div className="w-10 h-1 rounded-full bg-gray-600" />
+          </div>
+
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(255,215,0,0.1)' }}>
+              <span className="text-xl">🔥</span>
+            </div>
+            <div>
+              <h3 className="text-white font-semibold text-base">Winning Streak</h3>
+              <p className="text-gray-400 text-xs">{streak > 0 ? `${streak} week${streak !== 1 ? 's' : ''} and counting` : 'Your main streak'}</p>
+            </div>
+          </div>
+
+          <p className="text-white text-sm leading-relaxed mb-2">
+            Hit {all} weekly goals ({list}) in the same week to win it. Win weeks in a row and your streak grows. Miss one and it resets.
+          </p>
+          <p className="text-gray-400 text-xs leading-relaxed mb-5">
+            {recoveryIsBonus && 'Recovery is a bonus and doesn\'t count toward it. '}A Streak Shield can save a week when life gets busy.
+          </p>
+
+          <div className="flex gap-3">
+            <button
+              onClick={() => { close(); onSeeStreaks?.(); }}
+              className="flex-1 py-3 rounded-xl text-sm font-semibold"
+              style={{ backgroundColor: 'rgba(255,215,0,0.1)', color: '#FFD700' }}
+            >
+              See your streaks
+            </button>
+            <button
+              onClick={close}
+              className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
+              style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+            >
+              Got it
+            </button>
+          </div>
+        </>
+      )}
+    </SlideUpSheet>
   );
 };
 
@@ -13110,7 +13178,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
               // whose meaning changed: the days left are now headroom, not a deadline.
               : weekComplete
                 ? `${daysLeft} day${daysLeft !== 1 ? 's' : ''} left in the week`
-                : `${hasExistingStreak ? 'Hit these to keep your streaks alive' : 'Hit these to start your first streak'} · ${daysLeft} day${daysLeft !== 1 ? 's' : ''} left`}</p>
+                : `${hasExistingStreak ? 'Hit these to keep your streaks alive' : `Hit ${thisWeekJudged.required.length === 2 ? 'both' : 'all three'} this week to start your Winning Streak`} · ${daysLeft} day${daysLeft !== 1 ? 's' : ''} left`}</p>
           </div>
 
           {/* Individual Goals - The Main Event */}
@@ -13638,6 +13706,10 @@ export default function DaySevenApp() {
   });
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('home');
+  const [showWinningStreakInfo, setShowWinningStreakInfo] = useState(false);
+  // The goals this week's Winning Streak needs, captured when the explainer opens (kept
+  // through its close animation so the text doesn't change as it slides away).
+  const [winningStreakRequired, setWinningStreakRequired] = useState(['lifts', 'cardio', 'steps']);
   const [showSettings, setShowSettings] = useState(false);
   /// Shown at launch when a returning user's HealthKit permission is gone (reinstall,
   /// restore to a new phone) so the system prompt has context and a tap behind it.
@@ -18446,7 +18518,13 @@ export default function DaySevenApp() {
                 const injured = userData?.injuryMode?.isActive;
                 return (
                 <button
-                  onClick={() => switchTab('profile')}
+                  // Explains the term (it's otherwise only defined in the first-run tour);
+                  // the sheet's "See your streaks" keeps the old shortcut to Profile.
+                  onClick={() => {
+                    triggerHaptic(ImpactStyle.Light);
+                    setWinningStreakRequired(winningCategories(getCurrentWeekKey(), buildWeekCtx()));
+                    setShowWinningStreakInfo(true);
+                  }}
                   className="flex items-center gap-1.5 px-2.5 py-1 rounded-full transition-all duration-300 ease-out active:scale-95"
                   style={injured
                     ? { backgroundColor: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.25)' }
@@ -18462,6 +18540,17 @@ export default function DaySevenApp() {
           </div>
         );
       })()}
+
+      {/* Winning Streak explainer — rendered outside the header, whose backdrop-filter would
+          otherwise become the containing block for this fixed sheet. */}
+      <WinningStreakInfoSheet
+        isOpen={showWinningStreakInfo}
+        onClose={() => setShowWinningStreakInfo(false)}
+        required={winningStreakRequired}
+        recoveryIsBonus={!winningStreakRequired.includes('recovery') && (userData?.goals?.recoveryPerWeek ?? 2) > 0}
+        streak={userData?.streaks?.master || 0}
+        onSeeStreaks={() => switchTab('profile')}
+      />
 
       {/* Status bar blur overlay for non-home tabs */}
       {activeTab !== 'home' && <StatusBarBlur />}

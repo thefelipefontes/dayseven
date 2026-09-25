@@ -11559,6 +11559,9 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         const todayTarget = up100((goal - (total - today)) / daysLeft);
         return today > todayTarget && daysLeft > 1 ? up100((goal - total) / (daysLeft - 1)) : todayTarget;
       })(),
+      // Today's full target, counted from the start of the day (what perDayToFinish returns
+      // until today beats it) — the status line subtracts today's steps from it.
+      todayTarget: Math.ceil(Math.max(0, (goal - (total - (weekProgress.steps?.today || 0))) / daysLeft) / 100) * 100,
       pacePercent: (dayIndex / 7) * 100,
     };
   }, [healthHistory, weekProgress.steps?.today, weekProgress.steps?.goal]);
@@ -13200,11 +13203,12 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
           {/* Status line — one slot under the rings for the week's single most important
               message. It replaced the stack of banners (vacation, injury, week won, streak at
               risk) that used to sit above the card; in order of priority, the first that
-              applies wins, and the steps pace sentence is the everyday fallback. */}
+              applies wins, and the steps pace sentence is the everyday fallback. The status
+              rows carry no icon: the bold coloured label already says what they are. */}
           {(() => {
             const row = (icon, body, action) => (
               <div className="mt-4 pt-3 border-t border-white/10 flex items-center gap-2">
-                <span className="self-start mt-[1px] flex-shrink-0">{icon}</span>
+                {icon && <span className="self-start mt-[1px] flex-shrink-0">{icon}</span>}
                 <p className="flex-1 text-[12.5px] leading-snug" style={{ color: '#bbb' }}>{body}</p>
                 {action}
               </div>
@@ -13217,7 +13221,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
               const start = userData.vacationMode.startDate && new Date(userData.vacationMode.startDate + 'T12:00:00');
               const daysRemaining = start ? Math.max(0, 14 - Math.floor((new Date() - start) / (24 * 60 * 60 * 1000))) : null;
               return row(
-                <span className="text-[13px]">✈️</span>,
+                null,
                 <><span className="font-semibold" style={{ color: '#00D1FF' }}>Vacation mode.</span> Streaks are frozen{daysRemaining !== null && <> · {daysRemaining} day{daysRemaining !== 1 ? 's' : ''} remaining</>}</>,
                 smallButton('Deactivate', '#00D1FF', () => setShowVacationDeactivateConfirm(true))
               );
@@ -13228,7 +13232,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             if (userData.injuryMode?.isActive) {
               const end = userData.injuryMode.estimatedEndWeek && new Date(userData.injuryMode.estimatedEndWeek + 'T12:00:00');
               return row(
-                <span className="text-[13px]">🩹</span>,
+                null,
                 <><span className="font-semibold" style={{ color: '#A78BFA' }}>Injury mode · {formatInjuryPausedLabel(userData.injuryMode)}.</span> Take the time you need{end && <> · auto-resumes {end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</>}</>,
                 canResumeInjury && smallButton("I'm back", '#A78BFA', () => { triggerHaptic(ImpactStyle.Light); onRequestResumeInjury?.(); })
               );
@@ -13239,7 +13243,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
               return (
                 <button onClick={onReplayCelebration} className="w-full text-left active:opacity-70 transition-opacity">
                   {row(
-                    <span className="text-[13px]">🏆</span>,
+                    null,
                     <><span className="font-semibold" style={{ color: '#00FF94' }}>Week won.</span> Your winning streak is safe · tap to replay</>,
                     <svg width="7" height="12" viewBox="0 0 7 12" fill="none" style={{ color: '#00FF94', flexShrink: 0 }}>
                       <path d="M1 1L6 6L1 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
@@ -13257,10 +13261,19 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
               recoveryNeeded && recoveryRemaining > 0 ? `${recoveryRemaining} recovery` : null,
               stepsRemaining > 0 ? `${formatK(stepsRemaining)} steps` : null
             ].filter(Boolean);
+            // The steps figure in the list is what's left *now* (today's steps already taken
+            // off), so the note has to be too: "9.5k more today", not today's full 12.1k
+            // target, which read as contradicting 21.5k ÷ 2 days. Once today's share is done,
+            // it gives the per-day figure for the days after. None on the last day — the
+            // remaining total already is today's number.
+            const moreToday = Math.max(0, weekSteps.todayTarget - (weekProgress.steps?.today || 0));
+            const stepsNote = stepsRemaining > 0 && daysLeft > 1
+              ? (moreToday > 0 ? `${formatK(moreToday)} more today` : `${formatK(weekSteps.perDayToFinish)}/day after today`)
+              : null;
             if (!joinedToday && daysLeft <= 3 && toGo.length > 0) {
               return row(
-                <span className="text-[13px]">⏳</span>,
-                <><span className="font-semibold" style={{ color: '#FF6B5E' }}>{daysLeft === 1 ? 'Last day:' : 'To go:'}</span> {toGo.join(', ')}{stepsRemaining > 0 && <span style={{ color: '#777' }}> ({formatK(weekSteps.perDayToFinish)}/day)</span>}</>
+                null,
+                <><span className="font-semibold" style={{ color: '#FF6B5E' }}>{daysLeft === 1 ? 'Last day:' : 'To go:'}</span> {toGo.join(', ')}{stepsNote && <span style={{ color: '#777' }}> ({stepsNote})</span>}</>
               );
             }
 
@@ -13506,7 +13519,6 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
           if (isShielded) {
             return (
               <div className="mt-3 flex items-center justify-center gap-2 text-[12px]">
-                <span>🛡️</span>
                 <span className="font-semibold text-gray-300">Streak Shield active</span>
                 <span className="text-gray-500">{showRetroactive ? "· last week's streaks are protected" : '· streaks protected this week'}</span>
                 {infoButton}
@@ -13530,7 +13542,6 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                 className="flex items-center gap-1.5 text-[12px] font-semibold active:opacity-60 transition-opacity"
                 style={{ color: '#9ca3af' }}
               >
-                <span>🛡️</span>
                 {!isPro
                   ? <>Streak Shield <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(255,149,0,0.15)', color: '#FF9500' }}>PRO</span></>
                   : showRetroactive ? "Revive last week's streak · before Monday ends ›" : 'Use Streak Shield this week ›'}

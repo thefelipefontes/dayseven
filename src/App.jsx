@@ -13107,10 +13107,6 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             </div>
             <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>{userData.injuryMode?.isActive
               ? 'Rest up — your streak is safe while you heal'
-              // The winning streak lives here, under the title, rather than as a pill in the
-              // page header — it's what the goals below are protecting.
-              : (userData.streaks?.master || 0) > 0
-                ? <><span className="font-semibold" style={{ color: '#FFD700' }}>🔥 {userData.streaks.master}-week winning streak</span> · {daysLeft} day{daysLeft !== 1 ? 's' : ''} left</>
               // The Week Won banner directly below already delivers the news in green;
               // repeating "all goals met" here would stack the same line twice. So drop
               // the instruction — there's nothing left to hit — and keep only the fact
@@ -13424,8 +13420,9 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
           </div>
         </div>
 
-        {/* Streak Shield — a quiet text link under the card rather than a banner above it
-            (the week's status now lives in the card's status line). Hidden during vacation. */}
+        {/* Streak Shield — a quiet grey text link under the card rather than a banner above it
+            (the week's status now lives in the card's status line). Grey on purpose: colour on
+            Home is kept for the rings. Hidden during vacation. */}
         {!userData.vacationMode?.isActive && !userData.injuryMode?.isActive && (() => {
           const currentWeek = getCurrentWeekKey();
           const previousWeek = getPreviousWeekKey();
@@ -13507,7 +13504,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             return (
               <div className="mt-3 flex items-center justify-center gap-2 text-[12px]">
                 <span>🛡️</span>
-                <span style={{ color: '#00FF94' }} className="font-semibold">Streak Shield active</span>
+                <span className="font-semibold text-gray-300">Streak Shield active</span>
                 <span className="text-gray-500">{showRetroactive ? "· last week's streaks are protected" : '· streaks protected this week'}</span>
                 {infoButton}
               </div>
@@ -13528,7 +13525,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                   }
                 }}
                 className="flex items-center gap-1.5 text-[12px] font-semibold active:opacity-60 transition-opacity"
-                style={{ color: !isPro ? '#9ca3af' : '#00D1FF' }}
+                style={{ color: '#9ca3af' }}
               >
                 <span>🛡️</span>
                 {!isPro
@@ -18444,6 +18441,22 @@ export default function DaySevenApp() {
                   style={{ opacity: wordmarkOpacity }}
                 />
               </div>
+              {userData?.streaks?.master > 0 && !activeWorkout && (() => {
+                const injured = userData?.injuryMode?.isActive;
+                return (
+                <button
+                  onClick={() => switchTab('profile')}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full transition-all duration-300 ease-out active:scale-95"
+                  style={injured
+                    ? { backgroundColor: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.25)' }
+                    : { backgroundColor: 'rgba(255,215,0,0.1)', border: '1px solid rgba(255,215,0,0.2)' }}
+                >
+                  <span style={{ fontSize: isCollapsed ? 12 : 14 }} className="transition-all duration-300">{injured ? '🩹' : '🔥'}</span>
+                  <span className="font-bold transition-all duration-300" style={{ color: injured ? '#A78BFA' : '#FFD700', fontSize: isCollapsed ? 12 : 14 }}>{userData.streaks.master}</span>
+                  <span className="font-medium transition-all duration-300" style={{ color: injured ? 'rgba(167,139,250,0.7)' : 'rgba(255,215,0,0.7)', fontSize: isCollapsed ? 9 : 11 }}>{injured ? 'week streak · paused' : 'week winning streak'}</span>
+                </button>
+                );
+              })()}
             </div>
           </div>
         );

@@ -1187,7 +1187,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                       className="px-3 py-1 rounded-full text-[12px] font-semibold transition-all duration-150"
                       style={{
                         backgroundColor: active ? '#00FF94' : 'transparent',
-                        color: active ? 'black' : '#9CA3AF',
+                        color: active ? 'black' : '#aaa',
                         minWidth: 40,
                       }}
                     >
@@ -1743,7 +1743,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                   </div>
                   <div>
                     <span className="text-sm text-white block">{isPro ? 'DaySeven Pro' : 'DaySeven'}</span>
-                    <p className="text-[11px]" style={{ color: isPro ? '#00FF94' : '#9ca3af' }}>
+                    <p className="text-[11px]" style={{ color: isPro ? '#00FF94' : '#aaa' }}>
                       {!isPro ? 'Free plan' : isLifetime ? 'Lifetime — yours forever' : 'Active'}
                     </p>
                   </div>
@@ -1787,7 +1787,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                      <svg className="w-4 h-4" fill="none" stroke="#9ca3af" viewBox="0 0 24 24" strokeWidth={1.5}>
+                      <svg className="w-4 h-4" fill="none" stroke="#aaa" viewBox="0 0 24 24" strokeWidth={1.5}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
                       </svg>
                     </div>
@@ -2968,7 +2968,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                 type="button"
                 onClick={handleSaveProfileField}
                 disabled={!canSaveProfile}
-                className={`flex-1 py-3 rounded-xl text-sm font-semibold transition-colors ${canSaveProfile ? 'bg-white text-black active:scale-95' : 'bg-zinc-800 text-zinc-500'}`}
+                className={`flex-1 py-3 rounded-xl text-sm font-semibold transition-colors ${canSaveProfile ? 'bg-white text-black active:scale-95' : 'bg-zinc-800 text-gray-500'}`}
               >
                 {isSavingProfile ? (
                   <span className="flex items-center justify-center gap-2">

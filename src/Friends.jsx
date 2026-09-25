@@ -580,7 +580,7 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
                                   disabled={isSending}
                                   className={`text-sm font-medium px-4 py-1.5 rounded-full ${
                                     isSending
-                                      ? 'bg-zinc-700 text-zinc-400'
+                                      ? 'bg-zinc-700 text-gray-400'
                                       : 'bg-white text-black hover:bg-gray-100 active:bg-gray-200'
                                   }`}
                                 >

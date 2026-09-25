@@ -189,7 +189,7 @@ const NotificationSettings = ({ userId, onClose }) => {
       <div className="flex-1 pr-4">
         <p className="text-white font-medium">{label}</p>
         {description && (
-          <p className="text-zinc-500 text-sm mt-0.5">{description}</p>
+          <p className="text-gray-500 text-sm mt-0.5">{description}</p>
         )}
       </div>
       <Toggle enabled={enabled} onToggle={onToggle} disabled={disabled} />
@@ -239,7 +239,7 @@ const NotificationSettings = ({ userId, onClose }) => {
           <h2 className="text-xl font-bold text-white">Notifications</h2>
           <button
             onClick={onClose}
-            className="text-zinc-400 hover:text-white p-2 -mr-2"
+            className="text-gray-400 hover:text-white p-2 -mr-2"
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 6L6 18M6 6l12 12" />
@@ -260,18 +260,18 @@ const NotificationSettings = ({ userId, onClose }) => {
         {/* Permission banner */}
         {notSupported ? (
           <div className="bg-zinc-800/50 rounded-xl p-4 mb-6">
-            <p className="text-zinc-400 text-sm">
+            <p className="text-gray-400 text-sm">
               Push notifications are only available on mobile devices.
             </p>
           </div>
         ) : permissionChecking ? (
           <div className="bg-zinc-800/50 rounded-xl p-4 mb-6">
-            <p className="text-zinc-400 text-sm">Checking notification status...</p>
+            <p className="text-gray-400 text-sm">Checking notification status...</p>
           </div>
         ) : !permissionGranted ? (
           <div className="bg-zinc-800/50 rounded-xl p-4 mb-6">
             <p className="text-white font-medium mb-2">Enable Notifications</p>
-            <p className="text-zinc-400 text-sm mb-3">
+            <p className="text-gray-400 text-sm mb-3">
               Get notified about friend activity, streak reminders, and more.
             </p>
             <button
@@ -299,7 +299,7 @@ const NotificationSettings = ({ userId, onClose }) => {
             <div className="flex items-center justify-between py-4">
               <div className="flex-1 pr-4">
                 <p className="text-white font-semibold text-lg">All Notifications</p>
-                <p className="text-zinc-500 text-sm mt-0.5">
+                <p className="text-gray-500 text-sm mt-0.5">
                   {allEnabled ? 'Turn off all notifications' : 'Turn on all notifications'}
                 </p>
               </div>
@@ -396,7 +396,7 @@ const NotificationSettings = ({ userId, onClose }) => {
               <div className="flex items-center justify-between">
                 <div className="flex-1 pr-4">
                   <p className="text-white font-medium">Daily Reminder</p>
-                  <p className="text-zinc-500 text-sm mt-0.5">
+                  <p className="text-gray-500 text-sm mt-0.5">
                     Get a daily reminder to work out
                   </p>
                 </div>
@@ -407,7 +407,7 @@ const NotificationSettings = ({ userId, onClose }) => {
               </div>
               {preferences.dailyReminders && (
                 <div className="mt-3">
-                  <label className="text-zinc-400 text-sm">Remind me at</label>
+                  <label className="text-gray-400 text-sm">Remind me at</label>
                   <select
                     value={preferences.dailyReminderTime}
                     onChange={(e) => handleTimeChange('dailyReminderTime', e.target.value)}
@@ -478,7 +478,7 @@ const NotificationSettings = ({ userId, onClose }) => {
               <div className="flex items-center justify-between">
                 <div className="flex-1 pr-4">
                   <p className="text-white font-medium">Quiet Hours</p>
-                  <p className="text-zinc-500 text-sm mt-0.5">
+                  <p className="text-gray-500 text-sm mt-0.5">
                     Don't send notifications during these hours
                   </p>
                 </div>
@@ -507,7 +507,7 @@ const NotificationSettings = ({ userId, onClose }) => {
                       );
                     })}
                   </select>
-                  <span className="text-zinc-500">to</span>
+                  <span className="text-gray-500">to</span>
                   <select
                     value={preferences.quietHoursEnd}
                     onChange={(e) => handleTimeChange('quietHoursEnd', e.target.value)}
@@ -532,7 +532,7 @@ const NotificationSettings = ({ userId, onClose }) => {
           </div>
         </div>
 
-        <div className="mt-8 text-center text-zinc-600 text-xs">
+        <div className="mt-8 text-center text-gray-600 text-xs">
           Notification preferences are synced across your devices
         </div>
       </div>

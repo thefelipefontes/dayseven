@@ -106,7 +106,7 @@ const CATEGORY_COLORS = {
   cardio: '#FF9500',
   recovery: '#00D1FF',
   hybrid: '#C4B5FD',
-  other: '#9CA3AF',
+  other: '#aaa',
   uncategorized: '#FFC800',
 };
 

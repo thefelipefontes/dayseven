@@ -166,7 +166,7 @@ export default function ChallengeDetailModal({
   };
 
   const category = challenge.matchRule?.category;
-  const color = CATEGORY_COLOR[category] || '#888';
+  const color = CATEGORY_COLOR[category] || '#777';
 
   const meName = userProfile?.displayName || userProfile?.username || 'You';
   const mePhotoURL = userProfile?.photoURL || null;

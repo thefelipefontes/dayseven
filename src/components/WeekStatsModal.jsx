@@ -84,7 +84,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
     if (injuryFrozenRow(cat)) return <span style={{ fontSize: '13px', lineHeight: 1 }}>🩹</span>;
     if (isShielded) return <span style={{ fontSize: '13px', lineHeight: 1 }}>🛡️</span>;
     if (!met && isLiveWeek) {
-      return <span className="text-xs font-bold" style={{ color: '#888' }}>{count === undefined ? '—' : `${count}/${goal}`}</span>;
+      return <span className="text-xs font-bold" style={{ color: '#777' }}>{count === undefined ? '—' : `${count}/${goal}`}</span>;
     }
     return <span className="text-xs font-bold" style={{ color: met ? color : '#FF453A' }}>{met ? '✓' : '✗'}</span>;
   };
@@ -200,7 +200,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
             bg = 'rgba(0,255,148,0.1)'; border = 'rgba(0,255,148,0.3)'; color = '#00FF94'; label = '✓ Completed';
           } else if (isLiveWeek) {
             const daysLeft = 8 - daysElapsed; // today included
-            bg = 'rgba(255,255,255,0.05)'; border = 'rgba(255,255,255,0.12)'; color = '#ddd';
+            bg = 'rgba(255,255,255,0.05)'; border = 'rgba(255,255,255,0.12)'; color = '#ccc';
             label = daysLeft <= 1 ? 'In progress · last day' : `In progress · ${daysLeft} days left`;
           } else {
             bg = 'rgba(255,69,58,0.1)'; border = 'rgba(255,69,58,0.3)'; color = '#FF453A'; label = '✗ Incomplete';
@@ -231,14 +231,14 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
                 <div className="absolute rounded-full" style={{ left: `calc(${((daysElapsed - 1) / 7) * 100}% - 1px)`, top: '-4px', width: '2px', height: '14px', backgroundColor: '#fff' }} />
               )}
             </div>
-            <p className="text-[12.5px] mt-2 leading-snug" style={{ color: '#bbb' }}>
+            <p className="text-[12.5px] mt-2 leading-snug" style={{ color: '#ccc' }}>
               {(() => {
                 const perDayAvg = formatK(weekStepsTotal / daysElapsed);
                 if (weekStepsTotal >= weekStepsGoal) {
                   return <><span className="font-semibold" style={{ color: '#BF5AF2' }}>Steps goal hit.</span> {formatK(weekStepsTotal)} steps, ~{perDayAvg} a day.</>;
                 }
                 if (!isLiveWeek) {
-                  return <><span className="font-semibold" style={{ color: '#ddd' }}>{formatK(weekStepsGoal - weekStepsTotal)} short.</span> ~{perDayAvg} a day.</>;
+                  return <><span className="font-semibold" style={{ color: '#ccc' }}>{formatK(weekStepsGoal - weekStepsTotal)} short.</span> ~{perDayAvg} a day.</>;
                 }
                 // Live week — same math as Home: pace counts only finished days.
                 const finishedDays = daysElapsed - 1;

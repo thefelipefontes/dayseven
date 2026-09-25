@@ -680,7 +680,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
   const suggestBlock = (
     undoPlan ? (
       <div className={`${suggestAtTop ? 'mb-3' : 'mt-3'} p-3 rounded-xl flex items-center justify-between gap-3`} style={{ backgroundColor: 'rgba(255,255,255,0.04)' }}>
-        <span className="text-[12.5px]" style={{ color: '#bbb' }}>{suggestWholeWeek ? 'Week built' : 'Plan suggested'} · drag anything to adjust</span>
+        <span className="text-[12.5px]" style={{ color: '#ccc' }}>{suggestWholeWeek ? 'Week built' : 'Plan suggested'} · drag anything to adjust</span>
         <button onClick={undoSuggestion} className="shrink-0 px-3 py-1 rounded-full text-[12px] font-semibold active:scale-95 transition-transform" style={{ backgroundColor: 'rgba(255,255,255,0.08)', color: '#fff' }}>Undo</button>
       </div>
     ) : (
@@ -692,7 +692,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
         <span className="text-lg">✨</span>
         <div className="flex-1">
           <div className="text-[13px] font-semibold" style={{ color: '#00FF94' }}>{suggestWholeWeek ? 'Build my week for me' : 'Suggest a plan'}</div>
-          <div className="text-[11px]" style={{ color: '#999' }}>
+          <div className="text-[11px]" style={{ color: '#aaa' }}>
             {suggestWholeWeek
               ? 'Spreads your sessions across the week, with rest between lifting days'
               : `Spreads your sessions across ${todayIdx === 0 ? 'the week' : 'the rest of the week'}, with rest between lifting days`}
@@ -787,7 +787,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
           {placedTotal > 0 && <div className="mt-3 pt-3 flex items-center flex-wrap gap-1.5 text-[12px]" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
             {upNext ? (
               <>
-                <span className="mr-0.5" style={{ color: '#999' }}>Up next</span>
+                <span className="mr-0.5" style={{ color: '#aaa' }}>Up next</span>
                 {upNext.pills.map((p, i) => (
                   <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: CATS[p.cat].bg, color: CATS[p.cat].color }}>
                     <CategoryIcon category={CATS[p.cat].cat} size={11} color="currentColor" />{chipLabel(p)}
@@ -816,7 +816,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
             const isToday = d.key === todayKey;
             return (
               <div key={d.key} className="flex-1 flex flex-col items-center gap-1.5">
-                <span className="text-[10px] font-semibold" style={{ color: isToday ? '#fff' : '#666' }}>{d.label[0]}</span>
+                <span className="text-[10px] font-semibold" style={{ color: isToday ? '#fff' : '#777' }}>{d.label[0]}</span>
                 <div className="flex flex-col gap-0.5 items-center" style={{ minHeight: 6 }}>
                   {pills.length === 0
                     ? <span style={{ width: 4, height: 4, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.12)' }} />
@@ -856,7 +856,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
             style={{
               height: 44,
               top: -52, // over the "Your week" header, clear of Sunday's row
-              color: hoverKey === 'tray' ? '#fff' : '#999',
+              color: hoverKey === 'tray' ? '#fff' : '#aaa',
               backgroundColor: hoverKey === 'tray' ? 'rgba(255,69,58,0.25)' : 'rgba(30,30,30,0.95)',
               border: `1px dashed ${hoverKey === 'tray' ? 'rgba(255,69,58,0.7)' : 'rgba(255,255,255,0.2)'}`,
             }}
@@ -913,7 +913,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
                 }}
               >
                 <div className="w-10 shrink-0 pt-1">
-                  <div className="text-[13px] font-semibold" style={{ color: isToday ? '#fff' : '#999' }}>{d.label}</div>
+                  <div className="text-[13px] font-semibold" style={{ color: isToday ? '#fff' : '#aaa' }}>{d.label}</div>
                   {isToday && <div className="text-[9px] font-bold" style={{ color: '#0A84FF' }}>TODAY</div>}
                 </div>
                 <div className="flex-1 flex flex-wrap gap-1.5 items-center min-h-[28px]">
@@ -931,11 +931,11 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
                   const goalHit = weekStepsTotal >= weekStepsGoal;
                   const icon = <CategoryIcon category="steps" size={10} color="currentColor" />;
                   if (i < todayIdx) return (
-                    <span className="shrink-0 pt-1.5 flex items-center gap-1 text-[11px]" style={{ color: daySteps[i] >= stepsPerDay ? '#BF5AF2' : '#666' }}>{icon}{fmtK(daySteps[i])}</span>
+                    <span className="shrink-0 pt-1.5 flex items-center gap-1 text-[11px]" style={{ color: daySteps[i] >= stepsPerDay ? '#BF5AF2' : '#777' }}>{icon}{fmtK(daySteps[i])}</span>
                   );
                   if (i === todayIdx) return (
                     <span className="shrink-0 pt-1.5 flex items-center gap-1 text-[11px]" style={{ color: goalHit ? '#BF5AF2' : '#aaa' }}>
-                      {icon}{fmtK(stepsToday)}{!goalHit && <span style={{ color: '#666' }}>+{fmtK(stepsPerDayToGo)}</span>}
+                      {icon}{fmtK(stepsToday)}{!goalHit && <span style={{ color: '#777' }}>+{fmtK(stepsPerDayToGo)}</span>}
                     </span>
                   );
                   if (goalHit) return null;
@@ -957,7 +957,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
             className="flex items-center justify-between gap-2 mt-3 px-2.5 py-2 rounded-xl"
             style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
           >
-            <span className="text-[11px] leading-snug" style={{ color: '#999' }}>
+            <span className="text-[11px] leading-snug" style={{ color: '#aaa' }}>
               This week differs from your repeating plan.
             </span>
             <button
@@ -988,11 +988,11 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
               border: `1px solid ${repeatWeekly ? 'rgba(48,209,88,0.4)' : 'rgba(255,255,255,0.1)'}`,
             }}
           >
-            <span className="text-[11px] font-semibold" style={{ color: repeatWeekly ? '#30D158' : '#999' }}>
+            <span className="text-[11px] font-semibold" style={{ color: repeatWeekly ? '#30D158' : '#aaa' }}>
               {repeatWeekly ? '✓ Repeats weekly' : 'Repeat weekly'}
             </span>
           </button>
-          <span className="text-[11px] text-right" style={{ color: '#666' }}>
+          <span className="text-[11px] text-right" style={{ color: '#777' }}>
             Tap a session to set its type · drag to move
           </span>
         </div>

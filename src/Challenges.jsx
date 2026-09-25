@@ -122,7 +122,7 @@ export function ChallengeActivityPickerModal({ isOpen, onClose, activities = [],
             <div className="space-y-2">
               {eligible.map(activity => {
                 const rule = buildMatchRule(activity);
-                const color = CATEGORY_COLOR[rule?.category] || '#888';
+                const color = CATEGORY_COLOR[rule?.category] || '#777';
                 return (
                   <button
                     key={activity.id}
@@ -219,7 +219,7 @@ export function ChallengeApplyPastActivityModal({ isOpen, onClose, activities = 
 
   const ruleLabel = describeMatchRule(challenge.matchRule, resolveUnit(userProfile));
   const cat = challenge.matchRule?.category;
-  const color = CATEGORY_COLOR[cat] || '#888';
+  const color = CATEGORY_COLOR[cat] || '#777';
 
   return (
     <div
@@ -507,7 +507,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
                   pace: (distance && duration) ? `${formatPaceWithUnit(Math.round((duration * 60) / distance), u)}` : '—',
                 };
                 const titles = { distance: 'Distance', duration: 'Time', pace: 'Pace' };
-                const ruleColor = CATEGORY_COLOR[matchRule.category] || '#888';
+                const ruleColor = CATEGORY_COLOR[matchRule.category] || '#777';
                 return (
                   <>
                     <p className="text-xs text-gray-400 mb-2">Match on</p>
@@ -539,8 +539,8 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
               <div
                 className="mb-4 p-3 rounded-xl"
                 style={{
-                  backgroundColor: `${CATEGORY_COLOR[matchRule.category] || '#888'}10`,
-                  border: `1px solid ${CATEGORY_COLOR[matchRule.category] || '#888'}30`
+                  backgroundColor: `${CATEGORY_COLOR[matchRule.category] || '#777'}10`,
+                  border: `1px solid ${CATEGORY_COLOR[matchRule.category] || '#777'}30`
                 }}
               >
                 <p className="text-xs text-gray-400 mb-0.5">They'll need to:</p>
@@ -940,7 +940,7 @@ function StatePill({ state }) {
 // Sent / Received pill when Challenges moved into Friends with one list per status.
 function PerspectivePill({ isChallenger }) {
   const label = isChallenger ? 'Their move' : 'Your move';
-  const color = isChallenger ? '#9ca3af' : '#FFD60A';
+  const color = isChallenger ? '#aaa' : '#FFD60A';
   return (
     <span
       className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0"
@@ -962,7 +962,7 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
   const isChallenger = challenge.challengerUid === currentUid;
   const isGroup = challenge.type === 'group';
   const category = challenge.matchRule?.category;
-  const color = CATEGORY_COLOR[category] || '#888';
+  const color = CATEGORY_COLOR[category] || '#777';
   const ruleLabel = describeMatchRule(challenge.matchRule);
 
   // For groups, my personal status drives accept/decline; for 1v1 fall back to legacy fields.

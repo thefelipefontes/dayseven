@@ -11627,18 +11627,24 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
     };
   }, [healthHistory, weekProgress.steps?.today, weekProgress.steps?.goal]);
   const formatK = (n) => `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
-  const recoveryChip = (
-    <button
-      onClick={() => { triggerHaptic(ImpactStyle.Light); setShowRecoveryBreakdown(!showRecoveryBreakdown); }}
-      className="flex items-center gap-1.5 text-[11px] active:opacity-70 transition-opacity"
-    >
-      <CategoryIcon category="recovery" size={12} />
-      <span style={{ color: '#aaa' }}>Recovery</span>
-      <span style={{ color: '#aaa' }}>{weekProgress.recovery?.completed || 0}/{weekProgress.recovery?.goal || 0}</span>
-      {(userData.streaks?.recovery || 0) > 0 && (
-        <span className="font-bold" style={{ color: '#00D1FF' }}>🔥 {userData.streaks.recovery}w</span>
-      )}
-    </button>
+  // Recovery bonus: a small, faintly tinted pill centered right under the rings — grouped with
+  // the goals, but small enough not to read as a fourth ring. (On the Week Progress line it
+  // read as feeding the percentage, which it doesn't.) Tap for the breakdown.
+  const recoveryBonusPill = (
+    <div className="mt-3.5 flex justify-center">
+      <button
+        onClick={() => { triggerHaptic(ImpactStyle.Light); setShowRecoveryBreakdown(!showRecoveryBreakdown); }}
+        className="inline-flex items-center gap-1.5 px-3 py-[5px] rounded-full text-[12px] active:opacity-70 transition-opacity"
+        style={{ backgroundColor: 'rgba(0,209,255,0.06)', color: '#aaa' }}
+      >
+        <CategoryIcon category="recovery" size={13} />
+        Recovery <span style={{ color: '#777' }}>bonus</span>
+        <span className="font-semibold text-white">{weekProgress.recovery?.completed || 0}/{weekProgress.recovery?.goal || 0}</span>
+        {(userData.streaks?.recovery || 0) > 0 && (
+          <span className="font-bold" style={{ color: '#00D1FF' }}>🔥 {userData.streaks.recovery}w</span>
+        )}
+      </button>
+    </div>
   );
   // "Win the week, not the day": turns the weekly gap into one small daily number. Pace
   // only counts finished days, so today can put you ahead but never behind.
@@ -13267,6 +13273,9 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             </button>
           </div>
 
+          {/* Recovery bonus pill (Recovery off, goal 0: none) */}
+          {(userData?.goals?.recoveryPerWeek ?? 2) > 0 && recoveryBonusPill}
+
           {/* Status line — one slot under the rings for the week's single most important
               message. It replaced the stack of banners (vacation, injury, week won, streak at
               risk) that used to sit above the card; in order of priority, the first that
@@ -13486,12 +13495,8 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
 
           {/* Overall Progress Bar */}
           <div className="mt-4 pt-4 border-t border-white/10">
-            {/* Recovery sits on the Week Progress line: a bonus with its own streak, not part of
-                winning the week, so it doesn't get its own row (tap for the breakdown). */}
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-gray-400">Week Progress <span className="font-bold ml-1" style={{ color: overallPercent >= 100 ? '#FFD700' : 'white' }}><AnimatedCounter value={overallPercent} />%</span></span>
-              {/* Recovery off (goal 0): no bonus chip */}
-              {(userData?.goals?.recoveryPerWeek ?? 2) > 0 && <span className="flex items-center gap-1.5"><span className="text-[10px] text-gray-500">Bonus</span>{recoveryChip}</span>}
             </div>
             {/* Gold like the winning-streak badge — finishing this bar is what extends that
                 streak. (Green read as part of the Strength ring right above it.) */}

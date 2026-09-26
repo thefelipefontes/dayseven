@@ -12807,8 +12807,13 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             </button>
             {showRecentActivity && (
               <SwipeableProvider>
-                <div className="mt-2 space-y-1.5">
-                  {latestActivities.map((act) => (
+                {/* Rows match today's workout row, a size smaller: category-tinted icon tile,
+                    no box. The solid background is the card's own colour (3% white over the
+                    page ≈ #111) — invisible, but it covers the delete action while swiping. */}
+                <div className="mt-1.5 space-y-0.5">
+                  {latestActivities.map((act) => {
+                    const rtint = { recovery: '0,209,255', cardio: '255,149,0' }[getActivityCategory(act)] || '0,255,148';
+                    return (
                     <SwipeableActivityItem
                       key={act.id}
                       activity={act}
@@ -12817,14 +12822,14 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                     >
                       <div
                         onClick={() => { triggerHaptic(ImpactStyle.Light); setSelectedActivity(act); }}
-                        className="w-full px-3 py-2.5 flex items-center gap-3 text-left cursor-pointer active:opacity-70 transition-opacity"
-                        style={{ backgroundColor: '#080808' }}
+                        className="w-full py-[5px] flex items-center gap-3 text-left cursor-pointer active:opacity-70 transition-opacity"
+                        style={{ backgroundColor: '#111111' }}
                       >
-                        <div className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                          <ActivityIcon type={act.type} subtype={act.subtype} size={17} sportEmoji={act.sportEmoji} customEmoji={act.customEmoji} customIcon={act.customIcon} countToward={act.countToward} customActivityCategory={act.customActivityCategory} />
+                        <div className="w-7 h-7 rounded-[9px] flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `rgba(${rtint},0.1)` }}>
+                          <ActivityIcon type={act.type} subtype={act.subtype} size={15} sportEmoji={act.sportEmoji} customEmoji={act.customEmoji} customIcon={act.customIcon} countToward={act.countToward} customActivityCategory={act.customActivityCategory} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-[13.5px] font-semibold truncate">{
+                          <div className="text-[13px] font-semibold truncate">{
                             act.type === 'Other' ? (act.subtype || 'Other')
                             : act.type === 'Strength Training' ? (() => {
                               const st = act.strengthType || 'Strength Training';
@@ -12833,14 +12838,15 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                             })()
                             : (act.subtype ? `${act.type} · ${act.subtype}` : act.type)
                           }</div>
-                          <div className="text-[11.5px] text-gray-400 truncate">
+                          <div className="text-[11px] text-gray-400 truncate">
                             {formatFriendlyDate(act.date)}{act.time ? ` · ${act.time}` : ''}{act.duration ? ` · ${act.duration} min` : ''}
                           </div>
                         </div>
-                        <span className="text-gray-600 text-xs pl-1">›</span>
+                        <span className="text-gray-600 text-xs">›</span>
                       </div>
                     </SwipeableActivityItem>
-                  ))}
+                    );
+                  })}
                 </div>
               </SwipeableProvider>
             )}
@@ -13267,10 +13273,10 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
               applies wins, and the steps pace sentence is the everyday fallback. The status
               rows carry no icon: the bold coloured label already says what they are. */}
           {(() => {
-            const row = (icon, body, action) => (
+            const row = (icon, body, action, centered = false) => (
               <div className="mt-4 pt-3 border-t border-white/10 flex items-center gap-2">
                 {icon && <span className="self-start mt-[1px] flex-shrink-0">{icon}</span>}
-                <p className="flex-1 text-[12.5px] leading-snug" style={{ color: '#ccc' }}>{body}</p>
+                <p className={`flex-1 text-[12.5px] leading-snug${centered ? ' text-center' : ''}`} style={{ color: '#ccc' }}>{body}</p>
                 {action}
               </div>
             );
@@ -13328,7 +13334,9 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             if (!joinedToday && daysLeft <= 3 && toGo.length > 0) {
               return row(
                 null,
-                <><span className="font-semibold" style={{ color: '#FF6B5E' }}>{daysLeft === 1 ? 'Last day:' : 'To go:'}</span> {toGo.join(', ')}{stepsNote && <span style={{ color: '#777' }}> ({stepsNote})</span>}</>
+                <><span className="font-semibold" style={{ color: '#FF6B5E' }}>{daysLeft === 1 ? 'Last day:' : 'To go:'}</span> {toGo.join(', ')}{stepsNote && <span style={{ color: '#777' }}> ({stepsNote})</span>}</>,
+                null,
+                true // centered under the rings
               );
             }
 
@@ -13574,6 +13582,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
           if (isShielded) {
             return (
               <div className="mt-3 flex items-center justify-center gap-2 text-[12px]">
+                <span>🛡️</span>
                 <span className="font-semibold text-gray-300">Streak Shield active</span>
                 <span className="text-gray-500">{showRetroactive ? "· last week's streaks are protected" : '· streaks protected this week'}</span>
                 {infoButton}
@@ -13597,6 +13606,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                 className="flex items-center gap-1.5 text-[12px] font-semibold active:opacity-60 transition-opacity"
                 style={{ color: '#aaa' }}
               >
+                <span>🛡️</span>
                 {!isPro
                   ? <>Streak Shield <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(255,149,0,0.15)', color: '#FF9500' }}>PRO</span></>
                   : showRetroactive ? "Revive last week's streak · before Monday ends ›" : 'Use Streak Shield this week ›'}

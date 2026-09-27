@@ -8,6 +8,23 @@ Paste each field into App Store Connect → App Information / Version page. Limi
 
 ---
 
+## What's New in 1.8.1 (4000 max)
+
+```
+Your progress, at a glance.
+
+• Profile calendar: weeks you didn't win now show how close you got, and this week's progress updates live
+• Week stats show your progress bar and exactly what you missed
+• Month stats: steps against your monthly goal, longest strength and cardio sessions, and cleaner totals
+• Distance shows in your chosen units everywhere (kilometers now display correctly)
+• Recovery sits right under your rings as a bonus
+• Tidier Plan tab: Suggest is a quick button while you still have sessions to place
+• Recent activity matches the look of today's workouts
+• Fixes and polish
+```
+
+---
+
 ## What's New in 1.8.0 (4000 max)
 
 ```

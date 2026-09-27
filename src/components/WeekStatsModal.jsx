@@ -198,12 +198,30 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
             bg = 'rgba(0,209,255,0.1)'; border = 'rgba(0,209,255,0.3)'; color = '#00D1FF'; label = '🛡️ Shield Used';
           } else if (weekData?.goalsMet) {
             bg = 'rgba(0,255,148,0.1)'; border = 'rgba(0,255,148,0.3)'; color = '#00FF94'; label = '✓ Completed';
-          } else if (isLiveWeek) {
-            const daysLeft = 8 - daysElapsed; // today included
-            bg = 'rgba(255,255,255,0.05)'; border = 'rgba(255,255,255,0.12)'; color = '#ccc';
-            label = daysLeft <= 1 ? 'In progress · last day' : `In progress · ${daysLeft} days left`;
           } else {
-            bg = 'rgba(255,69,58,0.1)'; border = 'rgba(255,69,58,0.3)'; color = '#FF453A'; label = '✗ Incomplete';
+            // Not won (yet): the week's % and a gold bar like Home's Week Progress, and for a
+            // finished week, what it fell short on.
+            const judged = weekData?.weekJudged;
+            const percent = judged?.percent ?? 0;
+            const daysLeft = 8 - daysElapsed; // today included
+            const names = { lifts: 'strength', cardio: 'cardio', recovery: 'recovery' };
+            const missed = !isLiveWeek && judged
+              ? judged.required.filter(c => !judged[c]).map(c => c === 'steps' ? `${formatK(judged.missing.steps)} steps` : `${judged.missing[c]} ${names[c]}`)
+              : [];
+            return (
+              <div className="p-3 rounded-xl mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)' }}>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm">Week Goals</span>
+                  <span className="font-bold" style={{ color: isLiveWeek ? '#ccc' : '#FF453A' }}>
+                    {percent}% · {isLiveWeek ? (daysLeft <= 1 ? 'last day' : `${daysLeft} days left`) : 'Incomplete'}
+                  </span>
+                </div>
+                <div className="h-1 rounded-full mt-2.5 overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
+                  <div className="h-full rounded-full" style={{ width: `${percent}%`, backgroundColor: '#FFD700' }} />
+                </div>
+                {missed.length > 0 && <div className="text-[11px] mt-1.5" style={{ color: '#777' }}>Missed: {missed.join(', ')}</div>}
+              </div>
+            );
           }
           return (
             <div className="p-3 rounded-xl mb-4 flex items-center justify-between" style={{ backgroundColor: bg, border: `1px solid ${border}` }}>

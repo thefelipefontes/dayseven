@@ -150,17 +150,29 @@ export const hasRecentSteps = (stepsByDate = {}, today = new Date()) => {
  *   weekSteps  {number}   the week's step total
  *   required   {string[]} categories the Winning Streak needs this week (winningCategories);
  *                         defaults to the original Strength + Cardio + Recovery
- * @returns {{ lifts, cardio, recovery, steps: boolean, all: boolean, required: string[] }}
+ * @returns {{ lifts, cardio, recovery, steps: boolean, all: boolean, required: string[],
+ *            percent: number, missing: { lifts, cardio, recovery, steps: number } }}
+ *   percent  0–100, the average completion of the required goals, each capped at its goal
+ *            (extra doesn't count) — the same number as Home's Week Progress.
+ *   missing  how far short each goal is (0 when met): sessions, or steps for `steps`.
  */
 export const judgeWeek = (counts, weekGoals, { weekSteps = 0, required = ['lifts', 'cardio', 'recovery'] } = {}) => {
+  const stepsGoal = (weekGoals.stepsPerDay ?? DEFAULTS.stepsPerDay) * 7;
+  const done = { lifts: counts?.lifts || 0, cardio: counts?.cardio || 0, recovery: counts?.recovery || 0, steps: weekSteps };
+  const goal = { lifts: weekGoals.lifts, cardio: weekGoals.cardio, recovery: weekGoals.recovery, steps: stepsGoal };
   const met = {
-    lifts: (counts?.lifts || 0) >= weekGoals.lifts,
-    cardio: (counts?.cardio || 0) >= weekGoals.cardio,
+    lifts: done.lifts >= goal.lifts,
+    cardio: done.cardio >= goal.cardio,
     // A recovery goal of 0 means Recovery is off: never "met", so its streak doesn't count up on its own.
-    recovery: weekGoals.recovery > 0 && (counts?.recovery || 0) >= weekGoals.recovery,
-    steps: weekSteps >= (weekGoals.stepsPerDay ?? DEFAULTS.stepsPerDay) * 7,
+    recovery: goal.recovery > 0 && done.recovery >= goal.recovery,
+    steps: done.steps >= goal.steps,
   };
-  return { ...met, all: required.every((c) => met[c]), required };
+  const part = (c) => (goal[c] > 0 ? Math.min(done[c] / goal[c], 1) : 1);
+  const percent = required.length > 0
+    ? Math.round((required.reduce((sum, c) => sum + part(c), 0) / required.length) * 100)
+    : 0;
+  const missing = Object.fromEntries(Object.keys(goal).map((c) => [c, Math.max(0, (goal[c] || 0) - done[c])]));
+  return { ...met, all: required.every((c) => met[c]), required, percent, missing };
 };
 
 /**

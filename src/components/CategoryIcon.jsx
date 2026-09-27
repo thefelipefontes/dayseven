@@ -8,6 +8,7 @@ import {
   IconBolt,
   IconCrown,
   IconTrophy,
+  IconRoute,
 } from '@tabler/icons-react';
 
 // The app's icon vocabulary: the three weekly-goal categories (was 💪 / ❤️ / 🧊) plus the two
@@ -51,6 +52,9 @@ export const CATEGORY_ICONS = {
   workouts: IconChecklist,
   wins: IconBolt,
   longest: IconCrown,
+  // Distance is a route (two points joined by a path), not cardio's heartbeat: the month
+  // totals showed distance with the cardio mark, which read as a second cardio count.
+  distance: IconRoute,
   overall: IconTrophy,
 };
 
@@ -64,6 +68,7 @@ export const CATEGORY_COLORS = {
   wins: '#FFD60A',
   longest: '#FFD700',
   overall: '#FFD700',
+  distance: '#FF9500', // cardio orange: distance comes from runs, rides and walks
 };
 
 // Aliases for the names the older surfaces use for the same things.

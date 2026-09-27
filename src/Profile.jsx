@@ -396,23 +396,19 @@ export default function ProfilePage(props) {
   const weeks = generateMonthWeeks();
 
   // Pre-compute which weeks have all goals met
-  const weekGoalsMet = (() => {
-    const goals = userData.goals;
+  // Each calendar week judged by the shared rule (utils/weekGoals), against the goals in force
+  // that week: `.all` drives the ✓, `.percent` the "67%" on weeks that weren't won. Future
+  // weeks aren't judged (null).
+  const weekJudgements = (() => {
     const todayStr = getTodayDate();
     const result = {};
     weeks.forEach(week => {
       const startStr = week.days[0].date;
-      const endStr = week.days[6].date;
-      // Only check weeks that have fully passed or are the current week
-      if (startStr > todayStr) {
-        result[week.id] = false;
-        return;
-      }
-      // Shared rule (utils/weekGoals), against the goals in force that week.
-      result[week.id] = judgeWeekFromActivities(activities, startStr, profileWeekCtx).all;
+      result[week.id] = startStr > todayStr ? null : judgeWeekFromActivities(activities, startStr, profileWeekCtx);
     });
     return result;
   })();
+  const weekGoalsMet = Object.fromEntries(Object.entries(weekJudgements).map(([id, j]) => [id, !!j?.all]));
 
   // Calculate weekly stats for comparison (last week and average)
   const calculateWeeklyStats = () => {
@@ -1197,6 +1193,8 @@ export default function ProfilePage(props) {
                 {/* Week stats button - shows checkmark if all goals met */}
                 {(() => {
                   const goalsHit = weekGoalsMet[week.id];
+                  const judged = weekJudgements[week.id]; // null for future weeks
+                  const isCurrentCalendarWeek = !!judged && week.days.some(d => d.date === getTodayDate());
                   // week.days[0].date is always the Sunday of the row, which is the
                   // key format stored in shieldedWeeks/vacationMode.vacationWeeks.
                   const weekKey = week.days[0]?.date;
@@ -1253,6 +1251,17 @@ export default function ProfilePage(props) {
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00FF94" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                           <polyline points="20 6 9 17 4 12" />
                         </svg>
+                      ) : judged && !isWeekLocked ? (
+                        // Not won (yet): how close it got. The live week in gold, like Home's
+                        // Week Progress, with a faint outline to pick it out.
+                        <span
+                          className="w-full h-full rounded-md flex items-center justify-center text-[10px] font-bold"
+                          style={isCurrentCalendarWeek
+                            ? { color: '#FFD700', boxShadow: 'inset 0 0 0 1px rgba(255,215,0,0.35)' }
+                            : { color: '#aaa' }}
+                        >
+                          {judged.percent}%
+                        </span>
                       ) : (
                         <SectionIcon type="chart" size={12} color={SECTION_ICON_TAPPABLE} />
                       )}
@@ -3439,6 +3448,7 @@ export default function ProfilePage(props) {
       {/* Month Stats Modal */}
       <MonthStatsModal
         isOpen={showMonthStats}
+        distanceUnit={distanceUnit}
         onClose={() => setShowMonthStats(false)}
         onShare={() => {
           setShowMonthStats(false);

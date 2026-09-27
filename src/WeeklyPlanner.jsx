@@ -721,15 +721,29 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
               {placedTotal}/{totalGoal} sessions placed
             </p>
           </div>
-          {onEditGoals && (
-            <button
-              onClick={() => { triggerHaptic(ImpactStyle.Light); onEditGoals(); }}
-              className="shrink-0 mt-0.5 flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[12px] font-semibold active:scale-95 transition-transform"
-              style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: '#ccc' }}
-            >
-              <SectionIcon type="target" size={13} color="#ccc" /> Goals
-            </button>
-          )}
+          <div className="shrink-0 mt-0.5 flex items-center gap-1.5">
+            {/* Suggest, as a small header button: only while sessions are still unplaced (an
+                empty week is when it helps), then Undo right after a suggestion. It used to be
+                a big card that also sat under a fully planned week. */}
+            {showSuggest && (undoPlan || trayByCat.length > 0) && (
+              <button
+                onClick={undoPlan ? undoSuggestion : applySuggestion}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[12px] font-semibold active:scale-95 transition-transform"
+                style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: '#ccc' }}
+              >
+                {undoPlan ? '↶ Undo' : '✨ Suggest'}
+              </button>
+            )}
+            {onEditGoals && (
+              <button
+                onClick={() => { triggerHaptic(ImpactStyle.Light); onEditGoals(); }}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[12px] font-semibold active:scale-95 transition-transform"
+                style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: '#ccc' }}
+              >
+                <SectionIcon type="target" size={13} color="#ccc" /> Goals
+              </button>
+            )}
+          </div>
         </div>
       ) : (
       <button
@@ -802,7 +816,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
         </div>
       )}
 
-      {showSuggest && suggestAtTop && suggestBlock}
+      {showSuggest && !asPage && suggestAtTop && suggestBlock}
 
       {/* Collapsed: at-a-glance week strip (dots colored by category, dimmed = not yet done) */}
       {!expanded && (
@@ -952,7 +966,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
         {/* This week has drifted from the repeating plan — offer to make it the new
             default. Edits are week-scoped now, so without this there's no way to
             update the template short of toggling repeat off and on. */}
-        {divergesFromTemplate && (
+        {divergesFromTemplate && !asPage && (
           <div
             className="flex items-center justify-between gap-2 mt-3 px-2.5 py-2 rounded-xl"
             style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
@@ -970,36 +984,67 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
           </div>
         )}
 
-        {/* Footer: repeat toggle + type hint share one row (keeps the top tight) */}
-        <div className="flex items-center justify-between gap-2 mt-3 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-          <button
-            onClick={() => {
-              triggerHaptic(ImpactStyle.Light);
-              markEdited();
-              // Switching repeat ON snapshots the current plan as the template —
-              // this plan is precisely what the user is choosing to repeat.
-              // Switching OFF leaves the stored template alone so it survives.
-              if (!repeatWeekly) promoteToTemplate.current = true;
-              setRepeatWeekly(v => !v);
-            }}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full transition-all active:scale-95 shrink-0"
-            style={{
-              backgroundColor: repeatWeekly ? 'rgba(48,209,88,0.12)' : 'rgba(255,255,255,0.05)',
-              border: `1px solid ${repeatWeekly ? 'rgba(48,209,88,0.4)' : 'rgba(255,255,255,0.1)'}`,
-            }}
-          >
-            <span className="text-[11px] font-semibold" style={{ color: repeatWeekly ? '#30D158' : '#aaa' }}>
-              {repeatWeekly ? '✓ Repeats weekly' : 'Repeat weekly'}
+        {asPage ? (
+          // Plan tab: one quiet line under the week — the repeat toggle, and when this week has
+          // drifted from the repeating plan, the offer to update it. (The type/drag hint and
+          // the separate "differs" box were cut to declutter.)
+          <div className="flex items-center justify-between gap-2 mt-3 px-1">
+            <button
+              onClick={() => {
+                triggerHaptic(ImpactStyle.Light);
+                markEdited();
+                // Switching repeat ON snapshots the current plan as the template —
+                // this plan is precisely what the user is choosing to repeat.
+                // Switching OFF leaves the stored template alone so it survives.
+                if (!repeatWeekly) promoteToTemplate.current = true;
+                setRepeatWeekly(v => !v);
+              }}
+              className="flex items-center gap-1.5 text-[12px] font-semibold active:opacity-60 transition-opacity"
+              style={{ color: repeatWeekly ? '#30D158' : '#aaa' }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17 2l4 4-4 4" /><path d="M3 11v-1a4 4 0 0 1 4-4h14" /><path d="M7 22l-4-4 4-4" /><path d="M21 13v1a4 4 0 0 1-4 4H3" />
+              </svg>
+              {repeatWeekly ? 'Repeats weekly' : 'Repeat weekly'}
+            </button>
+            {divergesFromTemplate && (
+              <button onClick={promoteThisWeek} className="text-[12px] active:opacity-60 transition-opacity" style={{ color: '#aaa' }}>
+                Differs this week · <span className="font-semibold" style={{ color: '#30D158' }}>Update</span>
+              </button>
+            )}
+          </div>
+        ) : (
+          // Onboarding: repeat toggle + type hint share one row (keeps the top tight)
+          <div className="flex items-center justify-between gap-2 mt-3 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            <button
+              onClick={() => {
+                triggerHaptic(ImpactStyle.Light);
+                markEdited();
+                // Switching repeat ON snapshots the current plan as the template —
+                // this plan is precisely what the user is choosing to repeat.
+                // Switching OFF leaves the stored template alone so it survives.
+                if (!repeatWeekly) promoteToTemplate.current = true;
+                setRepeatWeekly(v => !v);
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full transition-all active:scale-95 shrink-0"
+              style={{
+                backgroundColor: repeatWeekly ? 'rgba(48,209,88,0.12)' : 'rgba(255,255,255,0.05)',
+                border: `1px solid ${repeatWeekly ? 'rgba(48,209,88,0.4)' : 'rgba(255,255,255,0.1)'}`,
+              }}
+            >
+              <span className="text-[11px] font-semibold" style={{ color: repeatWeekly ? '#30D158' : '#aaa' }}>
+                {repeatWeekly ? '✓ Repeats weekly' : 'Repeat weekly'}
+              </span>
+            </button>
+            <span className="text-[11px] text-right" style={{ color: '#777' }}>
+              Tap a session to set its type · drag to move
             </span>
-          </button>
-          <span className="text-[11px] text-right" style={{ color: '#777' }}>
-            Tap a session to set its type · drag to move
-          </span>
-        </div>
+          </div>
+        )}
       </div>
       )}
 
-      {showSuggest && !suggestAtTop && suggestBlock}
+      {showSuggest && !asPage && !suggestAtTop && suggestBlock}
 
       {/* Drag ghost — portalled to body so a transformed ancestor (e.g. the
           onboarding slide wrapper) can't offset its fixed positioning. */}

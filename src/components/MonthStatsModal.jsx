@@ -4,7 +4,8 @@ import CategoryIcon from './CategoryIcon';
 import { normalizeFocusAreas } from '../utils/focusAreas';
 import { initialUserData } from '../utils/initialUserData';
 import { countsAsLifting, countsAsCardio, countsAsRecovery } from '../utils/activityCategory';
-import { judgeWeek, countWeekActivities, weekGoalsResolver, weekContext, stepsByDateFrom, weekStepsTotal, winningCategories } from '../utils/weekGoals';
+import { judgeWeek, countWeekActivities, weekGoalsResolver, weekContext, stepsByDateFrom, weekStepsTotal, winningCategories, weekKeyFromDateStr } from '../utils/weekGoals';
+import { formatDistanceValue, unitLabel } from '../utils/distance';
 
 const RecoveryBonusRow = ({ count, suffix = '' }) => (
   <div className="px-3 py-2 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(0,209,255,0.06)', border: '1px solid rgba(0,209,255,0.18)' }}>
@@ -18,7 +19,7 @@ const RecoveryBonusRow = ({ count, suffix = '' }) => (
   </div>
 );
 
-const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, userData, activities, healthHistory }) => {
+const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, userData, activities, healthHistory, distanceUnit = 'mi' }) => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
 
@@ -63,6 +64,15 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
     .filter(a => a.distance)
     .reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
   const totalSteps = monthData?.steps || 0;
+  // The month's steps goal: each day's goal (stepsPerDay in force that week) summed over the
+  // month's days — 10k × 30 = 300k — rather than the weekly goal × 4, which a 4.3-week month
+  // would clear about 30k early.
+  const monthStepsGoal = (() => {
+    const goalFor = weekGoalsResolver(goals, userData?.goalHistory || []);
+    return monthDates.reduce((sum, d) => sum + (goalFor(weekKeyFromDateStr(d))?.stepsPerDay || 0), 0);
+  })();
+  const distUnit = unitLabel(distanceUnit);
+  const totalMinutes = monthActivities.reduce((sum, a) => sum + (parseInt(a.duration) || 0), 0);
   const daysActive = new Set(monthActivities.map(a => a.date)).size;
 
   // Calculate weeks hitting goals
@@ -116,14 +126,16 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
     return best;
   }, null);
 
-  // Longest session
-  const longestSession = monthActivities.reduce((best, a) => {
+  // Longest session, split by category so a long lift and a long run each get their card.
+  const longestOf = (list) => list.reduce((best, a) => {
     const dur = parseInt(a.duration) || 0;
-    if (!best || dur > best.duration) {
-      return { duration: dur, type: a.type };
+    if (dur > 0 && (!best || dur > best.duration)) {
+      return { duration: dur, type: a.type === 'Strength Training' ? (a.strengthType || 'Strength') : (a.subtype || a.type) };
     }
     return best;
   }, null);
+  const longestStrength = longestOf(monthActivities.filter(countsAsLifting));
+  const longestCardio = longestOf(monthActivities.filter(countsAsCardio));
 
   // Furthest distance (any activity with distance - walking, running, cycling, etc.)
   const furthestDistance = monthActivities.reduce((best, a) => {
@@ -222,7 +234,7 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
             </div>
             <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(191,90,242,0.1)' }}>
               <div className="text-2xl font-black" style={{ color: '#BF5AF2' }}>{(totalSteps / 1000).toFixed(0)}k</div>
-              <div className="text-[10px] text-gray-400"><CategoryIcon category="steps" size={11} className="inline align-[-2px] mr-1" />Steps</div>
+              <div className="text-[10px] text-gray-400"><CategoryIcon category="steps" size={11} className="inline align-[-2px] mr-1" />{weeksData.stepsTracked && monthStepsGoal > 0 ? `of ${(monthStepsGoal / 1000).toFixed(0)}k steps` : 'Steps'}</div>
             </div>
           </div>
           <div className="-mt-2 mb-4"><RecoveryBonusRow count={recoveryCount} suffix="sessions" /></div>
@@ -233,57 +245,45 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
               <SectionIcon type="chart" />
               <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Month Totals</span>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                <div className="text-lg font-black">{totalCalories.toLocaleString()}</div>
-                <div className="text-[10px] text-gray-400"><CategoryIcon category="calories" size={11} className="inline align-[-2px] mr-1" />Calories Burned</div>
-              </div>
-              <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                <div className="text-lg font-black">{totalMiles.toFixed(1)} mi</div>
-                <div className="text-[10px] text-gray-400"><CategoryIcon category="cardio" size={11} className="inline align-[-2px] mr-1" />Distance</div>
-              </div>
-              <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                <div className="text-lg font-black">{monthActivities.reduce((sum, a) => sum + (parseInt(a.duration) || 0), 0).toLocaleString()}</div>
-                <div className="text-[10px] text-gray-400">⏱ Minutes</div>
-              </div>
-              <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                <div className="text-lg font-black">{daysActive}</div>
-                <div className="text-[10px] text-gray-400">📅 Days Active</div>
-              </div>
+            {/* One quiet row rather than four boxes — these are totals to glance at, not goals. */}
+            <div className="flex py-3.5 px-1 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.04)' }}>
+              {[
+                { value: totalCalories.toLocaleString(), icon: <CategoryIcon category="calories" size={11} />, label: 'cal' },
+                { value: formatDistanceValue(totalMiles, distanceUnit, 1), icon: <CategoryIcon category="distance" size={11} />, label: distUnit },
+                { value: totalMinutes.toLocaleString(), icon: <SectionIcon type="clock" size={11} color="#aaa" />, label: 'min' },
+                { value: daysActive, icon: <SectionIcon type="calendar" size={11} color="#aaa" />, label: 'days' },
+              ].map((t, i) => (
+                <React.Fragment key={t.label}>
+                  {i > 0 && <div className="w-px self-stretch" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }} />}
+                  <div className="flex-1 text-center">
+                    <div className="text-[17px] font-extrabold">{t.value}</div>
+                    <div className="text-[11px] text-gray-400 flex items-center justify-center gap-1 mt-0.5">{t.icon}{t.label}</div>
+                  </div>
+                </React.Fragment>
+              ))}
             </div>
           </div>
 
-          {/* Highlights - always show all 3 cards */}
+          {/* Highlights — 2×2 in category colours: longest strength (green), longest cardio and
+              furthest (cardio orange), best burn (calorie red). Always all four cards. */}
           <div className="mb-4">
             <div className="flex items-center gap-2 mb-3">
               <SectionIcon type="trophy" />
               <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Highlights</span>
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              {/* Best Burn */}
-              <div className="p-2.5 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,69,58,0.1)' }}>
-                <div className="text-base font-black" style={{ color: bestBurn?.calories > 0 ? '#FF453A' : '#555' }}>
-                  {bestBurn?.calories > 0 ? bestBurn.calories.toLocaleString() : 'N/A'}
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { has: longestStrength, value: longestStrength && `${longestStrength.duration} min`, sub: longestStrength?.type, cat: 'lifts', label: 'Longest Strength', color: '#00FF94', tint: '0,255,148' },
+                { has: longestCardio, value: longestCardio && `${longestCardio.duration} min`, sub: longestCardio?.type, cat: 'cardio', label: 'Longest Cardio', color: '#FF9500', tint: '255,149,0' },
+                { has: furthestDistance?.distance > 0, value: furthestDistance?.distance > 0 && `${formatDistanceValue(furthestDistance.distance, distanceUnit, 2)} ${distUnit}`, sub: furthestDistance?.type, cat: 'distance', label: 'Furthest', color: '#FF9500', tint: '255,149,0' },
+                { has: bestBurn?.calories > 0, value: bestBurn?.calories > 0 && `${bestBurn.calories.toLocaleString()} cal`, sub: bestBurn?.type, cat: 'calories', label: 'Best Burn', color: '#FF6B6B', tint: '255,107,107' },
+              ].map((h) => (
+                <div key={h.label} className="p-2.5 rounded-xl text-center" style={{ backgroundColor: `rgba(${h.tint},0.08)` }}>
+                  <div className="text-base font-black" style={{ color: h.has ? h.color : '#555' }}>{h.has ? h.value : 'N/A'}</div>
+                  <div className="text-[10px] text-gray-400 flex items-center justify-center gap-1"><CategoryIcon category={h.cat} size={10} />{h.label}</div>
+                  <div className="text-[10px] text-gray-500 truncate">{h.has ? h.sub : '—'}</div>
                 </div>
-                <div className="text-[9px] text-gray-400"><CategoryIcon category="calories" size={10} className="inline align-[-2px] mr-1" />Best Burn</div>
-                <div className="text-[9px] text-gray-500">{bestBurn?.calories > 0 ? bestBurn.type : '—'}</div>
-              </div>
-              {/* Longest Session */}
-              <div className="p-2.5 rounded-xl text-center" style={{ backgroundColor: 'rgba(147,112,219,0.1)' }}>
-                <div className="text-base font-black" style={{ color: longestSession?.duration > 0 ? '#9370DB' : '#555' }}>
-                  {longestSession?.duration > 0 ? `${longestSession.duration} min` : 'N/A'}
-                </div>
-                <div className="text-[9px] text-gray-400">⏱️ Longest</div>
-                <div className="text-[9px] text-gray-500">{longestSession?.duration > 0 ? longestSession.type : '—'}</div>
-              </div>
-              {/* Furthest Distance */}
-              <div className="p-2.5 rounded-xl text-center" style={{ backgroundColor: 'rgba(50,205,50,0.1)' }}>
-                <div className="text-base font-black" style={{ color: furthestDistance?.distance > 0 ? '#32CD32' : '#555' }}>
-                  {furthestDistance?.distance > 0 ? `${furthestDistance.distance.toFixed(2)} mi` : 'N/A'}
-                </div>
-                <div className="text-[9px] text-gray-400">📍 Furthest</div>
-                <div className="text-[9px] text-gray-500">{furthestDistance?.distance > 0 ? furthestDistance.type : '—'}</div>
-              </div>
+              ))}
             </div>
           </div>
 

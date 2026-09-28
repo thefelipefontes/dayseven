@@ -1679,6 +1679,9 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
   const [activityPhoto, setActivityPhoto] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
   const [isPhotoPrivate, setIsPhotoPrivate] = useState(false);
+  // "Challenge a friend" after saving — same opt-in toggle as the Log Activity screen.
+  const [challengeAfterSave, setChallengeAfterSave] = useState(false);
+  useEffect(() => { if (isOpen) setChallengeAfterSave(false); }, [isOpen]);
   const [isLoadingMetrics, setIsLoadingMetrics] = useState(false);
   const [healthKitDataFetched, setHealthKitDataFetched] = useState(false);
   const [linkedWorkout, setLinkedWorkout] = useState(null);
@@ -2157,6 +2160,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
 
     onSave({
       ...workout,
+      challengeAfterSave, // opens the challenge sheet after saving; stripped before it's stored
       date: dateStr,
       time: startTimeDisplay,
       duration: finalDuration,
@@ -2695,6 +2699,25 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                 </div>
               )}
             </div>
+
+            {/* Challenge a friend — opt-in, same as the Log Activity screen. A finished live
+                workout is always from today, so it only needs friends to challenge. */}
+            {Object.keys(friendsByUid || {}).length > 0 && (
+              <button
+                type="button"
+                onClick={() => { triggerHaptic(ImpactStyle.Light); setChallengeAfterSave(v => !v); }}
+                className="w-full mt-4 flex items-center gap-3 p-3 rounded-xl text-left"
+                style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-white">Challenge a friend</div>
+                  <div className="text-xs text-gray-500 mt-0.5 leading-snug">After saving, send this workout to a friend to match within 24–72 hours.</div>
+                </div>
+                <div className="w-11 h-6 rounded-full relative flex-shrink-0 transition-colors" style={{ backgroundColor: challengeAfterSave ? '#00FF94' : 'rgba(255,255,255,0.15)' }}>
+                  <div className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all" style={{ left: challengeAfterSave ? 22 : 2 }} />
+                </div>
+              </button>
+            )}
 
             {/* Discard Workout */}
             {onDiscard && (

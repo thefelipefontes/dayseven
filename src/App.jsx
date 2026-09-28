@@ -8265,6 +8265,10 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   // Sports-specific emojis for picker
   const sportsEmojis = ['⚽', '🏀', '🏈', '⚾', '🥎', '🎾', '🏐', '🏉', '🥏', '🎱', '🪀', '🏓', '🏸', '🏒', '🏑', '🥍', '🏏', '🪃', '🥅', '⛳', '🪁', '🏹', '🎣', '🤿', '🥊', '🥋', '🎽', '🛹', '🛼', '🛷', '⛸️', '🥌', '🎿', '⛷️', '🏂', '🪂', '🏋️', '🤼', '🤸', '⛹️', '🤺', '🏇', '🧘', '🏄', '🚣', '🧗', '🚵', '🚴', '🤾', '🤽', '🏊', '🏌️'];
   const [date, setDate] = useState(defaultDate || getTodayDate());
+  // "Challenge a friend" after saving — opt-in from the log screen (it used to pop up after
+  // every logged activity, a freemium-era nudge). Off each time the screen opens.
+  const [challengeAfterSave, setChallengeAfterSave] = useState(false);
+  useEffect(() => { if (isOpen) setChallengeAfterSave(false); }, [isOpen]);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [notes, setNotes] = useState('');
@@ -9239,6 +9243,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 
             // COMPLETED MODE: Normal save flow
             onSave({
+              challengeAfterSave: challengeAfterSave && !pendingActivity?.id, // opens the challenge sheet after saving; stripped before it's stored
               id: pendingActivity?.id, // Preserve ID if editing
               time: activityTime || pendingActivity?.time, // Use linked workout time, or preserve time if editing
               type: finalType,
@@ -11079,6 +11084,25 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 </div>
               )}
             </div>
+
+            {/* Challenge a friend — opt-in: after saving, opens the challenge sheet for this workout.
+                New logs from today only (challenges match same-day workouts), and only with friends. */}
+            {!pendingActivity?.id && date === getTodayDate() && Object.keys(friendsByUid || {}).length > 0 && (
+              <button
+                type="button"
+                onClick={() => { triggerHaptic(ImpactStyle.Light); setChallengeAfterSave(v => !v); }}
+                className="w-full flex items-center gap-3 p-3 rounded-xl text-left"
+                style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-white">Challenge a friend</div>
+                  <div className="text-xs text-gray-500 mt-0.5 leading-snug">After saving, send this workout to a friend to match within 24–72 hours.</div>
+                </div>
+                <div className="w-11 h-6 rounded-full relative flex-shrink-0 transition-colors" style={{ backgroundColor: challengeAfterSave ? '#00FF94' : 'rgba(255,255,255,0.15)' }}>
+                  <div className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all" style={{ left: challengeAfterSave ? 22 : 2 }} />
+                </div>
+              </button>
+            )}
               </>
             )}
           </div>
@@ -17281,7 +17305,7 @@ export default function DaySevenApp() {
     }
 
     // Remove photoFile from activity object (don't save file object to Firestore)
-    const { photoFile, ...activityData } = activity;
+    const { photoFile, challengeAfterSave, ...activityData } = activity;
 
     let newActivity;
     let updatedActivities;
@@ -17463,9 +17487,10 @@ export default function DaySevenApp() {
     // Skip celebration for edits
     if (isEdit) return;
 
-    // Offer to challenge a friend with this activity (only if user has friends + activity is challengeable).
+    // Challenge a friend — only when the user turned it on in the log screen. (It used to open
+    // after every logged activity: a freemium-era nudge, dropped now the app is paid-only.)
     // isChallengeable enforces same-day, category, and non-warmup in one check.
-    if (isChallengeable(newActivity) && friends.length > 0) {
+    if (challengeAfterSave && isChallengeable(newActivity) && friends.length > 0) {
       setChallengeModalActivity(newActivity);
     }
 

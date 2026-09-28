@@ -13359,7 +13359,12 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             // vs a 12.1k daily share that includes today's steps). The Today's Activity row shows
             // today's share as "2.6k / 12.1k" instead.
             const stepsNote = null;
-            if (!joinedToday && daysLeft <= 3 && toGo.length > 0) {
+            // Thursday (3 days left) only when a workout is still open — that's the last day two
+            // sessions still fit with rest between. Steps alone keep the pace line on Thursday.
+            // Friday and Saturday: anything open.
+            const sessionsOpen = liftsRemaining > 0 || cardioRemaining > 0 || (recoveryNeeded && recoveryRemaining > 0);
+            const showToGo = daysLeft <= 2 || (daysLeft === 3 && sessionsOpen);
+            if (!joinedToday && showToGo && toGo.length > 0) {
               // Tappable: opens the Winning Streak explainer — the line says what's left, the sheet
               // says why it matters (the old banner's "to keep your winning streak").
               return (

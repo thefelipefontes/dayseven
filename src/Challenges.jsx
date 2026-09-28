@@ -67,6 +67,93 @@ function useTicker(intervalMs = 60000) {
 // Modal: pick which past activity to challenge with (opened from friend profile)
 // =====================================================================
 
+// Bottom sheet shell for the challenge flows: slide-up/down animation, drag down to dismiss, and
+// the page behind stays put. The drag moves a wrapper (not the sheet itself) because the sheet's
+// slide animation holds its end transform (`forwards`), which would override an inline one.
+// Touches outside the sheet, or inside it where nothing can scroll, never reach the page.
+function DraggableSheet({ isClosing, onDismiss, zClass = 'z-50', children }) {
+  const overlayRef = useRef(null);
+  const sheetRef = useRef(null);
+  const [dragY, setDragY] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const dismissRef = useRef(onDismiss);
+  dismissRef.current = onDismiss;
+
+  useEffect(() => {
+    const overlay = overlayRef.current;
+    const sheet = sheetRef.current;
+    if (!overlay || !sheet) return;
+    let startY = 0, dy = 0, scroller = null, canDrag = false;
+    const scrollerFor = (t) => {
+      for (let n = t; n && n !== sheet; n = n.parentElement) {
+        const oy = getComputedStyle(n).overflowY;
+        if ((oy === 'auto' || oy === 'scroll') && n.scrollHeight > n.clientHeight + 1) return n;
+      }
+      return null;
+    };
+    const onStart = (e) => {
+      if (!e.touches[0]) return;
+      startY = e.touches[0].clientY;
+      dy = 0;
+      scroller = sheet.contains(e.target) ? scrollerFor(e.target) : null;
+      canDrag = sheet.contains(e.target) && (!scroller || scroller.scrollTop <= 0);
+    };
+    const onMove = (e) => {
+      if (!e.touches[0]) return;
+      if (!sheet.contains(e.target)) { e.preventDefault(); return; } // backdrop
+      const d = e.touches[0].clientY - startY;
+      if (canDrag && d > 0 && (!scroller || scroller.scrollTop <= 0)) {
+        e.preventDefault();
+        dy = d;
+        setDragging(true);
+        setDragY(d);
+        return;
+      }
+      if (!scroller) { e.preventDefault(); return; }
+      // At either end of the list, don't let the scroll run on into the page.
+      const atTop = scroller.scrollTop <= 0;
+      const atBottom = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1;
+      if ((d > 0 && atTop) || (d < 0 && atBottom)) e.preventDefault();
+    };
+    const onEnd = () => {
+      if (!dy) return;
+      setDragging(false);
+      if (dy > 100) dismissRef.current();
+      else setDragY(0);
+      dy = 0;
+    };
+    overlay.addEventListener('touchstart', onStart, { passive: true });
+    overlay.addEventListener('touchmove', onMove, { passive: false });
+    overlay.addEventListener('touchend', onEnd, { passive: true });
+    overlay.addEventListener('touchcancel', onEnd, { passive: true });
+    return () => {
+      overlay.removeEventListener('touchstart', onStart);
+      overlay.removeEventListener('touchmove', onMove);
+      overlay.removeEventListener('touchend', onEnd);
+      overlay.removeEventListener('touchcancel', onEnd);
+    };
+  }, []);
+
+  return (
+    <div
+      ref={overlayRef}
+      data-modal-overlay
+      className={`fixed inset-0 ${zClass} flex items-end justify-center transition-all duration-250 ${isClosing ? 'bg-black/0' : 'bg-black/80'}`}
+      onClick={(e) => { if (e.target === e.currentTarget) onDismiss(); }}
+    >
+      <div className="w-full" style={{ transform: `translateY(${dragY}px)`, transition: dragging ? 'none' : 'transform 250ms ease-out' }}>
+        <div
+          ref={sheetRef}
+          className={`w-full bg-zinc-900 rounded-t-3xl flex flex-col ${isClosing ? 'animate-slide-down' : 'animate-slide-up'}`}
+          style={{ maxHeight: '80vh' }}
+        >
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ChallengeActivityPickerModal({ isOpen, onClose, activities = [], friend, onPick, userProfile }) {
   const [isClosing, setIsClosing] = useState(false);
 
@@ -90,73 +177,65 @@ export function ChallengeActivityPickerModal({ isOpen, onClose, activities = [],
   });
 
   return (
-    <div
-      className={`fixed inset-0 z-[70] flex items-end justify-center transition-all duration-250 ${isClosing ? 'bg-black/0' : 'bg-black/80'}`}
-      onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
-    >
-      <div
-        className={`w-full bg-zinc-900 rounded-t-3xl flex flex-col ${isClosing ? 'animate-slide-down' : 'animate-slide-up'}`}
-        style={{ maxHeight: '80vh' }}
-      >
-        <div className="flex justify-center pt-3 pb-2">
-          <div className="w-10 h-1 bg-zinc-700 rounded-full" />
-        </div>
-
-        <div className="flex items-center justify-between px-4 pb-3">
-          <button onClick={handleClose} className="text-gray-400 text-sm font-medium">Cancel</button>
-          <h1 className="text-white text-base font-semibold">Pick a workout</h1>
-          <div className="w-12" />
-        </div>
-
-        <p className="text-xs text-gray-400 px-4 pb-3">
-          Challenge {friend?.displayName || friend?.username || 'them'} with a workout from today.
-        </p>
-
-        <div className="flex-1 overflow-y-auto pb-8 px-4">
-          {eligible.length === 0 ? (
-            <div className="py-12 text-center">
-              <p className="text-gray-400 mb-2">No workouts logged today.</p>
-              <p className="text-gray-500 text-sm">Challenges are same-day only — log a workout first, then come back here.</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {eligible.map(activity => {
-                const rule = buildMatchRule(activity);
-                const color = CATEGORY_COLOR[rule?.category] || '#777';
-                return (
-                  <button
-                    key={activity.id}
-                    onClick={() => { triggerHaptic(ImpactStyle.Light); onPick?.(activity); }}
-                    className="w-full p-3 rounded-xl text-left transition-colors"
-                    style={{
-                      backgroundColor: 'rgba(255,255,255,0.04)',
-                      border: `1px solid ${color}25`,
-                    }}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div
-                        className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
-                        style={{ backgroundColor: `${color}20` }}
-                      >
-                        <span style={{ color, fontSize: 16 }}>⚡</span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white text-sm font-medium truncate">
-                          {activity.type === 'Other' ? (activity.subtype || 'Other') : activity.type}
-                          {activity.subtype && activity.type !== 'Other' && ` · ${activity.subtype}`}
-                        </p>
-                        <p className="text-gray-500 text-xs">{activity.date} · {activity.duration || 0} min{activity.distance ? ` · ${formatDistanceValue(activity.distance, viewerUnit, 1)} ${unitLabel(viewerUnit)}` : ''}</p>
-                        <p className="text-xs mt-1" style={{ color }}>Match: {describeMatchRule(rule, viewerUnit)}</p>
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
+    <DraggableSheet isClosing={isClosing} onDismiss={handleClose} zClass="z-[70]">
+      <div className="flex justify-center pt-3 pb-2">
+        <div className="w-10 h-1 bg-zinc-700 rounded-full" />
       </div>
-    </div>
+
+      <div className="flex items-center justify-between px-4 pb-3">
+        <button onClick={handleClose} className="text-gray-400 text-sm font-medium">Cancel</button>
+        <h1 className="text-white text-base font-semibold">Pick a workout</h1>
+        <div className="w-12" />
+      </div>
+
+      <p className="text-xs text-gray-400 px-4 pb-3">
+        Challenge {friend?.displayName || friend?.username || 'them'} with a workout from today.
+      </p>
+
+      <div className="flex-1 overflow-y-auto pb-8 px-4">
+        {eligible.length === 0 ? (
+          <div className="py-12 text-center">
+            <p className="text-gray-400 mb-2">No workouts logged today.</p>
+            <p className="text-gray-500 text-sm">Challenges are same-day only — log a workout first, then come back here.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {eligible.map(activity => {
+              const rule = buildMatchRule(activity);
+              const color = CATEGORY_COLOR[rule?.category] || '#777';
+              return (
+                <button
+                  key={activity.id}
+                  onClick={() => { triggerHaptic(ImpactStyle.Light); onPick?.(activity); }}
+                  className="w-full p-3 rounded-xl text-left transition-colors"
+                  style={{
+                    backgroundColor: 'rgba(255,255,255,0.04)',
+                    border: `1px solid ${color}25`,
+                  }}
+                >
+                  <div className="flex items-start gap-3">
+                    <div
+                      className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+                      style={{ backgroundColor: `${color}20` }}
+                    >
+                      <span style={{ color, fontSize: 16 }}>⚡</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-sm font-medium truncate">
+                        {activity.type === 'Other' ? (activity.subtype || 'Other') : activity.type}
+                        {activity.subtype && activity.type !== 'Other' && ` · ${activity.subtype}`}
+                      </p>
+                      <p className="text-gray-500 text-xs">{activity.date} · {activity.duration || 0} min{activity.distance ? ` · ${formatDistanceValue(activity.distance, viewerUnit, 1)} ${unitLabel(viewerUnit)}` : ''}</p>
+                      <p className="text-xs mt-1" style={{ color }}>Match: {describeMatchRule(rule, viewerUnit)}</p>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </DraggableSheet>
   );
 }
 
@@ -222,109 +301,101 @@ export function ChallengeApplyPastActivityModal({ isOpen, onClose, activities = 
   const color = CATEGORY_COLOR[cat] || '#777';
 
   return (
-    <div
-      className={`fixed inset-0 z-[70] flex items-end justify-center transition-all duration-250 ${isClosing ? 'bg-black/0' : 'bg-black/80'}`}
-      onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
-    >
-      <div
-        className={`w-full bg-zinc-900 rounded-t-3xl flex flex-col ${isClosing ? 'animate-slide-down' : 'animate-slide-up'}`}
-        style={{ maxHeight: '80vh' }}
-      >
-        <div className="flex justify-center pt-3 pb-2">
-          <div className="w-10 h-1 bg-zinc-700 rounded-full" />
-        </div>
-
-        <div className="flex items-center justify-between px-4 pb-3">
-          <button onClick={handleClose} className="text-gray-400 text-sm font-medium">Cancel</button>
-          <h1 className="text-white text-base font-semibold">Pick an activity</h1>
-          <div className="w-12" />
-        </div>
-
-        <p className="text-xs px-4 pb-3" style={{ color }}>
-          Must match: {ruleLabel}
-        </p>
-
-        <div className="flex-1 overflow-y-auto pb-8 px-4">
-          {eligible.length === 0 ? (
-            <div className="py-12 text-center">
-              <p className="text-gray-400 mb-2">No matching activities yet.</p>
-              <p className="text-gray-500 text-sm">Log a workout that meets the target ({ruleLabel}) and it'll show up here.</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <div className="mb-2 p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                <label className="text-[11px] uppercase tracking-wider text-gray-500 block mb-1.5">
-                  💬 Add a message with the win
-                </label>
-                <textarea
-                  value={completionMessage}
-                  onChange={(e) => setCompletionMessage(e.target.value.slice(0, 140))}
-                  rows={2}
-                  placeholder="Easy peasy 💪"
-                  className="w-full bg-transparent text-white text-sm placeholder-gray-600 resize-none focus:outline-none"
-                  maxLength={140}
-                />
-                <div className="text-right text-[10px] text-gray-500">{completionMessage.length} / 140</div>
-              </div>
-              {requiresPhoto && (
-                <div
-                  className="mb-2 p-3 rounded-xl"
-                  style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.35)' }}
-                >
-                  <p className="text-xs" style={{ color: '#FFD60A' }}>
-                    📸 This challenge requires a photo. Tap any activity below — we'll prompt for a photo if it's missing one.
-                  </p>
-                </div>
-              )}
-              {eligible.map(activity => {
-                const photoBlocked = isPhotoBlocked(activity);
-                return (
-                  <button
-                    key={activity.id}
-                    onClick={() => {
-                      triggerHaptic(ImpactStyle.Light);
-                      if (photoBlocked) {
-                        // Photo-required + no photo: let the parent run the capture-upload-apply
-                        // flow so the user never lands on a save that the server will reject.
-                        onAttachPhotoAndApply?.(activity, messageOrUndefined);
-                        return;
-                      }
-                      onPick?.(activity, messageOrUndefined);
-                    }}
-                    className="w-full p-3 rounded-xl text-left transition-colors"
-                    style={{
-                      backgroundColor: photoBlocked ? 'rgba(255,214,10,0.04)' : 'rgba(255,255,255,0.04)',
-                      border: `1px solid ${photoBlocked ? 'rgba(255,214,10,0.25)' : `${color}25`}`,
-                    }}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div
-                        className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
-                        style={{ backgroundColor: `${color}20` }}
-                      >
-                        <span style={{ color, fontSize: 16 }}>⚡</span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white text-sm font-medium truncate">
-                          {activity.type === 'Other' ? (activity.subtype || 'Other') : activity.type}
-                          {activity.subtype && activity.type !== 'Other' && ` · ${activity.subtype}`}
-                        </p>
-                        <p className="text-gray-500 text-xs">{activity.date}{activity.duration ? ` · ${activity.duration} min` : ''}{activity.distance ? ` · ${formatDistanceValue(activity.distance, resolveUnit(userProfile), 1)} ${unitLabel(resolveUnit(userProfile))}` : ''}</p>
-                        {photoBlocked && (
-                          <p className="text-[11px] mt-1 font-semibold" style={{ color: '#FFD60A' }}>
-                            📸 Tap to add a photo and apply
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
+    <DraggableSheet isClosing={isClosing} onDismiss={handleClose} zClass="z-[70]">
+      <div className="flex justify-center pt-3 pb-2">
+        <div className="w-10 h-1 bg-zinc-700 rounded-full" />
       </div>
-    </div>
+
+      <div className="flex items-center justify-between px-4 pb-3">
+        <button onClick={handleClose} className="text-gray-400 text-sm font-medium">Cancel</button>
+        <h1 className="text-white text-base font-semibold">Pick an activity</h1>
+        <div className="w-12" />
+      </div>
+
+      <p className="text-xs px-4 pb-3" style={{ color }}>
+        Must match: {ruleLabel}
+      </p>
+
+      <div className="flex-1 overflow-y-auto pb-8 px-4">
+        {eligible.length === 0 ? (
+          <div className="py-12 text-center">
+            <p className="text-gray-400 mb-2">No matching activities yet.</p>
+            <p className="text-gray-500 text-sm">Log a workout that meets the target ({ruleLabel}) and it'll show up here.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="mb-2 p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <label className="text-[11px] uppercase tracking-wider text-gray-500 block mb-1.5">
+                💬 Add a message with the win
+              </label>
+              <textarea
+                value={completionMessage}
+                onChange={(e) => setCompletionMessage(e.target.value.slice(0, 140))}
+                rows={2}
+                placeholder="Easy peasy 💪"
+                className="w-full bg-transparent text-white text-sm placeholder-gray-600 resize-none focus:outline-none"
+                maxLength={140}
+              />
+              <div className="text-right text-[10px] text-gray-500">{completionMessage.length} / 140</div>
+            </div>
+            {requiresPhoto && (
+              <div
+                className="mb-2 p-3 rounded-xl"
+                style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.35)' }}
+              >
+                <p className="text-xs" style={{ color: '#FFD60A' }}>
+                  📸 This challenge requires a photo. Tap any activity below — we'll prompt for a photo if it's missing one.
+                </p>
+              </div>
+            )}
+            {eligible.map(activity => {
+              const photoBlocked = isPhotoBlocked(activity);
+              return (
+                <button
+                  key={activity.id}
+                  onClick={() => {
+                    triggerHaptic(ImpactStyle.Light);
+                    if (photoBlocked) {
+                      // Photo-required + no photo: let the parent run the capture-upload-apply
+                      // flow so the user never lands on a save that the server will reject.
+                      onAttachPhotoAndApply?.(activity, messageOrUndefined);
+                      return;
+                    }
+                    onPick?.(activity, messageOrUndefined);
+                  }}
+                  className="w-full p-3 rounded-xl text-left transition-colors"
+                  style={{
+                    backgroundColor: photoBlocked ? 'rgba(255,214,10,0.04)' : 'rgba(255,255,255,0.04)',
+                    border: `1px solid ${photoBlocked ? 'rgba(255,214,10,0.25)' : `${color}25`}`,
+                  }}
+                >
+                  <div className="flex items-start gap-3">
+                    <div
+                      className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+                      style={{ backgroundColor: `${color}20` }}
+                    >
+                      <span style={{ color, fontSize: 16 }}>⚡</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-sm font-medium truncate">
+                        {activity.type === 'Other' ? (activity.subtype || 'Other') : activity.type}
+                        {activity.subtype && activity.type !== 'Other' && ` · ${activity.subtype}`}
+                      </p>
+                      <p className="text-gray-500 text-xs">{activity.date}{activity.duration ? ` · ${activity.duration} min` : ''}{activity.distance ? ` · ${formatDistanceValue(activity.distance, resolveUnit(userProfile), 1)} ${unitLabel(resolveUnit(userProfile))}` : ''}</p>
+                      {photoBlocked && (
+                        <p className="text-[11px] mt-1 font-semibold" style={{ color: '#FFD60A' }}>
+                          📸 Tap to add a photo and apply
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </DraggableSheet>
   );
 }
 
@@ -455,291 +526,283 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
   };
 
   return (
-    <div
-      className={`fixed inset-0 z-50 flex items-end justify-center transition-all duration-250 ${isClosing ? 'bg-black/0' : 'bg-black/80'}`}
-      onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
-    >
-      <div
-        className={`w-full bg-zinc-900 rounded-t-3xl flex flex-col ${isClosing ? 'animate-slide-down' : 'animate-slide-up'}`}
-        style={{ maxHeight: '80vh' }}
-      >
-        <div className="flex justify-center pt-3 pb-2">
-          <div className="w-10 h-1 bg-zinc-700 rounded-full" />
+    <DraggableSheet isClosing={isClosing} onDismiss={handleClose} zClass="z-50">
+      <div className="flex justify-center pt-3 pb-2">
+        <div className="w-10 h-1 bg-zinc-700 rounded-full" />
+      </div>
+
+      <div className="flex items-center justify-between px-4 pb-3">
+        <button onClick={handleClose} className="text-gray-400 text-sm font-medium transition-all duration-150 active:scale-90 active:opacity-70">Skip</button>
+        <h1 className="text-white text-lg font-semibold">Challenge a friend</h1>
+        <div className="w-10" />
+      </div>
+
+      {!canChallenge ? (
+        <div className="px-6 py-12 text-center">
+          <p className="text-gray-400 mb-2">This activity can't be challenged.</p>
+          <p className="text-gray-500 text-sm">Warmups and untracked activities aren't supported yet.</p>
+          <button onClick={handleClose} className="mt-6 px-6 py-3 rounded-xl bg-zinc-800 text-white font-medium transition-all duration-150 active:scale-95">Close</button>
         </div>
+      ) : (
+        <>
+          {/* Scrollable middle */}
+          <div className="flex-1 overflow-y-auto px-4 pb-3">
+            {/* Title (optional) */}
+            <p className="text-xs text-gray-400 mb-2">Title (optional)</p>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              maxLength={60}
+              placeholder="e.g. Saturday long run"
+              className="w-full mb-4 px-3 py-3 rounded-xl text-white placeholder-gray-600 text-sm focus:outline-none"
+              style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+            />
 
-        <div className="flex items-center justify-between px-4 pb-3">
-          <button onClick={handleClose} className="text-gray-400 text-sm font-medium transition-all duration-150 active:scale-90 active:opacity-70">Skip</button>
-          <h1 className="text-white text-lg font-semibold">Challenge a friend</h1>
-          <div className="w-10" />
-        </div>
-
-        {!canChallenge ? (
-          <div className="px-6 py-12 text-center">
-            <p className="text-gray-400 mb-2">This activity can't be challenged.</p>
-            <p className="text-gray-500 text-sm">Warmups and untracked activities aren't supported yet.</p>
-            <button onClick={handleClose} className="mt-6 px-6 py-3 rounded-xl bg-zinc-800 text-white font-medium transition-all duration-150 active:scale-95">Close</button>
-          </div>
-        ) : (
-          <>
-            {/* Scrollable middle */}
-            <div className="flex-1 overflow-y-auto px-4 pb-3">
-              {/* Title (optional) */}
-              <p className="text-xs text-gray-400 mb-2">Title (optional)</p>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                maxLength={60}
-                placeholder="e.g. Saturday long run"
-                className="w-full mb-4 px-3 py-3 rounded-xl text-white placeholder-gray-600 text-sm focus:outline-none"
-                style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
-              />
-
-              {/* Metric picker — only when 2+ are available (distance cardio with miles + minutes).
-                  Each segment shows the value the recipient must match, so the choice is concrete. */}
-              {metrics.length > 1 && (() => {
-                const distance = parseFloat(activity?.distance) || 0;
-                const duration = parseInt(activity?.duration, 10) || 0;
-                const u = resolveUnit(userProfile);
-                const labels = {
-                  distance: distance ? `${formatDistanceValue(distance, u, distance % 1 === 0 ? 0 : 1)} ${unitLabel(u)}` : '—',
-                  duration: duration ? `${duration} min` : '—',
-                  pace: (distance && duration) ? `${formatPaceWithUnit(Math.round((duration * 60) / distance), u)}` : '—',
-                };
-                const titles = { distance: 'Distance', duration: 'Time', pace: 'Pace' };
-                const ruleColor = CATEGORY_COLOR[matchRule.category] || '#777';
-                return (
-                  <>
-                    <p className="text-xs text-gray-400 mb-2">Match on</p>
-                    <div className="flex gap-2 mb-3">
-                      {metrics.map(m => {
-                        const isSelected = metric === m;
-                        return (
-                          <button
-                            key={m}
-                            onClick={() => { setMetric(m); triggerHaptic(ImpactStyle.Light); }}
-                            className="flex-1 py-2 rounded-xl text-xs font-medium transition-all duration-150 active:scale-95"
-                            style={{
-                              backgroundColor: isSelected ? `${ruleColor}1A` : 'rgba(255,255,255,0.04)',
-                              color: isSelected ? 'white' : 'rgba(255,255,255,0.6)',
-                              border: `1px solid ${isSelected ? ruleColor : 'transparent'}`,
-                            }}
-                          >
-                            <div className="font-semibold">{titles[m]}</div>
-                            <div className="text-[10px] mt-0.5 opacity-80">{labels[m]}</div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </>
-                );
-              })()}
-
-              {/* Match rule preview */}
-              <div
-                className="mb-4 p-3 rounded-xl"
-                style={{
-                  backgroundColor: `${CATEGORY_COLOR[matchRule.category] || '#777'}10`,
-                  border: `1px solid ${CATEGORY_COLOR[matchRule.category] || '#777'}30`
-                }}
-              >
-                <p className="text-xs text-gray-400 mb-0.5">They'll need to:</p>
-                <p className="text-white font-medium">{describeMatchRule(matchRule, resolveUnit(userProfile))}</p>
-              </div>
-
-              {/* Window picker */}
-              <p className="text-xs text-gray-400 mb-2">Time to complete</p>
-              <div className="flex gap-2 mb-5">
-                {CHALLENGE_WINDOW_HOURS.map(hrs => (
-                  <button
-                    key={hrs}
-                    onClick={() => { setWindowHours(hrs); triggerHaptic(ImpactStyle.Light); }}
-                    className="flex-1 py-3 rounded-xl text-sm font-medium transition-all duration-150 active:scale-95"
-                    style={{
-                      backgroundColor: windowHours === hrs ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)',
-                      color: windowHours === hrs ? 'white' : 'rgba(255,255,255,0.6)',
-                      border: windowHours === hrs ? '1px solid rgba(255,255,255,0.2)' : '1px solid transparent'
-                    }}
-                  >
-                    {hrs}h
-                  </button>
-                ))}
-              </div>
-
-              {/* Require-photo toggle. Disabled if you didn't attach a photo yourself —
-                  if you want proof, you bring proof. */}
-              <button
-                onClick={() => {
-                  if (!canRequirePhoto) {
-                    triggerHaptic(ImpactStyle.Light);
-                    setError('Add a photo to your activity first — you need proof to require proof.');
-                    return;
-                  }
-                  setError(null);
-                  setRequirePhoto(p => !p);
-                  triggerHaptic(ImpactStyle.Light);
-                }}
-                className="w-full flex items-center justify-between p-3 rounded-xl mb-5 text-left transition-all duration-150 active:scale-[0.98]"
-                style={{
-                  backgroundColor: requirePhoto ? 'rgba(255,214,10,0.08)' : 'rgba(255,255,255,0.04)',
-                  border: `1px solid ${requirePhoto ? 'rgba(255,214,10,0.3)' : 'transparent'}`,
-                  opacity: canRequirePhoto ? 1 : 0.55,
-                }}
-              >
-                <div>
-                  <p className="text-sm font-medium text-white">📸 Require photo proof</p>
-                  <p className="text-[11px] mt-0.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
-                    {canRequirePhoto
-                      ? 'They must attach a photo to their workout for it to count.'
-                      : 'Add a photo to your own activity first to require one from them.'}
-                  </p>
-                </div>
-                <div
-                  className="w-10 h-6 rounded-full relative transition-colors flex-shrink-0 ml-3"
-                  style={{ backgroundColor: requirePhoto ? '#FFD60A' : 'rgba(255,255,255,0.15)' }}
-                >
-                  <div
-                    className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all"
-                    style={{ left: requirePhoto ? '18px' : '2px' }}
-                  />
-                </div>
-              </button>
-
-              {/* Free-tier gate: 1 challenge per calendar month */}
-              {overCap && (
-                <button
-                  onClick={onPresentPaywall}
-                  className="w-full mb-4 p-3 rounded-xl text-left transition-all duration-150 active:scale-[0.98]"
-                  style={{ backgroundColor: 'rgba(255,149,0,0.08)', border: '1px solid rgba(255,149,0,0.2)' }}
-                >
-                  <p className="text-sm font-medium" style={{ color: '#FF9500' }}>
-                    You've used your free challenge this month.
-                  </p>
-                  <p className="text-xs mt-0.5" style={{ color: 'rgba(255,149,0,0.8)' }}>
-                    Upgrade to Pro for unlimited challenges.
-                  </p>
-                </button>
-              )}
-
-              {/* Friend picker (multi-select) */}
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs text-gray-400">{isGroup ? `Pick friends (${selectedCount} selected)` : 'Pick a friend'}</p>
-                {selectedCount > 0 && (
-                  <button onClick={() => setSelectedFriendUids(new Set())} className="text-xs text-gray-500">Clear</button>
-                )}
-              </div>
-
-              {/* Group / Individual mode toggle — only when 2+ selected */}
-              {isGroup && (
-                <div className="flex p-1 rounded-lg mb-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  {[
-                    { key: 'group', label: 'Group', sublabel: 'One shared challenge' },
-                    { key: 'individual', label: 'Individual', sublabel: 'Separate 1v1 with each' }
-                  ].map(opt => {
-                    const active = sendMode === opt.key;
-                    return (
-                      <button
-                        key={opt.key}
-                        onClick={() => { setSendMode(opt.key); triggerHaptic(ImpactStyle.Light); }}
-                        className="flex-1 py-2 rounded-md text-center transition-all duration-150 active:scale-95"
-                        style={{
-                          backgroundColor: active ? 'rgba(255,214,10,0.15)' : 'transparent',
-                          color: active ? '#FFD60A' : 'rgba(255,255,255,0.5)',
-                          border: active ? '1px solid rgba(255,214,10,0.3)' : '1px solid transparent',
-                        }}
-                      >
-                        <div className="text-sm font-semibold">{opt.label}</div>
-                        <div className="text-[10px] mt-0.5" style={{ color: active ? 'rgba(255,214,10,0.7)' : 'rgba(255,255,255,0.35)' }}>{opt.sublabel}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              {friends.length === 0 ? (
-                <div className="py-8 text-center">
-                  <p className="text-gray-500 text-sm">Add some friends first to send challenges.</p>
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  {friends.map(f => {
-                    const selected = selectedFriendUids.has(f.uid);
-                    return (
-                      <button
-                        key={f.uid}
-                        onClick={() => toggleFriend(f.uid)}
-                        className="w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-150 active:scale-[0.98]"
-                        style={{
-                          backgroundColor: selected ? 'rgba(255,255,255,0.08)' : 'transparent',
-                          border: selected ? '1px solid rgba(255,255,255,0.15)' : '1px solid transparent'
-                        }}
-                      >
-                        <div className="w-10 h-10 rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center text-white text-sm">
-                          {f.photoURL ? <img src={f.photoURL} className="w-full h-full object-cover" alt="" /> : (f.displayName || f.username || '?').charAt(0).toUpperCase()}
-                        </div>
-                        <div className="flex-1 text-left">
-                          <p className="text-white text-sm font-medium">{f.displayName || f.username}</p>
-                          {f.username && f.displayName && <p className="text-gray-500 text-xs">@{f.username}</p>}
-                        </div>
-                        <div
-                          className="w-5 h-5 rounded-md flex items-center justify-center transition-colors"
+            {/* Metric picker — only when 2+ are available (distance cardio with miles + minutes).
+                Each segment shows the value the recipient must match, so the choice is concrete. */}
+            {metrics.length > 1 && (() => {
+              const distance = parseFloat(activity?.distance) || 0;
+              const duration = parseInt(activity?.duration, 10) || 0;
+              const u = resolveUnit(userProfile);
+              const labels = {
+                distance: distance ? `${formatDistanceValue(distance, u, distance % 1 === 0 ? 0 : 1)} ${unitLabel(u)}` : '—',
+                duration: duration ? `${duration} min` : '—',
+                pace: (distance && duration) ? `${formatPaceWithUnit(Math.round((duration * 60) / distance), u)}` : '—',
+              };
+              const titles = { distance: 'Distance', duration: 'Time', pace: 'Pace' };
+              const ruleColor = CATEGORY_COLOR[matchRule.category] || '#777';
+              return (
+                <>
+                  <p className="text-xs text-gray-400 mb-2">Match on</p>
+                  <div className="flex gap-2 mb-3">
+                    {metrics.map(m => {
+                      const isSelected = metric === m;
+                      return (
+                        <button
+                          key={m}
+                          onClick={() => { setMetric(m); triggerHaptic(ImpactStyle.Light); }}
+                          className="flex-1 py-2 rounded-xl text-xs font-medium transition-all duration-150 active:scale-95"
                           style={{
-                            backgroundColor: selected ? '#FFD60A' : 'transparent',
-                            border: selected ? '1px solid #FFD60A' : '1px solid rgba(255,255,255,0.2)'
+                            backgroundColor: isSelected ? `${ruleColor}1A` : 'rgba(255,255,255,0.04)',
+                            color: isSelected ? 'white' : 'rgba(255,255,255,0.6)',
+                            border: `1px solid ${isSelected ? ruleColor : 'transparent'}`,
                           }}
                         >
-                          {selected && (
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="black" viewBox="0 0 24 24" strokeWidth={3}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                            </svg>
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
+                          <div className="font-semibold">{titles[m]}</div>
+                          <div className="text-[10px] mt-0.5 opacity-80">{labels[m]}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              );
+            })()}
+
+            {/* Match rule preview */}
+            <div
+              className="mb-4 p-3 rounded-xl"
+              style={{
+                backgroundColor: `${CATEGORY_COLOR[matchRule.category] || '#777'}10`,
+                border: `1px solid ${CATEGORY_COLOR[matchRule.category] || '#777'}30`
+              }}
+            >
+              <p className="text-xs text-gray-400 mb-0.5">They'll need to:</p>
+              <p className="text-white font-medium">{describeMatchRule(matchRule, resolveUnit(userProfile))}</p>
+            </div>
+
+            {/* Window picker */}
+            <p className="text-xs text-gray-400 mb-2">Time to complete</p>
+            <div className="flex gap-2 mb-5">
+              {CHALLENGE_WINDOW_HOURS.map(hrs => (
+                <button
+                  key={hrs}
+                  onClick={() => { setWindowHours(hrs); triggerHaptic(ImpactStyle.Light); }}
+                  className="flex-1 py-3 rounded-xl text-sm font-medium transition-all duration-150 active:scale-95"
+                  style={{
+                    backgroundColor: windowHours === hrs ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)',
+                    color: windowHours === hrs ? 'white' : 'rgba(255,255,255,0.6)',
+                    border: windowHours === hrs ? '1px solid rgba(255,255,255,0.2)' : '1px solid transparent'
+                  }}
+                >
+                  {hrs}h
+                </button>
+              ))}
+            </div>
+
+            {/* Require-photo toggle. Disabled if you didn't attach a photo yourself —
+                if you want proof, you bring proof. */}
+            <button
+              onClick={() => {
+                if (!canRequirePhoto) {
+                  triggerHaptic(ImpactStyle.Light);
+                  setError('Add a photo to your activity first — you need proof to require proof.');
+                  return;
+                }
+                setError(null);
+                setRequirePhoto(p => !p);
+                triggerHaptic(ImpactStyle.Light);
+              }}
+              className="w-full flex items-center justify-between p-3 rounded-xl mb-5 text-left transition-all duration-150 active:scale-[0.98]"
+              style={{
+                backgroundColor: requirePhoto ? 'rgba(255,214,10,0.08)' : 'rgba(255,255,255,0.04)',
+                border: `1px solid ${requirePhoto ? 'rgba(255,214,10,0.3)' : 'transparent'}`,
+                opacity: canRequirePhoto ? 1 : 0.55,
+              }}
+            >
+              <div>
+                <p className="text-sm font-medium text-white">📸 Require photo proof</p>
+                <p className="text-[11px] mt-0.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
+                  {canRequirePhoto
+                    ? 'They must attach a photo to their workout for it to count.'
+                    : 'Add a photo to your own activity first to require one from them.'}
+                </p>
+              </div>
+              <div
+                className="w-10 h-6 rounded-full relative transition-colors flex-shrink-0 ml-3"
+                style={{ backgroundColor: requirePhoto ? '#FFD60A' : 'rgba(255,255,255,0.15)' }}
+              >
+                <div
+                  className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all"
+                  style={{ left: requirePhoto ? '18px' : '2px' }}
+                />
+              </div>
+            </button>
+
+            {/* Free-tier gate: 1 challenge per calendar month */}
+            {overCap && (
+              <button
+                onClick={onPresentPaywall}
+                className="w-full mb-4 p-3 rounded-xl text-left transition-all duration-150 active:scale-[0.98]"
+                style={{ backgroundColor: 'rgba(255,149,0,0.08)', border: '1px solid rgba(255,149,0,0.2)' }}
+              >
+                <p className="text-sm font-medium" style={{ color: '#FF9500' }}>
+                  You've used your free challenge this month.
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: 'rgba(255,149,0,0.8)' }}>
+                  Upgrade to Pro for unlimited challenges.
+                </p>
+              </button>
+            )}
+
+            {/* Friend picker (multi-select) */}
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs text-gray-400">{isGroup ? `Pick friends (${selectedCount} selected)` : 'Pick a friend'}</p>
+              {selectedCount > 0 && (
+                <button onClick={() => setSelectedFriendUids(new Set())} className="text-xs text-gray-500">Clear</button>
               )}
             </div>
 
-            {/* Sticky footer — CTA always visible */}
-            <div
-              className="px-4 pt-3 border-t"
+            {/* Group / Individual mode toggle — only when 2+ selected */}
+            {isGroup && (
+              <div className="flex p-1 rounded-lg mb-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                {[
+                  { key: 'group', label: 'Group', sublabel: 'One shared challenge' },
+                  { key: 'individual', label: 'Individual', sublabel: 'Separate 1v1 with each' }
+                ].map(opt => {
+                  const active = sendMode === opt.key;
+                  return (
+                    <button
+                      key={opt.key}
+                      onClick={() => { setSendMode(opt.key); triggerHaptic(ImpactStyle.Light); }}
+                      className="flex-1 py-2 rounded-md text-center transition-all duration-150 active:scale-95"
+                      style={{
+                        backgroundColor: active ? 'rgba(255,214,10,0.15)' : 'transparent',
+                        color: active ? '#FFD60A' : 'rgba(255,255,255,0.5)',
+                        border: active ? '1px solid rgba(255,214,10,0.3)' : '1px solid transparent',
+                      }}
+                    >
+                      <div className="text-sm font-semibold">{opt.label}</div>
+                      <div className="text-[10px] mt-0.5" style={{ color: active ? 'rgba(255,214,10,0.7)' : 'rgba(255,255,255,0.35)' }}>{opt.sublabel}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {friends.length === 0 ? (
+              <div className="py-8 text-center">
+                <p className="text-gray-500 text-sm">Add some friends first to send challenges.</p>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {friends.map(f => {
+                  const selected = selectedFriendUids.has(f.uid);
+                  return (
+                    <button
+                      key={f.uid}
+                      onClick={() => toggleFriend(f.uid)}
+                      className="w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-150 active:scale-[0.98]"
+                      style={{
+                        backgroundColor: selected ? 'rgba(255,255,255,0.08)' : 'transparent',
+                        border: selected ? '1px solid rgba(255,255,255,0.15)' : '1px solid transparent'
+                      }}
+                    >
+                      <div className="w-10 h-10 rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center text-white text-sm">
+                        {f.photoURL ? <img src={f.photoURL} className="w-full h-full object-cover" alt="" /> : (f.displayName || f.username || '?').charAt(0).toUpperCase()}
+                      </div>
+                      <div className="flex-1 text-left">
+                        <p className="text-white text-sm font-medium">{f.displayName || f.username}</p>
+                        {f.username && f.displayName && <p className="text-gray-500 text-xs">@{f.username}</p>}
+                      </div>
+                      <div
+                        className="w-5 h-5 rounded-md flex items-center justify-center transition-colors"
+                        style={{
+                          backgroundColor: selected ? '#FFD60A' : 'transparent',
+                          border: selected ? '1px solid #FFD60A' : '1px solid rgba(255,255,255,0.2)'
+                        }}
+                      >
+                        {selected && (
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="black" viewBox="0 0 24 24" strokeWidth={3}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                          </svg>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Sticky footer — CTA always visible */}
+          <div
+            className="px-4 pt-3 border-t"
+            style={{
+              borderColor: 'rgba(255,255,255,0.06)',
+              paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
+              backgroundColor: '#18181b'
+            }}
+          >
+            {error && (
+              <p className="text-red-400 text-sm text-center mb-2">{error}</p>
+            )}
+            <button
+              onClick={handleSend}
+              disabled={selectedCount === 0 || isSubmitting}
+              className="w-full py-3.5 rounded-xl font-semibold transition-all duration-150 active:scale-[0.98]"
               style={{
-                borderColor: 'rgba(255,255,255,0.06)',
-                paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
-                backgroundColor: '#18181b'
+                backgroundColor: selectedCount > 0 ? '#FFD60A' : 'rgba(255,255,255,0.1)',
+                color: selectedCount > 0 ? 'black' : 'rgba(255,255,255,0.4)',
+                opacity: isSubmitting ? 0.6 : 1
               }}
             >
-              {error && (
-                <p className="text-red-400 text-sm text-center mb-2">{error}</p>
-              )}
-              <button
-                onClick={handleSend}
-                disabled={selectedCount === 0 || isSubmitting}
-                className="w-full py-3.5 rounded-xl font-semibold transition-all duration-150 active:scale-[0.98]"
-                style={{
-                  backgroundColor: selectedCount > 0 ? '#FFD60A' : 'rgba(255,255,255,0.1)',
-                  color: selectedCount > 0 ? 'black' : 'rgba(255,255,255,0.4)',
-                  opacity: isSubmitting ? 0.6 : 1
-                }}
-              >
-                {isSubmitting
-                  ? 'Sending...'
-                  : overCap
-                    ? 'Upgrade to Pro'
-                    : selectedCount === 0
-                      ? 'Pick a friend'
-                      : selectedCount === 1
-                        ? 'Send Challenge'
-                        : sendMode === 'individual'
-                          ? `Send ${selectedCount} individual challenges`
-                          : `Challenge ${selectedCount} friends as a group`}
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
+              {isSubmitting
+                ? 'Sending...'
+                : overCap
+                  ? 'Upgrade to Pro'
+                  : selectedCount === 0
+                    ? 'Pick a friend'
+                    : selectedCount === 1
+                      ? 'Send Challenge'
+                      : sendMode === 'individual'
+                        ? `Send ${selectedCount} individual challenges`
+                        : `Challenge ${selectedCount} friends as a group`}
+            </button>
+          </div>
+        </>
+      )}
+    </DraggableSheet>
   );
 }
 

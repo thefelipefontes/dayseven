@@ -11444,7 +11444,7 @@ const WinningStreakInfoSheet = ({ isOpen, onClose, required = ['lifts', 'cardio'
   );
 };
 
-const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, healthHistory = [], onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, openActivityTarget = null, showHkEmptyHint = false, hkAccessBlocked = false, onDismissHkEmptyHint = () => {}, onOpenHealthSettings = () => {}, showNotifReask = false, onAcceptNotifReask = () => {}, onDismissNotifReask = () => {}, onReplayCelebration = () => {}, pendingChallenges = [], onOpenPlan = () => {} }) => {
+const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, healthHistory = [], onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onUseStreakShield, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, openActivityTarget = null, showHkEmptyHint = false, hkAccessBlocked = false, onDismissHkEmptyHint = () => {}, onOpenHealthSettings = () => {}, showNotifReask = false, onAcceptNotifReask = () => {}, onDismissNotifReask = () => {}, onReplayCelebration = () => {}, pendingChallenges = [], onOpenPlan = () => {}, onShowWinningStreakInfo = () => {} }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
   const [dismissConfirmWorkouts, setDismissConfirmWorkouts] = useState(null); // Workouts pending dismiss confirmation
@@ -13360,11 +13360,17 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             // today's share as "2.6k / 12.1k" instead.
             const stepsNote = null;
             if (!joinedToday && daysLeft <= 3 && toGo.length > 0) {
-              return row(
+              // Tappable: opens the Winning Streak explainer — the line says what's left, the sheet
+              // says why it matters (the old banner's "to keep your winning streak").
+              return (
+                <button onClick={() => { triggerHaptic(ImpactStyle.Light); onShowWinningStreakInfo(); }} className="w-full active:opacity-70 transition-opacity">
+                  {row(
                 null,
                 <><span className="font-semibold" style={{ color: '#FF6B5E' }}>{daysLeft === 1 ? 'Last day:' : 'To go:'}</span> {toGo.join(', ')}{stepsNote && <span style={{ color: '#777' }}> ({stepsNote})</span>}</>,
                 null,
                 true // centered under the rings
+                  )}
+                </button>
               );
             }
 
@@ -13744,6 +13750,11 @@ export default function DaySevenApp() {
   // The goals this week's Winning Streak needs, captured when the explainer opens (kept
   // through its close animation so the text doesn't change as it slides away).
   const [winningStreakRequired, setWinningStreakRequired] = useState(['lifts', 'cardio', 'steps']);
+  // Opened by the header badge and by Home's "To go" line.
+  const openWinningStreakInfo = () => {
+    setWinningStreakRequired(winningCategories(getCurrentWeekKey(), buildWeekCtx()));
+    setShowWinningStreakInfo(true);
+  };
   const [showSettings, setShowSettings] = useState(false);
   /// Shown at launch when a returning user's HealthKit permission is gone (reinstall,
   /// restore to a new phone) so the system prompt has context and a tap behind it.
@@ -18554,11 +18565,7 @@ export default function DaySevenApp() {
                 <button
                   // Explains the term (it's otherwise only defined in the first-run tour);
                   // the sheet's "See your streaks" keeps the old shortcut to Profile.
-                  onClick={() => {
-                    triggerHaptic(ImpactStyle.Light);
-                    setWinningStreakRequired(winningCategories(getCurrentWeekKey(), buildWeekCtx()));
-                    setShowWinningStreakInfo(true);
-                  }}
+                  onClick={() => { triggerHaptic(ImpactStyle.Light); openWinningStreakInfo(); }}
                   className="flex items-center gap-1.5 px-2.5 py-1 rounded-full transition-all duration-300 ease-out active:scale-95"
                   style={injured
                     ? { backgroundColor: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.25)' }
@@ -18687,6 +18694,7 @@ export default function DaySevenApp() {
                   showNotifReask={showNotifReask}
                   onAcceptNotifReask={handleAcceptNotifReask}
                   onDismissNotifReask={consumeNotifReask}
+                  onShowWinningStreakInfo={openWinningStreakInfo}
                   onReplayCelebration={() => {
                     // Pure replay — no streak/celebration state is written. The modal
                     // resets itself whenever `show` goes false, so re-showing it plays

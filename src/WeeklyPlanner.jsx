@@ -5,7 +5,7 @@ import CategoryIcon from './components/CategoryIcon';
 import { triggerHaptic, ImpactStyle } from './utils/haptics';
 import { toLocalDateStr } from './utils/dateHelpers';
 import { getActivityCategory } from './utils/activityCategory';
-import { hasRecentSteps } from './utils/weekGoals';
+import { hasRecentSteps, stepsDailyShare } from './utils/weekGoals';
 
 // ---------------------------------------------------------------------------
 // Weekly Planner
@@ -639,11 +639,11 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
   const daySteps = dayDates.map(d => (stepsByDate?.[d] || 0));
   const weekStepsTotal = daySteps.slice(0, todayIdx + 1).reduce((a, b) => a + b, 0);
   const weekStepsGoal = (stepsPerDay || 10000) * 7;
-  // Daily step target from today on: what's left right now, split evenly over the days left
-  // (today included) — the same number Home and the week stats sheet show. Today's row adds
-  // it on top of what's already walked ("2.6k +10.8k"), and each day ahead aims for it.
+  // Today's share of the week's steps (utils/weekGoals stepsDailyShare), fixed for the day —
+  // the same number Home, the week stats sheet and the Watch show. Today's row is walked/share
+  // ("2.6k/12.1k"); each day ahead aims for the share, or less once today beats it.
   const stepsToday = daySteps[todayIdx] || 0;
-  const stepsPerDayToGo = Math.ceil(Math.max(0, weekStepsGoal - weekStepsTotal) / daysLeft / 100) * 100;
+  const { share: todayStepTarget, after: laterStepTarget } = stepsDailyShare(weekStepsGoal, weekStepsTotal, stepsToday, daysLeft);
   const fmtK = (n) => `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
 
   // Suggest from today through Saturday. Days already behind us keep what's on them,
@@ -790,7 +790,7 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
                   <span style={{ color: '#777' }}>of {fmtK(weekStepsGoal)} steps</span>
                 </span>
                 <span style={{ color: weekStepsTotal >= weekStepsGoal ? '#BF5AF2' : '#777' }}>
-                  {weekStepsTotal >= weekStepsGoal ? '✓ Goal hit' : `${fmtK(stepsPerDayToGo)}/day to go`}
+                  {weekStepsTotal >= weekStepsGoal ? '✓ Goal hit' : `${fmtK(todayStepTarget)} a day`}
                 </span>
               </div>
               <div className="h-1.5 rounded-full mt-1.5 overflow-hidden" style={{ backgroundColor: 'rgba(191,90,242,0.2)' }}>
@@ -948,14 +948,14 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
                     <span className="shrink-0 pt-1.5 flex items-center gap-1 text-[11px]" style={{ color: daySteps[i] >= stepsPerDay ? '#BF5AF2' : '#777' }}>{icon}{fmtK(daySteps[i])}</span>
                   );
                   if (i === todayIdx) return (
-                    <span className="shrink-0 pt-1.5 flex items-center gap-1 text-[11px]" style={{ color: goalHit ? '#BF5AF2' : '#aaa' }}>
-                      {icon}{fmtK(stepsToday)}{!goalHit && <span style={{ color: '#777' }}>+{fmtK(stepsPerDayToGo)}</span>}
+                    <span className="shrink-0 pt-1.5 flex items-center gap-1 text-[11px]" style={{ color: goalHit || stepsToday >= todayStepTarget ? '#BF5AF2' : '#aaa' }}>
+                      {icon}{fmtK(stepsToday)}{!goalHit && <span style={{ color: '#777' }}>/{fmtK(todayStepTarget)}</span>}
                     </span>
                   );
                   if (goalHit) return null;
                   // Days ahead: the target, in a dashed "slot to fill" (key under "Your week")
                   return (
-                    <span className="shrink-0 mt-1 flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-md" style={{ color: '#9d7bb0', border: '1px dashed rgba(191,90,242,0.35)' }}>{icon}{fmtK(stepsPerDayToGo)}</span>
+                    <span className="shrink-0 mt-1 flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-md" style={{ color: '#9d7bb0', border: '1px dashed rgba(191,90,242,0.35)' }}>{icon}{fmtK(laterStepTarget)}</span>
                   );
                 })()}
               </div>

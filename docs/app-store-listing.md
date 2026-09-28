@@ -18,6 +18,8 @@ Clearer daily steps.
 • Ahead or behind now reflects where your week stood going into today, and won't flip back and forth as you walk
 • Tap the "To go" line to see how your Winning Streak works
 • The late-week "To go" reminder now starts Thursday only when a workout is still open
+• Challenges are on your terms: turn on "Challenge a friend" when logging or finishing a workout, instead of a prompt after every activity
+• Challenge screens now swipe down to close
 • Fixes and polish
 ```
 

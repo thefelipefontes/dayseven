@@ -5,6 +5,7 @@ import ActivityIcon from './ActivityIcon';
 import CategoryIcon from './CategoryIcon';
 import { initialUserData } from '../utils/initialUserData';
 import { countsAsLifting, countsAsCardio, countsAsRecovery } from '../utils/activityCategory';
+import { stepsDailyShare } from '../utils/weekGoals';
 
 const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity, onSelectActivity, onShare, userData }) => {
   const [isAnimating, setIsAnimating] = useState(false);
@@ -258,14 +259,18 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
                 if (!isLiveWeek) {
                   return <><span className="font-semibold" style={{ color: '#ccc' }}>{formatK(weekStepsGoal - weekStepsTotal)} short.</span> ~{perDayAvg} a day.</>;
                 }
-                // Live week — same math as Home: pace counts only finished days.
+                // Live week — same math and wording as Home: pace as of yesterday's close, then
+                // today's share, fixed for the day (utils/weekGoals stepsDailyShare).
                 const finishedDays = daysElapsed - 1;
-                const aheadBy = weekStepsTotal - dailyStepsGoal * finishedDays;
-                const perDayToFinish = formatK(Math.ceil((weekStepsGoal - weekStepsTotal) / (7 - finishedDays) / 100) * 100);
-                if (finishedDays === 0) return <><span className="font-semibold text-white">New week.</span> {perDayToFinish} a day wins it.</>;
-                if (Math.abs(aheadBy) < 500) return <><span className="font-semibold" style={{ color: '#00FF94' }}>Right on pace.</span> {perDayToFinish} a day finishes the week.</>;
-                if (aheadBy > 0) return <><span className="font-semibold" style={{ color: '#00FF94' }}>{formatK(aheadBy)} ahead of pace.</span> {perDayToFinish} a day finishes the week.</>;
-                return <><span className="font-semibold" style={{ color: '#FFC800' }}>{formatK(-aheadBy)} to make up.</span> {perDayToFinish} a day still wins the week.</>;
+                const stepsTodayLive = weekData?.stepsToday ?? 0;
+                const aheadBy = (weekStepsTotal - stepsTodayLive) - dailyStepsGoal * finishedDays;
+                const { share, leftToday, lastDay } = stepsDailyShare(weekStepsGoal, weekStepsTotal, stepsTodayLive, 7 - finishedDays);
+                const rate = lastDay ? `${formatK(leftToday)} more today` : `${formatK(share)} a day`;
+                if (finishedDays === 0) return <><span className="font-semibold text-white">New week.</span> {rate} wins it.</>;
+                if (lastDay) return <><span className="font-semibold text-white">Last day.</span> {rate} wins the week.</>;
+                if (Math.abs(aheadBy) < 500) return <><span className="font-semibold" style={{ color: '#00FF94' }}>On pace going into today.</span> {rate} wins it.</>;
+                if (aheadBy > 0) return <><span className="font-semibold" style={{ color: '#00FF94' }}>{formatK(aheadBy)} ahead going into today.</span> {rate} wins it.</>;
+                return <><span className="font-semibold" style={{ color: '#FFC800' }}>{formatK(-aheadBy)} behind going into today.</span> {rate} still wins it.</>;
               })()}
             </p>
           </div>

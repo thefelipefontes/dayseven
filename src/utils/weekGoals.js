@@ -200,3 +200,24 @@ export const judgeWeekFromActivities = (activities, weekKey, ctx = {}) => {
     required: winningCategories(weekKey, ctx),
   });
 };
+
+/**
+ * Today's steps share, set at the START of today and fixed all day: what the week still needed
+ * going into today ÷ the days left, today included. 70k goal, Monday, 11.9k before today →
+ * (70k − 11.9k) ÷ 6 = 9.7k. It's a daily total ("846 / 9.7k"), so it's the one number shown
+ * everywhere — Home's pace line and Today's Activity row, the Plan tab, the week stats sheet,
+ * and the Watch (DailyDetailView.swift todayStepTarget, same rule). It resets each morning:
+ * less if you beat yesterday's share, more if you didn't.
+ *   total     the week's steps so far, today included; today  today's steps so far
+ *   daysLeft  days left in the week including today (Saturday = 1)
+ * @returns {{ share: number, after: number, leftToday: number, lastDay: boolean }}
+ *   after      what each day after today needs — the share, or less once today beats it
+ *   leftToday  steps still to walk today to hit the share
+ */
+export const stepsDailyShare = (goal, total, today, daysLeft) => {
+  const up100 = (n) => Math.ceil(Math.max(0, n) / 100) * 100;
+  const d = Math.max(daysLeft, 1);
+  const share = up100((goal - (total - today)) / d);
+  const after = d > 1 && today > share ? up100((goal - total) / (d - 1)) : share;
+  return { share, after, leftToday: Math.max(0, share - today), lastDay: d <= 1 };
+};

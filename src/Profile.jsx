@@ -3427,6 +3427,9 @@ export default function ProfilePage(props) {
             weekGoals: weekGoalsResolver(goals, userData?.goalHistory || [])(weekDates[0]),
             calories: weekCalories,
             steps: weekSteps,
+            // Today's share of `steps` (live week only) — the week sheet's pace is "going into
+            // today", so it needs today's steps to take them back off.
+            stepsToday: weekDates.includes(todayKey) ? (healthDataByDate[todayKey]?.steps || 0) : 0,
             daysElapsed,
             isCurrentWeek: weekDates.includes(todayKey),
             miles: miles,

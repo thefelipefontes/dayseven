@@ -39,7 +39,7 @@ import { FOCUS_AREA_GROUPS, ALL_FOCUS_AREAS, FOCUS_AREA_MIGRATION, normalizeFocu
 import { initialUserData } from './utils/initialUserData';
 import { getDefaultCountToward, getActivityCategory, countsAsLifting, countsAsCardio, countsAsRecovery } from './utils/activityCategory';
 import { computeStreaks } from './utils/streaks';
-import { judgeWeekFromActivities, judgeWeek, countWeekActivities, weekGoalsResolver, weekKeyFromDateStr, weekContext, stepsByDateFrom, weekStepsTotal, winningCategories, hasRecentSteps } from './utils/weekGoals';
+import { judgeWeekFromActivities, judgeWeek, countWeekActivities, weekGoalsResolver, weekKeyFromDateStr, weekContext, stepsByDateFrom, weekStepsTotal, winningCategories, hasRecentSteps, stepsDailyShare } from './utils/weekGoals';
 import { manualCaloriesForDate, needsHkCaloriesBackfill } from './utils/calories';
 import { reverseGeocode, formatLocation } from './utils/geocode';
 import SectionIcon from './components/SectionIcon';
@@ -11618,11 +11618,12 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
       total,
       goal,
       dayIndex,
-      aheadBy: total - dailyGoal * dayIndex,
-      // What's left right now, split evenly over the days left (today included). Same rule
-      // as the Plan tab's step targets and the week stats sheet, so every screen shows one
-      // number: 21.5k to go over 2 days reads 10.8k/day, i.e. 10.8k more today and tomorrow.
-      perDayToFinish: Math.ceil(Math.max(0, goal - total) / daysLeft / 100) * 100,
+      // Pace as of yesterday's close: steps before today vs the finished days. Today isn't over,
+      // so it neither helps nor hurts until tomorrow — the per-day figure carries today.
+      aheadBy: (total - (weekProgress.steps?.today || 0)) - dailyGoal * dayIndex,
+      // Today's share (utils/weekGoals stepsDailyShare): set at the start of today, fixed all
+      // day — the one daily number on every screen, and the "846 / 9.7k" in Today's Activity.
+      ...(() => { const r = stepsDailyShare(goal, total, weekProgress.steps?.today || 0, daysLeft); return { perDayToFinish: r.share, leftToday: r.leftToday, lastDay: r.lastDay }; })(),
       pacePercent: (dayIndex / 7) * 100,
     };
   }, [healthHistory, weekProgress.steps?.today, weekProgress.steps?.goal]);
@@ -11646,18 +11647,24 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
       </button>
     </div>
   );
-  // "Win the week, not the day": turns the weekly gap into one small daily number. Pace
-  // only counts finished days, so today can put you ahead but never behind.
+  // "Win the week, not the day": where the week stood going into today, then today's share —
+  // a daily total, fixed all day (progress toward it is the Today's Activity steps row).
+  const stepsRate = weekSteps.lastDay
+    ? `${formatK(weekSteps.leftToday)} more today`
+    : `${formatK(weekSteps.perDayToFinish)} a day`;
   const stepsPaceSentence = weekSteps.total >= weekSteps.goal ? (
     <><span className="font-semibold" style={{ color: '#00FF94' }}>Steps done.</span> {formatK(weekSteps.goal)} for the week — everything from here is extra.</>
   ) : weekSteps.dayIndex === 0 ? (
-    <><span className="font-semibold text-white">New week.</span> {formatK(weekSteps.perDayToFinish)} a day wins it.</>
+    <><span className="font-semibold text-white">New week.</span> {stepsRate} wins it.</>
+  ) : weekSteps.lastDay ? (
+    // Saturday: "to make up" and "more today" would be the same number twice.
+    <><span className="font-semibold text-white">Last day.</span> {stepsRate} wins the week.</>
   ) : Math.abs(weekSteps.aheadBy) < 500 ? (
-    <><span className="font-semibold" style={{ color: '#00FF94' }}>Right on pace.</span> {formatK(weekSteps.perDayToFinish)} a day finishes the week.</>
+    <><span className="font-semibold" style={{ color: '#00FF94' }}>On pace going into today.</span> {stepsRate} wins it.</>
   ) : weekSteps.aheadBy > 0 ? (
-    <><span className="font-semibold" style={{ color: '#00FF94' }}>{formatK(weekSteps.aheadBy)} ahead of pace.</span> {formatK(weekSteps.perDayToFinish)} a day finishes the week.</>
+    <><span className="font-semibold" style={{ color: '#00FF94' }}>{formatK(weekSteps.aheadBy)} ahead going into today.</span> {stepsRate} wins it.</>
   ) : (
-    <><span className="font-semibold" style={{ color: '#FFC800' }}>{formatK(-weekSteps.aheadBy)} to make up.</span> {formatK(weekSteps.perDayToFinish)} a day still wins the week.</>
+    <><span className="font-semibold" style={{ color: '#FFC800' }}>{formatK(-weekSteps.aheadBy)} behind going into today.</span> {stepsRate} still wins it.</>
   );
   const showCaloriesOnHome = userProfile?.privacySettings?.showCaloriesOnHome === true;
 
@@ -12707,15 +12714,26 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         )}
 
       <div className="p-4 rounded-2xl space-y-3" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-        {/* Steps today — a count, not a daily goal ("win the week, not the day"). The
-            target lives on the Steps ring below, which tracks the week. */}
-        <div className="flex items-center gap-3">
-          <span className="text-lg"><CategoryIcon category="steps" size={18} /></span>
-          <div className="flex-1 flex items-baseline justify-between">
-            <span className="text-xs text-gray-400">Steps today</span>
-            <span className="text-[13.5px] font-semibold">{(weekProgress.steps?.today || 0).toLocaleString()}</span>
-          </div>
-        </div>
+        {/* Steps today, against today's share of the week (utils/weekGoals stepsDailyShare) —
+            fixed for the day, reset each morning from how the week stands. The count turns
+            purple once today's share is walked. No share once the week's steps are done, or
+            for users whose Winning Streak doesn't count steps. */}
+        {(() => {
+          const todaySteps = weekProgress.steps?.today || 0;
+          const showShare = thisWeekJudged.required.includes('steps') && weekSteps.total < weekSteps.goal && weekSteps.perDayToFinish > 0;
+          return (
+            <div className="flex items-center gap-3">
+              <span className="text-lg"><CategoryIcon category="steps" size={18} /></span>
+              <div className="flex-1 flex items-baseline justify-between">
+                <span className="text-xs text-gray-400">Steps today</span>
+                <span className="text-[13.5px] font-semibold" style={{ color: showShare && todaySteps >= weekSteps.perDayToFinish ? '#BF5AF2' : undefined }}>
+                  {todaySteps.toLocaleString()}
+                  {showShare && <span className="font-medium" style={{ color: '#777' }}> / {formatK(weekSteps.perDayToFinish)}</span>}
+                </span>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Today's workouts (strength, cardio, recovery), one compact row each. The weekly
             steps and pace now live on the Steps ring in This Week's Goals. */}
@@ -13337,9 +13355,10 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
               recoveryNeeded && recoveryRemaining > 0 ? `${recoveryRemaining} recovery` : null,
               stepsRemaining > 0 ? `${formatK(stepsRemaining)} steps` : null
             ].filter(Boolean);
-            // Per day of what's left, so it agrees with the remaining total beside it
-            // (21.5k over 2 days → 10.8k/day). None on the last day — the total already is it.
-            const stepsNote = stepsRemaining > 0 && daysLeft > 1 ? `${formatK(weekSteps.perDayToFinish)}/day` : null;
+            // No per-day note: next to the remaining total it read as a contradiction (21.5k left
+            // vs a 12.1k daily share that includes today's steps). The Today's Activity row shows
+            // today's share as "2.6k / 12.1k" instead.
+            const stepsNote = null;
             if (!joinedToday && daysLeft <= 3 && toGo.length > 0) {
               return row(
                 null,

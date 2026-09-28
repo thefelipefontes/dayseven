@@ -8,6 +8,21 @@ Paste each field into App Store Connect → App Information / Version page. Limi
 
 ---
 
+## What's New in 1.8.2 (4000 max)
+
+```
+Clearer daily steps.
+
+• One daily steps number everywhere: see today's steps against today's share of your weekly goal, like 846 / 9.7k
+• Your share is set each morning from how your week is going, so it's a real target you can hit
+• Ahead or behind now reflects where your week stood going into today, and won't flip back and forth as you walk
+• Tap the "To go" line to see how your Winning Streak works
+• The late-week "To go" reminder now starts Thursday only when a workout is still open
+• Fixes and polish
+```
+
+---
+
 ## What's New in 1.8.1 (4000 max)
 
 ```

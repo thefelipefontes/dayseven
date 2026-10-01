@@ -1143,7 +1143,6 @@ exports.sendGoalReminder = onSchedule(
       const week = await judgeUserWeek(userId, userData, weekStartStr);
       const { counts, goals } = week;
       const daysLeft = 7 - dayOfWeek; // Days until end of week (Saturday)
-      const doneCount = week.required.filter((c) => week.met[c]).length;
 
       if (week.all) {
         await sendNotificationToUser(
@@ -1168,18 +1167,35 @@ exports.sendGoalReminder = onSchedule(
         steps: Math.max(0, week.stepsGoal - week.steps),
       };
       const label = { lifts: 'strength', cardio: 'cardio', recovery: 'recovery' };
-      const remaining = week.required
-        .filter((c) => !week.met[c])
-        .map((c) => (c === 'steps' ? `${formatStepsK(remainingFor.steps)} steps` : `${remainingFor[c]} ${label[c]}`));
-      const remainingStr = remaining.join(', ');
 
-      const body = doneCount === 0
-        ? `You still need ${remainingStr} to win the week. ${daysLeft} days left — time to get moving! 💪`
-        : `Still need ${remainingStr} to win the week — ${daysLeft} days left! 💪`;
+      // By Thursday the steps goal is almost never met yet, so "0/3 goals" undersells the
+      // week. Count sessions instead (capped per category, so extra cardio can't stand in
+      // for a missing lift) and turn the step gap into a per-day pace for Thu–Sat.
+      const sessionCats = week.required.filter((c) => c !== 'steps');
+      const sessionsGoal = sessionCats.reduce((n, c) => n + goals[c], 0);
+      const sessionsDone = sessionCats.reduce((n, c) => n + Math.min(counts[c], goals[c]), 0);
+      const sessionsLeft = sessionCats
+        .filter((c) => !week.met[c])
+        .map((c) => `${remainingFor[c]} ${label[c]}`)
+        .join(' + ');
+      const stepsLeft = week.required.includes('steps') && !week.met.steps;
+      const stepsPerDay = Math.ceil(remainingFor.steps / daysLeft / 100) * 100;
+      const stepsStr = `${formatStepsK(stepsPerDay)} steps a day`;
+
+      let body;
+      if (sessionsLeft && stepsLeft) {
+        body = `Still need ${sessionsLeft}, plus ${stepsStr} through Saturday to win the week. 💪`;
+      } else if (stepsLeft) {
+        body = `Workouts are done — just ${stepsStr} through Saturday to win the week. 👟`;
+      } else if (week.required.includes('steps')) {
+        body = `Steps are covered — still need ${sessionsLeft} to win the week. ${daysLeft} days left! 💪`;
+      } else {
+        body = `Still need ${sessionsLeft} to win the week — ${daysLeft} days left! 💪`;
+      }
 
       await sendNotificationToUser(
         userId,
-        `${doneCount}/${week.required.length} Goals Done — ${daysLeft} Days Left`,
+        `${sessionsDone}/${sessionsGoal} Workouts Done — ${daysLeft} Days Left`,
         body,
         {
           type: NotificationType.GOAL_REMINDER,

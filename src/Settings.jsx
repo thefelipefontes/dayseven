@@ -1,4 +1,5 @@
 import CategoryIcon from './components/CategoryIcon';
+import { shieldCooldownLeft, nextShieldWeek, SHIELD_COOLDOWN_WEEKS, SHIELD_MIN_PERCENT } from './utils/streakShield';
 import React, { useState, useEffect, useRef } from 'react';
 import { auth } from './firebase';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
@@ -38,7 +39,7 @@ const getPreviousWeekKey = () => {
   return toLocalDateStr(sunday);
 };
 
-export default function SettingsPage({ user, userProfile, userData, onSignOut, onEditGoals, onCancelPendingGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onUpdateDistanceUnit, onUpdateMaxHeartRate, onUpdateDisplayName, onUpdateUsername, onChangePassword, onResetPassword, onDeleteAccount, onNotificationSettings, isPro, planType, onPresentPaywall, onPresentCustomerCenter, onRestorePurchases, onToggleVacationMode, onActivateInjuryMode, onResumeInjuryMode, canResumeInjury = false, injuryMinWeeks = 2, injuryMaxWeeks = 12, injuryYearlyCap = 16, injuryRemainingWeeks = 16, onUseStreakShield, onClose, scrollTo = null, onBackfillCalories = null, pendingCalorieBackfillCount = 0 }) {
+export default function SettingsPage({ user, userProfile, userData, onSignOut, onEditGoals, onCancelPendingGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onUpdateDistanceUnit, onUpdateMaxHeartRate, onUpdateDisplayName, onUpdateUsername, onChangePassword, onResetPassword, onDeleteAccount, onNotificationSettings, isPro, planType, onPresentPaywall, onPresentCustomerCenter, onRestorePurchases, onToggleVacationMode, onActivateInjuryMode, onResumeInjuryMode, canResumeInjury = false, injuryMinWeeks = 2, injuryMaxWeeks = 12, injuryYearlyCap = 16, injuryRemainingWeeks = 16, onClose, scrollTo = null, onBackfillCalories = null, pendingCalorieBackfillCount = 0 }) {
   // Lifetime is a non-consumable, so there's no renewal to manage or cancel —
   // the Customer Center still handles refunds and receipts, but the row that
   // opens it shouldn't call itself "Manage Subscription".
@@ -47,7 +48,6 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [showVacationConfirm, setShowVacationConfirm] = useState(false);
   const [showVacationDeactivateConfirm, setShowVacationDeactivateConfirm] = useState(false);
-  const [showShieldConfirmProfile, setShowShieldConfirmProfile] = useState(false);
   const [showInjuryConfirm, setShowInjuryConfirm] = useState(false);
   const [showInjuryResumeConfirm, setShowInjuryResumeConfirm] = useState(false);
   // Duration slider value (weeks) for the injury activation modal. Clamped to the
@@ -1517,84 +1517,69 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                   <span className="text-sm text-white">Streak Shield</span>
                   {!isPro && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(255,149,0,0.15)', color: '#FF9500' }}>PRO</span>}
                 </div>
-                <p className="text-[11px] text-gray-500">Protect your streaks when you miss a week</p>
+                <p className="text-[11px] text-gray-500">Covers a week you got to {SHIELD_MIN_PERCENT}% of, once every {SHIELD_COOLDOWN_WEEKS} weeks</p>
               </div>
             </div>
             <div className="mt-3 pt-3 border-t border-zinc-700/50">
               {(() => {
-                const SHIELD_COOLDOWN_WEEKS = 6;
+                // Nothing to press: the shield applies itself to a week that ends short at
+                // 70%+ (utils/streakShield). This only reports where it stands.
                 const lastUsedWeek = userData.streakShield?.lastUsedWeek;
                 const currentWeek = getCurrentWeekKey();
                 const previousWeek = getPreviousWeekKey();
+                const fmtWeek = (weekKey) => new Date(weekKey + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
                 const isShieldedCurrent = lastUsedWeek === currentWeek;
                 const isShieldedPrevious = lastUsedWeek === previousWeek;
-                const today = new Date();
-                const isRetroWindow = today.getDay() <= 1; // Sunday or Monday
+                const isRetroWindow = new Date().getDay() <= 1; // Sunday or Monday
+                const weeksRemaining = shieldCooldownLeft(lastUsedWeek, currentWeek);
+                const onCooldown = weeksRemaining > 0;
 
-                // Already used this week or last week (retroactive)
-                if (isShieldedCurrent || (isShieldedPrevious && isRetroWindow)) {
-                  return (
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#00FF94' }} />
-                      <span className="text-xs font-semibold" style={{ color: '#00FF94' }}>{isShieldedCurrent ? 'Active this week' : 'Active for last week'}</span>
-                    </div>
-                  );
+                let label;
+                let color;
+                if (!isPro) {
+                  label = 'Pro only';
+                  color = '#FF9500';
+                } else if (isShieldedCurrent || (isShieldedPrevious && isRetroWindow)) {
+                  label = isShieldedCurrent ? 'Active this week' : 'Saved last week';
+                  color = '#00FF94';
+                } else if (onCooldown) {
+                  label = 'On cooldown';
+                  color = '#FF9500';
+                } else {
+                  label = 'Ready';
+                  color = '#00FF94';
                 }
-
-                let onCooldown = false;
-                let weeksRemaining = 0;
-                let availableDate = null;
-
-                if (lastUsedWeek) {
-                  const lastUsedDate = new Date(lastUsedWeek + 'T12:00:00');
-                  const currentWeekDate = new Date(currentWeek + 'T12:00:00');
-                  const weeksSinceUsed = Math.floor((currentWeekDate - lastUsedDate) / (7 * 24 * 60 * 60 * 1000));
-                  if (weeksSinceUsed < SHIELD_COOLDOWN_WEEKS) {
-                    onCooldown = true;
-                    weeksRemaining = SHIELD_COOLDOWN_WEEKS - weeksSinceUsed;
-                    availableDate = new Date(lastUsedDate);
-                    availableDate.setDate(availableDate.getDate() + SHIELD_COOLDOWN_WEEKS * 7);
-                  }
-                }
-
-                const shieldAvailable = !onCooldown;
 
                 return (
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: shieldAvailable ? '#00FF94' : '#FF9500' }} />
-                        <span className="text-xs font-semibold" style={{ color: shieldAvailable ? '#00FF94' : '#FF9500' }}>
-                          {shieldAvailable ? 'Available' : 'On cooldown'}
-                        </span>
+                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
+                        <span className="text-xs font-semibold" style={{ color }}>{label}</span>
                       </div>
-                      <button
-                        onClick={() => {
-                          if (!isPro) { onPresentPaywall?.(); return; }
-                          if (shieldAvailable) {
-                            triggerHaptic(ImpactStyle.Medium);
-                            setShowShieldConfirmProfile(true);
-                          }
-                        }}
-                        className="px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all duration-150"
-                        style={{
-                          backgroundColor: shieldAvailable ? 'rgba(0,209,255,0.15)' : 'rgba(255,255,255,0.05)',
-                          color: shieldAvailable ? '#00D1FF' : '#555',
-                          opacity: shieldAvailable ? 1 : 0.6,
-                        }}
-                        disabled={!shieldAvailable && isPro}
-                      >
-                        {!isPro ? 'Upgrade to Pro' : shieldAvailable ? 'Use Now' : 'On Cooldown'}
-                      </button>
+                      {!isPro && (
+                        <button
+                          onClick={() => onPresentPaywall?.()}
+                          className="px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all duration-150"
+                          style={{ backgroundColor: 'rgba(0,209,255,0.15)', color: '#00D1FF' }}
+                        >
+                          Upgrade to Pro
+                        </button>
+                      )}
                     </div>
-                    {lastUsedWeek && (
+                    {isPro && !onCooldown && !isShieldedCurrent && (
                       <p className="text-[11px] text-gray-500 ml-4">
-                        Last used: week of {new Date(lastUsedWeek + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        Applies itself if a week ends short and you got to {SHIELD_MIN_PERCENT}%.
                       </p>
                     )}
-                    {onCooldown && availableDate && (
+                    {lastUsedWeek && (
                       <p className="text-[11px] text-gray-500 ml-4">
-                        Available again: {availableDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ({weeksRemaining} week{weeksRemaining !== 1 ? 's' : ''} remaining)
+                        Last used: week of {fmtWeek(lastUsedWeek)}
+                      </p>
+                    )}
+                    {onCooldown && (
+                      <p className="text-[11px] text-gray-500 ml-4">
+                        Ready again: {fmtWeek(nextShieldWeek(lastUsedWeek))} ({weeksRemaining} week{weeksRemaining !== 1 ? 's' : ''} remaining)
                       </p>
                     )}
                   </div>
@@ -1603,63 +1588,6 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
             </div>
           </div>
         </div>
-
-        {/* Streak Shield Confirmation Modal (Profile) */}
-        {showShieldConfirmProfile && (() => {
-          const currentWeek = getCurrentWeekKey();
-          return (
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setShowShieldConfirmProfile(false)}>
-              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-              <div
-                className="relative w-[85%] max-w-sm rounded-2xl p-6"
-                style={{ backgroundColor: '#1a1a1a' }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="flex flex-col items-center text-center mb-5">
-                  <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
-                    <span className="text-3xl">🛡️</span>
-                  </div>
-                  <h3 className="text-white font-semibold text-lg">Use Streak Shield?</h3>
-                  <p className="text-gray-400 text-sm mt-2 leading-relaxed">
-                    This will protect all your current streaks for this week, even if you don't complete your goals.
-                  </p>
-                </div>
-
-                <div className="rounded-xl p-3 mb-5" style={{ backgroundColor: 'rgba(255,149,0,0.08)', border: '1px solid rgba(255,149,0,0.15)' }}>
-                  <div className="flex items-start gap-2">
-                    <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="#FF9500" viewBox="0 0 24 24" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
-                    </svg>
-                    <p className="text-xs leading-relaxed" style={{ color: '#FF9500' }}>
-                      You only get <span className="font-semibold">1 streak shield every 6 weeks</span>. Once used, you won't be able to use another one until the cooldown resets.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => setShowShieldConfirmProfile(false)}
-                    className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
-                    style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowShieldConfirmProfile(false);
-                      triggerHaptic(ImpactStyle.Heavy);
-                      onUseStreakShield?.(currentWeek);
-                    }}
-                    className="flex-1 py-3 rounded-xl text-sm font-semibold text-white"
-                    style={{ backgroundColor: '#00D1FF' }}
-                  >
-                    Activate Shield
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
 
         {/* Challenges Section */}
         {(() => {

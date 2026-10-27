@@ -935,20 +935,27 @@ const ProgressRing = ({ progress, size = 60, strokeWidth = 4, color = '#00FF94',
 // otherwise only exist on Profile, which is the trip this saves.
 //
 // Renders a fixed-height blank line when there's no streak rather than nothing at all, so
-// the three rings stay baseline-aligned no matter who has what going. Paused (injury or
-// vacation) borrows the header's purple 🩹 treatment.
+// the three rings stay baseline-aligned no matter who has what going. A paused streak shows
+// why: 🩹 in injury purple, or 🌴 in the vacation-mode cyan.
 //
 // The marker stays an emoji while the activity labels above are line icons — that contrast
 // is deliberate. It keeps 🔥 as the single warm accent in the card and matches the emoji
 // the header's master-streak badge uses.
-const RingStreak = ({ weeks = 0, color, paused = false }) => (
-  <div
-    className="text-[11px] font-bold mt-0.5 h-[15px] leading-[15px]"
-    style={{ color: paused ? '#A78BFA' : color }}
-  >
-    {weeks > 0 ? `${paused ? '🩹' : '🔥'} ${weeks}w` : ''}
-  </div>
-);
+const RING_STREAK_PAUSED = {
+  vacation: { emoji: '🌴', color: '#00D1FF' },
+  injury: { emoji: '🩹', color: '#A78BFA' },
+};
+const RingStreak = ({ weeks = 0, color, paused = null }) => {
+  const pause = RING_STREAK_PAUSED[paused];
+  return (
+    <div
+      className="text-[11px] font-bold mt-0.5 h-[15px] leading-[15px]"
+      style={{ color: pause ? pause.color : color }}
+    >
+      {weeks > 0 ? `${pause ? pause.emoji : '🔥'} ${weeks}w` : ''}
+    </div>
+  );
+};
 
 // Ring label + its expand chevron. The chevron is absolutely positioned so it sits OUTSIDE
 // the centering box: the ring, "💪 Strength", and the streak line below then all share one
@@ -11732,9 +11739,9 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
   const cardioRemaining = injuryFrozen.includes('cardio') ? 0 : Math.max(0, (weekProgress.cardio?.goal || 0) - (weekProgress.cardio?.completed || 0));
   const recoveryRemaining = injuryFrozen.includes('recovery') ? 0 : Math.max(0, (weekProgress.recovery?.goal || 0) - (weekProgress.recovery?.completed || 0));
 
-  // Is this category's streak on hold? Vacation freezes all three; an injury freezes only
-  // the categories it selected (a partial injury leaves the rest running normally).
-  const streakPaused = (cat) => !!userData?.vacationMode?.isActive || injuryFrozen.includes(cat);
+  // Why is this category's streak on hold, if it is? Vacation freezes all three; an injury
+  // freezes only the categories it selected (a partial injury leaves the rest running normally).
+  const streakPaused = (cat) => userData?.vacationMode?.isActive ? 'vacation' : injuryFrozen.includes(cat) ? 'injury' : null;
 
   // Does the user have a streak carried in from COMPLETED weeks — i.e. something
   // to keep rather than to start?

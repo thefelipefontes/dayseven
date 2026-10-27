@@ -24,7 +24,8 @@ export const initialUserData = {
   streakShield: {
     lastUsedWeek: null,    // Week key when shield was last used (e.g., "2026-03-02")
     shieldedWeeks: []      // Array of week keys where shield was activated
-    // Shield cooldown: 1 use per 6 weeks, starting from user's first full week after sign-up
+    // Earned at 70% of a week and applied automatically, once every 4 weeks — see
+    // utils/streakShield for the rest of the fields (autoFrom, autoWeeks, …)
   },
   vacationMode: {
     isActive: false,

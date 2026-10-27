@@ -23,6 +23,7 @@ import { resolveUnit, unitLabel, formatDistanceValue, milesToDisplay, formatPace
 import { getActivityCategory, countsAsLifting, countsAsCardio } from './utils/activityCategory';
 import { judgeWeekFromActivities, judgeWeek, countWeekActivities, weekGoalsResolver, weekContext, stepsByDateFrom, weekStepsTotal, winningCategories } from './utils/weekGoals';
 import { manualCaloriesForDate } from './utils/calories';
+import { shieldCooldownLeft, nextShieldWeek, SHIELD_COOLDOWN_WEEKS, SHIELD_MIN_PERCENT } from './utils/streakShield';
 
 
 
@@ -61,7 +62,7 @@ export default function ProfilePage(props) {
     onAddActivity, onDeleteActivity, onEditActivity, initialView = 'calendar', initialStatsSubView = 'overview',
     activeStreaksRef, calendarRef, statsRef, progressPhotosRef, isPro, onPresentPaywall, onShareStamp,
     friends = [], onChallengeActivity, historyLatestActivityRef,
-    onUseStreakShield, onToggleVacationMode, onCaptureLocation
+    onToggleVacationMode, onCaptureLocation
   } = props;
 
   const [showSelfProfile, setShowSelfProfile] = useState(false);
@@ -822,28 +823,24 @@ export default function ProfilePage(props) {
             </p>
             {/* Compact shield + vacation status — tap each to open the action modal */}
             {(() => {
-              const SHIELD_COOLDOWN_WEEKS = 6;
               const _today = new Date();
               const _sunday = new Date(_today);
               _sunday.setDate(_today.getDate() - _today.getDay());
               const currentWeek = `${_sunday.getFullYear()}-${String(_sunday.getMonth() + 1).padStart(2, '0')}-${String(_sunday.getDate()).padStart(2, '0')}`;
               const isShielded = (userData?.streakShield?.shieldedWeeks || []).includes(currentWeek);
-              const lastUsedWeek = userData?.streakShield?.lastUsedWeek;
+              const cooldownLeft = shieldCooldownLeft(userData?.streakShield?.lastUsedWeek, currentWeek);
+              // The shield is earned at 70% of the week (utils/streakShield), so until then
+              // this shows how far along the week is.
               let shieldText = '';
               if (!isPro) {
                 shieldText = 'Pro only';
               } else if (isShielded) {
                 shieldText = 'Active';
-              } else if (lastUsedWeek) {
-                const lastUsedDate = new Date(lastUsedWeek);
-                const weeksSince = Math.floor((_sunday - lastUsedDate) / (7 * 24 * 60 * 60 * 1000));
-                if (weeksSince < SHIELD_COOLDOWN_WEEKS) {
-                  shieldText = `${SHIELD_COOLDOWN_WEEKS - weeksSince}w`;
-                } else {
-                  shieldText = 'Available';
-                }
+              } else if (cooldownLeft > 0) {
+                shieldText = `${cooldownLeft}w`;
               } else {
-                shieldText = 'Available';
+                const pct = judgeWeekFromActivities(activities, currentWeek, profileWeekCtx).percent;
+                shieldText = pct >= SHIELD_MIN_PERCENT ? 'Ready' : `${pct}% / ${SHIELD_MIN_PERCENT}%`;
               }
               const vacationActive = !!userData?.vacationMode?.isActive;
               const vmCurrentYear = new Date().getFullYear();
@@ -922,23 +919,16 @@ export default function ProfilePage(props) {
 
           if (!(daysLeft <= 3 && anyRemaining && hasActiveStreak)) return null;
 
-          // Compute shield availability for the CTA
-          const SHIELD_COOLDOWN_WEEKS = 6;
-          const currentWeek = cwStartStr;
-          const isShielded = (userData?.streakShield?.shieldedWeeks || []).includes(currentWeek);
-          const lastUsedWeek = userData?.streakShield?.lastUsedWeek;
-          let shieldOnCooldown = false;
-          if (lastUsedWeek) {
-            const lastUsedDate = new Date(lastUsedWeek);
-            const weeksSince = Math.floor((cwStart - lastUsedDate) / (7 * 24 * 60 * 60 * 1000));
-            if (weeksSince < SHIELD_COOLDOWN_WEEKS) shieldOnCooldown = true;
-          }
-          const shieldAvailable = isPro && !isShielded && !shieldOnCooldown;
+          // The shield applies itself at 70%+, so with one available the hint is the target.
+          const isShielded = (userData?.streakShield?.shieldedWeeks || []).includes(cwStartStr);
+          const shieldAvailable = isPro && !isShielded && shieldCooldownLeft(userData?.streakShield?.lastUsedWeek, cwStartStr) === 0;
 
           return (
             <div className="mt-3">
               <p className="text-[11px] leading-snug text-center" style={{ color: 'rgba(255,255,255,0.45)' }}>
-                At risk of losing your streak? Protect it by tapping 🛡️ or 🌴 above.
+                {shieldAvailable
+                  ? `At risk of losing your streak? Get to ${SHIELD_MIN_PERCENT}% and your 🛡️ covers the rest.`
+                  : 'At risk of losing your streak? Protect it by tapping 🛡️ or 🌴 above.'}
               </p>
             </div>
           );
@@ -3531,7 +3521,6 @@ export default function ProfilePage(props) {
     )}
 
     {quickActionModal && (() => {
-      const SHIELD_COOLDOWN_WEEKS = 6;
       const _today = new Date();
       const _sunday = new Date(_today);
       _sunday.setDate(_today.getDate() - _today.getDay());
@@ -3539,17 +3528,9 @@ export default function ProfilePage(props) {
 
       const isShielded = (userData?.streakShield?.shieldedWeeks || []).includes(currentWeek);
       const lastUsedWeek = userData?.streakShield?.lastUsedWeek;
-      let onCooldown = false;
-      let weeksUntilAvailable = 0;
-      if (lastUsedWeek) {
-        const lastUsedDate = new Date(lastUsedWeek);
-        const currentWeekDate = new Date(currentWeek);
-        const weeksSinceUsed = Math.floor((currentWeekDate - lastUsedDate) / (7 * 24 * 60 * 60 * 1000));
-        if (weeksSinceUsed < SHIELD_COOLDOWN_WEEKS) {
-          onCooldown = true;
-          weeksUntilAvailable = SHIELD_COOLDOWN_WEEKS - weeksSinceUsed;
-        }
-      }
+      const weeksUntilAvailable = shieldCooldownLeft(lastUsedWeek, currentWeek);
+      const onCooldown = weeksUntilAvailable > 0;
+      const fmtWeek = (weekKey) => new Date(`${weekKey}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
       const vacationActive = !!userData?.vacationMode?.isActive;
       const vacationStart = userData?.vacationMode?.startDate;
       const vacationDaysRemaining = vacationActive && vacationStart ? (() => {
@@ -3577,6 +3558,7 @@ export default function ProfilePage(props) {
       let actionLabel = null;
       let actionColor = '#FFD60A';
       let onAction = null;
+      let extra = null; // shield only: this week's progress toward 70%, or the cooldown
 
       if (isShield) {
         if (!isPro) {
@@ -3586,27 +3568,70 @@ export default function ProfilePage(props) {
           statusLabel = 'Active this week';
           statusColor = '#00FF94';
         } else if (onCooldown) {
-          statusLabel = `On cooldown · ${weeksUntilAvailable}w`;
+          statusLabel = `Next in ${weeksUntilAvailable}w`;
           statusColor = '#FF9500';
-        } else {
-          statusLabel = 'Available';
-          statusColor = '#00FF94';
         }
 
         details = [
-          { color: '#00FF94', title: 'Protects your streaks', body: "If you can't complete your weekly goals, activate the shield to keep all your streaks from resetting." },
-          { color: '#00D1FF', title: 'Available once every 6 weeks', body: "After using a shield, there's a 6-week cooldown before you can use another one. Use it wisely!" },
-          { color: '#FF9500', title: 'Appears when you need it', body: "The shield shows up in the last days of the week when your goals are incomplete, or on Sunday/Monday to retroactively save last week's streak." },
+          { color: '#00FF94', title: `Earned at ${SHIELD_MIN_PERCENT}%`, body: `Get to at least ${SHIELD_MIN_PERCENT}% of your weekly goals and the shield covers the rest, so none of your streaks reset. A zero week can't be shielded.` },
+          { color: '#00D1FF', title: `Once every ${SHIELD_COOLDOWN_WEEKS} weeks`, body: `After a shield is used, the next one is ready ${SHIELD_COOLDOWN_WEEKS} weeks later.` },
+          { color: '#FF9500', title: 'Works on its own', body: `If a week ends short and you were above ${SHIELD_MIN_PERCENT}%, the shield is used automatically. Nothing to remember.` },
         ];
 
         if (!isPro) {
           actionLabel = 'Upgrade to Pro';
           actionColor = '#FFD60A';
           onAction = () => { triggerHaptic(ImpactStyle.Medium); onPresentPaywall?.(); closeQuickAction(); };
-        } else if (!isShielded && !onCooldown) {
-          actionLabel = 'Use Shield';
-          actionColor = '#00D1FF';
-          onAction = () => { triggerHaptic(ImpactStyle.Medium); onUseStreakShield?.(currentWeek); closeQuickAction(); };
+        } else if (onCooldown) {
+          const done = SHIELD_COOLDOWN_WEEKS - weeksUntilAvailable;
+          extra = (
+            <div className="rounded-xl p-3 mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+              <div className="flex justify-between text-xs text-gray-400">
+                <span>Used week of {fmtWeek(lastUsedWeek)}</span>
+                <span>Ready {fmtWeek(nextShieldWeek(lastUsedWeek))}</span>
+              </div>
+              <div className="flex gap-1.5 mt-2.5">
+                {Array.from({ length: SHIELD_COOLDOWN_WEEKS }, (_, i) => (
+                  <div key={i} className="flex-1 h-1.5 rounded-full" style={{ backgroundColor: i < done ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.12)' }} />
+                ))}
+              </div>
+            </div>
+          );
+        } else if (!isShielded) {
+          const judged = judgeWeekFromActivities(activities, currentWeek, profileWeekCtx);
+          const pct = judged.percent;
+          statusLabel = pct >= SHIELD_MIN_PERCENT ? 'Ready' : 'Locked';
+          statusColor = pct >= SHIELD_MIN_PERCENT ? '#00FF94' : 'rgba(255,255,255,0.5)';
+          const goalsFor = weekGoalsResolver(profileWeekCtx.goals, profileWeekCtx.goalHistory)(currentWeek);
+          const counts = countWeekActivities((activities || []).filter(a => a?.date && a.date >= currentWeek && a.date <= toLocalDateStr(new Date(_sunday.getFullYear(), _sunday.getMonth(), _sunday.getDate() + 6))));
+          const stepsDone = weekStepsTotal(profileWeekCtx.stepsByDate, currentWeek);
+          const k = (n) => (n >= 1000 ? `${Math.round(n / 1000)}k` : `${n}`);
+          const GOAL = {
+            lifts: { name: 'Strength', color: '#00FF94', value: `${counts.lifts}/${goalsFor.lifts}` },
+            cardio: { name: 'Cardio', color: '#FF9500', value: `${counts.cardio}/${goalsFor.cardio}` },
+            recovery: { name: 'Recovery', color: '#00D1FF', value: `${counts.recovery}/${goalsFor.recovery}` },
+            steps: { name: 'Steps', color: '#BF5AF2', value: `${k(stepsDone)}/${k(goalsFor.stepsPerDay * 7)}` },
+          };
+          extra = (
+            <div className="rounded-xl p-3 mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+              <div className="flex justify-between items-baseline text-xs text-gray-400">
+                <span>This week</span>
+                <span><span className="text-white text-xl font-bold">{pct}%</span> / {SHIELD_MIN_PERCENT}%</span>
+              </div>
+              <div className="relative h-1.5 rounded-full mt-2" style={{ backgroundColor: 'rgba(255,255,255,0.12)' }}>
+                <div className="absolute inset-y-0 left-0 rounded-full bg-white" style={{ width: `${pct}%` }} />
+                <div className="absolute rounded-full bg-white" style={{ left: `${SHIELD_MIN_PERCENT}%`, top: -4, width: 2, height: 14 }} />
+              </div>
+              <div className="flex gap-1.5 mt-3">
+                {judged.required.map((c) => (
+                  <div key={c} className="flex-1 rounded-lg px-2 py-1.5" style={{ backgroundColor: 'rgba(255,255,255,0.04)' }}>
+                    <span className="block text-white text-sm font-semibold">{GOAL[c].value}</span>
+                    <span className="text-[11px] text-gray-400"><span className="inline-block w-1.5 h-1.5 rounded-full mr-1 align-middle" style={{ backgroundColor: GOAL[c].color }} />{GOAL[c].name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
         }
       } else {
         if (!isPro) {
@@ -3671,6 +3696,8 @@ export default function ProfilePage(props) {
                 <span className="text-xs font-semibold flex-shrink-0" style={{ color: statusColor }}>{statusLabel}</span>
               )}
             </div>
+
+            {extra}
 
             {/* Details */}
             <div className="space-y-3 mb-5">

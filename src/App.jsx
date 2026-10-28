@@ -14035,11 +14035,15 @@ export default function DaySevenApp() {
       let maxFromHealthKit = null;
       let maxFromActivities = null;
 
-      // Source 1: Query HealthKit for highest recorded HR (last 90 days)
-      try {
-        maxFromHealthKit = await queryMaxHeartRateFromHealthKit(90);
-      } catch (e) {
-        // Silently fail
+      // Source 1: Query HealthKit for highest recorded HR (last 90 days). Only with read
+      // access already granted: the native heart-rate query asks for it otherwise, which
+      // raised a bare HealthKit sheet a few seconds after sign-in.
+      if (isHealthKitReadAuthorized()) {
+        try {
+          maxFromHealthKit = await queryMaxHeartRateFromHealthKit(90);
+        } catch (e) {
+          // Silently fail
+        }
       }
 
       // Source 2: Scan existing activities for highest maxHr (via ref)

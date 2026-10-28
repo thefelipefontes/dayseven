@@ -1,4 +1,4 @@
-import { doc, getDoc, getDocFromServer, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, writeBatch, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, getDocFromServer, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, limit, writeBatch, onSnapshot } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { Capacitor } from '@capacitor/core';
@@ -536,15 +536,19 @@ export async function checkUsernameAvailable(username, currentUid = null) {
         return false; // Reserved by someone else
       }
 
-      // Also check /users collection for legacy users who don't have a /usernames doc
+      // Also check public profiles for legacy users who don't have a /usernames doc
+      // (user docs can't be queried; publicProfiles mirrors their usernames)
       const { snapshots } = await FirebaseFirestore.getCollection({
-        reference: 'users',
+        reference: 'publicProfiles',
         compositeFilter: {
           type: 'and',
           queryConstraints: [
             { type: 'where', fieldPath: 'username', opStr: '==', value: lowerUsername }
           ]
-        }
+        },
+        queryConstraints: [
+          { type: 'limit', limit: 2 }
+        ]
       });
       if (snapshots?.length) {
         // Allow if the only match is the current user
@@ -562,8 +566,8 @@ export async function checkUsernameAvailable(username, currentUid = null) {
         return false; // Reserved by someone else
       }
 
-      // Also check /users collection for legacy users
-      const usersQuery = query(collection(db, 'users'), where('username', '==', lowerUsername));
+      // Also check public profiles for legacy users (user docs can't be queried)
+      const usersQuery = query(collection(db, 'publicProfiles'), where('username', '==', lowerUsername), limit(2));
       const usersSnapshot = await getDocs(usersQuery);
       if (!usersSnapshot.empty) {
         if (currentUid && usersSnapshot.size === 1 && usersSnapshot.docs[0].id === currentUid) return true;
@@ -1176,6 +1180,32 @@ export async function deleteUserAccount(uid, username) {
         // friends deletion failed
       }
 
+      // Native: Delete friend requests involving this user
+      for (const side of ['fromUid', 'toUid']) {
+        try {
+          const { snapshots: requestSnapshots } = await FirebaseFirestore.getCollection({
+            reference: 'friendRequests',
+            compositeFilter: {
+              type: 'and',
+              queryConstraints: [{ type: 'where', fieldPath: side, opStr: '==', value: uid }]
+            }
+          });
+          for (const snap of (requestSnapshots || [])) {
+            await FirebaseFirestore.deleteDocument({ reference: `friendRequests/${snap.id}` });
+          }
+        } catch (e) {
+          // friend requests deletion failed
+        }
+      }
+
+      // Native: Delete push tokens, so this device stops getting the old account's
+      // notifications (the server also removes them when the user doc goes)
+      try {
+        await FirebaseFirestore.deleteDocument({ reference: `userTokens/${uid}` });
+      } catch (e) {
+        // tokens may not exist
+      }
+
       // Native: Delete the user document
       await FirebaseFirestore.deleteDocument({
         reference: `users/${uid}`
@@ -1220,6 +1250,9 @@ export async function deleteUserAccount(uid, username) {
       } catch (e) {
         // friend requests deletion failed
       }
+
+      // Delete push tokens (the server also removes them when the user doc goes)
+      batch.delete(doc(db, 'userTokens', uid));
 
       // Delete the user document
       const userRef = doc(db, 'users', uid);

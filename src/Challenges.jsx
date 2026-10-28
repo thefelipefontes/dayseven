@@ -10,6 +10,7 @@ import {
   isChallengeable,
   CHALLENGE_WINDOW_HOURS,
   FREE_MONTHLY_CHALLENGE_CAP,
+  MAX_CHALLENGE_RECIPIENTS,
   applyOptimisticChallengeCompletions,
   evaluateActivityAgainstChallenge,
   availableChallengeMetrics,
@@ -473,6 +474,10 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
     // in case state got out of sync (race, future "fan-out" code path that bypasses the UI).
     if (requirePhoto && !hasOwnPhoto) {
       setError('Add a photo to your activity first — you need proof to require proof.');
+      return;
+    }
+    if (sendMode !== 'individual' && selectedCount > MAX_CHALLENGE_RECIPIENTS) {
+      setError(`A group challenge can include up to ${MAX_CHALLENGE_RECIPIENTS} friends.`);
       return;
     }
 

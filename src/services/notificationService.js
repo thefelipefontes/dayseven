@@ -331,7 +331,9 @@ export const getDefaultPreferences = () => ({
   // Reminders
   streakReminders: true,
   goalReminders: true,
-  dailyReminders: true, // default ON — the core daily habit nudge (retention)
+  // Off unless saved: new accounts get it switched on at creation (server-side); older
+  // accounts that never chose don't get daily reminders, so Settings shows it off.
+  dailyReminders: false,
   dailyReminderTime: '09:00', // Default 9 AM
 
   // Activity detection

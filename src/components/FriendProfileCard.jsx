@@ -17,6 +17,10 @@ import ZoomablePhoto from './ZoomablePhoto';
  * `actions` is a ReactNode rendered in the footer — parents control which buttons show
  * (Challenge / Remove Friend / Send Request / Close) since friendship-state logic lives
  * outside this component.
+ *
+ * `statsVisible` is false for someone who isn't a friend (search results, friend
+ * requests): only friends can read a user's stats, so the card shows name and photo and
+ * a line saying to add them, instead of a block of zeros.
  */
 const RecoveryBonusRow = ({ children }) => (
   <div className="mt-2 px-2.5 py-2 rounded-lg flex items-center justify-between" style={{ backgroundColor: 'rgba(0,209,255,0.06)', border: '1px solid rgba(0,209,255,0.18)' }}>
@@ -29,7 +33,7 @@ const RecoveryBonusRow = ({ children }) => (
   </div>
 );
 
-export default function FriendProfileCard({ friend, onClose, actions = null, preloadedProfile = null }) {
+export default function FriendProfileCard({ friend, onClose, actions = null, preloadedProfile = null, statsVisible = true }) {
   const [isAnimating, setIsAnimating] = useState(false);
   // When `preloadedProfile` is provided (e.g., the current user's own card — App already
   // has userProfile + userData loaded and live-subscribed), seed state with it and skip
@@ -78,7 +82,7 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
   useEffect(() => {
     let cancelled = false;
     if (preloadedProfile) return;
-    if (!friend?.uid) return;
+    if (!friend?.uid || !statsVisible) return;
     (async () => {
       try {
         const p = await getUserProfile(friend.uid);
@@ -86,7 +90,7 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
       } catch {}
     })();
     return () => { cancelled = true; };
-  }, [friend?.uid, preloadedProfile]);
+  }, [friend?.uid, preloadedProfile, statsVisible]);
 
   const handleClose = () => {
     setIsAnimating(false);
@@ -207,8 +211,15 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
             </div>
           </div>
 
+          {!statsVisible && (
+            <p className="px-6 pb-4 text-center text-sm text-gray-500">
+              Add {friend?.displayName?.split(' ')[0] || friend?.username || 'them'} as a friend to see their streaks and records.
+            </p>
+          )}
+
           {/* Body — natural height. The overlay above is the scroll container, so the
               card itself doesn't need internal scrolling. */}
+          {statsVisible && (
           <div className="px-4 pb-3">
             {/* Headline triplet — Winning Streak (current), Best Streak (longestMasterStreak),
                 Challenges (W-L stacked above completion %). Single-word labels avoid the
@@ -275,6 +286,7 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
               )}
             </div>
           </div>
+          )}
 
           {/* Action footer — parent-controlled. Falls back to a Close button if nothing
               else was passed (e.g., the ChallengesTab quick-profile case). */}

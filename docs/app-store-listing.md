@@ -8,6 +8,21 @@ Paste each field into App Store Connect → App Information / Version page. Limi
 
 ---
 
+## What's New in 1.8.3 (4000 max)
+
+```
+A shield you earn.
+
+• The Streak Shield (Pro) is now earned: get to 70% of your week and it covers the rest, so a near miss doesn't reset your streaks
+• Nothing to remember: if a week ends short and you got to 70%, the shield is used automatically
+• Shields come back faster, once every 4 weeks instead of 6
+• Late in the week, Home shows how close you are to earning it, and tells you when it saved your streak
+• Vacation mode now shows 🌴 under your rings
+• Fixes and polish
+```
+
+---
+
 ## What's New in 1.8.2 (4000 max)
 
 ```

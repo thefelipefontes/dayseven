@@ -16,6 +16,21 @@ class AuthService: ObservableObject {
     private var authListener: AuthStateDidChangeListenerHandle?
     private var currentNonce: String?
 
+    /// Set when the user taps a sign-in button. isSignedIn also turns true when a launch
+    /// restores the saved session, and only a sign-in the user asked for may be followed by
+    /// permission prompts.
+    private var userRequestedSignIn = false
+
+    func noteUserRequestedSignIn() {
+        userRequestedSignIn = true
+    }
+
+    /// Whether the sign-in that just completed came from a tap. Reading it clears it.
+    func takeUserRequestedSignIn() -> Bool {
+        defer { userRequestedSignIn = false }
+        return userRequestedSignIn
+    }
+
     init() {
         setupAuthListener()
     }

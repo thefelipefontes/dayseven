@@ -89,11 +89,16 @@ struct RootView: View {
         .onChange(of: appVM.authService.isSignedIn) { _, signedIn in
             if signedIn {
                 Task {
-                    await appVM.requestHealthKitPermissions()
-                    // Also queue the location prompt now so distance workouts
-                    // have GPS ready on first use — avoids the mid-workout
-                    // "Location is off" alert. No-op if already decided.
-                    appVM.requestLocationPermissionIfNeeded()
+                    // Prompts only right after a sign-in the user tapped. This also fires
+                    // when a cold launch restores the saved session, and asking then put
+                    // permission prompts up with no tap behind them, on every launch.
+                    if appVM.authService.takeUserRequestedSignIn() {
+                        await appVM.requestHealthKitPermissions()
+                        // Also queue the location prompt now so distance workouts
+                        // have GPS ready on first use — avoids the mid-workout
+                        // "Location is off" alert. No-op if already decided.
+                        appVM.requestLocationPermissionIfNeeded()
+                    }
                     await appVM.loadUserData()
                 }
             }

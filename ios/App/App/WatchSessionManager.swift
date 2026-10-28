@@ -23,8 +23,15 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     /// But they also respond to the v1-style URL with proper callable protocol
     private let functionsBaseURL = "https://us-central1-dayseven-f1a89.cloudfunctions.net"
 
-    /// Track Live Activity started from watch workout notifications
+    /// Live Activity shown for the workout the watch is running. Main thread only.
     var watchWorkoutLiveActivityId: String?
+
+    /// Live Activity of the phone's own HKWorkoutBuilder session, owned by
+    /// HealthKitWriterPlugin. Kept here so the watch bookkeeping above never
+    /// adopts or replaces it. Main thread only.
+    var phoneWorkoutLiveActivityId: String?
+
+    private var activityUpdatesTask: Task<Void, Never>?
 
     private override init() {
         super.init()
@@ -383,33 +390,54 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
 
     // MARK: - Watch Workout Live Activity
 
+    /// Running means on screen and still updatable. An ended activity lingers in
+    /// `Activity.activities` until it is dismissed, so presence alone says nothing.
     @available(iOS 16.2, *)
-    private func startWatchWorkoutLiveActivity(activityType: String, startTime: Date) {
-        // Skip if we're already tracking one
-        if watchWorkoutLiveActivityId != nil {
-            print("[WatchSession] Live Activity already tracked, skipping duplicate start")
+    private func isRunning(_ activity: Activity<WorkoutActivityAttributes>) -> Bool {
+        activity.activityState == .active || activity.activityState == .stale
+    }
+
+    @available(iOS 16.2, *)
+    private func runningActivity(id: String?) -> Activity<WorkoutActivityAttributes>? {
+        guard let id else { return nil }
+        return Activity<WorkoutActivityAttributes>.activities.first { $0.id == id && isRunning($0) }
+    }
+
+    /// The newest running workout Live Activity, if any (main thread).
+    @available(iOS 16.2, *)
+    func newestRunningWorkoutActivity() -> Activity<WorkoutActivityAttributes>? {
+        Activity<WorkoutActivityAttributes>.activities
+            .filter { isRunning($0) }
+            .max { $0.attributes.startTime < $1.attributes.startTime }
+    }
+
+    /// Shows the Live Activity for a workout the watch is running (main thread).
+    /// Adopts one that is already running, such as the push-to-start one the
+    /// server sends, instead of stacking a second card on top of it. Never adopts
+    /// an activity that is ending, or the phone workout's own.
+    @available(iOS 16.2, *)
+    func startOrAdoptWatchWorkoutLiveActivity(activityType: String) {
+        if runningActivity(id: watchWorkoutLiveActivityId) != nil {
+            print("[LiveActivity] Watch Live Activity already active, skipping")
             return
         }
+        watchWorkoutLiveActivityId = nil
 
-        // Check if the APNs push already started a Live Activity (push-to-start)
-        let existingActivities = Activity<WorkoutActivityAttributes>.activities
-        if let existing = existingActivities.first {
-            watchWorkoutLiveActivityId = existing.id
-            print("[WatchSession] Adopted existing push-started Live Activity: \(existing.id)")
+        let candidates = Activity<WorkoutActivityAttributes>.activities
+            .filter { isRunning($0) && $0.id != phoneWorkoutLiveActivityId }
+        if let pushStarted = candidates.max(by: { $0.attributes.startTime < $1.attributes.startTime }) {
+            watchWorkoutLiveActivityId = pushStarted.id
+            print("[LiveActivity] Adopted running Live Activity: \(pushStarted.id)")
             return
         }
-
-        let icon = liveActivityIconForType(activityType)
-        let category = liveActivityCategoryForType(activityType)
 
         let attributes = WorkoutActivityAttributes(
             activityType: activityType,
-            activityIcon: icon,
-            startTime: startTime,
-            categoryColor: category
+            activityIcon: liveActivityIconForType(activityType),
+            startTime: Date(),
+            categoryColor: liveActivityCategoryForType(activityType)
         )
         let initialState = WorkoutActivityAttributes.ContentState(isPaused: false)
-
         do {
             let activity = try Activity.request(
                 attributes: attributes,
@@ -417,9 +445,34 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
                 pushType: nil
             )
             watchWorkoutLiveActivityId = activity.id
-            print("[WatchSession] Live Activity started: \(activity.id)")
+            print("[LiveActivity] Started watch workout Live Activity: \(activity.id)")
         } catch {
-            print("[WatchSession] Failed to start Live Activity: \(error)")
+            print("[LiveActivity] Failed to start watch workout Live Activity: \(error)")
+        }
+    }
+
+    /// Push-to-start can land after JS already showed a Live Activity for the
+    /// same watch workout (APNs latency), which stacked two cards. Whenever a
+    /// new workout activity appears, it replaces the watch one we were tracking,
+    /// so at most one is on screen. The phone workout's activity is left alone.
+    @available(iOS 17.2, *)
+    func observeNewWorkoutActivities() {
+        guard activityUpdatesTask == nil else { return }
+        activityUpdatesTask = Task { @MainActor [weak self] in
+            for await newcomer in Activity<WorkoutActivityAttributes>.activityUpdates {
+                guard let self else { return }
+                guard newcomer.id != self.phoneWorkoutLiveActivityId,
+                      newcomer.id != self.watchWorkoutLiveActivityId else { continue }
+
+                if let tracked = self.runningActivity(id: self.watchWorkoutLiveActivityId) {
+                    print("[LiveActivity] Replacing \(tracked.id) with newer \(newcomer.id)")
+                    self.watchWorkoutLiveActivityId = newcomer.id
+                    await tracked.end(nil, dismissalPolicy: .immediate)
+                } else if self.watchWorkoutLiveActivityId != nil {
+                    // The tracked one is gone; follow the new one.
+                    self.watchWorkoutLiveActivityId = newcomer.id
+                }
+            }
         }
     }
 
@@ -427,7 +480,7 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     func endWatchWorkoutLiveActivity() {
         let finalState = WorkoutActivityAttributes.ContentState(isPaused: false)
 
-        Task {
+        Task { @MainActor in
             // End ALL workout Live Activities (covers both locally-started and push-started)
             for activity in Activity<WorkoutActivityAttributes>.activities {
                 await activity.end(

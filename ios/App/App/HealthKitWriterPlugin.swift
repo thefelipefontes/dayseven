@@ -511,12 +511,13 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                 self.startCaloriesObserver(from: startDate)
                 self.startDistanceObserver(from: startDate)
 
-                // Start Live Activity on lock screen
-                if #available(iOS 16.2, *) {
-                    self.startWorkoutLiveActivity(activityType: activityTypeString, startTime: startDate)
-                }
-
                 DispatchQueue.main.async {
+                    // Start Live Activity on lock screen. On main, so its id is
+                    // recorded before WatchSessionManager's activity observer sees it.
+                    if #available(iOS 16.2, *) {
+                        self.startWorkoutLiveActivity(activityType: activityTypeString, startTime: startDate)
+                    }
+
                     call.resolve([
                         "success": true,
                         "startDate": self.isoFormatter.string(from: startDate),
@@ -661,14 +662,18 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         // Discard the workout builder without saving
         workoutBuilder?.discardWorkout()
 
-        // Dismiss Live Activity immediately
-        if #available(iOS 16.2, *) {
-            dismissWorkoutLiveActivity()
-        }
-
         resetLiveWorkoutState()
 
-        call.resolve(["success": true])
+        // Resolve only once the Live Activity has ended. When the watch takes
+        // over, JS awaits this and then asks for the watch Live Activity; while
+        // the phone one was still ending it got adopted and then vanished.
+        if #available(iOS 16.2, *) {
+            endWorkoutLiveActivity {
+                call.resolve(["success": true])
+            }
+        } else {
+            call.resolve(["success": true])
+        }
     }
 
     /// Forget the live session and its metrics. The builder must already be
@@ -750,12 +755,13 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    /// Ends the phone workout's Live Activity, then calls `completion` on main.
     @available(iOS 16.2, *)
-    private func endWorkoutLiveActivity() {
-        let targetId = liveActivityId
+    private func endWorkoutLiveActivity(completion: (() -> Void)? = nil) {
         let finalState = WorkoutActivityAttributes.ContentState(isPaused: false)
 
-        Task {
+        Task { @MainActor in
+            let targetId = self.liveActivityId
             if let targetId = targetId {
                 // End only the phone workout's Live Activity
                 for activity in Activity<WorkoutActivityAttributes>.activities {
@@ -769,8 +775,9 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                     }
                 }
             } else {
-                // No ID — end ALL as fallback cleanup
-                for activity in Activity<WorkoutActivityAttributes>.activities {
+                // No ID — end every workout activity except the watch workout's
+                let watchId = WatchSessionManager.shared.watchWorkoutLiveActivityId
+                for activity in Activity<WorkoutActivityAttributes>.activities where activity.id != watchId {
                     await activity.end(
                         .init(state: finalState, staleDate: nil),
                         dismissalPolicy: .immediate
@@ -778,54 +785,26 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                     print("[LiveActivity] Ended activity (fallback): \(activity.id)")
                 }
             }
-            self.liveActivityId = nil
+            // A newer phone workout may have started while this one was ending
+            if self.liveActivityId == targetId {
+                self.liveActivityId = nil
+            }
+            completion?()
         }
     }
 
     @available(iOS 16.2, *)
     private func updateLiveActivityPaused(_ isPaused: Bool, accumulatedPauseTime: Double = 0) {
-        guard let activityId = liveActivityId else { return }
         let newState = WorkoutActivityAttributes.ContentState(isPaused: isPaused, accumulatedPauseTime: accumulatedPauseTime)
 
-        Task {
+        Task { @MainActor in
+            guard let activityId = self.liveActivityId else { return }
             for activity in Activity<WorkoutActivityAttributes>.activities {
                 if activity.id == activityId {
                     await activity.update(.init(state: newState, staleDate: nil))
                     break
                 }
             }
-        }
-    }
-
-    @available(iOS 16.2, *)
-    private func dismissWorkoutLiveActivity() {
-        let targetId = liveActivityId
-        let finalState = WorkoutActivityAttributes.ContentState(isPaused: false)
-
-        Task {
-            if let targetId = targetId {
-                // Dismiss only the phone workout's Live Activity
-                for activity in Activity<WorkoutActivityAttributes>.activities {
-                    if activity.id == targetId {
-                        await activity.end(
-                            .init(state: finalState, staleDate: nil),
-                            dismissalPolicy: .immediate
-                        )
-                        print("[LiveActivity] Dismissed phone activity: \(activity.id)")
-                        break
-                    }
-                }
-            } else {
-                // No ID — end ALL as fallback cleanup
-                for activity in Activity<WorkoutActivityAttributes>.activities {
-                    await activity.end(
-                        .init(state: finalState, staleDate: nil),
-                        dismissalPolicy: .immediate
-                    )
-                    print("[LiveActivity] Dismissed activity (fallback): \(activity.id)")
-                }
-            }
-            self.liveActivityId = nil
         }
     }
 
@@ -841,7 +820,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
 
-            Task {
+            Task { @MainActor in
                 var ended = 0
                 for activity in activities {
                     await activity.end(
@@ -852,9 +831,8 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                     print("[LiveActivity] Force-ended activity: \(activity.id)")
                 }
                 self.liveActivityId = nil
-                DispatchQueue.main.async {
-                    call.resolve(["success": true, "ended": ended])
-                }
+                WatchSessionManager.shared.watchWorkoutLiveActivityId = nil
+                call.resolve(["success": true, "ended": ended])
             }
         } else {
             call.resolve(["success": true, "ended": 0])
@@ -863,16 +841,19 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func checkActiveLiveActivity(_ call: CAPPluginCall) {
         if #available(iOS 16.2, *) {
-            let activities = Activity<WorkoutActivityAttributes>.activities
-            if let active = activities.first {
-                let attrs = active.attributes
-                call.resolve([
-                    "isActive": true,
-                    "activityType": attrs.activityType,
-                    "startTime": ISO8601DateFormatter().string(from: attrs.startTime)
-                ])
-            } else {
-                call.resolve(["isActive": false])
+            DispatchQueue.main.async {
+                // An ended activity stays in the list until dismissed; JS would
+                // restore a workout from it.
+                if let active = WatchSessionManager.shared.newestRunningWorkoutActivity() {
+                    let attrs = active.attributes
+                    call.resolve([
+                        "isActive": true,
+                        "activityType": attrs.activityType,
+                        "startTime": ISO8601DateFormatter().string(from: attrs.startTime)
+                    ])
+                } else {
+                    call.resolve(["isActive": false])
+                }
             }
         } else {
             call.resolve(["isActive": false])
@@ -917,43 +898,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         let activityType = call.getString("activityType") ?? "Other"
         if #available(iOS 16.2, *) {
             DispatchQueue.main.async {
-                let mgr = WatchSessionManager.shared
-
-                // Check if push-to-start already created one
-                if mgr.watchWorkoutLiveActivityId == nil {
-                    let existing = Activity<WorkoutActivityAttributes>.activities
-                    if let pushStarted = existing.first {
-                        mgr.watchWorkoutLiveActivityId = pushStarted.id
-                        print("[LiveActivity] Adopted push-started Live Activity from JS: \(pushStarted.id)")
-                        return
-                    }
-                }
-
-                guard mgr.watchWorkoutLiveActivityId == nil else {
-                    print("[LiveActivity] Watch Live Activity already active, skipping")
-                    return
-                }
-
-                let icon = mgr.liveActivityIconForType(activityType)
-                let category = mgr.liveActivityCategoryForType(activityType)
-                let attributes = WorkoutActivityAttributes(
-                    activityType: activityType,
-                    activityIcon: icon,
-                    startTime: Date(),
-                    categoryColor: category
-                )
-                let initialState = WorkoutActivityAttributes.ContentState(isPaused: false)
-                do {
-                    let activity = try Activity.request(
-                        attributes: attributes,
-                        content: .init(state: initialState, staleDate: nil),
-                        pushType: nil
-                    )
-                    mgr.watchWorkoutLiveActivityId = activity.id
-                    print("[LiveActivity] Started watch workout Live Activity from JS: \(activity.id)")
-                } catch {
-                    print("[LiveActivity] Failed to start from JS: \(error)")
-                }
+                WatchSessionManager.shared.startOrAdoptWatchWorkoutLiveActivity(activityType: activityType)
             }
         }
         call.resolve(["success": true])
@@ -971,7 +916,12 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         call.resolve(["success": true])
     }
 
-    private var liveActivityId: String?
+    /// The phone workout's Live Activity. Stored on WatchSessionManager so the
+    /// watch Live Activity bookkeeping can tell it apart. Main thread only.
+    private var liveActivityId: String? {
+        get { WatchSessionManager.shared.phoneWorkoutLiveActivityId }
+        set { WatchSessionManager.shared.phoneWorkoutLiveActivityId = newValue }
+    }
 
     @objc func getLiveWorkoutMetrics(_ call: CAPPluginCall) {
         guard liveWorkoutStartDate != nil else {

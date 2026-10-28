@@ -31,9 +31,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Activate WatchConnectivity for Apple Watch auth relay
         WatchSessionManager.shared.activate()
 
-        // Start observing ActivityKit push-to-start tokens (iOS 17.2+)
+        // Start observing ActivityKit push-to-start tokens (iOS 17.2+), and the
+        // activities those pushes start, so one can't stack on a JS-started one
         if #available(iOS 17.2, *) {
             observeActivityKitPushToStartToken()
+            WatchSessionManager.shared.observeNewWorkoutActivities()
         }
 
         return true

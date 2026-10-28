@@ -23,8 +23,11 @@ struct DaySevenPhoneTimelineProvider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<DaySevenPhoneEntry>) -> Void) {
         let data = SharedDefaults.readStreakData()
         let entry = DaySevenPhoneEntry(date: .now, data: data)
-        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 30, to: .now)!
-        let timeline = Timeline(entries: [entry], policy: .after(nextUpdate))
+        // Every 30 minutes, and at midnight so today's numbers reset on time
+        let calendar = Calendar.current
+        let inThirtyMinutes = calendar.date(byAdding: .minute, value: 30, to: .now)!
+        let midnight = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: .now)) ?? inThirtyMinutes
+        let timeline = Timeline(entries: [entry], policy: .after(min(inThirtyMinutes, midnight)))
         completion(timeline)
     }
 }
@@ -461,7 +464,13 @@ struct LargeWidgetView: View {
     }
 
     private func formatActivityDate(_ dateStr: String) -> String {
+        // A fixed-format date key, not something shown: parse it in the Gregorian
+        // calendar with the POSIX locale, or a device set to the Buddhist or
+        // Japanese calendar reads "2026" as a year in that era.
         let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
         formatter.dateFormat = "yyyy-MM-dd"
         guard let date = formatter.date(from: dateStr) else { return dateStr }
 

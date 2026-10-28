@@ -585,6 +585,9 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         defaults.set(call.getInt("todaySteps") ?? 0, forKey: "todaySteps")
         defaults.set(call.getInt("stepsGoal") ?? 10000, forKey: "stepsGoal")
         defaults.set(call.getInt("todayCalories") ?? 0, forKey: "todayCalories")
+        // The day todaySteps/todayCalories are for, so the widget can zero them
+        // after midnight instead of showing yesterday's until the app is opened
+        defaults.set(Self.widgetDayKey(Date()), forKey: "todayDate")
         defaults.set(call.getInt("daysLeftInWeek") ?? 0, forKey: "daysLeftInWeek")
         defaults.set(call.getInt("weekSteps") ?? 0, forKey: "weekSteps")
         defaults.set(call.getString("weekStartDate") ?? "", forKey: "weekStartDate")
@@ -600,6 +603,15 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         WidgetCenter.shared.reloadAllTimelines()
 
         call.resolve(["success": true])
+    }
+
+    /// "YYYY-MM-DD" in the Gregorian calendar and device time zone, the format
+    /// the widget's SharedDefaults compares against.
+    private static func widgetDayKey(_ date: Date) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let c = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
 
     // MARK: - Live Activity

@@ -48,7 +48,9 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "checkActiveLiveActivity", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "showLocationDeniedDialog", returnType: CAPPluginReturnPromise),
         // Send the user to the OS screen where Health access can be re-granted
-        CAPPluginMethod(name: "openHealthSettings", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "openHealthSettings", returnType: CAPPluginReturnPromise),
+        // Mirror the settings that gate the background "New Workout Detected" notification
+        CAPPluginMethod(name: "setWorkoutDetectionPrefs", returnType: CAPPluginReturnPromise)
     ]
 
     private let healthStore = HKHealthStore()
@@ -542,6 +544,23 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         heartRateSamples = []
         heartRateHKSamples = []
         lastHeartRate = 0
+    }
+
+    // MARK: - Workout Detection Settings
+
+    /// Mirrors the settings that gate the background "New Workout Detected"
+    /// notification into UserDefaults (see WorkoutDetectionObserver).
+    /// Keys left out keep their stored value.
+    @objc func setWorkoutDetectionPrefs(_ call: CAPPluginCall) {
+        var values: [String: Any] = [:]
+        for key in WorkoutDetectionObserver.boolPrefKeys {
+            if let value = call.getBool(key) { values[key] = value }
+        }
+        for key in WorkoutDetectionObserver.stringPrefKeys {
+            if let value = call.getString(key) { values[key] = value }
+        }
+        WorkoutDetectionObserver.updatePrefs(values)
+        call.resolve()
     }
 
     // MARK: - Widget Data
@@ -2223,7 +2242,6 @@ final class WorkoutDetectionObserver {
 
     private let healthStore = HKHealthStore()
     private var workoutObserverQuery: HKObserverQuery?
-    private static let lastWorkoutCheckKey = "dayseven_lastWorkoutNotificationCheck"
     private static let workoutNotificationId = "dayseven-workout-detected"
 
     private init() {}
@@ -2232,6 +2250,8 @@ final class WorkoutDetectionObserver {
     /// Neither call shows a permission sheet, so this is safe at every launch.
     func start() {
         guard workoutObserverQuery == nil else { return }
+        // Replaced by anchorKey; the old start-date cursor missed backdated imports
+        UserDefaults.standard.removeObject(forKey: "dayseven_lastWorkoutNotificationCheck")
         guard HKHealthStore.isHealthDataAvailable() else {
             print("[HealthKitWriter] HealthKit not available, skipping background workout setup")
             return
@@ -2289,98 +2309,178 @@ final class WorkoutDetectionObserver {
         start()
     }
 
+    // MARK: Settings mirrored from JS
+
+    /// The user's settings that gate this notification, mirrored from JS by
+    /// HealthKitWriterPlugin.setWorkoutDetectionPrefs. The notification fires
+    /// from a HealthKit wake where no JS runs, so it can't read them from
+    /// Firestore. Nothing mirrored yet (JS hasn't run since install or update)
+    /// means no notification.
+    private static let prefsKey = "dayseven_workoutDetectionPrefs"
+    static let boolPrefKeys = ["signedIn", "newActivityDetected", "healthKitSyncDisabled", "quietHoursEnabled"]
+    static let stringPrefKeys = ["quietHoursStart", "quietHoursEnd"]
+
+    /// Merges `values` into the stored settings; keys not given keep their value.
+    static func updatePrefs(_ values: [String: Any]) {
+        var prefs = UserDefaults.standard.dictionary(forKey: prefsKey) ?? [:]
+        prefs.merge(values) { _, new in new }
+        UserDefaults.standard.set(prefs, forKey: prefsKey)
+    }
+
+    private func prefsAllowNotification(at date: Date) -> Bool {
+        guard let prefs = UserDefaults.standard.dictionary(forKey: Self.prefsKey),
+              prefs["signedIn"] as? Bool == true,
+              prefs["newActivityDetected"] as? Bool ?? true,
+              prefs["healthKitSyncDisabled"] as? Bool != true else { return false }
+
+        guard prefs["quietHoursEnabled"] as? Bool == true else { return true }
+        return !Self.isWithinQuietHours(
+            date,
+            start: prefs["quietHoursStart"] as? String ?? "22:00",
+            end: prefs["quietHoursEnd"] as? String ?? "07:00"
+        )
+    }
+
+    /// Same rule as isQuietHours in notificationService.js, in device-local time.
+    static func isWithinQuietHours(_ date: Date, start: String, end: String) -> Bool {
+        func minutes(_ hhmm: String, fallback: Int) -> Int {
+            let parts = hhmm.split(separator: ":").compactMap { Int($0) }
+            guard parts.count == 2 else { return fallback }
+            return parts[0] * 60 + parts[1]
+        }
+        let time = Calendar.current.dateComponents([.hour, .minute], from: date)
+        let now = (time.hour ?? 0) * 60 + (time.minute ?? 0)
+        let startMinutes = minutes(start, fallback: 22 * 60)
+        let endMinutes = minutes(end, fallback: 7 * 60)
+        if startMinutes <= endMinutes {
+            return now >= startMinutes && now < endMinutes
+        }
+        return now >= startMinutes || now < endMinutes // overnight, e.g. 22:00-07:00
+    }
+
+    // MARK: Detection
+
+    /// Where the last check got to in HealthKit's change history. An anchor
+    /// finds workouts by when they were saved, not by their start date, so a
+    /// workout another app syncs hours later with an earlier start still counts.
+    private static let anchorKey = "dayseven_workoutDetectionAnchor"
+
+    /// Only workouts from the last week are worth a prompt: a bulk import of old
+    /// history is new to HealthKit but not something to open the app for.
+    private static let recentWindowDays = 7
+
+    // Main thread only. One check at a time, so two wakes can't both announce
+    // the same workout.
+    private var isChecking = false
+    private var needsRecheck = false
+    private var pendingCompletions: [() -> Void] = []
+
     private func checkForNewWorkouts(completion: @escaping () -> Void) {
-        // Check app state on main thread — only notify if app is NOT in the foreground
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else {
-                completion()
-                return
+        DispatchQueue.main.async {
+            self.pendingCompletions.append(completion)
+            if self.isChecking {
+                // Let the running check finish, then look again for what woke us.
+                self.needsRecheck = true
+            } else {
+                self.runCheck()
             }
-
-            let state = UIApplication.shared.applicationState
-            guard state != .active else {
-                print("[HealthKitWriter] App is active, skipping notification (in-app banner handles this)")
-                completion()
-                return
-            }
-
-            self.queryAndNotifyNewWorkouts(completion: completion)
         }
     }
 
-    private func queryAndNotifyNewWorkouts(completion: @escaping () -> Void) {
-        let workoutType = HKWorkoutType.workoutType()
-        let defaults = UserDefaults.standard
+    /// Main thread.
+    private func runCheck() {
+        isChecking = true
+        needsRecheck = false
 
-        // Start date: last check time, or 7 days ago as fallback
-        let lastCheck: Date
-        if let stored = defaults.object(forKey: Self.lastWorkoutCheckKey) as? Date {
-            lastCheck = stored
-        } else {
-            lastCheck = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-        }
+        let previousAnchor = loadAnchor()
+        let since = Calendar.current.date(byAdding: .day, value: -Self.recentWindowDays, to: Date()) ?? Date()
+        let predicate = HKQuery.predicateForSamples(withStart: since, end: nil, options: [])
 
-        let predicate = HKQuery.predicateForSamples(
-            withStart: lastCheck,
-            end: nil,
-            options: .strictStartDate
-        )
-        let sortDescriptor = NSSortDescriptor(
-            key: HKSampleSortIdentifierEndDate,
-            ascending: false
-        )
-
-        let query = HKSampleQuery(
-            sampleType: workoutType,
+        let query = HKAnchoredObjectQuery(
+            type: HKWorkoutType.workoutType(),
             predicate: predicate,
-            limit: 20,
-            sortDescriptors: [sortDescriptor]
-        ) { [weak self] _, samples, error in
-            guard let self = self else {
-                completion()
-                return
+            anchor: previousAnchor,
+            limit: HKObjectQueryNoLimit
+        ) { _, samples, _, newAnchor, error in
+            DispatchQueue.main.async {
+                self.handleCheckResult(samples: samples, newAnchor: newAnchor, error: error, isBaseline: previousAnchor == nil) {
+                    if self.needsRecheck {
+                        self.runCheck()
+                        return
+                    }
+                    self.isChecking = false
+                    let completions = self.pendingCompletions
+                    self.pendingCompletions = []
+                    completions.forEach { $0() }
+                }
             }
-
-            if let error = error {
-                print("[HealthKitWriter] Workout query error: \(error.localizedDescription)")
-                completion()
-                return
-            }
-
-            guard let workouts = samples as? [HKWorkout], !workouts.isEmpty else {
-                print("[HealthKitWriter] No new workouts found")
-                completion()
-                return
-            }
-
-            // Filter out workouts created by DaySeven (matches JS-side source filter)
-            let externalWorkouts = workouts.filter { workout in
-                let sourceName = workout.sourceRevision.source.name.lowercased()
-                let bundleId = workout.sourceRevision.source.bundleIdentifier.lowercased()
-                return !sourceName.contains("dayseven") && !bundleId.contains("dayseven")
-            }
-
-            guard !externalWorkouts.isEmpty else {
-                print("[HealthKitWriter] All new workouts are from DaySeven, skipping notification")
-                defaults.set(Date(), forKey: Self.lastWorkoutCheckKey)
-                completion()
-                return
-            }
-
-            print("[HealthKitWriter] Found \(externalWorkouts.count) new external workout(s)")
-
-            // Update timestamp so we don't re-notify about these
-            defaults.set(Date(), forKey: Self.lastWorkoutCheckKey)
-
-            // Schedule local push notification
-            self.scheduleWorkoutNotification(count: externalWorkouts.count)
-            completion()
         }
 
         healthStore.execute(query)
     }
 
-    private func scheduleWorkoutNotification(count: Int) {
+    /// Main thread. Calls `done` once any notification has been handed to the system.
+    private func handleCheckResult(samples: [HKSample]?, newAnchor: HKQueryAnchor?, error: Error?, isBaseline: Bool, done: @escaping () -> Void) {
+        if let error = error {
+            // Keep the old anchor so the next wake sees these workouts. Expected
+            // while the device is locked (the Health database is protected).
+            print("[HealthKitWriter] Workout query error: \(error.localizedDescription)")
+            done()
+            return
+        }
+
+        saveAnchor(newAnchor)
+
+        // First check on this install (or since this update): everything already
+        // in HealthKit is old news, including a week the user already imported.
+        guard !isBaseline else {
+            print("[HealthKitWriter] Workout detection baseline recorded")
+            done()
+            return
+        }
+
+        // Filter out workouts created by DaySeven (matches JS-side source filter)
+        let externalWorkouts = (samples as? [HKWorkout] ?? []).filter { workout in
+            let sourceName = workout.sourceRevision.source.name.lowercased()
+            let bundleId = workout.sourceRevision.source.bundleIdentifier.lowercased()
+            return !sourceName.contains("dayseven") && !bundleId.contains("dayseven")
+        }
+
+        guard !externalWorkouts.isEmpty else {
+            print("[HealthKitWriter] No new external workouts")
+            done()
+            return
+        }
+
+        // The anchor has already moved past these: a workout seen while the app
+        // is open, or muted by the user's settings, is not announced later.
+        guard UIApplication.shared.applicationState != .active else {
+            print("[HealthKitWriter] App is active, skipping notification (in-app banner handles this)")
+            done()
+            return
+        }
+        guard prefsAllowNotification(at: Date()) else {
+            print("[HealthKitWriter] New-workout notification is off, in quiet hours, or HealthKit sync is disabled")
+            done()
+            return
+        }
+
+        print("[HealthKitWriter] Found \(externalWorkouts.count) new external workout(s)")
+        scheduleWorkoutNotification(count: externalWorkouts.count, completion: done)
+    }
+
+    private func loadAnchor() -> HKQueryAnchor? {
+        guard let data = UserDefaults.standard.data(forKey: Self.anchorKey) else { return nil }
+        return try? NSKeyedUnarchiver.unarchivedObject(ofClass: HKQueryAnchor.self, from: data)
+    }
+
+    private func saveAnchor(_ anchor: HKQueryAnchor?) {
+        guard let anchor = anchor,
+              let data = try? NSKeyedArchiver.archivedData(withRootObject: anchor, requiringSecureCoding: true) else { return }
+        UserDefaults.standard.set(data, forKey: Self.anchorKey)
+    }
+
+    private func scheduleWorkoutNotification(count: Int, completion: @escaping () -> Void) {
         let content = UNMutableNotificationContent()
         content.title = "New Workout Detected"
         if count == 1 {
@@ -2404,6 +2504,7 @@ final class WorkoutDetectionObserver {
             } else {
                 print("[HealthKitWriter] Workout notification scheduled (count: \(count))")
             }
+            DispatchQueue.main.async { completion() }
         }
     }
 }

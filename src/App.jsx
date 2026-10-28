@@ -23,9 +23,9 @@ import { getFriends, getReactions, getFriendRequests, getComments, addReply, get
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
-import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, fetchHealthDataForDate, fetchDailyHealthRange, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, pushDistanceUnitToWatch, fetchWorkoutRoute, updateWidgetData, updateLiveActivityState, startWatchWorkoutLiveActivity, endAllLiveActivities, checkActiveLiveActivity, showLocationDeniedDialog, getHealthConnectionStatus, backfillHkCalories, isHealthKitReadAuthorized } from './services/healthService';
+import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, fetchHealthDataForDate, fetchDailyHealthRange, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, pushDistanceUnitToWatch, fetchWorkoutRoute, updateWidgetData, updateLiveActivityState, startWatchWorkoutLiveActivity, endAllLiveActivities, checkActiveLiveActivity, showLocationDeniedDialog, getHealthConnectionStatus, backfillHkCalories, isHealthKitReadAuthorized, syncWorkoutDetectionPrefs } from './services/healthService';
 import NotificationSettings from './NotificationSettings';
-import { initializePushNotifications, handleNotificationNavigation, removeFCMToken, clearBadge, clearAllNotifications, shouldShowNotification, getNotificationPreferences, logNotificationOpen, getNotificationPermissionStatus, requestNotificationPermission } from './services/notificationService';
+import { initializePushNotifications, handleNotificationNavigation, removeFCMToken, clearBadge, clearAllNotifications, shouldShowNotification, getNotificationPreferences, logNotificationOpen, getNotificationPermissionStatus, requestNotificationPermission, workoutDetectionFields } from './services/notificationService';
 import { initializeRevenueCat, loginRevenueCat, checkProStatus, getPlanType, addCustomerInfoListener, logoutRevenueCat, presentPaywall, presentCustomerCenter, restorePurchases, setDevAuthEmail, getOfferings } from './services/subscriptionService';
 import ActivityIcon, { ICON_PICKER_CATEGORIES, CATEGORY_COLORS as ICON_CATEGORY_COLORS } from './components/ActivityIcon';
 import RouteMapView, { ll2px, bestFit, makeTiles, RouteOverlay, TileLayer, TILE } from './components/RouteMapView';
@@ -13962,6 +13962,27 @@ export default function DaySevenApp() {
   // Refs to access user/profile/activities in syncHealthKit callback without adding as dependencies
   const userProfileRef = useRef(userProfile);
   useEffect(() => { userProfileRef.current = userProfile; }, [userProfile]);
+
+  // Mirror what gates the native "New Workout Detected" notification, which fires
+  // from a HealthKit background wake where no JS runs. The notification fields go
+  // across once per sign-in, from the freshly loaded profile; after that
+  // saveNotificationPreferences mirrors each change, because NotificationSettings
+  // saves don't refresh this copy of the profile. Signed out = no notification.
+  const workoutDetectionPrefsSentFor = useRef(null);
+  useEffect(() => {
+    if (!user?.uid) {
+      workoutDetectionPrefsSentFor.current = null;
+      syncWorkoutDetectionPrefs({ signedIn: false });
+      return;
+    }
+    if (!userProfile) return;
+    const prefs = { signedIn: true, healthKitSyncDisabled: !!userProfile.disableHealthKitSync };
+    if (workoutDetectionPrefsSentFor.current !== user.uid) {
+      workoutDetectionPrefsSentFor.current = user.uid;
+      Object.assign(prefs, workoutDetectionFields(userProfile.notificationPreferences));
+    }
+    syncWorkoutDetectionPrefs(prefs);
+  }, [user?.uid, userProfile]);
   const userRef = useRef(user);
   useEffect(() => { userRef.current = user; }, [user]);
   // Coalesces overlapping HealthKit syncs. visibilitychange (chatty on iOS),

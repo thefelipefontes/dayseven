@@ -1431,54 +1431,41 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        // Request read authorization for heart rate
-        let typesToRead: Set<HKObjectType> = [heartRateType]
+        // A query never asks for access: this runs from background paths (workout
+        // linking, the 90-day max-HR lookup), and the Health sheet must only follow
+        // a user tap. Without read access HealthKit simply returns no samples.
+        let predicate = HKQuery.predicateForSamples(
+            withStart: startDate,
+            end: endDate,
+            options: [.strictStartDate, .strictEndDate]
+        )
 
-        healthStore.requestAuthorization(toShare: nil, read: typesToRead) { [weak self] success, error in
-            guard let self = self else { return }
+        // Statistics instead of a sample query: the 90-day max-HR lookup would
+        // otherwise load every heart-rate sample in that window into memory.
+        let query = HKStatisticsQuery(
+            quantityType: heartRateType,
+            quantitySamplePredicate: predicate,
+            options: [.discreteAverage, .discreteMax]
+        ) { _, statistics, _ in
+            let hrUnit = HKUnit.count().unitDivided(by: .minute())
+            let avgHr = statistics?.averageQuantity()?.doubleValue(for: hrUnit)
+            let maxHr = statistics?.maximumQuantity()?.doubleValue(for: hrUnit)
 
-            if !success {
-                DispatchQueue.main.async {
+            DispatchQueue.main.async {
+                guard let avgHr, let maxHr else {
                     call.resolve(["hasData": false])
+                    return
                 }
-                return
+
+                call.resolve([
+                    "hasData": true,
+                    "avgHr": Int(round(avgHr)),
+                    "maxHr": Int(round(maxHr))
+                ])
             }
-
-            let predicate = HKQuery.predicateForSamples(
-                withStart: startDate,
-                end: endDate,
-                options: [.strictStartDate, .strictEndDate]
-            )
-
-            let query = HKSampleQuery(
-                sampleType: heartRateType,
-                predicate: predicate,
-                limit: HKObjectQueryNoLimit,
-                sortDescriptors: nil
-            ) { _, samples, _ in
-                DispatchQueue.main.async {
-                    guard let samples = samples as? [HKQuantitySample], !samples.isEmpty else {
-                        call.resolve(["hasData": false])
-                        return
-                    }
-
-                    let hrUnit = HKUnit.count().unitDivided(by: .minute())
-                    let hrValues = samples.map { $0.quantity.doubleValue(for: hrUnit) }
-
-                    let avgHr = hrValues.reduce(0, +) / Double(hrValues.count)
-                    let maxHr = hrValues.max() ?? 0
-
-                    call.resolve([
-                        "hasData": true,
-                        "avgHr": Int(round(avgHr)),
-                        "maxHr": Int(round(maxHr)),
-                        "sampleCount": hrValues.count
-                    ])
-                }
-            }
-
-            self.healthStore.execute(query)
         }
+
+        healthStore.execute(query)
     }
 
     // MARK: - Watch Workout Control (via WatchConnectivity)

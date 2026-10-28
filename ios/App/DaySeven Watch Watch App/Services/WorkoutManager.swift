@@ -351,19 +351,28 @@ class WorkoutManager: NSObject, ObservableObject {
         } catch {
             print("[WorkoutManager] endCollection error: \(error.localizedDescription)")
         }
-        let workout = try await builder.finishWorkout()
+        // Nothing after `isEnding = true` may throw. A finishWorkout throw used to escape
+        // here with isEnding and isActive still set: End stuck on "Saving..." for good, no
+        // summary, and the workout never reached DaySeven. If HealthKit can't store it, keep
+        // going with the metrics captured above so it is at least saved here.
+        var workout: HKWorkout?
+        do {
+            workout = try await builder.finishWorkout()
+        } catch {
+            print("[WorkoutManager] finishWorkout error — saving from captured metrics: \(error.localizedDescription)")
+        }
 
-        // Finalize GPS route if this was an outdoor workout
+        // Stop GPS, and finalize the route if this was an outdoor workout HealthKit stored
+        locationManager?.stopUpdatingLocation()
+        locationManager = nil
         if isOutdoorWorkout, let rb = routeBuilder, let finishedWorkout = workout {
-            locationManager?.stopUpdatingLocation()
-            locationManager = nil
             do {
                 try await rb.finishRoute(with: finishedWorkout, metadata: nil)
             } catch {
                 print("[WorkoutManager] Route finalization error: \(error.localizedDescription)")
             }
-            routeBuilder = nil
         }
+        routeBuilder = nil
         isOutdoorWorkout = false
 
         let result = WorkoutResult(
@@ -619,8 +628,19 @@ extension WorkoutManager: HKWorkoutSessionDelegate {
         _ workoutSession: HKWorkoutSession,
         didFailWithError error: Error
     ) {
+        let failedSession = ObjectIdentifier(workoutSession)
+        let reason = error.localizedDescription
         Task { @MainActor in
-            self.cancelWorkout()
+            print("[WorkoutManager] Workout session failed: \(reason)")
+            guard self.session.map(ObjectIdentifier.init) == failedSession,
+                  self.isActive, !self.isEnding else { return }
+            // End it instead of discarding it. cancelWorkout() threw away everything the
+            // user had done so far; ending publishes the result, and the summary saves it.
+            do {
+                _ = try await self.endWorkout()
+            } catch {
+                self.cancelWorkout()
+            }
         }
     }
 }

@@ -79,6 +79,9 @@ class AppViewModel: ObservableObject {
     /// Used for logging to help debug sync issues.
     private var lastKnownActivityCount: Int = 0
 
+    /// Read-modify-write attempts before giving up on a write the phone keeps racing.
+    private let maxWriteAttempts = 3
+
     init() {
         // Give PhoneConnectivityService access to WorkoutManager for remote commands
         phoneService.workoutManager = workoutManager
@@ -221,13 +224,7 @@ class AppViewModel: ObservableObject {
 
             let userData = try await firestoreData
 
-            activities = userData.activities
-            goals = userData.goals
-            streaks = userData.streaks
-            injuryModeActive = userData.injuryActive
-            injuryFrozenCats = userData.injuryFrozen
-            loadedWeekCelebrations = userData.weekCelebrations
-            personalRecords = userData.personalRecords
+            adopt(userData)
             distanceUnit = userData.distanceUnit
             SharedDefaults.writeDistanceUnit(userData.distanceUnit)
             lastKnownActivityCount = activities.count
@@ -348,6 +345,25 @@ class AppViewModel: ObservableObject {
         return (try? await healthKitService.fetchTodayDistance()) ?? 0
     }
 
+    // MARK: - Writes
+    //
+    // Every write below replaces the whole `activities` field, so each one starts from a fresh
+    // read and applies only its own change to it. They never write the watch's in-memory
+    // `activities`: after a load timeout that is often [], and PATCHing it used to wipe the
+    // user's entire history. The read's updateTime goes along as a precondition; if the phone
+    // wrote in between, Firestore refuses and we re-read and try again.
+
+    /// Takes on the server's view of the user from a fresh read.
+    private func adopt(_ data: UserDocument) {
+        activities = data.activities
+        goals = data.goals
+        streaks = data.streaks
+        injuryModeActive = data.injuryActive
+        injuryFrozenCats = data.injuryFrozen
+        loadedWeekCelebrations = data.weekCelebrations
+        personalRecords = data.personalRecords
+    }
+
     // MARK: - Save Activity (after workout ends)
 
     func saveActivity(_ activity: Activity) async {
@@ -364,41 +380,107 @@ class AppViewModel: ObservableObject {
         // Flush any previously queued offline activities first
         await flushOfflineQueue()
 
-        // Fetch fresh data from Firestore to avoid overwriting activities added from phone
-        do {
-            let freshData = try await firestoreService.getUserData(uid: uid)
-            activities = freshData.activities
-            goals = freshData.goals
-            streaks = freshData.streaks
-            injuryModeActive = freshData.injuryActive
-            injuryFrozenCats = freshData.injuryFrozen
-            loadedWeekCelebrations = freshData.weekCelebrations
-            personalRecords = freshData.personalRecords
+        for attempt in 1...maxWriteAttempts {
+            let freshData: UserDocument
+            do {
+                freshData = try await firestoreService.getUserData(uid: uid)
+            } catch {
+                // Without a fresh read there is nothing safe to write: queue the workout and let
+                // the flush merge it into a real read later.
+                print("[SaveActivity] Could not read Firestore — queueing instead of writing: \(error.localizedDescription)")
+                OfflineQueueManager.shared.enqueue(activity)
+                showQueued(activity)
+                return
+            }
+            adopt(freshData)
             print("[SaveActivity] Refreshed \(activities.count) activities from Firestore before save")
-        } catch {
-            print("[SaveActivity] Warning: Could not refresh from Firestore, using local data: \(error.localizedDescription)")
+
+            // Store previous progress for streak comparison
+            let oldProgress = weeklyProgress
+
+            let updatedActivities = [activity] + freshData.activities
+            let newProgress = calculateWeeklyProgress(activities: updatedActivities, goals: goals)
+
+            // Check for streak updates. This advances self.streaks / personalRecords; a retry
+            // re-adopts the fresh read first, so a refused attempt can't count twice.
+            let category = ActivityTypes.getActivityCategory(activity)
+            var recordUpdates: [String: Any]? = nil
+            let completed = updateStreaksIfNeeded(oldProgress: oldProgress, newProgress: newProgress, category: category, recordUpdates: &recordUpdates)
+
+            // Build weekCelebrations update if any category was just completed
+            var weekCelebrations: [String: Any]? = nil
+            if completed.lifts || completed.cardio || completed.recovery || completed.master {
+                let weekKey = currentWeekKey()
+                weekCelebrations = [
+                    "week": weekKey,
+                    "lifts": completed.lifts || newProgress.lifts.completed >= goals.liftsPerWeek,
+                    "cardio": completed.cardio || newProgress.cardio.completed >= goals.cardioPerWeek,
+                    // A recovery goal of 0 means Recovery is off — never "met"
+                    "recovery": completed.recovery || (goals.recoveryPerWeek > 0 && newProgress.recovery.completed >= goals.recoveryPerWeek),
+                    "steps": phoneWeekFlag("steps", week: weekKey),
+                    "master": phoneWeekFlag("master", week: weekKey)
+                ]
+            }
+
+            do {
+                try await firestoreService.batchSave(
+                    uid: uid,
+                    activities: updatedActivities,
+                    streaks: streaks,
+                    recordUpdates: recordUpdates,
+                    weekCelebrations: weekCelebrations,
+                    expectedUpdateTime: freshData.updateTime
+                )
+            } catch FirestoreError.preconditionFailed where attempt < maxWriteAttempts {
+                print("[SaveActivity] Document changed since the read (attempt \(attempt)) — re-reading")
+                continue
+            } catch {
+                print("[SaveActivity] FAILED — queueing for retry: \(error.localizedDescription)")
+                OfflineQueueManager.shared.enqueue(activity)
+                // Still show it (and its goal) locally; the flush and the phone settle the rest.
+                setActivities(updatedActivities)
+                celebrate(completed)
+                pushDataToWidget()
+                return
+            }
+
+            print("[SaveActivity] Successfully saved \(updatedActivities.count) activities to Firestore")
+            setActivities(updatedActivities)
+            celebrate(completed)
+
+            // Mark save time so we skip redundant dataChanged reloads
+            // (the phone will echo back a dataChanged after processing our save)
+            lastSaveTime = Date()
+            lastKnownActivityCount = updatedActivities.count
+
+            // Push updated data to widget
+            pushDataToWidget()
+
+            // Notify the iPhone to refresh its Firestore cache
+            notifyPhoneDataChanged()
+            return
         }
+    }
 
-        // Store previous progress for streak comparison
-        let oldProgress = weeklyProgress
+    /// Replaces the local activities and recomputes everything derived from them.
+    private func setActivities(_ list: [Activity]) {
+        activities = list
+        weeklyProgress = calculateWeeklyProgress(activities: list, goals: goals)
+        weeklyStats = calculateWeeklyStats(activities: list)
+    }
 
-        // Add activity to the beginning of the array
-        var updatedActivities = activities
-        updatedActivities.insert(activity, at: 0)
-        activities = updatedActivities
+    /// Shows a queued workout locally until the flush lands it. Streaks and celebrations wait
+    /// for that: without a fresh read the local list may be missing most of the week.
+    private func showQueued(_ activity: Activity) {
+        if !activities.contains(where: { $0.id == activity.id }) {
+            setActivities([activity] + activities)
+        }
+        pushDataToWidget()
+    }
 
-        // Recalculate progress
-        let newProgress = calculateWeeklyProgress(activities: updatedActivities, goals: goals)
-        weeklyProgress = newProgress
-        weeklyStats = calculateWeeklyStats(activities: updatedActivities)
-
-        // Check for streak updates
-        let category = ActivityTypes.getActivityCategory(activity)
-        var recordUpdates: [String: Any]? = nil
-        let completed = updateStreaksIfNeeded(oldProgress: oldProgress, newProgress: newProgress, category: category, recordUpdates: &recordUpdates)
-
-        // Trigger watch celebrations for completed goals (foreground — user just logged from watch)
-        // Master streak overrides individual category celebrations
+    /// Plays the celebrations for goals a save just completed. Master overrides the
+    /// individual categories (foreground — the user just logged from the watch).
+    private func celebrate(_ completed: (lifts: Bool, cardio: Bool, recovery: Bool, master: Bool)) {
         if completed.master {
             celebrationManager.triggerCelebration(.master, streakCount: streaks.master, isBackground: false)
         } else {
@@ -411,49 +493,6 @@ class AppViewModel: ObservableObject {
             if completed.recovery {
                 celebrationManager.triggerCelebration(.recovery, streakCount: streaks.recovery, isBackground: false)
             }
-        }
-
-        // Build weekCelebrations update if any category was just completed
-        var weekCelebrations: [String: Any]? = nil
-        if completed.lifts || completed.cardio || completed.recovery || completed.master {
-            let weekKey = currentWeekKey()
-            weekCelebrations = [
-                "week": weekKey,
-                "lifts": completed.lifts || newProgress.lifts.completed >= goals.liftsPerWeek,
-                "cardio": completed.cardio || newProgress.cardio.completed >= goals.cardioPerWeek,
-                // A recovery goal of 0 means Recovery is off — never "met"
-                "recovery": completed.recovery || (goals.recoveryPerWeek > 0 && newProgress.recovery.completed >= goals.recoveryPerWeek),
-                "steps": phoneWeekFlag("steps", week: weekKey),
-                "master": phoneWeekFlag("master", week: weekKey)
-            ]
-        }
-
-        // Save to Firestore
-        do {
-            try await firestoreService.batchSave(
-                uid: uid,
-                activities: updatedActivities,
-                streaks: streaks,
-                recordUpdates: recordUpdates,
-                weekCelebrations: weekCelebrations
-            )
-            print("[SaveActivity] Successfully saved \(updatedActivities.count) activities to Firestore")
-
-            // Mark save time so we skip redundant dataChanged reloads
-            // (the phone will echo back a dataChanged after processing our save)
-            lastSaveTime = Date()
-            lastKnownActivityCount = updatedActivities.count
-
-            // Push updated data to widget
-            pushDataToWidget()
-
-            // Notify the iPhone to refresh its Firestore cache
-            notifyPhoneDataChanged()
-        } catch {
-            print("[SaveActivity] FAILED — queueing for retry: \(error.localizedDescription)")
-            OfflineQueueManager.shared.enqueue(activity)
-            // Still push to widget so local state is reflected immediately
-            pushDataToWidget()
         }
     }
 
@@ -468,34 +507,51 @@ class AppViewModel: ObservableObject {
             return
         }
 
-        guard let index = activities.firstIndex(where: { $0.id == activityId }) else {
-            print("[UpdateActivity] Activity not found: \(activityId)")
-            return
-        }
+        for attempt in 1...maxWriteAttempts {
+            let freshData: UserDocument
+            do {
+                freshData = try await firestoreService.getUserData(uid: uid)
+            } catch {
+                print("[UpdateActivity] Could not read Firestore — not writing: \(error.localizedDescription)")
+                return
+            }
+            adopt(freshData)
 
-        // Apply updates to the activity
-        var updatedActivity = activities[index]
-        updates(&updatedActivity)
-        activities[index] = updatedActivity
+            // Merge by id into the fresh list: only this one activity changes.
+            var updatedActivities = freshData.activities
+            guard let index = updatedActivities.firstIndex(where: { $0.id == activityId }) else {
+                print("[UpdateActivity] Activity not in Firestore: \(activityId)")
+                setActivities(updatedActivities)
+                return
+            }
+            updates(&updatedActivities[index])
 
-        // Save to Firestore using batchSave (always uses field masks to prevent wiping other fields)
-        do {
-            try await firestoreService.batchSave(
-                uid: uid,
-                activities: activities,
-                streaks: streaks,
-                recordUpdates: nil
-            )
+            // Save to Firestore using batchSave (always uses field masks to prevent wiping other fields)
+            do {
+                try await firestoreService.batchSave(
+                    uid: uid,
+                    activities: updatedActivities,
+                    streaks: streaks,
+                    recordUpdates: nil,
+                    expectedUpdateTime: freshData.updateTime
+                )
+            } catch FirestoreError.preconditionFailed where attempt < maxWriteAttempts {
+                print("[UpdateActivity] Document changed since the read (attempt \(attempt)) — re-reading")
+                continue
+            } catch {
+                print("[UpdateActivity] FAILED: \(error.localizedDescription)")
+                return
+            }
             print("[UpdateActivity] Successfully updated activity \(activityId)")
 
+            setActivities(updatedActivities)
             lastSaveTime = Date()
-            lastKnownActivityCount = activities.count
+            lastKnownActivityCount = updatedActivities.count
             pushDataToWidget()
 
             // Notify the iPhone to refresh
             notifyPhoneDataChanged()
-        } catch {
-            print("[UpdateActivity] FAILED: \(error.localizedDescription)")
+            return
         }
     }
 
@@ -517,55 +573,58 @@ class AppViewModel: ObservableObject {
         let pending = queue.pendingActivities
         print("[OfflineFlush] Flushing \(pending.count) pending activities")
 
-        do {
-            // Fetch fresh state from Firestore
-            let freshData = try await firestoreService.getUserData(uid: uid)
-            var mergedActivities = freshData.activities
+        for attempt in 1...maxWriteAttempts {
+            do {
+                // Fetch fresh state from Firestore
+                let freshData = try await firestoreService.getUserData(uid: uid)
+                var mergedActivities = freshData.activities
 
-            // Merge: insert pending activities that aren't already in Firestore
-            var addedCount = 0
-            for activity in pending {
-                if !mergedActivities.contains(where: { $0.id == activity.id }) {
-                    mergedActivities.insert(activity, at: 0)
-                    addedCount += 1
+                // Merge: insert pending activities that aren't already in Firestore
+                var addedCount = 0
+                for activity in pending {
+                    if !mergedActivities.contains(where: { $0.id == activity.id }) {
+                        mergedActivities.insert(activity, at: 0)
+                        addedCount += 1
+                    }
                 }
-            }
 
-            guard addedCount > 0 else {
+                guard addedCount > 0 else {
+                    queue.clearAll()
+                    print("[OfflineFlush] All pending already synced — cleared queue")
+                    return
+                }
+
+                // Save using batchSave (always uses field masks to prevent wiping other fields)
+                try await firestoreService.batchSave(
+                    uid: uid,
+                    activities: mergedActivities,
+                    streaks: freshData.streaks,
+                    recordUpdates: nil,
+                    expectedUpdateTime: freshData.updateTime
+                )
+
                 queue.clearAll()
-                print("[OfflineFlush] All pending already synced — cleared queue")
+
+                // Update local state
+                adopt(freshData)
+                setActivities(mergedActivities)
+                pushDataToWidget()
+
+                lastSaveTime = Date()
+                lastKnownActivityCount = mergedActivities.count
+
+                // Notify the phone to refresh and reconcile streaks
+                notifyPhoneDataChanged()
+
+                print("[OfflineFlush] Successfully flushed \(addedCount) activities")
+                return
+            } catch FirestoreError.preconditionFailed where attempt < maxWriteAttempts {
+                print("[OfflineFlush] Document changed since the read (attempt \(attempt)) — re-reading")
+                continue
+            } catch {
+                print("[OfflineFlush] Failed — will retry later: \(error.localizedDescription)")
                 return
             }
-
-            // Save using batchSave (always uses field masks to prevent wiping other fields)
-            try await firestoreService.batchSave(
-                uid: uid,
-                activities: mergedActivities,
-                streaks: freshData.streaks,
-                recordUpdates: nil
-            )
-
-            queue.clearAll()
-
-            // Update local state
-            activities = mergedActivities
-            goals = freshData.goals
-            streaks = freshData.streaks
-            loadedWeekCelebrations = freshData.weekCelebrations
-            personalRecords = freshData.personalRecords
-            weeklyProgress = calculateWeeklyProgress(activities: mergedActivities, goals: freshData.goals)
-            weeklyStats = calculateWeeklyStats(activities: mergedActivities)
-            pushDataToWidget()
-
-            lastSaveTime = Date()
-            lastKnownActivityCount = mergedActivities.count
-
-            // Notify the phone to refresh and reconcile streaks
-            notifyPhoneDataChanged()
-
-            print("[OfflineFlush] Successfully flushed \(addedCount) activities")
-        } catch {
-            print("[OfflineFlush] Failed — will retry later: \(error.localizedDescription)")
         }
     }
 
@@ -580,70 +639,83 @@ class AppViewModel: ObservableObject {
             return
         }
 
-        // Capture old progress before deletion
-        let oldProgress = weeklyProgress
-
-        // Remove from local array
-        var updatedActivities = activities
-        updatedActivities.removeAll { $0.id == activityId }
-        activities = updatedActivities
-
-        // Recalculate progress
-        let newProgress = calculateWeeklyProgress(activities: updatedActivities, goals: goals)
-        weeklyProgress = newProgress
-        weeklyStats = calculateWeeklyStats(activities: updatedActivities)
-
-        // Check if deletion drops any category below goal and decrement streaks
-        var weekCelebrations: [String: Any]? = nil
-        let liftsDropped = oldProgress.lifts.completed >= goals.liftsPerWeek && newProgress.lifts.completed < goals.liftsPerWeek
-        let cardioDropped = oldProgress.cardio.completed >= goals.cardioPerWeek && newProgress.cardio.completed < goals.cardioPerWeek
-        let recoveryDropped = oldProgress.recovery.completed >= goals.recoveryPerWeek && newProgress.recovery.completed < goals.recoveryPerWeek
-        let wasAllMet = oldProgress.allGoalsMet
-
-        if liftsDropped || cardioDropped || recoveryDropped {
-            if liftsDropped {
-                streaks.lifts = max(0, streaks.lifts - 1)
-                celebrationManager.clearCelebration(.strength)
+        for attempt in 1...maxWriteAttempts {
+            let freshData: UserDocument
+            do {
+                freshData = try await firestoreService.getUserData(uid: uid)
+            } catch {
+                print("[DeleteActivity] Could not read Firestore — not writing: \(error.localizedDescription)")
+                return
             }
-            if cardioDropped {
-                streaks.cardio = max(0, streaks.cardio - 1)
-                celebrationManager.clearCelebration(.cardio)
+            adopt(freshData)
+
+            guard freshData.activities.contains(where: { $0.id == activityId }) else {
+                print("[DeleteActivity] Activity not in Firestore (already gone): \(activityId)")
+                setActivities(freshData.activities)
+                pushDataToWidget()
+                return
             }
-            if recoveryDropped {
-                streaks.recovery = max(0, streaks.recovery - 1)
-                celebrationManager.clearCelebration(.recovery)
+
+            // Progress before and after, both from the fresh read
+            let oldProgress = calculateWeeklyProgress(activities: freshData.activities, goals: goals)
+            let updatedActivities = freshData.activities.filter { $0.id != activityId }
+            let newProgress = calculateWeeklyProgress(activities: updatedActivities, goals: goals)
+
+            // Check if deletion drops any category below goal and decrement streaks.
+            // Like the save, this edits self.streaks, which a retry re-adopts from the read.
+            var weekCelebrations: [String: Any]? = nil
+            let liftsDropped = oldProgress.lifts.completed >= goals.liftsPerWeek && newProgress.lifts.completed < goals.liftsPerWeek
+            let cardioDropped = oldProgress.cardio.completed >= goals.cardioPerWeek && newProgress.cardio.completed < goals.cardioPerWeek
+            let recoveryDropped = oldProgress.recovery.completed >= goals.recoveryPerWeek && newProgress.recovery.completed < goals.recoveryPerWeek
+            let wasAllMet = oldProgress.allGoalsMet
+
+            if liftsDropped || cardioDropped || recoveryDropped {
+                if liftsDropped { streaks.lifts = max(0, streaks.lifts - 1) }
+                if cardioDropped { streaks.cardio = max(0, streaks.cardio - 1) }
+                if recoveryDropped { streaks.recovery = max(0, streaks.recovery - 1) }
+
+                // Build weekCelebrations clearing the flags for dropped categories
+                let weekKey = currentWeekKey()
+                weekCelebrations = [
+                    "week": weekKey,
+                    "lifts": !liftsDropped && newProgress.lifts.completed >= goals.liftsPerWeek,
+                    "cardio": !cardioDropped && newProgress.cardio.completed >= goals.cardioPerWeek,
+                    "recovery": !recoveryDropped && goals.recoveryPerWeek > 0 && newProgress.recovery.completed >= goals.recoveryPerWeek,
+                    "steps": phoneWeekFlag("steps", week: weekKey),
+                    // Strength and Cardio are part of every Winning Streak rule; the phone
+                    // re-judges the week (and its recovery/steps parts) on its next recalculation.
+                    "master": (liftsDropped || cardioDropped) ? false : phoneWeekFlag("master", week: weekKey)
+                ]
             }
+
+            do {
+                try await firestoreService.batchSave(
+                    uid: uid,
+                    activities: updatedActivities,
+                    streaks: streaks,
+                    recordUpdates: nil,
+                    weekCelebrations: weekCelebrations,
+                    expectedUpdateTime: freshData.updateTime
+                )
+            } catch FirestoreError.preconditionFailed where attempt < maxWriteAttempts {
+                print("[DeleteActivity] Document changed since the read (attempt \(attempt)) — re-reading")
+                continue
+            } catch {
+                print("[DeleteActivity] FAILED: \(error.localizedDescription)")
+                return
+            }
+            print("[DeleteActivity] Successfully removed activity and saved \(updatedActivities.count) activities")
+
+            if liftsDropped { celebrationManager.clearCelebration(.strength) }
+            if cardioDropped { celebrationManager.clearCelebration(.cardio) }
+            if recoveryDropped { celebrationManager.clearCelebration(.recovery) }
             // The Winning Streak count itself is the phone's (it needs weekly steps); the
             // watch only clears its own celebration flag.
-            if wasAllMet {
+            if (liftsDropped || cardioDropped || recoveryDropped) && wasAllMet {
                 celebrationManager.clearCelebration(.master)
             }
 
-            // Build weekCelebrations clearing the flags for dropped categories
-            let weekKey = currentWeekKey()
-            weekCelebrations = [
-                "week": weekKey,
-                "lifts": !liftsDropped && newProgress.lifts.completed >= goals.liftsPerWeek,
-                "cardio": !cardioDropped && newProgress.cardio.completed >= goals.cardioPerWeek,
-                "recovery": !recoveryDropped && goals.recoveryPerWeek > 0 && newProgress.recovery.completed >= goals.recoveryPerWeek,
-                "steps": phoneWeekFlag("steps", week: weekKey),
-                // Strength and Cardio are part of every Winning Streak rule; the phone
-                // re-judges the week (and its recovery/steps parts) on its next recalculation.
-                "master": (liftsDropped || cardioDropped) ? false : phoneWeekFlag("master", week: weekKey)
-            ]
-        }
-
-        // Save to Firestore
-        do {
-            try await firestoreService.batchSave(
-                uid: uid,
-                activities: updatedActivities,
-                streaks: streaks,
-                recordUpdates: nil,
-                weekCelebrations: weekCelebrations
-            )
-            print("[DeleteActivity] Successfully removed activity and saved \(updatedActivities.count) activities")
-
+            setActivities(updatedActivities)
             lastSaveTime = Date()
             lastKnownActivityCount = updatedActivities.count
 
@@ -652,8 +724,7 @@ class AppViewModel: ObservableObject {
 
             // Notify the iPhone to refresh
             notifyPhoneDataChanged()
-        } catch {
-            print("[DeleteActivity] FAILED: \(error.localizedDescription)")
+            return
         }
     }
 

@@ -1329,35 +1329,35 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    /// Total of `type` since `startDate`, merged across sources. A cumulative-sum
+    /// statistics query lets HealthKit drop the overlap when the iPhone and the
+    /// Watch both record the same minutes; summing raw samples counted them twice.
+    /// No `.strictStartDate`, so a sample straddling the start is prorated rather
+    /// than dropped.
+    private func cumulativeSum(of type: HKQuantityType, unit: HKUnit, since startDate: Date, completion: @escaping (Double) -> Void) {
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: nil, options: [])
+        let query = HKStatisticsQuery(quantityType: type, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, statistics, _ in
+            guard let total = statistics?.sumQuantity()?.doubleValue(for: unit) else { return }
+            completion(total)
+        }
+        healthStore.execute(query)
+    }
+
     private func fetchCaloriesSamples(from startDate: Date) {
         guard let caloriesType = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned) else { return }
 
-        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: nil, options: .strictStartDate)
-        let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+        cumulativeSum(of: caloriesType, unit: .kilocalorie(), since: startDate) { [weak self] totalCalories in
+            guard totalCalories > 0 else { return }
 
-        let query = HKSampleQuery(sampleType: caloriesType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) { [weak self] _, samples, error in
-            guard let self = self, error == nil, let samples = samples as? [HKQuantitySample] else { return }
-
-            let kcalUnit = HKUnit.kilocalorie()
-            var totalCalories: Double = 0
-
-            for sample in samples {
-                totalCalories += sample.quantity.doubleValue(for: kcalUnit)
-            }
-
-            if totalCalories > 0 {
+            DispatchQueue.main.async {
+                guard let self = self else { return }
                 self.accumulatedCalories = totalCalories
-
-                DispatchQueue.main.async {
-                    self.notifyListeners("metricsUpdated", data: [
-                        "type": "calories",
-                        "calories": Int(round(totalCalories))
-                    ])
-                }
+                self.notifyListeners("metricsUpdated", data: [
+                    "type": "calories",
+                    "calories": Int(round(totalCalories))
+                ])
             }
         }
-
-        healthStore.execute(query)
     }
 
     private func startDistanceObserver(from startDate: Date) {
@@ -1389,25 +1389,16 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
     private func fetchDistanceSamples(from startDate: Date) {
         guard let distanceType = HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning) else { return }
 
-        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: nil, options: .strictStartDate)
-        let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+        // Merged across sources like calories: this value pre-fills the finish
+        // modal and is written back to HealthKit with the workout, so a doubled
+        // iPhone + Watch distance would be saved as fact.
+        cumulativeSum(of: distanceType, unit: .meter(), since: startDate) { [weak self] totalDistance in
+            guard totalDistance > 0 else { return }
 
-        let query = HKSampleQuery(sampleType: distanceType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) { [weak self] _, samples, error in
-            guard let self = self, error == nil, let samples = samples as? [HKQuantitySample] else { return }
-
-            let meterUnit = HKUnit.meter()
-            var totalDistance: Double = 0
-
-            for sample in samples {
-                totalDistance += sample.quantity.doubleValue(for: meterUnit)
-            }
-
-            if totalDistance > 0 {
-                self.accumulatedDistance = totalDistance
+            DispatchQueue.main.async {
+                self?.accumulatedDistance = totalDistance
             }
         }
-
-        healthStore.execute(query)
     }
 
     // MARK: - Heart Rate Query

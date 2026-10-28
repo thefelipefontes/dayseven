@@ -221,18 +221,10 @@ class CelebrationManager: ObservableObject {
     // MARK: - Date Helpers
 
     private func todayDateString() -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: Date())
+        formatDateString(Date())
     }
 
     private func currentWeekKey() -> String {
-        let calendar = Calendar.current
-        let today = Date()
-        let weekday = calendar.component(.weekday, from: today) // 1 = Sunday
-        let startOfWeek = calendar.date(byAdding: .day, value: -(weekday - 1), to: calendar.startOfDay(for: today))!
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: startOfWeek)
+        formatDateString(startOfCurrentWeek())
     }
 }

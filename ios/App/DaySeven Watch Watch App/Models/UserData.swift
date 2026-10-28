@@ -176,13 +176,8 @@ struct Activity: Codable, Identifiable {
         healthKitUUID: String? = nil,
         countToward: String? = nil
     ) -> Activity {
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        let dateString = dateFormatter.string(from: date)
-
-        let timeFormatter = DateFormatter()
-        timeFormatter.dateFormat = "h:mm a"
-        let timeString = timeFormatter.string(from: date)
+        let dateString = formatDateString(date)
+        let timeString = formatTimeString(date)
 
         return Activity(
             id: .newID(),

@@ -340,6 +340,11 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
             return
         }
 
+        guard !contextCommandHandled(timestamp) else {
+            print("[PhoneConnect] Ignoring pending action '\(action)' — already handled")
+            return
+        }
+
         print("[PhoneConnect] Processing pending context action: \(action) (age: \(Int(age))s)")
 
         switch action {
@@ -353,6 +358,8 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
                     print("[PhoneConnect] Pending endWorkout: no active workout")
                     return
                 }
+                guard self.isForCurrentWorkout(timestamp, wm) else { return }
+                self.markContextCommandHandled(timestamp)
                 do {
                     // The phone already saved this workout when the user tapped Save there.
                     let _ = try await wm.endWorkout(endedFromPhone: true)
@@ -365,6 +372,8 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
         case "cancelWorkout":
             guard let wm = workoutManager else { return }
             Task { @MainActor in
+                guard wm.isActive, self.isForCurrentWorkout(timestamp, wm) else { return }
+                self.markContextCommandHandled(timestamp)
                 wm.cancelWorkout()
                 self.remoteWorkoutEnded = true
                 print("[PhoneConnect] Pending cancelWorkout: workout cancelled via context")
@@ -380,6 +389,8 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
                     print("[PhoneConnect] Pending pauseWorkout: workout not active or already paused")
                     return
                 }
+                guard self.isForCurrentWorkout(timestamp, wm) else { return }
+                self.markContextCommandHandled(timestamp)
                 wm.pause()
                 print("[PhoneConnect] Pending pauseWorkout: workout paused via context")
             }
@@ -390,11 +401,14 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
                     print("[PhoneConnect] Pending resumeWorkout: workout not active or not paused")
                     return
                 }
+                guard self.isForCurrentWorkout(timestamp, wm) else { return }
+                self.markContextCommandHandled(timestamp)
                 wm.resume()
                 print("[PhoneConnect] Pending resumeWorkout: workout resumed via context")
             }
         case "dataChanged":
             print("[PhoneConnect] Pending dataChanged: flagging for reload")
+            markContextCommandHandled(timestamp)
             DispatchQueue.main.async {
                 self.dataChangedFlag = true
             }
@@ -404,6 +418,32 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
 
         // Clear the pending action after processing
         clearPendingContextCommand()
+    }
+
+    // The phone writes each command into its whole applicationContext, and that context is
+    // handed to the watch again on every session activation and with every later push (a
+    // distance-unit change, say). So one command can arrive several times within its
+    // 10-minute window. A replayed endWorkout ended whatever workout was running by then —
+    // one the phone never saw, now ended as phone-saved, so nobody saved it.
+
+    private static let lastHandledContextCommandKey = "lastHandledContextCommandTimestamp"
+
+    private func contextCommandHandled(_ timestamp: TimeInterval) -> Bool {
+        timestamp <= UserDefaults.standard.double(forKey: Self.lastHandledContextCommandKey)
+    }
+
+    private func markContextCommandHandled(_ timestamp: TimeInterval) {
+        UserDefaults.standard.set(timestamp, forKey: Self.lastHandledContextCommandKey)
+    }
+
+    /// A workout command queued before the running workout began was meant for an earlier one.
+    @MainActor
+    private func isForCurrentWorkout(_ timestamp: TimeInterval, _ wm: WorkoutManager) -> Bool {
+        guard let start = wm.workoutStartDate, timestamp >= start.timeIntervalSince1970 else {
+            print("[PhoneConnect] Ignoring pending command from before this workout started")
+            return false
+        }
+        return true
     }
 
     /// Clear the pending action from applicationContext after it's been processed

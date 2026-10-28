@@ -132,6 +132,9 @@ class WorkoutManager: NSObject, ObservableObject {
     private var accumulatedPauseTime: TimeInterval = 0
     private var lastPauseDate: Date?
 
+    /// When the running workout started (nil when none is running).
+    var workoutStartDate: Date? { startDate }
+
     /// Total paused time so far, including any in-progress pause. Used so the phone
     /// app can compute elapsed locally (now - startDate - effectivePauseTime) and
     /// stay smooth like the Live Activity instead of lagging behind WCSession polls.

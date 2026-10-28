@@ -566,6 +566,12 @@ const ProfilePhoto = React.memo(({ photoURL, displayName, size = 40 }) => (
 ));
 
 // Memoized ActivityCard - only re-renders when its specific props change
+// Stable empty fallbacks for card props: a fresh [] / {} on every render fails
+// MemoizedActivityCard's identity check, so every card re-rendered on each feed render
+// (every touchmove of a pull-to-refresh, for one).
+const EMPTY_ARRAY = [];
+const EMPTY_OBJECT = {};
+
 const MemoizedActivityCard = React.memo(({
   activity,
   activityKey,
@@ -3269,9 +3275,9 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               activity={activity}
               activityKey={key}
               onPhotoFullscreenChange={(isOpen) => handlePhotoFullscreenChange(key, isOpen)}
-              reactions={activityReactions[key] || []}
-              comments={activityComments[key] || []}
-              commentReplies={commentReplies[key] || {}}
+              reactions={activityReactions[key] || EMPTY_ARRAY}
+              comments={activityComments[key] || EMPTY_ARRAY}
+              commentReplies={commentReplies[key] || EMPTY_OBJECT}
               showComments={expandedComments[key] || false}
               challengeMeta={challengeMeta}
               user={user}

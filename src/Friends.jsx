@@ -695,6 +695,7 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
         <FriendProfileCard
           friend={selectedProfile}
           onClose={() => setSelectedProfile(null)}
+          statsVisible={isFriend(selectedProfile.uid)}
           actions={(() => {
             const closeAfter = (fn) => () => { fn?.(); setSelectedProfile(null); };
             if (isFriend(selectedProfile.uid)) {

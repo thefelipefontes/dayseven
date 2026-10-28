@@ -44,6 +44,10 @@ export const CHALLENGE_WINDOW_HOURS = [24, 48, 72];
 // bounds how long the invite stays open so the same-day-ish kineticism is preserved.
 export const ACCEPT_WINDOW_HOURS = 8;
 
+// Most friends one challenge can name. firestore.rules checks each one is a friend, and
+// rules can make only so many lookups per write.
+export const MAX_CHALLENGE_RECIPIENTS = 10;
+
 // Challenges are same-day only — activity must be logged for today (user's local date).
 // Keeps the feature kinetic ("I just did this, your turn") and avoids stale invites.
 
@@ -328,6 +332,9 @@ export async function createChallenge({ challengerUid, challengerName, friendUid
   if (!CHALLENGE_WINDOW_HOURS.includes(windowHours)) {
     return { error: 'invalid_window' };
   }
+  if (targets.length > MAX_CHALLENGE_RECIPIENTS) {
+    return { error: 'too_many_recipients' };
+  }
 
   const matchRule = buildMatchRule(activity, metric);
   if (!matchRule) {
@@ -357,7 +364,7 @@ export async function createChallenge({ challengerUid, challengerName, friendUid
     type: isGroup ? 'group' : '1v1',
     mode: 'all_complete',
     challengerUid,
-    challengerName: challengerName || '',
+    challengerName: (challengerName || '').slice(0, 100),
     title: cleanTitle,
     participantUids: [challengerUid, ...targets],
     participants,

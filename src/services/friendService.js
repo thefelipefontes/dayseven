@@ -9,7 +9,8 @@ import {
   where,
   orderBy,
   limit,
-  serverTimestamp
+  serverTimestamp,
+  writeBatch
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Capacitor } from '@capacitor/core';
@@ -70,6 +71,34 @@ const withRetry = async (fn, maxRetries = 2, delayMs = 500) => {
   throw lastError;
 };
 
+// Name, username and photo of any user, from publicProfiles/{uid} — the copy of those
+// fields a Cloud Function keeps for everyone signed in to read. A user doc itself is only
+// readable by its owner and their friends. Falls back to the user doc for a profile not
+// mirrored yet (that read succeeds only for friends, and only the shape matters here).
+async function getPublicProfile(uid) {
+  const pick = (data) => ({
+    uid,
+    username: data?.username,
+    displayName: data?.displayName,
+    photoURL: data?.photoURL,
+  });
+  try {
+    if (isNative) {
+      const { snapshot } = await FirebaseFirestore.getDocument({ reference: `publicProfiles/${uid}` });
+      if (snapshot?.data) return pick(snapshot.data);
+      const { snapshot: userSnapshot } = await FirebaseFirestore.getDocument({ reference: `users/${uid}` });
+      return pick(userSnapshot?.data);
+    }
+    const publicDoc = await withTimeout(getDoc(doc(db, 'publicProfiles', uid)));
+    if (publicDoc.exists()) return pick(publicDoc.data());
+    const userDoc = await withTimeout(getDoc(doc(db, 'users', uid)));
+    return pick(userDoc.exists() ? userDoc.data() : null);
+  } catch (error) {
+    // One unreadable profile must not blank the whole list it's part of.
+    return pick(null);
+  }
+}
+
 export async function searchUsers(searchQuery, currentUid) {
   if (!searchQuery || searchQuery.length < 1) return [];
 
@@ -79,7 +108,7 @@ export async function searchUsers(searchQuery, currentUid) {
     if (isNative) {
       // Use native Firestore with composite query
       const { snapshots } = await FirebaseFirestore.getCollection({
-        reference: 'users',
+        reference: 'publicProfiles',
         compositeFilter: {
           type: 'and',
           queryConstraints: [
@@ -107,7 +136,7 @@ export async function searchUsers(searchQuery, currentUid) {
       return users;
     } else {
       // Use web Firestore
-      const usersRef = collection(db, 'users');
+      const usersRef = collection(db, 'publicProfiles');
       const q = query(
         usersRef,
         where('username', '>=', lowerQuery),
@@ -147,26 +176,30 @@ export async function sendFriendRequest(fromUid, toUid) {
         return { error: 'already_friends' };
       }
 
-      // Check for existing requests - get all pending requests and filter
-      const { snapshots: allRequests } = await FirebaseFirestore.getCollection({
-        reference: 'friendRequests',
-        compositeFilter: {
-          type: 'and',
-          queryConstraints: [
-            { type: 'where', fieldPath: 'status', opStr: '==', value: 'pending' }
-          ]
-        }
-      });
+      // Check for existing pending requests between the two of us, one direction per query
+      // (the rules only let a user read requests they're a side of).
+      const pendingBetween = async (from, to) => {
+        const { snapshots } = await FirebaseFirestore.getCollection({
+          reference: 'friendRequests',
+          compositeFilter: {
+            type: 'and',
+            queryConstraints: [
+              { type: 'where', fieldPath: 'fromUid', opStr: '==', value: from },
+              { type: 'where', fieldPath: 'toUid', opStr: '==', value: to },
+              { type: 'where', fieldPath: 'status', opStr: '==', value: 'pending' }
+            ]
+          }
+        });
+        return (snapshots || []).length > 0;
+      };
 
       // Check for request from current user to target
-      const existingTo = allRequests?.find(s => s.data?.fromUid === fromUid && s.data?.toUid === toUid);
-      if (existingTo) {
+      if (await pendingBetween(fromUid, toUid)) {
         return { error: 'request_already_sent' };
       }
 
       // Check for request from target to current user
-      const existingFrom = allRequests?.find(s => s.data?.fromUid === toUid && s.data?.toUid === fromUid);
-      if (existingFrom) {
+      if (await pendingBetween(toUid, fromUid)) {
         return { error: 'request_already_received' };
       }
 
@@ -268,20 +301,10 @@ export async function getFriendRequests(uid, forceRefresh = false) {
         const requestData = snap.data;
         if (!requestData) return null;
 
-        const { snapshot: senderSnapshot } = await FirebaseFirestore.getDocument({
-          reference: `users/${requestData.fromUid}`
-        });
-        const senderData = senderSnapshot?.data || {};
-
         return {
           id: snap.id,
           ...requestData,
-          fromUser: {
-            uid: requestData.fromUid,
-            username: senderData.username,
-            displayName: senderData.displayName,
-            photoURL: senderData.photoURL
-          }
+          fromUser: await getPublicProfile(requestData.fromUid)
         };
       });
 
@@ -301,19 +324,11 @@ export async function getFriendRequests(uid, forceRefresh = false) {
       // Batch fetch all sender profiles in parallel for speed
       const requestPromises = querySnapshot.docs.map(async (docSnapshot) => {
         const requestData = docSnapshot.data();
-        const senderRef = doc(db, 'users', requestData.fromUid);
-        const senderDoc = await withTimeout(getDoc(senderRef));
-        const senderData = senderDoc.exists() ? senderDoc.data() : {};
 
         return {
           id: docSnapshot.id,
           ...requestData,
-          fromUser: {
-            uid: requestData.fromUid,
-            username: senderData.username,
-            displayName: senderData.displayName,
-            photoURL: senderData.photoURL
-          }
+          fromUser: await getPublicProfile(requestData.fromUid)
         };
       });
 
@@ -361,20 +376,10 @@ export async function getSentRequests(uid, forceRefresh = false) {
         const requestData = snap.data;
         if (!requestData) return null;
 
-        const { snapshot: recipientSnapshot } = await FirebaseFirestore.getDocument({
-          reference: `users/${requestData.toUid}`
-        });
-        const recipientData = recipientSnapshot?.data || {};
-
         return {
           id: snap.id,
           ...requestData,
-          toUser: {
-            uid: requestData.toUid,
-            username: recipientData.username,
-            displayName: recipientData.displayName,
-            photoURL: recipientData.photoURL
-          }
+          toUser: await getPublicProfile(requestData.toUid)
         };
       });
 
@@ -393,19 +398,11 @@ export async function getSentRequests(uid, forceRefresh = false) {
       // Batch fetch all recipient profiles in parallel for speed
       const requestPromises = querySnapshot.docs.map(async (docSnapshot) => {
         const requestData = docSnapshot.data();
-        const recipientRef = doc(db, 'users', requestData.toUid);
-        const recipientDoc = await withTimeout(getDoc(recipientRef));
-        const recipientData = recipientDoc.exists() ? recipientDoc.data() : {};
 
         return {
           id: docSnapshot.id,
           ...requestData,
-          toUser: {
-            uid: requestData.toUid,
-            username: recipientData.username,
-            displayName: recipientData.displayName,
-            photoURL: recipientData.photoURL
-          }
+          toUser: await getPublicProfile(requestData.toUid)
         };
       });
 
@@ -427,47 +424,33 @@ export async function getSentRequests(uid, forceRefresh = false) {
   }
 }
 
+// Accepting is one batch: the request flips to accepted and both friend docs are written
+// together, each naming the request. The rules allow friend docs only in that batch.
 export async function acceptFriendRequest(requestId, fromUid, toUid) {
   try {
     if (isNative) {
-      // Update request status
-      await FirebaseFirestore.updateDocument({
-        reference: `friendRequests/${requestId}`,
-        data: { status: 'accepted' }
-      });
-
-      // Add to both users' friends subcollections
-      await FirebaseFirestore.setDocument({
-        reference: `users/${fromUid}/friends/${toUid}`,
-        data: {
-          friendUid: toUid,
-          addedAt: new Date().toISOString()
-        }
-      });
-
-      await FirebaseFirestore.setDocument({
-        reference: `users/${toUid}/friends/${fromUid}`,
-        data: {
-          friendUid: fromUid,
-          addedAt: new Date().toISOString()
-        }
+      const addedAt = new Date().toISOString();
+      await FirebaseFirestore.writeBatch({
+        operations: [
+          { type: 'update', reference: `friendRequests/${requestId}`, data: { status: 'accepted' } },
+          { type: 'set', reference: `users/${fromUid}/friends/${toUid}`, data: { friendUid: toUid, addedAt, requestId } },
+          { type: 'set', reference: `users/${toUid}/friends/${fromUid}`, data: { friendUid: fromUid, addedAt, requestId } },
+        ]
       });
     } else {
-      const requestRef = doc(db, 'friendRequests', requestId);
-      await withTimeout(setDoc(requestRef, { status: 'accepted' }, { merge: true }));
-
-      const fromFriendRef = doc(db, 'users', fromUid, 'friends', toUid);
-      const toFriendRef = doc(db, 'users', toUid, 'friends', fromUid);
-
-      await withTimeout(setDoc(fromFriendRef, {
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'friendRequests', requestId), { status: 'accepted' });
+      batch.set(doc(db, 'users', fromUid, 'friends', toUid), {
         friendUid: toUid,
-        addedAt: serverTimestamp()
-      }));
-
-      await withTimeout(setDoc(toFriendRef, {
+        addedAt: serverTimestamp(),
+        requestId
+      });
+      batch.set(doc(db, 'users', toUid, 'friends', fromUid), {
         friendUid: fromUid,
-        addedAt: serverTimestamp()
-      }));
+        addedAt: serverTimestamp(),
+        requestId
+      });
+      await withTimeout(batch.commit());
     }
 
     // Clear cache for both users so fresh data is fetched
@@ -513,21 +496,14 @@ export async function getFriends(uid, forceRefresh = false) {
         reference: `users/${uid}/friends`
       });
 
-      // Batch fetch all friend profiles in parallel for speed
+      // Batch fetch all friend profiles in parallel for speed. The public profile is all this
+      // list shows, and it's a fraction of the user doc (which carries every activity).
       const friendPromises = (snapshots || []).map(async (snap) => {
         const friendData = snap.data;
         if (!friendData) return null;
 
-        const { snapshot: profileSnapshot } = await FirebaseFirestore.getDocument({
-          reference: `users/${friendData.friendUid}`
-        });
-        const friendProfile = profileSnapshot?.data || {};
-
         return {
-          uid: friendData.friendUid,
-          username: friendProfile.username,
-          displayName: friendProfile.displayName,
-          photoURL: friendProfile.photoURL,
+          ...(await getPublicProfile(friendData.friendUid)),
           addedAt: friendData.addedAt
         };
       });
@@ -537,18 +513,13 @@ export async function getFriends(uid, forceRefresh = false) {
       const friendsRef = collection(db, 'users', uid, 'friends');
       const querySnapshot = await withTimeout(getDocs(friendsRef));
 
-      // Batch fetch all friend profiles in parallel for speed
+      // Batch fetch all friend profiles in parallel for speed. The public profile is all this
+      // list shows, and it's a fraction of the user doc (which carries every activity).
       const friendPromises = querySnapshot.docs.map(async (docSnapshot) => {
         const friendData = docSnapshot.data();
-        const friendProfileRef = doc(db, 'users', friendData.friendUid);
-        const friendProfileDoc = await withTimeout(getDoc(friendProfileRef));
-        const friendProfile = friendProfileDoc.exists() ? friendProfileDoc.data() : {};
 
         return {
-          uid: friendData.friendUid,
-          username: friendProfile.username,
-          displayName: friendProfile.displayName,
-          photoURL: friendProfile.photoURL,
+          ...(await getPublicProfile(friendData.friendUid)),
           addedAt: friendData.addedAt
         };
       });

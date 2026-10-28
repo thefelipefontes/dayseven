@@ -251,11 +251,9 @@ struct MainTabView: View {
 
                 // Refresh steps and calories gathered while backgrounded, and
                 // reload activities so the rings reflect anything logged on the phone
-                // while we were away (rate limited inside).
+                // while we were away (rate limited inside). It also flushes any
+                // offline-queued work, after the reload rather than alongside it.
                 Task { await appVM.refreshOnForeground() }
-
-                // Flush any offline-queued activities
-                Task { await appVM.flushOfflineQueue() }
 
                 // If a workout is active but no ActiveWorkoutView is shown,
                 // push one — but only after a short delay to let the

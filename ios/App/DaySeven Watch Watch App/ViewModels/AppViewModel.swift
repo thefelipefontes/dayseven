@@ -62,9 +62,11 @@ class AppViewModel: ObservableObject {
     private var writesInFlight = 0
     private var isSaving: Bool { writesInFlight > 0 }
 
-    /// Writes finished so far. A load compares it before and after its fetch: if a write
-    /// finished in between, the load's read may predate it and must not replace its result.
-    private var writesFinished = 0
+    /// Bumped whenever setActivities changes what's shown. A load compares it before and
+    /// after its fetch: if a write changed the activities in between, the load's read may
+    /// predate that and must not replace it. (A write that failed or changed nothing doesn't
+    /// count, so a queued item that keeps failing can't keep every reload from applying.)
+    private var activitiesVersion = 0
 
     /// Re-entrancy guard for loadUserData(). Not isLoading — that starts true to drive the
     /// launch spinner, so guarding on it would block the very first load.
@@ -220,7 +222,7 @@ class AppViewModel: ObservableObject {
 
         isLoading = true
         print("[LoadUserData] Starting fetch for uid \(uid.prefix(6))…")
-        let writesBeforeFetch = writesFinished
+        let versionBeforeFetch = activitiesVersion
 
         do {
             // Fetch Firestore data and HealthKit data in parallel
@@ -235,7 +237,7 @@ class AppViewModel: ObservableObject {
             SharedDefaults.writeDistanceUnit(userData.distanceUnit)
             loadRetryCount = 0
 
-            if isSaving || writesFinished != writesBeforeFetch {
+            if isSaving || activitiesVersion != versionBeforeFetch {
                 // A save started or finished while this read was in flight. Its state is newer
                 // than (or about to replace) what this read saw; adopting the read would put
                 // the just-saved workout back off the rings.
@@ -318,9 +320,14 @@ class AppViewModel: ObservableObject {
         await refreshHealthData()
 
         if isLoadingData || isSaving { return }
-        if Date().timeIntervalSince(lastLoadTime) < 30 { return }
-        if Date().timeIntervalSince(lastSaveTime) < 5 { return }
+        if Date().timeIntervalSince(lastLoadTime) < 30 || Date().timeIntervalSince(lastSaveTime) < 5 {
+            // No reload due, but still retry anything queued
+            await flushOfflineQueue()
+            return
+        }
 
+        // The load flushes anything queued once it has loaded. A flush started alongside it
+        // (as the foreground used to) made the load skip or discard its read while it ran.
         await loadUserData()
     }
 
@@ -365,7 +372,6 @@ class AppViewModel: ObservableObject {
 
     private func endWrite() {
         writesInFlight -= 1
-        writesFinished += 1
     }
 
     /// Takes on the server's view of the user from a fresh read.
@@ -504,6 +510,7 @@ class AppViewModel: ObservableObject {
     /// queued discard stays off them until the flush lands it.
     private func setActivities(_ list: [Activity]) {
         let shown = OfflineQueueManager.shared.applyingPending(to: list)
+        activitiesVersion += 1
         activities = shown
         weeklyProgress = calculateWeeklyProgress(activities: shown, goals: goals)
         weeklyStats = calculateWeeklyStats(activities: shown)

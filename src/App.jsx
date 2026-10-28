@@ -368,6 +368,23 @@ const formatInjuryPausedLabel = (injuryMode) => {
   return fc.map(c => INJURY_CATEGORY_LABELS[c] || c).join(' & ') + ' paused';
 };
 
+// goalHistory with this week's entry set to `goals`: the entry saveUserGoals writes to
+// Firestore, applied to local state too. The history is otherwise only loaded at launch, so
+// after a goal change the rest of the session judged this week by the old goals.
+const withThisWeekGoals = (history, goals) => {
+  const weekKey = getCurrentWeekKey();
+  return [
+    ...(Array.isArray(history) ? history : []).filter(h => h?.fromWeek !== weekKey),
+    {
+      fromWeek: weekKey,
+      liftsPerWeek: goals.liftsPerWeek ?? null,
+      cardioPerWeek: goals.cardioPerWeek ?? null,
+      recoveryPerWeek: goals.recoveryPerWeek ?? null,
+      stepsPerDay: goals.stepsPerDay ?? null,
+    },
+  ].sort((a, b) => (a.fromWeek || '').localeCompare(b.fromWeek || ''));
+};
+
 // Every week a vacation covered: from its start through day 14 (when it auto-ends) or now,
 // whichever comes first, plus whatever was already recorded. Recording only the week the app
 // happened to be opened in left a week the user was away (and never opened the app) judged
@@ -15479,7 +15496,12 @@ export default function DaySevenApp() {
           if (pending) {
             if (isPendingDue(pending)) {
               const { applyOn: _a, queuedAt: _q, ...goalFields } = pending;
-              setUserData(prev => ({ ...prev, goals: goalFields, pendingGoals: null }));
+              userDataRef.current = {
+                ...(userDataRef.current || {}),
+                goals: goalFields,
+                goalHistory: withThisWeekGoals(profileForStreaks?.goalHistory, goalFields),
+              };
+              setUserData(prev => ({ ...prev, goals: goalFields, pendingGoals: null, goalHistory: withThisWeekGoals(prev.goalHistory, goalFields) }));
               saveUserGoals(user.uid, goalFields).catch(() => {});
               clearPendingGoals(user.uid).catch(() => {});
             } else {
@@ -20485,6 +20507,7 @@ export default function DaySevenApp() {
                   ...prev,
                   goals: goalsToSave,
                   pendingGoals: null,
+                  goalHistory: withThisWeekGoals(prev.goalHistory, goalsToSave),
                 }));
                 setWeeklyProgress(prev => ({
                   ...prev,

@@ -13949,9 +13949,14 @@ export default function DaySevenApp() {
   const handleDismissWorkout = (workout) => {
     const uuid = workout.healthKitUUID || workout.id;
     if (uuid) {
-      const newDismissed = [...dismissedWorkoutUUIDs, uuid];
-      setDismissedWorkoutUUIDs(newDismissed);
-      localStorage.setItem('dismissedWorkoutUUIDs', JSON.stringify(newDismissed));
+      // Functional update: "Dismiss all" calls this once per workout in the same tick,
+      // and building from the closure's list kept only the last one.
+      setDismissedWorkoutUUIDs(prev => {
+        if (prev.includes(uuid)) return prev;
+        const newDismissed = [...prev, uuid];
+        try { localStorage.setItem('dismissedWorkoutUUIDs', JSON.stringify(newDismissed)); } catch {}
+        return newDismissed;
+      });
       // Also remove from pending workouts
       setHealthKitData(prev => ({
         ...prev,

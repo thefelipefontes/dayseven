@@ -93,7 +93,7 @@ export default function ProfilePage(props) {
     if (isPro) return null;
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 7);
-    return cutoff.toISOString().split('T')[0];
+    return toLocalDateStr(cutoff); // local date: toISOString is UTC, a day ahead on US evenings
   }, [isPro]);
 
   const visibleActivities = useMemo(() => {
@@ -553,10 +553,11 @@ export default function ProfilePage(props) {
     startOfWeek.setDate(today.getDate() - today.getDay());
     startOfWeek.setHours(0, 0, 0, 0);
 
-    const weekActivities = activities.filter(a => {
-      const actDate = parseLocalDate(a.date);
-      return actDate >= startOfWeek && actDate <= today;
-    });
+    // Compare date strings: activity dates parse to noon, so "<= now" dropped all of
+    // today's activities until midday.
+    const startStr = toLocalDateStr(startOfWeek);
+    const todayDateStr = toLocalDateStr(new Date());
+    const weekActivities = activities.filter(a => a.date >= startStr && a.date <= todayDateStr);
 
     // Goal-slot counts (a Circuit-style 'lifting+cardio' session fills both) and the verdict
     // come from the shared rule in utils/weekGoals.
@@ -763,12 +764,12 @@ export default function ProfilePage(props) {
     } else if (totalsView === 'last-7-days') {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - 7);
-      const cutoffStr = cutoff.toISOString().split('T')[0];
+      const cutoffStr = toLocalDateStr(cutoff); // local, not UTC
       filteredHistory = filteredHistory.filter(h => h.date >= cutoffStr);
     } else if (totalsView === 'last-30-days') {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - 30);
-      const cutoffStr = cutoff.toISOString().split('T')[0];
+      const cutoffStr = toLocalDateStr(cutoff); // local, not UTC
       filteredHistory = filteredHistory.filter(h => h.date >= cutoffStr);
     } else if (totalsView === 'this-month') {
       filteredHistory = filteredHistory.filter(h => h.date?.startsWith(thisMonthStr));

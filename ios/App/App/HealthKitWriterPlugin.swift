@@ -553,11 +553,16 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             guard let self = self else { return }
 
             if !success {
-                // Still dismiss Live Activity even if collection end fails
-                if #available(iOS 16.2, *) {
-                    self.endWorkoutLiveActivity()
-                }
+                // Throw the session away. Keeping the builder would make every
+                // later startLiveWorkout fail with "A workout is already in
+                // progress" until the app is killed.
+                builder.discardWorkout()
                 DispatchQueue.main.async {
+                    // Still dismiss Live Activity even if collection end fails
+                    if #available(iOS 16.2, *) {
+                        self.endWorkoutLiveActivity()
+                    }
+                    self.resetLiveWorkoutState()
                     call.reject(error?.localizedDescription ?? "Failed to end workout collection")
                 }
                 return
@@ -661,7 +666,14 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             dismissWorkoutLiveActivity()
         }
 
-        // Clean up
+        resetLiveWorkoutState()
+
+        call.resolve(["success": true])
+    }
+
+    /// Forget the live session and its metrics. The builder must already be
+    /// finished or discarded.
+    private func resetLiveWorkoutState() {
         workoutBuilder = nil
         liveWorkoutStartDate = nil
         observerStartDate = nil
@@ -670,8 +682,6 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         heartRateSamples = []
         heartRateHKSamples = []
         lastHeartRate = 0
-
-        call.resolve(["success": true])
     }
 
     // MARK: - Widget Data

@@ -39,6 +39,14 @@ const getPreviousWeekKey = () => {
   return toLocalDateStr(sunday);
 };
 
+// True when a touch moved more than a tap would (a scroll that started on the element).
+// Pairs with an onTouchStart that stores the start Y in dataset.touchY.
+const wasScroll = (e) => {
+  const startY = parseFloat(e.currentTarget.dataset.touchY);
+  const endY = e.changedTouches?.[0]?.clientY;
+  return Number.isFinite(startY) && Number.isFinite(endY) && Math.abs(endY - startY) > 10;
+};
+
 export default function SettingsPage({ user, userProfile, userData, onSignOut, onEditGoals, onCancelPendingGoals, onUpdatePhoto, onShare, onStartTour, onUpdatePrivacy, onUpdateDistanceUnit, onUpdateMaxHeartRate, onUpdateDisplayName, onUpdateUsername, onChangePassword, onResetPassword, onDeleteAccount, onNotificationSettings, isPro, planType, onPresentPaywall, onPresentCustomerCenter, onRestorePurchases, onToggleVacationMode, onActivateInjuryMode, onResumeInjuryMode, canResumeInjury = false, injuryMinWeeks = 2, injuryMaxWeeks = 12, injuryYearlyCap = 16, injuryRemainingWeeks = 16, onClose, scrollTo = null, onBackfillCalories = null, pendingCalorieBackfillCount = 0 }) {
   // Lifetime is a non-consumable, so there's no renewal to manage or cancel —
   // the Customer Center still handles refunds and receipts, but the row that
@@ -2159,6 +2167,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
           className="w-full py-4 rounded-xl font-semibold text-red-500 transition-all duration-150"
           style={{ backgroundColor: 'rgba(255,69,58,0.1)', transform: 'scale(1)' }}
           onTouchStart={(e) => {
+            e.currentTarget.dataset.touchY = String(e.touches[0]?.clientY ?? 0);
             e.currentTarget.style.transform = 'scale(0.98)';
             e.currentTarget.style.backgroundColor = 'rgba(255,69,58,0.2)';
           }}
@@ -2166,6 +2175,9 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
             e.preventDefault();
             e.currentTarget.style.transform = 'scale(1)';
             e.currentTarget.style.backgroundColor = 'rgba(255,69,58,0.1)';
+            // iOS ends a scroll with touchend, not touchcancel: a scroll that started on
+            // this full-width button signed the user out.
+            if (wasScroll(e)) return;
             triggerHaptic(ImpactStyle.Medium);
             onSignOut();
           }}
@@ -2191,11 +2203,13 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
           className="w-full py-4 rounded-xl font-semibold text-gray-500 transition-all duration-150 mt-3"
           style={{ backgroundColor: 'transparent', transform: 'scale(1)' }}
           onTouchStart={(e) => {
+            e.currentTarget.dataset.touchY = String(e.touches[0]?.clientY ?? 0);
             e.currentTarget.style.transform = 'scale(0.98)';
           }}
           onTouchEnd={(e) => {
             e.preventDefault();
             e.currentTarget.style.transform = 'scale(1)';
+            if (wasScroll(e)) return; // same as Sign Out above
             triggerHaptic(ImpactStyle.Light);
             onDeleteAccount();
           }}

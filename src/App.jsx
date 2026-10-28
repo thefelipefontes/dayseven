@@ -17399,6 +17399,19 @@ export default function DaySevenApp() {
         // Same reasoning for the HealthKit calorie stamp: losing it would make an
         // auto-tracked burn look hand-entered and get added on top of the daily total.
         hkCalories: activityData.hkCalories ?? existingActivity?.hkCalories,
+        // Other fields the edit modal doesn't model. Dropping `location` made the detail
+        // sheet geocode the route again and re-save a location the user had removed.
+        location: activityData.location !== undefined ? activityData.location : existingActivity?.location,
+        appleWorkoutName: activityData.appleWorkoutName ?? existingActivity?.appleWorkoutName,
+        // The exact start/end only still describe this activity if its day and time didn't move.
+        ...(activityData.date === existingActivity?.date && activityData.time === existingActivity?.time
+          ? { startTime: activityData.startTime ?? existingActivity?.startTime, endTime: activityData.endTime ?? existingActivity?.endTime }
+          : {}),
+        // The rebuilt linked workout has no start date; keep it while it's the same workout.
+        linkedHealthKitStartDate: activityData.linkedHealthKitStartDate
+          ?? (activityData.linkedHealthKitUUID && activityData.linkedHealthKitUUID === existingActivity?.linkedHealthKitUUID
+            ? existingActivity?.linkedHealthKitStartDate
+            : undefined),
       };
       updatedActivities = activities.map(a => a.id === activityData.id ? newActivity : a);
       

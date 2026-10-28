@@ -49,6 +49,13 @@ export const clearUserCache = (uid) => {
   cache.timestamps.delete(`customActivities_${uid}`);
 };
 
+// Sign-out: drop every cached read and the stale-write counts, so the next sign-in (the
+// same account or another) starts from fresh reads before anything is saved.
+export const resetUserServiceSession = () => {
+  Object.values(cache).forEach((v) => { if (v instanceof Map) v.clear(); });
+  lastKnownServerActivityCount.clear();
+};
+
 // Helper function to add timeout to Firestore operations (for web SDK fallback)
 const withTimeout = (promise, timeoutMs = 10000) => {
   return Promise.race([

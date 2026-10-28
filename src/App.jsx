@@ -16,7 +16,7 @@ import SettingsPage from './Settings';
 import ProfilePage from './Profile';
 import { isChallengeable, getChallengesForUser, activityMatchesChallengeRule, describeMatchRule, evaluateActivityAgainstChallenge, applyOptimisticChallengeCompletions, applyChallengeIntent, subscribeToChallenges, bucketChallenges, countOutgoingThisMonth } from './services/challengeService';
 import ChallengeMatchChooser from './components/ChallengeMatchChooser';
-import { createUserProfile, getUserProfile, updateUserProfile, updateDisplayName, updateUsername, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, deleteActivityPhoto, saveUserGoals, getUserGoals, savePendingGoals, clearPendingGoals, setOnboardingComplete, setTourComplete, savePersonalRecords, getPersonalRecords, saveDailyHealthData, getDailyHealthData, getDailyHealthHistory, subscribeToUserChallengeStats } from './services/userService';
+import { createUserProfile, getUserProfile, updateUserProfile, updateDisplayName, updateUsername, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, deleteActivityPhoto, saveUserGoals, getUserGoals, savePendingGoals, clearPendingGoals, setOnboardingComplete, setTourComplete, savePersonalRecords, getPersonalRecords, saveDailyHealthData, getDailyHealthData, getDailyHealthHistory, subscribeToUserChallengeStats, resetUserServiceSession } from './services/userService';
 import { isSundayToday, nextSundayDateStr, isPendingDue, formatApplyOn } from './utils/goalsSchedule';
 import { getFriends, getReactions, getFriendRequests, getComments, addReply, getReplies, deleteReply, addReaction, removeReaction, addComment, cleanupActivitySocialData } from './services/friendService';
 
@@ -14727,6 +14727,18 @@ export default function DaySevenApp() {
     // signup. Clears any stale localStorage flags from a prior pre-signup.
     try { localStorage.removeItem('preSignupOnboarding'); } catch {}
     setPreSignupDone(false);
+
+    // Session load flags and caches. On native, sign-out never runs handleUserAuth(null),
+    // so these used to survive into the next sign-in: the custom-activities effect saved
+    // the default empty list over the real one ~500 ms after signing back in, the records
+    // ratchet ran against zeroed records, and the next account's saves were checked
+    // against this account's activity count.
+    setRecordsLoaded(false);
+    setProfileStateLoaded(false);
+    setRecentHealthReady(false);
+    hasLoadedCustomActivities.current = false;
+    lastHealthBackfillRef.current = 0;
+    resetUserServiceSession();
 
     // Then attempt actual sign out in background (don't block UI)
     (async () => {

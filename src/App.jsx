@@ -16503,14 +16503,17 @@ export default function DaySevenApp() {
             // happen at the native level (below JS) and can overwrite watch-saved data.
             // After a delay (giving the SDK time to flush), re-read Firestore and
             // re-stamp the correct data if it was overwritten.
-            const capturedCount = freshActivities.length;
+            // Compares against, and re-saves, the CURRENT local list, not the resume
+            // snapshot: re-saving the snapshot brought back anything deleted in those
+            // 5 seconds (and dropped anything added).
             const capturedUid = user.uid;
             setTimeout(async () => {
               try {
                 const verifyActivities = await getUserActivities(capturedUid, true);
-                if (verifyActivities.length < capturedCount) {
-                  console.warn(`[VisibilityHeal] Stale SDK flush detected: server has ${verifyActivities.length} but should have ${capturedCount} — re-saving`);
-                  await saveUserActivities(capturedUid, freshActivities);
+                const localActivities = activitiesRef.current || [];
+                if (verifyActivities.length < localActivities.length) {
+                  console.warn(`[VisibilityHeal] Stale SDK flush detected: server has ${verifyActivities.length} but local has ${localActivities.length} — re-saving`);
+                  await saveUserActivities(capturedUid, localActivities);
                 }
               } catch (e) {
                 // Non-critical — healing check failed

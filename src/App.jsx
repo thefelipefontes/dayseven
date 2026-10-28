@@ -8875,6 +8875,10 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   ), [matchingChallenges, effectiveChallengeSelection]);
   const hasPhotoAttached = !!activityPhoto || !!pendingActivity?.photoURL;
   const photoMissingForChallenge = photoRequiredSelected.length > 0 && !hasPhotoAttached;
+  // Editing a saved activity, as opposed to logging a new one. Apple Health workouts waiting
+  // to be logged carry an 'hk_' id too, and gating on any id let them save without the
+  // challenge's required photo (the server then silently refused to credit it).
+  const isEditingSaved = !!pendingActivity?.id && !(typeof pendingActivity.id === 'string' && pendingActivity.id.startsWith('hk_'));
 
   const toggleChallengeFulfill = (id) => {
     setChallengeFulfillSelection(prev => {
@@ -9383,8 +9387,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             handleClose();
           }}
           className="font-bold transition-all duration-150 px-2 py-1 rounded-lg"
-          style={{ color: !activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0 && !pendingActivity?.id) || (mode === 'completed' && !pendingActivity?.id && photoMissingForChallenge) ? 'rgba(0,255,148,0.3)' : '#00FF94' }}
-          disabled={!activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0 && !pendingActivity?.id) || (mode === 'completed' && !pendingActivity?.id && photoMissingForChallenge) || (mode !== 'start' && date > getTodayDate())}
+          style={{ color: !activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0 && !pendingActivity?.id) || (mode === 'completed' && !isEditingSaved && photoMissingForChallenge) ? 'rgba(0,255,148,0.3)' : '#00FF94' }}
+          disabled={!activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0 && !pendingActivity?.id) || (mode === 'completed' && !isEditingSaved && photoMissingForChallenge) || (mode !== 'start' && date > getTodayDate())}
           onTouchStart={(e) => {
             if (!e.currentTarget.disabled) {
               e.currentTarget.style.transform = 'scale(0.9)';

@@ -49,16 +49,11 @@ class OfflineQueueManager {
         print("[OfflineQueue] Enqueued activity \(activity.id). Queue size: \(queue.count)")
     }
 
-    /// Queue a detail edit. An edit to an activity that is itself still queued is folded into
-    /// it; otherwise it replaces any older queued edit to the same activity.
+    /// Queue a detail edit, replacing any older queued edit to the same activity. It stays its
+    /// own entry even when the activity's save is queued too (merge applies edits after
+    /// inserts): rewriting the queued save in place lost the edit whenever a flush had
+    /// already snapshotted the old copy.
     func enqueueUpdate(_ update: ActivityDetailsUpdate) {
-        var inserts = pendingActivities
-        if let index = inserts.firstIndex(where: { $0.id == update.activityId }) {
-            update.apply(to: &inserts[index])
-            save(inserts, forKey: Self.pendingActivitiesKey)
-            print("[OfflineQueue] Folded edit into queued activity \(update.activityId)")
-            return
-        }
         var updates = pendingUpdates.filter { $0.activityId != update.activityId }
         updates.append(update)
         save(updates, forKey: Self.pendingUpdatesKey)
@@ -77,9 +72,12 @@ class OfflineQueueManager {
 
     /// Forget any queued insert or edit for this activity (it's being discarded). Without
     /// this, a discarded workout whose auto-save had been queued came back on the next flush.
-    func drop(_ id: ActivityID) {
+    /// Returns whether its save was queued.
+    @discardableResult
+    func drop(_ id: ActivityID) -> Bool {
         let inserts = pendingActivities
-        if inserts.contains(where: { $0.id == id }) {
+        let wasQueued = inserts.contains(where: { $0.id == id })
+        if wasQueued {
             save(inserts.filter { $0.id != id }, forKey: Self.pendingActivitiesKey)
             print("[OfflineQueue] Dropped queued activity \(id)")
         }
@@ -87,6 +85,7 @@ class OfflineQueueManager {
         if updates.contains(where: { $0.activityId == id }) {
             save(updates.filter { $0.activityId != id }, forKey: Self.pendingUpdatesKey)
         }
+        return wasQueued
     }
 
     /// The current queue applied to a list of activities (for display after a fresh read).
@@ -94,8 +93,9 @@ class OfflineQueueManager {
         Self.merge(inserts: pendingActivities, updates: pendingUpdates, deletions: pendingDeletions, into: activities).activities
     }
 
-    /// Applies queued work to a fresh read: discards, then detail edits, then inserts that
-    /// aren't already there (by id, or as the phone's copy of the same HealthKit workout).
+    /// Applies queued work to a fresh read: discards, then inserts that aren't already there
+    /// (by id, or as the phone's copy of the same HealthKit workout), then detail edits — last,
+    /// so an edit to a workout whose save is queued too lands on it.
     /// `changed` is false when the read already reflects all of it.
     static func merge(inserts: [Activity], updates: [ActivityDetailsUpdate], deletions: [ActivityID], into activities: [Activity]) -> (activities: [Activity], changed: Bool) {
         var merged = activities
@@ -105,17 +105,17 @@ class OfflineQueueManager {
         merged.removeAll { deletions.contains($0.id) }
         changed = changed || merged.count != before
 
-        for update in updates {
-            guard let index = merged.firstIndex(where: { $0.id == update.activityId }) else { continue }
-            update.apply(to: &merged[index])
-            changed = true
-        }
-
         for activity in inserts where !deletions.contains(activity.id) {
             if !merged.contains(where: { $0.id == activity.id || activity.isSameHealthKitWorkout(as: $0) }) {
                 merged.insert(activity, at: 0)
                 changed = true
             }
+        }
+
+        for update in updates {
+            guard let index = merged.firstIndex(where: { $0.id == update.activityId }) else { continue }
+            update.apply(to: &merged[index])
+            changed = true
         }
         return (merged, changed)
     }

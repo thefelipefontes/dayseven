@@ -407,8 +407,10 @@ class AppViewModel: ObservableObject {
                 // Without a fresh read there is nothing safe to write: queue the workout and let
                 // the flush merge it into a real read later.
                 print("[SaveActivity] Could not read Firestore — queueing instead of writing: \(error.localizedDescription)")
-                // It shows on the rings from the queue; streaks and celebrations wait for the
-                // flush, since without a read the local list may be missing most of the week.
+                // It shows on the rings from the queue. Streaks and celebrations are left alone:
+                // without a read the local list may be missing most of the week. The flush
+                // doesn't advance them either; the phone recalculates streaks from history on
+                // its next load.
                 OfflineQueueManager.shared.enqueue(activity)
                 setActivities(activities)
                 pushDataToWidget()
@@ -614,16 +616,18 @@ class AppViewModel: ObservableObject {
         queue.isFlushing = true
         defer { queue.isFlushing = false }
 
-        // Snapshot: anything queued while this flush is in flight waits for the next one
-        let inserts = queue.pendingActivities
-        let updates = queue.pendingUpdates
-        let deletions = queue.pendingDeletions
-        print("[OfflineFlush] Flushing \(inserts.count) activities, \(updates.count) edits, \(deletions.count) discards")
-
         for attempt in 1...maxWriteAttempts {
             do {
                 // Fetch fresh state from Firestore
                 let freshData = try await firestoreService.getUserData(uid: uid)
+
+                // Snapshot the queue after the read, so a discard made while it was in flight
+                // stays out. Anything queued from here on waits for the next flush.
+                let inserts = queue.pendingActivities
+                let updates = queue.pendingUpdates
+                let deletions = queue.pendingDeletions
+                print("[OfflineFlush] Flushing \(inserts.count) activities, \(updates.count) edits, \(deletions.count) discards")
+
                 let merged = OfflineQueueManager.merge(inserts: inserts, updates: updates, deletions: deletions, into: freshData.activities)
 
                 guard merged.changed else {
@@ -674,7 +678,16 @@ class AppViewModel: ObservableObject {
 
         // A queued auto-save (or edit) of this workout would otherwise be flushed later and
         // bring the discarded workout back.
-        OfflineQueueManager.shared.drop(activityId)
+        let queue = OfflineQueueManager.shared
+        let saveWasQueued = queue.drop(activityId)
+        // A flush already writing may still carry that save in its snapshot. Leave a queued
+        // discard behind in that case; if there turns out to be nothing to discard, the next
+        // flush just clears it.
+        defer {
+            if saveWasQueued || queue.isFlushing, !queue.pendingDeletions.contains(activityId) {
+                queue.enqueueDeletion(activityId)
+            }
+        }
 
         guard let uid = authService.currentUser?.uid else {
             print("[DeleteActivity] No user uid — skipping delete")

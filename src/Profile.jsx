@@ -1495,13 +1495,22 @@ export default function ProfilePage(props) {
               <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Your recent workout and recovery sessions</p>
             </div>
 
+            {/* Swipe left to delete, long-press for Edit/Delete, the same as Home's rows. The
+                solid fill is the old 5%-white-on-black row colour: the swipe wrapper is opaque
+                and has to cover the red delete action while swiping. */}
+            <SwipeableProvider>
             <div className="space-y-2">
               {toShow.map((activity) => (
-                <button
+                <SwipeableActivityItem
                   key={activity.id}
+                  activity={activity}
+                  onDelete={(act) => onDeleteActivity && onDeleteActivity(act.id)}
+                  onEdit={onEditActivity}
+                >
+                <div
                   onClick={() => { triggerHaptic(ImpactStyle.Light); setSelectedDayActivity(activity); }}
-                  className="w-full p-3 flex items-center gap-3 text-left rounded-xl transition-opacity active:opacity-70"
-                  style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+                  className="w-full p-3 flex items-center gap-3 text-left cursor-pointer transition-opacity active:opacity-70"
+                  style={{ backgroundColor: '#0D0D0D' }}
                 >
                   <ActivityIcon type={activity.type} subtype={activity.subtype} size={20} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} countToward={activity.countToward} customActivityCategory={activity.customActivityCategory} />
                   <div className="flex-1 min-w-0">
@@ -1529,7 +1538,8 @@ export default function ProfilePage(props) {
                     </div>
                   </div>
                   <span className="text-gray-600 text-xs">›</span>
-                </button>
+                </div>
+                </SwipeableActivityItem>
               ))}
 
               {hasMore && (
@@ -1542,6 +1552,7 @@ export default function ProfilePage(props) {
                 </button>
               )}
             </div>
+            </SwipeableProvider>
           </div>
         );
       })()}

@@ -11501,7 +11501,7 @@ const WinningStreakInfoSheet = ({ isOpen, onClose, required = ['lifts', 'cardio'
   );
 };
 
-const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, healthHistory = [], onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onDismissShieldNotice = () => {}, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, openActivityTarget = null, showHkEmptyHint = false, hkAccessBlocked = false, onDismissHkEmptyHint = () => {}, onOpenHealthSettings = () => {}, showNotifReask = false, onAcceptNotifReask = () => {}, onDismissNotifReask = () => {}, onReplayCelebration = () => {}, pendingChallenges = [], onOpenPlan = () => {}, onShowWinningStreakInfo = () => {} }) => {
+const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, healthHistory = [], onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onDismissShieldNotice = () => {}, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, openActivityTarget = null, onOpenActivityTargetHandled = () => {}, showHkEmptyHint = false, hkAccessBlocked = false, onDismissHkEmptyHint = () => {}, onOpenHealthSettings = () => {}, showNotifReask = false, onAcceptNotifReask = () => {}, onDismissNotifReask = () => {}, onReplayCelebration = () => {}, pendingChallenges = [], onOpenPlan = () => {}, onShowWinningStreakInfo = () => {} }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
   const [dismissConfirmWorkouts, setDismissConfirmWorkouts] = useState(null); // Workouts pending dismiss confirmation
@@ -11843,10 +11843,16 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
   // Deep-link from "add muscle groups" notification: when DaySevenApp updates
   // openActivityTarget, find the activity and open its detail modal. The
   // nonce makes repeated taps for the same activity re-open the modal.
+  // `activities` is a dependency so a tap that lands before activities load still
+  // opens once they do; the parent clears the target once it's opened, or every
+  // later sync, save or Home remount would pop the sheet open again.
   useEffect(() => {
     if (!openActivityTarget?.activityId) return;
     const found = activities.find(a => String(a.id) === String(openActivityTarget.activityId));
-    if (found) setSelectedActivity(found);
+    if (found) {
+      setSelectedActivity(found);
+      onOpenActivityTargetHandled();
+    }
   }, [openActivityTarget?.activityId, openActivityTarget?.nonce, activities]);
 
   // Helper to convert time string (e.g., "1:55 PM") to minutes since midnight for proper sorting
@@ -18784,6 +18790,7 @@ export default function DaySevenApp() {
                   onDismissWorkout={handleDismissWorkout}
                   onWorkoutPickerChange={setIsHomeWorkoutPickerOpen}
                   openActivityTarget={homeOpenActivityTarget}
+                  onOpenActivityTargetHandled={() => setHomeOpenActivityTarget(null)}
                   showHkEmptyHint={showHkEmptyHint}
                   hkAccessBlocked={hkAccessBlocked}
                   onDismissHkEmptyHint={handleDismissHkEmptyHint}

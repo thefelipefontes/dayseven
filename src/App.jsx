@@ -9612,6 +9612,10 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                               setActivityType(workout.type);
                               setSubtype(workout.subtype || '');
                               if (workout.date) setDate(workout.date);
+                              // The workout's own start time, as handleLinkWorkout does; otherwise
+                              // it kept the time the sheet opened (a 6:10 AM run logged at 9 PM
+                              // saved as 9 PM), which also skews ordering and the HR backfill window.
+                              if (workout.time) setActivityTime(workout.time);
                               setLinkedWorkout(workout);
                               setDurationHours(Math.floor((workout.duration || 0) / 60));
                               setDurationMinutes((workout.duration || 0) % 60);

@@ -944,8 +944,11 @@ class AppViewModel: ObservableObject {
 
     // MARK: - Push Data to Widget Complication
 
+    /// Last time pushDataToWidget asked WidgetKit for a reload
+    private var lastWidgetReload: Date = .distantPast
+
     private func pushDataToWidget() {
-        SharedDefaults.writeStreakData(
+        let change = SharedDefaults.writeStreakData(
             masterStreak: streaks.master,
             liftsStreak: streaks.lifts,
             cardioStreak: streaks.cardio,
@@ -962,7 +965,19 @@ class AppViewModel: ObservableObject {
             weekSteps: weekSteps,
             injuryModeActive: injuryModeActive
         )
-        WidgetCenter.shared.reloadAllTimelines()
-        print("[Widget] Pushed streak data and reloaded timelines")
+        // Reloads come out of the complication's daily budget. The HealthKit observers call
+        // this on every steps or calories delivery, and it used to reload each time; now
+        // nothing drawn changing means no reload, and steps alone reload at most every 15
+        // minutes (the timeline's own 30-minute refresh picks up the rest).
+        switch change {
+        case .none:
+            return
+        case .steps where Date().timeIntervalSince(lastWidgetReload) < 15 * 60:
+            return
+        case .steps, .other:
+            lastWidgetReload = Date()
+            WidgetCenter.shared.reloadAllTimelines()
+            print("[Widget] Pushed streak data and reloaded timelines")
+        }
     }
 }

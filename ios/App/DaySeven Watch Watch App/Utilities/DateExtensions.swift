@@ -84,10 +84,7 @@ func formatDuration(_ minutes: Int) -> String {
 // MARK: - Start of current week (Sunday)
 
 func startOfCurrentWeek() -> Date {
-    let calendar = Calendar.current
-    let today = Date()
-    let weekday = calendar.component(.weekday, from: today)
-    return calendar.date(byAdding: .day, value: -(weekday - 1), to: calendar.startOfDay(for: today))!
+    SharedDefaults.weekStart(containing: Date())
 }
 
 // MARK: - Start of today

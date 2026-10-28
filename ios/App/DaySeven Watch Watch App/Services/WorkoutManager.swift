@@ -408,7 +408,13 @@ class WorkoutManager: NSObject, ObservableObject {
 
     // MARK: - Pause / Resume
 
+    // Both are no-ops unless they change the state. The phone's sendMessage handlers call
+    // them without checking, and a second pause restarted lastPauseDate, dropping every
+    // paused second so far from accumulatedPauseTime (that time then counted as active).
+    // A stray resume started a second 30fps timer next to the running one.
+
     func pause() {
+        guard isActive, !isPaused, !isEnding else { return }
         session?.pause()
         isPaused = true
         lastPauseDate = Date()
@@ -418,6 +424,7 @@ class WorkoutManager: NSObject, ObservableObject {
     }
 
     func resume() {
+        guard isActive, isPaused, !isEnding else { return }
         session?.resume()
         isPaused = false
         if let pauseStart = lastPauseDate {
@@ -467,6 +474,9 @@ class WorkoutManager: NSObject, ObservableObject {
     // even if watchOS throttles the timer frequency.
 
     private func startTimer() {
+        // Never leave a running timer behind: it would keep firing at 30fps unreferenced
+        timer?.invalidate()
+
         // Record the reference point so we can compute elapsed on each tick
         if activeStartDate == nil {
             activeStartDate = Date()

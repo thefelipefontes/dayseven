@@ -565,7 +565,7 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
 
         Task { @MainActor in
             wm.pause()
-            replyHandler(["success": true, "isPaused": true])
+            replyHandler(["success": true, "isPaused": wm.isPaused])
         }
     }
 
@@ -577,7 +577,7 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
 
         Task { @MainActor in
             wm.resume()
-            replyHandler(["success": true, "isPaused": false])
+            replyHandler(["success": true, "isPaused": wm.isPaused])
         }
     }
 

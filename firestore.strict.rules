@@ -1,0 +1,379 @@
+rules_version = '2';
+
+// STRICT rules — the target state. Deploy these (copy over firestore.rules) only once the
+// app build that reads publicProfiles and accepts friend requests in one batch is what
+// nearly everyone runs: app versions up to 1.8.3 read non-friends' user docs for search
+// and friend requests, which these rules refuse.
+//
+// firestore.rules is the transitional version of this file. The two differ only in the
+// blocks marked TRANSITIONAL there; keep everything else identical. Both are covered by
+// firestore-tests/.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isUser(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    // `uid`'s own friends list contains the caller. A user's list is their consent, so this
+    // is what grants a friend access to their data.
+    function isFriendOf(uid) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(uid)/friends/$(request.auth.uid));
+    }
+
+    function ownerOrFriend(uid) {
+      return isUser(uid) || isFriendOf(uid);
+    }
+
+    // Absent, null, or a string of at most `max` characters.
+    function optString(data, key, max) {
+      return !(key in data) || data[key] == null || (data[key] is string && data[key].size() <= max);
+    }
+
+    // ---------- users ----------
+
+    // Written only by Cloud Functions (RevenueCat webhook, challenge scoring, lifecycle
+    // nudges): subscription state and challenge results are server-authoritative.
+    function serverOnlyUserKeys() {
+      return ['forceProTier', 'subscription', 'challengeStats', 'winbackStage', 'winbackLastSentAt',
+        'trialEndingNotified', 'trialFinalNotified', 'activationFirstNudge', 'activationWeekNudge'];
+    }
+
+    // New accounts must hold a subscription (subscriptionRequired: true). A doc created
+    // without the field is stamped server-side (protectUserFields); it can never be false.
+    function validNewUser() {
+      let data = request.resource.data;
+      return !data.keys().hasAny(serverOnlyUserKeys())
+        && (!('subscriptionRequired' in data) || data.subscriptionRequired == true);
+    }
+
+    function changesServerOnlyUserKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(serverOnlyUserKeys().concat(['subscriptionRequired']));
+    }
+
+    // ---------- friends ----------
+
+    // A friend doc can only be written in the same batch that accepts the friend request,
+    // by the person accepting it: the doc names the request, which must go from pending to
+    // accepted in that batch, and the two uids must be the request's two sides. A request
+    // is accepted once, so a friendship can only be written at the moment it's accepted.
+    function validFriendWrite(ownerUid, otherUid) {
+      let data = request.resource.data;
+      let requestPath = /databases/$(database)/documents/friendRequests/$(data.requestId);
+      let before = get(requestPath).data;
+      let after = getAfter(requestPath).data;
+      return data.keys().hasOnly(['friendUid', 'addedAt', 'requestId'])
+        && data.requestId is string
+        && data.friendUid == otherUid
+        && before.status == 'pending'
+        && after.status == 'accepted'
+        && after.toUid == request.auth.uid
+        && [after.fromUid, after.toUid].toSet() == [ownerUid, otherUid].toSet();
+    }
+
+    // ---------- social ----------
+
+    function validReaction() {
+      let data = request.resource.data;
+      return data.keys().hasOnly(['reactorUid', 'reactorName', 'reactorPhoto', 'reactionType', 'createdAt'])
+        && data.reactorUid == request.auth.uid
+        && optString(data, 'reactorName', 100)
+        && optString(data, 'reactorPhoto', 2048)
+        && data.reactionType is string && data.reactionType.size() <= 32;
+    }
+
+    function validComment() {
+      let data = request.resource.data;
+      return data.keys().hasOnly(['id', 'commenterUid', 'commenterName', 'commenterPhoto', 'text', 'createdAt'])
+        && data.commenterUid == request.auth.uid
+        && optString(data, 'commenterName', 100)
+        && optString(data, 'commenterPhoto', 2048)
+        && data.text is string && data.text.size() > 0 && data.text.size() <= 2000;
+    }
+
+    function validReply() {
+      let data = request.resource.data;
+      return data.keys().hasOnly(['id', 'replierUid', 'replierName', 'replierPhoto', 'text', 'createdAt'])
+        && data.replierUid == request.auth.uid
+        && optString(data, 'replierName', 100)
+        && optString(data, 'replierPhoto', 2048)
+        && data.text is string && data.text.size() > 0 && data.text.size() <= 2000;
+    }
+
+    // ---------- challenges ----------
+
+    // Two-digit zero padding for 0–99: 7 → '107' → '07'.
+    function pad2(n) {
+      return string(n + 100).replace('^1', '');
+    }
+
+    // 'YYYY-MM-DDTHH' for a timestamp (UTC). Rules can't turn a timestamp into a string.
+    function isoHour(t) {
+      return string(t.year()) + '-' + pad2(t.month()) + '-' + pad2(t.day()) + 'T' + pad2(t.hours());
+    }
+
+    // The client writes deadlines as Date.toISOString() strings, which sort by time, so they
+    // compare against hour prefixes of request.time. The slack (at least 2 hours either way)
+    // allows for a phone clock that is off.
+    function deadlineWithin(value, maxHours) {
+      return value is string
+        && value.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?Z$')
+        && value >= isoHour(request.time - duration.value(2, 'h'))
+        && value < isoHour(request.time + duration.value(maxHours + 3, 'h'));
+    }
+
+    // Recipients are participantUids[1..10]. Rules can't loop, so each slot is spelled out.
+    // Each recipient lists the challenger as a friend.
+    function friendAt(challengerUid, uids, i) {
+      return uids.size() <= i
+        || exists(/databases/$(database)/documents/users/$(uids[i])/friends/$(challengerUid));
+    }
+
+    function allFriends(challengerUid, uids) {
+      return friendAt(challengerUid, uids, 1) && friendAt(challengerUid, uids, 2)
+        && friendAt(challengerUid, uids, 3) && friendAt(challengerUid, uids, 4)
+        && friendAt(challengerUid, uids, 5) && friendAt(challengerUid, uids, 6)
+        && friendAt(challengerUid, uids, 7) && friendAt(challengerUid, uids, 8)
+        && friendAt(challengerUid, uids, 9) && friendAt(challengerUid, uids, 10);
+    }
+
+    function validMatchRule(rule) {
+      return rule is map
+        && rule.keys().hasOnly(['category', 'activityType', 'distanceMin', 'durationMin', 'paceMaxSecondsPerMile'])
+        && rule.category in ['lifting', 'cardio', 'recovery']
+        && optString(rule, 'activityType', 40);
+    }
+
+    function validChallengerActivity(activity) {
+      return activity is map
+        && activity.keys().hasOnly(['activityId', 'type', 'subtype', 'duration', 'distance', 'calories', 'countToward', 'date'])
+        && optString(activity, 'activityId', 100)
+        && optString(activity, 'type', 40)
+        && optString(activity, 'subtype', 60)
+        && optString(activity, 'countToward', 30)
+        && optString(activity, 'date', 10);
+    }
+
+    // A new challenge: the challenger names 1–10 friends, every one of them pending.
+    function validChallengeCreate() {
+      let data = request.resource.data;
+      let uids = data.participantUids;
+      return data.keys().hasOnly(['id', 'type', 'mode', 'challengerUid', 'challengerName', 'title',
+          'participantUids', 'participants', 'challengerActivity', 'matchRule', 'windowHours',
+          'requirePhoto', 'createdAt', 'expiresAt', 'respondByAt', 'status', 'friendUid', 'friendStatus'])
+        && data.challengerUid == request.auth.uid
+        && data.status == 'pending'
+        && uids is list && uids.size() >= 2 && uids.size() <= 11
+        && uids[0] == request.auth.uid
+        && uids.toSet().size() == uids.size()
+        && data.participants is map
+        && data.participants.keys().toSet() == uids.toSet().difference([request.auth.uid].toSet())
+        && data.participants.values().hasOnly([{'status': 'pending'}])
+        && allFriends(request.auth.uid, uids)
+        && ((data.type == '1v1' && uids.size() == 2
+              && data.friendUid == uids[1] && data.friendStatus == 'pending')
+            || (data.type == 'group' && uids.size() >= 3
+              && !data.keys().hasAny(['friendUid', 'friendStatus'])))
+        && data.windowHours in [24, 48, 72]
+        && data.title is string && data.title.size() <= 60
+        && data.challengerName is string && data.challengerName.size() <= 100
+        && (!('requirePhoto' in data) || data.requirePhoto is bool)
+        && validMatchRule(data.matchRule)
+        && validChallengerActivity(data.challengerActivity)
+        && deadlineWithin(data.respondByAt, 8)
+        && data.expiresAt == data.respondByAt;
+    }
+
+    function challengeChangedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    // Only the caller's own participant entry changed, from one status to another, touching
+    // only the listed keys inside it.
+    function ownEntryMoves(fromStatus, toStatus, keys) {
+      let uid = request.auth.uid;
+      let before = resource.data.participants[uid];
+      let after = request.resource.data.participants[uid];
+      return request.resource.data.participants.diff(resource.data.participants).affectedKeys() == [uid].toSet()
+        && before.status == fromStatus
+        && after.status == toStatus
+        && after.diff(before).affectedKeys().hasOnly(keys);
+    }
+
+    function acceptsChallenge() {
+      let before = resource.data;
+      let after = request.resource.data;
+      let changed = challengeChangedKeys();
+      return ownEntryMoves('pending', 'accepted', ['status', 'acceptedAt'])
+        && after.status == 'active'
+        && ((before.status == 'pending'
+              && changed.hasOnly(['participants', 'status', 'expiresAt', 'firstAcceptedAt', 'friendStatus', 'acceptedAt'])
+              && deadlineWithin(after.expiresAt, before.windowHours))
+            || (before.status == 'active'
+              && changed.hasOnly(['participants'])))
+        && (!changed.hasAny(['friendStatus']) || (before.friendUid == request.auth.uid && after.friendStatus == 'accepted'));
+    }
+
+    function declinesChallenge() {
+      let before = resource.data;
+      let after = request.resource.data;
+      let changed = challengeChangedKeys();
+      return ownEntryMoves('pending', 'declined', ['status', 'resolvedAt'])
+        && ((before.type == 'group' && changed.hasOnly(['participants']))
+            || (before.type != 'group'
+              && changed.hasOnly(['participants', 'status', 'friendStatus', 'resolvedAt'])
+              && after.status == 'declined' && after.friendStatus == 'declined'));
+    }
+
+    function challengerCancelsPending() {
+      return request.auth.uid == resource.data.challengerUid
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'cancelled'
+        && challengeChangedKeys().hasOnly(['status', 'resolvedAt']);
+    }
+
+    function challengerRequestsCancel() {
+      let before = resource.data;
+      let ask = request.resource.data.cancelRequest;
+      return request.auth.uid == before.challengerUid
+        && before.status == 'active'
+        && before.type != 'group'
+        && challengeChangedKeys().hasOnly(['cancelRequest'])
+        && (!('cancelRequest' in before) || before.cancelRequest == null || before.cancelRequest.response != null)
+        && ask.keys().hasOnly(['requestedBy', 'requestedAt', 'response', 'respondedAt'])
+        && ask.requestedBy == request.auth.uid
+        && ask.response == null;
+    }
+
+    function answersCancelRequest() {
+      let before = resource.data;
+      let after = request.resource.data;
+      let changed = challengeChangedKeys();
+      return request.auth.uid != before.challengerUid
+        && before.status == 'active'
+        && before.participants[request.auth.uid].status == 'accepted'
+        && before.cancelRequest.response == null
+        && before.cancelRequest.requestedBy != request.auth.uid
+        && after.cancelRequest.diff(before.cancelRequest).affectedKeys().hasOnly(['response', 'respondedAt'])
+        && ((after.cancelRequest.response == 'accepted' && after.status == 'cancelled'
+              && changed.hasOnly(['cancelRequest', 'status', 'resolvedAt']))
+            || (after.cancelRequest.response == 'declined' && changed.hasOnly(['cancelRequest'])));
+    }
+
+    // ==========================================
+
+    match /users/{userId} {
+      // Friends feed, leaderboard and challenge cards read friends' docs. Everyone else gets
+      // publicProfiles/{uid}. No list: nobody can query across user docs.
+      allow get: if ownerOrFriend(userId);
+      allow create: if isUser(userId) && validNewUser();
+      allow update: if isUser(userId) && !changesServerOnlyUserKeys();
+      allow delete: if isUser(userId);
+
+      // Daily HealthKit totals (steps on the leaderboard).
+      match /dailyHealth/{date} {
+        allow read: if ownerOrFriend(userId);
+        allow write: if isUser(userId);
+      }
+
+      match /friends/{friendId} {
+        // Either side of a friendship can see it and end it.
+        allow read, delete: if isUser(userId) || isUser(friendId);
+        allow create, update: if signedIn() && validFriendWrite(userId, friendId);
+      }
+
+      // Reactions are keyed by the reactor's uid.
+      match /activityReactions/{activityId}/reactions/{reactorId} {
+        allow read: if ownerOrFriend(userId);
+        allow create, update: if isUser(reactorId) && ownerOrFriend(userId) && validReaction();
+        allow delete: if isUser(reactorId) || isUser(userId);
+      }
+
+      match /activityComments/{activityId}/comments/{commentId} {
+        allow read: if ownerOrFriend(userId);
+        allow create: if ownerOrFriend(userId) && validComment();
+        allow delete: if signedIn()
+          && (request.auth.uid == resource.data.commenterUid || request.auth.uid == userId);
+
+        match /replies/{replyId} {
+          allow read: if ownerOrFriend(userId);
+          allow create: if ownerOrFriend(userId) && validReply();
+          allow delete: if signedIn()
+            && (request.auth.uid == resource.data.replierUid || request.auth.uid == userId);
+        }
+      }
+    }
+
+    // Name, username and photo for anyone signed in (search, friend requests). Written only
+    // by the protectUserFields Cloud Function, mirrored from users/{uid}.
+    match /publicProfiles/{uid} {
+      allow get: if signedIn();
+      allow list: if signedIn() && request.query.limit <= 20;
+    }
+
+    // One reservation per username, held by the uid it names.
+    match /usernames/{username} {
+      allow get: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['uid'])
+        && request.resource.data.uid == request.auth.uid;
+      allow update: if isUser(resource.data.uid)
+        && request.resource.data.keys().hasOnly(['uid'])
+        && request.resource.data.uid == request.auth.uid;
+      allow delete: if isUser(resource.data.uid);
+    }
+
+    match /friendRequests/{requestId} {
+      allow read: if signedIn()
+        && (request.auth.uid == resource.data.fromUid || request.auth.uid == resource.data.toUid);
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['id', 'fromUid', 'toUid', 'status', 'createdAt'])
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.toUid is string
+        && request.resource.data.toUid != request.auth.uid
+        && request.resource.data.status == 'pending'
+        && (!('id' in request.resource.data) || request.resource.data.id == requestId)
+        && exists(/databases/$(database)/documents/users/$(request.resource.data.toUid));
+      // Only the recipient answers, pending → accepted (declining deletes the request).
+      allow update: if isUser(resource.data.toUid)
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'accepted'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+      allow delete: if signedIn()
+        && (request.auth.uid == resource.data.fromUid || request.auth.uid == resource.data.toUid);
+    }
+
+    // FCM tokens — only the owner.
+    match /userTokens/{userId} {
+      allow read, write: if isUser(userId);
+    }
+
+    // Friend challenges. Read: participants, and anyone for completed challenges (the
+    // friends feed shows "Completed [sender]'s challenge" to viewers who weren't in it).
+    // Clients create pending challenges and move their own entry pending → accepted or
+    // declined; the challenger cancels or asks to cancel. Completion, expiry and scoring
+    // happen in Cloud Functions.
+    match /challenges/{challengeId} {
+      allow read: if signedIn()
+        && (request.auth.uid in resource.data.participantUids
+            || resource.data.status == 'completed');
+
+      allow create: if signedIn() && validChallengeCreate();
+
+      allow update: if signedIn()
+        && request.auth.uid in resource.data.participantUids
+        && resource.data.participants is map
+        && (acceptsChallenge()
+            || declinesChallenge()
+            || challengerCancelsPending()
+            || challengerRequestsCancel()
+            || answersCancelRequest());
+    }
+  }
+}

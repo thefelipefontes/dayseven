@@ -129,8 +129,9 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
 
   const formatPace = (mins) => {
     if (!mins || mins <= 0) return '—';
-    const m = Math.floor(mins);
-    const s = Math.round((mins - m) * 60);
+    const total = Math.round(mins * 60); // whole seconds first, or 7.995 shows as "7:60"
+    const m = Math.floor(total / 60);
+    const s = total % 60;
     return `${m}:${String(s).padStart(2, '0')}`;
   };
 

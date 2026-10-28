@@ -4763,8 +4763,9 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
   // Helper to format pace
   const formatPace = (pace) => {
     if (!pace) return '--:--';
-    const mins = Math.floor(pace);
-    const secs = Math.round((pace - mins) * 60);
+    const total = Math.round(pace * 60); // whole seconds first, or 7.995 shows as "7:60"
+    const mins = Math.floor(total / 60);
+    const secs = total % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
@@ -5837,8 +5838,9 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
   // seconds-precise duration so a 25:30 run isn't rounded to a whole-minute pace.
   const durationForPace = duration + (activity.durationSeconds || 0) / 60;
   const pace = hasDistance && durationForPace > 0 ? durationForPace / distanceInUnit : 0;
-  const paceMin = Math.floor(pace);
-  const paceSec = Math.round((pace - paceMin) * 60);
+  const paceTotalSec = Math.round(pace * 60); // whole seconds first, or 7.995 shows as "7:60"
+  const paceMin = Math.floor(paceTotalSec / 60);
+  const paceSec = paceTotalSec % 60;
   const paceStr = `${paceMin}:${String(paceSec).padStart(2, '0')}`;
 
   // Activity display name — strip body parts for strength (shown separately via muscle labels)
@@ -17639,8 +17641,9 @@ export default function DaySevenApp() {
               updatedRecords.fastestPace = { value: pace, activityType: 'Running' };
               const _u = userProfile?.distanceUnit === 'km' ? 'km' : 'mi';
               const paceInUnit = _u === 'km' ? pace / 1.60934 : pace;
-              const paceMin = Math.floor(paceInUnit);
-              const paceSec = Math.round((paceInUnit - paceMin) * 60);
+              const paceTotalSec = Math.round(paceInUnit * 60);
+              const paceMin = Math.floor(paceTotalSec / 60);
+              const paceSec = paceTotalSec % 60;
               recordsBroken.push(`${paceMin}:${paceSec.toString().padStart(2, '0')}/${_u} run pace ⚡`);
             }
           }
@@ -17658,8 +17661,9 @@ export default function DaySevenApp() {
               updatedRecords.fastestCyclingPace = { value: pace, activityType: 'Cycle' };
               const _u = userProfile?.distanceUnit === 'km' ? 'km' : 'mi';
               const paceInUnit = _u === 'km' ? pace / 1.60934 : pace;
-              const paceMin = Math.floor(paceInUnit);
-              const paceSec = Math.round((paceInUnit - paceMin) * 60);
+              const paceTotalSec = Math.round(paceInUnit * 60);
+              const paceMin = Math.floor(paceTotalSec / 60);
+              const paceSec = paceTotalSec % 60;
               recordsBroken.push(`${paceMin}:${paceSec.toString().padStart(2, '0')}/${_u} cycle pace 🚴`);
             }
           }

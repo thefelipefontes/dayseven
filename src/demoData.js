@@ -117,9 +117,9 @@ export const getDemoActivities = () => {
   };
 
   const formatPace = (minutes, miles) => {
-    const perMile = minutes / miles;
-    const mm = Math.floor(perMile);
-    const ss = Math.round((perMile - mm) * 60);
+    const total = Math.round((minutes / miles) * 60);
+    const mm = Math.floor(total / 60);
+    const ss = total % 60;
     return `${mm}:${String(ss).padStart(2, '0')}`;
   };
 

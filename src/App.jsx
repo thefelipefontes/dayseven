@@ -998,8 +998,8 @@ const HeatMapCalendar = ({ data, onSelectDate, selectedDate, onSelectWeek }) => 
     const days = [];
     const today = new Date();
     const startDate = new Date(today);
+    startDate.setDate(1); // before setMonth, or the 29th–31st overflows into the next month
     startDate.setMonth(startDate.getMonth() - viewMonths + 1);
-    startDate.setDate(1);
     
     // Adjust to start from Sunday
     const dayOfWeek = startDate.getDay();
@@ -8631,6 +8631,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 
   const changeMonth = (delta) => {
     const currentDate = new Date(date + 'T12:00:00');
+    currentDate.setDate(1); // on the 29th–31st, setMonth overflows into the following month
     currentDate.setMonth(currentDate.getMonth() + delta);
     const newMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
     // Never browse past the current month — future days can't be logged, so

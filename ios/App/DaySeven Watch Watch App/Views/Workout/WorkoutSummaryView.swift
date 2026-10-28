@@ -494,12 +494,12 @@ struct WorkoutSummaryView: View {
 
         guard needsUpdate else { return }
 
-        await appVM.updateActivity(withId: activityId) { activity in
-            activity.subtype = currentSubtype
-            activity.focusAreas = currentFocusAreas
-            activity.focusArea = currentFocusAreas?.first
-            activity.countToward = currentCountToward
-        }
+        await appVM.updateActivityDetails(ActivityDetailsUpdate(
+            activityId: activityId,
+            subtype: currentSubtype,
+            focusAreas: currentFocusAreas,
+            countToward: currentCountToward
+        ))
         print("[WorkoutSummary] Re-saved activity with updated details")
     }
 }

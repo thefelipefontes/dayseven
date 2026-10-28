@@ -207,6 +207,24 @@ struct Activity: Codable, Identifiable {
     }
 }
 
+// MARK: - Activity Details Update
+
+/// The post-workout details the summary lets you change after the auto-save. A value, not a
+/// closure, so an edit that can't reach Firestore can wait in the offline queue.
+struct ActivityDetailsUpdate: Codable, Equatable {
+    let activityId: ActivityID
+    var subtype: String?
+    var focusAreas: [String]?
+    var countToward: String?
+
+    func apply(to activity: inout Activity) {
+        activity.subtype = subtype
+        activity.focusAreas = focusAreas
+        activity.focusArea = focusAreas?.first
+        activity.countToward = countToward
+    }
+}
+
 // MARK: - Custom Activity
 
 struct CustomActivity: Codable, Identifiable {

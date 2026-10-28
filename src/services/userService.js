@@ -1365,17 +1365,24 @@ export async function getDailyHealthHistory(uid, days = 30) {
     const today = new Date();
 
     if (isNative) {
-      // For native, we need to fetch the collection and filter
+      // Only the window asked for: the unfiltered read downloaded every day ever stored
+      // (two years is ~730 docs) at launch, on every pull-to-refresh and once per friend on
+      // the leaderboard. The client-side check below stays as a guard.
+      const cutoffDate = new Date(today);
+      cutoffDate.setDate(cutoffDate.getDate() - days);
+      const cutoffStr = toLocalDateStr(cutoffDate);
       const collectionPath = `users/${uid}/dailyHealth`;
       const { snapshots } = await FirebaseFirestore.getCollection({
-        reference: collectionPath
+        reference: collectionPath,
+        compositeFilter: {
+          type: 'and',
+          queryConstraints: [
+            { type: 'where', fieldPath: 'date', opStr: '>=', value: cutoffStr },
+          ],
+        },
       });
 
       if (snapshots) {
-        // Calculate the cutoff date
-        const cutoffDate = new Date(today);
-        cutoffDate.setDate(cutoffDate.getDate() - days);
-        const cutoffStr = toLocalDateStr(cutoffDate);
 
         for (const snap of snapshots) {
           if (snap.data && snap.data.date >= cutoffStr) {

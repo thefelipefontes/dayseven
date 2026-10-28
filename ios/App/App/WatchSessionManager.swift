@@ -12,6 +12,14 @@ extension Notification.Name {
     static let watchActivitySaved = Notification.Name("watchActivitySaved")
 }
 
+/// A workout the watch reported starting. Posted as the object of
+/// `.watchWorkoutStarted`.
+struct WatchWorkoutStart {
+    let activityType: String
+    let strengthType: String?
+    let receivedAt: Date
+}
+
 /// Manages WatchConnectivity on the iPhone side.
 /// Listens for auth-token requests from the Apple Watch and responds
 /// with a Firebase custom token so the watch can sign in as the same user.
@@ -32,6 +40,26 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     var phoneWorkoutLiveActivityId: String?
 
     private var activityUpdatesTask: Task<Void, Never>?
+
+    /// The watch workout in progress, from its workoutStarted until its
+    /// workoutEnded. HealthKitWriterPlugin replays it on load, because a start
+    /// that arrives before the bridge exists is posted to nobody. Main thread only.
+    private(set) var pendingWatchWorkoutStart: WatchWorkoutStart?
+
+    private func watchWorkoutDidStart(activityType: String, strengthType: String?) {
+        DispatchQueue.main.async {
+            let start = WatchWorkoutStart(activityType: activityType, strengthType: strengthType, receivedAt: Date())
+            self.pendingWatchWorkoutStart = start
+            NotificationCenter.default.post(name: .watchWorkoutStarted, object: start)
+        }
+    }
+
+    private func watchWorkoutDidEnd() {
+        DispatchQueue.main.async {
+            self.pendingWatchWorkoutStart = nil
+            NotificationCenter.default.post(name: .watchWorkoutEnded, object: nil)
+        }
+    }
 
     private override init() {
         super.init()
@@ -240,16 +268,7 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
             // Live Activity is started from JS when the app is in the foreground
             // (background start fails with "visibility" error)
 
-            DispatchQueue.main.async {
-                NotificationCenter.default.post(
-                    name: .watchWorkoutStarted,
-                    object: nil,
-                    userInfo: [
-                        "activityType": activityType,
-                        "strengthType": strengthType as Any
-                    ]
-                )
-            }
+            watchWorkoutDidStart(activityType: activityType, strengthType: strengthType)
         case "workoutEnded":
             print("[WatchSession] Watch workout ended")
 
@@ -260,12 +279,7 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
                 }
             }
 
-            DispatchQueue.main.async {
-                NotificationCenter.default.post(
-                    name: .watchWorkoutEnded,
-                    object: nil
-                )
-            }
+            watchWorkoutDidEnd()
         case "workoutPaused":
             let isPaused = message["isPaused"] as? Bool ?? false
             let accumulatedPauseTime = message["accumulatedPauseTime"] as? Double ?? 0
@@ -299,16 +313,7 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
 
             // Live Activity is started from JS when the app is in the foreground
 
-            DispatchQueue.main.async {
-                NotificationCenter.default.post(
-                    name: .watchWorkoutStarted,
-                    object: nil,
-                    userInfo: [
-                        "activityType": activityType,
-                        "strengthType": strengthType as Any
-                    ]
-                )
-            }
+            watchWorkoutDidStart(activityType: activityType, strengthType: strengthType)
 
         case "workoutEnded":
             print("[WatchSession] transferUserInfo: Watch workout ended")
@@ -319,9 +324,7 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
                 }
             }
 
-            DispatchQueue.main.async {
-                NotificationCenter.default.post(name: .watchWorkoutEnded, object: nil)
-            }
+            watchWorkoutDidEnd()
 
         case "workoutPaused":
             let isPaused = userInfo["isPaused"] as? Bool ?? false

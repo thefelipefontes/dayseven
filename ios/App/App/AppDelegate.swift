@@ -31,6 +31,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Activate WatchConnectivity for Apple Watch auth relay
         WatchSessionManager.shared.activate()
 
+        // HealthKit observer for "New Workout Detected". Registered here, not by
+        // the plugin: a HealthKit background launch connects no scene, so the
+        // bridge (and the plugin) never loads on the launches this exists for.
+        WorkoutDetectionObserver.shared.start()
+
         // Start observing ActivityKit push-to-start tokens (iOS 17.2+), and the
         // activities those pushes start, so one can't stack on a JS-started one
         if #available(iOS 17.2, *) {

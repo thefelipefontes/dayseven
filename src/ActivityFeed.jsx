@@ -11,7 +11,7 @@ import FriendProfileCard from './components/FriendProfileCard';
 import ZoomablePhoto from './components/ZoomablePhoto';
 import { isDemoAccount, getDemoLeaderboardFriends, getDemoActivities, getDemoHealthHistory, getDemoUserData, getDemoChallengeStats, getDemoUserLeaderboardOverride } from './demoData';
 import { resolveUnit, unitLabel, formatDistanceValue, milesToDisplay } from './utils/distance';
-import { getActivityCategory } from './utils/activityCategory';
+import { getActivityCategory, countsAsLifting, countsAsCardio, countsAsRecovery } from './utils/activityCategory';
 
 // Convert a Date to YYYY-MM-DD string in local timezone (avoids UTC date shifting)
 const toLocalDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -82,8 +82,12 @@ const calculateLeaderboardStats = (rawActivities, healthHistory, recordsData) =>
   const calcPeriodVolume = (periodActivities) => {
     const running = periodActivities.filter(a => a.type === 'Running');
     const cycling = periodActivities.filter(a => a.type === 'Cycle');
-    const strength = periodActivities.filter(a => getActivityCategory(a) === 'lifting');
-    const recovery = periodActivities.filter(a => getActivityCategory(a) === 'recovery');
+    // Goal-slot rules shared with Home: a Strength + Cardio session (Circuit) is both, and
+    // every cardio type counts (swims, rows, hikes…), not just runs and rides.
+    const strength = periodActivities.filter(countsAsLifting);
+    const recovery = periodActivities.filter(countsAsRecovery);
+    const cardio = periodActivities.filter(countsAsCardio);
+    const goalSessions = periodActivities.filter(a => countsAsLifting(a) || countsAsCardio(a) || countsAsRecovery(a));
     const coldPlunge = periodActivities.filter(a => a.type === 'Cold Plunge');
     const sauna = periodActivities.filter(a => a.type === 'Sauna');
     const yoga = periodActivities.filter(a => a.type === 'Yoga');
@@ -93,6 +97,8 @@ const calculateLeaderboardStats = (rawActivities, healthHistory, recordsData) =>
       miles: running.reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0),
       runMinutes: running.reduce((sum, a) => sum + (parseInt(a.duration) || 0), 0),
       strengthSessions: strength.length,
+      cardioSessions: cardio.length,
+      goalSessions: goalSessions.length,
       liftingMinutes: strength.reduce((sum, a) => sum + (parseInt(a.duration) || 0), 0),
       recoverySessions: recovery.length,
       coldPlunges: coldPlunge.length,
@@ -138,6 +144,8 @@ const calculateLeaderboardStats = (rawActivities, healthHistory, recordsData) =>
       miles: { week: weekVolume.miles, month: monthVolume.miles, year: yearVolume.miles, all: allVolume.miles },
       runMinutes: { week: weekVolume.runMinutes, month: monthVolume.runMinutes, year: yearVolume.runMinutes, all: allVolume.runMinutes },
       strengthSessions: { week: weekVolume.strengthSessions, month: monthVolume.strengthSessions, year: yearVolume.strengthSessions, all: allVolume.strengthSessions },
+      cardioSessions: { week: weekVolume.cardioSessions, month: monthVolume.cardioSessions, year: yearVolume.cardioSessions, all: allVolume.cardioSessions },
+      goalSessions: { week: weekVolume.goalSessions, month: monthVolume.goalSessions, year: yearVolume.goalSessions, all: allVolume.goalSessions },
       liftingMinutes: { week: weekVolume.liftingMinutes, month: monthVolume.liftingMinutes, year: yearVolume.liftingMinutes, all: allVolume.liftingMinutes },
       recoverySessions: { week: weekVolume.recoverySessions, month: monthVolume.recoverySessions, year: yearVolume.recoverySessions, all: allVolume.recoverySessions },
       coldPlunges: { week: weekVolume.coldPlunges, month: monthVolume.coldPlunges, year: yearVolume.coldPlunges, all: allVolume.coldPlunges },
@@ -2150,10 +2158,10 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         case 'calories': return userData.stats?.calories?.[tr] || 0;
         case 'steps': return userData.stats?.steps?.[tr] || 0;
         case 'workouts': {
-          return (v.runs?.[tr] || 0) + (v.strengthSessions?.[tr] || 0) + (v.recoverySessions?.[tr] || 0) + (v.rides?.[tr] || 0);
+          return v.goalSessions?.[tr] || 0;
         }
         case 'strengthSessions': return v.strengthSessions?.[tr] || 0;
-        case 'cardioSessions': return (v.runs?.[tr] || 0) + (v.rides?.[tr] || 0);
+        case 'cardioSessions': return v.cardioSessions?.[tr] || 0;
         case 'recoverySessions': return v.recoverySessions?.[tr] || 0;
         case 'wins': return cs.wins || 0;
         case 'currentStreak': return cs.currentWinStreak || 0;
@@ -2340,10 +2348,10 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         case 'calories': return userData.stats?.calories?.[timeRange] || 0;
         case 'steps': return userData.stats?.steps?.[timeRange] || 0;
         case 'workouts': {
-          return (v.runs?.[timeRange] || 0) + (v.strengthSessions?.[timeRange] || 0) + (v.recoverySessions?.[timeRange] || 0) + (v.rides?.[timeRange] || 0);
+          return v.goalSessions?.[timeRange] || 0;
         }
         case 'strengthSessions': return v.strengthSessions?.[timeRange] || 0;
-        case 'cardioSessions': return (v.runs?.[timeRange] || 0) + (v.rides?.[timeRange] || 0);
+        case 'cardioSessions': return v.cardioSessions?.[timeRange] || 0;
         case 'recoverySessions': return v.recoverySessions?.[timeRange] || 0;
         case 'wins': return cs.wins || 0;
         case 'currentStreak': return cs.currentWinStreak || 0;
@@ -2615,10 +2623,10 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           case 'steps': return userData.stats?.steps?.[tr] || 0;
           case 'workouts': {
             // Total workouts = sum of all activity sessions
-            return (v.runs?.[tr] || 0) + (v.strengthSessions?.[tr] || 0) + (v.recoverySessions?.[tr] || 0) + (v.rides?.[tr] || 0);
+            return v.goalSessions?.[tr] || 0;
           }
           case 'strengthSessions': return v.strengthSessions?.[tr] || 0;
-          case 'cardioSessions': return (v.runs?.[tr] || 0) + (v.rides?.[tr] || 0);
+          case 'cardioSessions': return v.cardioSessions?.[tr] || 0;
           case 'recoverySessions': return v.recoverySessions?.[tr] || 0;
           default: return userData.stats?.calories?.[tr] || 0;
         }

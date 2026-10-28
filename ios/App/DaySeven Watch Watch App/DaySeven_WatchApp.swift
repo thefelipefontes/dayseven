@@ -27,7 +27,21 @@ class ExtensionDelegate: NSObject, WKApplicationDelegate {
 
         let phoneService = PhoneConnectivityService.shared
         let isIndoor = workoutConfiguration.locationType == .indoor
-        let activityType = Self.mapHKActivityTypeToString(workoutConfiguration.activityType)
+        let app = ActivityTypes.appActivity(for: workoutConfiguration.activityType)
+        let activityType = app.type
+
+        // Swimming: surface the swimmingLocationType the launcher set (defaults to Pool when
+        // unspecified) so HK metadata stays correct. Indoor/Outdoor only for the types that
+        // have it as a subtype, and only when the phone said which; it sends .unknown otherwise.
+        let subtype: String?
+        if workoutConfiguration.activityType == .swimming {
+            subtype = workoutConfiguration.swimmingLocationType == .openWater ? "Open Water" : "Pool"
+        } else if ActivityTypes.all.first(where: { $0.name == activityType })?.subtypes.contains("Indoor") == true,
+                  workoutConfiguration.locationType != .unknown {
+            subtype = isIndoor ? "Indoor" : "Outdoor"
+        } else {
+            subtype = nil
+        }
 
         Task { @MainActor in
             // WorkoutManager may not be set yet if app was just cold-launched
@@ -59,76 +73,26 @@ class ExtensionDelegate: NSObject, WKApplicationDelegate {
                 print("[ExtDelegate] remoteWorkoutRequest already pending, skipping")
                 return
             }
-            // For swimming, surface the swimmingLocationType the launcher set
-            // (defaults to Pool when unspecified) so HK metadata stays correct.
-            let externalSwimSubtype: String? = workoutConfiguration.activityType == .swimming
-                ? (workoutConfiguration.swimmingLocationType == .openWater ? "Open Water" : "Pool")
-                : nil
             do {
-                try await wm.startWorkout(activityType: workoutConfiguration.activityType, isIndoor: isIndoor, subtype: externalSwimSubtype)
+                try await wm.startWorkout(activityType: workoutConfiguration.activityType, isIndoor: isIndoor, subtype: subtype)
                 phoneService.remoteWorkoutRequest = PhoneConnectivityService.RemoteWorkoutRequest(
                     activityType: activityType,
-                    strengthType: nil,
-                    subtype: isIndoor ? "Indoor" : "Outdoor",
-                    focusAreas: nil
+                    strengthType: app.strengthType,
+                    subtype: subtype,
+                    focusAreas: nil,
+                    countToward: app.countToward
                 )
                 print("[ExtDelegate] Workout started + remoteWorkoutRequest published")
                 // Notify the phone so it can switch from phone to watch source
-                phoneService.notifyPhoneWorkoutStarted(activityType: activityType, strengthType: nil)
+                phoneService.notifyPhoneWorkoutStarted(activityType: activityType, strengthType: app.strengthType)
                 // Also trigger Live Activity via APNs push (works even when phone is backgrounded)
-                phoneService.requestLiveActivityPush(activityType: activityType, strengthType: nil)
+                phoneService.requestLiveActivityPush(activityType: activityType, strengthType: app.strengthType)
                 // Success haptic
                 WKInterfaceDevice.current().play(.success)
             } catch {
                 print("[ExtDelegate] Failed to start workout: \(error.localizedDescription)")
                 WKInterfaceDevice.current().play(.failure)
             }
-        }
-    }
-
-    /// Reverse-map HKWorkoutActivityType back to our app's activity type string
-    static func mapHKActivityTypeToString(_ type: HKWorkoutActivityType) -> String {
-        switch type {
-        case .running: return "Running"
-        case .cycling: return "Cycling"
-        case .swimming: return "Swimming"
-        case .walking: return "Walking"
-        case .hiking: return "Hiking"
-        case .traditionalStrengthTraining: return "Strength Training"
-        case .highIntensityIntervalTraining: return "HIIT"
-        case .yoga: return "Yoga"
-        case .pilates: return "Pilates"
-        case .coreTraining: return "Core Training"
-        case .elliptical: return "Elliptical"
-        case .stairClimbing: return "Stair Climbing"
-        case .crossTraining: return "Cross Training"
-        case .flexibility: return "Flexibility"
-        case .functionalStrengthTraining: return "Functional Strength"
-        case .americanFootball: return "Football"
-        case .basketball: return "Basketball"
-        case .soccer: return "Soccer"
-        case .tennis: return "Tennis"
-        case .golf: return "Golf"
-        case .baseball: return "Baseball"
-        case .boxing: return "Boxing"
-        case .martialArts: return "Martial Arts"
-        case .rowing: return "Rowing"
-        case .socialDance: return "Dance"
-        case .badminton: return "Badminton"
-        case .volleyball: return "Volleyball"
-        case .hockey: return "Hockey"
-        case .lacrosse: return "Lacrosse"
-        case .rugby: return "Rugby"
-        case .softball: return "Softball"
-        case .squash: return "Squash"
-        case .tableTennis: return "Table Tennis"
-        case .racquetball: return "Racquetball"
-        case .handball: return "Handball"
-        case .cricket: return "Cricket"
-        case .mindAndBody: return "Mind and Body"
-        case .preparationAndRecovery: return "Cold Plunge"
-        case .cooldown: return "Cooldown"
-        default: return "Other"
         }
     }
 }

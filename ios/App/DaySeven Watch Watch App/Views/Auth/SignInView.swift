@@ -30,6 +30,7 @@ struct SignInView: View {
 
                 // Sign in via iPhone (primary — works with Google, Apple, any auth)
                 Button {
+                    appVM.authService.noteUserRequestedSignIn()
                     Task {
                         await phoneService.requestSignInFromPhone()
                     }
@@ -78,6 +79,7 @@ struct SignInView: View {
 
                 // Sign in with Apple (fallback — creates separate Apple account)
                 SignInWithAppleButton(.signIn) { request in
+                    appVM.authService.noteUserRequestedSignIn()
                     let nonce = appVM.authService.generateNonce()
                     request.requestedScopes = [.email, .fullName]
                     request.nonce = appVM.authService.sha256(nonce)
@@ -112,6 +114,7 @@ struct SignInView: View {
                     .padding(.vertical, 4)
 
                 Button {
+                    appVM.authService.noteUserRequestedSignIn()
                     appVM.authService.simulatorSignIn()
                 } label: {
                     HStack {

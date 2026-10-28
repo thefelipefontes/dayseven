@@ -21,11 +21,15 @@ struct DaySevenTimelineProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<DaySevenEntry>) -> Void) {
-        let data = SharedDefaults.readStreakData()
-        let entry = DaySevenEntry(date: .now, data: data)
+        let now = Date.now
+        let entry = DaySevenEntry(date: now, data: SharedDefaults.readStreakData(asOf: now))
+        // An entry for Sunday midnight too, so the rings empty when the week rolls over even
+        // if no reload comes in time (the refresh below is a request, not a promise).
+        let nextWeek = SharedDefaults.nextWeekStart(after: now)
+        let rollover = DaySevenEntry(date: nextWeek, data: SharedDefaults.readStreakData(asOf: nextWeek))
         // Refresh every 30 minutes (the app also triggers reloads on save)
-        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 30, to: .now)!
-        let timeline = Timeline(entries: [entry], policy: .after(nextUpdate))
+        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 30, to: now)!
+        let timeline = Timeline(entries: [entry, rollover], policy: .after(nextUpdate))
         completion(timeline)
     }
 }

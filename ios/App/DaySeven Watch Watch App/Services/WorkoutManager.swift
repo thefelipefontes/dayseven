@@ -15,6 +15,9 @@ struct WorkoutResult: Equatable {
     var avgHr: Int
     var maxHr: Int
     var distance: Double? // miles
+    /// The phone ended this workout, and the phone saves it (with this workoutUUID) as part of
+    /// its own Finish flow. The watch summary must not save a second copy.
+    var endedFromPhone: Bool = false
 }
 
 // MARK: - Workout Split
@@ -129,6 +132,9 @@ class WorkoutManager: NSObject, ObservableObject {
     private var accumulatedPauseTime: TimeInterval = 0
     private var lastPauseDate: Date?
 
+    /// When the running workout started (nil when none is running).
+    var workoutStartDate: Date? { startDate }
+
     /// Total paused time so far, including any in-progress pause. Used so the phone
     /// app can compute elapsed locally (now - startDate - effectivePauseTime) and
     /// stay smooth like the Live Activity instead of lagging behind WCSession polls.
@@ -165,35 +171,6 @@ class WorkoutManager: NSObject, ObservableObject {
         }
     }
 
-    // MARK: - Summary Fallback Mapping
-
-    /// Map an HK activity type to a canonical phone-side activity name. Used as
-    /// a last-resort default for summaryActivityType when an entry path forgot
-    /// to populate it. Names match keys in the phone's ICON_MAP so the saved
-    /// Activity renders with the right icon and title.
-    static func summaryFallbackName(for activityType: HKWorkoutActivityType) -> String {
-        switch activityType {
-        case .traditionalStrengthTraining, .functionalStrengthTraining: return "Strength Training"
-        case .coreTraining: return "Strength Training"
-        case .crossTraining, .highIntensityIntervalTraining: return "Strength Training"
-        case .running: return "Running"
-        case .cycling: return "Cycle"
-        case .walking: return "Walking"
-        case .hiking: return "Hiking"
-        case .swimming: return "Swimming"
-        case .rowing: return "Rowing"
-        case .elliptical: return "Elliptical"
-        case .stairClimbing, .stepTraining: return "Stair Climbing"
-        case .yoga: return "Yoga"
-        case .pilates: return "Pilates"
-        case .flexibility: return "Yoga"
-        case .cooldown: return "Cooldown"
-        case .mindAndBody: return "Yoga"
-        case .preparationAndRecovery: return "Cold Plunge"
-        default: return "Other"
-        }
-    }
-
     // MARK: - Start Workout
 
     func startWorkout(activityType: HKWorkoutActivityType, isIndoor: Bool = false, subtype: String? = nil) async throws {
@@ -210,10 +187,10 @@ class WorkoutManager: NSObject, ObservableObject {
         // without those richer paths firing, autoSaveWorkout still has a
         // non-empty type to persist instead of saving a blank Activity.
         if summaryActivityType.isEmpty {
-            summaryActivityType = WorkoutManager.summaryFallbackName(for: activityType)
-            if summaryActivityType == "Strength Training" && summaryStrengthType == nil {
-                summaryStrengthType = activityType == .functionalStrengthTraining ? "Bodyweight" : "Weightlifting"
-            }
+            let fallback = ActivityTypes.appActivity(for: activityType)
+            summaryActivityType = fallback.type
+            if summaryStrengthType == nil { summaryStrengthType = fallback.strengthType }
+            if summaryCountToward == nil { summaryCountToward = fallback.countToward }
         }
 
         let config = HKWorkoutConfiguration()
@@ -331,7 +308,7 @@ class WorkoutManager: NSObject, ObservableObject {
 
     // MARK: - End Workout
 
-    func endWorkout() async throws -> WorkoutResult {
+    func endWorkout(endedFromPhone: Bool = false) async throws -> WorkoutResult {
         guard let session = session, let builder = builder, let startDate = startDate else {
             throw WorkoutError.noActiveWorkout
         }
@@ -377,19 +354,28 @@ class WorkoutManager: NSObject, ObservableObject {
         } catch {
             print("[WorkoutManager] endCollection error: \(error.localizedDescription)")
         }
-        let workout = try await builder.finishWorkout()
+        // Nothing after `isEnding = true` may throw. A finishWorkout throw used to escape
+        // here with isEnding and isActive still set: End stuck on "Saving..." for good, no
+        // summary, and the workout never reached DaySeven. If HealthKit can't store it, keep
+        // going with the metrics captured above so it is at least saved here.
+        var workout: HKWorkout?
+        do {
+            workout = try await builder.finishWorkout()
+        } catch {
+            print("[WorkoutManager] finishWorkout error — saving from captured metrics: \(error.localizedDescription)")
+        }
 
-        // Finalize GPS route if this was an outdoor workout
+        // Stop GPS, and finalize the route if this was an outdoor workout HealthKit stored
+        locationManager?.stopUpdatingLocation()
+        locationManager = nil
         if isOutdoorWorkout, let rb = routeBuilder, let finishedWorkout = workout {
-            locationManager?.stopUpdatingLocation()
-            locationManager = nil
             do {
                 try await rb.finishRoute(with: finishedWorkout, metadata: nil)
             } catch {
                 print("[WorkoutManager] Route finalization error: \(error.localizedDescription)")
             }
-            routeBuilder = nil
         }
+        routeBuilder = nil
         isOutdoorWorkout = false
 
         let result = WorkoutResult(
@@ -400,7 +386,8 @@ class WorkoutManager: NSObject, ObservableObject {
             calories: capturedCalories,
             avgHr: capturedAvgHr,
             maxHr: capturedMaxHr,
-            distance: capturedDistance > 0.01 ? capturedDistance : nil
+            distance: capturedDistance > 0.01 ? capturedDistance : nil,
+            endedFromPhone: endedFromPhone
         )
 
         // IMPORTANT: Publish result BEFORE setting isActive = false
@@ -424,7 +411,13 @@ class WorkoutManager: NSObject, ObservableObject {
 
     // MARK: - Pause / Resume
 
+    // Both are no-ops unless they change the state. The phone's sendMessage handlers call
+    // them without checking, and a second pause restarted lastPauseDate, dropping every
+    // paused second so far from accumulatedPauseTime (that time then counted as active).
+    // A stray resume started a second 30fps timer next to the running one.
+
     func pause() {
+        guard isActive, !isPaused, !isEnding else { return }
         session?.pause()
         isPaused = true
         lastPauseDate = Date()
@@ -434,6 +427,7 @@ class WorkoutManager: NSObject, ObservableObject {
     }
 
     func resume() {
+        guard isActive, isPaused, !isEnding else { return }
         session?.resume()
         isPaused = false
         if let pauseStart = lastPauseDate {
@@ -483,6 +477,9 @@ class WorkoutManager: NSObject, ObservableObject {
     // even if watchOS throttles the timer frequency.
 
     private func startTimer() {
+        // Never leave a running timer behind: it would keep firing at 30fps unreferenced
+        timer?.invalidate()
+
         // Record the reference point so we can compute elapsed on each tick
         if activeStartDate == nil {
             activeStartDate = Date()
@@ -644,8 +641,19 @@ extension WorkoutManager: HKWorkoutSessionDelegate {
         _ workoutSession: HKWorkoutSession,
         didFailWithError error: Error
     ) {
+        let failedSession = ObjectIdentifier(workoutSession)
+        let reason = error.localizedDescription
         Task { @MainActor in
-            self.cancelWorkout()
+            print("[WorkoutManager] Workout session failed: \(reason)")
+            guard self.session.map(ObjectIdentifier.init) == failedSession,
+                  self.isActive, !self.isEnding else { return }
+            // End it instead of discarding it. cancelWorkout() threw away everything the
+            // user had done so far; ending publishes the result, and the summary saves it.
+            do {
+                _ = try await self.endWorkout()
+            } catch {
+                self.cancelWorkout()
+            }
         }
     }
 }

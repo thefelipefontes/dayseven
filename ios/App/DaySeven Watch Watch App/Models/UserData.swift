@@ -145,6 +145,14 @@ struct Activity: Codable, Identifiable {
         focusAreas ?? (focusArea.map { [$0] } ?? [])
     }
 
+    /// Whether `other` records the same HealthKit workout as this one: the phone stamps a
+    /// watch workout's UUID on the copy it saves (healthKitUUID) or links to it
+    /// (linkedHealthKitUUID). Two activities like that are one workout logged twice.
+    func isSameHealthKitWorkout(as other: Activity) -> Bool {
+        guard let uuid = healthKitUUID, !uuid.isEmpty else { return false }
+        return other.healthKitUUID == uuid || other.linkedHealthKitUUID == uuid
+    }
+
     enum CodingKeys: String, CodingKey {
         case id, type, subtype, date, time, duration, calories, avgHr, maxHr
         case distance, source, sourceDevice, strengthType, focusArea, focusAreas, notes
@@ -168,13 +176,8 @@ struct Activity: Codable, Identifiable {
         healthKitUUID: String? = nil,
         countToward: String? = nil
     ) -> Activity {
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        let dateString = dateFormatter.string(from: date)
-
-        let timeFormatter = DateFormatter()
-        timeFormatter.dateFormat = "h:mm a"
-        let timeString = timeFormatter.string(from: date)
+        let dateString = formatDateString(date)
+        let timeString = formatTimeString(date)
 
         return Activity(
             id: .newID(),
@@ -196,6 +199,32 @@ struct Activity: Codable, Identifiable {
             healthKitUUID: healthKitUUID,
             countToward: countToward
         )
+    }
+}
+
+// MARK: - Activity Details Update
+
+/// The post-workout details the summary lets you change after the auto-save. A value, not a
+/// closure, so an edit that can't reach Firestore can wait in the offline queue.
+struct ActivityDetailsUpdate: Codable, Equatable {
+    let activityId: ActivityID
+    var subtype: String?
+    var focusAreas: [String]?
+    var countToward: String?
+
+    func apply(to activity: inout Activity) {
+        activity.subtype = subtype
+        activity.focusAreas = focusAreas
+        activity.focusArea = focusAreas?.first
+        activity.countToward = countToward
+
+        // The encoder starts from the fields the activity was read with and only writes the
+        // known ones that are non-nil, so a detail set back to "None" here would keep its old
+        // value in Firestore. This edit is the user clearing it on purpose: drop it from there.
+        for (key, cleared) in [("subtype", subtype == nil), ("countToward", countToward == nil),
+                               ("focusAreas", focusAreas == nil), ("focusArea", focusAreas?.first == nil)] where cleared {
+            activity.rawFirestoreFields?[key] = nil
+        }
     }
 }
 

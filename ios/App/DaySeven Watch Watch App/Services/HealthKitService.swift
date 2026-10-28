@@ -132,50 +132,35 @@ class HealthKitService {
 
     // MARK: - Today's Steps
 
+    /// Steps since midnight. Today's bucket of the same day-split query as the week, so today
+    /// and "the week before today" add up the way they do on the phone (its Plan tab works
+    /// out today's step target from exactly that split, stepsDailyShare). A plain query from
+    /// midnight with .strictStartDate dropped any sample that started before midnight, so
+    /// today read low and the target derived from it read high.
     func fetchTodaySteps() async throws -> Int {
-        let stepsType = HKQuantityType(.stepCount)
-        let predicate = HKQuery.predicateForSamples(
-            withStart: startOfToday(),
-            end: Date(),
-            options: .strictStartDate
-        )
-
-        let result = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int, Error>) in
-            let query = HKStatisticsQuery(
-                quantityType: stepsType,
-                quantitySamplePredicate: predicate,
-                options: .cumulativeSum
-            ) { _, statistics, error in
-                if let error = error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-                let steps = statistics?.sumQuantity()?.doubleValue(for: .count()) ?? 0
-                continuation.resume(returning: Int(steps))
-            }
-            healthStore.execute(query)
-        }
-
-        return result
+        let today = startOfToday()
+        guard let leadIn = Calendar.current.date(byAdding: .day, value: -1, to: today) else { return 0 }
+        return Int(try await dailyStepsTotal(from: leadIn, counting: today))
     }
 
     // MARK: - This Week's Steps
 
     /// Steps from Sunday midnight to now — the Steps ring (stepsPerDay × 7).
-    ///
-    /// Runs a day-bucketed statistics collection starting a day early (Saturday) and drops
-    /// that lead-in day, so a sample that crossed Saturday→Sunday midnight is split between
-    /// the days the way the Health app splits it. A single query from Sunday with
-    /// .strictStartDate would drop it entirely (the phone saw ~850-900 steps lost that way).
     func fetchWeekSteps() async throws -> Int {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
-        let weekday = calendar.component(.weekday, from: today) // 1 = Sunday
-        guard let sunday = calendar.date(byAdding: .day, value: -(weekday - 1), to: today),
-              let leadIn = calendar.date(byAdding: .day, value: -1, to: sunday) else { return 0 }
+        let sunday = startOfCurrentWeek()
+        guard let leadIn = Calendar.current.date(byAdding: .day, value: -1, to: sunday) else { return 0 }
+        return Int(try await dailyStepsTotal(from: leadIn, counting: sunday))
+    }
 
+    /// Steps from `countFrom` to now, summed over day buckets.
+    ///
+    /// Runs a day-bucketed statistics collection starting a day early (`leadIn`) and drops
+    /// that lead-in day, so a sample that crossed midnight into `countFrom` is split between
+    /// the days the way the Health app splits it. A single query from `countFrom` with
+    /// .strictStartDate would drop it entirely (the phone saw ~850-900 steps lost that way).
+    private func dailyStepsTotal(from leadIn: Date, counting countFrom: Date) async throws -> Double {
         let predicate = HKQuery.predicateForSamples(withStart: leadIn, end: Date(), options: .strictStartDate)
-        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int, Error>) in
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Double, Error>) in
             let query = HKStatisticsCollectionQuery(
                 quantityType: HKQuantityType(.stepCount),
                 quantitySamplePredicate: predicate,
@@ -189,10 +174,10 @@ class HealthKitService {
                     return
                 }
                 var total = 0.0
-                collection?.enumerateStatistics(from: sunday, to: Date()) { stats, _ in
+                collection?.enumerateStatistics(from: countFrom, to: Date()) { stats, _ in
                     total += stats.sumQuantity()?.doubleValue(for: .count()) ?? 0
                 }
-                continuation.resume(returning: Int(total))
+                continuation.resume(returning: total)
             }
             healthStore.execute(query)
         }

@@ -255,15 +255,22 @@ struct ActivityTypes {
 
     // MARK: - Default countToward for hybrid activities
 
-    static func getDefaultCountToward(type: String, subtype: String?, countToward: String? = nil) -> String? {
+    /// The countToward a watch save stamps (src/utils/activityCategory.js getDefaultCountToward
+    /// for the types listed; nil leaves it to the type-based category).
+    static func getDefaultCountToward(type: String, subtype: String?, strengthType: String? = nil, countToward: String? = nil) -> String? {
         // If an explicit countToward was provided (e.g. from hybrid picker), use it
         if let ct = countToward, !ct.isEmpty { return ct }
+        // The phone keys Circuit by the variant name, but a watch strength workout is type
+        // "Strength Training" with the variant in strengthType, so check both. Missing this
+        // left every watch Circuit counting toward Strength only.
+        if type == "Circuit" || strengthType == "Circuit" { return "lifting+cardio" }
         switch type {
         case "Weightlifting", "Bodyweight":
             return "lifting"
-        case "Circuit":
-            return "lifting+cardio"
-        case "Yoga", "Pilates":
+        case "Yoga":
+            // Same subtype rule as getActivityCategory: Power, Hot and Vinyasa count as cardio.
+            return ["Power", "Hot", "Vinyasa"].contains(subtype ?? "") ? "cardio" : "recovery"
+        case "Pilates":
             return "recovery"
         default:
             return nil
@@ -350,6 +357,65 @@ struct ActivityTypes {
 
         default:
             return .other
+        }
+    }
+
+    // MARK: - HKWorkoutActivityType -> app activity (the reverse of the mapping above)
+
+    /// The app activity a bare HealthKit type stands for, for workouts the watch didn't pick
+    /// itself — the phone's startWatchApp fallback hands over only an HKWorkoutConfiguration.
+    /// Names follow the phone's HealthKit import table (workoutTypeMap in healthService.js), so
+    /// each one is a type the category tables above know and fills the ring it fills there.
+    static func appActivity(for hkType: HKWorkoutActivityType) -> (type: String, strengthType: String?, countToward: String?) {
+        switch hkType {
+        // Strength: stored as "Strength Training" with the variant in strengthType
+        case .traditionalStrengthTraining: return ("Strength Training", "Weightlifting", nil)
+        case .functionalStrengthTraining: return ("Strength Training", "Bodyweight", nil)
+        case .highIntensityIntervalTraining, .crossTraining, .coreTraining:
+            return ("Strength Training", "Circuit", nil)
+
+        // Cardio
+        case .running: return ("Running", nil, nil)
+        case .cycling: return ("Cycle", nil, nil)
+        case .swimming: return ("Swimming", nil, nil)
+        case .walking: return ("Walking", nil, nil)
+        case .hiking: return ("Hiking", nil, nil)
+        case .elliptical: return ("Elliptical", nil, nil)
+        case .stairClimbing, .stepTraining: return ("Stair Climbing", nil, nil)
+        case .rowing: return ("Rowing", nil, nil)
+        case .crossCountrySkiing: return ("Ski Trainer", nil, nil)
+        case .socialDance, .cardioDance: return ("Dance", nil, nil)
+
+        // Sports (team sports count as cardio)
+        case .americanFootball: return ("Football", nil, nil)
+        case .basketball: return ("Basketball", nil, nil)
+        case .soccer: return ("Soccer", nil, nil)
+        case .tennis: return ("Tennis", nil, nil)
+        case .golf: return ("Golf", nil, nil)
+        case .baseball: return ("Baseball", nil, nil)
+        case .boxing: return ("Boxing", nil, nil)
+        case .martialArts: return ("Martial Arts", nil, nil)
+        case .badminton: return ("Badminton", nil, nil)
+        case .volleyball: return ("Volleyball", nil, nil)
+        case .hockey: return ("Hockey", nil, nil)
+        case .lacrosse: return ("Lacrosse", nil, nil)
+        case .rugby: return ("Rugby", nil, nil)
+        case .softball: return ("Softball", nil, nil)
+        case .squash: return ("Squash", nil, nil)
+        case .tableTennis: return ("Table Tennis", nil, nil)
+        case .racquetball: return ("Racquetball", nil, nil)
+        case .handball: return ("Handball", nil, nil)
+        case .cricket: return ("Cricket", nil, nil)
+
+        // Recovery
+        case .yoga, .mindAndBody, .flexibility: return ("Yoga", nil, nil)
+        case .pilates: return ("Pilates", nil, nil)
+        case .cooldown: return ("Cooldown", nil, nil)
+        // Sauna and Cold Plunge both arrive as preparationAndRecovery, so the type can't say
+        // which. Name neither; count it toward Recovery, where either one belongs.
+        case .preparationAndRecovery: return ("Other", nil, "recovery")
+
+        default: return ("Other", nil, nil)
         }
     }
 

@@ -507,6 +507,10 @@ struct ActiveWorkoutView: View {
     /// location-denied alert's "Start Anyway" button can call it directly
     /// without re-running the pre-flight check.
     private func proceedToStartWorkout(hkType: HKWorkoutActivityType) async {
+        // Behind the user's Start tap: covers HealthKit types they haven't answered yet (types
+        // added in an update), now that launches no longer ask. Returns at once, with no
+        // sheet, when everything has been answered.
+        await appVM.requestHealthKitPermissions()
         do {
             try await wm.startWorkout(activityType: hkType, isIndoor: isIndoor, subtype: preSelectedSubtype)
             wm.workoutPageIndex = 1  // Ensure timer page before TabView renders

@@ -1,30 +1,40 @@
 import Foundation
 
+// MARK: - Fixed-format date strings shared with the phone
+
+// "yyyy-MM-dd" and "h:mm a" here are data, not display text: the phone parses them as
+// Gregorian dates with English AM/PM. A plain DateFormatter follows the user's settings, so
+// a watch on the Buddhist or Japanese calendar wrote this year as 2569 or 0008, an Arabic
+// locale wrote Arabic-Indic digits, and 24-hour time could turn "h:mm a" into "15:04".
+// Every such string goes through these two.
+private func makeFixedFormatter(_ format: String) -> DateFormatter {
+    let formatter = DateFormatter()
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = .autoupdatingCurrent
+    formatter.dateFormat = format
+    return formatter
+}
+
+private let dayFormatter = makeFixedFormatter("yyyy-MM-dd")
+private let timeFormatter = makeFixedFormatter("h:mm a")
+
 // MARK: - Parse local date string "YYYY-MM-DD"
 
 func parseLocalDate(_ dateString: String) -> Date? {
-    let formatter = DateFormatter()
-    formatter.dateFormat = "yyyy-MM-dd"
-    formatter.timeZone = .current
-    return formatter.date(from: dateString)
+    dayFormatter.date(from: dateString)
 }
 
 // MARK: - Format date to "YYYY-MM-DD"
 
 func formatDateString(_ date: Date) -> String {
-    let formatter = DateFormatter()
-    formatter.dateFormat = "yyyy-MM-dd"
-    formatter.timeZone = .current
-    return formatter.string(from: date)
+    dayFormatter.string(from: date)
 }
 
 // MARK: - Format time to "h:mm a"
 
 func formatTimeString(_ date: Date) -> String {
-    let formatter = DateFormatter()
-    formatter.dateFormat = "h:mm a"
-    formatter.timeZone = .current
-    return formatter.string(from: date)
+    timeFormatter.string(from: date)
 }
 
 // MARK: - Format elapsed seconds to "MM:SS" or "H:MM:SS" (whole seconds)
@@ -74,10 +84,7 @@ func formatDuration(_ minutes: Int) -> String {
 // MARK: - Start of current week (Sunday)
 
 func startOfCurrentWeek() -> Date {
-    let calendar = Calendar.current
-    let today = Date()
-    let weekday = calendar.component(.weekday, from: today)
-    return calendar.date(byAdding: .day, value: -(weekday - 1), to: calendar.startOfDay(for: today))!
+    SharedDefaults.weekStart(containing: Date())
 }
 
 // MARK: - Start of today

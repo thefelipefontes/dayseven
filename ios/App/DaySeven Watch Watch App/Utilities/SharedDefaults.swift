@@ -22,6 +22,8 @@ struct SharedDefaults {
     static let todayCaloriesKey = "todayCalories"
     static let lastUpdatedKey = "lastUpdated"
     static let injuryModeActiveKey = "injuryModeActive"
+    /// Sunday 00:00 of the week the stored progress belongs to (seconds since 1970)
+    static let weekStartKey = "weekStart"
 
     // Distance unit preference ('mi' | 'km'). Mirrored from the phone via WCSession
     // applicationContext + watch-side Firestore load. Widgets can read for distance
@@ -49,8 +51,34 @@ struct SharedDefaults {
         defaults.set(unit == "km" ? "km" : "mi", forKey: distanceUnitKey)
     }
 
+    // MARK: - Weeks
+
+    /// Sunday 00:00 of the week containing `date`. The phone's weeks run Sunday to Saturday.
+    static func weekStart(containing date: Date) -> Date {
+        let calendar = Calendar.current
+        let day = calendar.startOfDay(for: date)
+        let weekday = calendar.component(.weekday, from: day) // 1 = Sunday
+        return calendar.date(byAdding: .day, value: -(weekday - 1), to: day) ?? day
+    }
+
+    /// Sunday 00:00 of the week after the one containing `date`.
+    static func nextWeekStart(after date: Date) -> Date {
+        let start = weekStart(containing: date)
+        return Calendar.current.date(byAdding: .day, value: 7, to: start) ?? start.addingTimeInterval(7 * 86_400)
+    }
+
     // MARK: - Write (called from watch app after data loads / activity saves)
 
+    /// What a write changed, as far as the complications can show it.
+    enum WidgetDataChange {
+        case none
+        /// Only the week's step count moved (it moves all day)
+        case steps
+        /// Rings, goals, streak or the week itself changed
+        case other
+    }
+
+    @discardableResult
     static func writeStreakData(
         masterStreak: Int, liftsStreak: Int, cardioStreak: Int, recoveryStreak: Int,
         liftsCompleted: Int, liftsGoal: Int,
@@ -59,8 +87,26 @@ struct SharedDefaults {
         todaySteps: Int, stepsGoal: Int, todayCalories: Int,
         weekSteps: Int = 0,
         injuryModeActive: Bool = false
-    ) {
-        guard let defaults = shared else { return }
+    ) -> WidgetDataChange {
+        guard let defaults = shared else { return .none }
+        let weekStart = weekStart(containing: Date()).timeIntervalSince1970
+
+        // Compare what the complications draw before overwriting it
+        let drawnBefore: [AnyHashable] = [
+            defaults.integer(forKey: masterStreakKey), defaults.integer(forKey: liftsCompletedKey),
+            defaults.integer(forKey: liftsGoalKey), defaults.integer(forKey: cardioCompletedKey),
+            defaults.integer(forKey: cardioGoalKey), defaults.integer(forKey: stepsGoalKey),
+            defaults.bool(forKey: injuryModeActiveKey), defaults.double(forKey: weekStartKey)
+        ]
+        let drawnAfter: [AnyHashable] = [
+            masterStreak, liftsCompleted, liftsGoal, cardioCompleted, cardioGoal, stepsGoal,
+            injuryModeActive, weekStart
+        ]
+        let change: WidgetDataChange = drawnBefore != drawnAfter ? .other
+            : defaults.integer(forKey: weekStepsKey) != weekSteps ? .steps
+            : .none
+
+        defaults.set(weekStart, forKey: weekStartKey)
         defaults.set(injuryModeActive, forKey: injuryModeActiveKey)
         defaults.set(masterStreak, forKey: masterStreakKey)
         defaults.set(liftsStreak, forKey: liftsStreakKey)
@@ -77,28 +123,40 @@ struct SharedDefaults {
         defaults.set(todayCalories, forKey: todayCaloriesKey)
         defaults.set(weekSteps, forKey: weekStepsKey)
         defaults.set(Date().timeIntervalSince1970, forKey: lastUpdatedKey)
+        return change
     }
 
     // MARK: - Read (called from widget extension)
 
-    static func readStreakData() -> WidgetStreakData {
+    /// The stored data as it stands at `date`. Progress written in an earlier week reads as
+    /// zero: the week rolls over at Sunday midnight whether or not the watch app has run
+    /// since, and showing last week's rings until it does made a fresh week look done.
+    /// Streak counts carry over (a streak only ends when a week is judged, on the phone).
+    static func readStreakData(asOf date: Date = Date()) -> WidgetStreakData {
         guard let defaults = shared else { return .empty }
+        let lastUpdated = defaults.double(forKey: lastUpdatedKey)
+        // Builds before weekStart existed: the last write happened in the data's own week
+        let storedWeek = defaults.double(forKey: weekStartKey)
+        let dataWeek = storedWeek > 0 ? storedWeek : lastUpdated
+        let sameWeek = dataWeek >= weekStart(containing: date).timeIntervalSince1970
+        let sameDay = lastUpdated >= Calendar.current.startOfDay(for: date).timeIntervalSince1970
+
         return WidgetStreakData(
             masterStreak: defaults.integer(forKey: masterStreakKey),
             liftsStreak: defaults.integer(forKey: liftsStreakKey),
             cardioStreak: defaults.integer(forKey: cardioStreakKey),
             recoveryStreak: defaults.integer(forKey: recoveryStreakKey),
-            liftsCompleted: defaults.integer(forKey: liftsCompletedKey),
+            liftsCompleted: sameWeek ? defaults.integer(forKey: liftsCompletedKey) : 0,
             liftsGoal: max(defaults.integer(forKey: liftsGoalKey), 1),
-            cardioCompleted: defaults.integer(forKey: cardioCompletedKey),
+            cardioCompleted: sameWeek ? defaults.integer(forKey: cardioCompletedKey) : 0,
             cardioGoal: max(defaults.integer(forKey: cardioGoalKey), 1),
-            recoveryCompleted: defaults.integer(forKey: recoveryCompletedKey),
+            recoveryCompleted: sameWeek ? defaults.integer(forKey: recoveryCompletedKey) : 0,
             recoveryGoal: max(defaults.integer(forKey: recoveryGoalKey), 1),
-            todaySteps: defaults.integer(forKey: todayStepsKey),
+            todaySteps: sameDay ? defaults.integer(forKey: todayStepsKey) : 0,
             stepsGoal: defaults.integer(forKey: stepsGoalKey) > 0 ? defaults.integer(forKey: stepsGoalKey) : 10000,
-            todayCalories: defaults.integer(forKey: todayCaloriesKey),
-            weekSteps: defaults.integer(forKey: weekStepsKey),
-            lastUpdated: defaults.double(forKey: lastUpdatedKey),
+            todayCalories: sameDay ? defaults.integer(forKey: todayCaloriesKey) : 0,
+            weekSteps: sameWeek ? defaults.integer(forKey: weekStepsKey) : 0,
+            lastUpdated: lastUpdated,
             injuryModeActive: defaults.bool(forKey: injuryModeActiveKey)
         )
     }

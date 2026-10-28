@@ -1,6 +1,22 @@
 import Foundation
 import FirebaseAuth
 
+// MARK: - User Document
+
+/// What the watch reads from `users/{uid}`, plus the document's `updateTime` — the
+/// precondition every activities write must carry (see `FirestoreService.batchSave`).
+struct UserDocument {
+    let goals: UserGoals
+    let streaks: UserStreaks
+    let activities: [Activity]
+    let personalRecords: PersonalRecords
+    let distanceUnit: String
+    let injuryActive: Bool
+    let injuryFrozen: [String]
+    let weekCelebrations: [String: Any]
+    let updateTime: String?
+}
+
 // MARK: - Firestore REST API Service (watchOS compatible)
 
 class FirestoreService {
@@ -20,8 +36,8 @@ class FirestoreService {
 
     // MARK: - Fetch User Data
 
-    func getUserData(uid: String) async throws -> (goals: UserGoals, streaks: UserStreaks, activities: [Activity], personalRecords: PersonalRecords, distanceUnit: String, injuryActive: Bool, injuryFrozen: [String], weekCelebrations: [String: Any]) {
-        let data = try await getDocument("users/\(uid)")
+    func getUserData(uid: String) async throws -> UserDocument {
+        let (data, updateTime) = try await getDocument("users/\(uid)")
 
         // Distance unit ('mi' default | 'km')
         let distanceUnit: String = {
@@ -121,15 +137,11 @@ class FirestoreService {
             }
         }
 
-        return (goals, streaks, activities, personalRecords, distanceUnit, injuryActive, injuryFrozen, weekCelebrations)
-    }
-
-    // MARK: - Save Activities
-
-    func saveActivities(uid: String, activities: [Activity]) async throws {
-        try await updateDocument("users/\(uid)", fields: [
-            "activities": encodeActivitiesArray(activities)
-        ], fieldMask: ["activities"])
+        return UserDocument(
+            goals: goals, streaks: streaks, activities: activities, personalRecords: personalRecords,
+            distanceUnit: distanceUnit, injuryActive: injuryActive, injuryFrozen: injuryFrozen,
+            weekCelebrations: weekCelebrations, updateTime: updateTime
+        )
     }
 
     // MARK: - Update Streaks
@@ -174,7 +186,13 @@ class FirestoreService {
 
     // MARK: - Batch Save (activity + streaks + records in one write)
 
-    func batchSave(uid: String, activities: [Activity], streaks: UserStreaks, recordUpdates: [String: Any]?, weekCelebrations: [String: Any]? = nil) async throws {
+    /// Writes the whole `activities` array, so `activities` must be a fresh read with this
+    /// call's change applied — never the watch's in-memory copy, which is often empty or stale
+    /// after a failed or slow load. Pass that read's `updateTime` as `expectedUpdateTime`:
+    /// Firestore then rejects the write with `FirestoreError.preconditionFailed` if anything
+    /// (usually the phone) changed the document in between, and the caller re-reads and retries
+    /// instead of overwriting that change.
+    func batchSave(uid: String, activities: [Activity], streaks: UserStreaks, recordUpdates: [String: Any]?, weekCelebrations: [String: Any]? = nil, expectedUpdateTime: String?) async throws {
         let streakWrite = activityStreakFields(streaks)
         var fields: [String: Any] = streakWrite.fields
         fields["activities"] = encodeActivitiesArray(activities)
@@ -208,7 +226,7 @@ class FirestoreService {
             fieldMask.append("weekCelebrations")
         }
 
-        try await updateDocument("users/\(uid)", fields: fields, fieldMask: fieldMask)
+        try await updateDocument("users/\(uid)", fields: fields, fieldMask: fieldMask, expectedUpdateTime: expectedUpdateTime)
     }
 
     // MARK: - REST API Helpers
@@ -242,13 +260,14 @@ class FirestoreService {
         }
     }
 
-    private func getDocument(_ path: String) async throws -> [String: Any] {
+    /// The document's fields, plus its `updateTime` for use as a write precondition.
+    private func getDocument(_ path: String) async throws -> (fields: [String: Any], updateTime: String?) {
         try await withFreshTokenRetry { token in
             try await self.performGet(path, token: token)
         }
     }
 
-    private func performGet(_ path: String, token: String) async throws -> [String: Any] {
+    private func performGet(_ path: String, token: String) async throws -> (fields: [String: Any], updateTime: String?) {
         let url = URL(string: "\(baseURL)/\(path)")!
 
         var request = URLRequest(url: url)
@@ -287,22 +306,26 @@ class FirestoreService {
             throw FirestoreError.malformedResponse
         }
 
-        return fields
+        return (fields, json["updateTime"] as? String)
     }
 
-    private func updateDocument(_ path: String, fields: [String: Any], fieldMask: [String]? = nil) async throws {
+    private func updateDocument(_ path: String, fields: [String: Any], fieldMask: [String]? = nil, expectedUpdateTime: String? = nil) async throws {
         try await withFreshTokenRetry { token in
-            try await self.performUpdate(path, fields: fields, fieldMask: fieldMask, token: token)
+            try await self.performUpdate(path, fields: fields, fieldMask: fieldMask, expectedUpdateTime: expectedUpdateTime, token: token)
         }
     }
 
-    private func performUpdate(_ path: String, fields: [String: Any], fieldMask: [String]?, token: String) async throws {
+    private func performUpdate(_ path: String, fields: [String: Any], fieldMask: [String]?, expectedUpdateTime: String?, token: String) async throws {
         // ALWAYS use field masks to prevent full document replacement.
         // If no explicit mask is provided, derive it from the fields dictionary keys.
         let mask = fieldMask ?? Array(fields.keys)
         var urlString = "\(baseURL)/\(path)"
         let maskParams = mask.map { "updateMask.fieldPaths=\($0)" }.joined(separator: "&")
         urlString += "?\(maskParams)"
+        if let updateTime = expectedUpdateTime,
+           let encoded = updateTime.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+            urlString += "&currentDocument.updateTime=\(encoded)"
+        }
 
         let url = URL(string: urlString)!
 
@@ -324,6 +347,13 @@ class FirestoreService {
             print("[Firestore] updateDocument FAILED status=\(statusCode) path=\(path)")
             print("[Firestore] Response: \(String(responseStr.prefix(500)))")
             if statusCode == 401 { throw FirestoreError.unauthenticated }
+            // The updateTime precondition failed: the document changed after our read.
+            // (ABORTED/409 is contention on the same document — the same answer: re-read.)
+            let status = ((try? JSONSerialization.jsonObject(with: responseData)) as? [String: Any])
+                .flatMap { $0["error"] as? [String: Any] }?["status"] as? String
+            if status == "FAILED_PRECONDITION" || status == "ABORTED" || statusCode == 409 {
+                throw FirestoreError.preconditionFailed
+            }
             throw FirestoreError.saveFailed
         }
         print("[Firestore] updateDocument SUCCESS path=\(path)")
@@ -535,6 +565,7 @@ enum FirestoreError: Error, LocalizedError {
     case notAuthenticated
     case networkError
     case saveFailed
+    case preconditionFailed
 
     var errorDescription: String? {
         switch self {
@@ -546,6 +577,7 @@ enum FirestoreError: Error, LocalizedError {
         case .notAuthenticated: return "Not authenticated"
         case .networkError: return "Network error"
         case .saveFailed: return "Failed to save data"
+        case .preconditionFailed: return "The document changed since it was read"
         }
     }
 }

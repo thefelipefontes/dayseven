@@ -89,11 +89,16 @@ struct RootView: View {
         .onChange(of: appVM.authService.isSignedIn) { _, signedIn in
             if signedIn {
                 Task {
-                    await appVM.requestHealthKitPermissions()
-                    // Also queue the location prompt now so distance workouts
-                    // have GPS ready on first use — avoids the mid-workout
-                    // "Location is off" alert. No-op if already decided.
-                    appVM.requestLocationPermissionIfNeeded()
+                    // Prompts only right after a sign-in the user tapped. This also fires
+                    // when a cold launch restores the saved session, and asking then put
+                    // permission prompts up with no tap behind them, on every launch.
+                    if appVM.authService.takeUserRequestedSignIn() {
+                        await appVM.requestHealthKitPermissions()
+                        // Also queue the location prompt now so distance workouts
+                        // have GPS ready on first use — avoids the mid-workout
+                        // "Location is off" alert. No-op if already decided.
+                        appVM.requestLocationPermissionIfNeeded()
+                    }
                     await appVM.loadUserData()
                 }
             }
@@ -244,13 +249,11 @@ struct MainTabView: View {
             if phase == .active {
                 appVM.phoneService.ensureSessionActive()
 
-                // Refresh health data to catch daily goals hit while backgrounded, and
+                // Refresh steps and calories gathered while backgrounded, and
                 // reload activities so the rings reflect anything logged on the phone
-                // while we were away (rate limited inside).
+                // while we were away (rate limited inside). It also flushes any
+                // offline-queued work, after the reload rather than alongside it.
                 Task { await appVM.refreshOnForeground() }
-
-                // Flush any offline-queued activities
-                Task { await appVM.flushOfflineQueue() }
 
                 // If a workout is active but no ActiveWorkoutView is shown,
                 // push one — but only after a short delay to let the
@@ -272,12 +275,14 @@ struct MainTabView: View {
                                     activityType: request.activityType,
                                     strengthType: request.strengthType,
                                     subtype: request.subtype,
-                                    focusAreas: request.focusAreas
+                                    focusAreas: request.focusAreas,
+                                    countToward: request.countToward
                                 ))
                             } else {
                                 startPath.append(WorkoutDestination.quickStart(
                                     activityType: request.activityType,
-                                    strengthType: request.strengthType
+                                    strengthType: request.strengthType,
+                                    countToward: request.countToward
                                 ))
                             }
                         } else {
@@ -322,12 +327,14 @@ struct MainTabView: View {
                             activityType: request.activityType,
                             strengthType: request.strengthType,
                             subtype: request.subtype,
-                            focusAreas: request.focusAreas
+                            focusAreas: request.focusAreas,
+                            countToward: request.countToward
                         ))
                     } else {
                         startPath.append(WorkoutDestination.quickStart(
                             activityType: request.activityType,
-                            strengthType: request.strengthType
+                            strengthType: request.strengthType,
+                            countToward: request.countToward
                         ))
                     }
                 }

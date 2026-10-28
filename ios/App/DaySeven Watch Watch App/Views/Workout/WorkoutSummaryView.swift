@@ -27,8 +27,9 @@ struct WorkoutSummaryView: View {
     @State private var savedActivityId: ActivityID?
     // Handle to the auto-save Task so Discard can await its completion (network
     // included) before deleting — awaiting a Task handle is reliable even after
-    // the view is torn down, unlike reading @State like isAutoSaving.
-    @State private var autoSaveTask: Task<Void, Never>?
+    // the view is torn down, unlike reading @State like isAutoSaving. Its value is the
+    // id the workout ended up stored under (see AppViewModel.saveActivity).
+    @State private var autoSaveTask: Task<ActivityID?, Never>?
 
     // Sheet-based pickers (since we're in an overlay, not a NavigationStack)
     @State private var showSubtypePicker = false
@@ -123,6 +124,13 @@ struct WorkoutSummaryView: View {
         }
     }
 
+    /// The phone ended this workout and saved it in its own Finish flow, so this summary only
+    /// shows the numbers: no auto-save (that was the duplicate), no details to edit, nothing to
+    /// discard here.
+    private var savedByPhone: Bool {
+        result.endedFromPhone
+    }
+
     var body: some View {
         summaryContent
     }
@@ -145,7 +153,13 @@ struct WorkoutSummaryView: View {
                 statsSection
 
                 // Detail pickers
-                detailPickersSection
+                if savedByPhone {
+                    Text("Saved on your iPhone")
+                        .font(.system(size: 12))
+                        .foregroundColor(.gray)
+                } else {
+                    detailPickersSection
+                }
 
                 // Done Button — re-saves if user changed any details after auto-save
                 Button {
@@ -167,15 +181,17 @@ struct WorkoutSummaryView: View {
                 .buttonStyle(.plain)
 
                 // Discard Button — deletes the auto-saved activity
-                Button {
-                    showDiscardAlert = true
-                } label: {
-                    Text("Discard \(activityNoun)")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.red.opacity(0.8))
+                if !savedByPhone {
+                    Button {
+                        showDiscardAlert = true
+                    } label: {
+                        Text("Discard \(activityNoun)")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.red.opacity(0.8))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 2)
                 }
-                .buttonStyle(.plain)
-                .padding(.top, 2)
             }
             .padding(.horizontal, 4)
         }
@@ -185,7 +201,7 @@ struct WorkoutSummaryView: View {
             if selectedFocusAreas.isEmpty { selectedFocusAreas = initialFocusAreas ?? [] }
             if selectedCountToward == nil { selectedCountToward = initialCountToward }
             // Auto-save immediately (like Apple Fitness)
-            if !isSaved && autoSaveTask == nil {
+            if !isSaved && autoSaveTask == nil && !savedByPhone {
                 autoSaveTask = Task { await autoSaveWorkout() }
             }
         }
@@ -195,7 +211,7 @@ struct WorkoutSummaryView: View {
                 // down. savedActivityId is set synchronously at the top of
                 // autoSaveWorkout(), so it's populated by the time the summary is
                 // on screen; autoSaveTask lets us wait for the save to *finish*.
-                let activityId = savedActivityId
+                let fallbackId = savedActivityId
                 let saveTask = autoSaveTask
 
                 // Dismiss the summary immediately. Never make the user wait on a
@@ -210,8 +226,13 @@ struct WorkoutSummaryView: View {
                 // Delete in the background, decoupled from the view's lifecycle.
                 Task {
                     // Let the in-flight auto-save complete first so its batchSave
-                    // can't land *after* the delete and resurrect the activity.
-                    await saveTask?.value
+                    // can't land *after* the delete and resurrect the activity. It also
+                    // says which id the workout is stored under, which is the phone's
+                    // copy when Firestore already had it.
+                    var activityId = fallbackId
+                    if let saveTask {
+                        activityId = await saveTask.value ?? fallbackId
+                    }
 
                     if let activityId {
                         await appVM.deleteActivity(withId: activityId)
@@ -418,7 +439,7 @@ struct WorkoutSummaryView: View {
 
     // MARK: - Auto-Save Workout (saves immediately like Apple Fitness)
 
-    private func autoSaveWorkout() async {
+    private func autoSaveWorkout() async -> ActivityID? {
         isAutoSaving = true
         defer { isAutoSaving = false }
 
@@ -428,7 +449,7 @@ struct WorkoutSummaryView: View {
         // the phone instead of seeing a blank row with a heartbeat icon.
         let resolvedType = activityType.isEmpty ? "Other" : activityType
 
-        let countToward = ActivityTypes.getDefaultCountToward(type: resolvedType, subtype: selectedSubtype, countToward: selectedCountToward)
+        let countToward = ActivityTypes.getDefaultCountToward(type: resolvedType, subtype: selectedSubtype, strengthType: strengthType, countToward: selectedCountToward)
 
         let activity = Activity.create(
             type: resolvedType,
@@ -447,33 +468,44 @@ struct WorkoutSummaryView: View {
         )
 
         savedActivityId = activity.id
-        await appVM.saveActivity(activity)
+        let storedId = await appVM.saveActivity(activity)
+        if let storedId { savedActivityId = storedId }
         isSaved = true
+        return storedId
     }
 
     // MARK: - Re-save if user changed details after auto-save
 
     private func resaveIfNeeded() async {
+        // Done can be tapped while the auto-save is still on the network. Wait for it: an edit
+        // sent before the save lands finds nothing to edit, and the save then lands with the
+        // original details. Its value is also the id the workout really went under.
+        if let autoSaveTask, let storedId = await autoSaveTask.value {
+            savedActivityId = storedId
+        }
         guard let activityId = savedActivityId else { return }
 
         // Check if any details differ from what was auto-saved
         let currentFocusAreas = selectedFocusAreas.isEmpty ? nil : selectedFocusAreas
         let currentSubtype = selectedSubtype
-        let currentCountToward = ActivityTypes.getDefaultCountToward(type: activityType, subtype: selectedSubtype, countToward: selectedCountToward)
+        let currentCountToward = ActivityTypes.getDefaultCountToward(type: activityType, subtype: selectedSubtype, strengthType: strengthType, countToward: selectedCountToward)
+        // What the auto-save stamped (it resolves the default too), so an untouched Circuit
+        // doesn't read as changed and re-save on every Done.
+        let savedCountToward = ActivityTypes.getDefaultCountToward(type: activityType, subtype: initialSubtype, strengthType: strengthType, countToward: initialCountToward)
 
         let initialFocusAreasResolved = (initialFocusAreas?.isEmpty ?? true) ? nil : initialFocusAreas
         let needsUpdate = currentFocusAreas != initialFocusAreasResolved
             || currentSubtype != initialSubtype
-            || currentCountToward != initialCountToward
+            || currentCountToward != savedCountToward
 
         guard needsUpdate else { return }
 
-        await appVM.updateActivity(withId: activityId) { activity in
-            activity.subtype = currentSubtype
-            activity.focusAreas = currentFocusAreas
-            activity.focusArea = currentFocusAreas?.first
-            activity.countToward = currentCountToward
-        }
+        await appVM.updateActivityDetails(ActivityDetailsUpdate(
+            activityId: activityId,
+            subtype: currentSubtype,
+            focusAreas: currentFocusAreas,
+            countToward: currentCountToward
+        ))
         print("[WorkoutSummary] Re-saved activity with updated details")
     }
 }

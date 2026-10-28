@@ -19893,7 +19893,6 @@ export default function DaySevenApp() {
               monthCardioWeeksHit: cardioWeeksHit,
               monthRecoveryWeeksHit: recoveryWeeksHit,
               monthAllGoalsWeeksHit: allGoalsWeeksHit,
-              monthWeeksTotal: weeksInMonth.length,
               // User goals for context
               liftsGoalMonthly: userData.goals.liftsPerWeek,
               cardioGoalMonthly: userData.goals.cardioPerWeek,

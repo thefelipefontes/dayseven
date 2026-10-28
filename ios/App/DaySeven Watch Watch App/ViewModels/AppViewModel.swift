@@ -395,8 +395,11 @@ class AppViewModel: ObservableObject {
             adopt(freshData)
             print("[SaveActivity] Refreshed \(activities.count) activities from Firestore before save")
 
-            // Store previous progress for streak comparison
-            let oldProgress = weeklyProgress
+            // Progress before this workout, from the same fresh read. weeklyProgress is the
+            // last local view: if the phone logged the goal-completing workout since, it still
+            // reads "one short", this save looks like it completed the goal, and streaks.lifts
+            // gets a second +1 (with longestStrengthStreak ratcheting up for good).
+            let oldProgress = calculateWeeklyProgress(activities: freshData.activities, goals: goals)
 
             let updatedActivities = [activity] + freshData.activities
             let newProgress = calculateWeeklyProgress(activities: updatedActivities, goals: goals)

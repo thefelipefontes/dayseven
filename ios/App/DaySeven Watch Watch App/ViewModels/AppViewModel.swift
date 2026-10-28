@@ -55,7 +55,16 @@ class AppViewModel: ObservableObject {
 
     /// Guard: prevents loadUserData() from overwriting local state while a save/delete is in progress.
     /// Without this, a phone-triggered reload can race with a watch save and reset progress.
-    private var isSaving = false
+    ///
+    /// A count of writes in flight, not a flag: saveActivity runs flushOfflineQueue inside
+    /// itself, and the flush's `isSaving = false` used to clear the flag for the outer save
+    /// too, leaving its whole write unguarded.
+    private var writesInFlight = 0
+    private var isSaving: Bool { writesInFlight > 0 }
+
+    /// Writes finished so far. A load compares it before and after its fetch: if a write
+    /// finished in between, the load's read may predate it and must not replace its result.
+    private var writesFinished = 0
 
     /// Re-entrancy guard for loadUserData(). Not isLoading — that starts true to drive the
     /// launch spinner, so guarding on it would block the very first load.
@@ -214,6 +223,7 @@ class AppViewModel: ObservableObject {
 
         isLoading = true
         print("[LoadUserData] Starting fetch for uid \(uid.prefix(6))…")
+        let writesBeforeFetch = writesFinished
 
         do {
             // Fetch Firestore data and HealthKit data in parallel
@@ -224,17 +234,25 @@ class AppViewModel: ObservableObject {
 
             let userData = try await firestoreData
 
-            adopt(userData)
             distanceUnit = userData.distanceUnit
             SharedDefaults.writeDistanceUnit(userData.distanceUnit)
-            lastKnownActivityCount = activities.count
-
-            // Calculate progress
-            weeklyProgress = calculateWeeklyProgress(activities: activities, goals: goals)
-            weeklyStats = calculateWeeklyStats(activities: activities)
-
-            lastLoadTime = Date()
             loadRetryCount = 0
+
+            if isSaving || writesFinished != writesBeforeFetch {
+                // A save started or finished while this read was in flight. Its state is newer
+                // than (or about to replace) what this read saw; adopting the read would put
+                // the just-saved workout back off the rings.
+                print("[LoadUserData] A save ran during the fetch — keeping its state over this read")
+            } else {
+                adopt(userData)
+                lastKnownActivityCount = activities.count
+
+                // Calculate progress
+                weeklyProgress = calculateWeeklyProgress(activities: activities, goals: goals)
+                weeklyStats = calculateWeeklyStats(activities: activities)
+
+                lastLoadTime = Date()
+            }
 
             print("[LoadUserData] Loaded \(activities.count) activities — lifts: \(weeklyProgress.lifts.completed)/\(goals.liftsPerWeek), cardio: \(weeklyProgress.cardio.completed)/\(goals.cardioPerWeek), recovery: \(weeklyProgress.recovery.completed)/\(goals.recoveryPerWeek)")
 
@@ -353,6 +371,15 @@ class AppViewModel: ObservableObject {
     // user's entire history. The read's updateTime goes along as a precondition; if the phone
     // wrote in between, Firestore refuses and we re-read and try again.
 
+    private func beginWrite() {
+        writesInFlight += 1
+    }
+
+    private func endWrite() {
+        writesInFlight -= 1
+        writesFinished += 1
+    }
+
     /// Takes on the server's view of the user from a fresh read.
     private func adopt(_ data: UserDocument) {
         activities = data.activities
@@ -370,8 +397,8 @@ class AppViewModel: ObservableObject {
     /// Firestore already holds this HealthKit workout — or nil if nothing was saved.
     @discardableResult
     func saveActivity(_ activity: Activity) async -> ActivityID? {
-        isSaving = true
-        defer { isSaving = false }
+        beginWrite()
+        defer { endWrite() }
 
         guard let uid = authService.currentUser?.uid else {
             print("[SaveActivity] No user uid — skipping save")
@@ -515,8 +542,8 @@ class AppViewModel: ObservableObject {
     // MARK: - Update Activity (re-save with changed details)
 
     func updateActivity(withId activityId: ActivityID, updates: (inout Activity) -> Void) async {
-        isSaving = true
-        defer { isSaving = false }
+        beginWrite()
+        defer { endWrite() }
 
         guard let uid = authService.currentUser?.uid else {
             print("[UpdateActivity] No user uid — skipping update")
@@ -576,12 +603,12 @@ class AppViewModel: ObservableObject {
     /// Retries saving any activities that were queued due to network failures.
     /// Fetches fresh data from Firestore, merges pending activities, and saves.
     func flushOfflineQueue() async {
-        isSaving = true
-        defer { isSaving = false }
-
         let queue = OfflineQueueManager.shared
         guard queue.hasPendingActivities, !queue.isFlushing else { return }
         guard let uid = authService.currentUser?.uid else { return }
+
+        beginWrite()
+        defer { endWrite() }
 
         queue.isFlushing = true
         defer { queue.isFlushing = false }
@@ -648,8 +675,8 @@ class AppViewModel: ObservableObject {
     // MARK: - Delete Activity (for discard after auto-save)
 
     func deleteActivity(withId activityId: ActivityID) async {
-        isSaving = true
-        defer { isSaving = false }
+        beginWrite()
+        defer { endWrite() }
 
         guard let uid = authService.currentUser?.uid else {
             print("[DeleteActivity] No user uid — skipping delete")

@@ -19,6 +19,7 @@ struct SharedDefaults {
     static let todayStepsKey = "todaySteps"
     static let stepsGoalKey = "stepsGoal"
     static let todayCaloriesKey = "todayCalories"
+    static let todayDateKey = "todayDate"           // "YYYY-MM-DD" the today* values are for
     static let lastUpdatedKey = "lastUpdated"
     static let recentActivitiesKey = "recentActivities"
     static let daysLeftInWeekKey = "daysLeftInWeek"
@@ -60,6 +61,7 @@ struct SharedDefaults {
         defaults.set(todaySteps, forKey: todayStepsKey)
         defaults.set(stepsGoal, forKey: stepsGoalKey)
         defaults.set(todayCalories, forKey: todayCaloriesKey)
+        defaults.set(WidgetStreakData.todayKey, forKey: todayDateKey)
         defaults.set(Date().timeIntervalSince1970, forKey: lastUpdatedKey)
     }
 
@@ -67,6 +69,11 @@ struct SharedDefaults {
 
     static func readStreakData() -> WidgetStreakData {
         guard let defaults = shared else { return .empty }
+        // Today's steps and calories belong to the day they were written. After
+        // midnight, until the app writes again, show zero rather than yesterday's.
+        // (No stamp = written by an older build; keep the old behaviour.)
+        let writtenDay = defaults.string(forKey: todayDateKey) ?? ""
+        let todayIsCurrent = writtenDay.isEmpty || writtenDay == WidgetStreakData.todayKey
         return WidgetStreakData(
             masterStreak: defaults.integer(forKey: masterStreakKey),
             liftsStreak: defaults.integer(forKey: liftsStreakKey),
@@ -78,9 +85,9 @@ struct SharedDefaults {
             cardioGoal: max(defaults.integer(forKey: cardioGoalKey), 1),
             recoveryCompleted: defaults.integer(forKey: recoveryCompletedKey),
             recoveryGoal: max(defaults.integer(forKey: recoveryGoalKey), 1),
-            todaySteps: defaults.integer(forKey: todayStepsKey),
+            todaySteps: todayIsCurrent ? defaults.integer(forKey: todayStepsKey) : 0,
             stepsGoal: defaults.integer(forKey: stepsGoalKey) > 0 ? defaults.integer(forKey: stepsGoalKey) : 10000,
-            todayCalories: defaults.integer(forKey: todayCaloriesKey),
+            todayCalories: todayIsCurrent ? defaults.integer(forKey: todayCaloriesKey) : 0,
             daysLeftInWeek: defaults.integer(forKey: daysLeftInWeekKey),
             lastUpdated: defaults.double(forKey: lastUpdatedKey),
             injuryModeActive: defaults.bool(forKey: injuryModeActiveKey),
@@ -157,7 +164,14 @@ struct WidgetStreakData {
     static var currentWeekStartKey: String {
         let cal = weekCalendar
         let start = cal.date(byAdding: .day, value: -finishedDaysThisWeek, to: cal.startOfDay(for: Date())) ?? Date()
-        let c = cal.dateComponents([.year, .month, .day], from: start)
+        return dayKey(start)
+    }
+
+    /// Today as "YYYY-MM-DD" (Gregorian, device time zone), matching `todayDate`.
+    static var todayKey: String { dayKey(Date()) }
+
+    private static func dayKey(_ date: Date) -> String {
+        let c = weekCalendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
 

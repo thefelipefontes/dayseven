@@ -1526,6 +1526,20 @@ export async function pushDistanceUnitToWatch(unit) {
   }
 }
 
+// Mirror the settings that gate the native "New Workout Detected" notification.
+// It fires from a HealthKit background wake where no JS runs, so it can't read
+// them from Firestore. Fields left out keep their stored value. Keys:
+// signedIn, newActivityDetected, healthKitSyncDisabled, quietHoursEnabled,
+// quietHoursStart, quietHoursEnd.
+export async function syncWorkoutDetectionPrefs(prefs) {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    await HealthKitWriter.setWorkoutDetectionPrefs(prefs);
+  } catch (e) {
+    // Non-critical — an older native build without the method keeps its old behaviour
+  }
+}
+
 // Update iPhone home screen widget data via App Group
 export async function updateWidgetData(data) {
   if (!Capacitor.isNativePlatform()) return;

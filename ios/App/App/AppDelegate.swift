@@ -12,6 +12,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
     private var pushToStartTokenTask: Task<Void, Never>?
+    private var authStateHandle: AuthStateDidChangeListenerHandle?
+    private static let pendingLiveActivityPushTokenKey = "pendingLiveActivityPushToken"
+    /// Latest push-to-start token this launch, so a user who signs in after it
+    /// arrived (including after a sign-out) gets it under their own uid.
+    private var latestLiveActivityPushToken: String?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // Initialize Firebase
@@ -31,9 +36,27 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Activate WatchConnectivity for Apple Watch auth relay
         WatchSessionManager.shared.activate()
 
-        // Start observing ActivityKit push-to-start tokens (iOS 17.2+)
+        // HealthKit observer for "New Workout Detected". Registered here, not by
+        // the plugin: a HealthKit background launch connects no scene, so the
+        // bridge (and the plugin) never loads on the launches this exists for.
+        WorkoutDetectionObserver.shared.start()
+
+        // Start observing ActivityKit push-to-start tokens (iOS 17.2+), and the
+        // activities those pushes start, so one can't stack on a JS-started one
         if #available(iOS 17.2, *) {
             observeActivityKitPushToStartToken()
+            WatchSessionManager.shared.observeNewWorkoutActivities()
+        }
+
+        // A push-to-start token that arrived while signed out (or whose upload
+        // failed) is parked in UserDefaults; upload it once someone signs in.
+        // Also fires right away for a session restored at launch.
+        authStateHandle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
+            guard let self = self, user != nil,
+                  let token = UserDefaults.standard.string(forKey: Self.pendingLiveActivityPushTokenKey)
+                    ?? self.latestLiveActivityPushToken else { return }
+            print("[ActivityKit] Uploading push-to-start token after sign-in")
+            self.storeLiveActivityPushToken(token)
         }
 
         return true
@@ -53,10 +76,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     private func storeLiveActivityPushToken(_ tokenHex: String) {
+        latestLiveActivityPushToken = tokenHex
         guard let uid = Auth.auth().currentUser?.uid else {
             print("[ActivityKit] No authenticated user — deferring token storage")
             // Store token locally so it can be uploaded after sign-in
-            UserDefaults.standard.set(tokenHex, forKey: "pendingLiveActivityPushToken")
+            UserDefaults.standard.set(tokenHex, forKey: Self.pendingLiveActivityPushTokenKey)
             return
         }
 
@@ -66,9 +90,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         ], merge: true) { error in
             if let error = error {
                 print("[ActivityKit] Failed to store push token: \(error.localizedDescription)")
+                // Retry on the next sign-in or launch
+                UserDefaults.standard.set(tokenHex, forKey: Self.pendingLiveActivityPushTokenKey)
             } else {
                 print("[ActivityKit] Push-to-start token stored for user \(uid)")
-                UserDefaults.standard.removeObject(forKey: "pendingLiveActivityPushToken")
+                // Only clear the token we just stored, not a newer one that
+                // arrived while this write was in flight
+                if UserDefaults.standard.string(forKey: Self.pendingLiveActivityPushTokenKey) == tokenHex {
+                    UserDefaults.standard.removeObject(forKey: Self.pendingLiveActivityPushTokenKey)
+                }
             }
         }
     }

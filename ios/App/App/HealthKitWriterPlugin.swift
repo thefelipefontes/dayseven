@@ -48,11 +48,13 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "checkActiveLiveActivity", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "showLocationDeniedDialog", returnType: CAPPluginReturnPromise),
         // Send the user to the OS screen where Health access can be re-granted
-        CAPPluginMethod(name: "openHealthSettings", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "openHealthSettings", returnType: CAPPluginReturnPromise),
+        // Mirror the settings that gate the background "New Workout Detected" notification
+        CAPPluginMethod(name: "setWorkoutDetectionPrefs", returnType: CAPPluginReturnPromise)
     ]
 
     private let healthStore = HKHealthStore()
-    // Retain active route queries to prevent premature deallocation
+    // Retain active route queries to prevent premature deallocation (main thread only)
     private var activeRouteQueries: [HKWorkoutRouteQuery] = []
 
     // MARK: - Plugin Lifecycle
@@ -78,8 +80,15 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             object: nil
         )
 
-        // Start background workout detection for local push notifications
-        setupWorkoutBackgroundDelivery()
+        // A watch workout that started before this plugin existed (the app was
+        // launched in the background by WatchConnectivity, or the bridge loaded
+        // late) was posted to nobody. Replay it; it waits for the JS listener.
+        if let pending = WatchSessionManager.shared.pendingWatchWorkoutStart {
+            emitWatchWorkoutStarted(pending)
+        }
+
+        // Background workout detection lives in WorkoutDetectionObserver,
+        // started from AppDelegate so it also runs on scene-less background launches.
     }
 
     @objc private func handleWatchActivitySaved() {
@@ -88,26 +97,53 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc private func handleWatchWorkoutStarted(_ notification: Notification) {
-        let activityType = notification.userInfo?["activityType"] as? String ?? "Other"
-        let strengthType = notification.userInfo?["strengthType"] as? String
-        var data: [String: Any] = [
-            "activityType": activityType,
-            "startTime": ISO8601DateFormatter().string(from: Date())
-        ]
-        if let strengthType = strengthType {
-            data["strengthType"] = strengthType
-        }
-        notifyListeners("watchWorkoutStarted", data: data)
-        // Live Activity is started by WatchSessionManager directly
+        guard let start = notification.object as? WatchWorkoutStart else { return }
+        emitWatchWorkoutStarted(start)
+        // Live Activity is started from JS (startWatchWorkoutLiveActivity)
     }
 
+    /// Retained until consumed: JS registers its listener after the WebView
+    /// loads, and briefly re-registers whenever the active workout changes.
+    /// A start sent with no listener was lost, leaving the phone unaware of a
+    /// workout the watch was recording.
+    private func emitWatchWorkoutStarted(_ start: WatchWorkoutStart) {
+        var data: [String: Any] = [
+            "activityType": start.activityType,
+            "startTime": ISO8601DateFormatter().string(from: start.receivedAt)
+        ]
+        if let strengthType = start.strengthType {
+            data["strengthType"] = strengthType
+        }
+        notifyListeners("watchWorkoutStarted", data: data, retainUntilConsumed: true)
+        watchWorkoutStartEmitted = true
+    }
+
+    /// A watchWorkoutStarted was emitted and no end has followed. Main thread only.
+    private var watchWorkoutStartEmitted = false
+
     @objc private func handleWatchWorkoutEnded(_ notification: Notification) {
-        notifyListeners("watchWorkoutEnded", data: [:])
+        defer { watchWorkoutStartEmitted = false }
+
+        // JS never heard about the start: drop it and the end together, rather
+        // than delivering both later in whichever order the listeners attach.
+        if retainedEventArguments?["watchWorkoutStarted"] != nil {
+            retainedEventArguments?.removeObject(forKey: "watchWorkoutStarted")
+            return
+        }
+        // Retain the end only for a start JS received, so it survives the moment
+        // the listener re-registers. A duplicate end (the watch reports over two
+        // channels) goes to current listeners only, as before.
+        notifyListeners("watchWorkoutEnded", data: [:], retainUntilConsumed: watchWorkoutStartEmitted)
         // Live Activity is ended by WatchSessionManager directly
     }
 
-    // Live workout session
+    // Live workout session. This state, the observer queries and the metrics
+    // below are touched only on the main thread: plugin methods arrive on
+    // Capacitor's bridge queue and HealthKit callbacks on HealthKit's queues,
+    // so each entry point and callback hops to main first.
     private var workoutBuilder: HKWorkoutBuilder?
+    /// Between the auth sheet and beginCollection, so a double tap can't start two
+    private var isStartingLiveWorkout = false
     private var liveWorkoutStartDate: Date?
     private var liveWorkoutActivityType: HKWorkoutActivityType = .other
 
@@ -116,11 +152,6 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
     private var caloriesQuery: HKObserverQuery?
     private var distanceQuery: HKObserverQuery?
     private var observerStartDate: Date?
-
-    // Background workout detection
-    private var workoutObserverQuery: HKObserverQuery?
-    private static let lastWorkoutCheckKey = "dayseven_lastWorkoutNotificationCheck"
-    private static let workoutNotificationId = "dayseven-workout-detected"
 
     // Accumulated metrics during observation
     private var accumulatedCalories: Double = 0
@@ -144,178 +175,6 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     deinit {
         stopObserverQueries()
-        if let query = workoutObserverQuery {
-            healthStore.stop(query)
-            workoutObserverQuery = nil
-        }
-    }
-
-    // MARK: - Background Workout Detection
-
-    private func setupWorkoutBackgroundDelivery() {
-        guard HKHealthStore.isHealthDataAvailable() else {
-            print("[HealthKitWriter] HealthKit not available, skipping background workout setup")
-            return
-        }
-
-        let workoutType = HKWorkoutType.workoutType()
-
-        // Create observer query — fires whenever any workout is saved to HealthKit
-        workoutObserverQuery = HKObserverQuery(
-            sampleType: workoutType,
-            predicate: nil
-        ) { [weak self] _, completionHandler, error in
-            guard let self = self else {
-                completionHandler()
-                return
-            }
-
-            if let error = error {
-                print("[HealthKitWriter] Workout observer error: \(error.localizedDescription)")
-                completionHandler()
-                return
-            }
-
-            print("[HealthKitWriter] Workout observer fired")
-            self.checkForNewWorkouts {
-                completionHandler()
-            }
-        }
-
-        if let query = workoutObserverQuery {
-            healthStore.execute(query)
-            print("[HealthKitWriter] Workout observer query started")
-        }
-
-        // Enable background delivery so iOS wakes the app when workouts are saved
-        healthStore.enableBackgroundDelivery(
-            for: workoutType,
-            frequency: .immediate
-        ) { success, error in
-            if let error = error {
-                print("[HealthKitWriter] Failed to enable background delivery: \(error.localizedDescription)")
-            } else {
-                print("[HealthKitWriter] Background delivery for workouts enabled: \(success)")
-            }
-        }
-    }
-
-    private func checkForNewWorkouts(completion: @escaping () -> Void) {
-        // Check app state on main thread — only notify if app is NOT in the foreground
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else {
-                completion()
-                return
-            }
-
-            let state = UIApplication.shared.applicationState
-            guard state != .active else {
-                print("[HealthKitWriter] App is active, skipping notification (in-app banner handles this)")
-                completion()
-                return
-            }
-
-            self.queryAndNotifyNewWorkouts(completion: completion)
-        }
-    }
-
-    private func queryAndNotifyNewWorkouts(completion: @escaping () -> Void) {
-        let workoutType = HKWorkoutType.workoutType()
-        let defaults = UserDefaults.standard
-
-        // Start date: last check time, or 7 days ago as fallback
-        let lastCheck: Date
-        if let stored = defaults.object(forKey: Self.lastWorkoutCheckKey) as? Date {
-            lastCheck = stored
-        } else {
-            lastCheck = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-        }
-
-        let predicate = HKQuery.predicateForSamples(
-            withStart: lastCheck,
-            end: nil,
-            options: .strictStartDate
-        )
-        let sortDescriptor = NSSortDescriptor(
-            key: HKSampleSortIdentifierEndDate,
-            ascending: false
-        )
-
-        let query = HKSampleQuery(
-            sampleType: workoutType,
-            predicate: predicate,
-            limit: 20,
-            sortDescriptors: [sortDescriptor]
-        ) { [weak self] _, samples, error in
-            guard let self = self else {
-                completion()
-                return
-            }
-
-            if let error = error {
-                print("[HealthKitWriter] Workout query error: \(error.localizedDescription)")
-                completion()
-                return
-            }
-
-            guard let workouts = samples as? [HKWorkout], !workouts.isEmpty else {
-                print("[HealthKitWriter] No new workouts found")
-                completion()
-                return
-            }
-
-            // Filter out workouts created by DaySeven (matches JS-side source filter)
-            let externalWorkouts = workouts.filter { workout in
-                let sourceName = workout.sourceRevision.source.name.lowercased()
-                let bundleId = workout.sourceRevision.source.bundleIdentifier.lowercased()
-                return !sourceName.contains("dayseven") && !bundleId.contains("dayseven")
-            }
-
-            guard !externalWorkouts.isEmpty else {
-                print("[HealthKitWriter] All new workouts are from DaySeven, skipping notification")
-                defaults.set(Date(), forKey: Self.lastWorkoutCheckKey)
-                completion()
-                return
-            }
-
-            print("[HealthKitWriter] Found \(externalWorkouts.count) new external workout(s)")
-
-            // Update timestamp so we don't re-notify about these
-            defaults.set(Date(), forKey: Self.lastWorkoutCheckKey)
-
-            // Schedule local push notification
-            self.scheduleWorkoutNotification(count: externalWorkouts.count)
-            completion()
-        }
-
-        healthStore.execute(query)
-    }
-
-    private func scheduleWorkoutNotification(count: Int) {
-        let content = UNMutableNotificationContent()
-        content.title = "New Workout Detected"
-        if count == 1 {
-            content.body = "A new workout was saved to Apple Health. Open DaySeven to import it."
-        } else {
-            content.body = "\(count) new workouts were saved to Apple Health. Open DaySeven to import them."
-        }
-        content.sound = .default
-
-        // Fixed identifier: new notifications replace previous ones (no stacking)
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
-        let request = UNNotificationRequest(
-            identifier: Self.workoutNotificationId,
-            content: content,
-            trigger: trigger
-        )
-
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error = error {
-                print("[HealthKitWriter] Failed to schedule notification: \(error.localizedDescription)")
-            } else {
-                print("[HealthKitWriter] Workout notification scheduled (count: \(count))")
-            }
-        }
     }
 
     // MARK: - Authorization
@@ -358,6 +217,8 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                 if let error = error {
                     call.reject(error.localizedDescription)
                 } else {
+                    // The observer registered at launch may predate this grant
+                    WorkoutDetectionObserver.shared.restart()
                     call.resolve(["authorized": success])
                 }
             }
@@ -387,6 +248,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                 if let error = error {
                     call.reject(error.localizedDescription)
                 } else {
+                    WorkoutDetectionObserver.shared.restart()
                     call.resolve(["authorized": success])
                 }
             }
@@ -411,13 +273,19 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
     // MARK: - Live Workout Session (New - triggers Apple Watch)
 
     @objc func startLiveWorkout(_ call: CAPPluginCall) {
+        // Live-session state is main-thread only (see the vars above)
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { self.startLiveWorkout(call) }
+            return
+        }
+
         guard HKHealthStore.isHealthDataAvailable() else {
             call.reject("HealthKit not available on this device")
             return
         }
 
-        // Check if there's already an active workout
-        if workoutBuilder != nil {
+        // Check if there's already an active workout, or one still starting
+        if workoutBuilder != nil || isStartingLiveWorkout {
             call.reject("A workout is already in progress")
             return
         }
@@ -445,89 +313,83 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         let typesToShare: Set<HKSampleType> = [workoutType]
 
+        isStartingLiveWorkout = true
         healthStore.requestAuthorization(toShare: typesToShare, read: typesToRead) { [weak self] success, error in
-            guard let self = self else { return }
+            DispatchQueue.main.async {
+                guard let self = self else { return }
 
-            if let error = error {
-                DispatchQueue.main.async {
+                if let error = error {
+                    self.isStartingLiveWorkout = false
                     call.reject(error.localizedDescription)
-                }
-                return
-            }
-
-            guard success else {
-                DispatchQueue.main.async {
-                    call.reject("Authorization denied")
-                }
-                return
-            }
-
-            // Create workout configuration
-            let configuration = HKWorkoutConfiguration()
-            configuration.activityType = activityType
-            if subtype?.lowercased() == "indoor" {
-                configuration.locationType = .indoor
-            } else if subtype?.lowercased() == "outdoor" {
-                configuration.locationType = .outdoor
-            } else {
-                configuration.locationType = .unknown
-            }
-
-            // Create workout builder
-            let builder = HKWorkoutBuilder(healthStore: self.healthStore, configuration: configuration, device: .local())
-
-            self.workoutBuilder = builder
-            self.liveWorkoutActivityType = activityType
-            self.liveWorkoutStartDate = Date()
-
-            // Reset metrics
-            self.accumulatedCalories = 0
-            self.accumulatedDistance = 0
-            self.heartRateSamples = []
-            self.heartRateHKSamples = []
-            self.lastHeartRate = 0
-            self.observerStartDate = self.liveWorkoutStartDate
-
-            // Begin workout data collection
-            guard let startDate = self.liveWorkoutStartDate else {
-                DispatchQueue.main.async {
-                    call.reject("Failed to initialize workout start date")
-                }
-                return
-            }
-
-            builder.beginCollection(withStart: startDate) { success, error in
-                if !success {
-                    DispatchQueue.main.async {
-                        self.workoutBuilder = nil
-                        self.liveWorkoutStartDate = nil
-                        call.reject(error?.localizedDescription ?? "Failed to start workout collection")
-                    }
                     return
                 }
 
-                // Start observing heart rate, calories, and distance
-                self.startHeartRateObserver(from: startDate)
-                self.startCaloriesObserver(from: startDate)
-                self.startDistanceObserver(from: startDate)
-
-                // Start Live Activity on lock screen
-                if #available(iOS 16.2, *) {
-                    self.startWorkoutLiveActivity(activityType: activityTypeString, startTime: startDate)
+                guard success else {
+                    self.isStartingLiveWorkout = false
+                    call.reject("Authorization denied")
+                    return
                 }
 
-                DispatchQueue.main.async {
-                    call.resolve([
-                        "success": true,
-                        "startDate": self.isoFormatter.string(from: startDate),
-                        "activityType": activityTypeString
-                    ])
+                // Create workout configuration
+                let configuration = HKWorkoutConfiguration()
+                configuration.activityType = activityType
+                if subtype?.lowercased() == "indoor" {
+                    configuration.locationType = .indoor
+                } else if subtype?.lowercased() == "outdoor" {
+                    configuration.locationType = .outdoor
+                } else {
+                    configuration.locationType = .unknown
+                }
+
+                // Create workout builder and begin data collection
+                let builder = HKWorkoutBuilder(healthStore: self.healthStore, configuration: configuration, device: .local())
+                let startDate = Date()
+
+                builder.beginCollection(withStart: startDate) { success, error in
+                    DispatchQueue.main.async {
+                        self.isStartingLiveWorkout = false
+
+                        if !success {
+                            call.reject(error?.localizedDescription ?? "Failed to start workout collection")
+                            return
+                        }
+
+                        // Fresh metrics for the new session
+                        self.resetLiveWorkoutState()
+                        self.workoutBuilder = builder
+                        self.liveWorkoutActivityType = activityType
+                        self.liveWorkoutStartDate = startDate
+                        self.observerStartDate = startDate
+
+                        // Start observing heart rate, calories, and distance
+                        self.startHeartRateObserver(from: startDate)
+                        self.startCaloriesObserver(from: startDate)
+                        self.startDistanceObserver(from: startDate)
+
+                        // Start Live Activity on lock screen. On main, so its id is
+                        // recorded before WatchSessionManager's activity observer sees it.
+                        if #available(iOS 16.2, *) {
+                            self.startWorkoutLiveActivity(activityType: activityTypeString, startTime: startDate)
+                        }
+
+                        call.resolve([
+                            "success": true,
+                            "startDate": self.isoFormatter.string(from: startDate),
+                            "activityType": activityTypeString
+                        ])
+                    }
                 }
             }
         }
     }
 
     @objc func endLiveWorkout(_ call: CAPPluginCall) {
+        // Live-session state is main-thread only (see the vars above)
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { self.endLiveWorkout(call) }
+            return
+        }
+
         guard let builder = workoutBuilder, let startDate = liveWorkoutStartDate else {
             // Always dismiss Live Activity even if workout state is gone
             if #available(iOS 16.2, *) {
@@ -550,101 +412,101 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
 
         // End the workout collection
         builder.endCollection(withEnd: endDate) { [weak self] success, error in
-            guard let self = self else { return }
-
-            if !success {
-                // Still dismiss Live Activity even if collection end fails
-                if #available(iOS 16.2, *) {
-                    self.endWorkoutLiveActivity()
-                }
-                DispatchQueue.main.async {
-                    call.reject(error?.localizedDescription ?? "Failed to end workout collection")
-                }
-                return
-            }
-
-            // Add samples before finishing
-            // NOTE: We intentionally do NOT write calories here to avoid double-counting.
-            // The user's Apple Watch/device has already written calorie samples to HealthKit
-            // during the workout. Writing them again would duplicate the values.
-            var samples: [HKSample] = []
-
-            // Add distance if provided (this doesn't cause double-counting issues)
-            if let distance = userDistance, distance > 0 {
-                if let distanceType = HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning) {
-                    let distanceQuantity = HKQuantity(unit: .meter(), doubleValue: distance)
-                    let distanceSample = HKQuantitySample(
-                        type: distanceType,
-                        quantity: distanceQuantity,
-                        start: startDate,
-                        end: endDate
-                    )
-                    samples.append(distanceSample)
-                }
-            }
-
-            // NOTE: We also don't add heart rate samples here - they're already in HealthKit
-            // from the Apple Watch. Adding them again would create duplicates.
-
-            let finishWorkout = { [weak self] in
+            DispatchQueue.main.async {
                 guard let self = self else { return }
 
-                builder.finishWorkout { workout, error in
-                    // Calculate final metrics for reporting back to the app
-                    let avgHr = self.heartRateSamples.isEmpty ? 0 : self.heartRateSamples.reduce(0, +) / Double(self.heartRateSamples.count)
-                    let maxHr = self.heartRateSamples.max() ?? 0
-                    let duration = endDate.timeIntervalSince(startDate) / 60.0 // in minutes
-
-                    // End Live Activity
+                if !success {
+                    // Throw the session away. Keeping the builder would make every
+                    // later startLiveWorkout fail with "A workout is already in
+                    // progress" until the app is killed.
+                    builder.discardWorkout()
+                    // Still dismiss Live Activity even if collection end fails
                     if #available(iOS 16.2, *) {
                         self.endWorkoutLiveActivity()
                     }
+                    self.resetLiveWorkoutState()
+                    call.reject(error?.localizedDescription ?? "Failed to end workout collection")
+                    return
+                }
 
-                    // Clean up
-                    self.workoutBuilder = nil
-                    self.liveWorkoutStartDate = nil
-                    self.observerStartDate = nil
+                // Add samples before finishing
+                // NOTE: We intentionally do NOT write calories here to avoid double-counting.
+                // The user's Apple Watch/device has already written calorie samples to HealthKit
+                // during the workout. Writing them again would duplicate the values.
+                var samples: [HKSample] = []
 
-                    DispatchQueue.main.async {
-                        if let workout = workout {
-                            call.resolve([
-                                "success": true,
-                                "workoutUUID": workout.uuid.uuidString,
-                                "duration": Int(round(duration)),
-                                "calories": Int(round(finalCalories)),
-                                "avgHr": Int(round(avgHr)),
-                                "maxHr": Int(round(maxHr)),
-                                "distance": self.accumulatedDistance, // meters
-                                "sampleCount": self.heartRateSamples.count
-                            ])
-                        } else {
-                            call.reject(error?.localizedDescription ?? "Failed to save workout")
-                        }
-
-                        // Reset metrics
-                        self.accumulatedCalories = 0
-                        self.accumulatedDistance = 0
-                        self.heartRateSamples = []
-                        self.heartRateHKSamples = []
-                        self.lastHeartRate = 0
+                // Add distance if provided (this doesn't cause double-counting issues)
+                if let distance = userDistance, distance > 0 {
+                    if let distanceType = HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning) {
+                        let distanceQuantity = HKQuantity(unit: .meter(), doubleValue: distance)
+                        let distanceSample = HKQuantitySample(
+                            type: distanceType,
+                            quantity: distanceQuantity,
+                            start: startDate,
+                            end: endDate
+                        )
+                        samples.append(distanceSample)
                     }
                 }
-            }
 
-            if !samples.isEmpty {
-                builder.add(samples) { success, error in
-                    if !success {
-                        // Sample addition failed, continuing with workout finish
+                // NOTE: We also don't add heart rate samples here - they're already in HealthKit
+                // from the Apple Watch. Adding them again would create duplicates.
+
+                let finishWorkout = {
+                    builder.finishWorkout { workout, error in
+                        DispatchQueue.main.async {
+                            // Calculate final metrics for reporting back to the app
+                            let avgHr = self.heartRateSamples.isEmpty ? 0 : self.heartRateSamples.reduce(0, +) / Double(self.heartRateSamples.count)
+                            let maxHr = self.heartRateSamples.max() ?? 0
+                            let duration = endDate.timeIntervalSince(startDate) / 60.0 // in minutes
+
+                            // End Live Activity
+                            if #available(iOS 16.2, *) {
+                                self.endWorkoutLiveActivity()
+                            }
+
+                            if let workout = workout {
+                                call.resolve([
+                                    "success": true,
+                                    "workoutUUID": workout.uuid.uuidString,
+                                    "duration": Int(round(duration)),
+                                    "calories": Int(round(finalCalories)),
+                                    "avgHr": Int(round(avgHr)),
+                                    "maxHr": Int(round(maxHr)),
+                                    "distance": self.accumulatedDistance, // meters
+                                    "sampleCount": self.heartRateSamples.count
+                                ])
+                            } else {
+                                call.reject(error?.localizedDescription ?? "Failed to save workout")
+                            }
+
+                            // Clean up
+                            self.resetLiveWorkoutState()
+                        }
                     }
+                }
+
+                if !samples.isEmpty {
+                    builder.add(samples) { success, error in
+                        if !success {
+                            // Sample addition failed, continuing with workout finish
+                        }
+                        finishWorkout()
+                    }
+                } else {
                     finishWorkout()
                 }
-            } else {
-                finishWorkout()
             }
         }
     }
 
     @objc func cancelLiveWorkout(_ call: CAPPluginCall) {
+        // Live-session state is main-thread only (see the vars above)
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { self.cancelLiveWorkout(call) }
+            return
+        }
+
         guard workoutBuilder != nil else {
             call.resolve(["success": true, "message": "No active workout to cancel"])
             return
@@ -656,12 +518,23 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         // Discard the workout builder without saving
         workoutBuilder?.discardWorkout()
 
-        // Dismiss Live Activity immediately
-        if #available(iOS 16.2, *) {
-            dismissWorkoutLiveActivity()
-        }
+        resetLiveWorkoutState()
 
-        // Clean up
+        // Resolve only once the Live Activity has ended. When the watch takes
+        // over, JS awaits this and then asks for the watch Live Activity; while
+        // the phone one was still ending it got adopted and then vanished.
+        if #available(iOS 16.2, *) {
+            endWorkoutLiveActivity {
+                call.resolve(["success": true])
+            }
+        } else {
+            call.resolve(["success": true])
+        }
+    }
+
+    /// Forget the live session and its metrics. The builder must already be
+    /// finished or discarded.
+    private func resetLiveWorkoutState() {
         workoutBuilder = nil
         liveWorkoutStartDate = nil
         observerStartDate = nil
@@ -670,8 +543,23 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         heartRateSamples = []
         heartRateHKSamples = []
         lastHeartRate = 0
+    }
 
-        call.resolve(["success": true])
+    // MARK: - Workout Detection Settings
+
+    /// Mirrors the settings that gate the background "New Workout Detected"
+    /// notification into UserDefaults (see WorkoutDetectionObserver).
+    /// Keys left out keep their stored value.
+    @objc func setWorkoutDetectionPrefs(_ call: CAPPluginCall) {
+        var values: [String: Any] = [:]
+        for key in WorkoutDetectionObserver.boolPrefKeys {
+            if let value = call.getBool(key) { values[key] = value }
+        }
+        for key in WorkoutDetectionObserver.stringPrefKeys {
+            if let value = call.getString(key) { values[key] = value }
+        }
+        WorkoutDetectionObserver.updatePrefs(values)
+        call.resolve()
     }
 
     // MARK: - Widget Data
@@ -696,6 +584,9 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         defaults.set(call.getInt("todaySteps") ?? 0, forKey: "todaySteps")
         defaults.set(call.getInt("stepsGoal") ?? 10000, forKey: "stepsGoal")
         defaults.set(call.getInt("todayCalories") ?? 0, forKey: "todayCalories")
+        // The day todaySteps/todayCalories are for, so the widget can zero them
+        // after midnight instead of showing yesterday's until the app is opened
+        defaults.set(Self.widgetDayKey(Date()), forKey: "todayDate")
         defaults.set(call.getInt("daysLeftInWeek") ?? 0, forKey: "daysLeftInWeek")
         defaults.set(call.getInt("weekSteps") ?? 0, forKey: "weekSteps")
         defaults.set(call.getString("weekStartDate") ?? "", forKey: "weekStartDate")
@@ -711,6 +602,15 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         WidgetCenter.shared.reloadAllTimelines()
 
         call.resolve(["success": true])
+    }
+
+    /// "YYYY-MM-DD" in the Gregorian calendar and device time zone, the format
+    /// the widget's SharedDefaults compares against.
+    private static func widgetDayKey(_ date: Date) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let c = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
 
     // MARK: - Live Activity
@@ -740,12 +640,13 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    /// Ends the phone workout's Live Activity, then calls `completion` on main.
     @available(iOS 16.2, *)
-    private func endWorkoutLiveActivity() {
-        let targetId = liveActivityId
+    private func endWorkoutLiveActivity(completion: (() -> Void)? = nil) {
         let finalState = WorkoutActivityAttributes.ContentState(isPaused: false)
 
-        Task {
+        Task { @MainActor in
+            let targetId = self.liveActivityId
             if let targetId = targetId {
                 // End only the phone workout's Live Activity
                 for activity in Activity<WorkoutActivityAttributes>.activities {
@@ -759,8 +660,9 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                     }
                 }
             } else {
-                // No ID — end ALL as fallback cleanup
-                for activity in Activity<WorkoutActivityAttributes>.activities {
+                // No ID — end every workout activity except the watch workout's
+                let watchId = WatchSessionManager.shared.watchWorkoutLiveActivityId
+                for activity in Activity<WorkoutActivityAttributes>.activities where activity.id != watchId {
                     await activity.end(
                         .init(state: finalState, staleDate: nil),
                         dismissalPolicy: .immediate
@@ -768,54 +670,26 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                     print("[LiveActivity] Ended activity (fallback): \(activity.id)")
                 }
             }
-            self.liveActivityId = nil
+            // A newer phone workout may have started while this one was ending
+            if self.liveActivityId == targetId {
+                self.liveActivityId = nil
+            }
+            completion?()
         }
     }
 
     @available(iOS 16.2, *)
     private func updateLiveActivityPaused(_ isPaused: Bool, accumulatedPauseTime: Double = 0) {
-        guard let activityId = liveActivityId else { return }
         let newState = WorkoutActivityAttributes.ContentState(isPaused: isPaused, accumulatedPauseTime: accumulatedPauseTime)
 
-        Task {
+        Task { @MainActor in
+            guard let activityId = self.liveActivityId else { return }
             for activity in Activity<WorkoutActivityAttributes>.activities {
                 if activity.id == activityId {
                     await activity.update(.init(state: newState, staleDate: nil))
                     break
                 }
             }
-        }
-    }
-
-    @available(iOS 16.2, *)
-    private func dismissWorkoutLiveActivity() {
-        let targetId = liveActivityId
-        let finalState = WorkoutActivityAttributes.ContentState(isPaused: false)
-
-        Task {
-            if let targetId = targetId {
-                // Dismiss only the phone workout's Live Activity
-                for activity in Activity<WorkoutActivityAttributes>.activities {
-                    if activity.id == targetId {
-                        await activity.end(
-                            .init(state: finalState, staleDate: nil),
-                            dismissalPolicy: .immediate
-                        )
-                        print("[LiveActivity] Dismissed phone activity: \(activity.id)")
-                        break
-                    }
-                }
-            } else {
-                // No ID — end ALL as fallback cleanup
-                for activity in Activity<WorkoutActivityAttributes>.activities {
-                    await activity.end(
-                        .init(state: finalState, staleDate: nil),
-                        dismissalPolicy: .immediate
-                    )
-                    print("[LiveActivity] Dismissed activity (fallback): \(activity.id)")
-                }
-            }
-            self.liveActivityId = nil
         }
     }
 
@@ -831,7 +705,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
 
-            Task {
+            Task { @MainActor in
                 var ended = 0
                 for activity in activities {
                     await activity.end(
@@ -842,9 +716,8 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
                     print("[LiveActivity] Force-ended activity: \(activity.id)")
                 }
                 self.liveActivityId = nil
-                DispatchQueue.main.async {
-                    call.resolve(["success": true, "ended": ended])
-                }
+                WatchSessionManager.shared.watchWorkoutLiveActivityId = nil
+                call.resolve(["success": true, "ended": ended])
             }
         } else {
             call.resolve(["success": true, "ended": 0])
@@ -853,16 +726,19 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func checkActiveLiveActivity(_ call: CAPPluginCall) {
         if #available(iOS 16.2, *) {
-            let activities = Activity<WorkoutActivityAttributes>.activities
-            if let active = activities.first {
-                let attrs = active.attributes
-                call.resolve([
-                    "isActive": true,
-                    "activityType": attrs.activityType,
-                    "startTime": ISO8601DateFormatter().string(from: attrs.startTime)
-                ])
-            } else {
-                call.resolve(["isActive": false])
+            DispatchQueue.main.async {
+                // An ended activity stays in the list until dismissed; JS would
+                // restore a workout from it.
+                if let active = WatchSessionManager.shared.newestRunningWorkoutActivity() {
+                    let attrs = active.attributes
+                    call.resolve([
+                        "isActive": true,
+                        "activityType": attrs.activityType,
+                        "startTime": ISO8601DateFormatter().string(from: attrs.startTime)
+                    ])
+                } else {
+                    call.resolve(["isActive": false])
+                }
             }
         } else {
             call.resolve(["isActive": false])
@@ -907,43 +783,7 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         let activityType = call.getString("activityType") ?? "Other"
         if #available(iOS 16.2, *) {
             DispatchQueue.main.async {
-                let mgr = WatchSessionManager.shared
-
-                // Check if push-to-start already created one
-                if mgr.watchWorkoutLiveActivityId == nil {
-                    let existing = Activity<WorkoutActivityAttributes>.activities
-                    if let pushStarted = existing.first {
-                        mgr.watchWorkoutLiveActivityId = pushStarted.id
-                        print("[LiveActivity] Adopted push-started Live Activity from JS: \(pushStarted.id)")
-                        return
-                    }
-                }
-
-                guard mgr.watchWorkoutLiveActivityId == nil else {
-                    print("[LiveActivity] Watch Live Activity already active, skipping")
-                    return
-                }
-
-                let icon = mgr.liveActivityIconForType(activityType)
-                let category = mgr.liveActivityCategoryForType(activityType)
-                let attributes = WorkoutActivityAttributes(
-                    activityType: activityType,
-                    activityIcon: icon,
-                    startTime: Date(),
-                    categoryColor: category
-                )
-                let initialState = WorkoutActivityAttributes.ContentState(isPaused: false)
-                do {
-                    let activity = try Activity.request(
-                        attributes: attributes,
-                        content: .init(state: initialState, staleDate: nil),
-                        pushType: nil
-                    )
-                    mgr.watchWorkoutLiveActivityId = activity.id
-                    print("[LiveActivity] Started watch workout Live Activity from JS: \(activity.id)")
-                } catch {
-                    print("[LiveActivity] Failed to start from JS: \(error)")
-                }
+                WatchSessionManager.shared.startOrAdoptWatchWorkoutLiveActivity(activityType: activityType)
             }
         }
         call.resolve(["success": true])
@@ -961,9 +801,20 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         call.resolve(["success": true])
     }
 
-    private var liveActivityId: String?
+    /// The phone workout's Live Activity. Stored on WatchSessionManager so the
+    /// watch Live Activity bookkeeping can tell it apart. Main thread only.
+    private var liveActivityId: String? {
+        get { WatchSessionManager.shared.phoneWorkoutLiveActivityId }
+        set { WatchSessionManager.shared.phoneWorkoutLiveActivityId = newValue }
+    }
 
     @objc func getLiveWorkoutMetrics(_ call: CAPPluginCall) {
+        // Live-session state is main-thread only (see the vars above)
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { self.getLiveWorkoutMetrics(call) }
+            return
+        }
+
         guard liveWorkoutStartDate != nil else {
             call.resolve([
                 "isActive": false,
@@ -1121,6 +972,12 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
     // MARK: - Legacy Observer Methods (backward compatibility)
 
     @objc func startObservingMetrics(_ call: CAPPluginCall) {
+        // Live-session state is main-thread only (see the vars above)
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { self.startObservingMetrics(call) }
+            return
+        }
+
         // If there's a live workout, just return its metrics
         if let existingStart = liveWorkoutStartDate {
             call.resolve([
@@ -1145,36 +1002,32 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         let typesToRead: Set<HKObjectType> = [heartRateType, caloriesType]
 
         healthStore.requestAuthorization(toShare: nil, read: typesToRead) { [weak self] success, error in
-            guard let self = self else { return }
-
-            if let error = error {
-                DispatchQueue.main.async {
-                    call.reject(error.localizedDescription)
-                }
-                return
-            }
-
-            guard success else {
-                DispatchQueue.main.async {
-                    call.reject("Authorization denied for reading health data")
-                }
-                return
-            }
-
-            self.stopObserverQueries()
-
-            let observerStart = Date()
-            self.observerStartDate = observerStart
-            self.accumulatedCalories = 0
-            self.accumulatedDistance = 0
-            self.heartRateSamples = []
-            self.heartRateHKSamples = []
-            self.lastHeartRate = 0
-
-            self.startHeartRateObserver(from: observerStart)
-            self.startCaloriesObserver(from: observerStart)
-
             DispatchQueue.main.async {
+                guard let self = self else { return }
+
+                if let error = error {
+                    call.reject(error.localizedDescription)
+                    return
+                }
+
+                guard success else {
+                    call.reject("Authorization denied for reading health data")
+                    return
+                }
+
+                self.stopObserverQueries()
+
+                let observerStart = Date()
+                self.observerStartDate = observerStart
+                self.accumulatedCalories = 0
+                self.accumulatedDistance = 0
+                self.heartRateSamples = []
+                self.heartRateHKSamples = []
+                self.lastHeartRate = 0
+
+                self.startHeartRateObserver(from: observerStart)
+                self.startCaloriesObserver(from: observerStart)
+
                 call.resolve([
                     "success": true,
                     "startDate": self.isoFormatter.string(from: observerStart)
@@ -1184,6 +1037,12 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func stopObservingMetrics(_ call: CAPPluginCall) {
+        // Live-session state is main-thread only (see the vars above)
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { self.stopObservingMetrics(call) }
+            return
+        }
+
         stopObserverQueries()
 
         let avgHr = heartRateSamples.isEmpty ? 0 : heartRateSamples.reduce(0, +) / Double(heartRateSamples.count)
@@ -1206,6 +1065,12 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func getLatestMetrics(_ call: CAPPluginCall) {
+        // Live-session state is main-thread only (see the vars above)
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { self.getLatestMetrics(call) }
+            return
+        }
+
         let avgHr = heartRateSamples.isEmpty ? 0 : heartRateSamples.reduce(0, +) / Double(heartRateSamples.count)
         let maxHr = heartRateSamples.max() ?? 0
 
@@ -1281,11 +1146,11 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
 
             if !newSamples.isEmpty {
-                self.heartRateSamples = newSamples
-                self.heartRateHKSamples = samples  // Store actual HK samples for workout attachment
-                self.lastHeartRate = newSamples.last ?? 0
-
                 DispatchQueue.main.async {
+                    self.heartRateSamples = newSamples
+                    self.heartRateHKSamples = samples  // Store actual HK samples for workout attachment
+                    self.lastHeartRate = newSamples.last ?? 0
+
                     let avgHr = self.heartRateSamples.reduce(0, +) / Double(self.heartRateSamples.count)
                     let maxHr = self.heartRateSamples.max() ?? 0
 
@@ -1329,35 +1194,35 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    /// Total of `type` since `startDate`, merged across sources. A cumulative-sum
+    /// statistics query lets HealthKit drop the overlap when the iPhone and the
+    /// Watch both record the same minutes; summing raw samples counted them twice.
+    /// No `.strictStartDate`, so a sample straddling the start is prorated rather
+    /// than dropped.
+    private func cumulativeSum(of type: HKQuantityType, unit: HKUnit, since startDate: Date, completion: @escaping (Double) -> Void) {
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: nil, options: [])
+        let query = HKStatisticsQuery(quantityType: type, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, statistics, _ in
+            guard let total = statistics?.sumQuantity()?.doubleValue(for: unit) else { return }
+            completion(total)
+        }
+        healthStore.execute(query)
+    }
+
     private func fetchCaloriesSamples(from startDate: Date) {
         guard let caloriesType = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned) else { return }
 
-        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: nil, options: .strictStartDate)
-        let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+        cumulativeSum(of: caloriesType, unit: .kilocalorie(), since: startDate) { [weak self] totalCalories in
+            guard totalCalories > 0 else { return }
 
-        let query = HKSampleQuery(sampleType: caloriesType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) { [weak self] _, samples, error in
-            guard let self = self, error == nil, let samples = samples as? [HKQuantitySample] else { return }
-
-            let kcalUnit = HKUnit.kilocalorie()
-            var totalCalories: Double = 0
-
-            for sample in samples {
-                totalCalories += sample.quantity.doubleValue(for: kcalUnit)
-            }
-
-            if totalCalories > 0 {
+            DispatchQueue.main.async {
+                guard let self = self else { return }
                 self.accumulatedCalories = totalCalories
-
-                DispatchQueue.main.async {
-                    self.notifyListeners("metricsUpdated", data: [
-                        "type": "calories",
-                        "calories": Int(round(totalCalories))
-                    ])
-                }
+                self.notifyListeners("metricsUpdated", data: [
+                    "type": "calories",
+                    "calories": Int(round(totalCalories))
+                ])
             }
         }
-
-        healthStore.execute(query)
     }
 
     private func startDistanceObserver(from startDate: Date) {
@@ -1389,25 +1254,16 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
     private func fetchDistanceSamples(from startDate: Date) {
         guard let distanceType = HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning) else { return }
 
-        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: nil, options: .strictStartDate)
-        let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+        // Merged across sources like calories: this value pre-fills the finish
+        // modal and is written back to HealthKit with the workout, so a doubled
+        // iPhone + Watch distance would be saved as fact.
+        cumulativeSum(of: distanceType, unit: .meter(), since: startDate) { [weak self] totalDistance in
+            guard totalDistance > 0 else { return }
 
-        let query = HKSampleQuery(sampleType: distanceType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) { [weak self] _, samples, error in
-            guard let self = self, error == nil, let samples = samples as? [HKQuantitySample] else { return }
-
-            let meterUnit = HKUnit.meter()
-            var totalDistance: Double = 0
-
-            for sample in samples {
-                totalDistance += sample.quantity.doubleValue(for: meterUnit)
-            }
-
-            if totalDistance > 0 {
-                self.accumulatedDistance = totalDistance
+            DispatchQueue.main.async {
+                self?.accumulatedDistance = totalDistance
             }
         }
-
-        healthStore.execute(query)
     }
 
     // MARK: - Heart Rate Query
@@ -1431,54 +1287,41 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        // Request read authorization for heart rate
-        let typesToRead: Set<HKObjectType> = [heartRateType]
+        // A query never asks for access: this runs from background paths (workout
+        // linking, the 90-day max-HR lookup), and the Health sheet must only follow
+        // a user tap. Without read access HealthKit simply returns no samples.
+        let predicate = HKQuery.predicateForSamples(
+            withStart: startDate,
+            end: endDate,
+            options: [.strictStartDate, .strictEndDate]
+        )
 
-        healthStore.requestAuthorization(toShare: nil, read: typesToRead) { [weak self] success, error in
-            guard let self = self else { return }
+        // Statistics instead of a sample query: the 90-day max-HR lookup would
+        // otherwise load every heart-rate sample in that window into memory.
+        let query = HKStatisticsQuery(
+            quantityType: heartRateType,
+            quantitySamplePredicate: predicate,
+            options: [.discreteAverage, .discreteMax]
+        ) { _, statistics, _ in
+            let hrUnit = HKUnit.count().unitDivided(by: .minute())
+            let avgHr = statistics?.averageQuantity()?.doubleValue(for: hrUnit)
+            let maxHr = statistics?.maximumQuantity()?.doubleValue(for: hrUnit)
 
-            if !success {
-                DispatchQueue.main.async {
+            DispatchQueue.main.async {
+                guard let avgHr, let maxHr else {
                     call.resolve(["hasData": false])
+                    return
                 }
-                return
+
+                call.resolve([
+                    "hasData": true,
+                    "avgHr": Int(round(avgHr)),
+                    "maxHr": Int(round(maxHr))
+                ])
             }
-
-            let predicate = HKQuery.predicateForSamples(
-                withStart: startDate,
-                end: endDate,
-                options: [.strictStartDate, .strictEndDate]
-            )
-
-            let query = HKSampleQuery(
-                sampleType: heartRateType,
-                predicate: predicate,
-                limit: HKObjectQueryNoLimit,
-                sortDescriptors: nil
-            ) { _, samples, _ in
-                DispatchQueue.main.async {
-                    guard let samples = samples as? [HKQuantitySample], !samples.isEmpty else {
-                        call.resolve(["hasData": false])
-                        return
-                    }
-
-                    let hrUnit = HKUnit.count().unitDivided(by: .minute())
-                    let hrValues = samples.map { $0.quantity.doubleValue(for: hrUnit) }
-
-                    let avgHr = hrValues.reduce(0, +) / Double(hrValues.count)
-                    let maxHr = hrValues.max() ?? 0
-
-                    call.resolve([
-                        "hasData": true,
-                        "avgHr": Int(round(avgHr)),
-                        "maxHr": Int(round(maxHr)),
-                        "sampleCount": hrValues.count
-                    ])
-                }
-            }
-
-            self.healthStore.execute(query)
         }
+
+        healthStore.execute(query)
     }
 
     // MARK: - Watch Workout Control (via WatchConnectivity)
@@ -1938,10 +1781,10 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         do {
-            var context = session.applicationContext
-            context["distanceUnit"] = unit
-            context["distanceUnitTimestamp"] = Date().timeIntervalSince1970
-            try session.updateApplicationContext(context)
+            try WatchSessionManager.shared.updateApplicationContext([
+                "distanceUnit": unit,
+                "distanceUnitTimestamp": Date().timeIntervalSince1970
+            ])
             print("[HealthKitWriter] pushDistanceUnit: queued '\(unit)' via applicationContext")
             call.resolve(["sent": true, "unit": unit])
         } catch {
@@ -2404,12 +2247,300 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
             }
         }
 
-        // Retain query to prevent deallocation before callback completes
-        activeRouteQueries.append(query)
-        healthStore.execute(query)
+        // Retain query to prevent deallocation before callback completes.
+        // On main: route lookups for several workouts run at once.
+        DispatchQueue.main.async {
+            self.activeRouteQueries.append(query)
+            self.healthStore.execute(query)
+        }
     }
 
     private func removeRouteQuery(_ query: HKWorkoutRouteQuery) {
-        activeRouteQueries.removeAll { $0 === query }
+        DispatchQueue.main.async {
+            self.activeRouteQueries.removeAll { $0 === query }
+        }
+    }
+}
+
+// MARK: - Background Workout Detection
+
+/// Posts the "New Workout Detected" local notification when another app saves a
+/// workout to HealthKit while DaySeven is in the background.
+///
+/// A process-wide singleton started from AppDelegate, not part of the plugin:
+/// under UIScene a HealthKit background launch connects no scene, so the
+/// storyboard view controller, the Capacitor bridge and this plugin are never
+/// created. An observer owned by the plugin was therefore never registered on
+/// exactly the launches it exists for, and HealthKit stops waking an app that
+/// leaves three wakes unanswered.
+final class WorkoutDetectionObserver {
+    static let shared = WorkoutDetectionObserver()
+
+    private let healthStore = HKHealthStore()
+    private var workoutObserverQuery: HKObserverQuery?
+    private static let workoutNotificationId = "dayseven-workout-detected"
+
+    private init() {}
+
+    /// Registers the observer and background delivery. Idempotent; main thread.
+    /// Neither call shows a permission sheet, so this is safe at every launch.
+    func start() {
+        guard workoutObserverQuery == nil else { return }
+        // Replaced by anchorKey; the old start-date cursor missed backdated imports
+        UserDefaults.standard.removeObject(forKey: "dayseven_lastWorkoutNotificationCheck")
+        guard HKHealthStore.isHealthDataAvailable() else {
+            print("[HealthKitWriter] HealthKit not available, skipping background workout setup")
+            return
+        }
+
+        let workoutType = HKWorkoutType.workoutType()
+
+        // Create observer query — fires whenever any workout is saved to HealthKit
+        workoutObserverQuery = HKObserverQuery(
+            sampleType: workoutType,
+            predicate: nil
+        ) { [weak self] _, completionHandler, error in
+            guard let self = self else {
+                completionHandler()
+                return
+            }
+
+            if let error = error {
+                print("[HealthKitWriter] Workout observer error: \(error.localizedDescription)")
+                completionHandler()
+                return
+            }
+
+            print("[HealthKitWriter] Workout observer fired")
+            self.checkForNewWorkouts {
+                completionHandler()
+            }
+        }
+
+        if let query = workoutObserverQuery {
+            healthStore.execute(query)
+            print("[HealthKitWriter] Workout observer query started")
+        }
+
+        // Enable background delivery so iOS wakes the app when workouts are saved
+        healthStore.enableBackgroundDelivery(
+            for: workoutType,
+            frequency: .immediate
+        ) { success, error in
+            if let error = error {
+                print("[HealthKitWriter] Failed to enable background delivery: \(error.localizedDescription)")
+            } else {
+                print("[HealthKitWriter] Background delivery for workouts enabled: \(success)")
+            }
+        }
+    }
+
+    /// Re-registers after the user answers the Health sheet: an observer query
+    /// started before read access was granted can stay silent until relaunch.
+    func restart() {
+        if let query = workoutObserverQuery {
+            healthStore.stop(query)
+            workoutObserverQuery = nil
+        }
+        start()
+    }
+
+    // MARK: Settings mirrored from JS
+
+    /// The user's settings that gate this notification, mirrored from JS by
+    /// HealthKitWriterPlugin.setWorkoutDetectionPrefs. The notification fires
+    /// from a HealthKit wake where no JS runs, so it can't read them from
+    /// Firestore. Nothing mirrored yet (JS hasn't run since install or update)
+    /// means no notification.
+    private static let prefsKey = "dayseven_workoutDetectionPrefs"
+    static let boolPrefKeys = ["signedIn", "newActivityDetected", "healthKitSyncDisabled", "quietHoursEnabled"]
+    static let stringPrefKeys = ["quietHoursStart", "quietHoursEnd"]
+
+    /// Merges `values` into the stored settings; keys not given keep their value.
+    static func updatePrefs(_ values: [String: Any]) {
+        var prefs = UserDefaults.standard.dictionary(forKey: prefsKey) ?? [:]
+        prefs.merge(values) { _, new in new }
+        UserDefaults.standard.set(prefs, forKey: prefsKey)
+    }
+
+    private func prefsAllowNotification(at date: Date) -> Bool {
+        guard let prefs = UserDefaults.standard.dictionary(forKey: Self.prefsKey),
+              prefs["signedIn"] as? Bool == true,
+              prefs["newActivityDetected"] as? Bool ?? true,
+              prefs["healthKitSyncDisabled"] as? Bool != true else { return false }
+
+        guard prefs["quietHoursEnabled"] as? Bool == true else { return true }
+        return !Self.isWithinQuietHours(
+            date,
+            start: prefs["quietHoursStart"] as? String ?? "22:00",
+            end: prefs["quietHoursEnd"] as? String ?? "07:00"
+        )
+    }
+
+    /// Same rule as isQuietHours in notificationService.js, in device-local time.
+    static func isWithinQuietHours(_ date: Date, start: String, end: String) -> Bool {
+        func minutes(_ hhmm: String, fallback: Int) -> Int {
+            let parts = hhmm.split(separator: ":").compactMap { Int($0) }
+            guard parts.count == 2 else { return fallback }
+            return parts[0] * 60 + parts[1]
+        }
+        let time = Calendar.current.dateComponents([.hour, .minute], from: date)
+        let now = (time.hour ?? 0) * 60 + (time.minute ?? 0)
+        let startMinutes = minutes(start, fallback: 22 * 60)
+        let endMinutes = minutes(end, fallback: 7 * 60)
+        if startMinutes <= endMinutes {
+            return now >= startMinutes && now < endMinutes
+        }
+        return now >= startMinutes || now < endMinutes // overnight, e.g. 22:00-07:00
+    }
+
+    // MARK: Detection
+
+    /// Where the last check got to in HealthKit's change history. An anchor
+    /// finds workouts by when they were saved, not by their start date, so a
+    /// workout another app syncs hours later with an earlier start still counts.
+    private static let anchorKey = "dayseven_workoutDetectionAnchor"
+
+    /// Only workouts from the last week are worth a prompt: a bulk import of old
+    /// history is new to HealthKit but not something to open the app for.
+    private static let recentWindowDays = 7
+
+    // Main thread only. One check at a time, so two wakes can't both announce
+    // the same workout.
+    private var isChecking = false
+    private var needsRecheck = false
+    private var pendingCompletions: [() -> Void] = []
+
+    private func checkForNewWorkouts(completion: @escaping () -> Void) {
+        DispatchQueue.main.async {
+            self.pendingCompletions.append(completion)
+            if self.isChecking {
+                // Let the running check finish, then look again for what woke us.
+                self.needsRecheck = true
+            } else {
+                self.runCheck()
+            }
+        }
+    }
+
+    /// Main thread.
+    private func runCheck() {
+        isChecking = true
+        needsRecheck = false
+
+        let previousAnchor = loadAnchor()
+        let since = Calendar.current.date(byAdding: .day, value: -Self.recentWindowDays, to: Date()) ?? Date()
+        let predicate = HKQuery.predicateForSamples(withStart: since, end: nil, options: [])
+
+        let query = HKAnchoredObjectQuery(
+            type: HKWorkoutType.workoutType(),
+            predicate: predicate,
+            anchor: previousAnchor,
+            limit: HKObjectQueryNoLimit
+        ) { _, samples, _, newAnchor, error in
+            DispatchQueue.main.async {
+                self.handleCheckResult(samples: samples, newAnchor: newAnchor, error: error, isBaseline: previousAnchor == nil) {
+                    if self.needsRecheck {
+                        self.runCheck()
+                        return
+                    }
+                    self.isChecking = false
+                    let completions = self.pendingCompletions
+                    self.pendingCompletions = []
+                    completions.forEach { $0() }
+                }
+            }
+        }
+
+        healthStore.execute(query)
+    }
+
+    /// Main thread. Calls `done` once any notification has been handed to the system.
+    private func handleCheckResult(samples: [HKSample]?, newAnchor: HKQueryAnchor?, error: Error?, isBaseline: Bool, done: @escaping () -> Void) {
+        if let error = error {
+            // Keep the old anchor so the next wake sees these workouts. Expected
+            // while the device is locked (the Health database is protected).
+            print("[HealthKitWriter] Workout query error: \(error.localizedDescription)")
+            done()
+            return
+        }
+
+        saveAnchor(newAnchor)
+
+        // First check on this install (or since this update): everything already
+        // in HealthKit is old news, including a week the user already imported.
+        guard !isBaseline else {
+            print("[HealthKitWriter] Workout detection baseline recorded")
+            done()
+            return
+        }
+
+        // Filter out workouts created by DaySeven (matches JS-side source filter)
+        let externalWorkouts = (samples as? [HKWorkout] ?? []).filter { workout in
+            let sourceName = workout.sourceRevision.source.name.lowercased()
+            let bundleId = workout.sourceRevision.source.bundleIdentifier.lowercased()
+            return !sourceName.contains("dayseven") && !bundleId.contains("dayseven")
+        }
+
+        guard !externalWorkouts.isEmpty else {
+            print("[HealthKitWriter] No new external workouts")
+            done()
+            return
+        }
+
+        // The anchor has already moved past these: a workout seen while the app
+        // is open, or muted by the user's settings, is not announced later.
+        guard UIApplication.shared.applicationState != .active else {
+            print("[HealthKitWriter] App is active, skipping notification (in-app banner handles this)")
+            done()
+            return
+        }
+        guard prefsAllowNotification(at: Date()) else {
+            print("[HealthKitWriter] New-workout notification is off, in quiet hours, or HealthKit sync is disabled")
+            done()
+            return
+        }
+
+        print("[HealthKitWriter] Found \(externalWorkouts.count) new external workout(s)")
+        scheduleWorkoutNotification(count: externalWorkouts.count, completion: done)
+    }
+
+    private func loadAnchor() -> HKQueryAnchor? {
+        guard let data = UserDefaults.standard.data(forKey: Self.anchorKey) else { return nil }
+        return try? NSKeyedUnarchiver.unarchivedObject(ofClass: HKQueryAnchor.self, from: data)
+    }
+
+    private func saveAnchor(_ anchor: HKQueryAnchor?) {
+        guard let anchor = anchor,
+              let data = try? NSKeyedArchiver.archivedData(withRootObject: anchor, requiringSecureCoding: true) else { return }
+        UserDefaults.standard.set(data, forKey: Self.anchorKey)
+    }
+
+    private func scheduleWorkoutNotification(count: Int, completion: @escaping () -> Void) {
+        let content = UNMutableNotificationContent()
+        content.title = "New Workout Detected"
+        if count == 1 {
+            content.body = "A new workout was saved to Apple Health. Open DaySeven to import it."
+        } else {
+            content.body = "\(count) new workouts were saved to Apple Health. Open DaySeven to import them."
+        }
+        content.sound = .default
+
+        // Fixed identifier: new notifications replace previous ones (no stacking)
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        let request = UNNotificationRequest(
+            identifier: Self.workoutNotificationId,
+            content: content,
+            trigger: trigger
+        )
+
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("[HealthKitWriter] Failed to schedule notification: \(error.localizedDescription)")
+            } else {
+                print("[HealthKitWriter] Workout notification scheduled (count: \(count))")
+            }
+            DispatchQueue.main.async { completion() }
+        }
     }
 }

@@ -15,6 +15,7 @@ import { LocalNotifications } from '@capacitor/local-notifications';
 import { Capacitor } from '@capacitor/core';
 import { doc, setDoc, updateDoc, arrayUnion, arrayRemove, getDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
+import { syncWorkoutDetectionPrefs } from './healthService';
 
 const isNative = Capacitor.isNativePlatform();
 
@@ -316,6 +317,22 @@ export const saveNotificationPreferences = async (userId, preferences) => {
 
   const { updateUserProfile } = await import('./userService');
   await updateUserProfile(userId, { notificationPreferences: preferences });
+  syncWorkoutDetectionPrefs(workoutDetectionFields(preferences));
+};
+
+/**
+ * The notification preferences the native "New Workout Detected" notification
+ * honours (see syncWorkoutDetectionPrefs in healthService).
+ * @param {Object} preferences - The notification preferences (may be partial)
+ */
+export const workoutDetectionFields = (preferences) => {
+  const prefs = { ...getDefaultPreferences(), ...(preferences || {}) };
+  return {
+    newActivityDetected: prefs.newActivityDetected !== false,
+    quietHoursEnabled: !!prefs.quietHoursEnabled,
+    quietHoursStart: prefs.quietHoursStart || '22:00',
+    quietHoursEnd: prefs.quietHoursEnd || '07:00',
+  };
 };
 
 /**

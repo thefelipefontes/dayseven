@@ -449,7 +449,7 @@ struct WorkoutSummaryView: View {
         // the phone instead of seeing a blank row with a heartbeat icon.
         let resolvedType = activityType.isEmpty ? "Other" : activityType
 
-        let countToward = ActivityTypes.getDefaultCountToward(type: resolvedType, subtype: selectedSubtype, countToward: selectedCountToward)
+        let countToward = ActivityTypes.getDefaultCountToward(type: resolvedType, subtype: selectedSubtype, strengthType: strengthType, countToward: selectedCountToward)
 
         let activity = Activity.create(
             type: resolvedType,
@@ -482,12 +482,15 @@ struct WorkoutSummaryView: View {
         // Check if any details differ from what was auto-saved
         let currentFocusAreas = selectedFocusAreas.isEmpty ? nil : selectedFocusAreas
         let currentSubtype = selectedSubtype
-        let currentCountToward = ActivityTypes.getDefaultCountToward(type: activityType, subtype: selectedSubtype, countToward: selectedCountToward)
+        let currentCountToward = ActivityTypes.getDefaultCountToward(type: activityType, subtype: selectedSubtype, strengthType: strengthType, countToward: selectedCountToward)
+        // What the auto-save stamped (it resolves the default too), so an untouched Circuit
+        // doesn't read as changed and re-save on every Done.
+        let savedCountToward = ActivityTypes.getDefaultCountToward(type: activityType, subtype: initialSubtype, strengthType: strengthType, countToward: initialCountToward)
 
         let initialFocusAreasResolved = (initialFocusAreas?.isEmpty ?? true) ? nil : initialFocusAreas
         let needsUpdate = currentFocusAreas != initialFocusAreasResolved
             || currentSubtype != initialSubtype
-            || currentCountToward != initialCountToward
+            || currentCountToward != savedCountToward
 
         guard needsUpdate else { return }
 

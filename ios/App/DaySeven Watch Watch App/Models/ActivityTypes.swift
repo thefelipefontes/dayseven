@@ -255,15 +255,22 @@ struct ActivityTypes {
 
     // MARK: - Default countToward for hybrid activities
 
-    static func getDefaultCountToward(type: String, subtype: String?, countToward: String? = nil) -> String? {
+    /// The countToward a watch save stamps (src/utils/activityCategory.js getDefaultCountToward
+    /// for the types listed; nil leaves it to the type-based category).
+    static func getDefaultCountToward(type: String, subtype: String?, strengthType: String? = nil, countToward: String? = nil) -> String? {
         // If an explicit countToward was provided (e.g. from hybrid picker), use it
         if let ct = countToward, !ct.isEmpty { return ct }
+        // The phone keys Circuit by the variant name, but a watch strength workout is type
+        // "Strength Training" with the variant in strengthType, so check both. Missing this
+        // left every watch Circuit counting toward Strength only.
+        if type == "Circuit" || strengthType == "Circuit" { return "lifting+cardio" }
         switch type {
         case "Weightlifting", "Bodyweight":
             return "lifting"
-        case "Circuit":
-            return "lifting+cardio"
-        case "Yoga", "Pilates":
+        case "Yoga":
+            // Same subtype rule as getActivityCategory: Power, Hot and Vinyasa count as cardio.
+            return ["Power", "Hot", "Vinyasa"].contains(subtype ?? "") ? "cardio" : "recovery"
+        case "Pilates":
             return "recovery"
         default:
             return nil

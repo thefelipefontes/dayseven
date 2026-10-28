@@ -18662,9 +18662,12 @@ export default function DaySevenApp() {
             await cancelLiveWorkout();
           }
 
-          // Mark workout data appropriately
+          // Mark workout data appropriately. The id is assigned here rather than inside
+          // handleActivitySaved so the route lookup below can attach its location to the
+          // saved activity (it had no id to match, so the location was never stored).
           const workoutData = {
             ...finishedWorkout,
+            id: finishedWorkout.id || Date.now(),
             healthKitSaved: shouldSkipHealthKitWrite || isWatchWorkout ? true : liveResult.success,
             healthKitUUID: shouldSkipHealthKitWrite ? undefined : liveResult.workoutUUID,
           };

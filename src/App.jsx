@@ -40,7 +40,7 @@ import { initialUserData } from './utils/initialUserData';
 import { getDefaultCountToward, getActivityCategory, countsAsLifting, countsAsCardio, countsAsRecovery } from './utils/activityCategory';
 import { computeStreaks } from './utils/streaks';
 import { planAutoShield, shieldCooldownLeft, nextShieldWeek, SHIELD_MIN_PERCENT } from './utils/streakShield';
-import { judgeWeekFromActivities, judgeWeek, countWeekActivities, weekGoalsResolver, weekKeyFromDateStr, weekContext, stepsByDateFrom, weekStepsTotal, winningCategories, hasRecentSteps, stepsDailyShare } from './utils/weekGoals';
+import { judgeWeekFromActivities, judgeWeek, countWeekActivities, weekGoalsResolver, weekKeyFromDate, weekKeyFromDateStr, weekContext, stepsByDateFrom, weekStepsTotal, winningCategories, hasRecentSteps, stepsDailyShare } from './utils/weekGoals';
 import { manualCaloriesForDate, needsHkCaloriesBackfill } from './utils/calories';
 import { reverseGeocode, formatLocation } from './utils/geocode';
 import SectionIcon from './components/SectionIcon';
@@ -366,6 +366,22 @@ const formatInjuryPausedLabel = (injuryMode) => {
   const fc = injuryFrozenCategories(injuryMode);
   if (INJURY_ALL_CATEGORIES.every(c => fc.includes(c))) return 'All streaks paused';
   return fc.map(c => INJURY_CATEGORY_LABELS[c] || c).join(' & ') + ' paused';
+};
+
+// Every week a vacation covered: from its start through day 14 (when it auto-ends) or now,
+// whichever comes first, plus whatever was already recorded. Recording only the week the app
+// happened to be opened in left a week the user was away (and never opened the app) judged
+// as missed, which broke the streak vacation mode exists to protect.
+const vacationWeeksCovered = (vm, now = new Date()) => {
+  const weeks = new Set(vm?.vacationWeeks || []);
+  if (!vm?.startDate) return [...weeks];
+  const start = new Date(`${vm.startDate}T12:00:00`);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 13);
+  const last = end < now ? end : now;
+  for (const d = new Date(start); d <= last; d.setDate(d.getDate() + 7)) weeks.add(weekKeyFromDate(d));
+  weeks.add(weekKeyFromDate(last));
+  return [...weeks].sort();
 };
 
 // Accumulate the per-week frozen-category map { "YYYY-MM-DD": ["lifts",...] } for an injury
@@ -15404,21 +15420,20 @@ export default function DaySevenApp() {
               const start = new Date(vm.startDate + 'T12:00:00');
               const now = new Date();
               const daysSinceStart = Math.floor((now - start) / (24 * 60 * 60 * 1000));
+              // Written to the ref too, so the load-time streak recalc below sees the weeks.
+              const covered = vacationWeeksCovered(vm, now);
               if (daysSinceStart >= 14) {
-                const deactivated = { ...vm, isActive: false };
+                const deactivated = { ...vm, isActive: false, vacationWeeks: covered };
+                userDataRef.current = { ...(userDataRef.current || {}), vacationMode: deactivated };
                 setUserData(prev => ({ ...prev, vacationMode: deactivated }));
                 updateUserProfile(user.uid, { vacationMode: deactivated }).catch(() => {});
+              } else if (covered.length !== (vm.vacationWeeks || []).length) {
+                const updated = { ...vm, vacationWeeks: covered };
+                userDataRef.current = { ...(userDataRef.current || {}), vacationMode: updated };
+                setUserData(prev => ({ ...prev, vacationMode: updated }));
+                updateUserProfile(user.uid, { vacationMode: updated }).catch(() => {});
               } else {
-                // Add current week to vacationWeeks if not already there
-                const currentWeek = getCurrentWeekKey();
-                const updatedWeeks = vm.vacationWeeks || [];
-                if (!updatedWeeks.includes(currentWeek)) {
-                  const updated = { ...vm, vacationWeeks: [...updatedWeeks, currentWeek] };
-                  setUserData(prev => ({ ...prev, vacationMode: updated }));
-                  updateUserProfile(user.uid, { vacationMode: updated }).catch(() => {});
-                } else {
-                  setUserData(prev => ({ ...prev, vacationMode: vm }));
-                }
+                setUserData(prev => ({ ...prev, vacationMode: vm }));
               }
             } else {
               setUserData(prev => ({ ...prev, vacationMode: vm }));

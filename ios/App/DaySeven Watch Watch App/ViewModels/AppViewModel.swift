@@ -366,14 +366,17 @@ class AppViewModel: ObservableObject {
 
     // MARK: - Save Activity (after workout ends)
 
-    func saveActivity(_ activity: Activity) async {
+    /// Returns the id the workout is stored (or queued) under — an existing activity's id when
+    /// Firestore already holds this HealthKit workout — or nil if nothing was saved.
+    @discardableResult
+    func saveActivity(_ activity: Activity) async -> ActivityID? {
         isSaving = true
         defer { isSaving = false }
 
         guard let uid = authService.currentUser?.uid else {
             print("[SaveActivity] No user uid — skipping save")
             errorMessage = "Not signed in"
-            return
+            return nil
         }
         print("[SaveActivity] Saving for uid: \(uid), type: \(activity.type)")
 
@@ -390,10 +393,19 @@ class AppViewModel: ObservableObject {
                 print("[SaveActivity] Could not read Firestore — queueing instead of writing: \(error.localizedDescription)")
                 OfflineQueueManager.shared.enqueue(activity)
                 showQueued(activity)
-                return
+                return activity.id
             }
             adopt(freshData)
             print("[SaveActivity] Refreshed \(activities.count) activities from Firestore before save")
+
+            // Already there: an earlier attempt that did land, or the phone's copy of the same
+            // HealthKit workout. Inserting again would log it twice.
+            if let existing = freshData.activities.first(where: { $0.id == activity.id || activity.isSameHealthKitWorkout(as: $0) }) {
+                print("[SaveActivity] Firestore already has this workout as \(existing.id) — not inserting a duplicate")
+                setActivities(freshData.activities)
+                pushDataToWidget()
+                return existing.id
+            }
 
             // Progress before this workout, from the same fresh read. weeklyProgress is the
             // last local view: if the phone logged the goal-completing workout since, it still
@@ -444,7 +456,7 @@ class AppViewModel: ObservableObject {
                 setActivities(updatedActivities)
                 celebrate(completed)
                 pushDataToWidget()
-                return
+                return activity.id
             }
 
             print("[SaveActivity] Successfully saved \(updatedActivities.count) activities to Firestore")
@@ -461,8 +473,9 @@ class AppViewModel: ObservableObject {
 
             // Notify the iPhone to refresh its Firestore cache
             notifyPhoneDataChanged()
-            return
+            return activity.id
         }
+        return nil
     }
 
     /// Replaces the local activities and recomputes everything derived from them.
@@ -582,10 +595,11 @@ class AppViewModel: ObservableObject {
                 let freshData = try await firestoreService.getUserData(uid: uid)
                 var mergedActivities = freshData.activities
 
-                // Merge: insert pending activities that aren't already in Firestore
+                // Merge: insert pending activities that aren't already in Firestore — by id, or
+                // as the phone's copy of the same HealthKit workout
                 var addedCount = 0
                 for activity in pending {
-                    if !mergedActivities.contains(where: { $0.id == activity.id }) {
+                    if !mergedActivities.contains(where: { $0.id == activity.id || activity.isSameHealthKitWorkout(as: $0) }) {
                         mergedActivities.insert(activity, at: 0)
                         addedCount += 1
                     }

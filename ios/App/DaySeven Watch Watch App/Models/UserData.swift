@@ -145,6 +145,14 @@ struct Activity: Codable, Identifiable {
         focusAreas ?? (focusArea.map { [$0] } ?? [])
     }
 
+    /// Whether `other` records the same HealthKit workout as this one: the phone stamps a
+    /// watch workout's UUID on the copy it saves (healthKitUUID) or links to it
+    /// (linkedHealthKitUUID). Two activities like that are one workout logged twice.
+    func isSameHealthKitWorkout(as other: Activity) -> Bool {
+        guard let uuid = healthKitUUID, !uuid.isEmpty else { return false }
+        return other.healthKitUUID == uuid || other.linkedHealthKitUUID == uuid
+    }
+
     enum CodingKeys: String, CodingKey {
         case id, type, subtype, date, time, duration, calories, avgHr, maxHr
         case distance, source, sourceDevice, strengthType, focusArea, focusAreas, notes

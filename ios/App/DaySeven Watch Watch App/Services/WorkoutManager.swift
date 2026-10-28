@@ -15,6 +15,9 @@ struct WorkoutResult: Equatable {
     var avgHr: Int
     var maxHr: Int
     var distance: Double? // miles
+    /// The phone ended this workout, and the phone saves it (with this workoutUUID) as part of
+    /// its own Finish flow. The watch summary must not save a second copy.
+    var endedFromPhone: Bool = false
 }
 
 // MARK: - Workout Split
@@ -331,7 +334,7 @@ class WorkoutManager: NSObject, ObservableObject {
 
     // MARK: - End Workout
 
-    func endWorkout() async throws -> WorkoutResult {
+    func endWorkout(endedFromPhone: Bool = false) async throws -> WorkoutResult {
         guard let session = session, let builder = builder, let startDate = startDate else {
             throw WorkoutError.noActiveWorkout
         }
@@ -400,7 +403,8 @@ class WorkoutManager: NSObject, ObservableObject {
             calories: capturedCalories,
             avgHr: capturedAvgHr,
             maxHr: capturedMaxHr,
-            distance: capturedDistance > 0.01 ? capturedDistance : nil
+            distance: capturedDistance > 0.01 ? capturedDistance : nil,
+            endedFromPhone: endedFromPhone
         )
 
         // IMPORTANT: Publish result BEFORE setting isActive = false

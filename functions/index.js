@@ -19,6 +19,7 @@ const http2 = require("http2");
 const fs = require("fs");
 const path = require("path");
 const { getPlannedCategoriesForToday, buildPlannedReminderMessage } = require("./plannerReminders");
+const { resolveUid, isStale, subscriptionFromEvent, transferUpdates } = require("./subscriptionEvents");
 
 // Initialize Firebase Admin
 initializeApp();
@@ -345,9 +346,11 @@ async function getUserPreferences(userId) {
  * Helper: Get user's display name
  */
 async function getUserDisplayName(userId) {
-  const userDoc = await db.collection('users').doc(userId).get();
-  if (!userDoc.exists) return 'Someone';
-  return userDoc.data().displayName || userDoc.data().username || 'Someone';
+  // The small mirrored profile first: the user doc carries the whole activity history.
+  const pub = await db.collection('publicProfiles').doc(userId).get();
+  const profile = pub.exists ? pub.data() : (await db.collection('users').doc(userId).get()).data();
+  const name = profile?.displayName || profile?.username || 'Someone';
+  return String(name).slice(0, 40); // push text; Settings caps names at 40
 }
 
 /**
@@ -523,7 +526,9 @@ function getDefaultPreferences() {
     friendActivity: false,
     streakReminders: true,
     goalReminders: true,
-    dailyReminders: true, // default ON — the core daily habit nudge (retention)
+    // Off unless saved: accounts created from Oct 2026 get `dailyReminders: true` written at
+    // creation (protectUserFields); older accounts that never chose stay off.
+    dailyReminders: false,
     dailyReminderTime: '09:00',
     streakMilestones: true,
     goalAchievements: true,
@@ -552,22 +557,30 @@ async function sendNotificationToUser(userId, title, body, data = {}, options = 
       return { success: false, reason: 'no_tokens' };
     }
 
-    const preferences = await getUserPreferences(userId);
+    // A deleted account's tokens can outlive it (and the device may now belong to a new
+    // account). Never push for an account that no longer exists; drop its tokens instead.
+    const userRef = db.collection('users').doc(userId);
+    const userSnap = await userRef.get();
+    if (!userSnap.exists) {
+      await db.collection('userTokens').doc(userId).delete().catch(() => {});
+      return { success: false, reason: 'no_user' };
+    }
+    const preferences = { ...getDefaultPreferences(), ...(userSnap.data().notificationPreferences || {}) };
 
     // Check quiet hours
     if (isQuietHours(preferences) && !options.ignoreQuietHours) {
       return { success: false, reason: 'quiet_hours' };
     }
 
-    // Increment unread badge count in Firestore for accurate app icon badge
-    const userRef = db.collection('users').doc(userId);
-    await userRef.set({ unreadBadgeCount: FieldValue.increment(1) }, { merge: true });
-
-    // If this is a social notification, also increment unreadFeedCount (for in-app red dot)
+    // Increment unread badge count in Firestore for accurate app icon badge.
+    // If this is a social notification, also increment unreadFeedCount (for in-app red dot).
+    // update(), not a merge set: a merge set would recreate the doc if the account was
+    // deleted a moment ago.
     const socialTypes = ['reaction', 'comment', 'reply', 'friend_request', 'friend_accepted', 'friend_workout'];
-    if (socialTypes.includes(data.type)) {
-      await userRef.set({ unreadFeedCount: FieldValue.increment(1) }, { merge: true });
-    }
+    await userRef.update({
+      unreadBadgeCount: FieldValue.increment(1),
+      ...(socialTypes.includes(data.type) ? { unreadFeedCount: FieldValue.increment(1) } : {}),
+    });
 
     // Read the updated badge count for APNS payload
     const updatedUser = await userRef.get();
@@ -769,6 +782,50 @@ exports.onFriendRequestAccepted = onDocumentUpdated(
   }
 );
 
+// How long after a friend request is accepted its friend docs may still appear. The app
+// writes them right after accepting; the window allows for a slow network.
+const FRIEND_DOC_WINDOW_MS = 15 * 60 * 1000;
+
+/**
+ * Whether an accepted friend request between the pair backs a friend doc created at
+ * `createdMs` (a minute of slack for a request accepted in the same instant).
+ */
+function friendDocIsBacked(requests, createdMs) {
+  return requests.some((r) => r.status === 'accepted'
+    && r.updatedMs <= createdMs + 60 * 1000
+    && createdMs - r.updatedMs <= FRIEND_DOC_WINDOW_MS);
+}
+
+/**
+ * Remove friend docs that no friend request backs, so a friends list only ever holds
+ * friendships someone accepted. App versions up to 1.8.3 write the two friend docs one at
+ * a time after accepting, which the transitional rules can't tie to a request; this checks
+ * them after the fact. The strict rules only allow friend docs written in the accepting
+ * batch, so under them this never finds anything to remove.
+ *
+ * A friend doc is kept when a request between the two users was accepted within
+ * FRIEND_DOC_WINDOW_MS of the doc's creation, so an old accepted request can't back a
+ * friend doc written long after a friendship ended.
+ */
+exports.validateFriendDoc = onDocumentCreated(
+  'users/{userId}/friends/{friendId}',
+  async (event) => {
+    const { userId, friendId } = event.params;
+    const createdMs = new Date(event.data.createTime?.toDate?.() || event.time).getTime();
+    const between = (from, to) => db.collection('friendRequests')
+      .where('fromUid', '==', from).where('toUid', '==', to).get();
+    const [a, b] = await Promise.all([between(userId, friendId), between(friendId, userId)]);
+    const requests = [...a.docs, ...b.docs].map((d) => ({
+      status: d.data().status,
+      updatedMs: d.updateTime.toDate().getTime(),
+    }));
+    if (friendDocIsBacked(requests, createdMs)) return;
+
+    console.warn(`[validateFriendDoc] removing unbacked friend doc users/${userId}/friends/${friendId}`);
+    await event.data.ref.delete();
+  }
+);
+
 /**
  * Send notification when someone reacts to an activity
  * Path: users/{ownerId}/activityReactions/{activityId}/reactions/{reactorId}
@@ -782,7 +839,8 @@ exports.onReactionCreated = onDocumentCreated(
     const reactorId = reaction.reactorUid;
     const emoji = reaction.reactionType || '👍';
 
-    if (!reactorId) return;
+    // Reactions are keyed by the reactor's uid (the rules enforce it for new writes).
+    if (!reactorId || reactorId !== event.params.reactionId) return;
 
     // Don't notify yourself
     if (ownerId === reactorId) return;
@@ -790,7 +848,8 @@ exports.onReactionCreated = onDocumentCreated(
     const prefs = await getUserPreferences(ownerId);
     if (!prefs.reactions) return;
 
-    const reactorName = reaction.reactorName || await getUserDisplayName(reactorId);
+    // The name comes from the reactor's profile, never from the client-written reaction.
+    const reactorName = await getUserDisplayName(reactorId);
 
     await sendNotificationToUser(
       ownerId,
@@ -827,7 +886,8 @@ exports.onCommentCreated = onDocumentCreated(
     const prefs = await getUserPreferences(ownerId);
     if (!prefs.comments) return;
 
-    const commenterName = comment.commenterName || await getUserDisplayName(commenterId);
+    // The name comes from the commenter's profile, never from the client-written comment.
+    const commenterName = await getUserDisplayName(commenterId);
     const truncatedText = text.length > 50 ? text.substring(0, 47) + '...' : text;
 
     await sendNotificationToUser(
@@ -875,7 +935,8 @@ exports.onReplyCreated = onDocumentCreated(
     const prefs = await getUserPreferences(commenterId);
     if (!prefs.comments) return;
 
-    const replierName = reply.replierName || await getUserDisplayName(replierId);
+    // The name comes from the replier's profile, never from the client-written reply.
+    const replierName = await getUserDisplayName(replierId);
     const truncatedText = text.length > 50 ? text.substring(0, 47) + '...' : text;
 
     await sendNotificationToUser(
@@ -897,52 +958,90 @@ exports.onReplyCreated = onDocumentCreated(
 // SCHEDULED REMINDERS
 // ==========================================
 
+// Fields every hourly users-scan reads to decide who is due. The rest of a user doc — mostly
+// the activity history — is read only for the few users who pass those checks.
+const ACCESS_FIELDS = ['subscriptionRequired', 'forceProTier', 'subscription', 'notificationPreferences'];
+
+// Schedule options for the hourly users-scans (the 60 s / 256 MiB default doesn't scale).
+const HOURLY_USER_SCAN = { schedule: '0 * * * *', timeZone: 'UTC', timeoutSeconds: 540, memory: '512MiB' };
+
+/** Notification preferences from an already-read user doc (same result as getUserPreferences). */
+function prefsOf(userData) {
+  return { ...getDefaultPreferences(), ...(userData.notificationPreferences || {}) };
+}
+
+/** The whole user doc, for a user who passed a job's cheap checks. */
+async function readFullUser(userId) {
+  const snap = await db.collection('users').doc(userId).get();
+  return snap.exists ? snap.data() : null;
+}
+
+/**
+ * Run `fn(doc)` over `docs`, `limit` at a time. One user's failure is logged and the rest
+ * carry on (a single throw used to end the whole run).
+ */
+async function forEachLimited(docs, label, fn, limit = 10) {
+  let next = 0;
+  const worker = async () => {
+    while (next < docs.length) {
+      const doc = docs[next++];
+      try {
+        await fn(doc);
+      } catch (err) {
+        console.error(`[${label}] failed for ${doc.id}:`, err);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, docs.length) }, worker));
+}
+
+/** 'YYYY-MM-01' of the month before the one containing `dateStr` ('YYYY-MM-DD'). */
+const monthStartBefore = (dateStr) => {
+  const [y, m] = dateStr.split('-').map(Number);
+  const d = new Date(Date.UTC(y, m - 2, 1));
+  return d.toISOString().split('T')[0];
+};
+
+
 /**
  * Streak reminder - runs every day at 8 PM
  * Only reminds users who haven't logged activity in 48+ hours
  * Activities are stored as arrays in users/{uid} documents
  */
 exports.sendStreakReminders = onSchedule(
-  {
-    schedule: '0 * * * *', // hourly; fires at 8 PM in each user's local timezone
-    timeZone: 'UTC',
-  },
+  HOURLY_USER_SCAN, // hourly; fires at 8 PM in each user's local timezone
   async () => {
-
-    const now = new Date();
-    const twoDaysAgo = new Date(now);
-    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-    const twoDaysAgoStr = twoDaysAgo.toISOString().split('T')[0];
 
     // Get users with active streaks who want reminders
     const usersSnapshot = await db.collection('users')
       .where('streaks.master', '>', 0)
+      .select(...ACCESS_FIELDS, 'streaks', 'vacationMode', 'injuryMode')
       .get();
 
-    for (const userDoc of usersSnapshot.docs) {
+    await forEachLimited(usersSnapshot.docs, 'sendStreakReminders', async (userDoc) => {
       const userId = userDoc.id;
       const userData = userDoc.data();
 
       // No app access (locked out / lapsed) → win-back owns them; stay silent here.
-      if (!hasAppAccess(userData)) continue;
+      if (!hasAppAccess(userData)) return;
 
       // Fire at 8 PM in the USER's local timezone (hourly job, gated per user).
-      const { time: localTime } = getUserLocalTime(userData.notificationPreferences?.timezone);
-      if (localTime !== '20:00') continue;
-
-      // Check if they've logged any activity in the last 48 hours
-      // Activities are stored as an array in the user document
-      const activities = userData.activities || [];
-      const hasRecentActivity = activities.some(a => a.date >= twoDaysAgoStr);
-
-      if (hasRecentActivity) continue; // Has recent activity, skip
+      const { time: localTime, dateStr: localToday } = getUserLocalTime(userData.notificationPreferences?.timezone);
+      if (localTime !== '20:00') return;
 
       // Skip users on vacation or injury mode (streak is frozen — don't nag)
-      if (userData.vacationMode?.isActive) continue;
-      if (userData.injuryMode?.isActive) continue;
+      if (userData.vacationMode?.isActive) return;
+      if (userData.injuryMode?.isActive) return;
 
-      const prefs = await getUserPreferences(userId);
-      if (!prefs.streakReminders) continue;
+      if (!prefsOf(userData).streakReminders) return;
+
+      // Check if they've logged any activity in the last 48 hours (their local dates)
+      // Activities are stored as an array in the user document
+      const twoDaysAgoStr = addDaysToDateStr(localToday, -2);
+      const activities = (await readFullUser(userId))?.activities || [];
+      const hasRecentActivity = activities.some(a => a.date >= twoDaysAgoStr);
+
+      if (hasRecentActivity) return; // Has recent activity, skip
 
       await sendNotificationToUser(
         userId,
@@ -953,7 +1052,7 @@ exports.sendStreakReminders = onSchedule(
           streak: userData.streaks.master.toString(),
         }
       );
-    }
+    });
   }
 );
 
@@ -1000,33 +1099,34 @@ function getUserLocalTime(timezone) {
  * Activities are stored as arrays in users/{uid} documents
  */
 exports.sendDailyReminders = onSchedule(
-  {
-    schedule: '0 * * * *', // Every hour on the hour
-    timeZone: 'UTC',
-  },
+  HOURLY_USER_SCAN, // Every hour on the hour
   async () => {
 
     // Get all users and check their notificationPreferences field
-    const usersSnapshot = await db.collection('users').get();
+    const usersSnapshot = await db.collection('users')
+      .select(...ACCESS_FIELDS, 'injuryMode', 'goals', 'weeklyPlan')
+      .get();
 
-    for (const userDoc of usersSnapshot.docs) {
+    await forEachLimited(usersSnapshot.docs, 'sendDailyReminders', async (userDoc) => {
       const userId = userDoc.id;
       const userData = userDoc.data();
       const prefs = userData.notificationPreferences;
 
       // No app access (locked out / lapsed) → win-back owns them; stay silent here.
-      if (!hasAppAccess(userData)) continue;
+      if (!hasAppAccess(userData)) return;
 
       // Skip users healing — injury mode softens the "time to move" nudge
-      if (userData.injuryMode?.isActive) continue;
+      if (userData.injuryMode?.isActive) return;
 
-      // Skip users without preferences or with daily reminders disabled
-      if (!prefs || !prefs.dailyReminders) continue;
+      // Only users with daily reminders saved on: their own choice, or switched on when the
+      // account was created (protectUserFields, from Oct 2026). Older accounts that never
+      // chose stay off.
+      if (!prefs || !prefs.dailyReminders) return;
 
       const reminderTime = prefs.dailyReminderTime || '09:00';
       const { time: userLocalTime, dateStr: userToday, dayOfWeek } = getUserLocalTime(prefs.timezone);
 
-      if (reminderTime !== userLocalTime) continue;
+      if (reminderTime !== userLocalTime) return;
 
       // Sunday: nudge users who haven't planned this week to set it up. Fires at
       // the user's normal reminder time (so it never double-sends alongside the
@@ -1045,13 +1145,13 @@ exports.sendDailyReminders = onSchedule(
             "Drop your sessions on the days you'll train and we'll keep you on track.",
             { type: NotificationType.PLAN_WEEK_REMINDER }
           );
-          continue;
+          return;
         }
       }
 
       // Categories already satisfied today (in the user's timezone).
       // Activities are stored as an array in the user document.
-      const activities = userData.activities || [];
+      const activities = (await readFullUser(userId))?.activities || [];
       const doneToday = { strength: 0, cardio: 0, recovery: 0 };
       let loggedAnythingToday = false;
       for (const a of activities) {
@@ -1066,7 +1166,7 @@ exports.sendDailyReminders = onSchedule(
       // If the user has a weekly plan, make the nudge specific to today's plan.
       const todayPlan = getPlannedCategoriesForToday(userData.weeklyPlan, userToday, dayOfWeek);
       if (todayPlan) {
-        if (todayPlan.length === 0) continue; // planned rest day — respect it, no nudge
+        if (todayPlan.length === 0) return; // planned rest day — respect it, no nudge
 
         // Collect each planned session's type per category (keeps duplicates,
         // so two cardio sessions are counted as two).
@@ -1076,16 +1176,16 @@ exports.sendDailyReminders = onSchedule(
         }
         const anyUnmet = ['strength', 'cardio', 'recovery']
           .some((c) => byCat[c].length > (doneToday[c] || 0));
-        if (!anyUnmet) continue; // everything planned for today is already done
+        if (!anyUnmet) return; // everything planned for today is already done
 
         const msg = buildPlannedReminderMessage(byCat, doneToday);
-        if (!msg) continue;
+        if (!msg) return;
         await sendNotificationToUser(userId, msg.title, msg.body, { type: NotificationType.DAILY_REMINDER });
-        continue;
+        return;
       }
 
       // No plan this week → generic nudge, only if nothing logged yet today.
-      if (loggedAnythingToday) continue;
+      if (loggedAnythingToday) return;
 
       await sendNotificationToUser(
         userId,
@@ -1095,7 +1195,7 @@ exports.sendDailyReminders = onSchedule(
           type: NotificationType.DAILY_REMINDER,
         }
       );
-    }
+    });
   }
 );
 
@@ -1106,41 +1206,38 @@ exports.sendDailyReminders = onSchedule(
  * Uses the 'countToward' field for category (strength/cardio/recovery)
  */
 exports.sendGoalReminder = onSchedule(
-  {
-    schedule: '0 * * * *', // Every hour on the hour
-    timeZone: 'UTC',
-  },
+  HOURLY_USER_SCAN, // Every hour on the hour
   async () => {
 
-    const usersSnapshot = await db.collection('users').get();
+    const usersSnapshot = await db.collection('users')
+      .select(...ACCESS_FIELDS, 'vacationMode', 'injuryMode')
+      .get();
 
-    for (const userDoc of usersSnapshot.docs) {
+    await forEachLimited(usersSnapshot.docs, 'sendGoalReminder', async (userDoc) => {
       const userId = userDoc.id;
       const userData = userDoc.data();
 
       // No app access (locked out / lapsed) → win-back owns them; stay silent here.
-      if (!hasAppAccess(userData)) continue;
+      if (!hasAppAccess(userData)) return;
 
       // Skip users on vacation or injury mode (streak is frozen — don't nag)
-      if (userData.vacationMode?.isActive) continue;
-      if (userData.injuryMode?.isActive) continue;
+      if (userData.vacationMode?.isActive) return;
+      if (userData.injuryMode?.isActive) return;
 
-      const prefs = await getUserPreferences(userId);
-      if (!prefs.goalReminders) continue;
+      const prefs = prefsOf(userData);
+      if (!prefs.goalReminders) return;
 
       // Check if it's 8 AM Thursday in the user's timezone
       const { time: userLocalTime, dateStr: userToday, dayOfWeek } = getUserLocalTime(prefs.timezone);
-      if (dayOfWeek !== 4 || userLocalTime !== '08:00') continue;
+      if (dayOfWeek !== 4 || userLocalTime !== '08:00') return;
 
-      // Get start of current week (Sunday) in the user's local timezone
-      // userToday is Thursday (day 4), so Sunday is 4 days back
-      const todayParts = userToday.split('-').map(Number);
-      const localToday = new Date(todayParts[0], todayParts[1] - 1, todayParts[2]);
-      localToday.setDate(localToday.getDate() - dayOfWeek);
-      const weekStartStr = localToday.toISOString().split('T')[0];
+      // Start of the current week (Sunday) in the user's local timezone
+      const weekStartStr = addDaysToDateStr(userToday, -dayOfWeek);
 
       // This week so far, judged by the user's Winning Streak rule (judgeUserWeek).
-      const week = await judgeUserWeek(userId, userData, weekStartStr);
+      const fullData = await readFullUser(userId);
+      if (!fullData) return;
+      const week = await judgeUserWeek(userId, fullData, weekStartStr);
       const { counts, goals } = week;
       const daysLeft = 7 - dayOfWeek; // Days until end of week (Saturday)
 
@@ -1156,7 +1253,7 @@ exports.sendGoalReminder = onSchedule(
             allGoalsMet: 'true',
           }
         );
-        continue;
+        return;
       }
 
       // What's left for the Winning Streak (recovery only under the original rule)
@@ -1206,7 +1303,7 @@ exports.sendGoalReminder = onSchedule(
           daysLeft: daysLeft.toString(),
         }
       );
-    }
+    });
   }
 );
 
@@ -1217,39 +1314,39 @@ exports.sendGoalReminder = onSchedule(
  * Activities are stored as arrays in users/{uid} documents
  */
 exports.sendWeeklySummary = onSchedule(
-  {
-    schedule: '0 * * * *', // hourly; fires Sunday 10 AM in each user's local timezone
-    timeZone: 'UTC',
-  },
+  HOURLY_USER_SCAN, // hourly; fires Sunday 10 AM in each user's local timezone
   async () => {
 
-    const usersSnapshot = await db.collection('users').get();
-    const oneWeekAgo = new Date();
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-    const weekAgoStr = oneWeekAgo.toISOString().split('T')[0];
+    const usersSnapshot = await db.collection('users')
+      .select(...ACCESS_FIELDS, 'injuryMode')
+      .get();
 
-    for (const userDoc of usersSnapshot.docs) {
+    await forEachLimited(usersSnapshot.docs, 'sendWeeklySummary', async (userDoc) => {
       const userId = userDoc.id;
-      const userData = userDoc.data();
+      const gate = userDoc.data();
 
       // No app access (locked out / lapsed) → win-back owns them; stay silent here.
-      if (!hasAppAccess(userData)) continue;
+      if (!hasAppAccess(gate)) return;
 
       // Fire Sunday 10 AM in the USER's local timezone (hourly job, gated per user).
-      const { time: localTime, dayOfWeek, dateStr: localToday } = getUserLocalTime(userData.notificationPreferences?.timezone);
-      if (dayOfWeek !== 0 || localTime !== '10:00') continue;
+      const { time: localTime, dayOfWeek, dateStr: localToday } = getUserLocalTime(gate.notificationPreferences?.timezone);
+      if (dayOfWeek !== 0 || localTime !== '10:00') return;
 
       // Skip recap while healing — a "you crushed it / nothing logged" summary
       // lands wrong during an injury pause.
-      if (userData.injuryMode?.isActive) continue;
+      if (gate.injuryMode?.isActive) return;
 
-      const prefs = await getUserPreferences(userId);
-      if (!prefs.weeklySummary) continue;
+      if (!prefsOf(gate).weeklySummary) return;
 
+      const userData = await readFullUser(userId);
+      if (!userData) return;
 
-      // Count activities this week by category from user's activities array
+      // The week that just ended (last Sunday → yesterday) in the user's own dates, by
+      // category, from the user's activities array
+      const weekStartStr = addDaysToDateStr(localToday, -7);
+      const weekEndStr = addDaysToDateStr(localToday, -1);
       const activities = userData.activities || [];
-      const thisWeekActivities = activities.filter(a => a.date >= weekAgoStr);
+      const thisWeekActivities = activities.filter(a => a.date >= weekStartStr && a.date <= weekEndStr);
 
       let strength = 0;
       let cardio = 0;
@@ -1273,7 +1370,7 @@ exports.sendWeeklySummary = onSchedule(
 
       // The week that just ended (last Sunday → yesterday), judged by the user's Winning
       // Streak rule (judgeUserWeek) — steps from their start week, recovery before it.
-      const lastWeek = await judgeUserWeek(userId, userData, addDaysToDateStr(localToday, -7));
+      const lastWeek = await judgeUserWeek(userId, userData, weekStartStr);
       const allGoalsMet = lastWeek.all;
       const caloriesLabel = totalCalories >= 1000 ? `${(totalCalories / 1000).toFixed(1)}k` : totalCalories.toString();
       const weekLine = lastWeek.stepsRule
@@ -1331,7 +1428,7 @@ exports.sendWeeklySummary = onSchedule(
           pendingSharePrompt: { type: 'weekly', sentAt: new Date().toISOString() }
         });
       }
-    }
+    });
   }
 );
 
@@ -1341,45 +1438,40 @@ exports.sendWeeklySummary = onSchedule(
  * Activities are stored as arrays in users/{uid} documents
  */
 exports.sendMonthlySummary = onSchedule(
-  {
-    schedule: '0 * * * *', // hourly; fires the 1st at 10 AM in each user's local timezone
-    timeZone: 'UTC',
-  },
+  HOURLY_USER_SCAN, // hourly; fires the 1st at 10 AM in each user's local timezone
   async () => {
 
-    const usersSnapshot = await db.collection('users').get();
+    const usersSnapshot = await db.collection('users')
+      .select(...ACCESS_FIELDS, 'injuryMode')
+      .get();
 
-    // Calculate last month's date range
-    const now = new Date();
-    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0); // Last day of previous month
-    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1); // First day of previous month
-    const lastMonthStartStr = lastMonthStart.toISOString().split('T')[0];
-    const lastMonthEndStr = lastMonthEnd.toISOString().split('T')[0];
-
-    // Calculate month before last for comparison
-    const prevMonthEnd = new Date(now.getFullYear(), now.getMonth() - 1, 0);
-    const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 2, 1);
-    const prevMonthStartStr = prevMonthStart.toISOString().split('T')[0];
-    const prevMonthEndStr = prevMonthEnd.toISOString().split('T')[0];
-
-    const monthName = lastMonthStart.toLocaleDateString('en-US', { month: 'long' });
-
-    for (const userDoc of usersSnapshot.docs) {
+    await forEachLimited(usersSnapshot.docs, 'sendMonthlySummary', async (userDoc) => {
       const userId = userDoc.id;
-      const userData = userDoc.data();
+      const gate = userDoc.data();
 
       // No app access (locked out / lapsed) → win-back owns them; stay silent here.
-      if (!hasAppAccess(userData)) continue;
+      if (!hasAppAccess(gate)) return;
 
       // Fire the 1st at 10 AM in the USER's local timezone (hourly job, gated per user).
-      const { time: localTime, dateStr } = getUserLocalTime(userData.notificationPreferences?.timezone);
-      if (!dateStr.endsWith('-01') || localTime !== '10:00') continue;
+      const { time: localTime, dateStr } = getUserLocalTime(gate.notificationPreferences?.timezone);
+      if (!dateStr.endsWith('-01') || localTime !== '10:00') return;
 
       // Skip recap while healing (see weekly summary).
-      if (userData.injuryMode?.isActive) continue;
+      if (gate.injuryMode?.isActive) return;
 
-      const prefs = await getUserPreferences(userId);
-      if (!prefs.monthlySummary) continue;
+      if (!prefsOf(gate).monthlySummary) return;
+
+      const userData = await readFullUser(userId);
+      if (!userData) return;
+
+      // Last month and the one before, in the user's own dates. (From the server's UTC
+      // clock, users east of UTC got the month before last: their 10 AM on the 1st is
+      // still the previous day in UTC.)
+      const lastMonthStartStr = monthStartBefore(dateStr);
+      const lastMonthEndStr = addDaysToDateStr(dateStr, -1);
+      const prevMonthStartStr = monthStartBefore(lastMonthStartStr);
+      const prevMonthEndStr = addDaysToDateStr(lastMonthStartStr, -1);
+      const monthName = new Date(`${lastMonthStartStr}T12:00:00Z`).toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' });
 
       // Filter activities from user's activities array by date range
       const activities = userData.activities || [];
@@ -1443,7 +1535,7 @@ exports.sendMonthlySummary = onSchedule(
           }
         );
       }
-    }
+    });
   }
 );
 
@@ -1490,65 +1582,87 @@ exports.revenueCatWebhook = onRequest(
       return;
     }
 
-    // Resolve the Firebase UID, skipping RevenueCat anonymous ids.
-    const uid = [event.app_user_id, event.original_app_user_id, ...(event.aliases || [])]
-      .filter(Boolean)
-      .find((id) => !String(id).startsWith('$RCAnonymousID:'));
-    if (!uid) {
-      res.status(200).json({ ok: true, skipped: 'anonymous_only' });
-      return;
-    }
-
     try {
-      const type = event.type;
-      const periodType = event.period_type || null; // TRIAL | NORMAL | INTRO
-      const expirationMs = event.expiration_at_ms || null;
-      const expiresAt = expirationMs ? new Date(expirationMs).toISOString() : null;
-
-      const ACTIVE = ['INITIAL_PURCHASE', 'RENEWAL', 'PRODUCT_CHANGE', 'UNCANCELLATION', 'SUBSCRIPTION_EXTENDED', 'TEMPORARY_ENTITLEMENT_GRANT'];
-      const INACTIVE = ['EXPIRATION', 'BILLING_ISSUE', 'SUBSCRIPTION_PAUSED'];
-
-      let entitlementActive;
-      if (ACTIVE.includes(type)) entitlementActive = true;
-      else if (INACTIVE.includes(type)) entitlementActive = false;
-      // CANCELLATION = auto-renew off but still entitled until expiry.
-      else if (type === 'CANCELLATION') entitlementActive = expirationMs ? expirationMs > Date.now() : true;
-      else entitlementActive = expirationMs ? expirationMs > Date.now() : false;
-
-      const isTrial = periodType === 'TRIAL';
-      const subscription = {
-        entitlementActive,
-        status: !entitlementActive ? 'expired' : (isTrial ? 'trial' : 'active'),
-        periodType,
-        environment: event.environment || null, // 'PRODUCTION' | 'SANDBOX' — exclude SANDBOX from counts/targeting
-        expiresAt,
-        trialEndsAt: isTrial && entitlementActive ? expiresAt : null,
-        willRenew: type === 'CANCELLATION' ? false : entitlementActive,
-        lastEventType: type,
-        updatedAt: new Date().toISOString(),
-      };
-
-      const update = { subscription };
-      // Converting clears/re-arms the lifecycle nudges so a re-subscribe gets a
-      // fresh trial-end reminder and stops any in-flight win-back sequence.
-      if (entitlementActive) {
-        update.winbackStage = FieldValue.delete();
-        update.winbackLastSentAt = FieldValue.delete();
-        if (isTrial && type === 'INITIAL_PURCHASE') {
-          update.trialEndingNotified = FieldValue.delete();
-          update.trialFinalNotified = FieldValue.delete();
-        }
+      // TRANSFER names the accounts on both sides and has no app_user_id of its own.
+      if (event.type === 'TRANSFER') {
+        const uids = [...(event.transferred_to || []), ...(event.transferred_from || [])];
+        const prevByUid = {};
+        await Promise.all(uids.map(async (id) => {
+          if (!id || String(id).startsWith('$RCAnonymousID:')) return;
+          const snap = await db.collection('users').doc(String(id)).get();
+          prevByUid[id] = snap.data()?.subscription || null;
+        }));
+        const results = await Promise.all(transferUpdates(event, prevByUid).map(({ uid, subscription }) =>
+          applySubscriptionUpdate(uid, event, subscription)));
+        console.log(`[revenueCatWebhook] TRANSFER from=${JSON.stringify(event.transferred_from)} to=${JSON.stringify(event.transferred_to)} results=${results.join(',')}`);
+        res.status(200).json({ ok: true });
+        return;
       }
 
-      await db.collection('users').doc(uid).set(update, { merge: true });
-      console.log(`[revenueCatWebhook] ${type}/${periodType} uid=${uid} active=${entitlementActive} expiresAt=${expiresAt}`);
-      res.status(200).json({ ok: true });
+      const uid = resolveUid(event);
+      if (!uid) {
+        res.status(200).json({ ok: true, skipped: 'anonymous_only' });
+        return;
+      }
+
+      const subscription = subscriptionFromEvent(event);
+      if (!subscription) {
+        res.status(200).json({ ok: true, skipped: 'no_entitlement_change' });
+        return;
+      }
+
+      const result = await applySubscriptionUpdate(uid, event, subscription);
+      console.log(`[revenueCatWebhook] ${event.type}/${subscription.periodType} uid=${uid} active=${subscription.entitlementActive} expiresAt=${subscription.expiresAt} → ${result}`);
+      res.status(200).json({ ok: true, result });
     } catch (err) {
       console.error('[revenueCatWebhook] Error:', err);
       res.status(500).json({ error: err.message });
     }
   }
 );
+
+/**
+ * Store one webhook result on users/{uid}, in a transaction so two deliveries for the same
+ * user can't interleave. Skips events older than the last one applied, and never recreates
+ * the doc of a deleted account (a merge write would bring back a stub that the hourly jobs
+ * then treat as a grandfathered user). Returns 'applied' | 'stale' | 'no_account'.
+ */
+async function applySubscriptionUpdate(uid, event, subscription) {
+  const userRef = db.collection('users').doc(uid);
+  // A purchase can beat the app's first profile write; create the doc only for a live account.
+  const authUserExists = async () => {
+    try {
+      await getAuth().getUser(uid);
+      return true;
+    } catch (err) {
+      if (err.code === 'auth/user-not-found') return false;
+      throw err;
+    }
+  };
+
+  const snap = await userRef.get();
+  if (!snap.exists && !(await authUserExists())) return 'no_account';
+
+  return db.runTransaction(async (tx) => {
+    const fresh = await tx.get(userRef);
+    const prev = fresh.data()?.subscription;
+    if (isStale(event, prev)) return 'stale';
+
+    const update = { subscription };
+    // Converting clears/re-arms the lifecycle nudges so a re-subscribe gets a
+    // fresh trial-end reminder and stops any in-flight win-back sequence.
+    if (subscription.entitlementActive) {
+      update.winbackStage = FieldValue.delete();
+      update.winbackLastSentAt = FieldValue.delete();
+      if (subscription.status === 'trial' && event.type === 'INITIAL_PURCHASE') {
+        update.trialEndingNotified = FieldValue.delete();
+        update.trialFinalNotified = FieldValue.delete();
+      }
+    }
+    tx.set(userRef, update, { merge: true });
+    return 'applied';
+  });
+}
 
 /**
  * Helper: server-side mirror of the app's "full access" gate. A user can use
@@ -1590,12 +1704,12 @@ function daysSince(iso) {
 }
 
 /**
- * Helper: count this-week (last 7 days) workouts + recovery for a value recap.
+ * Helper: count this-week (last 7 days, the user's local dates) workouts + recovery for a
+ * value recap.
  */
 function weekRecap(userData) {
-  const oneWeekAgo = new Date();
-  oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-  const weekAgoStr = oneWeekAgo.toISOString().split('T')[0];
+  const { dateStr: localToday } = getUserLocalTime(userData.notificationPreferences?.timezone);
+  const weekAgoStr = addDaysToDateStr(localToday, -7);
   let workouts = 0;
   let recovery = 0;
   (userData.activities || []).filter((a) => a.date >= weekAgoStr).forEach((a) => {
@@ -1618,33 +1732,33 @@ function weekRecap(userData) {
  * Depends on the RevenueCat webhook having stamped subscription.trialEndsAt.
  */
 exports.sendTrialEndingReminders = onSchedule(
-  {
-    schedule: '0 * * * *', // every hour
-    timeZone: 'UTC',
-  },
+  HOURLY_USER_SCAN, // every hour
   async () => {
     const snap = await db.collection('users')
       .where('subscription.status', '==', 'trial')
+      .select('subscription', 'trialEndingNotified', 'trialFinalNotified', 'streaks', 'notificationPreferences')
       .get();
 
     const now = Date.now();
-    for (const userDoc of snap.docs) {
+    await forEachLimited(snap.docs, 'sendTrialEndingReminders', async (userDoc) => {
       const userId = userDoc.id;
       const userData = userDoc.data();
       const sub = userData.subscription || {};
-      if (!sub.entitlementActive || !sub.trialEndsAt) continue;
+      if (!sub.entitlementActive || !sub.trialEndsAt) return;
       // Only nudge CANCELLED trials (auto-renew off). A trial set to convert
       // needs no action — and reminding it the trial is ending just invites a
       // cancel-before-billing, which raises churn. Skip unless willRenew===false.
-      if (sub.willRenew !== false) continue;
+      if (sub.willRenew !== false) return;
 
       const hoursLeft = (new Date(sub.trialEndsAt).getTime() - now) / (60 * 60 * 1000);
-      if (hoursLeft <= 0) continue;
+      if (hoursLeft <= 0) return;
 
       // Day-before nudge (~24h), once.
       if (hoursLeft >= 22 && hoursLeft < 26 && !userData.trialEndingNotified) {
         // Recovery is a bonus now, so the recap sticks to workouts and the Winning Streak.
-        const { workouts } = weekRecap(userData);
+        const fullData = await readFullUser(userId);
+        if (!fullData) return;
+        const { workouts } = weekRecap(fullData);
         const streak = userData.streaks?.master || 0;
         const built = workouts > 0 || streak > 0;
         const recapStr = built
@@ -1658,8 +1772,8 @@ exports.sendTrialEndingReminders = onSchedule(
           { type: NotificationType.TRIAL_ENDING },
           { ignoreQuietHours: true }
         );
-        await db.collection('users').doc(userId).set({ trialEndingNotified: true }, { merge: true });
-        continue;
+        await db.collection('users').doc(userId).update({ trialEndingNotified: true });
+        return;
       }
 
       // Final nudge (~2h), once.
@@ -1671,9 +1785,9 @@ exports.sendTrialEndingReminders = onSchedule(
           { type: NotificationType.TRIAL_FINAL },
           { ignoreQuietHours: true }
         );
-        await db.collection('users').doc(userId).set({ trialFinalNotified: true }, { merge: true });
+        await db.collection('users').doc(userId).update({ trialFinalNotified: true });
       }
-    }
+    });
   }
 );
 
@@ -1685,10 +1799,7 @@ exports.sendTrialEndingReminders = onSchedule(
  * Taps open the app → the hard gate (LockedScreen) carries the subscribe CTA.
  */
 exports.sendWinbackReminders = onSchedule(
-  {
-    schedule: '0 * * * *', // hourly; fires at 6 PM in each user's local timezone
-    timeZone: 'UTC',
-  },
+  HOURLY_USER_SCAN, // hourly; fires at 6 PM in each user's local timezone
   async () => {
     // Dormant until explicitly enabled (see isWinbackEnabled). Guards against
     // nagging real subscribers before the RevenueCat webhook is populating state.
@@ -1699,6 +1810,7 @@ exports.sendWinbackReminders = onSchedule(
 
     const snap = await db.collection('users')
       .where('subscriptionRequired', '==', true)
+      .select(...ACCESS_FIELDS, 'username', 'demoMode', 'winbackStage', 'streaks', 'createdAt')
       .get();
 
     // Three copy variants, same day 1/3/7 cadence, picked per user:
@@ -1721,20 +1833,20 @@ exports.sendWinbackReminders = onSchedule(
       { stage: 3, minDays: 7, title: 'Last call 👋', body: 'Your DaySeven plan is saved. Resubscribe to pick it back up.' },
     ];
 
-    for (const userDoc of snap.docs) {
+    await forEachLimited(snap.docs, 'sendWinbackReminders', async (userDoc) => {
       const userId = userDoc.id;
       const userData = userDoc.data();
 
-      if (hasAppAccess(userData)) continue;       // subscribed/comped — not a target
-      if (!userData.username) continue;            // still mid-onboarding
-      if (userData.demoMode === true) continue;
+      if (hasAppAccess(userData)) return;       // subscribed/comped — not a target
+      if (!userData.username) return;            // still mid-onboarding
+      if (userData.demoMode === true) return;
 
       // Fire at 6 PM in the USER's local timezone (hourly job, gated per user).
       const { time: localTime } = getUserLocalTime(userData.notificationPreferences?.timezone);
-      if (localTime !== '18:00') continue;
+      if (localTime !== '18:00') return;
 
       const sentStage = userData.winbackStage || 0;
-      if (sentStage >= 3) continue;                // sequence complete (3 stages)
+      if (sentStage >= 3) return;                // sequence complete (3 stages)
 
       // Pick the copy variant. A win-back target WITH a subscription record has
       // already used their trial (entitlement inactive) → resubscribe, no trial
@@ -1744,7 +1856,8 @@ exports.sendWinbackReminders = onSchedule(
       if (!sub) {
         stages = NEVER_SUBSCRIBED;
       } else {
-        const realActivities = (userData.activities || []).filter((a) => a.source !== 'onboarding_credit');
+        const activities = (await readFullUser(userId))?.activities || [];
+        const realActivities = activities.filter((a) => a.source !== 'onboarding_credit');
         const hasProgress = (userData.streaks?.master || 0) > 0 || realActivities.length > 0;
         stages = hasProgress ? LAPSED_WITH_PROGRESS : LAPSED_NO_PROGRESS;
       }
@@ -1756,19 +1869,19 @@ exports.sendWinbackReminders = onSchedule(
       const clockStart = (sub && sub.entitlementActive === false && sub.expiresAt) ? sub.expiresAt : userData.createdAt;
       const age = daysSince(clockStart);
       const due = [...stages].reverse().find((s) => age >= s.minDays && s.stage > sentStage);
-      if (!due) continue;
+      if (!due) return;
 
       const result = await sendNotificationToUser(
         userId, due.title, due.body,
         { type: NotificationType.WINBACK, stage: String(due.stage) }
       );
       if (result.success) {
-        await db.collection('users').doc(userId).set({
+        await db.collection('users').doc(userId).update({
           winbackStage: due.stage,
           winbackLastSentAt: new Date().toISOString(),
-        }, { merge: true });
+        });
       }
-    }
+    });
   }
 );
 
@@ -1781,33 +1894,33 @@ exports.sendWinbackReminders = onSchedule(
  * (streak is still 0). Gated on the streakReminders pref. Each fires once.
  */
 exports.sendActivationReminders = onSchedule(
-  {
-    schedule: '0 * * * *', // hourly; fires at 5 PM in each user's local timezone
-    timeZone: 'UTC',
-  },
+  HOURLY_USER_SCAN, // hourly; fires at 5 PM in each user's local timezone
   async () => {
     const snap = await db.collection('users')
       .where('subscriptionRequired', '==', true)
+      .select(...ACCESS_FIELDS, 'username', 'demoMode', 'injuryMode', 'vacationMode', 'streaks', 'createdAt',
+        'activationFirstNudge', 'activationWeekNudge')
       .get();
 
-    for (const userDoc of snap.docs) {
+    await forEachLimited(snap.docs, 'sendActivationReminders', async (userDoc) => {
       const userId = userDoc.id;
-      const userData = userDoc.data();
+      const gate = userDoc.data();
 
-      if (!hasAppAccess(userData)) continue;       // locked out → win-back handles them
-      if (!userData.username) continue;             // still mid-onboarding
-      if (userData.demoMode === true) continue;
-      if (userData.injuryMode?.isActive || userData.vacationMode?.isActive) continue;
-      if ((userData.streaks?.master || 0) > 0) continue;     // past their first completed week
-      if (daysSince(userData.createdAt) >= 7) continue; // week-one only
+      if (!hasAppAccess(gate)) return;       // locked out → win-back handles them
+      if (!gate.username) return;             // still mid-onboarding
+      if (gate.demoMode === true) return;
+      if (gate.injuryMode?.isActive || gate.vacationMode?.isActive) return;
+      if ((gate.streaks?.master || 0) > 0) return;     // past their first completed week
+      if (daysSince(gate.createdAt) >= 7) return; // week-one only
 
       // Fire at 5 PM in the USER's local timezone (hourly job, gated per user).
-      const { time: localTime } = getUserLocalTime(userData.notificationPreferences?.timezone);
-      if (localTime !== '17:00') continue;
+      const { time: localTime, dateStr: localToday, dayOfWeek } = getUserLocalTime(gate.notificationPreferences?.timezone);
+      if (localTime !== '17:00') return;
 
-      const prefs = await getUserPreferences(userId);
-      if (!prefs.streakReminders) continue;
+      if (!prefsOf(gate).streakReminders) return;
 
+      const userData = await readFullUser(userId);
+      if (!userData) return;
       const activities = userData.activities || [];
       const age = daysSince(userData.createdAt);
 
@@ -1820,16 +1933,16 @@ exports.sendActivationReminders = onSchedule(
             'Log your first workout to kick off week one — it only takes a tap.',
             { type: NotificationType.ACTIVATION, stage: 'first' }
           );
-          await db.collection('users').doc(userId).set({ activationFirstNudge: true }, { merge: true });
+          await db.collection('users').doc(userId).update({ activationFirstNudge: true });
         }
-        continue;
+        return;
       }
 
       // Finish-the-week nudge — once, from ~day 3, when started but goals unmet.
       if (age >= 3 && !userData.activationWeekNudge) {
-        // This calendar week (Sunday start, UTC), judged by the user's Winning Streak rule.
-        const now = new Date();
-        const weekStartStr = addDaysToDateStr(now.toISOString().split('T')[0], -now.getUTCDay());
+        // This calendar week (Sunday start, the user's local dates), judged by the user's
+        // Winning Streak rule.
+        const weekStartStr = addDaysToDateStr(localToday, -dayOfWeek);
         const week = await judgeUserWeek(userId, userData, weekStartStr);
         if (!week.all) {
           // Workouts = strength + cardio sessions; recovery is a bonus, not a workout toward the week.
@@ -1840,10 +1953,10 @@ exports.sendActivationReminders = onSchedule(
             `${completed} workout${completed === 1 ? '' : 's'} down this week. Finish your goals before Sunday to lock in week one!`,
             { type: NotificationType.ACTIVATION, stage: 'week' }
           );
-          await db.collection('users').doc(userId).set({ activationWeekNudge: true }, { merge: true });
+          await db.collection('users').doc(userId).update({ activationWeekNudge: true });
         }
       }
-    }
+    });
   }
 );
 
@@ -2127,10 +2240,22 @@ exports.onGoalAchieved = onDocumentUpdated(
 // FIELD PROTECTION: Prevent goals/profile wipe
 // ==========================================
 
+// The fields anyone signed in may see (search, friend requests). The rules keep the rest of
+// users/{uid} to the owner and their friends.
+const PUBLIC_PROFILE_FIELDS = ['username', 'displayName', 'photoURL'];
+
 /**
  * Monitors writes to user documents and automatically restores critical fields
  * (goals, hasCompletedOnboarding, username) if they get wiped.
  * Also logs what changed for debugging.
+ *
+ * It also keeps the server-owned companions of the user doc in step, since it already runs
+ * on every write:
+ *  - publicProfiles/{uid}: mirrors PUBLIC_PROFILE_FIELDS (clients can't write it).
+ *  - a new account gets subscriptionRequired: true (the paywall cutover) and daily
+ *    reminders switched on, unless the creating write set them.
+ *  - a deleted account loses its public profile and its push tokens, so old devices stop
+ *    getting its notifications.
  */
 exports.protectUserFields = onDocumentWritten(
   { document: "users/{userId}" },
@@ -2139,8 +2264,31 @@ exports.protectUserFields = onDocumentWritten(
     const before = event.data?.before?.data();
     const after = event.data?.after?.data();
 
-    // Skip if document was deleted
-    if (!after) return;
+    if (!after) {
+      await Promise.all([
+        db.collection('publicProfiles').doc(userId).delete(),
+        db.collection('userTokens').doc(userId).delete(),
+      ]).catch((err) => console.error(`[protectUserFields] cleanup after delete failed for ${userId}:`, err));
+      return;
+    }
+
+    if (PUBLIC_PROFILE_FIELDS.some((k) => (before?.[k] ?? null) !== (after[k] ?? null)) || !before) {
+      const profile = { uid: userId };
+      for (const k of PUBLIC_PROFILE_FIELDS) profile[k] = after[k] ?? null;
+      await db.collection('publicProfiles').doc(userId).set(profile)
+        .catch((err) => console.error(`[protectUserFields] publicProfiles sync failed for ${userId}:`, err));
+    }
+
+    if (!before) {
+      const stamp = {};
+      if (after.subscriptionRequired === undefined) stamp.subscriptionRequired = true;
+      if (!after.createdAt) stamp.createdAt = new Date().toISOString();
+      if (after.notificationPreferences?.dailyReminders === undefined) stamp['notificationPreferences.dailyReminders'] = true;
+      if (Object.keys(stamp).length > 0) {
+        await event.data.after.ref.update(stamp)
+          .catch((err) => console.error(`[protectUserFields] new-account stamp failed for ${userId}:`, err));
+      }
+    }
 
     // Check if critical fields were wiped
     const goalsWiped = before?.goals && !after.goals;
@@ -2294,13 +2442,15 @@ async function fulfillChallengeForUser({ userId, challengeDocRef, challenge, mat
     const friendNewStreak = (friendStats.currentWinStreak || 0) + 1;
 
     tx.update(challengeDocRef, update);
-    tx.set(friendRef, {
-      challengeStats: {
-        wins: FieldValue.increment(1),
-        currentWinStreak: friendNewStreak,
-        longestWinStreak: Math.max(friendStats.longestWinStreak || 0, friendNewStreak),
-      },
-    }, { merge: true });
+    if (friendSnap.exists) {
+      tx.set(friendRef, {
+        challengeStats: {
+          wins: FieldValue.increment(1),
+          currentWinStreak: friendNewStreak,
+          longestWinStreak: Math.max(friendStats.longestWinStreak || 0, friendNewStreak),
+        },
+      }, { merge: true });
+    }
 
     didFulfill = true;
   });
@@ -2383,7 +2533,7 @@ exports.onChallengeCreated = onDocumentCreated(
   'challenges/{challengeId}',
   async (event) => {
     const challenge = event.data.data();
-    const { challengerUid, challengerName, matchRule, type, participants, title, challengerActivity } = challenge;
+    const { challengerUid, matchRule, type, participants, title, challengerActivity } = challenge;
     if (!challengerUid) return;
 
     // Recipient list: participants map keys (preferred) OR legacy friendUid (Phase 1 1v1)
@@ -2392,7 +2542,8 @@ exports.onChallengeCreated = onDocumentCreated(
       : (challenge.friendUid ? [challenge.friendUid] : []);
     if (recipientUids.length === 0) return;
 
-    const fromName = challengerName || await getUserDisplayName(challengerUid);
+    // The challenger's name comes from their profile, not the client-written challenge.
+    const fromName = await getUserDisplayName(challengerUid);
 
     // Scope label for the notification headline. Pulled from the challenger's actual
     // activity (so Cold Plunge reads as "Cold Plunge", not just "Recovery") with
@@ -2483,10 +2634,11 @@ exports.onChallengeUpdated = onDocumentUpdated(
     if (newAccepters.length > 0) {
       // Bump `accepted` counter — denominator for completion rate (wins / accepted).
       // Only accepters score; challenger never gets credit for sending.
+      // update(), not a merge set, so a deleted account's doc isn't recreated.
       await Promise.all(newAccepters.map(uid =>
-        db.collection('users').doc(uid).set({
-          challengeStats: { accepted: FieldValue.increment(1) },
-        }, { merge: true }).catch(err =>
+        db.collection('users').doc(uid).update({
+          'challengeStats.accepted': FieldValue.increment(1),
+        }).catch(err =>
           console.error(`[onChallengeUpdated] failed to bump accepted for ${uid}:`, err)
         )
       ));
@@ -2735,7 +2887,7 @@ exports.onUserActivitiesUpdatedForChallenges = onDocumentUpdated(
       try {
         const prefs = await getUserPreferences(userId);
         if (!prefs.challengeCompleted) return;
-        const challengerName = challenge.challengerName || await getUserDisplayName(challenge.challengerUid);
+        const challengerName = await getUserDisplayName(challenge.challengerUid);
         await sendNotificationToUser(
           userId,
           'Add a photo to finish! 📸',
@@ -2807,6 +2959,20 @@ exports.expireChallenges = onSchedule(
           const data = fresh.data();
           if (data.status !== 'pending' && data.status !== 'active') return;
 
+          // Losses go only to accounts that still exist (a merge set would recreate a
+          // deleted one). Transactions need every read before the first write.
+          const recordLosses = async (uids) => {
+            const refs = uids.map((uid) => db.collection('users').doc(uid));
+            const snaps = refs.length ? await tx.getAll(...refs) : [];
+            return () => snaps.forEach((snap) => {
+              if (!snap.exists) return;
+              tx.update(snap.ref, {
+                'challengeStats.losses': FieldValue.increment(1),
+                'challengeStats.currentWinStreak': 0,
+              });
+            });
+          };
+
           const overallExpiredMs = data.expiresAt ? new Date(data.expiresAt).getTime() : 0;
           const overallExpired = overallExpiredMs && overallExpiredMs < nowMs;
 
@@ -2827,16 +2993,13 @@ exports.expireChallenges = onSchedule(
               });
             } else {
               if (!overallExpired) return;
+              const writeLosses = await recordLosses(data.friendUid ? [data.friendUid] : []);
               tx.update(doc.ref, {
                 status: 'expired',
                 friendStatus: 'expired',
                 resolvedAt: nowIso,
               });
-              if (data.friendUid) {
-                tx.set(db.collection('users').doc(data.friendUid), {
-                  challengeStats: { losses: FieldValue.increment(1), currentWinStreak: 0 },
-                }, { merge: true });
-              }
+              writeLosses();
             }
             return;
           }
@@ -2852,7 +3015,8 @@ exports.expireChallenges = onSchedule(
             } else if (p.status === 'accepted' && overallExpired) {
               participantUpdates[`participants.${uid}.status`] = 'expired';
               participantUpdates[`participants.${uid}.resolvedAt`] = nowIso;
-              lossUpdates.push({ uid, isLoss: true });
+              // Only someone who accepted it (the app stamps acceptedAt) can lose it.
+              if (p.acceptedAt) lossUpdates.push({ uid, isLoss: true });
             }
           }
 
@@ -2882,16 +3046,13 @@ exports.expireChallenges = onSchedule(
 
           if (Object.keys(participantUpdates).length === 0 && lossUpdates.length === 0) return;
 
+          const writeLosses = await recordLosses(lossUpdates.map(({ uid }) => uid));
           if (Object.keys(participantUpdates).length > 0) {
             tx.update(doc.ref, participantUpdates);
           }
 
           // Apply per-participant losses (server-only counters)
-          for (const { uid } of lossUpdates) {
-            tx.set(db.collection('users').doc(uid), {
-              challengeStats: { losses: FieldValue.increment(1), currentWinStreak: 0 },
-            }, { merge: true });
-          }
+          writeLosses();
         });
       } catch (err) {
         console.error(`[expireChallenges] failed to expire ${doc.id}:`, err);
@@ -2921,7 +3082,8 @@ exports.challengeExpiringSoon = onSchedule(
     await Promise.all(snap.docs.map(async (doc) => {
       const data = doc.data();
       try {
-        const challengerName = data.challengerName || await getUserDisplayName(data.challengerUid);
+        // Looked up only for challenges in the window: this runs for every active challenge.
+        const challengerName = () => getUserDisplayName(data.challengerUid);
 
         // Phase 3 path: per-participant. Timer is now shared (overall expiresAt) so the
         // window-check is the same for everyone, but we still gate on per-participant
@@ -2942,13 +3104,14 @@ exports.challengeExpiringSoon = onSchedule(
 
           if (recipientsToNotify.length === 0) return;
 
+          const name = await challengerName();
           await Promise.all(recipientsToNotify.map(async (uid) => {
             const prefs = await getUserPreferences(uid);
             if (!prefs.challengeExpiring) return;
             await sendNotificationToUser(
               uid,
               'Challenge Ending Soon ⏰',
-              `~1h left on ${challengerName}'s challenge.`,
+              `~1h left on ${name}'s challenge.`,
               {
                 type: NotificationType.CHALLENGE_EXPIRING,
                 fromUserId: data.challengerUid,
@@ -2973,7 +3136,7 @@ exports.challengeExpiringSoon = onSchedule(
         await sendNotificationToUser(
           data.friendUid,
           'Challenge Ending Soon ⏰',
-          `~1h left on ${challengerName}'s challenge.`,
+          `~1h left on ${await challengerName()}'s challenge.`,
           {
             type: NotificationType.CHALLENGE_EXPIRING,
             fromUserId: data.challengerUid,
@@ -3033,26 +3196,32 @@ exports.applyChallengeIntent = onCall(async (request) => {
     : null;
 
   const userRef = db.collection('users').doc(userId);
-  const userSnap = await userRef.get();
-  if (!userSnap.exists) {
-    throw new HttpsError('not-found', 'User doc missing.');
-  }
-  const activities = userSnap.data()?.activities || [];
-  const activity = activities.find(a => String(a.id) === String(activityId));
-  if (!activity) {
-    throw new HttpsError('not-found', 'Activity not found on this user.');
-  }
 
   // Stamp intendedChallengeIds on the activity (additive — preserves any prior intent)
   // so the friend feed badge logic and any future threading reads stay coherent.
-  const existingIntent = Array.isArray(activity.intendedChallengeIds)
-    ? activity.intendedChallengeIds.map(String)
-    : [];
-  const mergedIntent = Array.from(new Set([...existingIntent, ...wantedIds]));
-  const updatedActivities = activities.map(a => (
-    String(a.id) === String(activityId) ? { ...a, intendedChallengeIds: mergedIntent } : a
-  ));
-  await userRef.set({ activities: updatedActivities }, { merge: true });
+  // In a transaction: the phone and the Watch rewrite the whole activities array, so a
+  // plain read-then-write here could put back a list from before their latest save.
+  const activity = await db.runTransaction(async (tx) => {
+    const userSnap = await tx.get(userRef);
+    if (!userSnap.exists) {
+      throw new HttpsError('not-found', 'User doc missing.');
+    }
+    const activities = userSnap.data()?.activities || [];
+    const found = activities.find(a => String(a.id) === String(activityId));
+    if (!found) {
+      throw new HttpsError('not-found', 'Activity not found on this user.');
+    }
+    const existingIntent = Array.isArray(found.intendedChallengeIds)
+      ? found.intendedChallengeIds.map(String)
+      : [];
+    const mergedIntent = Array.from(new Set([...existingIntent, ...wantedIds]));
+    tx.update(userRef, {
+      activities: activities.map(a => (
+        String(a.id) === String(activityId) ? { ...a, intendedChallengeIds: mergedIntent } : a
+      )),
+    });
+    return found;
+  });
 
   console.log('[applyChallengeIntent] start', {
     userId,

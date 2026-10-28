@@ -15404,6 +15404,11 @@ export default function DaySevenApp() {
           if (profileForStreaks?.goalHistory) {
             setUserData(prev => ({ ...prev, goalHistory: profileForStreaks.goalHistory }));
           }
+          // Saved Apple Health type preferences (icon/category for uncategorized types).
+          if (profileForStreaks?.healthKitTypePreferences) {
+            savedHKPreferencesRef.current = JSON.stringify(profileForStreaks.healthKitTypePreferences);
+            setUserData(prev => ({ ...prev, healthKitTypePreferences: profileForStreaks.healthKitTypePreferences }));
+          }
           // First week this user's Winning Streak is judged by the steps rule (Strength +
           // Cardio + weekly Steps; utils/weekGoals). Set once, the first time a build with the
           // rule loads for them, so earlier weeks keep the rule they were earned under.
@@ -16702,6 +16707,8 @@ export default function DaySevenApp() {
   // True once this session's first HealthKit backfill has finished (or failed), so last
   // week's step totals are final before the streak shield judges it.
   const [recentHealthReady, setRecentHealthReady] = useState(false);
+  // Apple Health type preferences as last read from or written to the profile.
+  const savedHKPreferencesRef = useRef(null);
   // True once this session's profile read came back, so streakShield, vacationMode and
   // injuryMode in userData are the user's own and not the initialUserData defaults.
   const [profileStateLoaded, setProfileStateLoaded] = useState(false);
@@ -16874,21 +16881,19 @@ export default function DaySevenApp() {
     }
   }, [userData?.customActivities, user]);
 
-  // Auto-save HealthKit type preferences to Firestore when they change
-  const hasLoadedHKPreferences = useRef(false);
+  // Auto-save HealthKit type preferences to Firestore when they change. Compared with the
+  // last value read or written (set when they load in handleUserAuth): the old "skip the
+  // first change" logic skipped the user's first preference when there was nothing to load.
   useEffect(() => {
     if (!user || !userData?.healthKitTypePreferences) return;
-    // Skip the initial load
-    if (!hasLoadedHKPreferences.current) {
-      hasLoadedHKPreferences.current = true;
-      return;
-    }
-    if (Object.keys(userData.healthKitTypePreferences).length > 0) {
-      const timeoutId = setTimeout(() => {
-        updateUserProfile(user.uid, { healthKitTypePreferences: userData.healthKitTypePreferences });
-      }, 500);
-      return () => clearTimeout(timeoutId);
-    }
+    if (Object.keys(userData.healthKitTypePreferences).length === 0) return;
+    const json = JSON.stringify(userData.healthKitTypePreferences);
+    if (json === savedHKPreferencesRef.current) return;
+    const timeoutId = setTimeout(() => {
+      savedHKPreferencesRef.current = json;
+      updateUserProfile(user.uid, { healthKitTypePreferences: userData.healthKitTypePreferences });
+    }, 500);
+    return () => clearTimeout(timeoutId);
   }, [userData?.healthKitTypePreferences, user]);
 
   // Calculate weekly progress from activities

@@ -217,6 +217,14 @@ struct ActivityDetailsUpdate: Codable, Equatable {
         activity.focusAreas = focusAreas
         activity.focusArea = focusAreas?.first
         activity.countToward = countToward
+
+        // The encoder starts from the fields the activity was read with and only writes the
+        // known ones that are non-nil, so a detail set back to "None" here would keep its old
+        // value in Firestore. This edit is the user clearing it on purpose: drop it from there.
+        for (key, cleared) in [("subtype", subtype == nil), ("countToward", countToward == nil),
+                               ("focusAreas", focusAreas == nil), ("focusArea", focusAreas?.first == nil)] where cleared {
+            activity.rawFirestoreFields?[key] = nil
+        }
     }
 }
 

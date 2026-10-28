@@ -49,9 +49,10 @@ export function formatPace(secondsPerMile, unit, { withSuffix = true } = {}) {
   if (!Number.isFinite(secondsPerMile) || secondsPerMile <= 0) {
     return withSuffix ? `--:--${paceLabel(unit)}` : '--:--';
   }
-  const sec = unit === 'km' ? secondsPerMile / KM_PER_MILE : secondsPerMile;
+  // Round to whole seconds before splitting, or 479.7s shows as "7:60".
+  const sec = Math.round(unit === 'km' ? secondsPerMile / KM_PER_MILE : secondsPerMile);
   const m = Math.floor(sec / 60);
-  const s = Math.round(sec - m * 60);
+  const s = sec % 60;
   const mm = m;
   const ss = s.toString().padStart(2, '0');
   return withSuffix ? `${mm}:${ss}${paceLabel(unit)}` : `${mm}:${ss}`;

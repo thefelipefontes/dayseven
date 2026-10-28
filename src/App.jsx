@@ -16,7 +16,7 @@ import SettingsPage from './Settings';
 import ProfilePage from './Profile';
 import { isChallengeable, getChallengesForUser, activityMatchesChallengeRule, describeMatchRule, evaluateActivityAgainstChallenge, applyOptimisticChallengeCompletions, applyChallengeIntent, subscribeToChallenges, bucketChallenges, countOutgoingThisMonth } from './services/challengeService';
 import ChallengeMatchChooser from './components/ChallengeMatchChooser';
-import { createUserProfile, getUserProfile, updateUserProfile, updateDisplayName, updateUsername, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, deleteActivityPhoto, saveUserGoals, getUserGoals, savePendingGoals, clearPendingGoals, setOnboardingComplete, setTourComplete, savePersonalRecords, getPersonalRecords, saveDailyHealthData, getDailyHealthData, getDailyHealthHistory, subscribeToUserChallengeStats } from './services/userService';
+import { createUserProfile, getUserProfile, updateUserProfile, updateDisplayName, updateUsername, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, deleteActivityPhoto, saveUserGoals, getUserGoals, savePendingGoals, clearPendingGoals, setOnboardingComplete, setTourComplete, savePersonalRecords, getPersonalRecords, saveDailyHealthData, getDailyHealthData, getDailyHealthHistory, subscribeToUserChallengeStats, resetUserServiceSession } from './services/userService';
 import { isSundayToday, nextSundayDateStr, isPendingDue, formatApplyOn } from './utils/goalsSchedule';
 import { getFriends, getReactions, getFriendRequests, getComments, addReply, getReplies, deleteReply, addReaction, removeReaction, addComment, cleanupActivitySocialData } from './services/friendService';
 
@@ -40,7 +40,7 @@ import { initialUserData } from './utils/initialUserData';
 import { getDefaultCountToward, getActivityCategory, countsAsLifting, countsAsCardio, countsAsRecovery } from './utils/activityCategory';
 import { computeStreaks } from './utils/streaks';
 import { planAutoShield, shieldCooldownLeft, nextShieldWeek, SHIELD_MIN_PERCENT } from './utils/streakShield';
-import { judgeWeekFromActivities, judgeWeek, countWeekActivities, weekGoalsResolver, weekKeyFromDateStr, weekContext, stepsByDateFrom, weekStepsTotal, winningCategories, hasRecentSteps, stepsDailyShare } from './utils/weekGoals';
+import { judgeWeekFromActivities, judgeWeek, countWeekActivities, weekGoalsResolver, weekKeyFromDate, weekKeyFromDateStr, weekContext, stepsByDateFrom, weekStepsTotal, winningCategories, hasRecentSteps, stepsDailyShare } from './utils/weekGoals';
 import { manualCaloriesForDate, needsHkCaloriesBackfill } from './utils/calories';
 import { reverseGeocode, formatLocation } from './utils/geocode';
 import SectionIcon from './components/SectionIcon';
@@ -366,6 +366,39 @@ const formatInjuryPausedLabel = (injuryMode) => {
   const fc = injuryFrozenCategories(injuryMode);
   if (INJURY_ALL_CATEGORIES.every(c => fc.includes(c))) return 'All streaks paused';
   return fc.map(c => INJURY_CATEGORY_LABELS[c] || c).join(' & ') + ' paused';
+};
+
+// goalHistory with this week's entry set to `goals`: the entry saveUserGoals writes to
+// Firestore, applied to local state too. The history is otherwise only loaded at launch, so
+// after a goal change the rest of the session judged this week by the old goals.
+const withThisWeekGoals = (history, goals) => {
+  const weekKey = getCurrentWeekKey();
+  return [
+    ...(Array.isArray(history) ? history : []).filter(h => h?.fromWeek !== weekKey),
+    {
+      fromWeek: weekKey,
+      liftsPerWeek: goals.liftsPerWeek ?? null,
+      cardioPerWeek: goals.cardioPerWeek ?? null,
+      recoveryPerWeek: goals.recoveryPerWeek ?? null,
+      stepsPerDay: goals.stepsPerDay ?? null,
+    },
+  ].sort((a, b) => (a.fromWeek || '').localeCompare(b.fromWeek || ''));
+};
+
+// Every week a vacation covered: from its start through day 14 (when it auto-ends) or now,
+// whichever comes first, plus whatever was already recorded. Recording only the week the app
+// happened to be opened in left a week the user was away (and never opened the app) judged
+// as missed, which broke the streak vacation mode exists to protect.
+const vacationWeeksCovered = (vm, now = new Date()) => {
+  const weeks = new Set(vm?.vacationWeeks || []);
+  if (!vm?.startDate) return [...weeks];
+  const start = new Date(`${vm.startDate}T12:00:00`);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 13);
+  const last = end < now ? end : now;
+  for (const d = new Date(start); d <= last; d.setDate(d.getDate() + 7)) weeks.add(weekKeyFromDate(d));
+  weeks.add(weekKeyFromDate(last));
+  return [...weeks].sort();
 };
 
 // Accumulate the per-week frozen-category map { "YYYY-MM-DD": ["lifts",...] } for an injury
@@ -998,8 +1031,8 @@ const HeatMapCalendar = ({ data, onSelectDate, selectedDate, onSelectWeek }) => 
     const days = [];
     const today = new Date();
     const startDate = new Date(today);
+    startDate.setDate(1); // before setMonth, or the 29th–31st overflows into the next month
     startDate.setMonth(startDate.getMonth() - viewMonths + 1);
-    startDate.setDate(1);
     
     // Adjust to start from Sunday
     const dayOfWeek = startDate.getDay();
@@ -4763,8 +4796,9 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
   // Helper to format pace
   const formatPace = (pace) => {
     if (!pace) return '--:--';
-    const mins = Math.floor(pace);
-    const secs = Math.round((pace - mins) * 60);
+    const total = Math.round(pace * 60); // whole seconds first, or 7.995 shows as "7:60"
+    const mins = Math.floor(total / 60);
+    const secs = total % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
@@ -5837,8 +5871,9 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
   // seconds-precise duration so a 25:30 run isn't rounded to a whole-minute pace.
   const durationForPace = duration + (activity.durationSeconds || 0) / 60;
   const pace = hasDistance && durationForPace > 0 ? durationForPace / distanceInUnit : 0;
-  const paceMin = Math.floor(pace);
-  const paceSec = Math.round((pace - paceMin) * 60);
+  const paceTotalSec = Math.round(pace * 60); // whole seconds first, or 7.995 shows as "7:60"
+  const paceMin = Math.floor(paceTotalSec / 60);
+  const paceSec = paceTotalSec % 60;
   const paceStr = `${paceMin}:${String(paceSec).padStart(2, '0')}`;
 
   // Activity display name — strip body parts for strength (shown separately via muscle labels)
@@ -8629,6 +8664,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 
   const changeMonth = (delta) => {
     const currentDate = new Date(date + 'T12:00:00');
+    currentDate.setDate(1); // on the 29th–31st, setMonth overflows into the following month
     currentDate.setMonth(currentDate.getMonth() + delta);
     const newMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
     // Never browse past the current month — future days can't be logged, so
@@ -8839,6 +8875,10 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
   ), [matchingChallenges, effectiveChallengeSelection]);
   const hasPhotoAttached = !!activityPhoto || !!pendingActivity?.photoURL;
   const photoMissingForChallenge = photoRequiredSelected.length > 0 && !hasPhotoAttached;
+  // Editing a saved activity, as opposed to logging a new one. Apple Health workouts waiting
+  // to be logged carry an 'hk_' id too, and gating on any id let them save without the
+  // challenge's required photo (the server then silently refused to credit it).
+  const isEditingSaved = !!pendingActivity?.id && !(typeof pendingActivity.id === 'string' && pendingActivity.id.startsWith('hk_'));
 
   const toggleChallengeFulfill = (id) => {
     setChallengeFulfillSelection(prev => {
@@ -9347,8 +9387,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             handleClose();
           }}
           className="font-bold transition-all duration-150 px-2 py-1 rounded-lg"
-          style={{ color: !activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0 && !pendingActivity?.id) || (mode === 'completed' && !pendingActivity?.id && photoMissingForChallenge) ? 'rgba(0,255,148,0.3)' : '#00FF94' }}
-          disabled={!activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0 && !pendingActivity?.id) || (mode === 'completed' && !pendingActivity?.id && photoMissingForChallenge) || (mode !== 'start' && date > getTodayDate())}
+          style={{ color: !activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0 && !pendingActivity?.id) || (mode === 'completed' && !isEditingSaved && photoMissingForChallenge) ? 'rgba(0,255,148,0.3)' : '#00FF94' }}
+          disabled={!activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0 && !pendingActivity?.id) || (mode === 'completed' && !isEditingSaved && photoMissingForChallenge) || (mode !== 'start' && date > getTodayDate())}
           onTouchStart={(e) => {
             if (!e.currentTarget.disabled) {
               e.currentTarget.style.transform = 'scale(0.9)';
@@ -9576,6 +9616,10 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                               setActivityType(workout.type);
                               setSubtype(workout.subtype || '');
                               if (workout.date) setDate(workout.date);
+                              // The workout's own start time, as handleLinkWorkout does; otherwise
+                              // it kept the time the sheet opened (a 6:10 AM run logged at 9 PM
+                              // saved as 9 PM), which also skews ordering and the HR backfill window.
+                              if (workout.time) setActivityTime(workout.time);
                               setLinkedWorkout(workout);
                               setDurationHours(Math.floor((workout.duration || 0) / 60));
                               setDurationMinutes((workout.duration || 0) % 60);
@@ -11499,7 +11543,7 @@ const WinningStreakInfoSheet = ({ isOpen, onClose, required = ['lifts', 'cardio'
   );
 };
 
-const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, healthHistory = [], onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onDismissShieldNotice = () => {}, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, openActivityTarget = null, showHkEmptyHint = false, hkAccessBlocked = false, onDismissHkEmptyHint = () => {}, onOpenHealthSettings = () => {}, showNotifReask = false, onAcceptNotifReask = () => {}, onDismissNotifReask = () => {}, onReplayCelebration = () => {}, pendingChallenges = [], onOpenPlan = () => {}, onShowWinningStreakInfo = () => {} }) => {
+const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, healthHistory = [], onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onDismissShieldNotice = () => {}, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, openActivityTarget = null, onOpenActivityTargetHandled = () => {}, showHkEmptyHint = false, hkAccessBlocked = false, onDismissHkEmptyHint = () => {}, onOpenHealthSettings = () => {}, showNotifReask = false, onAcceptNotifReask = () => {}, onDismissNotifReask = () => {}, onReplayCelebration = () => {}, pendingChallenges = [], onOpenPlan = () => {}, onShowWinningStreakInfo = () => {} }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
   const [dismissConfirmWorkouts, setDismissConfirmWorkouts] = useState(null); // Workouts pending dismiss confirmation
@@ -11507,10 +11551,6 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
   const [showWorkoutPicker, setShowWorkoutPicker] = useState(false);
   const [workoutPickerDragY, setWorkoutPickerDragY] = useState(0);
   const [workoutPickerTouchStart, setWorkoutPickerTouchStart] = useState(null);
-  const [activityReactions, setActivityReactions] = useState({});
-  const [activityComments, setActivityComments] = useState({});
-  const [reactionDetailModal, setReactionDetailModal] = useState(null); // { activityId, reactions, selectedEmoji }
-  const [commentDetailModal, setCommentDetailModal] = useState(null); // { activityId, comments }
   const [showShieldInfo, setShowShieldInfo] = useState(false);
 
   // Lock body scroll when workout picker modal is open
@@ -11841,10 +11881,16 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
   // Deep-link from "add muscle groups" notification: when DaySevenApp updates
   // openActivityTarget, find the activity and open its detail modal. The
   // nonce makes repeated taps for the same activity re-open the modal.
+  // `activities` is a dependency so a tap that lands before activities load still
+  // opens once they do; the parent clears the target once it's opened, or every
+  // later sync, save or Home remount would pop the sheet open again.
   useEffect(() => {
     if (!openActivityTarget?.activityId) return;
     const found = activities.find(a => String(a.id) === String(openActivityTarget.activityId));
-    if (found) setSelectedActivity(found);
+    if (found) {
+      setSelectedActivity(found);
+      onOpenActivityTargetHandled();
+    }
   }, [openActivityTarget?.activityId, openActivityTarget?.nonce, activities]);
 
   // Helper to convert time string (e.g., "1:55 PM") to minutes since midnight for proper sorting
@@ -11891,397 +11937,6 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
     recovery: { color: '#00D1FF', bg: 'rgba(0,209,255,0.14)', icon: 'recovery' },
   };
   const latestActivities = allLatestActivities.filter(a => !todaysWorkouts.includes(a)).slice(0, 3);
-
-  // Fetch reactions and comments for user's activities
-  useEffect(() => {
-    const fetchReactionsAndComments = async () => {
-      if (!user?.uid || activities.length === 0) return;
-
-      const reactionsMap = {};
-      const commentsMap = {};
-      await Promise.all(
-        allLatestActivities.map(async (activity) => {
-          if (activity.id) {
-            try {
-              const [reactions, comments] = await Promise.all([
-                getReactions(user.uid, activity.id),
-                getComments(user.uid, activity.id)
-              ]);
-              if (reactions.length > 0) {
-                reactionsMap[activity.id] = reactions;
-              }
-              if (comments.length > 0) {
-                commentsMap[activity.id] = comments;
-              }
-            } catch (error) {
-            }
-          }
-        })
-      );
-      setActivityReactions(reactionsMap);
-      setActivityComments(commentsMap);
-    };
-
-    fetchReactionsAndComments();
-  }, [user?.uid, activities]);
-
-  // Helper to get reaction summary for an activity
-  const getReactionSummary = (activityId) => {
-    const reactions = activityReactions[activityId] || [];
-    if (reactions.length === 0) return null;
-
-    // Count by emoji type
-    const counts = {};
-    reactions.forEach(r => {
-      counts[r.reactionType] = (counts[r.reactionType] || 0) + 1;
-    });
-
-    return { counts, total: reactions.length, reactions };
-  };
-
-  // Helper to get comment count for an activity
-  const getCommentCount = (activityId) => {
-    const comments = activityComments[activityId] || [];
-    return comments.length;
-  };
-
-  // Reactions Detail Modal
-  const ReactionsDetailModal = ({ data, onClose }) => {
-    if (!data) return null;
-
-    const { reactions, selectedEmoji } = data;
-
-    // Filter reactions by selected emoji
-    const filteredReactions = reactions.filter(r => r.reactionType === selectedEmoji);
-
-    return (
-      <div
-        className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
-        onClick={onClose}
-        onTouchEnd={(e) => {
-          if (e.target === e.currentTarget) {
-            e.preventDefault();
-            onClose();
-          }
-        }}
-      >
-        <div
-          className="w-full max-w-sm bg-zinc-900 rounded-2xl p-5 max-h-[60vh] overflow-y-auto"
-          onClick={e => e.stopPropagation()}
-          onTouchEnd={e => e.stopPropagation()}
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <span className="text-2xl">{selectedEmoji}</span>
-              <span className="text-gray-400 text-sm">{filteredReactions.length} {filteredReactions.length === 1 ? 'reaction' : 'reactions'}</span>
-            </div>
-            <button onClick={onClose} className="text-gray-400 p-1">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </div>
-
-          {/* Reactors list */}
-          <div className="space-y-2">
-            {filteredReactions.map((reactor, idx) => (
-              <div key={reactor.reactorUid || idx} className="flex items-center gap-3 p-3 rounded-xl bg-zinc-800">
-                <div className="w-10 h-10 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0">
-                  {reactor.reactorPhoto ? (
-                    <img src={reactor.reactorPhoto} alt={reactor.reactorName} className="w-full h-full object-cover" />
-                  ) : (
-                    <span className="text-white text-sm">{reactor.reactorName?.[0]?.toUpperCase() || '?'}</span>
-                  )}
-                </div>
-                <span className="text-white text-sm font-medium">{reactor.reactorName}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // Comments Detail Modal
-  const CommentsDetailModal = ({ data, onClose, user, userProfile, onRepliesUpdated }) => {
-    const [replyingTo, setReplyingTo] = useState(null);
-    const [commentReplies, setCommentReplies] = useState({});
-    const [expandedReplies, setExpandedReplies] = useState({});
-    const replyInputRef = useRef(null);
-
-    // Load replies when modal opens
-    useEffect(() => {
-      if (data?.activityId && data?.comments) {
-        const loadReplies = async () => {
-          const repliesMap = {};
-          await Promise.all(
-            data.comments.map(async (comment) => {
-              try {
-                const replies = await getReplies(user.uid, data.activityId, comment.id);
-                if (replies.length > 0) {
-                  repliesMap[comment.id] = replies;
-                }
-              } catch (error) {
-              }
-            })
-          );
-          setCommentReplies(repliesMap);
-        };
-        loadReplies();
-      }
-    }, [data, user?.uid]);
-
-    // Focus reply input when replying
-    useEffect(() => {
-      if (replyingTo && replyInputRef.current) {
-        replyInputRef.current.focus();
-      }
-    }, [replyingTo]);
-
-    if (!data) return null;
-
-    const { activityId, comments } = data;
-
-    const formatCommentTime = (createdAt) => {
-      if (!createdAt) return '';
-      const date = createdAt.toDate ? createdAt.toDate() : new Date(createdAt);
-      const now = new Date();
-      const diffMs = now - date;
-      const diffMins = Math.floor(diffMs / (1000 * 60));
-      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-      if (diffMins < 1) return 'Just now';
-      if (diffMins < 60) return `${diffMins}m`;
-      if (diffHours < 24) return `${diffHours}h`;
-      if (diffDays === 1) return '1d';
-      if (diffDays < 7) return `${diffDays}d`;
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    };
-
-    const handleSubmitReply = async (commentId, text) => {
-      if (!text.trim() || !user) return;
-      try {
-        const replierName = userProfile?.displayName || user?.displayName || userProfile?.username || user?.email?.split('@')[0] || 'User';
-        const replierPhoto = userProfile?.photoURL || user?.photoURL || null;
-
-        const replyId = await addReply(
-          user.uid,
-          activityId,
-          commentId,
-          user.uid,
-          replierName,
-          replierPhoto,
-          text.trim()
-        );
-
-        const newReply = {
-          id: replyId,
-          replierUid: user.uid,
-          replierName: replierName,
-          replierPhoto: replierPhoto,
-          text: text.trim(),
-          createdAt: { toDate: () => new Date() }
-        };
-
-        setCommentReplies(prev => ({
-          ...prev,
-          [commentId]: [...(prev[commentId] || []), newReply]
-        }));
-        setExpandedReplies(prev => ({ ...prev, [commentId]: true }));
-      } catch (error) {
-      }
-    };
-
-    const handleDeleteReply = async (commentId, replyId) => {
-      try {
-        await deleteReply(user.uid, activityId, commentId, replyId);
-        setCommentReplies(prev => ({
-          ...prev,
-          [commentId]: (prev[commentId] || []).filter(r => r.id !== replyId)
-        }));
-      } catch (error) {
-      }
-    };
-
-    return (
-      <div
-        className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
-        onClick={onClose}
-        onTouchEnd={(e) => {
-          if (e.target === e.currentTarget) {
-            e.preventDefault();
-            onClose();
-          }
-        }}
-      >
-        <div
-          className="w-full max-w-sm bg-zinc-900 rounded-2xl p-5 max-h-[70vh] overflow-y-auto"
-          onClick={e => e.stopPropagation()}
-          onTouchEnd={e => e.stopPropagation()}
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-              </svg>
-              <span className="text-gray-400 text-sm">{comments.length} {comments.length === 1 ? 'comment' : 'comments'}</span>
-            </div>
-            <button onClick={onClose} className="text-gray-400 p-1">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </div>
-
-          {/* Comments list */}
-          <div className="space-y-4">
-            {comments.map((comment, idx) => {
-              const replies = commentReplies[comment.id] || [];
-              const isExpanded = expandedReplies[comment.id];
-              return (
-                <div key={comment.id || idx}>
-                  <div className="flex gap-3">
-                    <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0">
-                      {comment.commenterPhoto ? (
-                        <img src={comment.commenterPhoto} alt={comment.commenterName} className="w-full h-full object-cover" />
-                      ) : (
-                        <span className="text-white text-xs">{comment.commenterName?.[0]?.toUpperCase() || '?'}</span>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="bg-zinc-800 rounded-2xl px-3 py-2">
-                        <span className="text-white text-xs font-medium">{comment.commenterName}</span>
-                        <p className="text-gray-300 text-sm break-words">{comment.text}</p>
-                      </div>
-                      <div className="flex items-center gap-3 mt-1 ml-1">
-                        <span className="text-gray-500 text-[10px]">{formatCommentTime(comment.createdAt)}</span>
-                        <button
-                          onClick={() => setReplyingTo({ commentId: comment.id, commenterName: comment.commenterName })}
-                          className="text-gray-400 text-[10px] font-medium hover:text-white"
-                        >
-                          Reply
-                        </button>
-                        {replies.length > 0 && !isExpanded && (
-                          <button
-                            onClick={() => setExpandedReplies(prev => ({ ...prev, [comment.id]: true }))}
-                            className="text-blue-400 text-[10px] font-medium"
-                          >
-                            View {replies.length} {replies.length === 1 ? 'reply' : 'replies'}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Replies thread */}
-                  {isExpanded && replies.length > 0 && (
-                    <div className="ml-11 mt-2 space-y-2 border-l-2 border-zinc-700 pl-3">
-                      {replies.map((reply) => (
-                        <div key={reply.id}>
-                          <div className="flex gap-2 items-start">
-                            <div className="w-6 h-6 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0">
-                              {reply.replierPhoto ? (
-                                <img src={reply.replierPhoto} alt={reply.replierName} className="w-full h-full object-cover" />
-                              ) : (
-                                <span className="text-white text-[9px]">{reply.replierName?.[0]?.toUpperCase() || '?'}</span>
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="bg-zinc-800/70 rounded-2xl px-3 py-1.5">
-                                <span className="text-white text-[11px] font-medium">{reply.replierName}</span>
-                                <p className="text-gray-300 text-xs break-words">{reply.text}</p>
-                              </div>
-                              <div className="flex items-center gap-2 mt-0.5 ml-1">
-                                <span className="text-gray-500 text-[9px]">{formatCommentTime(reply.createdAt)}</span>
-                                {reply.replierUid === user?.uid && (
-                                  <button
-                                    onClick={() => handleDeleteReply(comment.id, reply.id)}
-                                    className="text-red-400 text-[9px] font-medium"
-                                  >
-                                    Delete
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                      <button
-                        onClick={() => setExpandedReplies(prev => ({ ...prev, [comment.id]: false }))}
-                        className="text-gray-500 text-[10px] ml-2"
-                      >
-                        Hide replies
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Reply input */}
-                  {replyingTo?.commentId === comment.id && (
-                    <div className="ml-11 mt-2 flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0">
-                        {userData?.photoURL ? (
-                          <img src={userData.photoURL} alt="You" className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="text-white text-[9px]">{userData?.displayName?.[0]?.toUpperCase() || '?'}</span>
-                        )}
-                      </div>
-                      <div className="flex-1 flex items-center gap-2 bg-zinc-800 rounded-full px-3 py-1">
-                        <input
-                          ref={replyInputRef}
-                          type="text"
-                          defaultValue=""
-                          onKeyDown={async (e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              const text = replyInputRef.current?.value;
-                              if (text?.trim()) {
-                                await handleSubmitReply(comment.id, text);
-                                replyInputRef.current.value = '';
-                                setReplyingTo(null);
-                              }
-                            } else if (e.key === 'Escape') {
-                              setReplyingTo(null);
-                            }
-                          }}
-                          placeholder={`Reply to ${comment.commenterName}...`}
-                          className="flex-1 bg-transparent text-white text-xs focus:outline-none"
-                          style={{ fontSize: '14px' }}
-                        />
-                        <button
-                          onClick={async () => {
-                            const text = replyInputRef.current?.value;
-                            if (text?.trim()) {
-                              await handleSubmitReply(comment.id, text);
-                              replyInputRef.current.value = '';
-                              setReplyingTo(null);
-                            }
-                          }}
-                          className="text-xs font-medium text-green-500"
-                        >
-                          Post
-                        </button>
-                        <button
-                          onClick={() => setReplyingTo(null)}
-                          className="text-xs text-gray-500"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    );
-  };
 
   // Today's Activity: today's steps (a count) and today's workouts. Sits under This Week's
   // Goals — the week is the headline ("win the week, not the day").
@@ -13687,19 +13342,6 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         friends={friends}
       />
 
-      {/* Reactions Detail Modal */}
-      <ReactionsDetailModal
-        data={reactionDetailModal}
-        onClose={() => setReactionDetailModal(null)}
-      />
-
-      {/* Comments Detail Modal */}
-      <CommentsDetailModal
-        data={commentDetailModal}
-        onClose={() => setCommentDetailModal(null)}
-        user={user}
-        userProfile={userProfile}
-      />
     </div>
   );
 };
@@ -13779,7 +13421,9 @@ export default function DaySevenApp() {
   // Section to jump to when Settings opens — set by callers that deep link in
   // (the home "no workouts found" banner points at 'health'). Cleared on close.
   const [settingsScrollTo, setSettingsScrollTo] = useState(null);
-  const [scrollY, setScrollY] = useState(0);
+  // Only whether the header is collapsed, not the scroll position: storing the position
+  // re-rendered the whole app on every scroll event (60–120 a second).
+  const [headerCollapsed, setHeaderCollapsed] = useState(false);
   const [prevTab, setPrevTab] = useState('home');
   const [tabDirection, setTabDirection] = useState(0); // -1 = left, 0 = none, 1 = right
   const [showAddActivity, setShowAddActivity] = useState(false);
@@ -13787,6 +13431,8 @@ export default function DaySevenApp() {
   const [pendingActivity, setPendingActivity] = useState(null);
   const [defaultActivityDate, setDefaultActivityDate] = useState(null);
   const [showShare, setShowShare] = useState(false);
+  const shareStatsRef = useRef(null); // last ShareModal stats, see the stats prop
+  const celebrationCountsRef = useRef(null); // last WeekStreakCelebration weekCounts
   const [shareWeekRange, setShareWeekRange] = useState(null); // { startDate, endDate } for week-specific sharing
   const [shareMonthRange, setShareMonthRange] = useState(null); // { startDate, endDate } for month-specific sharing
   const [showStampModal, setShowStampModal] = useState(false);
@@ -13941,9 +13587,14 @@ export default function DaySevenApp() {
   const handleDismissWorkout = (workout) => {
     const uuid = workout.healthKitUUID || workout.id;
     if (uuid) {
-      const newDismissed = [...dismissedWorkoutUUIDs, uuid];
-      setDismissedWorkoutUUIDs(newDismissed);
-      localStorage.setItem('dismissedWorkoutUUIDs', JSON.stringify(newDismissed));
+      // Functional update: "Dismiss all" calls this once per workout in the same tick,
+      // and building from the closure's list kept only the last one.
+      setDismissedWorkoutUUIDs(prev => {
+        if (prev.includes(uuid)) return prev;
+        const newDismissed = [...prev, uuid];
+        try { localStorage.setItem('dismissedWorkoutUUIDs', JSON.stringify(newDismissed)); } catch {}
+        return newDismissed;
+      });
       // Also remove from pending workouts
       setHealthKitData(prev => ({
         ...prev,
@@ -14015,7 +13666,10 @@ export default function DaySevenApp() {
   // Auto-detect max heart rate from HealthKit + workout history when not set
   // NOTE: This useEffect is declared before activities state — uses activitiesRef to avoid TDZ
   useEffect(() => {
-    if (!user?.uid || userProfile?.maxHeartRate) return;
+    // Needs a loaded profile: a null one (a timed-out read) isn't "no max HR set", and the
+    // write below used to turn it into { maxHeartRate }, which routed an existing user into
+    // username setup and onboarding.
+    if (!user?.uid || !userProfile || userProfile.maxHeartRate) return;
 
     const detectMaxHR = async () => {
       let maxFromHealthKit = null;
@@ -14045,7 +13699,7 @@ export default function DaySevenApp() {
       if (detectedMax >= 120) { // Only use if it's a reasonable max HR
         try {
           await updateUserProfile(user.uid, { maxHeartRate: detectedMax });
-          setUserProfile(prev => ({ ...prev, maxHeartRate: detectedMax }));
+          setUserProfile(prev => (prev ? { ...prev, maxHeartRate: detectedMax } : prev));
         } catch (e) {
         }
       }
@@ -14054,7 +13708,7 @@ export default function DaySevenApp() {
     // Small delay to avoid running during initial load burst
     const timer = setTimeout(detectMaxHR, 3000);
     return () => clearTimeout(timer);
-  }, [user?.uid, userProfile?.maxHeartRate]);
+  }, [user?.uid, !!userProfile, userProfile?.maxHeartRate]);
 
   // Active workout tracking (for "Start Workout" flow)
   // Shape: { type, subtype, strengthType, focusArea, startTime: ISO string, icon, ... }
@@ -14593,7 +14247,7 @@ export default function DaySevenApp() {
   useEffect(() => {
     const handleScroll = () => {
       const scrollTop = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
-      setScrollY(scrollTop);
+      setHeaderCollapsed(scrollTop > 50); // same value → React skips the re-render
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
     document.addEventListener('scroll', handleScroll, { passive: true });
@@ -14709,6 +14363,18 @@ export default function DaySevenApp() {
     // signup. Clears any stale localStorage flags from a prior pre-signup.
     try { localStorage.removeItem('preSignupOnboarding'); } catch {}
     setPreSignupDone(false);
+
+    // Session load flags and caches. On native, sign-out never runs handleUserAuth(null),
+    // so these used to survive into the next sign-in: the custom-activities effect saved
+    // the default empty list over the real one ~500 ms after signing back in, the records
+    // ratchet ran against zeroed records, and the next account's saves were checked
+    // against this account's activity count.
+    setRecordsLoaded(false);
+    setProfileStateLoaded(false);
+    setRecentHealthReady(false);
+    hasLoadedCustomActivities.current = false;
+    lastHealthBackfillRef.current = 0;
+    resetUserServiceSession();
 
     // Then attempt actual sign out in background (don't block UI)
     (async () => {
@@ -15338,6 +15004,11 @@ export default function DaySevenApp() {
           if (profileForStreaks?.goalHistory) {
             setUserData(prev => ({ ...prev, goalHistory: profileForStreaks.goalHistory }));
           }
+          // Saved Apple Health type preferences (icon/category for uncategorized types).
+          if (profileForStreaks?.healthKitTypePreferences) {
+            savedHKPreferencesRef.current = JSON.stringify(profileForStreaks.healthKitTypePreferences);
+            setUserData(prev => ({ ...prev, healthKitTypePreferences: profileForStreaks.healthKitTypePreferences }));
+          }
           // First week this user's Winning Streak is judged by the steps rule (Strength +
           // Cardio + weekly Steps; utils/weekGoals). Set once, the first time a build with the
           // rule loads for them, so earlier weeks keep the rule they were earned under.
@@ -15346,7 +15017,9 @@ export default function DaySevenApp() {
             const ruleFrom = profileForStreaks?.winningRuleFrom || getCurrentWeekKey();
             userDataRef.current = { ...(userDataRef.current || {}), winningRuleFrom: ruleFrom };
             setUserData(prev => ({ ...prev, winningRuleFrom: ruleFrom }));
-            if (!profileForStreaks?.winningRuleFrom && user?.uid && !isDemoAccount(profileForStreaks, user)) {
+            // Only with a profile actually read: without one the stored week is unknown, not
+            // missing, and writing this week over it is permanent (the field is set once).
+            if (profileForStreaks && !profileForStreaks.winningRuleFrom && user?.uid && !isDemoAccount(profileForStreaks, user)) {
               updateUserProfile(user.uid, { winningRuleFrom: ruleFrom }).catch(() => {});
             }
           }
@@ -15369,21 +15042,20 @@ export default function DaySevenApp() {
               const start = new Date(vm.startDate + 'T12:00:00');
               const now = new Date();
               const daysSinceStart = Math.floor((now - start) / (24 * 60 * 60 * 1000));
+              // Written to the ref too, so the load-time streak recalc below sees the weeks.
+              const covered = vacationWeeksCovered(vm, now);
               if (daysSinceStart >= 14) {
-                const deactivated = { ...vm, isActive: false };
+                const deactivated = { ...vm, isActive: false, vacationWeeks: covered };
+                userDataRef.current = { ...(userDataRef.current || {}), vacationMode: deactivated };
                 setUserData(prev => ({ ...prev, vacationMode: deactivated }));
                 updateUserProfile(user.uid, { vacationMode: deactivated }).catch(() => {});
+              } else if (covered.length !== (vm.vacationWeeks || []).length) {
+                const updated = { ...vm, vacationWeeks: covered };
+                userDataRef.current = { ...(userDataRef.current || {}), vacationMode: updated };
+                setUserData(prev => ({ ...prev, vacationMode: updated }));
+                updateUserProfile(user.uid, { vacationMode: updated }).catch(() => {});
               } else {
-                // Add current week to vacationWeeks if not already there
-                const currentWeek = getCurrentWeekKey();
-                const updatedWeeks = vm.vacationWeeks || [];
-                if (!updatedWeeks.includes(currentWeek)) {
-                  const updated = { ...vm, vacationWeeks: [...updatedWeeks, currentWeek] };
-                  setUserData(prev => ({ ...prev, vacationMode: updated }));
-                  updateUserProfile(user.uid, { vacationMode: updated }).catch(() => {});
-                } else {
-                  setUserData(prev => ({ ...prev, vacationMode: vm }));
-                }
+                setUserData(prev => ({ ...prev, vacationMode: vm }));
               }
             } else {
               setUserData(prev => ({ ...prev, vacationMode: vm }));
@@ -15429,7 +15101,12 @@ export default function DaySevenApp() {
           if (pending) {
             if (isPendingDue(pending)) {
               const { applyOn: _a, queuedAt: _q, ...goalFields } = pending;
-              setUserData(prev => ({ ...prev, goals: goalFields, pendingGoals: null }));
+              userDataRef.current = {
+                ...(userDataRef.current || {}),
+                goals: goalFields,
+                goalHistory: withThisWeekGoals(profileForStreaks?.goalHistory, goalFields),
+              };
+              setUserData(prev => ({ ...prev, goals: goalFields, pendingGoals: null, goalHistory: withThisWeekGoals(prev.goalHistory, goalFields) }));
               saveUserGoals(user.uid, goalFields).catch(() => {});
               clearPendingGoals(user.uid).catch(() => {});
             } else {
@@ -16431,14 +16108,17 @@ export default function DaySevenApp() {
             // happen at the native level (below JS) and can overwrite watch-saved data.
             // After a delay (giving the SDK time to flush), re-read Firestore and
             // re-stamp the correct data if it was overwritten.
-            const capturedCount = freshActivities.length;
+            // Compares against, and re-saves, the CURRENT local list, not the resume
+            // snapshot: re-saving the snapshot brought back anything deleted in those
+            // 5 seconds (and dropped anything added).
             const capturedUid = user.uid;
             setTimeout(async () => {
               try {
                 const verifyActivities = await getUserActivities(capturedUid, true);
-                if (verifyActivities.length < capturedCount) {
-                  console.warn(`[VisibilityHeal] Stale SDK flush detected: server has ${verifyActivities.length} but should have ${capturedCount} — re-saving`);
-                  await saveUserActivities(capturedUid, freshActivities);
+                const localActivities = activitiesRef.current || [];
+                if (verifyActivities.length < localActivities.length) {
+                  console.warn(`[VisibilityHeal] Stale SDK flush detected: server has ${verifyActivities.length} but local has ${localActivities.length} — re-saving`);
+                  await saveUserActivities(capturedUid, localActivities);
                 }
               } catch (e) {
                 // Non-critical — healing check failed
@@ -16627,6 +16307,8 @@ export default function DaySevenApp() {
   // True once this session's first HealthKit backfill has finished (or failed), so last
   // week's step totals are final before the streak shield judges it.
   const [recentHealthReady, setRecentHealthReady] = useState(false);
+  // Apple Health type preferences as last read from or written to the profile.
+  const savedHKPreferencesRef = useRef(null);
   // True once this session's profile read came back, so streakShield, vacationMode and
   // injuryMode in userData are the user's own and not the initialUserData defaults.
   const [profileStateLoaded, setProfileStateLoaded] = useState(false);
@@ -16799,21 +16481,19 @@ export default function DaySevenApp() {
     }
   }, [userData?.customActivities, user]);
 
-  // Auto-save HealthKit type preferences to Firestore when they change
-  const hasLoadedHKPreferences = useRef(false);
+  // Auto-save HealthKit type preferences to Firestore when they change. Compared with the
+  // last value read or written (set when they load in handleUserAuth): the old "skip the
+  // first change" logic skipped the user's first preference when there was nothing to load.
   useEffect(() => {
     if (!user || !userData?.healthKitTypePreferences) return;
-    // Skip the initial load
-    if (!hasLoadedHKPreferences.current) {
-      hasLoadedHKPreferences.current = true;
-      return;
-    }
-    if (Object.keys(userData.healthKitTypePreferences).length > 0) {
-      const timeoutId = setTimeout(() => {
-        updateUserProfile(user.uid, { healthKitTypePreferences: userData.healthKitTypePreferences });
-      }, 500);
-      return () => clearTimeout(timeoutId);
-    }
+    if (Object.keys(userData.healthKitTypePreferences).length === 0) return;
+    const json = JSON.stringify(userData.healthKitTypePreferences);
+    if (json === savedHKPreferencesRef.current) return;
+    const timeoutId = setTimeout(() => {
+      savedHKPreferencesRef.current = json;
+      updateUserProfile(user.uid, { healthKitTypePreferences: userData.healthKitTypePreferences });
+    }, 500);
+    return () => clearTimeout(timeoutId);
   }, [userData?.healthKitTypePreferences, user]);
 
   // Calculate weekly progress from activities
@@ -17389,6 +17069,19 @@ export default function DaySevenApp() {
         // Same reasoning for the HealthKit calorie stamp: losing it would make an
         // auto-tracked burn look hand-entered and get added on top of the daily total.
         hkCalories: activityData.hkCalories ?? existingActivity?.hkCalories,
+        // Other fields the edit modal doesn't model. Dropping `location` made the detail
+        // sheet geocode the route again and re-save a location the user had removed.
+        location: activityData.location !== undefined ? activityData.location : existingActivity?.location,
+        appleWorkoutName: activityData.appleWorkoutName ?? existingActivity?.appleWorkoutName,
+        // The exact start/end only still describe this activity if its day and time didn't move.
+        ...(activityData.date === existingActivity?.date && activityData.time === existingActivity?.time
+          ? { startTime: activityData.startTime ?? existingActivity?.startTime, endTime: activityData.endTime ?? existingActivity?.endTime }
+          : {}),
+        // The rebuilt linked workout has no start date; keep it while it's the same workout.
+        linkedHealthKitStartDate: activityData.linkedHealthKitStartDate
+          ?? (activityData.linkedHealthKitUUID && activityData.linkedHealthKitUUID === existingActivity?.linkedHealthKitUUID
+            ? existingActivity?.linkedHealthKitStartDate
+            : undefined),
       };
       updatedActivities = activities.map(a => a.id === activityData.id ? newActivity : a);
       
@@ -17643,8 +17336,9 @@ export default function DaySevenApp() {
               updatedRecords.fastestPace = { value: pace, activityType: 'Running' };
               const _u = userProfile?.distanceUnit === 'km' ? 'km' : 'mi';
               const paceInUnit = _u === 'km' ? pace / 1.60934 : pace;
-              const paceMin = Math.floor(paceInUnit);
-              const paceSec = Math.round((paceInUnit - paceMin) * 60);
+              const paceTotalSec = Math.round(paceInUnit * 60);
+              const paceMin = Math.floor(paceTotalSec / 60);
+              const paceSec = paceTotalSec % 60;
               recordsBroken.push(`${paceMin}:${paceSec.toString().padStart(2, '0')}/${_u} run pace ⚡`);
             }
           }
@@ -17662,8 +17356,9 @@ export default function DaySevenApp() {
               updatedRecords.fastestCyclingPace = { value: pace, activityType: 'Cycle' };
               const _u = userProfile?.distanceUnit === 'km' ? 'km' : 'mi';
               const paceInUnit = _u === 'km' ? pace / 1.60934 : pace;
-              const paceMin = Math.floor(paceInUnit);
-              const paceSec = Math.round((paceInUnit - paceMin) * 60);
+              const paceTotalSec = Math.round(paceInUnit * 60);
+              const paceMin = Math.floor(paceTotalSec / 60);
+              const paceSec = paceTotalSec % 60;
               recordsBroken.push(`${paceMin}:${paceSec.toString().padStart(2, '0')}/${_u} cycle pace 🚴`);
             }
           }
@@ -18401,7 +18096,7 @@ export default function DaySevenApp() {
       }}
       onScroll={(e) => {
         if (activeTab === 'home') {
-          setScrollY(e.currentTarget.scrollTop);
+          setHeaderCollapsed(e.currentTarget.scrollTop > 50);
         }
       }}
     >
@@ -18539,8 +18234,14 @@ export default function DaySevenApp() {
                 if (!finishedWorkout.maxHr && watchResult.maxHr) {
                   finishedWorkout.maxHr = watchResult.maxHr;
                 }
-                if (!finishedWorkout.duration && watchResult.duration) {
+                // The watch's duration is active time, pauses excluded. The sheet's is
+                // wall-clock since start, which also counts paused time and the minutes
+                // spent on this Save sheet. Prefer the watch's unless a Health workout was
+                // linked (that one carries its own duration). The watch only reports whole
+                // minutes, so the sheet's leftover seconds no longer apply.
+                if (watchResult.duration && !finishedWorkout.linkedHealthKitUUID) {
                   finishedWorkout.duration = watchResult.duration;
+                  finishedWorkout.durationSeconds = undefined;
                 }
                 // Distance from watch is in miles (already converted by WorkoutResult)
                 if (!finishedWorkout.distance && watchResult.distance > 0) {
@@ -18561,9 +18262,12 @@ export default function DaySevenApp() {
             await cancelLiveWorkout();
           }
 
-          // Mark workout data appropriately
+          // Mark workout data appropriately. The id is assigned here rather than inside
+          // handleActivitySaved so the route lookup below can attach its location to the
+          // saved activity (it had no id to match, so the location was never stored).
           const workoutData = {
             ...finishedWorkout,
+            id: finishedWorkout.id || Date.now(),
             healthKitSaved: shouldSkipHealthKitWrite || isWatchWorkout ? true : liveResult.success,
             healthKitUUID: shouldSkipHealthKitWrite ? undefined : liveResult.workoutUUID,
           };
@@ -18619,7 +18323,7 @@ export default function DaySevenApp() {
 
       {/* Fixed Header for Home tab - collapses on scroll */}
       {activeTab === 'home' && (() => {
-        const isCollapsed = scrollY > 50;
+        const isCollapsed = headerCollapsed;
         const iconSize = isCollapsed ? 'h-9 w-9' : 'h-11 w-11';
         const wordmarkOpacity = isCollapsed ? 0 : 0.7;
         const wordmarkWidth = isCollapsed ? 'w-0' : 'w-auto';
@@ -18778,6 +18482,7 @@ export default function DaySevenApp() {
                   onDismissWorkout={handleDismissWorkout}
                   onWorkoutPickerChange={setIsHomeWorkoutPickerOpen}
                   openActivityTarget={homeOpenActivityTarget}
+                  onOpenActivityTargetHandled={() => setHomeOpenActivityTarget(null)}
                   showHkEmptyHint={showHkEmptyHint}
                   hkAccessBlocked={hkAccessBlocked}
                   onDismissHkEmptyHint={handleDismissHkEmptyHint}
@@ -19547,7 +19252,10 @@ export default function DaySevenApp() {
         }}
         onWeekChange={(range) => setShareWeekRange(range)}
         onMonthChange={(range) => setShareMonthRange(range)}
-        stats={(() => {
+        // Built only while the sheet is open (it walks every activity and a year of health
+        // history); the last result is reused for the close animation. Computing it on every
+        // render ran it on each scroll frame with the sheet closed.
+        stats={(showShare || !shareStatsRef.current) ? (shareStatsRef.current = (() => {
           // Determine which week to use for stats. Default mirrors the ShareModal's
           // smart default (Sun–Wed → last week, Thu–Sat → this week) so the very first
           // render matches the dropdown label — without this the modal flashed all
@@ -19897,7 +19605,6 @@ export default function DaySevenApp() {
               monthCardioWeeksHit: cardioWeeksHit,
               monthRecoveryWeeksHit: recoveryWeeksHit,
               monthAllGoalsWeeksHit: allGoalsWeeksHit,
-              monthWeeksTotal: weeksInMonth.length,
               // User goals for context
               liftsGoalMonthly: userData.goals.liftsPerWeek,
               cardioGoalMonthly: userData.goals.cardioPerWeek,
@@ -19921,7 +19628,7 @@ export default function DaySevenApp() {
           // Totals
           workouts: activities.length
         };
-        })()}
+        })()) : shareStatsRef.current}
       />
 
       <CelebrationOverlay
@@ -19949,7 +19656,8 @@ export default function DaySevenApp() {
         show={showWeekStreakCelebration && !challengeModalActivity}
         streakCount={userData?.streaks?.master || 1}
         goals={userData?.goals || {}}
-        weekCounts={(() => {
+        // Only while the celebration shows (same reasoning as ShareModal's stats).
+        weekCounts={(showWeekStreakCelebration || !celebrationCountsRef.current) ? (celebrationCountsRef.current = (() => {
           const progress = calculateWeeklyProgress(activities);
           const ctx = buildWeekCtx();
           const weekKey = getCurrentWeekKey();
@@ -19960,7 +19668,7 @@ export default function DaySevenApp() {
             steps: weekStepsTotal(ctx.stepsByDate, weekKey),
             stepsRule: winningCategories(weekKey, ctx).includes('steps'),
           };
-        })()}
+        })()) : celebrationCountsRef.current}
         onClose={() => {
           setShowWeekStreakCelebration(false);
           // Show pending toast after week streak celebration closes
@@ -20359,6 +20067,13 @@ export default function DaySevenApp() {
         <NotificationSettings
           userId={user?.uid}
           onClose={() => setShowNotificationSettings(false)}
+          onPermissionGranted={() => {
+            if (!user?.uid) return;
+            // Drop any listeners from an earlier setup first so handlers aren't doubled.
+            try { notificationCleanupRef.current?.(); } catch {}
+            notificationCleanupRef.current = null;
+            setupPushNotifications(user.uid).catch(() => {});
+          }}
         />
       )}
 
@@ -20410,6 +20125,7 @@ export default function DaySevenApp() {
                   ...prev,
                   goals: goalsToSave,
                   pendingGoals: null,
+                  goalHistory: withThisWeekGoals(prev.goalHistory, goalsToSave),
                 }));
                 setWeeklyProgress(prev => ({
                   ...prev,

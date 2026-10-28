@@ -14,7 +14,7 @@ import {
   isNotificationSupported,
 } from './services/notificationService';
 
-const NotificationSettings = ({ userId, onClose }) => {
+const NotificationSettings = ({ userId, onClose, onPermissionGranted }) => {
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState(null); // null, 'saved', 'error'
   const [permissionGranted, setPermissionGranted] = useState(null); // null = checking, true/false = known
@@ -85,6 +85,11 @@ const NotificationSettings = ({ userId, onClose }) => {
   const handleRequestPermission = async () => {
     const { granted } = await requestNotificationPermission();
     setPermissionGranted(granted);
+
+    // Granting permission alone doesn't register this device for pushes: the FCM token
+    // and listeners come from App's setupPushNotifications, which otherwise only ran on
+    // the next cold launch.
+    if (granted) onPermissionGranted?.();
 
     if (!granted) {
       alert('Please enable notifications in your device settings to receive push notifications.');

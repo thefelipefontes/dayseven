@@ -133,7 +133,7 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
 
   const handleDeclineRequest = async (requestId) => {
     try {
-      await declineFriendRequest(requestId);
+      await declineFriendRequest(requestId, user.uid); // uid clears the 30s request cache
       setRequests(requests.filter(r => r.id !== requestId));
     } catch (error) {
     }
@@ -141,7 +141,7 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
 
   const handleCancelRequest = async (requestId) => {
     try {
-      await declineFriendRequest(requestId);
+      await declineFriendRequest(requestId, user.uid); // uid clears the 30s request cache
       setSentRequests(sentRequests.filter(r => r.id !== requestId));
     } catch (error) {
     }

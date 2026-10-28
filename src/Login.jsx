@@ -532,18 +532,18 @@ const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
             {isLoading ? 'Creating account...' : 'Create Account'}
           </button>
 
-          {!signupOnly && (
-            <p className="text-center text-gray-500 text-sm pt-2">
-              Already have an account?{' '}
-              <button
-                type="button"
-                onClick={() => { resetForm(); setAuthMode('email-signin'); }}
-                className="text-green-400 font-medium hover:underline"
-              >
-                Sign in
-              </button>
-            </p>
-          )}
+          {/* Shown in signupOnly mode too: someone who reinstalled and took the survey
+              by mistake would otherwise have no way back to email sign-in. */}
+          <p className="text-center text-gray-500 text-sm pt-2">
+            Already have an account?{' '}
+            <button
+              type="button"
+              onClick={() => { resetForm(); setAuthMode('email-signin'); }}
+              className="text-green-400 font-medium hover:underline"
+            >
+              Sign in
+            </button>
+          </p>
         </form>
       </div>
     );

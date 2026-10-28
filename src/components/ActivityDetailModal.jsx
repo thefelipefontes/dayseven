@@ -146,7 +146,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
         if (existingReaction) {
           await removeReaction(activityOwnerId, activity.id, user.uid);
         }
-        await addReaction(activityOwnerId, activity.id, user.uid, emoji, userProfile?.displayName, userProfile?.photoURL);
+        await addReaction(activity.id, activityOwnerId, user.uid, userProfile?.displayName, userProfile?.photoURL, emoji);
         setReactions(prev => {
           const filtered = prev.filter(r => r.reactorUid !== user.uid);
           return [...filtered, { reactorUid: user.uid, reactionType: emoji, reactorName: userProfile?.displayName, reactorPhoto: userProfile?.photoURL }];
@@ -161,7 +161,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
     if (!user || !activity?.id || !activityOwnerId || !newComment.trim()) return;
 
     try {
-      await addComment(activityOwnerId, activity.id, user.uid, newComment.trim(), userProfile?.displayName, userProfile?.photoURL);
+      await addComment(activity.id, activityOwnerId, user.uid, userProfile?.displayName, userProfile?.photoURL, newComment.trim());
       setComments(prev => [...prev, {
         id: Date.now().toString(),
         commenterUid: user.uid,

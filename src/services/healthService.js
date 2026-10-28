@@ -410,9 +410,9 @@ function convertWorkoutToActivity(workout, resolvedTypes = {}) {
   // Calculate pace for running/cycling (minutes per mile)
   let pace = null;
   if (distance && distance > 0 && totalDurationSeconds > 0) {
-    const paceMinutes = (totalDurationSeconds / 60) / distance;
-    const paceMin = Math.floor(paceMinutes);
-    const paceSec = Math.round((paceMinutes - paceMin) * 60);
+    const paceTotalSec = Math.round(totalDurationSeconds / distance); // whole seconds first, or 7.995 shows as "7:60"
+    const paceMin = Math.floor(paceTotalSec / 60);
+    const paceSec = paceTotalSec % 60;
     pace = `${paceMin}:${paceSec.toString().padStart(2, '0')}`;
   }
 

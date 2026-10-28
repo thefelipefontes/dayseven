@@ -58,3 +58,7 @@ app-store-screenshots/out/
 
 # Orphaned Xcode duplicate (not referenced by project.pbxproj)
 ios/App/Dayseven Watch Widgets 2/
+
+# Secrets — never commit. The APNs key lives in Secret Manager (APNS_AUTH_KEY).
+*.p8
+functions/apns/

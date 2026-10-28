@@ -49,6 +49,13 @@ export const clearUserCache = (uid) => {
   cache.timestamps.delete(`customActivities_${uid}`);
 };
 
+// Sign-out: drop every cached read and the stale-write counts, so the next sign-in (the
+// same account or another) starts from fresh reads before anything is saved.
+export const resetUserServiceSession = () => {
+  Object.values(cache).forEach((v) => { if (v instanceof Map) v.clear(); });
+  lastKnownServerActivityCount.clear();
+};
+
 // Helper function to add timeout to Firestore operations (for web SDK fallback)
 const withTimeout = (promise, timeoutMs = 10000) => {
   return Promise.race([
@@ -265,7 +272,14 @@ export async function getUserProfile(uid, forceRefresh = false) {
 export function subscribeToUserChallengeStats(uid, onUpdate) {
   if (!uid || typeof onUpdate !== 'function') return () => {};
 
+  // The listener sees every write to the user doc (activity saves, badge resets, streaks),
+  // so only report a real challengeStats change. Reporting each snapshot re-rendered the
+  // whole app and reloaded the Friends feed on every unrelated write.
+  let lastJson = null;
   const apply = (challengeStats) => {
+    const json = JSON.stringify(challengeStats);
+    if (json === lastJson) return;
+    lastJson = json;
     // Refresh cached profile in place so other readers see the new counters.
     if (cache.userProfiles.has(uid)) {
       const cached = cache.userProfiles.get(uid);
@@ -1351,17 +1365,24 @@ export async function getDailyHealthHistory(uid, days = 30) {
     const today = new Date();
 
     if (isNative) {
-      // For native, we need to fetch the collection and filter
+      // Only the window asked for: the unfiltered read downloaded every day ever stored
+      // (two years is ~730 docs) at launch, on every pull-to-refresh and once per friend on
+      // the leaderboard. The client-side check below stays as a guard.
+      const cutoffDate = new Date(today);
+      cutoffDate.setDate(cutoffDate.getDate() - days);
+      const cutoffStr = toLocalDateStr(cutoffDate);
       const collectionPath = `users/${uid}/dailyHealth`;
       const { snapshots } = await FirebaseFirestore.getCollection({
-        reference: collectionPath
+        reference: collectionPath,
+        compositeFilter: {
+          type: 'and',
+          queryConstraints: [
+            { type: 'where', fieldPath: 'date', opStr: '>=', value: cutoffStr },
+          ],
+        },
       });
 
       if (snapshots) {
-        // Calculate the cutoff date
-        const cutoffDate = new Date(today);
-        cutoffDate.setDate(cutoffDate.getDate() - days);
-        const cutoffStr = toLocalDateStr(cutoffDate);
 
         for (const snap of snapshots) {
           if (snap.data && snap.data.date >= cutoffStr) {

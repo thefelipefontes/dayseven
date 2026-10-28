@@ -20,7 +20,7 @@ import ActivityDetailModal from './components/ActivityDetailModal';
 import TrendsView from './components/TrendsView';
 import OwnProfileModal from './components/OwnProfileModal';
 import { resolveUnit, unitLabel, formatDistanceValue, milesToDisplay, formatPace } from './utils/distance';
-import { getActivityCategory, countsAsLifting, countsAsCardio } from './utils/activityCategory';
+import { getActivityCategory, countsAsLifting, countsAsCardio, countsAsRecovery } from './utils/activityCategory';
 import { judgeWeekFromActivities, judgeWeek, countWeekActivities, weekGoalsResolver, weekContext, stepsByDateFrom, weekStepsTotal, winningCategories } from './utils/weekGoals';
 import { manualCaloriesForDate } from './utils/calories';
 import { shieldCooldownLeft, nextShieldWeek, SHIELD_COOLDOWN_WEEKS, SHIELD_MIN_PERCENT } from './utils/streakShield';
@@ -93,7 +93,7 @@ export default function ProfilePage(props) {
     if (isPro) return null;
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 7);
-    return cutoff.toISOString().split('T')[0];
+    return toLocalDateStr(cutoff); // local date: toISOString is UTC, a day ahead on US evenings
   }, [isPro]);
 
   const visibleActivities = useMemo(() => {
@@ -427,9 +427,10 @@ export default function ProfilePage(props) {
       return actDate >= lastWeekStart && actDate <= lastWeekEnd;
     });
     
-    const lastWeekLifts = lastWeekActivities.filter(a => getActivityCategory(a) === 'lifting').length;
-    const lastWeekCardio = lastWeekActivities.filter(a => getActivityCategory(a) === 'cardio').length;
-    const lastWeekRecovery = lastWeekActivities.filter(a => getActivityCategory(a) === 'recovery').length;
+    // countsAs*: a Strength + Cardio session (Circuit) fills both slots, as on Home.
+    const lastWeekLifts = lastWeekActivities.filter(countsAsLifting).length;
+    const lastWeekCardio = lastWeekActivities.filter(countsAsCardio).length;
+    const lastWeekRecovery = lastWeekActivities.filter(countsAsRecovery).length;
     const lastWeekMiles = lastWeekActivities.reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
 
     // Calculate last week calories from healthDataByDate
@@ -473,9 +474,9 @@ export default function ProfilePage(props) {
           return actDate < currentWeekStart;
         });
         
-        const totalLifts = pastActivities.filter(a => getActivityCategory(a) === 'lifting').length;
-        const totalCardio = pastActivities.filter(a => getActivityCategory(a) === 'cardio').length;
-        const totalRecovery = pastActivities.filter(a => getActivityCategory(a) === 'recovery').length;
+        const totalLifts = pastActivities.filter(countsAsLifting).length;
+        const totalCardio = pastActivities.filter(countsAsCardio).length;
+        const totalRecovery = pastActivities.filter(countsAsRecovery).length;
         const totalMiles = pastActivities.reduce((sum, a) => sum + (parseFloat(a.distance) || 0), 0);
 
         // Calculate total calories from healthDataByDate for all past weeks
@@ -552,10 +553,11 @@ export default function ProfilePage(props) {
     startOfWeek.setDate(today.getDate() - today.getDay());
     startOfWeek.setHours(0, 0, 0, 0);
 
-    const weekActivities = activities.filter(a => {
-      const actDate = parseLocalDate(a.date);
-      return actDate >= startOfWeek && actDate <= today;
-    });
+    // Compare date strings: activity dates parse to noon, so "<= now" dropped all of
+    // today's activities until midday.
+    const startStr = toLocalDateStr(startOfWeek);
+    const todayDateStr = toLocalDateStr(new Date());
+    const weekActivities = activities.filter(a => a.date >= startStr && a.date <= todayDateStr);
 
     // Goal-slot counts (a Circuit-style 'lifting+cardio' session fills both) and the verdict
     // come from the shared rule in utils/weekGoals.
@@ -667,9 +669,11 @@ export default function ProfilePage(props) {
       filteredActivities = visibleActivities;
     }
     
-    const lifts = filteredActivities.filter(a => getActivityCategory(a) === 'lifting');
-    const cardioActs = filteredActivities.filter(a => getActivityCategory(a) === 'cardio');
-    const recoveryActs = filteredActivities.filter(a => getActivityCategory(a) === 'recovery');
+    // countsAs*: a Strength + Cardio session (Circuit) counts in both, as on Home;
+    // `workouts` below counts it once.
+    const lifts = filteredActivities.filter(countsAsLifting);
+    const cardioActs = filteredActivities.filter(countsAsCardio);
+    const recoveryActs = filteredActivities.filter(countsAsRecovery);
     
     // Cardio breakdown — bucket by activity type only. Indoor/Outdoor are
     // location subtypes ("Running indoors" is still Running), not their own
@@ -677,7 +681,8 @@ export default function ProfilePage(props) {
     const calcCardioBreakdown = (acts) => {
       const breakdown = {};
       acts.forEach(a => {
-        const key = a.type;
+        // A Circuit in the cardio breakdown reads as "Circuit", not "Strength Training".
+        const key = a.type === 'Strength Training' ? (a.strengthType || a.type) : a.type;
         if (!key) return;
         breakdown[key] = (breakdown[key] || 0) + 1;
       });
@@ -723,7 +728,7 @@ export default function ProfilePage(props) {
     const totalMiles = milesRan + milesBiked + milesWalked;
 
     return {
-      workouts: lifts.length + cardioActs.length,
+      workouts: filteredActivities.filter(a => countsAsLifting(a) || countsAsCardio(a)).length,
       recovery: recoveryActs.length,
       liftingCount: lifts.length,
       miles: totalMiles,
@@ -759,12 +764,12 @@ export default function ProfilePage(props) {
     } else if (totalsView === 'last-7-days') {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - 7);
-      const cutoffStr = cutoff.toISOString().split('T')[0];
+      const cutoffStr = toLocalDateStr(cutoff); // local, not UTC
       filteredHistory = filteredHistory.filter(h => h.date >= cutoffStr);
     } else if (totalsView === 'last-30-days') {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - 30);
-      const cutoffStr = cutoff.toISOString().split('T')[0];
+      const cutoffStr = toLocalDateStr(cutoff); // local, not UTC
       filteredHistory = filteredHistory.filter(h => h.date >= cutoffStr);
     } else if (totalsView === 'this-month') {
       filteredHistory = filteredHistory.filter(h => h.date?.startsWith(thisMonthStr));
@@ -1490,13 +1495,22 @@ export default function ProfilePage(props) {
               <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Your recent workout and recovery sessions</p>
             </div>
 
+            {/* Swipe left to delete, long-press for Edit/Delete, the same as Home's rows. The
+                solid fill is the old 5%-white-on-black row colour: the swipe wrapper is opaque
+                and has to cover the red delete action while swiping. */}
+            <SwipeableProvider>
             <div className="space-y-2">
               {toShow.map((activity) => (
-                <button
+                <SwipeableActivityItem
                   key={activity.id}
+                  activity={activity}
+                  onDelete={(act) => onDeleteActivity && onDeleteActivity(act.id)}
+                  onEdit={onEditActivity}
+                >
+                <div
                   onClick={() => { triggerHaptic(ImpactStyle.Light); setSelectedDayActivity(activity); }}
-                  className="w-full p-3 flex items-center gap-3 text-left rounded-xl transition-opacity active:opacity-70"
-                  style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+                  className="w-full p-3 flex items-center gap-3 text-left cursor-pointer transition-opacity active:opacity-70"
+                  style={{ backgroundColor: '#0D0D0D' }}
                 >
                   <ActivityIcon type={activity.type} subtype={activity.subtype} size={20} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} countToward={activity.countToward} customActivityCategory={activity.customActivityCategory} />
                   <div className="flex-1 min-w-0">
@@ -1524,7 +1538,8 @@ export default function ProfilePage(props) {
                     </div>
                   </div>
                   <span className="text-gray-600 text-xs">›</span>
-                </button>
+                </div>
+                </SwipeableActivityItem>
               ))}
 
               {hasMore && (
@@ -1537,6 +1552,7 @@ export default function ProfilePage(props) {
                 </button>
               )}
             </div>
+            </SwipeableProvider>
           </div>
         );
       })()}
@@ -1545,7 +1561,9 @@ export default function ProfilePage(props) {
       {(showDayModal || dayModalClosing) && calendarData[selectedDate] && (() => {
         // Get full activity data from activities array (has IDs and all stats)
         const fullDayActivities = visibleActivities.filter(a => a.date === selectedDate);
-        const lifts = fullDayActivities.filter(a => getActivityCategory(a) === 'lifting');
+        // A Strength + Cardio session (Circuit) is listed once, under Strength. It used to
+        // match neither list, so its day showed a dot but an empty sheet.
+        const lifts = fullDayActivities.filter(countsAsLifting);
         const cardioActivities = fullDayActivities.filter(a => getActivityCategory(a) === 'cardio');
         const recoveryActivities = fullDayActivities.filter(a => getActivityCategory(a) === 'recovery');
         const nonCardioWalks = fullDayActivities.filter(a =>
@@ -2923,9 +2941,9 @@ export default function ProfilePage(props) {
               });
 
               const totalCalories = activitiesBetween.reduce((sum, a) => sum + (parseInt(a.calories) || 0), 0);
-              const strengthSessions = activitiesBetween.filter(a => getActivityCategory(a) === 'lifting').length;
-              const cardioSessions = activitiesBetween.filter(a => getActivityCategory(a) === 'cardio').length;
-              const recoverySessions = activitiesBetween.filter(a => getActivityCategory(a) === 'recovery').length;
+              const strengthSessions = activitiesBetween.filter(countsAsLifting).length;
+              const cardioSessions = activitiesBetween.filter(countsAsCardio).length;
+              const recoverySessions = activitiesBetween.filter(countsAsRecovery).length;
               // Steps between the two photos (Apple Health). Steps are one of the three goals that
               // win the week, so they take the fourth tile; Recovery moves to a slim bonus row.
               // Without step data the old four tiles (Recovery included) stay.

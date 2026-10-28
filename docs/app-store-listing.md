@@ -21,6 +21,10 @@ A shield you earn.
 • Vacation mode now covers every week of your trip, even weeks you don't open the app, and shows 🌴 under your rings
 • Injury mode now pauses your Steps streak by default too
 • Apple Watch workouts save your active time, without the minutes you were paused
+• A Watch workout you end from your iPhone saves once, and Circuit on the Watch counts toward both Strength and Cardio
+• Watch complications and the iPhone widget start fresh on time each new day and week
+• Tracking a workout on your iPhone with your Watch on no longer double counts calories or distance
+• "New Workout Detected" follows your notification settings and quiet hours
 • Strength + Cardio sessions like Circuit now count in Profile and on the leaderboard, and the leaderboard counts every kind of cardio
 • Fixed new workouts sometimes not saving after you opened Friends
 • Fixed comments posted from an activity's details not showing up

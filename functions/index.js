@@ -16,8 +16,6 @@ const { getMessaging } = require("firebase-admin/messaging");
 const { getAuth } = require("firebase-admin/auth");
 const jwt = require("jsonwebtoken");
 const http2 = require("http2");
-const fs = require("fs");
-const path = require("path");
 const { getPlannedCategoriesForToday, buildPlannedReminderMessage } = require("./plannerReminders");
 
 // Initialize Firebase Admin
@@ -29,6 +27,13 @@ const messaging = getMessaging();
 // Shared secret guarding the RevenueCat webhook. Set it with:
 //   firebase functions:secrets:set REVENUECAT_WEBHOOK_SECRET
 const revenueCatWebhookSecret = defineSecret("REVENUECAT_WEBHOOK_SECRET");
+
+// APNs auth key (.p8 contents) and its key ID, for Live Activity pushes. They used to be a
+// .p8 file committed under functions/apns/, which a public repo exposes. Set them with:
+//   firebase functions:secrets:set APNS_AUTH_KEY --data-file AuthKey_<KEYID>.p8
+//   firebase functions:secrets:set APNS_KEY_ID
+const apnsAuthKey = defineSecret("APNS_AUTH_KEY");
+const apnsKeyId = defineSecret("APNS_KEY_ID");
 
 // ==========================================
 // WATCH APP AUTHENTICATION
@@ -78,8 +83,7 @@ exports.generateWatchToken = onRequest(async (req, res) => {
 // ACTIVITYKIT LIVE ACTIVITY PUSH
 // ==========================================
 
-// APNs configuration
-const APNS_KEY_ID = "4RCDUK8HZW";
+// APNs configuration (the key and key ID come from Secret Manager, see apnsAuthKey above)
 const APNS_TEAM_ID = "J4CL5KMB23";
 const APNS_TOPIC = "app.dayseven.fitness.push-type.liveactivity";
 
@@ -90,7 +94,7 @@ let apnsJwtExpiry = 0;
 
 function getApnsKey() {
   if (!apnsKeyCache) {
-    apnsKeyCache = fs.readFileSync(path.join(__dirname, "apns", "AuthKey_4RCDUK8HZW.p8"), "utf8");
+    apnsKeyCache = apnsAuthKey.value();
   }
   return apnsKeyCache;
 }
@@ -104,7 +108,7 @@ function getApnsJwt() {
   const key = getApnsKey();
   apnsJwtCache = jwt.sign({ iss: APNS_TEAM_ID, iat: now }, key, {
     algorithm: "ES256",
-    header: { alg: "ES256", kid: APNS_KEY_ID },
+    header: { alg: "ES256", kid: apnsKeyId.value().trim() },
   });
   apnsJwtExpiry = now + 3000; // 50 minutes
   return apnsJwtCache;
@@ -205,7 +209,7 @@ function liveActivityCategoryForType(type) {
  * Start a Live Activity on the user's iPhone via APNs push-to-start.
  * Called by the Apple Watch when a workout begins.
  */
-exports.startLiveActivityPush = onRequest(async (req, res) => {
+exports.startLiveActivityPush = onRequest({ secrets: [apnsAuthKey, apnsKeyId] }, async (req, res) => {
   console.log("[startLiveActivityPush] Called");
 
   if (req.method !== "POST") {

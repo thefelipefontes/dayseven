@@ -56,7 +56,18 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         let action = message["action"] as? String ?? "unknown"
         print("[WatchSession] Sending message: \(action), isReachable: \(session.isReachable), isPaired: \(session.isPaired), isWatchAppInstalled: \(session.isWatchAppInstalled)")
 
-        session.sendMessage(message, replyHandler: replyHandler) { [weak self] error in
+        let changesWorkoutState = action == "startWorkout" || action == "endWorkout" || action == "cancelWorkout"
+            || action == "pauseWorkout" || action == "resumeWorkout"
+
+        session.sendMessage(message, replyHandler: { [weak self] reply in
+            // The watch got this command directly, so any command queued earlier
+            // is obsolete. Left in the context it would be replayed on the
+            // watch's next activation and could end or pause the NEXT workout.
+            if changesWorkoutState {
+                self?.clearPendingCommandFromContext()
+            }
+            replyHandler(reply)
+        }) { [weak self] error in
             print("[WatchSession] Send failed: \(error.localizedDescription)")
 
             // For workout state-changing commands, queue via applicationContext
@@ -72,6 +83,22 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         }
     }
 
+    private static let pendingActionKey = "pendingAction"
+    private static let pendingActionTimestampKey = "pendingActionTimestamp"
+
+    /// Sends `values` merged onto the last applicationContext we sent. A queued
+    /// workout command is never carried forward: the watch replays pendingAction
+    /// on every activation, so re-sending a stale one alongside an unrelated
+    /// update (e.g. the distance unit) could end the next workout.
+    func updateApplicationContext(_ values: [String: Any]) throws {
+        let session = WCSession.default
+        var context = session.applicationContext
+        context.removeValue(forKey: Self.pendingActionKey)
+        context.removeValue(forKey: Self.pendingActionTimestampKey)
+        context.merge(values) { _, new in new }
+        try session.updateApplicationContext(context)
+    }
+
     /// Queue a workout command via applicationContext so it gets delivered when the watch wakes up.
     /// This is a fallback for when sendMessage fails (watch screen off / app in background).
     func queueCommandViaContext(action: String) {
@@ -79,13 +106,28 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         guard session.activationState == .activated else { return }
 
         do {
-            var context = session.applicationContext
-            context["pendingAction"] = action
-            context["pendingActionTimestamp"] = Date().timeIntervalSince1970
-            try session.updateApplicationContext(context)
+            try updateApplicationContext([
+                Self.pendingActionKey: action,
+                Self.pendingActionTimestampKey: Date().timeIntervalSince1970
+            ])
             print("[WatchSession] Queued \(action) via applicationContext")
         } catch {
             print("[WatchSession] Failed to queue via applicationContext: \(error.localizedDescription)")
+        }
+    }
+
+    /// Drop a queued workout command once it no longer applies: the watch took a
+    /// newer command directly, or a new workout started.
+    func clearPendingCommandFromContext() {
+        let session = WCSession.default
+        guard session.activationState == .activated,
+              session.applicationContext[Self.pendingActionKey] != nil else { return }
+
+        do {
+            try updateApplicationContext([:])
+            print("[WatchSession] Cleared queued command from applicationContext")
+        } catch {
+            print("[WatchSession] Failed to clear queued command: \(error.localizedDescription)")
         }
     }
 
@@ -185,6 +227,9 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
             let strengthType = message["strengthType"] as? String
             print("[WatchSession] Watch workout started: \(activityType)")
 
+            // A command queued for the previous workout must not hit this one.
+            clearPendingCommandFromContext()
+
             // Live Activity is started from JS when the app is in the foreground
             // (background start fails with "visibility" error)
 
@@ -242,6 +287,8 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
             let activityType = userInfo["activityType"] as? String ?? "Other"
             let strengthType = userInfo["strengthType"] as? String
             print("[WatchSession] transferUserInfo: Watch workout started: \(activityType)")
+
+            clearPendingCommandFromContext()
 
             // Live Activity is started from JS when the app is in the foreground
 

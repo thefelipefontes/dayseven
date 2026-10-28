@@ -1916,10 +1916,10 @@ public class HealthKitWriterPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         do {
-            var context = session.applicationContext
-            context["distanceUnit"] = unit
-            context["distanceUnitTimestamp"] = Date().timeIntervalSince1970
-            try session.updateApplicationContext(context)
+            try WatchSessionManager.shared.updateApplicationContext([
+                "distanceUnit": unit,
+                "distanceUnitTimestamp": Date().timeIntervalSince1970
+            ])
             print("[HealthKitWriter] pushDistanceUnit: queued '\(unit)' via applicationContext")
             call.resolve(["sent": true, "unit": unit])
         } catch {

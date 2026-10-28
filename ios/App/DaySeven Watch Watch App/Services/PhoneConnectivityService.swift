@@ -53,6 +53,7 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
         let strengthType: String?
         let subtype: String?
         let focusAreas: [String]?
+        var countToward: String? = nil
         let id: UUID = UUID() // unique so @Published always fires
         static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }
     }

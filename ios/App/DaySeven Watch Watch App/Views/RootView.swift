@@ -272,12 +272,14 @@ struct MainTabView: View {
                                     activityType: request.activityType,
                                     strengthType: request.strengthType,
                                     subtype: request.subtype,
-                                    focusAreas: request.focusAreas
+                                    focusAreas: request.focusAreas,
+                                    countToward: request.countToward
                                 ))
                             } else {
                                 startPath.append(WorkoutDestination.quickStart(
                                     activityType: request.activityType,
-                                    strengthType: request.strengthType
+                                    strengthType: request.strengthType,
+                                    countToward: request.countToward
                                 ))
                             }
                         } else {
@@ -322,12 +324,14 @@ struct MainTabView: View {
                             activityType: request.activityType,
                             strengthType: request.strengthType,
                             subtype: request.subtype,
-                            focusAreas: request.focusAreas
+                            focusAreas: request.focusAreas,
+                            countToward: request.countToward
                         ))
                     } else {
                         startPath.append(WorkoutDestination.quickStart(
                             activityType: request.activityType,
-                            strengthType: request.strengthType
+                            strengthType: request.strengthType,
+                            countToward: request.countToward
                         ))
                     }
                 }

@@ -127,17 +127,15 @@ class AppViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        // Wire up background health monitoring for steps/calories celebrations
-        // Note: isBackground=false so visual overlay shows when app is in foreground
-        // (e.g. during an active workout). The celebration won't re-fire thanks to
-        // hasCelebrated() guard, and if the app is truly backgrounded the overlay
-        // simply won't be visible.
+        // Background health monitoring keeps today's steps/calories and the week's steps
+        // current for the dashboard and complications. Neither is a daily goal any more, so
+        // nothing celebrates here: steps are weekly (the phone celebrates the week) and
+        // calories are a stat.
         healthKitService.onStepsUpdated = { [weak self] steps in
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
                 self.todaySteps = steps
                 self.weekSteps = await self.fetchWeekStepsSafe()
-                self.checkDailyGoalCelebrations(isBackground: false)
                 self.pushDataToWidget()
             }
         }
@@ -146,7 +144,6 @@ class AppViewModel: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
                 self.todayCalories = calories
-                self.checkDailyGoalCelebrations(isBackground: false)
                 self.pushDataToWidget()
             }
         }
@@ -269,9 +266,6 @@ class AppViewModel: ObservableObject {
             // Setup background health monitoring (idempotent — only runs once)
             healthKitService.setupBackgroundDelivery()
 
-            // Check if daily goals are already met (foreground check)
-            checkDailyGoalCelebrations(isBackground: false)
-
             // Flush any offline-queued work now that we have fresh data
             if OfflineQueueManager.shared.hasPendingWork {
                 Task {
@@ -337,9 +331,6 @@ class AppViewModel: ObservableObject {
         weekSteps = await fetchWeekStepsSafe()
         todayCalories = await fetchCaloriesSafe()
         todayDistance = await fetchDistanceSafe()
-
-        // Check if daily goals were hit
-        checkDailyGoalCelebrations(isBackground: false)
     }
 
     // MARK: - Safe HealthKit fetchers
@@ -904,16 +895,6 @@ class AppViewModel: ObservableObject {
         }
         if !weeklyProgress.allGoalsMet {
             celebrationManager.clearCelebration(.master)
-        }
-    }
-
-    private func checkDailyGoalCelebrations(isBackground: Bool) {
-        guard goals.caloriesPerDay > 0 else { return }
-
-        // No daily steps celebration: steps are a weekly goal now (win the week, not the
-        // day); the phone celebrates the week's total.
-        if todayCalories >= goals.caloriesPerDay {
-            celebrationManager.triggerCelebration(.calories, isBackground: isBackground)
         }
     }
 

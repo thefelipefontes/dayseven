@@ -370,6 +370,7 @@ class AppViewModel: ObservableObject {
 
     /// Takes on the server's view of the user from a fresh read.
     private func adopt(_ data: UserDocument) {
+        hasServerState = true
         activities = data.activities
         goals = data.goals
         streaks = data.streaks
@@ -928,7 +929,18 @@ class AppViewModel: ObservableObject {
     /// Last time pushDataToWidget asked WidgetKit for a reload
     private var lastWidgetReload: Date = .distantPast
 
+    /// Whether this launch has read the user from Firestore yet. Until then goals and streaks
+    /// are the defaults, and writing them would replace the complication's last good data
+    /// with a 0 streak.
+    private var hasServerState = false
+
     private func pushDataToWidget() {
+        guard hasServerState else { return }
+        // Recompute for the week as it is now. weeklyProgress is only refreshed when the
+        // activities change, so the first steps delivery after Sunday midnight wrote last
+        // week's counts stamped as the new week, and the complication showed them as done.
+        weeklyProgress = calculateWeeklyProgress(activities: activities, goals: goals)
+
         let change = SharedDefaults.writeStreakData(
             masterStreak: streaks.master,
             liftsStreak: streaks.lifts,

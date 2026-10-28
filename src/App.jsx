@@ -20063,6 +20063,13 @@ export default function DaySevenApp() {
         <NotificationSettings
           userId={user?.uid}
           onClose={() => setShowNotificationSettings(false)}
+          onPermissionGranted={() => {
+            if (!user?.uid) return;
+            // Drop any listeners from an earlier setup first so handlers aren't doubled.
+            try { notificationCleanupRef.current?.(); } catch {}
+            notificationCleanupRef.current = null;
+            setupPushNotifications(user.uid).catch(() => {});
+          }}
         />
       )}
 

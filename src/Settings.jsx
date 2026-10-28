@@ -1408,7 +1408,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                     onActivateInjuryMode?.(injuryMinWeeks);
                   } else {
                     setInjuryWeeks(Math.max(injuryMinWeeks, Math.min(4, injuryMaxWeeks)));
-                    setInjuryCats(['lifts', 'cardio', 'recovery']);
+                    setInjuryCats(['lifts', 'cardio', 'steps', 'recovery']);
                     setShowInjuryConfirm(true);
                   }
                 }}

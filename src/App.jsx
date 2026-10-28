@@ -13788,7 +13788,9 @@ export default function DaySevenApp() {
   // Section to jump to when Settings opens — set by callers that deep link in
   // (the home "no workouts found" banner points at 'health'). Cleared on close.
   const [settingsScrollTo, setSettingsScrollTo] = useState(null);
-  const [scrollY, setScrollY] = useState(0);
+  // Only whether the header is collapsed, not the scroll position: storing the position
+  // re-rendered the whole app on every scroll event (60–120 a second).
+  const [headerCollapsed, setHeaderCollapsed] = useState(false);
   const [prevTab, setPrevTab] = useState('home');
   const [tabDirection, setTabDirection] = useState(0); // -1 = left, 0 = none, 1 = right
   const [showAddActivity, setShowAddActivity] = useState(false);
@@ -13796,6 +13798,8 @@ export default function DaySevenApp() {
   const [pendingActivity, setPendingActivity] = useState(null);
   const [defaultActivityDate, setDefaultActivityDate] = useState(null);
   const [showShare, setShowShare] = useState(false);
+  const shareStatsRef = useRef(null); // last ShareModal stats, see the stats prop
+  const celebrationCountsRef = useRef(null); // last WeekStreakCelebration weekCounts
   const [shareWeekRange, setShareWeekRange] = useState(null); // { startDate, endDate } for week-specific sharing
   const [shareMonthRange, setShareMonthRange] = useState(null); // { startDate, endDate } for month-specific sharing
   const [showStampModal, setShowStampModal] = useState(false);
@@ -14607,7 +14611,7 @@ export default function DaySevenApp() {
   useEffect(() => {
     const handleScroll = () => {
       const scrollTop = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
-      setScrollY(scrollTop);
+      setHeaderCollapsed(scrollTop > 50); // same value → React skips the re-render
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
     document.addEventListener('scroll', handleScroll, { passive: true });
@@ -18430,7 +18434,7 @@ export default function DaySevenApp() {
       }}
       onScroll={(e) => {
         if (activeTab === 'home') {
-          setScrollY(e.currentTarget.scrollTop);
+          setHeaderCollapsed(e.currentTarget.scrollTop > 50);
         }
       }}
     >
@@ -18654,7 +18658,7 @@ export default function DaySevenApp() {
 
       {/* Fixed Header for Home tab - collapses on scroll */}
       {activeTab === 'home' && (() => {
-        const isCollapsed = scrollY > 50;
+        const isCollapsed = headerCollapsed;
         const iconSize = isCollapsed ? 'h-9 w-9' : 'h-11 w-11';
         const wordmarkOpacity = isCollapsed ? 0 : 0.7;
         const wordmarkWidth = isCollapsed ? 'w-0' : 'w-auto';
@@ -19583,7 +19587,10 @@ export default function DaySevenApp() {
         }}
         onWeekChange={(range) => setShareWeekRange(range)}
         onMonthChange={(range) => setShareMonthRange(range)}
-        stats={(() => {
+        // Built only while the sheet is open (it walks every activity and a year of health
+        // history); the last result is reused for the close animation. Computing it on every
+        // render ran it on each scroll frame with the sheet closed.
+        stats={(showShare || !shareStatsRef.current) ? (shareStatsRef.current = (() => {
           // Determine which week to use for stats. Default mirrors the ShareModal's
           // smart default (Sun–Wed → last week, Thu–Sat → this week) so the very first
           // render matches the dropdown label — without this the modal flashed all
@@ -19956,7 +19963,7 @@ export default function DaySevenApp() {
           // Totals
           workouts: activities.length
         };
-        })()}
+        })()) : shareStatsRef.current}
       />
 
       <CelebrationOverlay
@@ -19984,7 +19991,8 @@ export default function DaySevenApp() {
         show={showWeekStreakCelebration && !challengeModalActivity}
         streakCount={userData?.streaks?.master || 1}
         goals={userData?.goals || {}}
-        weekCounts={(() => {
+        // Only while the celebration shows (same reasoning as ShareModal's stats).
+        weekCounts={(showWeekStreakCelebration || !celebrationCountsRef.current) ? (celebrationCountsRef.current = (() => {
           const progress = calculateWeeklyProgress(activities);
           const ctx = buildWeekCtx();
           const weekKey = getCurrentWeekKey();
@@ -19995,7 +20003,7 @@ export default function DaySevenApp() {
             steps: weekStepsTotal(ctx.stepsByDate, weekKey),
             stepsRule: winningCategories(weekKey, ctx).includes('steps'),
           };
-        })()}
+        })()) : celebrationCountsRef.current}
         onClose={() => {
           setShowWeekStreakCelebration(false);
           // Show pending toast after week streak celebration closes

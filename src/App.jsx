@@ -18535,8 +18535,14 @@ export default function DaySevenApp() {
                 if (!finishedWorkout.maxHr && watchResult.maxHr) {
                   finishedWorkout.maxHr = watchResult.maxHr;
                 }
-                if (!finishedWorkout.duration && watchResult.duration) {
+                // The watch's duration is active time, pauses excluded. The sheet's is
+                // wall-clock since start, which also counts paused time and the minutes
+                // spent on this Save sheet. Prefer the watch's unless a Health workout was
+                // linked (that one carries its own duration). The watch only reports whole
+                // minutes, so the sheet's leftover seconds no longer apply.
+                if (watchResult.duration && !finishedWorkout.linkedHealthKitUUID) {
                   finishedWorkout.duration = watchResult.duration;
+                  finishedWorkout.durationSeconds = undefined;
                 }
                 // Distance from watch is in miles (already converted by WorkoutResult)
                 if (!finishedWorkout.distance && watchResult.distance > 0) {

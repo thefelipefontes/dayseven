@@ -15433,6 +15433,12 @@ export default function DaySevenApp() {
             }
           }
 
+          // The shield / vacation / injury state above only loads when the profile read
+          // returned something. Without it (a timed-out read with nothing cached) those
+          // fields are still the defaults, and the auto-shield must not save them over the
+          // user's real ones.
+          setProfileStateLoaded(!!profileForStreaks);
+
           // Load user's activities from Firestore (force refresh to pick up watch-saved activities),
           // and daily health history (365 days for the full-year Trends view) alongside it.
           // History has to land BEFORE the streak recalc below: weekly steps are part of
@@ -15637,6 +15643,7 @@ export default function DaySevenApp() {
       setIsOnboarded(null);
       setAuthLoading(false);
       setRecordsLoaded(false); // Reset on logout
+      setProfileStateLoaded(false);
     }
   }, []);
 
@@ -16616,6 +16623,9 @@ export default function DaySevenApp() {
   // True once this session's first HealthKit backfill has finished (or failed), so last
   // week's step totals are final before the streak shield judges it.
   const [recentHealthReady, setRecentHealthReady] = useState(false);
+  // True once this session's profile read came back, so streakShield, vacationMode and
+  // injuryMode in userData are the user's own and not the initialUserData defaults.
+  const [profileStateLoaded, setProfileStateLoaded] = useState(false);
   const [weeklyProgress, setWeeklyProgress] = useState(initialWeeklyProgress);
   const [userData, setUserData] = useState(initialUserData);
   const [recordsLoaded, setRecordsLoaded] = useState(false); // Track if records have been loaded from Firestore
@@ -17019,9 +17029,10 @@ export default function DaySevenApp() {
   // Streak Shield: applied automatically to a closed week that ended short but at 70%+
   // (utils/streakShield). Re-run whenever the data a week is judged on changes; the plan
   // is idempotent, and it hands a shield back if late data shows the week was won. Waits
-  // for the first HealthKit backfill on native so last week's steps are final.
+  // for the first HealthKit backfill on native so last week's steps are final, and for a
+  // real profile read so it never saves default shield state over the user's own.
   useEffect(() => {
-    if (!user?.uid || !isPro || !recordsLoaded) return;
+    if (!user?.uid || !isPro || !recordsLoaded || !profileStateLoaded) return;
     if (Capacitor.isNativePlatform() && !recentHealthReady) return;
     if (!activities || activities.length === 0) return;
     if (isDemoAccount(userProfileRef.current, userRef.current)) return;
@@ -17057,7 +17068,7 @@ export default function DaySevenApp() {
       }
       return updated;
     });
-  }, [user?.uid, isPro, recordsLoaded, recentHealthReady, activities, healthHistory, userData.streakShield, userData.vacationMode, userData.injuryMode, userData.goals, userData.goalHistory, userData.winningRuleFrom]);
+  }, [user?.uid, isPro, recordsLoaded, profileStateLoaded, recentHealthReady, activities, healthHistory, userData.streakShield, userData.vacationMode, userData.injuryMode, userData.goals, userData.goalHistory, userData.winningRuleFrom]);
 
   // Dismiss Home's "your shield saved last week" notice.
   const dismissShieldNotice = (weekKey) => {

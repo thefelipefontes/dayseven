@@ -17,7 +17,16 @@ A shield you earn.
 • Nothing to remember: if a week ends short and you got to 70%, the shield is used automatically
 • Shields come back faster, once every 4 weeks instead of 6
 • Late in the week, Home shows how close you are to earning it, and tells you when it saved your streak
-• Vacation mode now shows 🌴 under your rings
+• Swipe left on an activity in Profile to delete it, or long-press to edit or delete
+• Vacation mode now covers every week of your trip, even weeks you don't open the app, and shows 🌴 under your rings
+• Injury mode now pauses your Steps streak by default too
+• Apple Watch workouts save your active time, without the minutes you were paused
+• Strength + Cardio sessions like Circuit now count in Profile and on the leaderboard, and the leaderboard counts every kind of cardio
+• Fixed new workouts sometimes not saving after you opened Friends
+• Fixed comments posted from an activity's details not showing up
+• Workouts you pick from Apple Health keep their real start time, and editing an activity keeps its location
+• Turning on notifications in Settings works right away, no restart needed
+• Smoother scrolling and a faster app overall
 • Fixes and polish
 ```
 

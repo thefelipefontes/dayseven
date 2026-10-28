@@ -14033,7 +14033,10 @@ export default function DaySevenApp() {
   // Auto-detect max heart rate from HealthKit + workout history when not set
   // NOTE: This useEffect is declared before activities state — uses activitiesRef to avoid TDZ
   useEffect(() => {
-    if (!user?.uid || userProfile?.maxHeartRate) return;
+    // Needs a loaded profile: a null one (a timed-out read) isn't "no max HR set", and the
+    // write below used to turn it into { maxHeartRate }, which routed an existing user into
+    // username setup and onboarding.
+    if (!user?.uid || !userProfile || userProfile.maxHeartRate) return;
 
     const detectMaxHR = async () => {
       let maxFromHealthKit = null;
@@ -14063,7 +14066,7 @@ export default function DaySevenApp() {
       if (detectedMax >= 120) { // Only use if it's a reasonable max HR
         try {
           await updateUserProfile(user.uid, { maxHeartRate: detectedMax });
-          setUserProfile(prev => ({ ...prev, maxHeartRate: detectedMax }));
+          setUserProfile(prev => (prev ? { ...prev, maxHeartRate: detectedMax } : prev));
         } catch (e) {
         }
       }
@@ -14072,7 +14075,7 @@ export default function DaySevenApp() {
     // Small delay to avoid running during initial load burst
     const timer = setTimeout(detectMaxHR, 3000);
     return () => clearTimeout(timer);
-  }, [user?.uid, userProfile?.maxHeartRate]);
+  }, [user?.uid, !!userProfile, userProfile?.maxHeartRate]);
 
   // Active workout tracking (for "Start Workout" flow)
   // Shape: { type, subtype, strengthType, focusArea, startTime: ISO string, icon, ... }
@@ -15376,7 +15379,9 @@ export default function DaySevenApp() {
             const ruleFrom = profileForStreaks?.winningRuleFrom || getCurrentWeekKey();
             userDataRef.current = { ...(userDataRef.current || {}), winningRuleFrom: ruleFrom };
             setUserData(prev => ({ ...prev, winningRuleFrom: ruleFrom }));
-            if (!profileForStreaks?.winningRuleFrom && user?.uid && !isDemoAccount(profileForStreaks, user)) {
+            // Only with a profile actually read: without one the stored week is unknown, not
+            // missing, and writing this week over it is permanent (the field is set once).
+            if (profileForStreaks && !profileForStreaks.winningRuleFrom && user?.uid && !isDemoAccount(profileForStreaks, user)) {
               updateUserProfile(user.uid, { winningRuleFrom: ruleFrom }).catch(() => {});
             }
           }

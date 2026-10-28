@@ -830,9 +830,10 @@ export async function syncHealthKitData() {
     return { success: false, reason: 'not_available' };
   }
 
-  // Request authorization
-  const authorized = await requestHealthKitAuthorization();
-  if (!authorized) {
+  // Check, never ask: every caller runs on its own (launch, foreground, pull-to-refresh,
+  // after onboarding). Without read access the Reconnect Apple Health screen asks, behind
+  // a tap; asking here raised a bare HealthKit sheet after a reinstall.
+  if (!isHealthKitReadAuthorized()) {
     return { success: false, reason: 'not_authorized' };
   }
 
@@ -1073,9 +1074,8 @@ export async function fetchWorkoutMetricsForTimeRange(startTime, endTime) {
   }
 
   try {
-    // Ensure authorization
-    const authorized = await requestHealthKitAuthorization();
-    if (!authorized) {
+    // Check, never ask: this runs from an effect when the Finish sheet opens.
+    if (!isHealthKitReadAuthorized()) {
       return { success: false, reason: 'not_authorized' };
     }
 
@@ -1617,8 +1617,8 @@ export async function backfillHkCalories(activities, { onProgress, limit = BACKF
     return { success: true, scanned: 0, stamped: 0, skipped: 0, recovered: 0, activities };
   }
 
-  const authorized = await requestHealthKitAuthorization();
-  if (!authorized) {
+  // Check, never ask: the backfill runs on its own after launch.
+  if (!isHealthKitReadAuthorized()) {
     return { success: false, reason: 'not_authorized' };
   }
 

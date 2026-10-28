@@ -99,7 +99,10 @@ export function planAutoShield({ activities, ctx, streakShield = {}, vacationWee
   for (; week < currentWeek; week = addWeeks(week, 1)) {
     if (s.shieldedWeeks.includes(week)) continue;
     if (vacationWeeks.includes(week) || injuryFrozenWeeks[week] !== undefined) continue;
-    if (shieldCooldownLeft(s.lastUsedWeek, week) > 0) continue;
+    // 4 weeks from every shielded week, in both directions. Checking only forward from
+    // lastUsedWeek let a re-run shield an older week the cooldown had skipped, once a
+    // newer one had moved lastUsedWeek past it.
+    if (s.shieldedWeeks.some((w) => Math.abs(weeksBetween(w, week)) < SHIELD_COOLDOWN_WEEKS)) continue;
     const judged = judge(week);
     if (judged.all || judged.percent < SHIELD_MIN_PERCENT) continue;
 
@@ -119,8 +122,11 @@ export function planAutoShield({ activities, ctx, streakShield = {}, vacationWee
       || ['lifts', 'cardio', 'recovery', 'steps'].some((c) => !judged[c] && (going[c] || 0) > 0);
     if (!atRisk) continue;
 
-    s.prevUsedWeek = s.lastUsedWeek;
-    s.lastUsedWeek = week;
+    // lastUsedWeek anchors the cooldown and only ever moves forward.
+    if (!s.lastUsedWeek || week > s.lastUsedWeek) {
+      s.prevUsedWeek = s.lastUsedWeek;
+      s.lastUsedWeek = week;
+    }
     s.shieldedWeeks.push(week);
     s.autoWeeks = [...s.autoWeeks, week].slice(-8);
     applied = week;

@@ -108,8 +108,11 @@ const jsToFirestoreValue = (value) => {
   return { stringValue: String(value) };
 };
 
-// Track last known server activity count to guard against stale writes
-let lastKnownServerActivityCount = 0;
+// Highest activity count seen on the server, per user, for the stale-write guard in
+// saveUserActivities. Per uid on purpose: a single module-wide number was raised by
+// reading friends' activities (Friends feed, leaderboard), after which the signed-in
+// user's own smaller list was silently refused — new workouts didn't save.
+const lastKnownServerActivityCount = new Map();
 
 export async function createUserProfile(user) {
   const path = `users/${user.uid}`;
@@ -381,15 +384,23 @@ export async function saveUserActivities(uid, activities, { allowDecrease = fals
   // Guard against stale writes: never overwrite Firestore with fewer activities
   // unless explicitly allowed (e.g., user deleted an activity on the phone).
   // This catches race conditions from SDK offline queue replays, stale closures, etc.
-  if (!allowDecrease && cleanedActivities.length < lastKnownServerActivityCount) {
-    console.warn(`[saveUserActivities] BLOCKED stale write: tried to save ${cleanedActivities.length} but server has ${lastKnownServerActivityCount}`);
+  // Never write a list for a user whose server list hasn't been read successfully this
+  // session: a failed read shows as an empty list, and saving the next workout on top of
+  // it would replace the whole history with that one workout.
+  if (!lastKnownServerActivityCount.has(uid)) {
+    console.warn('[saveUserActivities] BLOCKED write: activities were never loaded for this user');
+    return;
+  }
+  const knownServerCount = lastKnownServerActivityCount.get(uid) || 0;
+  if (!allowDecrease && cleanedActivities.length < knownServerCount) {
+    console.warn(`[saveUserActivities] BLOCKED stale write: tried to save ${cleanedActivities.length} but server has ${knownServerCount}`);
     return;
   }
 
   // Update cache immediately (optimistic update)
   cache.userActivities.set(uid, cleanedActivities);
   cache.timestamps.set(`activities_${uid}`, Date.now());
-  lastKnownServerActivityCount = cleanedActivities.length;
+  lastKnownServerActivityCount.set(uid, cleanedActivities.length);
 
   try {
     await withRetry(async () => {
@@ -459,6 +470,9 @@ export async function getUserActivities(uid, forceRefresh = false) {
           cache: 'no-store'
         });
         console.log('[getUserActivities] REST response status:', response.status);
+        // An error body (401/429/5xx) has no fields and used to parse as "no activities",
+        // which got cached and could then be saved over the real history. Fall back instead.
+        if (!response.ok) throw new Error(`REST ${response.status}`);
         const json = await response.json();
         // Parse Firestore REST format
         const parseFirestoreValue = (val) => {
@@ -510,7 +524,7 @@ export async function getUserActivities(uid, forceRefresh = false) {
     // Cache the result and update server count tracker
     cache.userActivities.set(uid, activities);
     cache.timestamps.set(`activities_${uid}`, Date.now());
-    lastKnownServerActivityCount = Math.max(lastKnownServerActivityCount, activities.length);
+    lastKnownServerActivityCount.set(uid, Math.max(lastKnownServerActivityCount.get(uid) || 0, activities.length));
 
     return activities;
   } catch (error) {

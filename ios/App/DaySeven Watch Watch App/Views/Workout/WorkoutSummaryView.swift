@@ -477,6 +477,12 @@ struct WorkoutSummaryView: View {
     // MARK: - Re-save if user changed details after auto-save
 
     private func resaveIfNeeded() async {
+        // Done can be tapped while the auto-save is still on the network. Wait for it: an edit
+        // sent before the save lands finds nothing to edit, and the save then lands with the
+        // original details. Its value is also the id the workout really went under.
+        if let autoSaveTask, let storedId = await autoSaveTask.value {
+            savedActivityId = storedId
+        }
         guard let activityId = savedActivityId else { return }
 
         // Check if any details differ from what was auto-saved

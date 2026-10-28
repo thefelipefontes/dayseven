@@ -272,7 +272,14 @@ export async function getUserProfile(uid, forceRefresh = false) {
 export function subscribeToUserChallengeStats(uid, onUpdate) {
   if (!uid || typeof onUpdate !== 'function') return () => {};
 
+  // The listener sees every write to the user doc (activity saves, badge resets, streaks),
+  // so only report a real challengeStats change. Reporting each snapshot re-rendered the
+  // whole app and reloaded the Friends feed on every unrelated write.
+  let lastJson = null;
   const apply = (challengeStats) => {
+    const json = JSON.stringify(challengeStats);
+    if (json === lastJson) return;
+    lastJson = json;
     // Refresh cached profile in place so other readers see the new counters.
     if (cache.userProfiles.has(uid)) {
       const cached = cache.userProfiles.get(uid);

@@ -14928,6 +14928,9 @@ export default function DaySevenApp() {
         const demoHealthKit = getDemoHealthKitData();
         setActivities(demoActivities);
         activitiesRef.current = demoActivities;
+        // The home screen widget reads its Strength/Cardio counts from weeklyProgress, which
+        // the regular load path sets; without this it stays at 0 for demo accounts.
+        setWeeklyProgress(calculateWeeklyProgress(demoActivities));
         setUserProfile(prev => (prev ? { ...prev, ...getDemoProfileOverride() } : prev));
         setUserData(demoUserData);
         setCalendarData(getDemoCalendarData(demoActivities));

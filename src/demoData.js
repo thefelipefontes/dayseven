@@ -8,6 +8,15 @@ const formatDate = (date) => {
   return `${year}-${month}-${day}`;
 };
 
+// Which state this week is in for recordings (change it and rebuild):
+//   'midweek' — 2/3 lifting, 1/2 cardio, 53k steps.
+//   'finish'  — 2/3 lifting, 2/2 cardio, 72k steps: logging one strength workout
+//               wins the week and plays the Winning Streak celebration (3 → 4).
+//               Demo accounts don't persist celebrations, so it plays again on
+//               every fresh launch; afterwards "Week won · tap to replay" on Home
+//               replays it.
+export const DEMO_SCENARIO = 'finish';
+
 const daysAgo = (n) => {
   const d = new Date();
   d.setDate(d.getDate() - n);
@@ -52,7 +61,7 @@ export const getDemoActivities = () => {
   // Days later than today are clamped to today so nothing is dated in the
   // future; early in the week that stacks sessions onto the current day.
   //
-  // Fills 2/3 lifting, 1/2 cardio, 2/2 recovery (Bonus). Note that
+  // Fills 2/3 lifting, 1/2 cardio (2/2 in the 'finish' scenario), 2/2 recovery (Bonus). Note that
   // Walking counts toward no goal (see utils/activityCategory.js) — it's here
   // for the feed and step totals, not the rings.
   const currentWeekPlan = [
@@ -76,6 +85,11 @@ export const getDemoActivities = () => {
       notes: 'Bench 225x5, barbell rows 185x8, OHP 135x6, curls, tricep pushdowns' },
     { day: 2, time: '8:30 PM', type: 'Sauna', duration: 20 },
     { day: 4, time: '7:50 AM', type: 'Cold Plunge', duration: 5 },
+    ...(DEMO_SCENARIO === 'finish' ? [
+      { day: 3, time: '6:10 PM', type: 'Cycle',
+        duration: 46, calories: 388, distance: 14.2,
+        maxHr: 163, avgHr: 139 },
+    ] : []),
   ];
 
   let idCounter = 1;
@@ -315,10 +329,12 @@ export const getDemoUserData = (username) => {
     // and weekly Steps were all met, so those streaks must be >= master or the
     // profile contradicts itself. Recovery is a bonus now, but kept >= too.
     streaks: {
+      // In 'finish' this week's cardio and steps are already met, and the
+      // in-progress week extends a streak, so those two read one higher.
       master: 3,
       lifts: 6,
-      cardio: 3,
-      steps: 3,
+      cardio: DEMO_SCENARIO === 'finish' ? 4 : 3,
+      steps: DEMO_SCENARIO === 'finish' ? 4 : 3,
       recovery: 12,
       stepsGoal: 3
     },
@@ -394,9 +410,9 @@ const seededDailyTotals = (dateStr) => ({
 //   • weeks 1–3 ago land on 74–84k (met), week 4 on 60–64k (missed, which is
 //     what ends the Steps streak at 3);
 //   • older weeks keep the raw seeded values.
-// Tuned for recording mid-week (on a Thursday today gets ~10.6k); on a Sunday
-// today alone carries the full 53k.
-const CURRENT_WEEK_STEPS = 53000;
+// Tuned for recording mid-week (on a Thursday today gets a fifth of the week);
+// on a Sunday today alone carries the whole total.
+const CURRENT_WEEK_STEPS = DEMO_SCENARIO === 'finish' ? 72400 : 53000;
 const CURRENT_WEEK_PATTERN = [8400, 13900, 9100, 12400, 9600, 11200, 10300]; // Sun … Sat
 
 const sundayOf = (date) => {

@@ -52,7 +52,7 @@ export const getDemoActivities = () => {
   // Days later than today are clamped to today so nothing is dated in the
   // future; early in the week that stacks sessions onto the current day.
   //
-  // Fills 3/4 lifting, 1/2 cardio, 2/2 recovery = 75% week progress. Note that
+  // Fills 2/3 lifting, 1/2 cardio, 2/2 recovery (Bonus). Note that
   // Walking counts toward no goal (see utils/activityCategory.js) — it's here
   // for the feed and step totals, not the rings.
   const currentWeekPlan = [
@@ -75,11 +75,6 @@ export const getDemoActivities = () => {
       maxHr: 155, avgHr: 118,
       notes: 'Bench 225x5, barbell rows 185x8, OHP 135x6, curls, tricep pushdowns' },
     { day: 2, time: '8:30 PM', type: 'Sauna', duration: 20 },
-    { day: 4, time: '6:45 AM',
-      type: 'Strength Training', subtype: 'Weightlifting - Shoulders', strengthType: 'Weightlifting',
-      duration: 48, calories: 305,
-      focusAreas: ['Shoulders', 'Triceps'],
-      maxHr: 149, avgHr: 115 },
     { day: 4, time: '7:50 AM', type: 'Cold Plunge', duration: 5 },
   ];
 
@@ -157,7 +152,13 @@ export const getDemoActivities = () => {
     if (week % 3 === 0) weekActivities.push([9, 0]);  // yoga        — Sun
     if (week % 4 === 0) weekActivities.push([10, 6]); // second walk — Sat
 
-    weekActivities.forEach(([templateIdx, day], i) => {
+    // The weeks that end the seeded streaks (see getDemoUserData), so the history
+    // backs the numbers: week 4 is short on cardio (and steps, see demoWeekSteps),
+    // which caps Cardio, Steps and the Winning Streak at 3; week 7 is short on
+    // lifting, which caps Strength at 6.
+    const missed = MISSED_SESSIONS[week] || [];
+
+    weekActivities.filter(([templateIdx]) => !missed.includes(templateIdx)).forEach(([templateIdx, day], i) => {
       const daysFromToday = weekSunday - day;
       if (daysFromToday <= 0) return;
 
@@ -218,6 +219,11 @@ export const getDemoActivities = () => {
   // exactly what it does for a genuinely hand-entered workout).
   return [...thisWeek, ...historical].map(a => ({ ...a, hkCalories: a.calories || 0 }));
 };
+
+// Template indexes (see activityTemplates) dropped from a given number of weeks
+// ago. Week 4: the Wed run, Sat long ride and Sat second run, leaving 1 cardio.
+// Week 7: back and shoulders, leaving 2 lifts.
+const MISSED_SESSIONS = { 4: [4, 5, 6], 7: [1, 3] };
 
 // Per-username deep overrides on top of the base demo profile. Use this to
 // give individual demo personas distinct goals/streaks/PRs without forking
@@ -299,7 +305,7 @@ export const getDemoUserData = (username) => {
   const base = {
     name: 'DaySeven',
     goals: {
-      liftsPerWeek: 4,
+      liftsPerWeek: 3,
       cardioPerWeek: 2,
       recoveryPerWeek: 2,
       stepsPerDay: 10000,
@@ -309,10 +315,10 @@ export const getDemoUserData = (username) => {
     // and weekly Steps were all met, so those streaks must be >= master or the
     // profile contradicts itself. Recovery is a bonus now, but kept >= too.
     streaks: {
-      master: 12,
-      lifts: 14,
-      cardio: 12,
-      steps: 13,
+      master: 3,
+      lifts: 6,
+      cardio: 3,
+      steps: 3,
       recovery: 12,
       stepsGoal: 3
     },
@@ -381,6 +387,58 @@ const seededDailyTotals = (dateStr) => ({
   flights:  Math.round(seededDailyValue(dateStr + 'f', 4, 18)),
 });
 
+// Steps are shaped per week so the Steps ring and day strips agree with the
+// seeded streaks (stepsPerDay 10k = 70k a week):
+//   • this week totals exactly CURRENT_WEEK_STEPS by today, split unevenly
+//     across the days so far, with today fixed rather than ramping by hour;
+//   • weeks 1–3 ago land on 74–84k (met), week 4 on 60–64k (missed, which is
+//     what ends the Steps streak at 3);
+//   • older weeks keep the raw seeded values.
+// Tuned for recording mid-week (on a Thursday today gets ~10.6k); on a Sunday
+// today alone carries the full 53k.
+const CURRENT_WEEK_STEPS = 53000;
+const CURRENT_WEEK_PATTERN = [8400, 13900, 9100, 12400, 9600, 11200, 10300]; // Sun … Sat
+
+const sundayOf = (date) => {
+  const d = new Date(date);
+  d.setHours(12, 0, 0, 0);
+  d.setDate(d.getDate() - d.getDay());
+  return d;
+};
+
+const demoDaySteps = (date) => {
+  const today = new Date();
+  const weeksBack = Math.round((sundayOf(today) - sundayOf(date)) / (7 * 86400000));
+  const dateStr = formatDate(date);
+
+  if (weeksBack === 0) {
+    const todayIdx = today.getDay();
+    const priorTarget = CURRENT_WEEK_STEPS * todayIdx / (todayIdx + 1);
+    const patternSum = CURRENT_WEEK_PATTERN.slice(0, todayIdx).reduce((a, b) => a + b, 0);
+    const priorDay = (i) => Math.round(CURRENT_WEEK_PATTERN[i] * priorTarget / patternSum);
+    if (date.getDay() !== todayIdx) return priorDay(date.getDay());
+    // Today takes whatever the rounded earlier days leave, so the week lands exactly.
+    let prior = 0;
+    for (let i = 0; i < todayIdx; i++) prior += priorDay(i);
+    return CURRENT_WEEK_STEPS - prior;
+  }
+
+  const raw = seededDailyTotals(dateStr).steps;
+  if (weeksBack > 4) return raw;
+  const sunday = sundayOf(date);
+  const weekKey = formatDate(sunday);
+  const target = weeksBack === 4
+    ? seededDailyValue(weekKey + 'w', 60000, 64000)
+    : seededDailyValue(weekKey + 'w', 74000, 84000);
+  let rawWeek = 0;
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(sunday);
+    d.setDate(d.getDate() + i);
+    rawWeek += seededDailyTotals(formatDate(d)).steps;
+  }
+  return Math.round(raw * target / rawWeek);
+};
+
 export const getDemoHealthKitData = () => {
   const now = new Date();
   const dateStr = formatDate(now);
@@ -390,7 +448,7 @@ export const getDemoHealthKitData = () => {
 
   return {
     isConnected: true,
-    todaySteps:    Math.round(t.steps * hourFrac),
+    todaySteps:    demoDaySteps(now),
     todayCalories: Math.round(t.calories * hourFrac),
     todayDistance: +(t.distance * hourFrac).toFixed(1),
     todayFlights:  Math.round(t.flights * hourFrac),
@@ -403,11 +461,12 @@ export const getDemoHealthKitData = () => {
 export const getDemoHealthHistory = (days = 365) => {
   const out = [];
   for (let i = 1; i <= days; i++) {
-    const date = formatDate(daysAgo(i));
+    const day = daysAgo(i);
+    const date = formatDate(day);
     const t = seededDailyTotals(date);
     out.push({
       date,
-      steps: t.steps,
+      steps: demoDaySteps(day),
       calories: t.calories,
       lastUpdated: new Date().toISOString(),
     });

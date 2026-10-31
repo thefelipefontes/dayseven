@@ -39,7 +39,8 @@ import { FOCUS_AREA_GROUPS, ALL_FOCUS_AREAS, FOCUS_AREA_MIGRATION, normalizeFocu
 import { initialUserData } from './utils/initialUserData';
 import { getDefaultCountToward, getActivityCategory, countsAsLifting, countsAsCardio, countsAsRecovery } from './utils/activityCategory';
 import { computeStreaks } from './utils/streaks';
-import { planAutoShield, shieldCooldownLeft, nextShieldWeek, SHIELD_MIN_PERCENT } from './utils/streakShield';
+import ShieldLadder from './components/ShieldLadder';
+import { planAutoShield, goalsShortOfHalf, isHoldWeek, SHIELD_MIN_PERCENT } from './utils/streakShield';
 import { judgeWeekFromActivities, judgeWeek, countWeekActivities, weekGoalsResolver, weekKeyFromDate, weekKeyFromDateStr, weekContext, stepsByDateFrom, weekStepsTotal, winningCategories, hasRecentSteps, stepsDailyShare } from './utils/weekGoals';
 import { manualCaloriesForDate, needsHkCaloriesBackfill } from './utils/calories';
 import { reverseGeocode, formatLocation } from './utils/geocode';
@@ -11422,7 +11423,7 @@ const SlideUpSheet = ({ isOpen, onClose, children }) => {
   );
 };
 
-// Streak Shield info (the ⓘ next to the shield link on Home).
+// Streak Shield info (the ⓘ next to the shield line on Home).
 const ShieldInfoSheet = ({ isOpen, onClose }) => (
   <SlideUpSheet isOpen={isOpen} onClose={onClose}>
     {(close) => (
@@ -11438,41 +11439,11 @@ const ShieldInfoSheet = ({ isOpen, onClose }) => (
           </div>
           <div>
             <h3 className="text-white font-semibold text-base">Streak Shield</h3>
-            <p className="text-gray-400 text-xs">Pro Feature</p>
+            <p className="text-gray-400 text-xs">How a week counts</p>
           </div>
         </div>
 
-        <div className="space-y-3 mb-5">
-          <div className="flex gap-3">
-            <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
-              <svg className="w-3 h-3" fill="none" stroke="#00FF94" viewBox="0 0 24 24" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
-            </div>
-            <div>
-              <p className="text-white text-sm font-medium">Earned at 70%</p>
-              <p className="text-gray-400 text-xs mt-0.5">Get to at least 70% of your weekly goals and the shield covers the rest, so none of your streaks reset. A zero week can't be shielded.</p>
-            </div>
-          </div>
-
-          <div className="flex gap-3">
-            <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ backgroundColor: 'rgba(0,209,255,0.1)' }}>
-              <svg className="w-3 h-3" fill="none" stroke="#00D1FF" viewBox="0 0 24 24" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
-            </div>
-            <div>
-              <p className="text-white text-sm font-medium">Once every 4 weeks</p>
-              <p className="text-gray-400 text-xs mt-0.5">After a shield is used, the next one is ready 4 weeks later.</p>
-            </div>
-          </div>
-
-          <div className="flex gap-3">
-            <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ backgroundColor: 'rgba(255,149,0,0.1)' }}>
-              <svg className="w-3 h-3" fill="none" stroke="#FF9500" viewBox="0 0 24 24" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" /></svg>
-            </div>
-            <div>
-              <p className="text-white text-sm font-medium">Works on its own</p>
-              <p className="text-gray-400 text-xs mt-0.5">If a week ends short and you were above 70%, the shield is used automatically. Nothing to remember.</p>
-            </div>
-          </div>
-        </div>
+        <ShieldLadder />
 
         <button
           onClick={close}
@@ -11518,7 +11489,7 @@ const WinningStreakInfoSheet = ({ isOpen, onClose, required = ['lifts', 'cardio'
             Hit {all} weekly goals ({list}) in the same week to win it. Win weeks in a row and your streak grows. Miss one and it resets.
           </p>
           <p className="text-gray-400 text-xs leading-relaxed mb-5">
-            {recoveryIsBonus && 'Recovery is a bonus and doesn\'t count toward it. '}Get to 70% of a week and a Streak Shield covers the rest.
+            {recoveryIsBonus && 'Recovery is a bonus and doesn\'t count toward it. '}Can't win a week? Get to 70% of it, with every goal at least halfway, and your streak holds.
           </p>
 
           <div className="flex gap-3">
@@ -13183,9 +13154,9 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
 
         {/* Streak Shield — quiet grey lines under the card rather than a banner above it
             (the week's status lives in the card's status line). Grey on purpose: colour on
-            Home is kept for the rings. Hidden during vacation and injury. The shield is
-            earned at 70% and applies itself when a week closes (utils/streakShield), so
-            these only report where it stands. */}
+            Home is kept for the rings. Hidden during vacation and injury. A week holds at
+            70% with every goal at least halfway, and the hold applies itself when the week
+            closes (utils/streakShield), so these only report where it stands. */}
         {!userData.vacationMode?.isActive && !userData.injuryMode?.isActive && (() => {
           const currentWeek = getCurrentWeekKey();
           const shield = userData.streakShield || {};
@@ -13200,8 +13171,8 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             </button>
           );
 
-          // The shield just covered a closed week: say so once, until dismissed. This is
-          // the moment it was earned, so it names the percentage that earned it.
+          // The shield just held a closed week: say so once, until dismissed. This is the
+          // moment it was earned, so it names the percentage that earned it.
           const savedWeek = shield.lastUsedWeek;
           if (
             isPro && savedWeek && savedWeek < currentWeek
@@ -13211,15 +13182,19 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
           ) {
             const pct = judgeWeekFromActivities(activities, savedWeek, homeWeekCtx).percent;
             const master = userData.streaks?.master || 0;
-            const which = savedWeek === getPreviousWeekKey() ? 'last week' : `the week of ${fmtWeek(savedWeek)}`;
+            const which = savedWeek === getPreviousWeekKey() ? 'Last week' : `The week of ${fmtWeek(savedWeek)}`;
+            // A week shielded under the old rule advanced the streak, so it didn't "stay".
+            const body = !isHoldWeek(shield, savedWeek)
+              ? (master > 0 ? `Your ${master}-week Winning Streak is still alive.` : 'Your streaks are still alive.')
+              : master === 0 ? 'Your streaks are still alive.'
+              : thisWeekJudged.all ? `Your Winning Streak is alive at ${master}.`
+              : `Your Winning Streak stays at ${master}. Win this week to make it ${master + 1}.`;
             return (
               <div className="mt-3 rounded-2xl p-3.5 flex items-start gap-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                 <span className="text-xl leading-none mt-0.5">🛡️</span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-white text-sm font-semibold">Your shield saved {which}</p>
-                  <p className="text-gray-400 text-xs mt-0.5 leading-snug">
-                    You hit {pct}%, so {master > 0 ? `your ${master}-week Winning Streak is still alive` : 'your streaks are still alive'}. Next shield ready {fmtWeek(nextShieldWeek(savedWeek))}.
-                  </p>
+                  <p className="text-white text-sm font-semibold">{which} held at {pct}%</p>
+                  <p className="text-gray-400 text-xs mt-0.5 leading-snug">{body}</p>
                 </div>
                 <button
                   onClick={() => onDismissShieldNotice(savedWeek)}
@@ -13233,15 +13208,15 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             );
           }
 
-          // Sunday/Monday after a shielded week, and any week shielded by hand before the
-          // shield went automatic: the quiet "active" line.
+          // Sunday/Monday after a held week, and any week shielded by hand before the shield
+          // went automatic: the quiet "held" line.
           const lastWeekShielded = dayOfWeek <= 1 && shieldedWeeks.includes(getPreviousWeekKey());
           if (lastWeekShielded || shieldedWeeks.includes(currentWeek)) {
             return (
               <div className="mt-3 flex items-center justify-center gap-2 text-[12px]">
                 <span>🛡️</span>
-                <span className="font-semibold text-gray-300">Streak Shield active</span>
-                <span className="text-gray-500">{lastWeekShielded ? "· last week's streaks are protected" : '· streaks protected this week'}</span>
+                <span className="font-semibold text-gray-300">{lastWeekShielded ? 'Last week held' : 'Streak held'}</span>
+                <span className="text-gray-500">{lastWeekShielded ? '· your streaks carried over' : '· streaks protected this week'}</span>
                 {infoButton}
               </div>
             );
@@ -13279,24 +13254,13 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             );
           }
 
-          const cooldownLeft = shieldCooldownLeft(shield.lastUsedWeek, currentWeek);
-          if (cooldownLeft > 0) {
-            return (
-              <div className="mt-3 flex items-center justify-center gap-2 text-[12px] text-gray-500">
-                <span>🛡️</span>
-                <span>Next shield in {cooldownLeft} week{cooldownLeft === 1 ? '' : 's'}</span>
-                {infoButton}
-              </div>
-            );
-          }
-
           const pct = thisWeekJudged.percent;
           if (pct < SHIELD_MIN_PERCENT) {
             return (
               <div className="mt-3 flex flex-col items-center">
                 <div className="flex items-center justify-center gap-2 text-[12px]">
                   <span>🛡️</span>
-                  <span className="font-semibold" style={{ color: '#aaa' }}>Shield unlocks at {SHIELD_MIN_PERCENT}%</span>
+                  <span className="font-semibold" style={{ color: '#aaa' }}>Hold your streak at {SHIELD_MIN_PERCENT}%</span>
                   <span className="text-gray-500">· you're at {pct}%</span>
                   {infoButton}
                 </div>
@@ -13308,11 +13272,27 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             );
           }
 
+          // Over 70% but a goal short of halfway: name what it still needs.
+          const shortGoals = goalsShortOfHalf(thisWeekJudged);
+          if (shortGoals.length > 0) {
+            const need = shortGoals.map((c) => (c === 'steps'
+              ? `${formatK(thisWeekJudged.toHalf.steps)} more steps`
+              : `${thisWeekJudged.toHalf[c]} more ${{ lifts: 'strength', cardio: 'cardio', recovery: 'recovery' }[c]}`));
+            return (
+              <div className="mt-3 flex items-center justify-center gap-2 text-[12px]">
+                <span>🛡️</span>
+                <span className="font-semibold" style={{ color: '#aaa' }}>{need.join(', ')} to hold your streak</span>
+                {infoButton}
+              </div>
+            );
+          }
+
+          const master = userData.streaks?.master || 0;
           return (
             <div className="mt-3 flex items-center justify-center gap-2 text-[12px]">
               <span>🛡️</span>
-              <span className="font-semibold" style={{ color: '#aaa' }}>Shield earned</span>
-              <span className="text-gray-500">· covers you if the week ends short</span>
+              <span className="font-semibold" style={{ color: '#aaa' }}>Streak safe</span>
+              <span className="text-gray-500">{master > 0 ? `· win the week to reach ${master + 1} weeks` : '· win the week to start a Winning Streak'}</span>
               {infoButton}
             </div>
           );
@@ -14808,6 +14788,7 @@ export default function DaySevenApp() {
     const protections = existingRecords?._protections || {};
     const walked = computeStreaks(activitiesList, goals, {
       shieldedWeeks: protections.shieldedWeeks || [],
+      holdFrom: protections.holdFrom || null,
       vacationWeeks: protections.vacationWeeks || [],
       injuryFrozenWeeks: protections.injuryFrozenWeeks || {},
       goalHistory: existingRecords?._goalHistory || [],
@@ -15297,6 +15278,7 @@ export default function DaySevenApp() {
                 // longest-streak walk would break on every protected week.
                 _protections: {
                   shieldedWeeks: profileForStreaks?.streakShield?.shieldedWeeks || [],
+                  holdFrom: profileForStreaks?.streakShield?.holdFrom || null,
                   vacationWeeks: profileForStreaks?.vacationMode?.vacationWeeks || [],
                   injuryFrozenWeeks: profileForStreaks?.injuryMode?.frozenWeeks || {},
                 },
@@ -16723,6 +16705,7 @@ export default function DaySevenApp() {
     const src = overrides || userDataRef.current || {};
     return computeStreaks(allActivities, goals, {
       shieldedWeeks: src.streakShield?.shieldedWeeks || [],
+      holdFrom: src.streakShield?.holdFrom || null,
       vacationWeeks: src.vacationMode?.vacationWeeks || [],
       injuryFrozenWeeks: src.injuryMode?.frozenWeeks || {},
       goalHistory: src.goalHistory || [],
@@ -19346,6 +19329,7 @@ export default function DaySevenApp() {
           // vacation weeks and injury pauses for free.
           const historicalWalk = computeStreaks(activities, userData.goals, {
             shieldedWeeks,
+            holdFrom: userData?.streakShield?.holdFrom || null,
             vacationWeeks,
             injuryFrozenWeeks: userData?.injuryMode?.frozenWeeks || {},
             goalHistory: userData?.goalHistory || [],
@@ -19399,8 +19383,9 @@ export default function DaySevenApp() {
             }
             return weeks.reverse(); // oldest to newest
           })(),
-          // Total weeks won (up to and including selected week). Shielded weeks
-          // count as won; vacation weeks are excluded from the count entirely.
+          // Total weeks won (up to and including selected week). Old-style shielded weeks
+          // count as won, held weeks don't (utils/streakShield); vacation weeks are excluded
+          // from the count entirely.
           weeksWon: (() => {
             const weekMap = {};
 
@@ -19429,7 +19414,7 @@ export default function DaySevenApp() {
             allWeekKeys.forEach(weekKey => {
               if (vacationWeeks.includes(weekKey)) return; // vacation weeks excluded
               if (weekKey > weekRange.endStr) return; // never count weeks past selected
-              if (shieldedWeeks.includes(weekKey)) { count++; return; }
+              if (shieldedWeeks.includes(weekKey) && !isHoldWeek(userData?.streakShield, weekKey)) { count++; return; }
               const w = weekMap[weekKey] || { lifts: 0, cardio: 0, recovery: 0 };
               if (judgeCounts(w, weekKey).all) count++;
             });

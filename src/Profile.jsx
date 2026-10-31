@@ -23,7 +23,8 @@ import { resolveUnit, unitLabel, formatDistanceValue, milesToDisplay, formatPace
 import { getActivityCategory, countsAsLifting, countsAsCardio, countsAsRecovery } from './utils/activityCategory';
 import { judgeWeekFromActivities, judgeWeek, countWeekActivities, weekGoalsResolver, weekContext, stepsByDateFrom, weekStepsTotal, winningCategories } from './utils/weekGoals';
 import { manualCaloriesForDate } from './utils/calories';
-import { shieldCooldownLeft, nextShieldWeek, SHIELD_COOLDOWN_WEEKS, SHIELD_MIN_PERCENT } from './utils/streakShield';
+import { canHold, goalsShortOfHalf, isHoldWeek, SHIELD_MIN_PERCENT } from './utils/streakShield';
+import ShieldLadder from './components/ShieldLadder';
 
 
 
@@ -49,6 +50,8 @@ const injuryCalendarCats = (weekKey, injuryMode) => {
 const isInjuryCalendarWeek = (weekKey, injuryMode) => injuryCalendarCats(weekKey, injuryMode) !== null;
 
 // === ProfilePage wrapper (replaces HistoryTab) ===
+
+const GOAL_NAMES = { lifts: 'Strength', cardio: 'Cardio', recovery: 'Recovery', steps: 'Steps' };
 
 export default function ProfilePage(props) {
   const { user, userProfile, onOpenSettings } = props;
@@ -833,19 +836,20 @@ export default function ProfilePage(props) {
               _sunday.setDate(_today.getDate() - _today.getDay());
               const currentWeek = `${_sunday.getFullYear()}-${String(_sunday.getMonth() + 1).padStart(2, '0')}-${String(_sunday.getDate()).padStart(2, '0')}`;
               const isShielded = (userData?.streakShield?.shieldedWeeks || []).includes(currentWeek);
-              const cooldownLeft = shieldCooldownLeft(userData?.streakShield?.lastUsedWeek, currentWeek);
-              // The shield is earned at 70% of the week (utils/streakShield), so until then
-              // this shows how far along the week is.
+              // A week holds at 70% with every goal halfway (utils/streakShield), so until then
+              // this shows how far along the week is, or which goal is short.
               let shieldText = '';
               if (!isPro) {
                 shieldText = 'Pro only';
               } else if (isShielded) {
                 shieldText = 'Active';
-              } else if (cooldownLeft > 0) {
-                shieldText = `${cooldownLeft}w`;
               } else {
-                const pct = judgeWeekFromActivities(activities, currentWeek, profileWeekCtx).percent;
-                shieldText = pct >= SHIELD_MIN_PERCENT ? 'Ready' : `${pct}% / ${SHIELD_MIN_PERCENT}%`;
+                const judged = judgeWeekFromActivities(activities, currentWeek, profileWeekCtx);
+                const short = goalsShortOfHalf(judged);
+                if (judged.all) shieldText = 'Won';
+                else if (canHold(judged)) shieldText = 'Held';
+                else if (judged.percent >= SHIELD_MIN_PERCENT && short.length > 0) shieldText = `${judged.percent}% · ${GOAL_NAMES[short[0]]} short`;
+                else shieldText = `${judged.percent}% / ${SHIELD_MIN_PERCENT}%`;
               }
               const vacationActive = !!userData?.vacationMode?.isActive;
               const vmCurrentYear = new Date().getFullYear();
@@ -924,15 +928,15 @@ export default function ProfilePage(props) {
 
           if (!(daysLeft <= 3 && anyRemaining && hasActiveStreak)) return null;
 
-          // The shield applies itself at 70%+, so with one available the hint is the target.
+          // The hold applies itself, so the hint is the target.
           const isShielded = (userData?.streakShield?.shieldedWeeks || []).includes(cwStartStr);
-          const shieldAvailable = isPro && !isShielded && shieldCooldownLeft(userData?.streakShield?.lastUsedWeek, cwStartStr) === 0;
+          const shieldAvailable = isPro && !isShielded;
 
           return (
             <div className="mt-3">
               <p className="text-[11px] leading-snug text-center" style={{ color: 'rgba(255,255,255,0.45)' }}>
                 {shieldAvailable
-                  ? `At risk of losing your streak? Get to ${SHIELD_MIN_PERCENT}% and your 🛡️ covers the rest.`
+                  ? `At risk of losing your streak? Get to ${SHIELD_MIN_PERCENT}% of your week, with every goal at least halfway, to hold it 🛡️`
                   : 'At risk of losing your streak? Protect it by tapping 🛡️ or 🌴 above.'}
               </p>
             </div>
@@ -1195,14 +1199,17 @@ export default function ProfilePage(props) {
                   const weekKey = week.days[0]?.date;
                   const isVacation = (userData?.vacationMode?.vacationWeeks || []).includes(weekKey);
                   const isShielded = (userData?.streakShield?.shieldedWeeks || []).includes(weekKey);
+                  // Held (utils/streakShield): the streak was kept, not grown, so it's grey,
+                  // not green. Green only ever means the streak grew.
+                  const isHeld = isHoldWeek(userData?.streakShield, weekKey);
                   const isInjury = isInjuryCalendarWeek(weekKey, userData?.injuryMode);
                   const weekEndDate = week.days[6]?.date || week.days[week.days.length - 1]?.date;
                   const isWeekLocked = !!(historyCutoffDate && weekEndDate < historyCutoffDate);
                   // Vacation, injury, shield, and goals-met all keep the streak alive, so tint
                   // the cell to read as "good"; vacation = orange, injury = violet accent.
                   const isGood = goalsHit || isShielded || isVacation || isInjury;
-                  const bgDefault = isVacation ? 'rgba(255,149,0,0.15)' : isInjury ? 'rgba(167,139,250,0.15)' : (isGood ? 'rgba(0,255,148,0.15)' : 'rgba(255,255,255,0.05)');
-                  const bgPressed = isVacation ? 'rgba(255,149,0,0.28)' : isInjury ? 'rgba(167,139,250,0.28)' : (isGood ? 'rgba(0,255,148,0.25)' : 'rgba(255,255,255,0.1)');
+                  const bgDefault = isVacation ? 'rgba(255,149,0,0.15)' : isInjury ? 'rgba(167,139,250,0.15)' : isHeld ? 'rgba(255,255,255,0.08)' : (isGood ? 'rgba(0,255,148,0.15)' : 'rgba(255,255,255,0.05)');
+                  const bgPressed = isVacation ? 'rgba(255,149,0,0.28)' : isInjury ? 'rgba(167,139,250,0.28)' : isHeld ? 'rgba(255,255,255,0.14)' : (isGood ? 'rgba(0,255,148,0.25)' : 'rgba(255,255,255,0.1)');
                   return (
                     <button
                       onClick={() => {
@@ -3446,6 +3453,7 @@ export default function ProfilePage(props) {
             weekJudged: weekVerdict,
             isVacation,
             isShielded,
+            isHeld: isHoldWeek(userData?.streakShield, weekKey),
             isInjury,
             injuryFrozenCats
           };
@@ -3545,10 +3553,6 @@ export default function ProfilePage(props) {
       const currentWeek = `${_sunday.getFullYear()}-${String(_sunday.getMonth() + 1).padStart(2, '0')}-${String(_sunday.getDate()).padStart(2, '0')}`;
 
       const isShielded = (userData?.streakShield?.shieldedWeeks || []).includes(currentWeek);
-      const lastUsedWeek = userData?.streakShield?.lastUsedWeek;
-      const weeksUntilAvailable = shieldCooldownLeft(lastUsedWeek, currentWeek);
-      const onCooldown = weeksUntilAvailable > 0;
-      const fmtWeek = (weekKey) => new Date(`${weekKey}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
       const vacationActive = !!userData?.vacationMode?.isActive;
       const vacationStart = userData?.vacationMode?.startDate;
       const vacationDaysRemaining = vacationActive && vacationStart ? (() => {
@@ -3566,7 +3570,7 @@ export default function ProfilePage(props) {
       const isShield = quickActionModal === 'shield';
       const title = isShield ? 'Streak Shield' : 'Vacation Mode';
       const emoji = isShield ? '🛡️' : '🌴';
-      const subtitle = !isPro ? 'Pro Feature' : null;
+      const subtitle = !isPro ? 'Pro Feature' : isShield ? 'How a week counts' : null;
 
       // Build a status line + 3 bullet rows. Mirrors the Streak Shield info sheet on
       // Home and the vacation mode section in Settings so wording stays consistent.
@@ -3576,59 +3580,42 @@ export default function ProfilePage(props) {
       let actionLabel = null;
       let actionColor = '#FFD60A';
       let onAction = null;
-      let extra = null; // shield only: this week's progress toward 70%, or the cooldown
+      let extra = null; // shield only: this week's progress toward a hold
 
       if (isShield) {
         if (!isPro) {
           statusLabel = 'Pro only';
           statusColor = '#FF9500';
-        } else if (isShielded) {
-          statusLabel = 'Active this week';
-          statusColor = '#00FF94';
-        } else if (onCooldown) {
-          statusLabel = `Next in ${weeksUntilAvailable}w`;
-          statusColor = '#FF9500';
-        }
-
-        details = [
-          { color: '#00FF94', title: `Earned at ${SHIELD_MIN_PERCENT}%`, body: `Get to at least ${SHIELD_MIN_PERCENT}% of your weekly goals and the shield covers the rest, so none of your streaks reset. A zero week can't be shielded.` },
-          { color: '#00D1FF', title: `Once every ${SHIELD_COOLDOWN_WEEKS} weeks`, body: `After a shield is used, the next one is ready ${SHIELD_COOLDOWN_WEEKS} weeks later.` },
-          { color: '#FF9500', title: 'Works on its own', body: `If a week ends short and you were above ${SHIELD_MIN_PERCENT}%, the shield is used automatically. Nothing to remember.` },
-        ];
-
-        if (!isPro) {
           actionLabel = 'Upgrade to Pro';
           actionColor = '#FFD60A';
           onAction = () => { triggerHaptic(ImpactStyle.Medium); onPresentPaywall?.(); closeQuickAction(); };
-        } else if (onCooldown) {
-          const done = SHIELD_COOLDOWN_WEEKS - weeksUntilAvailable;
-          extra = (
-            <div className="rounded-xl p-3 mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              <div className="flex justify-between text-xs text-gray-400">
-                <span>Used week of {fmtWeek(lastUsedWeek)}</span>
-                <span>Ready {fmtWeek(nextShieldWeek(lastUsedWeek))}</span>
-              </div>
-              <div className="flex gap-1.5 mt-2.5">
-                {Array.from({ length: SHIELD_COOLDOWN_WEEKS }, (_, i) => (
-                  <div key={i} className="flex-1 h-1.5 rounded-full" style={{ backgroundColor: i < done ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.12)' }} />
-                ))}
-              </div>
-            </div>
-          );
-        } else if (!isShielded) {
+        } else if (isShielded) {
+          statusLabel = 'Active this week';
+          statusColor = '#e4e4e7';
+        } else {
+          // This week against the hold: 70% overall (the white tick on the bar) and halfway on
+          // every goal (the tick on each goal's bar).
           const judged = judgeWeekFromActivities(activities, currentWeek, profileWeekCtx);
           const pct = judged.percent;
-          statusLabel = pct >= SHIELD_MIN_PERCENT ? 'Ready' : 'Locked';
-          statusColor = pct >= SHIELD_MIN_PERCENT ? '#00FF94' : 'rgba(255,255,255,0.5)';
+          if (judged.all) {
+            statusLabel = 'Won';
+            statusColor = '#FFD700';
+          } else if (canHold(judged)) {
+            statusLabel = 'Held';
+            statusColor = '#e4e4e7';
+          } else {
+            statusLabel = 'Not held yet';
+            statusColor = 'rgba(255,255,255,0.5)';
+          }
           const goalsFor = weekGoalsResolver(profileWeekCtx.goals, profileWeekCtx.goalHistory)(currentWeek);
           const counts = countWeekActivities((activities || []).filter(a => a?.date && a.date >= currentWeek && a.date <= toLocalDateStr(new Date(_sunday.getFullYear(), _sunday.getMonth(), _sunday.getDate() + 6))));
           const stepsDone = weekStepsTotal(profileWeekCtx.stepsByDate, currentWeek);
           const k = (n) => (n >= 1000 ? `${Math.round(n / 1000)}k` : `${n}`);
           const GOAL = {
-            lifts: { name: 'Strength', color: '#00FF94', value: `${counts.lifts}/${goalsFor.lifts}` },
-            cardio: { name: 'Cardio', color: '#FF9500', value: `${counts.cardio}/${goalsFor.cardio}` },
-            recovery: { name: 'Recovery', color: '#00D1FF', value: `${counts.recovery}/${goalsFor.recovery}` },
-            steps: { name: 'Steps', color: '#BF5AF2', value: `${k(stepsDone)}/${k(goalsFor.stepsPerDay * 7)}` },
+            lifts: { color: '#00FF94', done: counts.lifts, goal: goalsFor.lifts },
+            cardio: { color: '#FF9500', done: counts.cardio, goal: goalsFor.cardio },
+            recovery: { color: '#00D1FF', done: counts.recovery, goal: goalsFor.recovery },
+            steps: { color: '#BF5AF2', done: stepsDone, goal: goalsFor.stepsPerDay * 7 },
           };
           extra = (
             <div className="rounded-xl p-3 mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
@@ -3641,12 +3628,24 @@ export default function ProfilePage(props) {
                 <div className="absolute rounded-full bg-white" style={{ left: `${SHIELD_MIN_PERCENT}%`, top: -4, width: 2, height: 14 }} />
               </div>
               <div className="flex gap-1.5 mt-3">
-                {judged.required.map((c) => (
-                  <div key={c} className="flex-1 rounded-lg px-2 py-1.5" style={{ backgroundColor: 'rgba(255,255,255,0.04)' }}>
-                    <span className="block text-white text-sm font-semibold">{GOAL[c].value}</span>
-                    <span className="text-[11px] text-gray-400"><span className="inline-block w-1.5 h-1.5 rounded-full mr-1 align-middle" style={{ backgroundColor: GOAL[c].color }} />{GOAL[c].name}</span>
-                  </div>
-                ))}
+                {judged.required.map((c) => {
+                  const g = GOAL[c];
+                  const toHalf = judged.toHalf[c];
+                  const fill = g.goal > 0 ? Math.min(100, (g.done / g.goal) * 100) : 100;
+                  return (
+                    <div key={c} className="flex-1 min-w-0 rounded-lg px-2 py-1.5" style={{ backgroundColor: 'rgba(255,255,255,0.04)' }}>
+                      <span className="block text-white text-sm font-semibold truncate">{c === 'steps' ? `${k(g.done)}/${k(g.goal)}` : `${g.done}/${g.goal}`}</span>
+                      <span className="text-[11px] text-gray-400"><span className="inline-block w-1.5 h-1.5 rounded-full mr-1 align-middle" style={{ backgroundColor: g.color }} />{GOAL_NAMES[c]}</span>
+                      <div className="relative h-[3px] rounded-full mt-1.5" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
+                        <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${fill}%`, backgroundColor: 'rgba(255,255,255,0.75)' }} />
+                        <div className="absolute" style={{ left: '50%', top: -2, width: 1.5, height: 7, backgroundColor: 'rgba(255,255,255,0.8)' }} />
+                      </div>
+                      <span className="block text-[11px] mt-1 truncate" style={{ color: toHalf > 0 ? '#FF6B5E' : '#d4d4d8' }}>
+                        {toHalf > 0 ? `${c === 'steps' ? k(toHalf) : toHalf} to halfway` : 'Halfway ✓'}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           );
@@ -3717,8 +3716,10 @@ export default function ProfilePage(props) {
 
             {extra}
 
+            {isShield && <ShieldLadder />}
+
             {/* Details */}
-            <div className="space-y-3 mb-5">
+            <div className="space-y-3 mb-5" style={{ display: details.length ? undefined : 'none' }}>
               {details.map((d, i) => (
                 <div key={i} className="flex gap-3">
                   <div

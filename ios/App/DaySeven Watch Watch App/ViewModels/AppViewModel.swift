@@ -96,6 +96,8 @@ class AppViewModel: ObservableObject {
     init() {
         // Give PhoneConnectivityService access to WorkoutManager for remote commands
         phoneService.workoutManager = workoutManager
+        // A workout recovered after a crash, before this view model existed
+        workoutManager.adoptRecoveredSessionIfAny()
 
         // Forward authService changes to trigger view updates
         authService.objectWillChange
@@ -607,6 +609,40 @@ class AppViewModel: ObservableObject {
         pushDataToWidget()
     }
 
+    // MARK: - Sign Out
+
+    /// Signs out and forgets everything that belonged to the account. The offline queue
+    /// would otherwise be flushed into whoever signs in next, the complications kept showing
+    /// this user's rings and streak, and the next sign-in briefly showed this user's data.
+    func signOut() {
+        authService.signOut()
+        guard authService.currentUser == nil else { return }
+
+        OfflineQueueManager.shared.clearAll()
+        SharedDefaults.clearUserData()
+        WidgetCenter.shared.reloadAllTimelines()
+        celebrationManager.reset()
+
+        hasServerState = false
+        activities = []
+        goals = .defaults
+        streaks = .defaults
+        injuryModeActive = false
+        injuryFrozenCats = []
+        loadedWeekCelebrations = [:]
+        personalRecords = .defaults
+        weeklyProgress = .empty
+        weeklyStats = WeeklyStats(totalWorkouts: 0, totalCalories: 0, totalMiles: 0, strengthCount: 0, cardioCount: 0, recoveryCount: 0)
+        activitiesVersion += 1
+        lastKnownActivityCount = 0
+        lastLoadTime = .distantPast
+        lastSaveTime = .distantPast
+        lastWidgetReload = .distantPast
+        loadRetryCount = 0
+        errorMessage = nil
+        print("[AppViewModel] Signed out — cleared the offline queue, complication data and loaded state")
+    }
+
     // MARK: - Offline Queue Flush
 
     /// Retries the writes that were queued due to network failures: new activities, detail
@@ -733,9 +769,12 @@ class AppViewModel: ObservableObject {
             let wasAllMet = oldProgress.allGoalsMet
 
             if liftsDropped || cardioDropped || recoveryDropped {
-                if liftsDropped { streaks.lifts = max(0, streaks.lifts - 1) }
-                if cardioDropped { streaks.cardio = max(0, streaks.cardio - 1) }
-                if recoveryDropped { streaks.recovery = max(0, streaks.recovery - 1) }
+                // Same injury filter as the save: a frozen category's streak is held by the
+                // phone, so the watch neither advances nor lowers it.
+                let injFrozen = injuryModeActive ? injuryFrozenCats : []
+                if liftsDropped && !injFrozen.contains("lifts") { streaks.lifts = max(0, streaks.lifts - 1) }
+                if cardioDropped && !injFrozen.contains("cardio") { streaks.cardio = max(0, streaks.cardio - 1) }
+                if recoveryDropped && !injFrozen.contains("recovery") { streaks.recovery = max(0, streaks.recovery - 1) }
 
                 // Build weekCelebrations clearing the flags for dropped categories
                 let weekKey = currentWeekKey()
@@ -955,7 +994,7 @@ class AppViewModel: ObservableObject {
     private var hasServerState = false
 
     private func pushDataToWidget() {
-        guard hasServerState else { return }
+        guard hasServerState, authService.currentUser != nil else { return }
         // Recompute for the week as it is now. weeklyProgress is only refreshed when the
         // activities change, so the first steps delivery after Sunday midnight wrote last
         // week's counts stamped as the new week, and the complication showed them as done.

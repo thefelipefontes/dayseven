@@ -508,6 +508,14 @@ final class PhoneConnectivityService: NSObject, ObservableObject, WCSessionDeleg
             return
         }
 
+        // Signed out, the watch shows the sign-in screen: the workout would run with no
+        // screen and no End button. The error sends the phone to its own workout instead.
+        guard Auth.auth().currentUser != nil else {
+            print("[PhoneConnect] startWorkout refused: not signed in on the watch")
+            replyHandler(["error": "Not signed in on Apple Watch"])
+            return
+        }
+
         let strengthType = message["strengthType"] as? String
         let subtype = message["subtype"] as? String
         let focusAreas = message["focusAreas"] as? [String] ?? (message["focusArea"] as? String).map { [$0] }

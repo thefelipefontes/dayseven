@@ -229,7 +229,7 @@ struct ActiveWorkoutView: View {
 
             // Elapsed time — massive white timer
             // When watch dims (always-on), show seconds only (no centiseconds)
-            Text(isLuminanceReduced ? formatElapsedTime(wm.elapsedSeconds) : formatElapsedTimePrecise(wm.elapsedTime))
+            ElapsedClockText(workoutMgr: wm, isLuminanceReduced: isLuminanceReduced)
                 .font(.system(size: 70, weight: .bold, design: .monospaced))
                 .foregroundColor(.white)
                 .minimumScaleFactor(0.4)
@@ -386,7 +386,7 @@ struct ActiveWorkoutView: View {
                 Spacer()
 
                 // Big elapsed time — white, slightly smaller for recovery
-                Text(isLuminanceReduced ? formatElapsedTime(wm.elapsedSeconds) : formatElapsedTimePrecise(wm.elapsedTime))
+                ElapsedClockText(workoutMgr: wm, isLuminanceReduced: isLuminanceReduced)
                     .font(.system(size: 38, weight: .bold, design: .monospaced))
                     .foregroundColor(.white)
                     .minimumScaleFactor(0.5)
@@ -536,6 +536,27 @@ struct ActiveWorkoutView: View {
             showSummary = true
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+}
+
+// MARK: - Elapsed Clock
+
+/// The workout clock, drawn from wall-clock time. Hundredths at 30fps while the screen is
+/// lit and the workout is running; whole seconds once a second when the screen dims or the
+/// workout is paused. SwiftUI doesn't draw it at all while the app is in the background.
+private struct ElapsedClockText: View {
+    let workoutMgr: WorkoutManager
+    let isLuminanceReduced: Bool
+
+    private var interval: TimeInterval {
+        isLuminanceReduced || workoutMgr.isPaused ? 1.0 : 1.0 / 30.0
+    }
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: interval)) { context in
+            let elapsed = workoutMgr.activeElapsed(at: context.date)
+            Text(isLuminanceReduced ? formatElapsedTime(Int(elapsed)) : formatElapsedTimePrecise(elapsed))
         }
     }
 }

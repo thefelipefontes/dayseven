@@ -1,5 +1,6 @@
 import SwiftUI
 import FirebaseCore
+import FirebaseAuth
 import HealthKit
 import WatchKit
 
@@ -17,6 +18,34 @@ class ExtensionDelegate: NSObject, WKApplicationDelegate {
         print("[ExtDelegate] applicationDidFinishLaunching — watch app launched")
         // Haptic on launch so we know the delegate is wired up
         WKInterfaceDevice.current().play(.click)
+    }
+
+    /// watchOS relaunches the app here when it died with a workout session running. The
+    /// session and everything its builder collected survive the crash; without recovering
+    /// them the workout kept running with no app to end it, and was never saved.
+    func handleActiveWorkoutRecovery() {
+        print("[ExtDelegate] handleActiveWorkoutRecovery — relaunched with a workout running")
+        Task { @MainActor in
+            let recovered: HKWorkoutSession?
+            do {
+                recovered = try await HKHealthStore().recoverActiveWorkoutSession()
+            } catch {
+                print("[ExtDelegate] recoverActiveWorkoutSession failed: \(error.localizedDescription)")
+                return
+            }
+            guard let session = recovered else {
+                print("[ExtDelegate] No workout session to recover")
+                return
+            }
+            // The view model (and its WorkoutManager) is built with the first scene, which
+            // may not exist yet on a background relaunch. It adopts the session then.
+            if let wm = PhoneConnectivityService.shared.workoutManager {
+                await wm.recoverWorkout(session)
+            } else {
+                print("[ExtDelegate] WorkoutManager not built yet — it adopts the session when it is")
+                WorkoutManager.recoveredSessionAwaitingManager = session
+            }
+        }
     }
 
     func handle(_ workoutConfiguration: HKWorkoutConfiguration) {
@@ -60,6 +89,15 @@ class ExtensionDelegate: NSObject, WKApplicationDelegate {
             }
             guard let wm = wm else {
                 print("[ExtDelegate] WorkoutManager still not available after 5s, giving up")
+                WKInterfaceDevice.current().play(.failure)
+                return
+            }
+            // Signed out, the watch shows the sign-in screen, so a workout started here ran
+            // with no screen and no End button, and nobody to save it for. The phone has
+            // already started its own workout (it only wakes the watch after its message
+            // failed), so it just keeps that one.
+            guard Auth.auth().currentUser != nil else {
+                print("[ExtDelegate] Not signed in on the watch — not starting the phone's workout")
                 WKInterfaceDevice.current().play(.failure)
                 return
             }

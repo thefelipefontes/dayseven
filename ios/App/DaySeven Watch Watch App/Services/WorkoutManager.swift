@@ -97,12 +97,13 @@ class WorkoutManager: NSObject, ObservableObject {
     /// Used to block UI interaction and show loading state.
     @Published var isEnding = false
 
-    // Workout metadata — set by ActiveWorkoutView at start, read by summary overlay in RootView
-    @Published var summaryActivityType: String = ""
-    @Published var summaryStrengthType: String? = nil
-    @Published var summarySubtype: String? = nil
-    @Published var summaryFocusAreas: [String]? = nil
-    @Published var summaryCountToward: String? = nil
+    // Workout metadata — set by ActiveWorkoutView at start, read by summary overlay in RootView.
+    // Saved with the running workout so a relaunch after a crash saves it as the same type.
+    @Published var summaryActivityType: String = "" { didSet { saveRecoveryInfoIfActive() } }
+    @Published var summaryStrengthType: String? = nil { didSet { saveRecoveryInfoIfActive() } }
+    @Published var summarySubtype: String? = nil { didSet { saveRecoveryInfoIfActive() } }
+    @Published var summaryFocusAreas: [String]? = nil { didSet { saveRecoveryInfoIfActive() } }
+    @Published var summaryCountToward: String? = nil { didSet { saveRecoveryInfoIfActive() } }
 
     // Heart rate zone tracking
     @Published var currentZone: HeartRateZone = .recovery
@@ -151,8 +152,10 @@ class WorkoutManager: NSObject, ObservableObject {
     private var routeBuilder: HKWorkoutRouteBuilder?
     private var isOutdoorWorkout: Bool = false
 
-    // Timer — use a display-link style timer that reads wall-clock time
-    // so elapsed time stays accurate even if watchOS throttles the timer
+    // Timer — reads wall-clock time so elapsed time stays accurate even if
+    // watchOS throttles it. It ticks once a second; the on-screen clock's
+    // hundredths come from activeElapsed(at:) in a TimelineView, which only runs
+    // fast while the screen is lit.
     private var timer: Timer?
     private var activeStartDate: Date?
     private var zoneStartDate: Date?
@@ -266,12 +269,26 @@ class WorkoutManager: NSObject, ObservableObject {
         let now = Date()
         startDate = now
 
-        // Clear any previous result and reset metrics
+        // Clear any previous result and reset metrics. Saved recovery info belongs to an
+        // earlier workout until this one is running.
         lastResult = nil
         resetMetrics()
+        clearRecoveryInfo()
 
         session.startActivity(with: now)
-        try await builder.beginCollection(at: now)
+        do {
+            try await builder.beginCollection(at: now)
+        } catch {
+            // The session is already running. Left alone it kept running with nothing on
+            // screen to end it (isActive never turned true), holding the heart-rate sensor.
+            print("[WorkoutManager] beginCollection failed — ending the session: \(error.localizedDescription)")
+            session.end()
+            builder.discardWorkout()
+            self.session = nil
+            self.builder = nil
+            startDate = nil
+            throw WorkoutError.startFailed(error.localizedDescription)
+        }
 
         // Also try enabling distance AFTER beginCollection as a belt-and-suspenders approach
         if activityType == .walking || activityType == .running || activityType == .hiking {
@@ -304,6 +321,174 @@ class WorkoutManager: NSObject, ObservableObject {
         activeStartDate = now
         zoneStartDate = now
         startTimer()
+        saveRecoveryInfoIfActive()
+    }
+
+    // MARK: - Crash Recovery
+
+    /// What the app knows about the running workout that HealthKit doesn't keep: how
+    /// DaySeven will save it, and whether it tracks a route. Written while a workout runs,
+    /// read back when watchOS relaunches the app after a crash to hand the session back.
+    private struct RecoveryInfo: Codable {
+        var activityType: String
+        var strengthType: String?
+        var subtype: String?
+        var focusAreas: [String]?
+        var countToward: String?
+        var isOutdoor: Bool
+        var distanceUnit: String
+    }
+
+    private static let recoveryInfoKey = "activeWorkoutRecoveryInfo"
+
+    private func saveRecoveryInfoIfActive() {
+        guard isActive, session != nil else { return }
+        let info = RecoveryInfo(
+            activityType: summaryActivityType,
+            strengthType: summaryStrengthType,
+            subtype: summarySubtype,
+            focusAreas: summaryFocusAreas,
+            countToward: summaryCountToward,
+            isOutdoor: isOutdoorWorkout,
+            distanceUnit: workoutDistanceUnit
+        )
+        if let data = try? JSONEncoder().encode(info) {
+            UserDefaults.standard.set(data, forKey: Self.recoveryInfoKey)
+        }
+    }
+
+    private func clearRecoveryInfo() {
+        UserDefaults.standard.removeObject(forKey: Self.recoveryInfoKey)
+    }
+
+    private func loadRecoveryInfo() -> RecoveryInfo? {
+        guard let data = UserDefaults.standard.data(forKey: Self.recoveryInfoKey) else { return nil }
+        return try? JSONDecoder().decode(RecoveryInfo.self, from: data)
+    }
+
+    /// A session watchOS handed back before the app had built its WorkoutManager (the
+    /// view model is created with the first scene). The first manager to exist adopts it.
+    static var recoveredSessionAwaitingManager: HKWorkoutSession?
+
+    /// Takes over a session recovered before this manager existed, if there is one.
+    func adoptRecoveredSessionIfAny() {
+        guard let recovered = Self.recoveredSessionAwaitingManager else { return }
+        Self.recoveredSessionAwaitingManager = nil
+        Task { await recoverWorkout(recovered) }
+    }
+
+    /// Re-attaches to the workout session that was running when the app died. watchOS keeps
+    /// the session and its builder's data alive across the crash; the app only has to take
+    /// them back, give the builder a new data source and rebuild its own state from them.
+    func recoverWorkout(_ recovered: HKWorkoutSession) async {
+        guard !isActive, session == nil else {
+            print("[WorkoutManager] Recovery skipped — a workout is already running here")
+            return
+        }
+        let recoveredBuilder = recovered.associatedWorkoutBuilder()
+        let info = loadRecoveryInfo()
+        print("[WorkoutManager] Recovering workout: state \(recovered.state.rawValue), builder start \(recoveredBuilder.startDate.map { "\($0)" } ?? "none"), saved info \(info != nil)")
+
+        // Collection never began (the app died between startActivity and beginCollection),
+        // so there is nothing to save. End it rather than leave it running unseen.
+        guard let start = recoveredBuilder.startDate else {
+            recovered.end()
+            recoveredBuilder.discardWorkout()
+            clearRecoveryInfo()
+            return
+        }
+
+        session = recovered
+        builder = recoveredBuilder
+        recovered.delegate = self
+        recoveredBuilder.delegate = self
+
+        // The builder comes back without a data source, and without one it stops collecting.
+        let config = recovered.workoutConfiguration
+        let dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: config)
+        switch config.activityType {
+        case .walking, .running, .hiking:
+            dataSource.enableCollection(for: HKQuantityType(.distanceWalkingRunning), predicate: nil)
+        case .cycling where config.locationType != .indoor:
+            dataSource.enableCollection(for: HKQuantityType(.distanceCycling), predicate: nil)
+        case .swimming:
+            dataSource.enableCollection(for: HKQuantityType(.distanceSwimming), predicate: nil)
+        default:
+            break
+        }
+        recoveredBuilder.dataSource = dataSource
+
+        workoutActivityType = config.activityType
+        startDate = start
+        lastResult = nil
+        resetMetrics()
+
+        let fallback = ActivityTypes.appActivity(for: config.activityType)
+        summaryActivityType = info?.activityType ?? fallback.type
+        summaryStrengthType = info?.strengthType ?? fallback.strengthType
+        summarySubtype = info?.subtype
+        summaryFocusAreas = info?.focusAreas
+        summaryCountToward = info?.countToward ?? fallback.countToward
+        if let unit = info?.distanceUnit { workoutDistanceUnit = unit }
+
+        // Everything collected before the crash is still in the builder
+        let now = Date()
+        let hrUnit = HKUnit.count().unitDivided(by: .minute())
+        let hrStats = recoveredBuilder.statistics(for: HKQuantityType(.heartRate))
+        heartRate = hrStats?.mostRecentQuantity()?.doubleValue(for: hrUnit) ?? 0
+        averageHeartRate = hrStats?.averageQuantity()?.doubleValue(for: hrUnit) ?? 0
+        maxHeartRate = hrStats?.maximumQuantity()?.doubleValue(for: hrUnit) ?? 0
+        activeCalories = recoveredBuilder.statistics(for: HKQuantityType(.activeEnergyBurned))?
+            .sumQuantity()?.doubleValue(for: .kilocalorie()) ?? 0
+        for type in [HKQuantityType(.distanceWalkingRunning), HKQuantityType(.distanceCycling), HKQuantityType(.distanceSwimming)] {
+            if let meters = recoveredBuilder.statistics(for: type)?.sumQuantity()?.doubleValue(for: .meter()), meters > 0 {
+                distance = meters
+            }
+        }
+        // Splits already passed were announced before the crash
+        let metersPerUnit = workoutDistanceUnit == "km" ? metersPerKm : metersPerMile
+        lastSplitAnnounced = Int((distance / metersPerUnit).rounded(.down))
+
+        // The builder's elapsed time already leaves out paused time. Whatever else has passed
+        // since the start was paused; a pause still going counts up to now, and resume() or
+        // endWorkout() adds the rest from lastPauseDate.
+        let activeSeconds = recoveredBuilder.elapsedTime(at: now)
+        accumulatedPauseTime = max(0, now.timeIntervalSince(start) - activeSeconds)
+        elapsedTime = activeSeconds
+        elapsedSeconds = Int(activeSeconds)
+        lastSplitElapsedAt = activeSeconds
+        activeStartDate = now
+        zoneStartDate = now
+
+        // The route recorded before the crash is lost with the old route builder. A new one
+        // keeps the rest of the route.
+        if info?.isOutdoor == true {
+            isOutdoorWorkout = true
+            routeBuilder = HKWorkoutRouteBuilder(healthStore: healthStore, device: .local())
+            startLocationCollection()
+        }
+
+        isActive = true
+        if recovered.state == .paused {
+            isPaused = true
+            lastPauseDate = now
+        } else {
+            isPaused = false
+            startTimer()
+        }
+        saveRecoveryInfoIfActive()
+        print("[WorkoutManager] Recovered \(summaryActivityType): \(Int(activeSeconds))s active, paused \(isPaused)")
+
+        // A session that had already been stopped only needs finishing. Ending it here
+        // publishes the result, and the summary saves it like any other workout.
+        if recovered.state == .stopped || recovered.state == .ended {
+            do {
+                _ = try await endWorkout()
+            } catch {
+                print("[WorkoutManager] Could not finish the recovered workout: \(error.localizedDescription)")
+                cancelWorkout()
+            }
+        }
     }
 
     // MARK: - End Workout
@@ -338,7 +523,7 @@ class WorkoutManager: NSObject, ObservableObject {
         // Capture all metric values NOW, before the slow HealthKit async calls,
         // so they can't be lost if something goes wrong.
         let capturedCalories = Int(activeCalories)
-        let capturedAvgHr = heartRateSamples.isEmpty ? 0 : Int(averageHeartRate)
+        let capturedAvgHr = Int(averageHeartRate)
         let capturedMaxHr = Int(maxHeartRate)
         let capturedDistance = distance / 1609.34
         // Active time only — exclude paused intervals so pace and total time
@@ -397,6 +582,7 @@ class WorkoutManager: NSObject, ObservableObject {
         self.lastResult = result
         isActive = false
         isEnding = false
+        clearRecoveryInfo()
 
         // Clean up
         self.session = nil
@@ -422,6 +608,7 @@ class WorkoutManager: NSObject, ObservableObject {
         isPaused = true
         lastPauseDate = Date()
         stopTimer()
+        updateElapsed()
         // Notify phone to update Live Activity
         PhoneConnectivityService.shared.notifyPhoneWorkoutPaused(true, accumulatedPauseTime: accumulatedPauseTime)
     }
@@ -462,6 +649,7 @@ class WorkoutManager: NSObject, ObservableObject {
         activeStartDate = nil
         zoneStartDate = nil
         lastPauseDate = nil
+        clearRecoveryInfo()
         // Clear summary metadata
         summaryActivityType = ""
         summaryStrengthType = nil
@@ -475,9 +663,26 @@ class WorkoutManager: NSObject, ObservableObject {
     // MARK: - Timer
     // Uses wall-clock difference so elapsed time is always accurate,
     // even if watchOS throttles the timer frequency.
+    //
+    // It used to tick 30 times a second for the hundredths on the clock, for the whole
+    // workout: screen dimmed, wrist down, app in the background. Every tick published
+    // elapsedTime, so SwiftUI re-diffed the workout screen at 30Hz for an hour-long run
+    // nobody was looking at. Now it ticks once a second (zone time, the phone's metrics,
+    // splits) and the clock draws itself from activeElapsed(at:).
+
+    /// Active (unpaused) time at `date`. Freezes while paused, because the pause in
+    /// progress counts as paused time up to `date`.
+    func activeElapsed(at date: Date) -> TimeInterval {
+        guard let start = startDate else { return elapsedTime }
+        var paused = accumulatedPauseTime
+        if let pauseStart = lastPauseDate {
+            paused += max(0, date.timeIntervalSince(pauseStart))
+        }
+        return max(0, date.timeIntervalSince(start) - paused)
+    }
 
     private func startTimer() {
-        // Never leave a running timer behind: it would keep firing at 30fps unreferenced
+        // Never leave a running timer behind: it would keep firing unreferenced
         timer?.invalidate()
 
         // Record the reference point so we can compute elapsed on each tick
@@ -485,31 +690,33 @@ class WorkoutManager: NSObject, ObservableObject {
             activeStartDate = Date()
         }
 
-        // ~30 fps for smooth hundredths-of-second display (like Apple Workout app)
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+        updateElapsed()
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let mgr = self else { return }
             Task { @MainActor in
-                guard let start = mgr.startDate else { return }
-                let now = Date()
-                let totalInterval = now.timeIntervalSince(start)
-                let activeInterval = totalInterval - mgr.accumulatedPauseTime
-                mgr.elapsedTime = max(0, activeInterval)
-
-                // Update whole-second counter (only fires @Published when value changes)
-                let newSeconds = Int(mgr.elapsedTime)
-                if newSeconds != mgr.elapsedSeconds {
-                    mgr.elapsedSeconds = newSeconds
-                }
-
-                // Update zone seconds from zone start date
-                if let zs = mgr.zoneStartDate {
-                    mgr.currentZoneSeconds = max(0, Int(now.timeIntervalSince(zs)))
-                }
+                mgr.updateElapsed()
             }
         }
         // Ensure the timer fires even during tracking scroll
         if let timer = timer {
             RunLoop.current.add(timer, forMode: .common)
+        }
+    }
+
+    private func updateElapsed() {
+        guard startDate != nil else { return }
+        let now = Date()
+        elapsedTime = activeElapsed(at: now)
+
+        // Update whole-second counter (only fires @Published when value changes)
+        let newSeconds = Int(elapsedTime)
+        if newSeconds != elapsedSeconds {
+            elapsedSeconds = newSeconds
+        }
+
+        // Update zone seconds from zone start date
+        if let zs = zoneStartDate {
+            currentZoneSeconds = max(0, Int(now.timeIntervalSince(zs)))
         }
     }
 
@@ -595,18 +802,20 @@ class WorkoutManager: NSObject, ObservableObject {
         let crossed = Int(totalUnits.rounded(.down))
         guard crossed > lastSplitAnnounced else { return }
 
-        let splitSeconds = elapsedTime - lastSplitElapsedAt
+        // Exact, not the once-a-second elapsedTime
+        let elapsedNow = activeElapsed(at: Date())
+        let splitSeconds = elapsedNow - lastSplitElapsedAt
         // Guard against zero/negative splits from clock drift or coalesced updates.
         guard splitSeconds > 0 else {
             lastSplitAnnounced = crossed
-            lastSplitElapsedAt = elapsedTime
+            lastSplitElapsedAt = elapsedNow
             return
         }
 
         // Overall pace at this moment: total elapsed / total units covered.
         // Falls back to the split pace itself if we're somehow at zero units
         // (shouldn't happen because crossed >= 1 by the guard above).
-        let overallSecondsPerUnit = totalUnits > 0 ? elapsedTime / totalUnits : splitSeconds
+        let overallSecondsPerUnit = totalUnits > 0 ? elapsedNow / totalUnits : splitSeconds
 
         let split = WorkoutSplit(
             splitNumber: crossed,
@@ -617,7 +826,7 @@ class WorkoutManager: NSObject, ObservableObject {
         )
         latestSplit = split
         lastSplitAnnounced = crossed
-        lastSplitElapsedAt = elapsedTime
+        lastSplitElapsedAt = elapsedNow
 
         // Apple's split haptic is a short distinct ping — `.notification` is the
         // closest single-shot match in the WatchKit catalog.
@@ -677,8 +886,11 @@ extension WorkoutManager: HKLiveWorkoutBuilderDelegate {
                     if let value = statistics?.mostRecentQuantity()?.doubleValue(for: hrUnit) {
                         self.heartRate = value
                         self.heartRateSamples.append(value)
-                        self.averageHeartRate = self.heartRateSamples.reduce(0, +) / Double(self.heartRateSamples.count)
-                        self.maxHeartRate = max(self.maxHeartRate, value)
+                        // The builder's average covers the whole workout, including samples
+                        // from before a crash recovery that heartRateSamples never saw.
+                        self.averageHeartRate = statistics?.averageQuantity()?.doubleValue(for: hrUnit)
+                            ?? self.heartRateSamples.reduce(0, +) / Double(self.heartRateSamples.count)
+                        self.maxHeartRate = max(self.maxHeartRate, statistics?.maximumQuantity()?.doubleValue(for: hrUnit) ?? value)
 
                         // Update heart rate zone
                         let newZone = HeartRateZone.zone(for: value, maxHR: self.estimatedMaxHR)

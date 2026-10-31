@@ -65,21 +65,25 @@ struct DashboardView: View {
                     .lineLimit(1)
             }
 
-            Button {
-                showSignOutAlert = true
-            } label: {
-                Text("Sign Out")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.red.opacity(0.8))
-            }
-            .buttonStyle(.plain)
-            .alert("Sign Out?", isPresented: $showSignOutAlert) {
-                Button("Sign Out", role: .destructive) {
-                    appVM.authService.signOut()
+            // Not during a workout: signed out, the watch shows the sign-in screen and the
+            // workout would keep running with no End button and nobody to save it for.
+            if !appVM.workoutManager.isActive {
+                Button {
+                    showSignOutAlert = true
+                } label: {
+                    Text("Sign Out")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.red.opacity(0.8))
                 }
-                Button("Cancel", role: .cancel) { }
-            } message: {
-                Text("You can sign back in anytime.")
+                .buttonStyle(.plain)
+                .alert("Sign Out?", isPresented: $showSignOutAlert) {
+                    Button("Sign Out", role: .destructive) {
+                        appVM.signOut()
+                    }
+                    Button("Cancel", role: .cancel) { }
+                } message: {
+                    Text("You can sign back in anytime.")
+                }
             }
         }
     }

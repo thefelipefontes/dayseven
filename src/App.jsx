@@ -13291,8 +13291,8 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
           return (
             <div className="mt-3 flex items-center justify-center gap-2 text-[12px]">
               <span>🛡️</span>
-              <span className="font-semibold" style={{ color: '#aaa' }}>Streak held</span>
-              <span className="text-gray-500">{master > 0 ? `· win the week to make it ${master + 1}` : '· your streaks are safe'}</span>
+              <span className="font-semibold" style={{ color: '#aaa' }}>Streak safe</span>
+              <span className="text-gray-500">{master > 0 ? `· win the week to reach ${master + 1} weeks` : '· win the week to start a Winning Streak'}</span>
               {infoButton}
             </div>
           );

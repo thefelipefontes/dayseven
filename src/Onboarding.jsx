@@ -1,5 +1,5 @@
-// Pre-signup onboarding flow: Welcome → Survey → Results → HK pre-screen →
-// Workout Linking → Notification pre-screen. State persists to localStorage
+// Pre-signup onboarding flow: Welcome → Survey → Results → goals → Streak pages →
+// Schedule → HK pre-screen → Workout Linking → Notification pre-screen. State persists to localStorage
 // at every step so a reload mid-flow doesn't wipe answers; the final write
 // to Firestore happens post-signup in finalizeOnboardingFlow.
 
@@ -8,6 +8,9 @@ import { Capacitor } from '@capacitor/core';
 import { fetchHealthKitWorkouts, fetchDailyHealthRange, requestHealthKitAuthorization, getHealthConnectionStatus, openHealthSettings } from './services/healthService';
 import { requestNotificationPermission } from './services/notificationService';
 import WeeklyPlanner from './WeeklyPlanner';
+import ShieldLadder from './components/ShieldLadder';
+import { judgeWeek } from './utils/weekGoals';
+import { SHIELD_MIN_PERCENT } from './utils/streakShield';
 
 // ============================================================================
 // Brand + style helpers
@@ -223,7 +226,7 @@ function Ring({ color, progress, size = 96, stroke = 10, label, count, goal, goa
             {goalOnly ? (
               <span className="font-bold" style={{ color, fontSize: size * 0.35, lineHeight: 1 }}>{goal}</span>
             ) : (
-              <span className="text-white font-bold text-base">{count}<span className="text-gray-500 text-xs font-medium">/{goal}</span></span>
+              <span className="text-white font-bold text-base">{count}{goal !== undefined && <span className="text-gray-500 text-xs font-medium">/{goal}</span>}</span>
             )}
           </div>
         )}
@@ -768,6 +771,153 @@ function DailyTargetsScreen({ weeklyGoals, onUpdateGoals, distanceUnit, onUpdate
         </button>
       </div>
     </div>
+  );
+}
+
+// ============================================================================
+// Streak pages — right after the goals are set, two pages explain how a week
+// counts: win it and the Winning Streak grows; fall short but reach 70% of it,
+// with at least half of each goal, and the Streak Shield holds the streak
+// (utils/streakShield). Both use the goals the person just picked.
+// ============================================================================
+
+const STREAK_CARD = { backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' };
+
+function StreakPage({ page, title, subtitle, cta, onBack, onContinue, children }) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black text-white flex flex-col overflow-hidden">
+      <div className="flex-shrink-0 px-6 pb-2 flex items-center" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)' }}>
+        <button
+          onClick={onBack}
+          className="text-gray-400 flex items-center gap-1 transition-all duration-150 px-2 py-1 rounded-lg -ml-2 mb-3"
+          {...pressProps}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+          <span className="text-sm">Back</span>
+        </button>
+        <div className="ml-auto mb-3 flex items-center gap-1.5">
+          {[1, 2].map((n) => (
+            <span key={n} className="block h-1.5 rounded-full transition-all duration-300" style={{ width: n === page ? 18 : 6, backgroundColor: n === page ? '#fff' : '#333' }} />
+          ))}
+        </div>
+      </div>
+
+      <div className="flex-1 px-6 pb-32 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="max-w-md mx-auto">
+          <h2 className="text-2xl font-bold mb-2">{title}</h2>
+          <p className="text-gray-400 text-[14px] leading-relaxed mb-5">{subtitle}</p>
+          {children}
+        </div>
+      </div>
+
+      <div className="fixed bottom-0 left-0 right-0 p-6 pb-12" style={{ background: 'linear-gradient(to top, #000 80%, transparent)' }}>
+        <button
+          onClick={onContinue}
+          className="w-full py-4 rounded-xl font-bold text-lg transition-all duration-150"
+          style={{ backgroundColor: '#00FF94', color: 'black' }}
+          {...ctaPressProps(true)}
+        >
+          {cta}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function StreakWinScreen({ weeklyGoals, onBack, onContinue }) {
+  const stepsGoal = weekStepsGoalOf(weeklyGoals);
+  return (
+    <StreakPage
+      page={1}
+      title="Win the week"
+      subtitle="Hit all three goals in the same week to win it. Win weeks in a row and your Winning Streak grows."
+      cta="Next"
+      onBack={onBack}
+      onContinue={onContinue}
+    >
+      <div className="rounded-2xl p-4 mb-3" style={STREAK_CARD}>
+        <div className="flex justify-center gap-3">
+          <Ring color={RING_COLORS.strength} progress={1} size={88} stroke={8} label="Strength" count={weeklyGoals.strength} />
+          <Ring color={RING_COLORS.cardio} progress={1} size={88} stroke={8} label="Cardio" count={weeklyGoals.cardio} />
+          <Ring color={RING_COLORS.steps} progress={1} size={88} stroke={8} label="Steps" count={formatStepsK(stepsGoal)} />
+        </div>
+        <p className="text-center text-sm font-semibold mt-4">
+          {weeklyGoals.strength} strength · {weeklyGoals.cardio} cardio · {formatStepsK(stepsGoal)} steps <span className="text-gray-400 font-normal whitespace-nowrap">= week won</span>
+        </p>
+      </div>
+
+      <div className="rounded-2xl p-4 mb-4" style={STREAK_CARD}>
+        <p className="text-sm font-semibold mb-2.5">Your Winning Streak</p>
+        <div className="flex gap-1.5">
+          {[1, 2, 3, 4].map((n) => (
+            <div key={n} className="flex-1 h-11 rounded-lg flex flex-col items-center justify-center gap-0.5" style={{ backgroundColor: 'rgba(0,255,148,0.15)' }}>
+              <span className="text-sm font-bold leading-none" style={{ color: '#00FF94' }}>✓</span>
+              <span className="text-[11px] text-gray-400 leading-none">Week {n}</span>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center justify-between text-xs mt-3">
+          <span className="text-gray-400">Four weeks won in a row</span>
+          <span className="font-bold" style={{ color: '#FFD700' }}>🔥 4 weeks</span>
+        </div>
+      </div>
+
+      {weeklyGoals.recovery > 0 && (
+        <p className="text-xs text-gray-500 leading-relaxed">
+          Recovery is a bonus. It has its own streak, but it doesn't count toward winning the week.
+        </p>
+      )}
+    </StreakPage>
+  );
+}
+
+// A week that holds but isn't won, in the person's own goals: Strength done, Cardio at
+// half (rounded up), Steps at about three quarters. Judged by the app's own week rules
+// so the example can't disagree with what the app will do.
+function streakHoldExample(weeklyGoals) {
+  const stepsGoal = weekStepsGoalOf(weeklyGoals);
+  const counts = { lifts: weeklyGoals.strength, cardio: Math.ceil(weeklyGoals.cardio / 2), recovery: 0 };
+  const weekSteps = Math.round((stepsGoal * 0.76) / 1000) * 1000;
+  const judged = judgeWeek(
+    counts,
+    { lifts: weeklyGoals.strength, cardio: weeklyGoals.cardio, recovery: weeklyGoals.recovery, stepsPerDay: weeklyGoals.stepsPerDay },
+    { weekSteps, required: ['lifts', 'cardio', 'steps'] }
+  );
+  return { counts, weekSteps, stepsGoal, percent: judged.percent };
+}
+
+function StreakShieldScreen({ weeklyGoals, onBack, onContinue }) {
+  const ex = useMemo(() => streakHoldExample(weeklyGoals), [weeklyGoals]);
+  const part = (done, goal) => (goal > 0 ? Math.min(1, done / goal) : 1);
+  return (
+    <StreakPage
+      page={2}
+      title="Your Streak Shield"
+      subtitle={`Some weeks don't go to plan. Get to ${SHIELD_MIN_PERCENT}% of your week and your streak holds instead of resetting.`}
+      cta="Got it"
+      onBack={onBack}
+      onContinue={onContinue}
+    >
+      <div className="rounded-2xl p-4 mb-3" style={STREAK_CARD}>
+        <div className="flex justify-center gap-3">
+          <Ring color={RING_COLORS.strength} progress={part(ex.counts.lifts, weeklyGoals.strength)} size={88} stroke={8} label="Strength" count={ex.counts.lifts} goal={weeklyGoals.strength} />
+          <Ring color={RING_COLORS.cardio} progress={part(ex.counts.cardio, weeklyGoals.cardio)} size={88} stroke={8} label="Cardio" count={ex.counts.cardio} goal={weeklyGoals.cardio} />
+          <Ring color={RING_COLORS.steps} progress={part(ex.weekSteps, ex.stepsGoal)} size={88} stroke={8} label="Steps" count={formatStepsK(ex.weekSteps)} goal={formatStepsK(ex.stepsGoal)} />
+        </div>
+        <div className="relative h-1.5 rounded-full mt-4" style={{ backgroundColor: 'rgba(255,255,255,0.12)' }}>
+          <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${ex.percent}%`, backgroundColor: '#FFD700' }} />
+          <div className="absolute rounded-full bg-white" style={{ left: `${SHIELD_MIN_PERCENT}%`, top: -4, width: 2, height: 14 }} />
+        </div>
+        <div className="flex items-center justify-between text-xs mt-2">
+          <span className="text-gray-400">This week</span>
+          <span className="font-bold">{ex.percent}% <span className="text-gray-400 font-normal">/ {SHIELD_MIN_PERCENT}%</span></span>
+        </div>
+      </div>
+
+      <ShieldLadder />
+    </StreakPage>
   );
 }
 
@@ -1714,8 +1864,28 @@ export default function OnboardingFlow({ onComplete, onSignIn }) {
           onBack={() => goBack('customize')}
           onContinue={() => {
             persistInProgress({ goals: goalsForSave, distanceUnit });
-            goForward('schedule');
+            goForward('streak-win');
           }}
+        />
+      );
+    }
+
+    if (step === 'streak-win' && weeklyGoals) {
+      return (
+        <StreakWinScreen
+          weeklyGoals={weeklyGoals}
+          onBack={() => goBack('daily-targets')}
+          onContinue={() => goForward('streak-shield')}
+        />
+      );
+    }
+
+    if (step === 'streak-shield' && weeklyGoals) {
+      return (
+        <StreakShieldScreen
+          weeklyGoals={weeklyGoals}
+          onBack={() => goBack('streak-win')}
+          onContinue={() => goForward('schedule')}
         />
       );
     }
@@ -1726,7 +1896,7 @@ export default function OnboardingFlow({ onComplete, onSignIn }) {
           goals={goalsForSave}
           initialPlan={weeklyPlan}
           onChange={(wp) => { setWeeklyPlan(wp); persistInProgress({ weeklyPlan: wp }); }}
-          onBack={() => goBack('daily-targets')}
+          onBack={() => goBack('streak-shield')}
           onContinue={() => goForward('hk')}
           onSkip={() => goForward('hk')}
         />

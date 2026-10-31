@@ -11,13 +11,17 @@ const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onCall, HttpsError, onRequest } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const { initializeApp } = require("firebase-admin/app");
-const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const { getFirestore, FieldValue, FieldPath } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
 const { getAuth } = require("firebase-admin/auth");
+const { getStorage } = require("firebase-admin/storage");
+const functionsV1 = require("firebase-functions/v1");
 const jwt = require("jsonwebtoken");
 const http2 = require("http2");
 const { getPlannedCategoriesForToday, buildPlannedReminderMessage } = require("./plannerReminders");
 const { resolveUid, isStale, subscriptionFromEvent, transferUpdates } = require("./subscriptionEvents");
+const { addDays, weekGoalsResolver, usesStepsRule, winningCategories, judgeWeek, canHold } = require("./weekRule");
+const { deleteAccountData } = require("./accountDeletion");
 
 // Initialize Firebase Admin
 initializeApp();
@@ -402,7 +406,7 @@ function getActivityCategoryForGoals(activity) {
 }
 
 // ==========================================
-// WEEK RULE — mirrors src/utils/weekGoals.js (keep in sync)
+// WEEK RULE — weekRule.js mirrors src/utils/weekGoals.js (keep in sync)
 // ==========================================
 //
 // The Winning Streak rule is per user and per week:
@@ -410,14 +414,11 @@ function getActivityCategoryForGoals(activity) {
 //     that predates the steps rule): Strength + Cardio + Recovery
 //   • from that week on: Strength + Cardio + weekly Steps (stepsPerDay × 7), or Strength +
 //     Cardio when the user has no step data in the last four weeks (no Apple Health).
+// Each week is judged against the goals in force that week (goalHistory, pendingGoals).
 // Daily steps come from users/{uid}/dailyHealth, which the app backfills from HealthKit
 // for this week and last week whenever it opens.
 
-const addDaysToDateStr = (dateStr, days) => {
-  const d = new Date(`${dateStr}T12:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().split('T')[0];
-};
+const addDaysToDateStr = addDays;
 
 /** Goal-slot counts; a Circuit / 'lifting+cardio' session fills both, as on the client. */
 function countWeekForGoals(activities) {
@@ -435,47 +436,50 @@ function countWeekForGoals(activities) {
 }
 
 /**
- * Judge the week starting `weekStartStr` (a Sunday, 'YYYY-MM-DD') for a user.
- * @returns {{ counts, steps, stepsGoal, goals, stepsRule, required: string[],
- *             met: {lifts,cardio,recovery,steps}, all: boolean }}
+ * Judge the week starting `weekStartStr` (a Sunday, 'YYYY-MM-DD') for a user, as the app
+ * would (weekRule.judgeWeek). `today` is the user's local date: like the app, whether they
+ * track steps at all is judged from the four weeks up to today.
+ * @returns judgeWeek's result ({ lifts, cardio, recovery, steps, all, required, percent,
+ *          missing, toHalf }) plus { counts, steps, stepsGoal, goals, stepsRule,
+ *          met: {lifts,cardio,recovery,steps} }
  */
-async function judgeUserWeek(userId, userData, weekStartStr) {
-  const g = userData.goals || {};
-  const goals = {
-    lifts: g.liftsPerWeek ?? 3,
-    cardio: g.cardioPerWeek ?? 2,
-    recovery: g.recoveryPerWeek ?? 2,
-    stepsPerDay: g.stepsPerDay ?? 10000,
-  };
+async function judgeUserWeek(userId, userData, weekStartStr, { today = null } = {}) {
   const weekEndStr = addDaysToDateStr(weekStartStr, 6);
+  const asOf = today || weekEndStr;
+  const goals = weekGoalsResolver(userData.goals, userData.goalHistory, userData.pendingGoals)(weekStartStr);
   const counts = countWeekForGoals((userData.activities || []).filter((a) => a.date >= weekStartStr && a.date <= weekEndStr));
-  const stepsRule = !!userData.winningRuleFrom && weekStartStr >= userData.winningRuleFrom;
+  const stepsRule = usesStepsRule(weekStartStr, userData.winningRuleFrom);
 
   let steps = 0;
   let stepsTracked = false;
   if (stepsRule) {
+    const from = addDaysToDateStr(asOf, -27);
     const snap = await db.collection('users').doc(userId).collection('dailyHealth')
-      .where('date', '>=', addDaysToDateStr(weekEndStr, -27)).get();
+      .where('date', '>=', from < weekStartStr ? from : weekStartStr).get();
     snap.forEach((doc) => {
       const d = doc.data() || {};
-      if (!d.date || d.date > weekEndStr) return;
-      if ((d.steps || 0) > 0) stepsTracked = true;
-      if (d.date >= weekStartStr) steps += d.steps || 0;
+      if (!d.date) return;
+      if ((d.steps || 0) > 0 && d.date >= from && d.date <= asOf) stepsTracked = true;
+      if (d.date >= weekStartStr && d.date <= weekEndStr) steps += d.steps || 0;
     });
   }
 
-  const stepsGoal = goals.stepsPerDay * 7;
-  const met = {
-    lifts: counts.lifts >= goals.lifts,
-    cardio: counts.cardio >= goals.cardio,
-    recovery: counts.recovery >= goals.recovery,
-    steps: steps >= stepsGoal,
-  };
-  const required = !stepsRule ? ['lifts', 'cardio', 'recovery'] : stepsTracked ? ['lifts', 'cardio', 'steps'] : ['lifts', 'cardio'];
-  return { counts, steps, stepsGoal, goals, stepsRule, required, met, all: required.every((c) => met[c]) };
+  const required = winningCategories(weekStartStr, { winningRuleFrom: userData.winningRuleFrom, stepsTracked });
+  const judged = judgeWeek(counts, goals, { weekSteps: steps, required });
+  const met = { lifts: judged.lifts, cardio: judged.cardio, recovery: judged.recovery, steps: judged.steps };
+  return { ...judged, counts, steps, stepsGoal: goals.stepsPerDay * 7, goals, stepsRule, met };
 }
 
 const formatStepsK = (n) => `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+
+const GOAL_WORDS = { lifts: 'strength', cardio: 'cardio', recovery: 'recovery', steps: 'steps' };
+
+/** The Winning Streak goals in push copy: 'Strength, cardio and steps', 'Strength and cardio'. */
+function goalsPhrase(required) {
+  const words = required.map((c) => GOAL_WORDS[c]);
+  const text = words.length > 1 ? `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}` : words.join('');
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
 
 /**
  * Helper: Check if current time is within quiet hours (timezone-aware)
@@ -721,6 +725,38 @@ exports.logNotificationOpen = onRequest(async (req, res) => {
 // SOCIAL NOTIFICATIONS
 // ==========================================
 
+// How many social pushes one user can set off for another. Each one follows a client
+// write, so without a cap a reaction taken back and given again, or a request sent and
+// withdrawn, would buzz someone's phone without end. `perKeyMs`: one push per activity in
+// that time, however often the same reaction is redone.
+const PUSH_LIMITS = {
+  friend_request: { max: 3, windowMs: 24 * 60 * 60 * 1000 },
+  reaction: { max: 10, windowMs: 60 * 60 * 1000, perKeyMs: 24 * 60 * 60 * 1000 },
+  comment: { max: 10, windowMs: 60 * 60 * 1000 },
+};
+
+/**
+ * Take one push of `kind` from `fromUid` to `toUid` out of the pair's allowance, or return
+ * false when it's used up. Kept per pair and kind in pushRateLimits/{kind}_{from}_{to}
+ * (server only; the rules give clients no access).
+ */
+async function claimPushSlot(kind, fromUid, toUid, key = null) {
+  const limit = PUSH_LIMITS[kind];
+  const ref = db.collection('pushRateLimits').doc(`${kind}_${fromUid}_${toUid}`);
+  const allowed = await db.runTransaction(async (tx) => {
+    const now = Date.now();
+    const data = (await tx.get(ref)).data() || {};
+    const sent = (data.sent || []).filter((t) => now - t < limit.windowMs);
+    const keys = Object.fromEntries(Object.entries(data.keys || {}).filter(([, t]) => now - t < (limit.perKeyMs || 0)));
+    if (sent.length >= limit.max || (key && keys[key])) return false;
+    if (key) keys[key] = now;
+    tx.set(ref, { kind, fromUid, toUid, sent: [...sent, now], keys, updatedAt: new Date(now).toISOString() });
+    return true;
+  });
+  if (!allowed) console.log(`[claimPushSlot] ${kind} ${fromUid} → ${toUid} over the limit, not sent`);
+  return allowed;
+}
+
 /**
  * Send notification when someone sends a friend request
  * Path: friendRequests/{requestId}
@@ -736,6 +772,7 @@ exports.onFriendRequestCreated = onDocumentCreated(
 
     const prefs = await getUserPreferences(toUid);
     if (!prefs.friendRequests) return;
+    if (!(await claimPushSlot('friend_request', fromUid, toUid))) return;
 
     const fromName = await getUserDisplayName(fromUid);
 
@@ -849,8 +886,14 @@ exports.onReactionCreated = onDocumentCreated(
     // Don't notify yourself
     if (ownerId === reactorId) return;
 
-    const prefs = await getUserPreferences(ownerId);
-    if (!prefs.reactions) return;
+    // Only for an activity the owner really has: a reaction can be written under any id.
+    const owner = await db.collection('users').doc(ownerId).get();
+    if (!owner.exists) return;
+    const activityId = event.params.activityId;
+    if (!(owner.data().activities || []).some((a) => String(a.id) === activityId)) return;
+
+    if (!prefsOf(owner.data()).reactions) return;
+    if (!(await claimPushSlot('reaction', reactorId, ownerId, activityId))) return;
 
     // The name comes from the reactor's profile, never from the client-written reaction.
     const reactorName = await getUserDisplayName(reactorId);
@@ -889,6 +932,7 @@ exports.onCommentCreated = onDocumentCreated(
 
     const prefs = await getUserPreferences(ownerId);
     if (!prefs.comments) return;
+    if (!(await claimPushSlot('comment', commenterId, ownerId))) return;
 
     // The name comes from the commenter's profile, never from the client-written comment.
     const commenterName = await getUserDisplayName(commenterId);
@@ -938,6 +982,8 @@ exports.onReplyCreated = onDocumentCreated(
 
     const prefs = await getUserPreferences(commenterId);
     if (!prefs.comments) return;
+    // Replies share the comments allowance, as they share its setting.
+    if (!(await claimPushSlot('comment', replierId, commenterId))) return;
 
     // The name comes from the replier's profile, never from the client-written reply.
     const replierName = await getUserDisplayName(replierId);
@@ -1008,18 +1054,44 @@ const monthStartBefore = (dateStr) => {
 
 
 /**
- * Streak reminder - runs every day at 8 PM
- * Only reminds users who haven't logged activity in 48+ hours
+ * Did the closed week starting `weekStartStr` keep the Winning Streak going, as the app
+ * judges it? Won, held by the Streak Shield (canHold, or a shield already stored for it),
+ * or frozen by vacation or injury. A held week is still a live streak, never a lost one.
+ */
+async function weekKeptStreak(userId, userData, weekStartStr, today) {
+  if ((userData.vacationMode?.vacationWeeks || []).includes(weekStartStr)) return true;
+  if ((userData.streakShield?.shieldedWeeks || []).includes(weekStartStr)) return true;
+  const week = await judgeUserWeek(userId, userData, weekStartStr, { today });
+  if (week.all || canHold(week)) return true;
+  // Injury holds the streak when it froze a goal that week's rule needed (utils/streaks).
+  const frozen = userData.injuryMode?.frozenWeeks?.[weekStartStr];
+  return Array.isArray(frozen) && (!week.stepsRule || frozen.some((c) => week.required.includes(c)));
+}
+
+/** The user's local 'YYYY-MM-DD' for an ISO timestamp. */
+function localDateOf(iso, timezone) {
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: timezone || 'America/New_York' }).format(new Date(iso));
+  } catch {
+    return new Date(iso).toISOString().split('T')[0];
+  }
+}
+
+/**
+ * Streak reminder ("Missing You"): 8 PM local, after 48 hours with nothing logged, while
+ * the Winning Streak is alive (last week won or held). One per lapse: after a reminder
+ * (lastStreakReminderAt) the next waits until the user has logged something since.
  * Activities are stored as arrays in users/{uid} documents
  */
 exports.sendStreakReminders = onSchedule(
   HOURLY_USER_SCAN, // hourly; fires at 8 PM in each user's local timezone
   async () => {
 
-    // Get users with active streaks who want reminders
+    // Users whose last saved streak was going. The phone saves streaks.master when the app
+    // runs, so it can be out of date; the week itself is judged below.
     const usersSnapshot = await db.collection('users')
       .where('streaks.master', '>', 0)
-      .select(...ACCESS_FIELDS, 'streaks', 'vacationMode', 'injuryMode')
+      .select(...ACCESS_FIELDS, 'streaks', 'vacationMode', 'injuryMode', 'lastStreakReminderAt')
       .get();
 
     await forEachLimited(usersSnapshot.docs, 'sendStreakReminders', async (userDoc) => {
@@ -1030,7 +1102,8 @@ exports.sendStreakReminders = onSchedule(
       if (!hasAppAccess(userData)) return;
 
       // Fire at 8 PM in the USER's local timezone (hourly job, gated per user).
-      const { time: localTime, dateStr: localToday } = getUserLocalTime(userData.notificationPreferences?.timezone);
+      const timezone = userData.notificationPreferences?.timezone;
+      const { time: localTime, dateStr: localToday, dayOfWeek } = getUserLocalTime(timezone);
       if (localTime !== '20:00') return;
 
       // Skip users on vacation or injury mode (streak is frozen — don't nag)
@@ -1042,20 +1115,33 @@ exports.sendStreakReminders = onSchedule(
       // Check if they've logged any activity in the last 48 hours (their local dates)
       // Activities are stored as an array in the user document
       const twoDaysAgoStr = addDaysToDateStr(localToday, -2);
-      const activities = (await readFullUser(userId))?.activities || [];
+      const fullData = await readFullUser(userId);
+      if (!fullData) return;
+      const activities = fullData.activities || [];
       const hasRecentActivity = activities.some(a => a.date >= twoDaysAgoStr);
 
       if (hasRecentActivity) return; // Has recent activity, skip
 
-      await sendNotificationToUser(
+      // Already reminded during this lapse: nothing logged since that reminder's day.
+      if (userData.lastStreakReminderAt) {
+        const remindedOn = localDateOf(userData.lastStreakReminderAt, timezone);
+        if (!activities.some((a) => a.date >= remindedOn)) return;
+      }
+
+      // Only while there's a streak to come back to: the last closed week won or held.
+      const lastWeekStart = addDaysToDateStr(localToday, -dayOfWeek - 7);
+      if (!(await weekKeptStreak(userId, fullData, lastWeekStart, localToday))) return;
+
+      // No week count: the saved one may predate last week's result.
+      const result = await sendNotificationToUser(
         userId,
         'Missing You! 👋',
-        `It's been a couple days. Your ${userData.streaks.master}-week Winning Streak is waiting for you!`,
-        {
-          type: NotificationType.STREAK_REMINDER,
-          streak: userData.streaks.master.toString(),
-        }
+        "It's been a couple days. Your Winning Streak is still alive — one workout keeps it going.",
+        { type: NotificationType.STREAK_REMINDER }
       );
+      if (result.success) {
+        await db.collection('users').doc(userId).update({ lastStreakReminderAt: new Date().toISOString() });
+      }
     });
   }
 );
@@ -1241,7 +1327,7 @@ exports.sendGoalReminder = onSchedule(
       // This week so far, judged by the user's Winning Streak rule (judgeUserWeek).
       const fullData = await readFullUser(userId);
       if (!fullData) return;
-      const week = await judgeUserWeek(userId, fullData, weekStartStr);
+      const week = await judgeUserWeek(userId, fullData, weekStartStr, { today: userToday });
       const { counts, goals } = week;
       const daysLeft = 7 - dayOfWeek; // Days until end of week (Saturday)
 
@@ -1249,9 +1335,7 @@ exports.sendGoalReminder = onSchedule(
         await sendNotificationToUser(
           userId,
           'Week Won Early! 🏆',
-          week.stepsRule
-            ? `Strength, cardio and steps are done with ${daysLeft} days to spare. Everything from here is extra.`
-            : `You've hit all your goals this week with ${daysLeft} days to spare. Amazing!`,
+          `${goalsPhrase(week.required)} are done with ${daysLeft} days to spare. Everything from here is extra.`,
           {
             type: NotificationType.GOAL_REMINDER,
             allGoalsMet: 'true',
@@ -1276,10 +1360,13 @@ exports.sendGoalReminder = onSchedule(
       const sessionsGoal = sessionCats.reduce((n, c) => n + goals[c], 0);
       const sessionsDone = sessionCats.reduce((n, c) => n + Math.min(counts[c], goals[c]), 0);
       const sessionsLeft = sessionCats
-        .filter((c) => !week.met[c])
+        .filter((c) => remainingFor[c] > 0)
         .map((c) => `${remainingFor[c]} ${label[c]}`)
         .join(' + ');
       const stepsLeft = week.required.includes('steps') && !week.met.steps;
+      // Nothing countable left but not won: the original rule with Recovery switched off
+      // (a goal of 0 is never met). There's nothing to ask for.
+      if (!sessionsLeft && !stepsLeft) return;
       const stepsPerDay = Math.ceil(remainingFor.steps / daysLeft / 100) * 100;
       const stepsStr = `${formatStepsK(stepsPerDay)} steps a day`;
 
@@ -1302,8 +1389,8 @@ exports.sendGoalReminder = onSchedule(
           type: NotificationType.GOAL_REMINDER,
           strengthRemaining: remainingFor.lifts.toString(),
           cardioRemaining: remainingFor.cardio.toString(),
-          recoveryRemaining: (week.stepsRule ? 0 : remainingFor.recovery).toString(),
-          stepsRemaining: (week.stepsRule ? remainingFor.steps : 0).toString(),
+          recoveryRemaining: (week.required.includes('recovery') ? remainingFor.recovery : 0).toString(),
+          stepsRemaining: (week.required.includes('steps') ? remainingFor.steps : 0).toString(),
           daysLeft: daysLeft.toString(),
         }
       );
@@ -1374,12 +1461,17 @@ exports.sendWeeklySummary = onSchedule(
 
       // The week that just ended (last Sunday → yesterday), judged by the user's Winning
       // Streak rule (judgeUserWeek) — steps from their start week, recovery before it.
-      const lastWeek = await judgeUserWeek(userId, userData, weekStartStr);
+      const lastWeek = await judgeUserWeek(userId, userData, weekStartStr, { today: localToday });
       const allGoalsMet = lastWeek.all;
       const caloriesLabel = totalCalories >= 1000 ? `${(totalCalories / 1000).toFixed(1)}k` : totalCalories.toString();
-      const weekLine = lastWeek.stepsRule
-        ? `${workouts} workouts, ${formatStepsK(lastWeek.steps)} steps, ${caloriesLabel} cal.`
-        : `${workouts} workouts, ${recovery} recovery sessions, ${caloriesLabel} cal.`;
+      // The third number is whatever the week's Winning Streak needed besides workouts:
+      // steps, recovery under the original rule, or nothing for a user without step data.
+      let weekLine = `${workouts} workouts, ${caloriesLabel} cal.`;
+      if (lastWeek.required.includes('steps')) {
+        weekLine = `${workouts} workouts, ${formatStepsK(lastWeek.steps)} steps, ${caloriesLabel} cal.`;
+      } else if (lastWeek.required.includes('recovery')) {
+        weekLine = `${workouts} workouts, ${recovery} recovery sessions, ${caloriesLabel} cal.`;
+      }
 
       if (totalCount === 0) {
         await sendNotificationToUser(
@@ -1586,6 +1678,14 @@ exports.revenueCatWebhook = onRequest(
       return;
     }
 
+    // Sandbox purchases (TestFlight, App Review, debug builds) say nothing about real
+    // access, and a test run on a real account would overwrite its production state.
+    if (event.environment === 'SANDBOX') {
+      console.log(`[revenueCatWebhook] skipped SANDBOX ${event.type}`);
+      res.status(200).json({ ok: true, skipped: 'sandbox' });
+      return;
+    }
+
     try {
       // TRANSFER names the accounts on both sides and has no app_user_id of its own.
       if (event.type === 'TRANSFER') {
@@ -1668,6 +1768,18 @@ async function applySubscriptionUpdate(uid, event, subscription) {
   });
 }
 
+// How long past its stored expiry an entitlement still counts, for a renewal webhook that
+// arrives late. Past that, a missed EXPIRATION no longer reads as access for good.
+const EXPIRY_SLACK_MS = 24 * 60 * 60 * 1000;
+
+/** Is the stored `subscription` entitled right now? No expiry (lifetime, transfer) is open-ended. */
+function subscriptionActive(sub, now = Date.now()) {
+  if (sub?.entitlementActive !== true) return false;
+  if (!sub.expiresAt) return true;
+  const expiresMs = new Date(sub.expiresAt).getTime();
+  return isNaN(expiresMs) || expiresMs + EXPIRY_SLACK_MS > now;
+}
+
 /**
  * Helper: server-side mirror of the app's "full access" gate. A user can use
  * the app (and therefore log workouts) when they hold an active entitlement,
@@ -1676,7 +1788,7 @@ async function applySubscriptionUpdate(uid, event, subscription) {
 function hasAppAccess(userData) {
   if (userData.subscriptionRequired !== true) return true; // grandfathered
   if (userData.forceProTier === true) return true; // comped
-  return userData.subscription?.entitlementActive === true;
+  return subscriptionActive(userData.subscription);
 }
 
 /**
@@ -1844,6 +1956,9 @@ exports.sendWinbackReminders = onSchedule(
       if (hasAppAccess(userData)) return;       // subscribed/comped — not a target
       if (!userData.username) return;            // still mid-onboarding
       if (userData.demoMode === true) return;
+      // State recorded from a sandbox purchase (before those were skipped) belongs to a
+      // tester: their access comes from TestFlight, not the store.
+      if (userData.subscription?.environment === 'SANDBOX') return;
 
       // Fire at 6 PM in the USER's local timezone (hourly job, gated per user).
       const { time: localTime } = getUserLocalTime(userData.notificationPreferences?.timezone);
@@ -1870,7 +1985,7 @@ exports.sendWinbackReminders = onSchedule(
       // Stage clock starts when they LOST access (lapsed subs/trials) — not raw
       // account age — so a lapsed trial gets the full day 1/3/7 sequence from the
       // lapse. Never-subscribed users have no expiry, so they fall back to signup.
-      const clockStart = (sub && sub.entitlementActive === false && sub.expiresAt) ? sub.expiresAt : userData.createdAt;
+      const clockStart = (sub && !subscriptionActive(sub) && sub.expiresAt) ? sub.expiresAt : userData.createdAt;
       const age = daysSince(clockStart);
       const due = [...stages].reverse().find((s) => age >= s.minDays && s.stage > sentStage);
       if (!due) return;
@@ -1947,7 +2062,7 @@ exports.sendActivationReminders = onSchedule(
         // This calendar week (Sunday start, the user's local dates), judged by the user's
         // Winning Streak rule.
         const weekStartStr = addDaysToDateStr(localToday, -dayOfWeek);
-        const week = await judgeUserWeek(userId, userData, weekStartStr);
+        const week = await judgeUserWeek(userId, userData, weekStartStr, { today: localToday });
         if (!week.all) {
           // Workouts = strength + cardio sessions; recovery is a bonus, not a workout toward the week.
           const completed = week.counts.lifts + week.counts.cardio;
@@ -2041,15 +2156,27 @@ exports.onStreakMilestone = onDocumentUpdated(
     // Don't fire celebratory milestones while the streak is paused for injury.
     if (after.injuryMode?.isActive) return;
 
-    // streaks.master is written by both the phone and the Watch and gets
-    // recalculated (e.g. goal-history fixes), so it can dip and recover. A
-    // genuine repeat of an N-week milestone needs at least N weeks of a fresh
-    // streak, so anything sooner is a flip-flop — don't send it twice.
-    const lastSentAt = after.streakMilestoneNotifiedAt?.[hitMilestone];
-    if (lastSentAt && Date.now() - new Date(lastSentAt).getTime() < hitMilestone * 7 * 24 * 60 * 60 * 1000) return;
+    if (!prefsOf(after).streakMilestones) return;
 
-    const prefs = await getUserPreferences(userId);
-    if (!prefs.streakMilestones) return;
+    // streaks.master is written by the phone (the Watch leaves it alone) and gets
+    // recalculated (e.g. goal-history fixes), so it can dip and recover. A genuine
+    // repeat of an N-week milestone needs at least N weeks of a fresh streak, so
+    // anything sooner is a flip-flop — don't send it twice.
+    //
+    // Claimed in a transaction before sending: two writes close together (or a retried
+    // trigger) each see the same snapshot, so a check against it lets both through.
+    const userRef = db.collection('users').doc(userId);
+    const stampPath = new FieldPath('streakMilestoneNotifiedAt', String(hitMilestone));
+    const claimedAt = new Date().toISOString();
+    const claimed = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(userRef);
+      if (!snap.exists) return false;
+      const lastSentAt = snap.data().streakMilestoneNotifiedAt?.[hitMilestone];
+      if (lastSentAt && Date.now() - new Date(lastSentAt).getTime() < hitMilestone * 7 * 24 * 60 * 60 * 1000) return false;
+      tx.update(userRef, stampPath, claimedAt);
+      return true;
+    });
+    if (!claimed) return;
 
     const messages = {
       5: '5 weeks strong! You\'re building a habit. 💪',
@@ -2079,10 +2206,15 @@ exports.onStreakMilestone = onDocumentUpdated(
         streak: newStreak.toString(),
       }
     );
-    if (result.success) {
-      await db.collection('users').doc(userId).set({
-        streakMilestoneNotifiedAt: { [hitMilestone]: new Date().toISOString() },
-      }, { merge: true });
+    if (!result.success) {
+      // Not delivered (quiet hours, no device): give the claim back so a later crossing
+      // can still celebrate it, unless another run has claimed it since.
+      await db.runTransaction(async (tx) => {
+        const snap = await tx.get(userRef);
+        if (snap.exists && snap.data().streakMilestoneNotifiedAt?.[hitMilestone] === claimedAt) {
+          tx.update(userRef, stampPath, FieldValue.delete());
+        }
+      });
     }
   }
 );
@@ -2162,8 +2294,8 @@ exports.onFriendActivityLogged = onDocumentUpdated(
 
 /**
  * Notify user when the week is won — weekCelebrations.master, set by the phone under the
- * user's Winning Streak rule (Strength + Cardio + Steps from their winningRuleFrom week;
- * Strength + Cardio + Recovery on app versions before it).
+ * user's Winning Streak rule (Strength + Cardio + Steps from their winningRuleFrom week, or
+ * Strength + Cardio without step data; Strength + Cardio + Recovery before it).
  *
  * Detection strategy: watch for weekCelebrations.master going from false → true.
  * Both the phone and watch set this flag when all goals are met.
@@ -2225,14 +2357,16 @@ exports.onGoalAchieved = onDocumentUpdated(
     // Mark timestamp before sending (prevents race between duplicate triggers)
     await userRef.set({ lastGoalAchievedNotifAt: new Date().toISOString() }, { merge: true });
 
-    // The phone sets weekCelebrations.master when the week is won under the user's rule
-    // (steps from their winningRuleFrom week; recovery on app versions before it).
+    // The phone sets weekCelebrations.master when the week is won under the user's rule.
+    // Name the goals that rule needed that week: steps only for someone with step data,
+    // recovery only before their winningRuleFrom week.
+    const { dateStr: localToday, dayOfWeek } = getUserLocalTime(after.notificationPreferences?.timezone);
+    const weekKey = after.weekCelebrations.week || addDaysToDateStr(localToday, -dayOfWeek);
+    const { required } = await judgeUserWeek(userId, after, weekKey, { today: localToday });
     await sendNotificationToUser(
       userId,
       'Week Won! 🏆',
-      after.winningRuleFrom
-        ? 'Strength, cardio and steps — done. Your winning streak just grew.'
-        : 'You\'ve hit all your strength, cardio, and recovery goals this week!',
+      `${goalsPhrase(required)} — done. Your winning streak just grew.`,
       {
         type: NotificationType.GOAL_ACHIEVED,
       }
@@ -2330,6 +2464,57 @@ exports.protectUserFields = onDocumentWritten(
     }
   }
 );
+
+// ==========================================
+// ACCOUNT DELETION
+// ==========================================
+
+// How recent a sign-in deleting an account needs: the window Firebase gives its own
+// client-side account delete before it asks the user to sign in again.
+const RECENT_SIGN_IN_MS = 5 * 60 * 1000;
+
+/** The Storage bucket to clean up, or null in the emulator without a Storage emulator. */
+function accountBucket() {
+  if (process.env.FUNCTIONS_EMULATOR === 'true' && !process.env.FIREBASE_STORAGE_EMULATOR_HOST) return null;
+  return getStorage().bucket();
+}
+
+/**
+ * Delete the caller's account: all its data everywhere (accountDeletion.js), then the
+ * Auth account last, so a failure part-way leaves an account that can sign in and retry.
+ * Needs a sign-in from the last few minutes; otherwise fails with 'requires-recent-login'
+ * and the app signs the user in again first.
+ */
+exports.deleteAccount = onCall({ timeoutSeconds: 300, memory: '512MiB' }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Sign-in required.');
+  }
+  const uid = request.auth.uid;
+  const authTimeMs = Number(request.auth.token?.auth_time || 0) * 1000;
+  if (Date.now() - authTimeMs > RECENT_SIGN_IN_MS) {
+    throw new HttpsError('failed-precondition', 'requires-recent-login');
+  }
+
+  const summary = await deleteAccountData({ db, bucket: accountBucket(), uid });
+  try {
+    await getAuth().deleteUser(uid);
+  } catch (err) {
+    if (err.code !== 'auth/user-not-found') throw err;
+  }
+  console.log(`[deleteAccount] deleted ${uid}`, summary);
+  return { deleted: true };
+});
+
+/**
+ * Clean up after any Auth account deletion: app versions up to 1.8.4 delete part of the
+ * data themselves and then the Auth account, and an account can also go from the console
+ * or scripts/deleteUser.js. After deleteAccount this finds nothing left.
+ */
+exports.onAuthUserDeleted = functionsV1.runWith({ timeoutSeconds: 300, memory: '512MB' })
+  .auth.user().onDelete(async (user) => {
+    const summary = await deleteAccountData({ db, bucket: accountBucket(), uid: user.uid });
+    console.log(`[onAuthUserDeleted] cleaned up ${user.uid}`, summary);
+  });
 
 // ==========================================
 // CHALLENGES
@@ -3289,6 +3474,46 @@ exports.applyChallengeIntent = onCall(async (request) => {
   }
 
   return { results };
+});
+
+/**
+ * Completed challenges won by the given users, for the friends feed's "Completed [sender]'s
+ * challenge" pill (getCompletedChallengesByWinners in the app). The rules keep a completed
+ * challenge to its participants and their friends, and a query can't check friendship, so
+ * the feed asks here: each uid must be the caller or have the caller on their friends
+ * list. Returns only the fields the pill reads.
+ */
+exports.completedChallengesForFeed = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Sign-in required.');
+  }
+  const caller = request.auth.uid;
+  const asked = Array.isArray(request.data?.uids) ? request.data.uids : [];
+  const uids = [...new Set(asked.filter((u) => typeof u === 'string' && u))].slice(0, 30);
+
+  const visible = await Promise.all(uids.map(async (uid) => uid === caller
+    || (await db.collection('users').doc(uid).collection('friends').doc(caller).get()).exists));
+  const snaps = await Promise.all(uids.filter((_, i) => visible[i]).map((uid) => db.collection('challenges')
+    .where('status', '==', 'completed').where('winnerUids', 'array-contains', uid).get()));
+
+  const byId = new Map();
+  snaps.forEach((snap) => snap.docs.forEach((d) => byId.set(d.id, d.data())));
+  const challenges = [...byId.entries()].map(([id, c]) => ({
+    id,
+    challengerUid: c.challengerUid || null,
+    challengerName: c.challengerName || '',
+    challengerActivity: { activityId: c.challengerActivity?.activityId || null },
+    requirePhoto: !!c.requirePhoto,
+    participants: Object.fromEntries(Object.entries(c.participants || {}).map(([uid, p]) => [uid, {
+      status: p?.status || null,
+      fulfillingActivityId: p?.fulfillingActivityId || null,
+    }])),
+    // Legacy 1v1 fields (pre-participants schema)
+    friendUid: c.friendUid || null,
+    friendStatus: c.friendStatus || null,
+    fulfillingActivityId: c.fulfillingActivityId || null,
+  }));
+  return { challenges };
 });
 
 exports.backfillChallengeStats = onCall(async (request) => {

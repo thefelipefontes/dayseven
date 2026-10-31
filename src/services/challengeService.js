@@ -29,6 +29,7 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../firebase';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseFirestore } from '@capacitor-firebase/firestore';
+import { callFunction } from './cloudFunctions';
 
 const isNative = Capacitor.isNativePlatform();
 
@@ -737,52 +738,17 @@ export async function applyChallengeIntent(activityId, challengeIds, message) {
 }
 
 /**
- * Read completed challenges where any of the given uids is a winner (accepter who
- * completed). Used by the friends feed to tag activities that fulfilled a challenge.
- * Firestore array-contains-any caps at 30 values; callers with larger lists should chunk.
+ * Completed challenges where any of the given uids is a winner (accepter who completed).
+ * Used by the friends feed to tag activities that fulfilled a challenge. The rules keep a
+ * completed challenge to its participants and their friends, and a query can't check
+ * friendship, so this asks the completedChallengesForFeed Cloud Function, which skips any
+ * uid that isn't the caller or a friend. At most 30 uids.
  */
 export async function getCompletedChallengesByWinners(uids) {
   if (!uids || uids.length === 0) return [];
-  const slice = uids.slice(0, 30);
-
   try {
-    if (isNative) {
-      // Chunk into one `array-contains` query per uid (the native plugin doesn't reliably
-      // handle `array-contains-any`). The `status == 'completed'` filter is REQUIRED at the
-      // query level — Firestore rules grant cross-user reads only on completed challenges,
-      // and rules verify queries by constraints, not by per-doc filtering.
-      const results = [];
-      await Promise.all(slice.map(async (uid) => {
-        try {
-          const { snapshots } = await FirebaseFirestore.getCollection({
-            reference: 'challenges',
-            compositeFilter: {
-              type: 'and',
-              queryConstraints: [
-                { type: 'where', fieldPath: 'status', opStr: '==', value: 'completed' },
-                { type: 'where', fieldPath: 'winnerUids', opStr: 'array-contains', value: uid },
-              ],
-            },
-          });
-          for (const s of (snapshots || [])) {
-            results.push({ id: s.id, ...s.data });
-          }
-        } catch (err) {
-          console.error('[getCompletedChallengesByWinners] uid query failed:', uid, err);
-        }
-      }));
-      // Dedupe by id (a challenge can include multiple winners — group challenges).
-      const dedup = new Map();
-      for (const c of results) if (c.id) dedup.set(c.id, c);
-      return Array.from(dedup.values());
-    }
-    const q = query(
-      collection(db, 'challenges'),
-      where('status', '==', 'completed'),
-      where('winnerUids', 'array-contains-any', slice),
-    );
-    const snap = await withTimeout(getDocs(q));
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const result = await callFunction('completedChallengesForFeed', { uids: uids.slice(0, 30) });
+    return result?.challenges || [];
   } catch (error) {
     console.error('[challengeService] getCompletedChallengesByWinners failed:', error);
     return [];

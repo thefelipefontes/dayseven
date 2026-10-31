@@ -7,6 +7,9 @@ const assert = require('node:assert/strict');
 const path = require('path');
 
 process.env.GCLOUD_PROJECT = 'demo-jobs';
+// emulators:exec sets FIREBASE_CONFIG to the functions emulator's project, and the Admin
+// SDK prefers it; without this the emulator's triggers would run on this data too.
+process.env.FIREBASE_CONFIG = JSON.stringify({ projectId: 'demo-jobs' });
 const functionsDir = path.join(__dirname, '..', 'functions');
 const messagingModule = require(require.resolve('firebase-admin/messaging', { paths: [functionsDir] }));
 const sent = [];
@@ -72,13 +75,54 @@ describe('scheduled jobs', () => {
     assert.equal(pushesTo('done').length, 0);
   });
 
+  // Steps rule with no step data: the Winning Streak needs Strength + Cardio. Oct 18–24 is
+  // the last closed week on Thursday Oct 29.
+  const streakUser = (activities, goals = { liftsPerWeek: 1, cardioPerWeek: 1 }) => ({
+    notificationPreferences: { timezone: 'UTC' }, streaks: { master: 4 }, winningRuleFrom: '2026-09-06', goals, activities,
+  });
+  const WON_LAST_WEEK = [{ id: 1, type: 'Strength Training', date: '2026-10-19' }, { id: 2, type: 'Running', date: '2026-10-20' }];
+
   it('streak reminder: 8 PM local, only after two quiet days', async () => {
-    const base = { notificationPreferences: { timezone: 'UTC' }, streaks: { master: 4 } };
-    await user('quiet', { ...base, activities: [{ id: 1, type: 'Running', date: '2026-10-25' }] });
-    await user('active', { ...base, activities: [{ id: 1, type: 'Running', date: '2026-10-28' }] });
+    await user('quiet', streakUser([...WON_LAST_WEEK, { id: 3, type: 'Running', date: '2026-10-25' }]));
+    await user('active', streakUser([...WON_LAST_WEEK, { id: 3, type: 'Running', date: '2026-10-28' }]));
     await at('2026-10-29T20:05:00Z', () => jobs.sendStreakReminders.run({}));
     assert.equal(pushesTo('quiet').length, 1);
+    assert.doesNotMatch(pushesTo('quiet')[0].notification.body, /\d-week/); // the saved count may be stale
     assert.equal(pushesTo('active').length, 0);
+  });
+
+  it('streak reminder: once per lapse', async () => {
+    const activities = [...WON_LAST_WEEK, { id: 3, type: 'Running', date: '2026-10-25' }];
+    await user('lapse', streakUser(activities));
+    await at('2026-10-29T20:05:00Z', () => jobs.sendStreakReminders.run({}));
+    await at('2026-10-30T20:05:00Z', () => jobs.sendStreakReminders.run({}));
+    assert.equal(pushesTo('lapse').length, 1);
+    // Back on Oct 30 (which wins that week), then quiet again: a new lapse.
+    await db.collection('users').doc('lapse').update({ activities: [...activities, { id: 4, type: 'Strength Training', date: '2026-10-30' }] });
+    await at('2026-11-02T20:05:00Z', () => jobs.sendStreakReminders.run({}));
+    assert.equal(pushesTo('lapse').length, 2);
+  });
+
+  it('streak reminder: after a held week, never after a lost one', async () => {
+    const goals = { liftsPerWeek: 2, cardioPerWeek: 2 };
+    const cardio = [{ id: 2, type: 'Running', date: '2026-10-20' }, { id: 3, type: 'Running', date: '2026-10-22' }];
+    // 1 of 2 strength, 2 of 2 cardio: 75%, every goal halfway → held.
+    await user('held', streakUser([{ id: 1, type: 'Strength Training', date: '2026-10-19' }, ...cardio], goals));
+    // No strength: 50% → lost, though the saved streak still says 4.
+    await user('lost', streakUser(cardio, goals));
+    await at('2026-10-29T20:05:00Z', () => jobs.sendStreakReminders.run({}));
+    assert.equal(pushesTo('held').length, 1);
+    assert.equal(pushesTo('lost').length, 0);
+  });
+
+  it('streak reminder: last week judged against the goals in force then', async () => {
+    // Goals went up this week; last week's 1 + 1 met the 1 + 1 in force then.
+    await user('raised', {
+      ...streakUser(WON_LAST_WEEK, { liftsPerWeek: 4, cardioPerWeek: 3 }),
+      goalHistory: [{ fromWeek: '2026-10-04', liftsPerWeek: 1, cardioPerWeek: 1 }, { fromWeek: '2026-10-25', liftsPerWeek: 4, cardioPerWeek: 3 }],
+    });
+    await at('2026-10-29T20:05:00Z', () => jobs.sendStreakReminders.run({}));
+    assert.equal(pushesTo('raised').length, 1);
   });
 
   it('goal reminder: Thursday 8 AM, judged on the local week', async () => {
@@ -93,6 +137,27 @@ describe('scheduled jobs', () => {
     await at('2026-10-29T08:01:00Z', () => jobs.sendGoalReminder.run({}));
     assert.equal(pushesTo('thu').length, 1);
     assert.match(pushesTo('thu')[0].notification.title, /^1\/3 Workouts Done/);
+    assert.equal(pushesTo('thu')[0].notification.body, 'Still need 1 strength + 1 cardio to win the week — 3 days left! 💪');
+  });
+
+  it('goal reminder: a week won early names only the goals it needed (no step data)', async () => {
+    await user('nosteps', {
+      notificationPreferences: { timezone: 'UTC' }, winningRuleFrom: '2026-09-06',
+      goals: { liftsPerWeek: 1, cardioPerWeek: 1 },
+      activities: [{ id: 1, type: 'Strength Training', date: '2026-10-26' }, { id: 2, type: 'Running', date: '2026-10-27' }],
+    });
+    await at('2026-10-29T08:01:00Z', () => jobs.sendGoalReminder.run({}));
+    assert.equal(pushesTo('nosteps')[0].notification.title, 'Week Won Early! 🏆');
+    assert.match(pushesTo('nosteps')[0].notification.body, /^Strength and cardio are done with 3 days to spare/);
+  });
+
+  it('goal reminder: no goals set means the app\'s defaults (4 strength, 3 cardio)', async () => {
+    await user('defaults', {
+      notificationPreferences: { timezone: 'UTC' }, winningRuleFrom: '2026-09-06',
+      activities: [{ id: 1, type: 'Strength Training', date: '2026-10-26' }],
+    });
+    await at('2026-10-29T08:01:00Z', () => jobs.sendGoalReminder.run({}));
+    assert.match(pushesTo('defaults')[0].notification.title, /^1\/7 Workouts Done/);
   });
 
   it('weekly summary counts last Sunday–Saturday, not this morning', async () => {
@@ -110,6 +175,25 @@ describe('scheduled jobs', () => {
     assert.equal(pushesTo('week').length, 1);
     assert.match(pushesTo('week')[0].notification.body, /^3 workouts, .*300 cal\./);
     assert.deepEqual((await db.collection('users').doc('week').get()).data().pendingSharePrompt.type, 'weekly');
+  });
+
+  it('weekly summary: no steps line for a user without step data', async () => {
+    await user('nostepsweek', {
+      notificationPreferences: { timezone: 'UTC' }, winningRuleFrom: '2026-09-06',
+      activities: [{ id: 1, type: 'Running', date: '2026-10-26', calories: 100 }],
+    });
+    await at('2026-11-01T10:05:00Z', () => jobs.sendWeeklySummary.run({}));
+    assert.equal(pushesTo('nostepsweek')[0].notification.body, '1 workouts, 100 cal. Tap to share with friends!');
+  });
+
+  it('an entitlement a day past its stored expiry is no access (a missed EXPIRATION)', async () => {
+    const prefs = { notificationPreferences: { timezone: 'UTC', dailyReminders: true, dailyReminderTime: '09:00' } };
+    const sub = (expiresAt) => ({ forceProTier: false, subscription: { entitlementActive: true, status: 'active', expiresAt } });
+    await user('stale-sub', { ...prefs, ...sub('2026-10-26T00:00:00.000Z') });
+    await user('renewing', { ...prefs, ...sub('2026-10-29T06:00:00.000Z') }); // renewal webhook a few hours late
+    await at('2026-10-29T09:10:00Z', () => jobs.sendDailyReminders.run({}));
+    assert.equal(pushesTo('stale-sub').length, 0);
+    assert.equal(pushesTo('renewing').length, 1);
   });
 
   it('monthly summary uses the user\'s month (UTC+14 is already on the 1st)', async () => {

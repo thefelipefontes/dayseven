@@ -152,6 +152,17 @@ service cloud.firestore {
         && friendAt(challengerUid, uids, 9) && friendAt(challengerUid, uids, 10);
     }
 
+    // The caller is on the friends list of one of the first ten participants. A read may
+    // check ten docs, so in an eleven-person group the last one doesn't count here.
+    function friendOfParticipant(uids) {
+      return isFriendOf(uids[0])
+        || (uids.size() > 1 && isFriendOf(uids[1])) || (uids.size() > 2 && isFriendOf(uids[2]))
+        || (uids.size() > 3 && isFriendOf(uids[3])) || (uids.size() > 4 && isFriendOf(uids[4]))
+        || (uids.size() > 5 && isFriendOf(uids[5])) || (uids.size() > 6 && isFriendOf(uids[6]))
+        || (uids.size() > 7 && isFriendOf(uids[7])) || (uids.size() > 8 && isFriendOf(uids[8]))
+        || (uids.size() > 9 && isFriendOf(uids[9]));
+    }
+
     function validMatchRule(rule) {
       return rule is map
         && rule.keys().hasOnly(['category', 'activityType', 'distanceMin', 'durationMin', 'paceMaxSecondsPerMile'])
@@ -367,15 +378,18 @@ service cloud.firestore {
       allow read, write: if isUser(userId);
     }
 
-    // Friend challenges. Read: participants, and anyone for completed challenges (the
-    // friends feed shows "Completed [sender]'s challenge" to viewers who weren't in it).
+    // Friend challenges. Read: participants, and once a challenge is completed, their
+    // friends too (the friends feed shows "Completed [sender]'s challenge"). A query can't
+    // check friendship, so queries are for participants only; the feed gets its friends'
+    // completed challenges from the completedChallengesForFeed Cloud Function.
     // Clients create pending challenges and move their own entry pending → accepted or
     // declined; the challenger cancels or asks to cancel. Completion, expiry and scoring
     // happen in Cloud Functions.
     match /challenges/{challengeId} {
-      allow read: if signedIn()
+      allow get: if signedIn()
         && (request.auth.uid in resource.data.participantUids
-            || resource.data.status == 'completed');
+            || (resource.data.status == 'completed' && friendOfParticipant(resource.data.participantUids)));
+      allow list: if signedIn() && request.auth.uid in resource.data.participantUids;
 
       allow create: if signedIn() && validChallengeCreate();
 

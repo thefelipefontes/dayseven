@@ -55,7 +55,7 @@ export async function fetchFeedSnapshot({ user, userProfile, friends }) {
 
   const limitedActivities = flatActivities.slice(0, ACTIVITY_LIMIT);
 
-  // Challenge tagging: single batched query keyed by friend uids; surfaces the
+  // Challenge tagging: one call for the challenges these friends won; surfaces the
   // "Completed [sender]'s challenge" pill on each fulfilling activity.
   const challengeMap = {};
   try {

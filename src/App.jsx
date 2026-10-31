@@ -5682,7 +5682,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
 // vertical dark band at the tile seam under retina scaling, regardless of
 // CORS or positioning rounding. A canvas sidesteps the seam entirely;
 // html-to-image captures it via toDataURL (CORS-clean since tiles are loaded
-// with crossOrigin and CartoDB returns Access-Control-Allow-Origin: *).
+// with crossOrigin and Esri returns Access-Control-Allow-Origin: *).
 //
 // MUST live at module scope. As a nested component inside ActivityStampModal,
 // every parent re-render gives it a new function identity → React remounts it
@@ -5692,7 +5692,7 @@ const StaticRouteMap = ({ coords, width, height, color, transparent }) => {
   const tileSig = useMemo(() => {
     if (!coords || coords.length < 2) return null;
     const fit = bestFit(coords, width, height);
-    const { tiles, pts } = makeTiles(coords, width, height, fit.z, fit.cp, true, 0);
+    const { tiles, pts } = makeTiles(coords, width, height, fit.z, fit.cp, 0);
     return { tiles, pts, urls: tiles.map(t => t.url).join('|') };
   }, [coords, width, height]);
 
@@ -5713,18 +5713,27 @@ const StaticRouteMap = ({ coords, width, height, color, transparent }) => {
     // preview tile URLs underneath. Without that, a CORS Image() request
     // to a URL WebKit already cached as non-CORS (from the preview render)
     // can fail to populate, leaving a tile gap on the canvas.
-    Promise.all(tiles.map(t => new Promise(resolve => {
+    // Base tiles first, then street-name labels on top.
+    const layers = [
+      ...tiles.map(t => ({ t, url: t.url })),
+      ...tiles.map(t => ({ t, url: t.labelUrl })),
+    ];
+    Promise.all(layers.map(({ url }) => new Promise(resolve => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => resolve(img);
       img.onerror = () => resolve(null);
-      img.src = `${t.url}?cors=1`;
+      img.src = `${url}?cors=1`;
     }))).then(loaded => {
       if (cancelled) return;
       loaded.forEach((img, i) => {
         if (!img) return;
-        const t = tiles[i];
-        ctx.drawImage(img, t.left, t.top, TILE, TILE);
+        const { t } = layers[i];
+        // Snap tile edges to device pixels, else anti-aliased edges leave a
+        // faint seam where neighbouring tiles meet.
+        const snap = v => Math.round(v * dpr) / dpr;
+        const x = snap(t.left), y = snap(t.top);
+        ctx.drawImage(img, x, y, snap(t.left + t.size) - x, snap(t.top + t.size) - y);
       });
     });
     return () => { cancelled = true; };

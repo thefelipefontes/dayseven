@@ -1,5 +1,5 @@
 import CategoryIcon from './components/CategoryIcon';
-import { shieldCooldownLeft, nextShieldWeek, SHIELD_COOLDOWN_WEEKS, SHIELD_MIN_PERCENT } from './utils/streakShield';
+import { SHIELD_MIN_PERCENT } from './utils/streakShield';
 import React, { useState, useEffect, useRef } from 'react';
 import { auth } from './firebase';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
@@ -1525,13 +1525,13 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                   <span className="text-sm text-white">Streak Shield</span>
                   {!isPro && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(255,149,0,0.15)', color: '#FF9500' }}>PRO</span>}
                 </div>
-                <p className="text-[11px] text-gray-500">Covers a week you got to {SHIELD_MIN_PERCENT}% of, once every {SHIELD_COOLDOWN_WEEKS} weeks</p>
+                <p className="text-[11px] text-gray-500">Holds your streak through any week you got to {SHIELD_MIN_PERCENT}% of, with every goal at least halfway</p>
               </div>
             </div>
             <div className="mt-3 pt-3 border-t border-zinc-700/50">
               {(() => {
-                // Nothing to press: the shield applies itself to a week that ends short at
-                // 70%+ (utils/streakShield). This only reports where it stands.
+                // Nothing to press: the hold applies itself, every week, to a week that ends
+                // short but qualifies (utils/streakShield). This only reports where it stands.
                 const lastUsedWeek = userData.streakShield?.lastUsedWeek;
                 const currentWeek = getCurrentWeekKey();
                 const previousWeek = getPreviousWeekKey();
@@ -1539,8 +1539,6 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                 const isShieldedCurrent = lastUsedWeek === currentWeek;
                 const isShieldedPrevious = lastUsedWeek === previousWeek;
                 const isRetroWindow = new Date().getDay() <= 1; // Sunday or Monday
-                const weeksRemaining = shieldCooldownLeft(lastUsedWeek, currentWeek);
-                const onCooldown = weeksRemaining > 0;
 
                 let label;
                 let color;
@@ -1548,13 +1546,10 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                   label = 'Pro only';
                   color = '#FF9500';
                 } else if (isShieldedCurrent || (isShieldedPrevious && isRetroWindow)) {
-                  label = isShieldedCurrent ? 'Active this week' : 'Saved last week';
+                  label = isShieldedCurrent ? 'Active this week' : 'Held last week';
                   color = '#00FF94';
-                } else if (onCooldown) {
-                  label = 'On cooldown';
-                  color = '#FF9500';
                 } else {
-                  label = 'Ready';
+                  label = 'On, every week';
                   color = '#00FF94';
                 }
 
@@ -1575,19 +1570,14 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                         </button>
                       )}
                     </div>
-                    {isPro && !onCooldown && !isShieldedCurrent && (
+                    {isPro && !isShieldedCurrent && (
                       <p className="text-[11px] text-gray-500 ml-4">
-                        Applies itself if a week ends short and you got to {SHIELD_MIN_PERCENT}%.
+                        Win the week and your streak grows. Fall short but hold it, and your streak stays.
                       </p>
                     )}
                     {lastUsedWeek && (
                       <p className="text-[11px] text-gray-500 ml-4">
-                        Last used: week of {fmtWeek(lastUsedWeek)}
-                      </p>
-                    )}
-                    {onCooldown && (
-                      <p className="text-[11px] text-gray-500 ml-4">
-                        Ready again: {fmtWeek(nextShieldWeek(lastUsedWeek))} ({weeksRemaining} week{weeksRemaining !== 1 ? 's' : ''} remaining)
+                        Last held: week of {fmtWeek(lastUsedWeek)}
                       </p>
                     )}
                   </div>

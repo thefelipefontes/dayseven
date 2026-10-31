@@ -24,8 +24,8 @@ export const initialUserData = {
   streakShield: {
     lastUsedWeek: null,    // Week key when shield was last used (e.g., "2026-03-02")
     shieldedWeeks: []      // Array of week keys where shield was activated
-    // Earned at 70% of a week and applied automatically, once every 4 weeks — see
-    // utils/streakShield for the rest of the fields (autoFrom, autoWeeks, …)
+    // Holds any week that ends at 70% with every goal halfway, applied automatically —
+    // see utils/streakShield for the rest of the fields (autoFrom, holdFrom, autoWeeks, …)
   },
   vacationMode: {
     isActive: false,

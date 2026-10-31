@@ -28,8 +28,9 @@ import { judgeWeekFromActivities } from './weekGoals';
 export const SHIELD_MIN_PERCENT = 70;
 // The old rule's cooldown, still applied to weeks before holdFrom.
 const LEGACY_COOLDOWN_WEEKS = 4;
-// How far back a run looks for a closed week to cover — enough for someone who didn't
-// open the app for a while, without ever reaching past autoFrom.
+// How far back a run looks for an old-rule week to cover, or a held week that late data
+// turned into a win. Weeks from holdFrom are always all checked, so someone who logs from
+// the Watch and doesn't open the phone app for two months still gets every hold.
 const LOOKBACK_WEEKS = 6;
 
 const weekDate = (weekKey) => new Date(`${weekKey}T12:00:00`);
@@ -101,8 +102,10 @@ export function planAutoShield({ activities, ctx, streakShield = {}, vacationWee
   });
   if (revoked) s.lastUsedWeek = latestShielded();
 
-  // Closed weeks only, oldest first, never before the rule existed.
-  let week = lookbackStart < s.autoFrom ? s.autoFrom : lookbackStart;
+  // Closed weeks only, oldest first, never before the rule existed: every week since holdFrom,
+  // plus old-rule weeks within the lookback.
+  const scanFrom = s.holdFrom < lookbackStart ? s.holdFrom : lookbackStart;
+  let week = scanFrom < s.autoFrom ? s.autoFrom : scanFrom;
   for (; week < currentWeek; week = addWeeks(week, 1)) {
     if (s.shieldedWeeks.includes(week)) continue;
     if (vacationWeeks.includes(week) || injuryFrozenWeeks[week] !== undefined) continue;

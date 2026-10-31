@@ -13251,6 +13251,8 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             (!thisWeekJudged.steps && !injuryFrozen.includes('steps') && (userData.streaks.steps || 0) > 0) ||
             (userData.streaks.master > 0 && !thisWeekJudged.all);
           if (!(daysLeft <= 3 && atRiskStreak)) return null;
+          // Won already: nothing to hold. (A bonus Recovery streak can still read as at risk.)
+          if (thisWeekJudged.all) return null;
 
           if (!isPro) {
             return (
@@ -15039,16 +15041,17 @@ export default function DaySevenApp() {
               updateUserProfile(user.uid, { winningRuleFrom: ruleFrom }).catch(() => {});
             }
           }
-          // Load streak shield data
+          // Load streak shield data. Written to the ref too, so the load-time streak recalc
+          // below sees held weeks; without it a held week reads as missed and the streak
+          // it held is saved as reset.
           if (profileForStreaks?.streakShield) {
-            setUserData(prev => ({
-              ...prev,
-              streakShield: {
-                ...profileForStreaks.streakShield,
-                lastUsedWeek: profileForStreaks.streakShield.lastUsedWeek ?? null,
-                shieldedWeeks: profileForStreaks.streakShield.shieldedWeeks ?? []
-              }
-            }));
+            const loadedShield = {
+              ...profileForStreaks.streakShield,
+              lastUsedWeek: profileForStreaks.streakShield.lastUsedWeek ?? null,
+              shieldedWeeks: profileForStreaks.streakShield.shieldedWeeks ?? []
+            };
+            userDataRef.current = { ...(userDataRef.current || {}), streakShield: loadedShield };
+            setUserData(prev => ({ ...prev, streakShield: loadedShield }));
           }
           // Load vacation mode data
           if (profileForStreaks?.vacationMode) {

@@ -71,8 +71,9 @@ function addRoute(map, coords, color) {
   });
 }
 
-// Mounts a MapLibre map in `ref` with the route drawn on it.
-function useRouteMap(ref, { coordinates, color, interactive, padding, enabled = true }) {
+// Mounts a MapLibre map in `ref` with the route drawn on it. Interactive maps
+// pan, pinch-zoom and two-finger rotate (no tilt); `onRotate` gets the bearing.
+function useRouteMap(ref, { coordinates, color, interactive, padding, enabled = true, mapRef, onRotate }) {
   useEffect(() => {
     if (!enabled || !ref.current || !coordinates || coordinates.length < 2) return;
     let map = null, cancelled = false;
@@ -86,15 +87,20 @@ function useRouteMap(ref, { coordinates, color, interactive, padding, enabled = 
         maxZoom: 19,
         interactive,
         attributionControl: false,
-        dragRotate: false,
+        maxPitch: 0,
         pitchWithRotate: false,
         touchPitch: false,
       });
-      if (interactive) map.touchZoomRotate.disableRotation();
+      if (mapRef) mapRef.current = map;
+      if (onRotate) map.on('rotate', () => onRotate(map.getBearing()));
       map.on('load', () => addRoute(map, coordinates, color));
     }).catch(() => {});
-    return () => { cancelled = true; map?.remove(); };
-  }, [ref, coordinates, color, interactive, padding, enabled]);
+    return () => {
+      cancelled = true;
+      map?.remove();
+      if (mapRef) mapRef.current = null;
+    };
+  }, [ref, coordinates, color, interactive, padding, enabled, mapRef, onRotate]);
 }
 
 // One-off render of the basemap (no route) for the share stamp. Uses the
@@ -142,10 +148,12 @@ function snapshotBasemap({ cLat, cLng, z, width, height, pixelRatio }) {
 const RouteMapView = ({ coordinates = [], color = '#00D1FF', height = 200 }) => {
   const previewRef = useRef(null);
   const fsRef = useRef(null);
+  const fsMapRef = useRef(null);
   const [fs, setFs] = useState(false);
+  const [bearing, setBearing] = useState(0);
 
   useRouteMap(previewRef, { coordinates, color, interactive: false, padding: 30 });
-  useRouteMap(fsRef, { coordinates, color, interactive: true, padding: 60, enabled: fs });
+  useRouteMap(fsRef, { coordinates, color, interactive: true, padding: 60, enabled: fs, mapRef: fsMapRef, onRotate: setBearing });
 
   const openFs = useCallback(() => {
     setFs(true);
@@ -154,6 +162,7 @@ const RouteMapView = ({ coordinates = [], color = '#00D1FF', height = 200 }) => 
 
   const closeFs = useCallback(() => {
     setFs(false);
+    setBearing(0);
     document.body.style.overflow = '';
   }, []);
 
@@ -199,10 +208,10 @@ const RouteMapView = ({ coordinates = [], color = '#00D1FF', height = 200 }) => 
         <div style={{ position: 'fixed', inset: 0, zIndex: 9999, backgroundColor: '#1a1a2e' }}>
           <div ref={fsRef} style={{ position: 'absolute', inset: 0 }} />
 
-          {/* X to close map */}
+          {/* X to close map, compass (only once rotated) to reset north */}
           <div style={{
             position: 'absolute', top: 70, left: 0, right: 0, zIndex: 10,
-            display: 'flex', alignItems: 'center',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '0 16px', pointerEvents: 'none',
           }}>
             <div
@@ -217,6 +226,22 @@ const RouteMapView = ({ coordinates = [], color = '#00D1FF', height = 200 }) => 
             >
               ×
             </div>
+            {Math.abs(bearing) > 0.5 && (
+              <div
+                onClick={(e) => { e.stopPropagation(); fsMapRef.current?.resetNorth(); }}
+                style={{
+                  width: 44, height: 44, borderRadius: '50%',
+                  backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(10px)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer', pointerEvents: 'auto',
+                }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" style={{ transform: `rotate(${-bearing}deg)` }}>
+                  <polygon points="12,2 16,12 8,12" fill="#fff" />
+                  <polygon points="12,22 16,12 8,12" fill="rgba(255,255,255,0.35)" />
+                </svg>
+              </div>
+            )}
           </div>
 
           {/* Open in Maps button */}

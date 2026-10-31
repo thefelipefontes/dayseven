@@ -13,6 +13,9 @@ import { getReactions, addReaction, removeReaction, getComments, addComment } fr
 import { isChallengeable } from '../services/challengeService';
 import { resolveUnit, unitLabel, formatDistanceValue, formatPaceFromMinutesAndMiles } from '../utils/distance';
 
+// One shared empty route, so "no route" keeps the same reference across renders.
+const NO_ROUTE = [];
+
 const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user, userProfile, onShareStamp, onCaptureLocation, isPro, onPresentPaywall, onChallenge, friends = [] }) => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
@@ -27,7 +30,10 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
   const [loadingInteractions, setLoadingInteractions] = useState(false);
 
   // Route map state
-  const [routeCoords, setRouteCoords] = useState([]);
+  // The route is kept with the id of the activity it was loaded for, so a late result for
+  // an activity that's no longer open can't be shown on, or geocoded into, another one.
+  const [route, setRoute] = useState({ id: null, coords: NO_ROUTE });
+  const routeCoords = route.id && route.id === activity?.id ? route.coords : NO_ROUTE;
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeChecked, setRouteChecked] = useState(false);
 
@@ -66,7 +72,8 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
   // Load GPS route for outdoor activities with a HealthKit UUID
   useEffect(() => {
     if (!isOpen || !activity) {
-      setRouteCoords([]);
+      setRoute({ id: null, coords: NO_ROUTE });
+      setRouteLoading(false);
       setRouteChecked(false);
       return;
     }
@@ -77,6 +84,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
                      (activity.healthKitUUID || activity.linkedHealthKitUUID);
 
     if (!hasRoute) {
+      setRouteLoading(false);
       setRouteChecked(true);
       return;
     }
@@ -84,15 +92,20 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
     setRouteLoading(true);
     setRouteChecked(false);
 
+    const id = activity.id;
+    let cancelled = false;
     fetchWorkoutRoute(activity.healthKitUUID || activity.linkedHealthKitUUID, activity.healthKitStartDate || activity.linkedHealthKitStartDate)
       .then(result => {
-        setRouteCoords(result.hasRoute ? result.coordinates : []);
+        if (!cancelled) setRoute({ id, coords: result.hasRoute ? result.coordinates : NO_ROUTE });
       })
-      .catch(() => setRouteCoords([]))
+      .catch(() => { if (!cancelled) setRoute({ id, coords: NO_ROUTE }); })
       .finally(() => {
+        if (cancelled) return;
         setRouteLoading(false);
         setRouteChecked(true);
       });
+    // Closed or switched to another activity before the route arrived: drop it.
+    return () => { cancelled = true; };
   }, [isOpen, activity?.id, activity?.healthKitUUID]);
 
   // Derive/display location. Shows a stored location immediately; otherwise, for

@@ -25,22 +25,34 @@ function bestFit(coords, w, h, pad = 40) {
   return { z, cp: ll2px(cLat, cLng, z), cLat, cLng };
 }
 
-function makeTiles(coords, w, h, z, cp, dark, margin = 0) {
+// Esri basemaps — keyless, Access-Control-Allow-Origin: * (needed by the
+// share stamp canvas). CARTO started watermarking keyless requests in
+// Oct 2026. The dark Canvas layers stop at z16 (z17+ returns a "Map data
+// not yet available" tile), so deeper zooms draw the z16 tile scaled up.
+// Esri tile paths are z/y/x.
+const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services';
+const ESRI_BASE = `${ESRI}/Canvas/World_Dark_Gray_Base/MapServer`;
+const ESRI_LABELS = `${ESRI}/Canvas/World_Dark_Gray_Reference/MapServer`;
+const ESRI_MAX_Z = 16;
+
+function makeTiles(coords, w, h, z, cp, margin = 0) {
+  const sz = Math.min(z, ESRI_MAX_Z);
+  const size = TILE * (1 << (z - sz)); // on-screen size of one source tile
   const vl = cp.x - w / 2, vt = cp.y - h / 2;
-  const txMin = Math.floor(vl / TILE) - margin, tyMin = Math.floor(vt / TILE) - margin;
-  const txMax = Math.floor((vl + w) / TILE) + margin, tyMax = Math.floor((vt + h) / TILE) + margin;
-  const maxT = (1 << z) - 1;
+  const txMin = Math.floor(vl / size) - margin, tyMin = Math.floor(vt / size) - margin;
+  const txMax = Math.floor((vl + w) / size) + margin, tyMax = Math.floor((vt + h) / size) + margin;
+  const maxT = (1 << sz) - 1;
   const tiles = [];
   for (let ty = tyMin; ty <= tyMax; ty++) {
     for (let tx = txMin; tx <= txMax; tx++) {
       const wtx = ((tx % (maxT + 1)) + (maxT + 1)) % (maxT + 1);
       if (ty < 0 || ty > maxT) continue;
-      const s = ['a', 'b', 'c', 'd'][(wtx + ty) % 4];
-      const base = dark ? 'dark_all' : 'rastertiles/voyager';
+      const path = `tile/${sz}/${ty}/${wtx}`;
       tiles.push({
-        key: `${z}/${wtx}/${ty}`,
-        left: tx * TILE - vl, top: ty * TILE - vt,
-        url: `https://${s}.basemaps.cartocdn.com/${base}/${z}/${wtx}/${ty}@2x.png`,
+        key: `${z}/${sz}/${wtx}/${ty}`,
+        left: tx * size - vl, top: ty * size - vt, size,
+        url: `${ESRI_BASE}/${path}`,
+        labelUrl: `${ESRI_LABELS}/${path}`,
       });
     }
   }
@@ -65,10 +77,17 @@ const RouteOverlay = ({ pts, w, h, color }) => {
   );
 };
 
-const TileLayer = ({ tiles }) => tiles.map(t => (
-  <img key={t.key} src={t.url} alt="" draggable={false}
-    style={{ position: 'absolute', left: t.left, top: t.top, width: TILE, height: TILE, pointerEvents: 'none' }} />
-));
+const TileLayer = ({ tiles }) => [
+  ...tiles.map(t => (
+    <img key={t.key} src={t.url} alt="" draggable={false}
+      style={{ position: 'absolute', left: t.left, top: t.top, width: t.size, height: t.size, pointerEvents: 'none' }} />
+  )),
+  // Street-name labels drawn above every base tile so a neighbour can't cover them
+  ...tiles.map(t => (
+    <img key={`l${t.key}`} src={t.labelUrl} alt="" draggable={false}
+      style={{ position: 'absolute', left: t.left, top: t.top, width: t.size, height: t.size, pointerEvents: 'none' }} />
+  )),
+];
 
 const RouteMapView = ({ coordinates = [], color = '#00D1FF', height = 200 }) => {
   const containerRef = useRef(null);
@@ -88,18 +107,18 @@ const RouteMapView = ({ coordinates = [], color = '#00D1FF', height = 200 }) => 
     return () => ro.disconnect();
   }, []);
 
-  // Preview — dark tiles, no margin
+  // Preview — no margin
   const preview = useMemo(() => {
     if (!coordinates?.length || coordinates.length < 2 || !cw) return null;
     const fit = bestFit(coordinates, cw, height);
-    const { tiles, pts } = makeTiles(coordinates, cw, height, fit.z, fit.cp, true, 0);
+    const { tiles, pts } = makeTiles(coordinates, cw, height, fit.z, fit.cp, 0);
     return { tiles, pts, W: cw, H: height };
   }, [coordinates, cw, height]);
 
-  // Fullscreen — Voyager tiles with margin=3 so zoom-out has tile coverage
+  // Fullscreen — margin=3 so zoom-out has tile coverage
   const fsData = useMemo(() => {
     if (!fs || !coordinates?.length || coordinates.length < 2) return null;
-    return makeTiles(coordinates, dims.w, dims.h, fsZ, fsCp, false, 3);
+    return makeTiles(coordinates, dims.w, dims.h, fsZ, fsCp, 3);
   }, [fs, coordinates, dims.w, dims.h, fsZ, fsCp]);
 
   const openFs = useCallback(() => {
@@ -299,7 +318,7 @@ const RouteMapView = ({ coordinates = [], color = '#00D1FF', height = 200 }) => 
             <TileLayer tiles={preview.tiles} />
             <RouteOverlay pts={preview.pts} w={preview.W} h={preview.H} color={color} />
             <div style={{ position: 'absolute', bottom: 2, right: 6, fontSize: 8, color: 'rgba(255,255,255,0.3)', pointerEvents: 'none' }}>
-              © OpenStreetMap
+              © Esri · © OpenStreetMap contributors
             </div>
             <div style={{
               position: 'absolute', top: 8, right: 8, width: 28, height: 28, borderRadius: '50%',
@@ -317,7 +336,7 @@ const RouteMapView = ({ coordinates = [], color = '#00D1FF', height = 200 }) => 
 
       {/* Fullscreen interactive map */}
       {fs && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, backgroundColor: '#f2efe9' }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, backgroundColor: '#1a1a2e' }}>
           {/* Map touch area — NO overflow:hidden so margin tiles stay visible during zoom */}
           <div
             style={{ position: 'absolute', inset: 0, touchAction: 'none' }}
@@ -381,9 +400,9 @@ const RouteMapView = ({ coordinates = [], color = '#00D1FF', height = 200 }) => 
           {/* Attribution */}
           <div style={{
             position: 'absolute', bottom: 16, right: 8, zIndex: 10,
-            fontSize: 9, color: 'rgba(0,0,0,0.35)',
+            fontSize: 9, color: 'rgba(255,255,255,0.35)',
           }}>
-            © OpenStreetMap
+            © Esri · © OpenStreetMap contributors
           </div>
         </div>
       )}

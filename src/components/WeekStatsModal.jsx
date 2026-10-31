@@ -71,6 +71,9 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
   // streak rows show 🌴/🛡️ rather than a red ✗ (mirrors the Activity Calendar cells).
   const isVacation = !!weekData?.isVacation;
   const isShielded = !!weekData?.isShielded;
+  // Held under the every-week rule (utils/streakShield): goals it met still count, the rest
+  // were held. An old-style shield covered every goal.
+  const isHeld = !!weekData?.isHeld;
   const isInjury = !!weekData?.isInjury;
   const injuryFrozenCats = weekData?.injuryFrozenCats || [];
   // A category row is injury-frozen if injury was active that week and the category was paused.
@@ -83,7 +86,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
   const streakIcon = (met, color, cat, count, goal) => {
     if (isVacation) return <span style={{ fontSize: '13px', lineHeight: 1 }}>🌴</span>;
     if (injuryFrozenRow(cat)) return <span style={{ fontSize: '13px', lineHeight: 1 }}>🩹</span>;
-    if (isShielded) return <span style={{ fontSize: '13px', lineHeight: 1 }}>🛡️</span>;
+    if (isShielded && !(isHeld && met)) return <span style={{ fontSize: '13px', lineHeight: 1 }}>🛡️</span>;
     if (!met && isLiveWeek) {
       return <span className="text-xs font-bold" style={{ color: '#777' }}>{count === undefined ? '—' : `${count}/${goal}`}</span>;
     }
@@ -92,6 +95,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
   const streakRowStyle = (met, rgb, cat) => {
     if (isVacation) return { backgroundColor: 'rgba(255,149,0,0.1)', border: '1px solid rgba(255,149,0,0.2)' };
     if (injuryFrozenRow(cat)) return { backgroundColor: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)' };
+    if (isHeld && !met) return { backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)' };
     if (isShielded || met) return { backgroundColor: `rgba(${rgb},0.1)`, border: `1px solid rgba(${rgb},0.2)` };
     return { backgroundColor: 'rgba(255,255,255,0.05)', border: 'none' };
   };
@@ -195,6 +199,8 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
             bg = 'rgba(255,149,0,0.1)'; border = 'rgba(255,149,0,0.3)'; color = '#FF9500'; label = '🌴 Vacation Week';
           } else if (isInjury) {
             bg = 'rgba(167,139,250,0.1)'; border = 'rgba(167,139,250,0.3)'; color = '#A78BFA'; label = ['lifts', 'cardio', 'steps', 'recovery'].every(c => injuryFrozenCats.includes(c)) ? '🩹 Injury Mode' : '🩹 Injury Mode · partial';
+          } else if (isHeld) {
+            bg = 'rgba(255,255,255,0.05)'; border = 'rgba(255,255,255,0.15)'; color = '#e4e4e7'; label = `🛡️ Held at ${weekData?.weekJudged?.percent ?? 0}%`;
           } else if (isShielded) {
             bg = 'rgba(0,209,255,0.1)'; border = 'rgba(0,209,255,0.3)'; color = '#00D1FF'; label = '🛡️ Shield Used';
           } else if (weekData?.goalsMet) {
@@ -321,7 +327,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
             </div>
             <div className="p-3 rounded-xl flex items-center justify-between" style={streakRowStyle(!!weekData?.goalsMet, '255,215,0', 'master')}>
               <div>
-                <span className="text-xs">🏆 Week won</span>
+                <span className="text-xs">{isHeld ? '🏆 Week held' : '🏆 Week won'}</span>
                 <div className="text-[10px] text-gray-500">{originalRuleWeek ? 'Strength + Cardio + Recovery' : weekRequired.includes('steps') ? 'Strength + Cardio + Steps' : 'Strength + Cardio'}</div>
               </div>
               {streakIcon(!!weekData?.goalsMet, '#FFD700', 'master')}

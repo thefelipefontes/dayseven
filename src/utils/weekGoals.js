@@ -155,6 +155,9 @@ export const hasRecentSteps = (stepsByDate = {}, today = new Date()) => {
  *   percent  0–100, the average completion of the required goals, each capped at its goal
  *            (extra doesn't count) — the same number as Home's Week Progress.
  *   missing  how far short each goal is (0 when met): sessions, or steps for `steps`.
+ *   toHalf   how far short of half each goal is (0 once there), half rounded up: 2 of 3
+ *            lifts, 1 of 2 cardio, 35k of 70k steps. A held week needs every required goal
+ *            at 0 here (utils/streakShield canHold).
  */
 export const judgeWeek = (counts, weekGoals, { weekSteps = 0, required = ['lifts', 'cardio', 'recovery'] } = {}) => {
   const stepsGoal = (weekGoals.stepsPerDay ?? DEFAULTS.stepsPerDay) * 7;
@@ -172,7 +175,8 @@ export const judgeWeek = (counts, weekGoals, { weekSteps = 0, required = ['lifts
     ? Math.round((required.reduce((sum, c) => sum + part(c), 0) / required.length) * 100)
     : 0;
   const missing = Object.fromEntries(Object.keys(goal).map((c) => [c, Math.max(0, (goal[c] || 0) - done[c])]));
-  return { ...met, all: required.every((c) => met[c]), required, percent, missing };
+  const toHalf = Object.fromEntries(Object.keys(goal).map((c) => [c, Math.max(0, Math.ceil((goal[c] || 0) / 2) - done[c])]));
+  return { ...met, all: required.every((c) => met[c]), required, percent, missing, toHalf };
 };
 
 /**

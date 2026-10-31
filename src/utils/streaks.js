@@ -11,7 +11,11 @@
 // Semantics (these mirror the live streak exactly):
 //   • A week counts for a category when that category's activity count meets its goal.
 //   • A 'lifting+cardio' activity (Circuit, etc.) fills BOTH a lifting and a cardio slot.
-//   • Shielded week → every category counts as met, so the streak advances.
+//   • Held week (shielded, from the user's holdFrom week) → goals it met advance as usual;
+//                     the rest are held (no advance, no break). The Winning Streak
+//                     advances only if the week was won, so a held week never grows it.
+//   • Shielded week before holdFrom (the old once-every-4-weeks shield) → every category
+//                     counts as met, so the streak advances.
 //   • Vacation week → skipped entirely: neither advances nor breaks anything.
 //   • Injury week   → the frozen categories are held (no advance, no break); categories
 //                     outside the frozen set run normally. Master is held when the injury
@@ -52,6 +56,8 @@ const zero = () => ({ master: 0, lifts: 0, cardio: 0, recovery: 0, steps: 0 });
  * @param {Object} goals       { liftsPerWeek, cardioPerWeek, recoveryPerWeek }
  * @param {Object} options
  *   shieldedWeeks     {string[]} week keys covered by a streak shield
+ *   holdFrom          {string}   first week a shield holds rather than advances
+ *                                (utils/streakShield); null = every shield advances
  *   vacationWeeks     {string[]} week keys frozen by vacation mode
  *   injuryFrozenWeeks {Object}   week key → array of frozen categories
  *   asOf              {Date}     treat this date's week as the in-progress week
@@ -65,6 +71,7 @@ export function computeStreaks(activities, goals, options = {}) {
 
   const {
     shieldedWeeks = [],
+    holdFrom = null,
     vacationWeeks = [],
     injuryFrozenWeeks = {},
     goalHistory = [],
@@ -128,12 +135,15 @@ export function computeStreaks(activities, goals, options = {}) {
       const counts = weeks.get(weekKey) || { lifts: 0, cardio: 0, recovery: 0 };
       const goalFor = goalsForWeek(weekKey);
       const shielded = shieldedWeeks.includes(weekKey);
-      // A shielded week counts as met across the board.
+      // A held week keeps what it missed from breaking; an old-style shield counts as met
+      // across the board.
+      const held = shielded && !!holdFrom && weekKey >= holdFrom;
+      const legacyShield = shielded && !held;
       const required = winningCategories(weekKey, ctx);
       const judged = judgeWeek(counts, goalFor, { weekSteps: weekStepsTotal(stepsByDate, weekKey), required });
       const met = {};
-      CATEGORIES.forEach((c) => { met[c] = shielded || judged[c]; });
-      const allMet = shielded || judged.all;
+      CATEGORIES.forEach((c) => { met[c] = legacyShield || judged[c]; });
+      const allMet = legacyShield || judged.all;
 
       const frozen = injuryFrozenWeeks[weekKey]; // array of frozen categories, or undefined
       const isInjury = frozen !== undefined;
@@ -141,7 +151,7 @@ export function computeStreaks(activities, goals, options = {}) {
       CATEGORIES.forEach((c) => {
         if (isInjury && frozen.includes(c)) return;     // held — protected
         if (met[c]) current[c]++;
-        else if (!isCurrentWeek) current[c] = 0;        // in-progress week never breaks
+        else if (!isCurrentWeek && !held) current[c] = 0; // in-progress week never breaks
       });
 
       // Master is held when the injury froze something this week's Winning Streak needs.
@@ -150,7 +160,7 @@ export function computeStreaks(activities, goals, options = {}) {
       const masterHeld = isInjury && (!usesStepsRule(weekKey, winningRuleFrom) || frozen.some((c) => required.includes(c)));
       if (!masterHeld) {
         if (allMet) current.master++;
-        else if (!isCurrentWeek) current.master = 0;
+        else if (!isCurrentWeek && !held) current.master = 0;
       }
 
       recordHighWater();

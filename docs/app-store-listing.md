@@ -8,6 +8,24 @@ Paste each field into App Store Connect → App Information / Version page. Limi
 
 ---
 
+## What's New in 1.8.4 (4000 max)
+
+```
+Every week counts now.
+
+• Win your week and your Winning Streak grows. Fall short but reach 70% of your week, with at least half of each goal, and your streak holds instead of resetting
+• The Streak Shield now works every week, on its own, with no waiting between shields
+• Late in the week, Home shows how close you are to holding your streak and what's left to win the week
+• Held weeks show a 🛡️ in your Profile calendar, and the Streak Shield sheet shows your progress on each goal
+• Route maps on your walks and runs show real streets again
+• Pinch, pan and rotate route maps, with a compass to point north again
+• The activity details sheet stays put while you move around the map
+• Activity share cards are now 4:5, and show your week as it stood after that session
+• Fixes and polish
+```
+
+---
+
 ## What's New in 1.8.3 (4000 max)
 
 ```

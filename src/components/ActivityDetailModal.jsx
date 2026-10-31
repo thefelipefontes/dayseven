@@ -203,6 +203,9 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
   // down, translate the whole sheet and dismiss past a threshold. preventDefault
   // on touchmove kills iOS's elastic bounce inside the scroll element — without
   // it the content double-displaces from the sheet drag.
+  // The sheet stays put for multi-finger gestures (a pinch anywhere cancels the
+  // drag) and for touches inside [data-no-sheet-drag], e.g. the expanded route
+  // map, which lives in this DOM subtree and would otherwise drag the sheet.
   useEffect(() => {
     if (!isOpen) return;
     const scrollEl = scrollRef.current;
@@ -212,7 +215,18 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
     let dragging = false;
     let dy = 0;
 
+    const cancelDrag = () => {
+      dragging = false;
+      setIsDragging(false);
+      setDragY(0);
+      dy = 0;
+    };
+
     const onTouchStart = (e) => {
+      if (e.touches.length > 1 || e.target.closest?.('[data-no-sheet-drag]')) {
+        cancelDrag();
+        return;
+      }
       if (scrollEl.scrollTop > 0 || !e.touches[0]) {
         dragging = false;
         return;
@@ -224,11 +238,8 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
 
     const onTouchMove = (e) => {
       if (!dragging || !e.touches[0]) return;
-      if (scrollEl.scrollTop > 0) {
-        dragging = false;
-        setIsDragging(false);
-        setDragY(0);
-        dy = 0;
+      if (scrollEl.scrollTop > 0 || e.touches.length > 1) {
+        cancelDrag();
         return;
       }
       const delta = e.touches[0].clientY - startY;

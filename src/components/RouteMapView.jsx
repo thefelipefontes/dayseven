@@ -205,7 +205,7 @@ const RouteMapView = ({ coordinates = [], color = '#00D1FF', height = 200 }) => 
 
       {/* Fullscreen interactive map — MapLibre handles pan and pinch-zoom */}
       {fs && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, backgroundColor: '#1a1a2e' }}>
+        <div data-no-sheet-drag style={{ position: 'fixed', inset: 0, zIndex: 9999, backgroundColor: '#1a1a2e' }}>
           <div ref={fsRef} style={{ position: 'absolute', inset: 0 }} />
 
           {/* X to close map, compass (only once rotated) to reset north */}

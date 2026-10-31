@@ -24,6 +24,8 @@ export default defineConfig({
           if (id.includes('@sentry')) return 'sentry'
           // Heavy canvas/image-rendering libs (only used for share images)
           if (id.includes('html2canvas') || id.includes('html-to-image')) return 'imaging'
+          // Route map renderer (lazy-loaded when a route map first shows)
+          if (id.includes('maplibre-gl')) return 'maplibre'
           if (id.includes('@tabler/icons') || id.includes('lucide-react')) return 'icons'
           if (id.includes('body-highlighter') || id.includes('muscle-highlighter')) return 'highlighter'
           if (id.includes('react') || id.includes('scheduler')) return 'react-vendor'

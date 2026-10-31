@@ -919,7 +919,9 @@ export default function ProfilePage(props) {
           cwStart.setHours(0, 0, 0, 0);
           const cwStartStr = `${cwStart.getFullYear()}-${String(cwStart.getMonth() + 1).padStart(2, '0')}-${String(cwStart.getDate()).padStart(2, '0')}`;
 
-          const anyRemaining = !judgeWeekFromActivities(activities, cwStartStr, profileWeekCtx).all;
+          const cwJudged = judgeWeekFromActivities(activities, cwStartStr, profileWeekCtx);
+          // Not at risk once the week already holds the streak (utils/streakShield).
+          const anyRemaining = !cwJudged.all && !canHold(cwJudged);
 
           const hasActiveStreak = (userData?.streaks?.master || 0) > 0
             || (userData?.streaks?.lifts || 0) > 0

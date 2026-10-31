@@ -2792,7 +2792,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
                   </svg>
                   <p className="text-xs leading-relaxed" style={{ color: '#FF9500' }}>
-                    Your goals go back to normal — hit this week's to keep your streak, or it'll break like usual.
+                    Your goals go back to normal. Win this week to grow your streak, or get to 70% with every goal at least halfway to hold it.
                   </p>
                 </div>
               </div>

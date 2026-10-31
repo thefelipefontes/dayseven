@@ -31,6 +31,10 @@ function bestFit(coords, w, h, pad = 40) {
 // requests in Oct 2026. MapLibre is ~800 KB, so it loads on first use.
 const MAP_STYLE = 'https://tiles.openfreemap.org/styles/dark';
 const MAP_ATTRIBUTION = '© OpenFreeMap · © OpenMapTiles · © OpenStreetMap contributors';
+// Offline, or with OpenFreeMap down, the style never arrives. The map then switches to this
+// plain dark background, built here with nothing to download, so the route still shows.
+const FALLBACK_STYLE = { version: 8, sources: {}, layers: [{ id: 'bg', type: 'background', paint: { 'background-color': '#1a1a1a' } }] };
+const STYLE_TIMEOUT_MS = 6000;
 
 let maplibrePromise = null;
 function loadMapLibre() {
@@ -76,7 +80,7 @@ function addRoute(map, coords, color) {
 function useRouteMap(ref, { coordinates, color, interactive, padding, enabled = true, mapRef, onRotate }) {
   useEffect(() => {
     if (!enabled || !ref.current || !coordinates || coordinates.length < 2) return;
-    let map = null, cancelled = false;
+    let map = null, cancelled = false, styleTimer = null;
     loadMapLibre().then(({ Map }) => {
       if (cancelled || !ref.current) return;
       map = new Map({
@@ -93,10 +97,25 @@ function useRouteMap(ref, { coordinates, color, interactive, padding, enabled = 
       });
       if (mapRef) mapRef.current = map;
       if (onRotate) map.on('rotate', () => onRotate(map.getBearing()));
-      map.on('load', () => addRoute(map, coordinates, color));
+      // Draw the route as soon as a style is ready, not on 'load', which also waits for the
+      // basemap tiles and never fires without them. Runs again after a switch to the fallback
+      // style, since setStyle drops the route's sources.
+      let styleReady = false;
+      map.on('style.load', () => {
+        styleReady = true;
+        if (!map.getSource('route')) addRoute(map, coordinates, color);
+      });
+      const fallBack = () => {
+        if (cancelled || styleReady || !map) return;
+        styleReady = true;
+        map.setStyle(FALLBACK_STYLE);
+      };
+      map.on('error', fallBack); // only acts before a style has loaded; tile errors after are ignored
+      styleTimer = setTimeout(fallBack, STYLE_TIMEOUT_MS);
     }).catch(() => {});
     return () => {
       cancelled = true;
+      clearTimeout(styleTimer);
       map?.remove();
       if (mapRef) mapRef.current = null;
     };
@@ -141,7 +160,11 @@ function snapshotBasemap({ cLat, cLng, z, width, height, pixelRatio }) {
       out.getContext('2d').drawImage(src, 0, 0);
       finish(out);
     });
-    map.on('error', () => {}); // a missing tile shouldn't abort the snapshot
+    // A missing tile shouldn't abort the snapshot, but without a style there's no basemap to
+    // take: resolve null now rather than after the 10 s timeout.
+    let styleReady = false;
+    map.once('style.load', () => { styleReady = true; });
+    map.on('error', () => { if (!styleReady) finish(null); });
   })).catch(() => null);
 }
 
@@ -165,6 +188,12 @@ const RouteMapView = ({ coordinates = [], color = '#00D1FF', height = 200 }) => 
     setBearing(0);
     document.body.style.overflow = '';
   }, []);
+
+  // Unmounted while fullscreen (the sheet closed or switched activity): unlock the page.
+  useEffect(() => {
+    if (!fs) return undefined;
+    return () => { document.body.style.overflow = ''; };
+  }, [fs]);
 
   // Open in Apple Maps
   const openMaps = useCallback(() => {

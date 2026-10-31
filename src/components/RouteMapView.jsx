@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 const TILE = 256;
 const MIN_Z = 10;
@@ -25,271 +25,137 @@ function bestFit(coords, w, h, pad = 40) {
   return { z, cp: ll2px(cLat, cLng, z), cLat, cLng };
 }
 
-// Esri basemaps — keyless, Access-Control-Allow-Origin: * (needed by the
-// share stamp canvas). CARTO started watermarking keyless requests in
-// Oct 2026. The dark Canvas layers stop at z16 (z17+ returns a "Map data
-// not yet available" tile), so deeper zooms draw the z16 tile scaled up.
-// Esri tile paths are z/y/x.
-const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services';
-const ESRI_BASE = `${ESRI}/Canvas/World_Dark_Gray_Base/MapServer`;
-const ESRI_LABELS = `${ESRI}/Canvas/World_Dark_Gray_Reference/MapServer`;
-const ESRI_MAX_Z = 16;
+// Basemap: OpenFreeMap's dark vector style rendered by MapLibre GL. Keyless,
+// no account, CORS-open (the share stamp snapshots the WebGL canvas, so
+// tiles must load untainted). CARTO started watermarking keyless raster
+// requests in Oct 2026. MapLibre is ~800 KB, so it loads on first use.
+const MAP_STYLE = 'https://tiles.openfreemap.org/styles/dark';
+const MAP_ATTRIBUTION = '© OpenFreeMap · © OpenMapTiles · © OpenStreetMap contributors';
 
-function makeTiles(coords, w, h, z, cp, margin = 0) {
-  const sz = Math.min(z, ESRI_MAX_Z);
-  const size = TILE * (1 << (z - sz)); // on-screen size of one source tile
-  const vl = cp.x - w / 2, vt = cp.y - h / 2;
-  const txMin = Math.floor(vl / size) - margin, tyMin = Math.floor(vt / size) - margin;
-  const txMax = Math.floor((vl + w) / size) + margin, tyMax = Math.floor((vt + h) / size) + margin;
-  const maxT = (1 << sz) - 1;
-  const tiles = [];
-  for (let ty = tyMin; ty <= tyMax; ty++) {
-    for (let tx = txMin; tx <= txMax; tx++) {
-      const wtx = ((tx % (maxT + 1)) + (maxT + 1)) % (maxT + 1);
-      if (ty < 0 || ty > maxT) continue;
-      const path = `tile/${sz}/${ty}/${wtx}`;
-      tiles.push({
-        key: `${z}/${sz}/${wtx}/${ty}`,
-        left: tx * size - vl, top: ty * size - vt, size,
-        url: `${ESRI_BASE}/${path}`,
-        labelUrl: `${ESRI_LABELS}/${path}`,
-      });
-    }
+let maplibrePromise = null;
+function loadMapLibre() {
+  if (!maplibrePromise) {
+    maplibrePromise = Promise.all([
+      import('maplibre-gl'),
+      import('maplibre-gl/dist/maplibre-gl.css'),
+    ]).then(([mod]) => mod.default ?? mod).catch(err => { maplibrePromise = null; throw err; });
   }
-  const pts = coords.map(c => {
-    const p = ll2px(c.lat, c.lng, z);
-    return { x: p.x - vl, y: p.y - vt };
-  });
-  return { tiles, pts };
+  return maplibrePromise;
 }
 
-const RouteOverlay = ({ pts, w, h, color }) => {
-  if (!pts || pts.length < 2) return null;
-  const s = pts[0], e = pts[pts.length - 1];
-  const d = pts.map(p => `${p.x},${p.y}`).join(' ');
-  return (
-    <svg width={w} height={h} style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}>
-      <polyline points={d} fill="none" stroke={color} strokeWidth="6" strokeOpacity="0.35" strokeLinecap="round" strokeLinejoin="round" />
-      <polyline points={d} fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx={s.x} cy={s.y} r={6} fill="#00FF94" stroke="#fff" strokeWidth={2} />
-      <circle cx={e.x} cy={e.y} r={6} fill={color} stroke="#fff" strokeWidth={2} />
-    </svg>
-  );
-};
+function routeBounds(coords) {
+  const lats = coords.map(c => c.lat), lngs = coords.map(c => c.lng);
+  return [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]];
+}
 
-const TileLayer = ({ tiles }) => [
-  ...tiles.map(t => (
-    <img key={t.key} src={t.url} alt="" draggable={false}
-      style={{ position: 'absolute', left: t.left, top: t.top, width: t.size, height: t.size, pointerEvents: 'none' }} />
-  )),
-  // Street-name labels drawn above every base tile so a neighbour can't cover them
-  ...tiles.map(t => (
-    <img key={`l${t.key}`} src={t.labelUrl} alt="" draggable={false}
-      style={{ position: 'absolute', left: t.left, top: t.top, width: t.size, height: t.size, pointerEvents: 'none' }} />
-  )),
-];
+// Glow + line + start/end dots, matching the old SVG overlay.
+function addRoute(map, coords, color) {
+  const line = coords.map(c => [c.lng, c.lat]);
+  map.addSource('route', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: line } } });
+  map.addSource('route-ends', {
+    type: 'geojson',
+    data: {
+      type: 'FeatureCollection',
+      features: [
+        { type: 'Feature', properties: { c: '#00FF94' }, geometry: { type: 'Point', coordinates: line[0] } },
+        { type: 'Feature', properties: { c: color }, geometry: { type: 'Point', coordinates: line[line.length - 1] } },
+      ],
+    },
+  });
+  const layout = { 'line-cap': 'round', 'line-join': 'round' };
+  map.addLayer({ id: 'route-glow', type: 'line', source: 'route', layout, paint: { 'line-color': color, 'line-width': 6, 'line-opacity': 0.35 } });
+  map.addLayer({ id: 'route-line', type: 'line', source: 'route', layout, paint: { 'line-color': color, 'line-width': 3 } });
+  map.addLayer({
+    id: 'route-ends', type: 'circle', source: 'route-ends',
+    paint: { 'circle-radius': 6, 'circle-color': ['get', 'c'], 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 },
+  });
+}
+
+// Mounts a MapLibre map in `ref` with the route drawn on it.
+function useRouteMap(ref, { coordinates, color, interactive, padding, enabled = true }) {
+  useEffect(() => {
+    if (!enabled || !ref.current || !coordinates || coordinates.length < 2) return;
+    let map = null, cancelled = false;
+    loadMapLibre().then(({ Map }) => {
+      if (cancelled || !ref.current) return;
+      map = new Map({
+        container: ref.current,
+        style: MAP_STYLE,
+        bounds: routeBounds(coordinates),
+        fitBoundsOptions: { padding, maxZoom: 17 },
+        maxZoom: 19,
+        interactive,
+        attributionControl: false,
+        dragRotate: false,
+        pitchWithRotate: false,
+        touchPitch: false,
+      });
+      if (interactive) map.touchZoomRotate.disableRotation();
+      map.on('load', () => addRoute(map, coordinates, color));
+    }).catch(() => {});
+    return () => { cancelled = true; map?.remove(); };
+  }, [ref, coordinates, color, interactive, padding, enabled]);
+}
+
+// One-off render of the basemap (no route) for the share stamp. Uses the
+// same center and zoom as bestFit so the stamp's SVG route overlay, which is
+// projected with ll2px, lines up. MapLibre zoom z-1 == 256px-tile zoom z.
+// Resolves to a canvas of width×height CSS px at `pixelRatio`, or null.
+function snapshotBasemap({ cLat, cLng, z, width, height, pixelRatio }) {
+  return loadMapLibre().then(({ Map }) => new Promise(resolve => {
+    const el = document.createElement('div');
+    el.style.cssText = `position:fixed;left:-10000px;top:0;width:${width}px;height:${height}px;pointer-events:none;`;
+    document.body.appendChild(el);
+    let map = null, done = false;
+    const finish = (out) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      map?.remove();
+      el.remove();
+      resolve(out);
+    };
+    const timer = setTimeout(() => finish(null), 10000);
+    map = new Map({
+      container: el,
+      style: MAP_STYLE,
+      center: [cLng, cLat],
+      zoom: z - 1,
+      interactive: false,
+      attributionControl: false,
+      fadeDuration: 0,
+      pixelRatio,
+      canvasContextAttributes: { preserveDrawingBuffer: true },
+    });
+    map.once('idle', () => {
+      const src = map.getCanvas();
+      const out = document.createElement('canvas');
+      out.width = src.width;
+      out.height = src.height;
+      out.getContext('2d').drawImage(src, 0, 0);
+      finish(out);
+    });
+    map.on('error', () => {}); // a missing tile shouldn't abort the snapshot
+  })).catch(() => null);
+}
 
 const RouteMapView = ({ coordinates = [], color = '#00D1FF', height = 200 }) => {
-  const containerRef = useRef(null);
-  const wrapperRef = useRef(null);
-  const [cw, setCw] = useState(0);
+  const previewRef = useRef(null);
+  const fsRef = useRef(null);
   const [fs, setFs] = useState(false);
-  const [fsZ, setFsZ] = useState(14);
-  const [fsCp, setFsCp] = useState({ x: 0, y: 0 });
-  const [dims, setDims] = useState({ w: 375, h: 700 });
-  const touch = useRef({});
-  const residualRef = useRef(1); // fractional scale between integer tile zoom levels
 
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const ro = new ResizeObserver(e => setCw(e[0].contentRect.width));
-    ro.observe(containerRef.current);
-    return () => ro.disconnect();
-  }, []);
-
-  // Preview — no margin
-  const preview = useMemo(() => {
-    if (!coordinates?.length || coordinates.length < 2 || !cw) return null;
-    const fit = bestFit(coordinates, cw, height);
-    const { tiles, pts } = makeTiles(coordinates, cw, height, fit.z, fit.cp, 0);
-    return { tiles, pts, W: cw, H: height };
-  }, [coordinates, cw, height]);
-
-  // Fullscreen — margin=3 so zoom-out has tile coverage
-  const fsData = useMemo(() => {
-    if (!fs || !coordinates?.length || coordinates.length < 2) return null;
-    return makeTiles(coordinates, dims.w, dims.h, fsZ, fsCp, 3);
-  }, [fs, coordinates, dims.w, dims.h, fsZ, fsCp]);
+  useRouteMap(previewRef, { coordinates, color, interactive: false, padding: 30 });
+  useRouteMap(fsRef, { coordinates, color, interactive: true, padding: 60, enabled: fs });
 
   const openFs = useCallback(() => {
-    const w = window.innerWidth, h = window.innerHeight;
-    setDims({ w, h });
-    if (coordinates.length >= 2) {
-      const fit = bestFit(coordinates, w, h, 60);
-      setFsZ(fit.z);
-      setFsCp(fit.cp);
-    }
-    residualRef.current = 1;
     setFs(true);
     document.body.style.overflow = 'hidden';
-  }, [coordinates]);
+  }, []);
 
   const closeFs = useCallback(() => {
     setFs(false);
     document.body.style.overflow = '';
-    if (wrapperRef.current) {
-      wrapperRef.current.style.transform = '';
-      wrapperRef.current.style.transformOrigin = '';
-    }
-    touch.current = {};
-    residualRef.current = 1;
   }, []);
-
-  // --- Commit gesture: recalculate map state, keep fractional zoom via residual ---
-  const commitGesture = useCallback((ts) => {
-    const el = wrapperRef.current;
-    const R = residualRef.current;
-    if (ts.mode === 'pan') {
-      const dx = ts.dx || 0, dy = ts.dy || 0;
-      // Pan is in screen pixels; convert to world pixels by dividing by residual
-      setFsCp(prev => ({ x: prev.x - dx / R, y: prev.y - dy / R }));
-    } else if (ts.mode === 'pinch') {
-      const gs = ts.scale || 1;
-      const dmx = ts.dx || 0, dmy = ts.dy || 0;
-      const baseR = ts.baseResidual ?? R;
-      const baseZ = ts.baseZ ?? fsZ;
-      const totalScale = baseR * gs;
-      // Exact fractional zoom
-      const exactZoom = Math.max(MIN_Z, Math.min(MAX_Z, baseZ + Math.log2(totalScale)));
-      const newTileZ = Math.floor(exactZoom);
-      const newResidual = Math.pow(2, exactZoom - newTileZ);
-      // Figure out what world point is at viewport center after the visual transform
-      const ox = ts.originX ?? dims.w / 2;
-      const oy = ts.originY ?? dims.h / 2;
-      const W = dims.w, H = dims.h;
-      const cx = (W / 2 - dmx - ox) / (totalScale) + ox;
-      const cy = (H / 2 - dmy - oy) / (totalScale) + oy;
-      const baseCp = ts.baseCp ?? fsCp;
-      // World coords at base tile zoom level
-      const worldX = baseCp.x - W / 2 / baseR + cx / baseR;
-      const worldY = baseCp.y - H / 2 / baseR + cy / baseR;
-      // Scale world coords to new tile zoom level
-      const factor = Math.pow(2, newTileZ - baseZ);
-      residualRef.current = newResidual;
-      setFsZ(newTileZ);
-      setFsCp({ x: worldX * factor, y: worldY * factor });
-    }
-    if (el) {
-      const nr = residualRef.current;
-      const W = dims.w, H = dims.h;
-      // Apply persistent residual scale from center of viewport
-      const tx = W / 2 * (1 - nr);
-      const ty = H / 2 * (1 - nr);
-      el.style.transform = `translate(${tx}px,${ty}px) scale(${nr})`;
-      el.style.transformOrigin = '0 0';
-    }
-  }, [dims, fsZ, fsCp]);
-
-  const onTouchStart = useCallback((e) => {
-    const t = e.touches;
-    const ts = touch.current;
-    const R = residualRef.current;
-    if (t.length === 1 && ts.mode !== 'pinch') {
-      ts.mode = 'pan';
-      ts.startX = t[0].clientX;
-      ts.startY = t[0].clientY;
-      ts.dx = 0; ts.dy = 0;
-    } else if (t.length >= 2) {
-      // Commit pending pan
-      if (ts.mode === 'pan' && (ts.dx || ts.dy)) {
-        setFsCp(prev => ({ x: prev.x - (ts.dx || 0) / R, y: prev.y - (ts.dy || 0) / R }));
-      }
-      ts.mode = 'pinch';
-      ts.baseDist = Math.hypot(t[1].clientX - t[0].clientX, t[1].clientY - t[0].clientY);
-      ts.originX = (t[0].clientX + t[1].clientX) / 2;
-      ts.originY = (t[0].clientY + t[1].clientY) / 2;
-      ts.baseCp = { ...fsCp };
-      ts.baseZ = fsZ;
-      ts.baseResidual = R;
-      ts.dx = 0; ts.dy = 0; ts.scale = 1;
-      if (wrapperRef.current) {
-        // Reset to just the residual scale from center
-        const W = dims.w, H = dims.h;
-        const tx = W / 2 * (1 - R);
-        const ty = H / 2 * (1 - R);
-        wrapperRef.current.style.transform = `translate(${tx}px,${ty}px) scale(${R})`;
-        wrapperRef.current.style.transformOrigin = '0 0';
-      }
-    }
-  }, [fsCp, fsZ, dims]);
-
-  const onTouchMove = useCallback((e) => {
-    e.preventDefault();
-    const t = e.touches;
-    const ts = touch.current;
-    const el = wrapperRef.current;
-    if (!el) return;
-
-    const R = residualRef.current;
-    if (ts.mode === 'pan' && t.length === 1) {
-      const dx = t[0].clientX - ts.startX;
-      const dy = t[0].clientY - ts.startY;
-      ts.dx = dx; ts.dy = dy;
-      // Compose pan on top of the persistent residual scale from center
-      const W = dims.w, H = dims.h;
-      const tx = W / 2 * (1 - R) + dx;
-      const ty = H / 2 * (1 - R) + dy;
-      el.style.transform = `translate(${tx}px,${ty}px) scale(${R})`;
-      el.style.transformOrigin = '0 0';
-    } else if (ts.mode === 'pinch' && t.length >= 2) {
-      const dist = Math.hypot(t[1].clientX - t[0].clientX, t[1].clientY - t[0].clientY);
-      const gs = dist / ts.baseDist;
-      const mx = (t[0].clientX + t[1].clientX) / 2;
-      const my = (t[0].clientY + t[1].clientY) / 2;
-      const dmx = mx - ts.originX, dmy = my - ts.originY;
-      ts.scale = gs; ts.dx = dmx; ts.dy = dmy;
-      // Compose: residual scale from center + gesture scale from pinch origin + pan
-      const baseR = ts.baseResidual ?? R;
-      const totalScale = baseR * gs;
-      const ox = ts.originX;
-      const oy = ts.originY;
-      const W = dims.w, H = dims.h;
-      // Transform: first apply baseR from center, then apply gesture (scale gs from origin + translate)
-      const tx = ox * (1 - gs) + gs * W / 2 * (1 - baseR) + dmx;
-      const ty = oy * (1 - gs) + gs * H / 2 * (1 - baseR) + dmy;
-      el.style.transform = `translate(${tx}px,${ty}px) scale(${totalScale})`;
-      el.style.transformOrigin = '0 0';
-    }
-  }, [dims]);
-
-  const onTouchEnd = useCallback((e) => {
-    const ts = touch.current;
-    if (e.touches.length === 0) {
-      commitGesture(ts);
-      touch.current = {};
-    } else if (e.touches.length === 1 && ts.mode === 'pinch') {
-      commitGesture(ts);
-      touch.current = {
-        mode: 'pan',
-        startX: e.touches[0].clientX,
-        startY: e.touches[0].clientY,
-        dx: 0, dy: 0,
-      };
-    }
-  }, [commitGesture]);
-
-  // Apply residual scale whenever fsData updates (new tiles loaded after commit)
-  useEffect(() => {
-    if (!fs || !wrapperRef.current) return;
-    const R = residualRef.current;
-    if (R !== 1) {
-      const W = dims.w, H = dims.h;
-      const tx = W / 2 * (1 - R);
-      const ty = H / 2 * (1 - R);
-      wrapperRef.current.style.transform = `translate(${tx}px,${ty}px) scale(${R})`;
-      wrapperRef.current.style.transformOrigin = '0 0';
-    }
-  }, [fs, fsData, dims]);
 
   // Open in Apple Maps
   const openMaps = useCallback(() => {
@@ -304,75 +170,49 @@ const RouteMapView = ({ coordinates = [], color = '#00D1FF', height = 200 }) => 
 
   return (
     <>
-      {/* Inline preview — dark tiles, tappable */}
+      {/* Inline preview — non-interactive, tap to expand */}
       <div
-        ref={containerRef}
         onClick={openFs}
         style={{
           width: '100%', height, borderRadius: 12, overflow: 'hidden',
           position: 'relative', backgroundColor: '#1a1a2e', cursor: 'pointer',
         }}
       >
-        {preview && (
-          <>
-            <TileLayer tiles={preview.tiles} />
-            <RouteOverlay pts={preview.pts} w={preview.W} h={preview.H} color={color} />
-            <div style={{ position: 'absolute', bottom: 2, right: 6, fontSize: 8, color: 'rgba(255,255,255,0.3)', pointerEvents: 'none' }}>
-              © Esri · © OpenStreetMap contributors
-            </div>
-            <div style={{
-              position: 'absolute', top: 8, right: 8, width: 28, height: 28, borderRadius: '50%',
-              backgroundColor: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(8px)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none',
-            }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" />
-                <line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" />
-              </svg>
-            </div>
-          </>
-        )}
+        <div ref={previewRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', bottom: 2, right: 6, fontSize: 8, color: 'rgba(255,255,255,0.3)', pointerEvents: 'none' }}>
+          {MAP_ATTRIBUTION}
+        </div>
+        <div style={{
+          position: 'absolute', top: 8, right: 8, width: 28, height: 28, borderRadius: '50%',
+          backgroundColor: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(8px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none',
+        }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" />
+            <line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" />
+          </svg>
+        </div>
       </div>
 
-      {/* Fullscreen interactive map */}
+      {/* Fullscreen interactive map — MapLibre handles pan and pinch-zoom */}
       {fs && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 9999, backgroundColor: '#1a1a2e' }}>
-          {/* Map touch area — NO overflow:hidden so margin tiles stay visible during zoom */}
-          <div
-            style={{ position: 'absolute', inset: 0, touchAction: 'none' }}
-            onTouchStart={onTouchStart}
-            onTouchMove={onTouchMove}
-            onTouchEnd={onTouchEnd}
-          >
-            <div
-              ref={wrapperRef}
-              style={{ position: 'relative', width: dims.w, height: dims.h, willChange: 'transform' }}
-            >
-              {fsData && (
-                <>
-                  <TileLayer tiles={fsData.tiles} />
-                  <RouteOverlay pts={fsData.pts} w={dims.w} h={dims.h} color={color} />
-                </>
-              )}
-            </div>
-          </div>
+          <div ref={fsRef} style={{ position: 'absolute', inset: 0 }} />
 
           {/* X to close map */}
           <div style={{
             position: 'absolute', top: 70, left: 0, right: 0, zIndex: 10,
             display: 'flex', alignItems: 'center',
-            padding: '0 16px',
+            padding: '0 16px', pointerEvents: 'none',
           }}>
             <div
-              onTouchStart={(e) => { e.stopPropagation(); }}
-              onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); closeFs(); }}
               onClick={(e) => { e.stopPropagation(); closeFs(); }}
               style={{
                 width: 44, height: 44, borderRadius: '50%',
                 backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(10px)',
                 color: '#fff', fontSize: 22,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                cursor: 'pointer',
+                cursor: 'pointer', pointerEvents: 'auto',
               }}
             >
               ×
@@ -381,8 +221,6 @@ const RouteMapView = ({ coordinates = [], color = '#00D1FF', height = 200 }) => 
 
           {/* Open in Maps button */}
           <div
-            onTouchStart={(e) => { e.stopPropagation(); }}
-            onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); openMaps(); }}
             onClick={(e) => { e.stopPropagation(); openMaps(); }}
             style={{
               position: 'absolute', bottom: 50, left: '50%', zIndex: 10,
@@ -400,9 +238,9 @@ const RouteMapView = ({ coordinates = [], color = '#00D1FF', height = 200 }) => 
           {/* Attribution */}
           <div style={{
             position: 'absolute', bottom: 16, right: 8, zIndex: 10,
-            fontSize: 9, color: 'rgba(255,255,255,0.35)',
+            fontSize: 9, color: 'rgba(255,255,255,0.35)', pointerEvents: 'none',
           }}>
-            © Esri · © OpenStreetMap contributors
+            {MAP_ATTRIBUTION}
           </div>
         </div>
       )}
@@ -410,5 +248,5 @@ const RouteMapView = ({ coordinates = [], color = '#00D1FF', height = 200 }) => 
   );
 };
 
-export { ll2px, bestFit, makeTiles, RouteOverlay, TileLayer, TILE };
+export { ll2px, bestFit, snapshotBasemap };
 export default RouteMapView;

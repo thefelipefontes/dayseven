@@ -28,7 +28,7 @@ import NotificationSettings from './NotificationSettings';
 import { initializePushNotifications, handleNotificationNavigation, removeFCMToken, clearBadge, clearAllNotifications, shouldShowNotification, getNotificationPreferences, logNotificationOpen, getNotificationPermissionStatus, requestNotificationPermission, workoutDetectionFields } from './services/notificationService';
 import { initializeRevenueCat, loginRevenueCat, checkProStatus, getPlanType, addCustomerInfoListener, logoutRevenueCat, presentPaywall, presentCustomerCenter, restorePurchases, setDevAuthEmail, getOfferings } from './services/subscriptionService';
 import ActivityIcon, { ICON_PICKER_CATEGORIES, CATEGORY_COLORS as ICON_CATEGORY_COLORS } from './components/ActivityIcon';
-import RouteMapView, { ll2px, bestFit, makeTiles, RouteOverlay, TileLayer, TILE } from './components/RouteMapView';
+import RouteMapView, { ll2px, bestFit, snapshotBasemap } from './components/RouteMapView';
 import MuscleBodyMap from './components/MuscleBodyMap';
 import { isDemoAccount, getDemoActivities, getDemoUserData, getDemoProfileOverride, getDemoHealthKitData, getDemoHealthHistory, getDemoCalendarData, getDemoFriends, getDemoChallengeStats } from './demoData';
 import { Dumbbell, Footprints } from 'lucide-react';
@@ -5677,12 +5677,11 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
   );
 };
 
-// Static route map for share stamp. Composites tiles onto a single canvas
-// instead of laying out multiple <img>s — WKWebView intermittently leaves a
-// vertical dark band at the tile seam under retina scaling, regardless of
-// CORS or positioning rounding. A canvas sidesteps the seam entirely;
-// html-to-image captures it via toDataURL (CORS-clean since tiles are loaded
-// with crossOrigin and Esri returns Access-Control-Allow-Origin: *).
+// Static route map for share stamp. The basemap is a one-off MapLibre
+// snapshot copied into a plain 2D canvas: html-to-image captures it via
+// toDataURL (CORS-clean since OpenFreeMap sends Access-Control-Allow-Origin: *),
+// and no live WebGL context is left behind. The route is an SVG overlay
+// projected with ll2px at bestFit's zoom, which the snapshot matches.
 //
 // MUST live at module scope. As a nested component inside ActivityStampModal,
 // every parent re-render gives it a new function identity → React remounts it
@@ -5692,8 +5691,12 @@ const StaticRouteMap = ({ coords, width, height, color, transparent }) => {
   const tileSig = useMemo(() => {
     if (!coords || coords.length < 2) return null;
     const fit = bestFit(coords, width, height);
-    const { tiles, pts } = makeTiles(coords, width, height, fit.z, fit.cp, 0);
-    return { tiles, pts, urls: tiles.map(t => t.url).join('|') };
+    const vl = fit.cp.x - width / 2, vt = fit.cp.y - height / 2;
+    const pts = coords.map(c => {
+      const p = ll2px(c.lat, c.lng, fit.z);
+      return { x: p.x - vl, y: p.y - vt };
+    });
+    return { fit, pts };
   }, [coords, width, height]);
 
   useEffect(() => {
@@ -5703,41 +5706,17 @@ const StaticRouteMap = ({ coords, width, height, color, transparent }) => {
     canvas.width = Math.round(width * dpr);
     canvas.height = Math.round(height * dpr);
     const ctx = canvas.getContext('2d');
-    ctx.scale(dpr, dpr);
     ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, width, height);
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     let cancelled = false;
-    const { tiles } = tileSig;
-    // Static query suffix keeps these URLs distinct from RouteMapView's
-    // preview tile URLs underneath. Without that, a CORS Image() request
-    // to a URL WebKit already cached as non-CORS (from the preview render)
-    // can fail to populate, leaving a tile gap on the canvas.
-    // Base tiles first, then street-name labels on top.
-    const layers = [
-      ...tiles.map(t => ({ t, url: t.url })),
-      ...tiles.map(t => ({ t, url: t.labelUrl })),
-    ];
-    Promise.all(layers.map(({ url }) => new Promise(resolve => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => resolve(img);
-      img.onerror = () => resolve(null);
-      img.src = `${url}?cors=1`;
-    }))).then(loaded => {
-      if (cancelled) return;
-      loaded.forEach((img, i) => {
-        if (!img) return;
-        const { t } = layers[i];
-        // Snap tile edges to device pixels, else anti-aliased edges leave a
-        // faint seam where neighbouring tiles meet.
-        const snap = v => Math.round(v * dpr) / dpr;
-        const x = snap(t.left), y = snap(t.top);
-        ctx.drawImage(img, x, y, snap(t.left + t.size) - x, snap(t.top + t.size) - y);
-      });
+    const { cLat, cLng, z } = tileSig.fit;
+    snapshotBasemap({ cLat, cLng, z, width, height, pixelRatio: dpr }).then(snap => {
+      if (cancelled || !snap) return;
+      ctx.drawImage(snap, 0, 0, canvas.width, canvas.height);
     });
     return () => { cancelled = true; };
-  }, [transparent, tileSig?.urls, width, height]);
+  }, [transparent, tileSig, width, height]);
 
   if (!tileSig) return null;
   const { pts } = tileSig;

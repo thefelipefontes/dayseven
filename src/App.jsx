@@ -13843,12 +13843,25 @@ export default function DaySevenApp() {
       console.log(`[Backfill] corrected ${updates.map(u => `${u.date}: ${stored[u.date]?.steps ?? 0} → ${u.steps} steps`).join(', ')}`);
 
       await Promise.all(updates.map(u => saveDailyHealthData(uid, u.date, u.steps, u.calories).catch(() => {})));
-      setHealthHistory(prev => {
+      const mergeUpdates = (list) => {
         const byDate = {};
-        (prev || []).forEach(e => { if (e?.date) byDate[e.date] = e; });
+        (list || []).forEach(e => { if (e?.date) byDate[e.date] = e; });
         updates.forEach(u => { byDate[u.date] = { ...(byDate[u.date] || {}), ...u }; });
         return Object.values(byDate).sort((a, b) => b.date.localeCompare(a.date));
-      });
+      };
+      healthHistoryRef.current = mergeUpdates(healthHistoryRef.current);
+      setHealthHistory(prev => mergeUpdates(prev));
+
+      // The load-time streak walk ran before these steps arrived, so a week they complete
+      // (or hold) read as missed and its streak was saved as reset. Walk again with them.
+      const recalculated = recalculateStreaksFromHistory(activitiesRef.current, userDataRef.current?.goals);
+      const storedStreaks = userDataRef.current?.streaks || {};
+      if (recalculated && Object.keys(recalculated).some(k => (recalculated[k] || 0) !== (storedStreaks[k] || 0))) {
+        const streaks = { ...storedStreaks, ...recalculated };
+        userDataRef.current = { ...(userDataRef.current || {}), streaks };
+        setUserData(prev => ({ ...prev, streaks: { ...prev.streaks, ...recalculated } }));
+        updateUserProfile(uid, { streaks }).catch(() => {});
+      }
     } catch (e) {
       // The next open or resume retries.
       console.log('[Backfill] failed:', e?.message || e);

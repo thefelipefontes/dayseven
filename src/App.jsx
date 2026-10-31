@@ -5788,6 +5788,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
   const cardRef = useRef(null);
   const nameTextRef = useRef(null);
   const [stampMode, setStampMode] = useState('dark'); // 'dark' or 'transparent'
+  const [stampFormat, setStampFormat] = useState('story'); // 'story' (9:16) or 'post' (4:5)
   const [isSharing, setIsSharing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isAnimating, setIsAnimating] = useState(false);
@@ -5820,7 +5821,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
     const nameRect = nameTextRef.current.getBoundingClientRect();
     const cardLeftPad = 16;
     setNameCenterX((nameRect.left + nameRect.width / 2) - cardRect.left - cardLeftPad);
-  }, [isOpen, activity?.id, activity?.type, stampMode]);
+  }, [isOpen, activity?.id, activity?.type, stampMode, stampFormat]);
 
   const handleClose = () => {
     setIsClosing(true);
@@ -5837,6 +5838,10 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
   const category = getActivityCategory(activity);
   const categoryColor = category === 'lifting' ? '#00FF94' : category === 'cardio' ? '#FF9500' : category === 'recovery' ? '#00D1FF' : '#aaa';
   const isTransparent = stampMode === 'transparent';
+  // Same sizes as the week share card: 270×480 story, 320×400 feed post.
+  const isPost = stampFormat === 'post';
+  const cardW = isPost ? 320 : 270;
+  const cardH = isPost ? 400 : 480;
 
   // Format duration
   const duration = activity.duration || 0;
@@ -5938,7 +5943,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
   const generateStampImage = async () => {
     if (!cardRef.current) return null;
     try {
-      const w = 270, h = 480;
+      const w = cardW, h = cardH;
       const scale = 3;
       const { toCanvas } = await import('html-to-image');
       const canvas = await toCanvas(cardRef.current, {
@@ -6062,9 +6067,10 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
       }}
       onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
     >
-      {/* Mode toggle */}
+      {/* Mode + format toggles */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
       <div style={{
-        display: 'flex', gap: 4, marginBottom: 16, padding: 3,
+        display: 'flex', gap: 4, padding: 3,
         borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.08)',
       }}>
         <button
@@ -6090,6 +6096,26 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
           Overlay
         </button>
       </div>
+      <div style={{
+        display: 'flex', gap: 4, padding: 3,
+        borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.08)',
+      }}>
+        {[['story', '9:16'], ['post', '4:5']].map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => setStampFormat(id)}
+            style={{
+              padding: '6px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+              backgroundColor: stampFormat === id ? 'rgba(255,255,255,0.15)' : 'transparent',
+              color: stampFormat === id ? '#fff' : 'rgba(255,255,255,0.5)',
+              border: 'none', cursor: 'pointer',
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      </div>
 
       {/* Location toggle — only when the activity has a captured location.
           Tap to include/remove it from the card before sharing. */}
@@ -6112,7 +6138,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
 
       {/* Stamp Card Preview */}
       <div style={{
-        width: 270, height: 480, borderRadius: 16, overflow: 'hidden',
+        width: cardW, height: cardH, borderRadius: 16, overflow: 'hidden',
         boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
         ...(isTransparent ? {
           backgroundImage: `linear-gradient(45deg, #1a1a1a 25%, transparent 25%), linear-gradient(-45deg, #1a1a1a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #1a1a1a 75%), linear-gradient(-45deg, transparent 75%, #1a1a1a 75%)`,
@@ -6124,7 +6150,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
         <div
           ref={cardRef}
           style={{
-            width: 270, height: 480,
+            width: cardW, height: cardH,
             background: isTransparent ? 'transparent' : 'linear-gradient(180deg, #0a0a0a 0%, #0d0d0d 50%, #000000 100%)',
             display: 'flex', flexDirection: 'column',
             padding: isTransparent ? '0 16px 16px' : '24px 20px 16px',
@@ -6378,8 +6404,8 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
               <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 4 }}>
                 <StaticRouteMap
                   coords={routeCoords}
-                  width={230}
-                  height={140}
+                  width={isPost ? 260 : 230}
+                  height={isPost ? 110 : 140}
                   color={categoryColor}
                   transparent={isTransparent}
                 />
@@ -6485,7 +6511,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       marginTop: -8, marginBottom: -8,
                     }}>
-                      <MuscleBodyMap muscleData={getMuscleData()} scale={0.62} hideLabels />
+                      <MuscleBodyMap muscleData={getMuscleData()} scale={isPost ? 0.46 : 0.62} hideLabels />
                     </div>
                     <div style={{
                       display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 4,
@@ -6591,7 +6617,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
           {/* Footer: Rings + Category fractions with icons (centered row) */}
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            marginTop: 'auto', paddingTop: 0, gap: 10,
+            marginTop: 'auto', paddingTop: isPost ? 12 : 0, gap: 10,
           }}>
             <MiniRings size={40} />
             <div>
@@ -6649,7 +6675,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
       </div>
 
       {/* Action Buttons */}
-      <div style={{ display: 'flex', gap: 12, marginTop: 20, width: 270 }}>
+      <div style={{ display: 'flex', gap: 12, marginTop: 20, width: cardW }}>
         <button
           onClick={handleSaveStamp}
           disabled={isSaving}
@@ -19690,14 +19716,53 @@ export default function DaySevenApp() {
           setStampRouteCoords([]);
         }}
         activity={stampActivity}
-        weeklyProgress={showStampModal ? calculateWeeklyProgress(activities) : weeklyProgress}
-        weekSteps={showStampModal ? (() => {
-          // Third ring on the stamp: this week's steps against the weekly goal. Users with no
-          // step data keep Recovery there (their week is judged on Strength + Cardio only).
+        {...(showStampModal && stampActivity?.date ? (() => {
+          // The stamp's "This week" is the week as it stood when this session was done, not
+          // as it stands now — sharing Tuesday's lift on Saturday shows Tuesday's numbers.
+          // Counts: that week's sessions up to and including this one (same day → by time).
+          // The stamped activity is added explicitly: straight after a live workout it may
+          // not be in `activities` yet.
+          const actDate = stampActivity.date;
+          const weekKey = weekKeyFromDateStr(actDate);
+          const toMinutes = (t) => {
+            const m = (t || '').match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+            if (!m) return null;
+            let h = parseInt(m[1], 10);
+            const p = m[3]?.toUpperCase();
+            if (p === 'PM' && h !== 12) h += 12;
+            if (p === 'AM' && h === 12) h = 0;
+            return h * 60 + parseInt(m[2], 10);
+          };
+          const actMin = toMinutes(stampActivity.time);
+          const upToThis = activities.filter(a => {
+            if (!a?.date || a.id === stampActivity.id) return false;
+            if (a.date < weekKey || a.date > actDate) return false;
+            if (a.date < actDate) return true;
+            const m = toMinutes(a.time);
+            return actMin == null || m == null || m <= actMin;
+          });
+          const counts = countWeekActivities([...upToThis, stampActivity]);
+          const goals = weekGoalsResolver(userData?.goals, userData?.goalHistory || [])(weekKey);
+          // Third ring: steps from the week's Sunday through the session's day (whole days —
+          // there's no intraday history). Users with no step data keep Recovery there.
           const byDate = stepsByDateFrom(healthHistory || [], healthKitData?.todaySteps || 0, getTodayDate());
-          if (!hasRecentSteps(byDate)) return null;
-          return { total: weekStepsTotal(byDate, getCurrentWeekKey()), goal: (userData?.goals?.stepsPerDay || 10000) * 7 };
-        })() : null}
+          let stepsTotal = 0;
+          const d = new Date(`${weekKey}T12:00:00`);
+          for (let i = 0; i < 7; i++) {
+            const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            if (k > actDate) break;
+            stepsTotal += byDate[k] || 0;
+            d.setDate(d.getDate() + 1);
+          }
+          return {
+            weeklyProgress: {
+              lifts: { completed: counts.lifts, goal: goals.lifts },
+              cardio: { completed: counts.cardio, goal: goals.cardio },
+              recovery: { completed: counts.recovery, goal: goals.recovery },
+            },
+            weekSteps: hasRecentSteps(byDate) ? { total: stepsTotal, goal: (goals.stepsPerDay || 10000) * 7 } : null,
+          };
+        })() : { weeklyProgress, weekSteps: null })}
         routeCoords={stampRouteCoords}
         getActivityCategory={getActivityCategory}
         userProfile={userProfile}

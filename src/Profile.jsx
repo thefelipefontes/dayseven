@@ -924,10 +924,10 @@ export default function ProfilePage(props) {
           // Not at risk once the week already holds the streak (utils/streakShield).
           const anyRemaining = !cwJudged.all && !canHold(cwJudged);
 
+          // Only the streaks a hold covers: the Winning Streak and its goals, so a bonus
+          // Recovery streak alone doesn't prompt it (utils/streaks).
           const hasActiveStreak = (userData?.streaks?.master || 0) > 0
-            || (userData?.streaks?.lifts || 0) > 0
-            || (userData?.streaks?.cardio || 0) > 0
-            || (userData?.streaks?.recovery || 0) > 0;
+            || cwJudged.required.some((c) => (userData?.streaks?.[c] || 0) > 0);
 
           if (!(daysLeft <= 3 && anyRemaining && hasActiveStreak)) return null;
 

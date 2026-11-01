@@ -119,7 +119,10 @@ export function planAutoShield({ activities, ctx, streakShield = {}, vacationWee
     }
 
     // Only when a streak was on the line. With `asOf` in this week the walk treats it as
-    // in progress, so a goal it missed still shows the streak carried into it.
+    // in progress, so a goal it missed still shows the streak carried into it. A hold covers
+    // only the goals it checked (utils/streaks), so a bonus Recovery streak alone doesn't
+    // call for one; an old-rule shield counted every goal as met, so any of them did.
+    const guarded = week >= s.holdFrom ? judged.required : ['lifts', 'cardio', 'recovery', 'steps'];
     const going = computeStreaks(activities, ctx.goals, {
       shieldedWeeks: s.shieldedWeeks,
       holdFrom: s.holdFrom,
@@ -132,7 +135,7 @@ export function planAutoShield({ activities, ctx, streakShield = {}, vacationWee
       asOf: weekDate(week),
     }).current;
     const atRisk = going.master > 0
-      || ['lifts', 'cardio', 'recovery', 'steps'].some((c) => !judged[c] && (going[c] || 0) > 0);
+      || guarded.some((c) => !judged[c] && (going[c] || 0) > 0);
     if (!atRisk) continue;
 
     s.shieldedWeeks.push(week);

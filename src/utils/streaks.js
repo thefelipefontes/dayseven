@@ -12,8 +12,11 @@
 //   • A week counts for a category when that category's activity count meets its goal.
 //   • A 'lifting+cardio' activity (Circuit, etc.) fills BOTH a lifting and a cardio slot.
 //   • Held week (shielded, from the user's holdFrom week) → goals it met advance as usual;
-//                     the rest are held (no advance, no break). The Winning Streak
-//                     advances only if the week was won, so a held week never grows it.
+//                     the Winning Streak goals it missed are held (no advance, no break).
+//                     A bonus Recovery streak isn't part of the hold, so it runs as normal:
+//                     otherwise a held week would keep a Recovery streak that a won week
+//                     with no recovery breaks. The Winning Streak advances only if the
+//                     week was won, so a held week never grows it.
 //   • Shielded week before holdFrom (the old once-every-4-weeks shield) → every category
 //                     counts as met, so the streak advances.
 //   • Vacation week → skipped entirely: neither advances nor breaks anything.
@@ -135,8 +138,8 @@ export function computeStreaks(activities, goals, options = {}) {
       const counts = weeks.get(weekKey) || { lifts: 0, cardio: 0, recovery: 0 };
       const goalFor = goalsForWeek(weekKey);
       const shielded = shieldedWeeks.includes(weekKey);
-      // A held week keeps what it missed from breaking; an old-style shield counts as met
-      // across the board.
+      // A held week keeps the Winning Streak goals it missed from breaking; an old-style
+      // shield counts as met across the board.
       const held = shielded && !!holdFrom && weekKey >= holdFrom;
       const legacyShield = shielded && !held;
       const required = winningCategories(weekKey, ctx);
@@ -151,7 +154,7 @@ export function computeStreaks(activities, goals, options = {}) {
       CATEGORIES.forEach((c) => {
         if (isInjury && frozen.includes(c)) return;     // held — protected
         if (met[c]) current[c]++;
-        else if (!isCurrentWeek && !held) current[c] = 0; // in-progress week never breaks
+        else if (!isCurrentWeek && !(held && required.includes(c))) current[c] = 0; // in-progress week never breaks
       });
 
       // Master is held when the injury froze something this week's Winning Streak needs.

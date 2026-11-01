@@ -120,6 +120,17 @@ class CelebrationManager: ObservableObject {
         print("[Celebration] Cleared \(type.rawValue) celebration flag")
     }
 
+    // MARK: - Reset (sign-out)
+
+    /// Drops whatever is showing or queued. The stored flags are cleared with the rest of the
+    /// account's data (SharedDefaults.clearUserData).
+    func reset() {
+        dismissTimer?.invalidate()
+        dismissTimer = nil
+        celebrationQueue = []
+        activeCelebration = nil
+    }
+
     // MARK: - Show / Dismiss
 
     private func showCelebration(_ event: CelebrationEvent) {

@@ -175,6 +175,57 @@ struct MainTabView: View {
         return min(selectedTab, 1)
     }
 
+    /// Shows the running workout's screen when none is on the stack: one started from the
+    /// phone, or one recovered after a crash. Waits a moment so the remoteWorkoutRequest
+    /// handler, which has priority, can navigate first.
+    private func showRunningWorkoutSoon() {
+        selectedTab = 0
+        appVM.workoutManager.workoutPageIndex = 1  // Ensure timer page, not controls
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            // Re-check: if remoteWorkoutRequest handler already navigated, skip
+            guard startPath.isEmpty && appVM.workoutManager.isActive else { return }
+            guard !appVM.workoutManager.isDismissingSummary else { return }
+            guard appVM.workoutManager.lastResult == nil else { return }
+
+            if let request = appVM.phoneService.remoteWorkoutRequest {
+                if request.subtype != nil || request.focusAreas != nil {
+                    startPath.append(WorkoutDestination.customStart(
+                        activityType: request.activityType,
+                        strengthType: request.strengthType,
+                        subtype: request.subtype,
+                        focusAreas: request.focusAreas,
+                        countToward: request.countToward
+                    ))
+                } else {
+                    startPath.append(WorkoutDestination.quickStart(
+                        activityType: request.activityType,
+                        strengthType: request.strengthType,
+                        countToward: request.countToward
+                    ))
+                }
+            } else {
+                // Use stored workout metadata to preserve type/details
+                let wm = appVM.workoutManager
+                let type = wm.summaryActivityType.isEmpty ? "Other" : wm.summaryActivityType
+                if wm.summaryFocusAreas != nil || wm.summarySubtype != nil {
+                    startPath.append(WorkoutDestination.customStart(
+                        activityType: type,
+                        strengthType: wm.summaryStrengthType,
+                        subtype: wm.summarySubtype,
+                        focusAreas: wm.summaryFocusAreas,
+                        countToward: wm.summaryCountToward
+                    ))
+                } else {
+                    startPath.append(WorkoutDestination.quickStart(
+                        activityType: type,
+                        strengthType: wm.summaryStrengthType,
+                        countToward: wm.summaryCountToward
+                    ))
+                }
+            }
+        }
+    }
+
     var body: some View {
         // 2 static tabs: Activity/Timer (tag 0) → Dashboard (tag 1)
         // Both edges have natural watchOS bounce.
@@ -229,6 +280,10 @@ struct MainTabView: View {
         }
         .ignoresSafeArea(edges: .bottom)
         .task {
+            // Recovered after a crash before this view existed
+            if appVM.workoutManager.isActive && startPath.isEmpty && appVM.workoutManager.lastResult == nil {
+                showRunningWorkoutSoon()
+            }
             if appVM.activities.isEmpty {
                 await appVM.loadUserData()
             }
@@ -240,6 +295,11 @@ struct MainTabView: View {
                 // and ensure nested pager shows timer, not controls
                 selectedTab = 0
                 appVM.workoutManager.workoutPageIndex = 1
+                // Started from the Start screen, its ActiveWorkoutView is already on the
+                // stack. A crash recovery that finished while the app was open has none.
+                if startPath.isEmpty {
+                    showRunningWorkoutSoon()
+                }
             } else if !active && oldActive {
                 // Workout just ended — stay on tab 0 (summary shows there)
                 selectedTab = 0
@@ -255,57 +315,11 @@ struct MainTabView: View {
                 // offline-queued work, after the reload rather than alongside it.
                 Task { await appVM.refreshOnForeground() }
 
-                // If a workout is active but no ActiveWorkoutView is shown,
-                // push one — but only after a short delay to let the
-                // remoteWorkoutRequest onChange handler fire first (it has priority).
+                // If a workout is active but no ActiveWorkoutView is shown, push one
                 if appVM.workoutManager.isActive && startPath.isEmpty
                     && !appVM.workoutManager.isDismissingSummary
                     && appVM.workoutManager.lastResult == nil {
-                    selectedTab = 0
-                    appVM.workoutManager.workoutPageIndex = 1  // Ensure timer page, not controls
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        // Re-check: if remoteWorkoutRequest handler already navigated, skip
-                        guard startPath.isEmpty && appVM.workoutManager.isActive else { return }
-                        guard !appVM.workoutManager.isDismissingSummary else { return }
-                        guard appVM.workoutManager.lastResult == nil else { return }
-
-                        if let request = appVM.phoneService.remoteWorkoutRequest {
-                            if request.subtype != nil || request.focusAreas != nil {
-                                startPath.append(WorkoutDestination.customStart(
-                                    activityType: request.activityType,
-                                    strengthType: request.strengthType,
-                                    subtype: request.subtype,
-                                    focusAreas: request.focusAreas,
-                                    countToward: request.countToward
-                                ))
-                            } else {
-                                startPath.append(WorkoutDestination.quickStart(
-                                    activityType: request.activityType,
-                                    strengthType: request.strengthType,
-                                    countToward: request.countToward
-                                ))
-                            }
-                        } else {
-                            // Use stored workout metadata to preserve type/details
-                            let wm = appVM.workoutManager
-                            let type = wm.summaryActivityType.isEmpty ? "Other" : wm.summaryActivityType
-                            if wm.summaryFocusAreas != nil || wm.summarySubtype != nil {
-                                startPath.append(WorkoutDestination.customStart(
-                                    activityType: type,
-                                    strengthType: wm.summaryStrengthType,
-                                    subtype: wm.summarySubtype,
-                                    focusAreas: wm.summaryFocusAreas,
-                                    countToward: wm.summaryCountToward
-                                ))
-                            } else {
-                                startPath.append(WorkoutDestination.quickStart(
-                                    activityType: type,
-                                    strengthType: wm.summaryStrengthType,
-                                    countToward: wm.summaryCountToward
-                                ))
-                            }
-                        }
-                    }
+                    showRunningWorkoutSoon()
                 } else if !startPath.isEmpty {
                     selectedTab = 0
                 }

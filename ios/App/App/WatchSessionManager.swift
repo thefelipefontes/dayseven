@@ -121,11 +121,26 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     private static let pendingActionKey = "pendingAction"
     private static let pendingActionTimestampKey = "pendingActionTimestamp"
 
+    /// Every read-modify-write of the applicationContext runs here, one at a time. They come
+    /// from the plugin (distance unit), WCSession's delegate queue (clearing a command when
+    /// the watch reports a workout) and sendMessage's reply and error handlers (queueing or
+    /// clearing a command). Two at once could each read the same context and the second
+    /// write would undo the first: a queued end lost, or a stale one put back.
+    private let contextQueue = DispatchQueue(label: "app.dayseven.watchSession.applicationContext")
+
     /// Sends `values` merged onto the last applicationContext we sent. A queued
     /// workout command is never carried forward: the watch replays pendingAction
     /// on every activation, so re-sending a stale one alongside an unrelated
     /// update (e.g. the distance unit) could end the next workout.
     func updateApplicationContext(_ values: [String: Any]) throws {
+        try contextQueue.sync {
+            try mergeIntoApplicationContext(values)
+        }
+    }
+
+    /// The edit itself. Only ever called on contextQueue.
+    private func mergeIntoApplicationContext(_ values: [String: Any]) throws {
+        dispatchPrecondition(condition: .onQueue(contextQueue))
         let session = WCSession.default
         var context = session.applicationContext
         context.removeValue(forKey: Self.pendingActionKey)
@@ -155,14 +170,18 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     /// newer command directly, or a new workout started.
     func clearPendingCommandFromContext() {
         let session = WCSession.default
-        guard session.activationState == .activated,
-              session.applicationContext[Self.pendingActionKey] != nil else { return }
+        guard session.activationState == .activated else { return }
 
-        do {
-            try updateApplicationContext([:])
-            print("[WatchSession] Cleared queued command from applicationContext")
-        } catch {
-            print("[WatchSession] Failed to clear queued command: \(error.localizedDescription)")
+        // The check and the clear are one edit, so a command queued in between isn't wiped
+        // unseen.
+        contextQueue.sync {
+            guard session.applicationContext[Self.pendingActionKey] != nil else { return }
+            do {
+                try mergeIntoApplicationContext([:])
+                print("[WatchSession] Cleared queued command from applicationContext")
+            } catch {
+                print("[WatchSession] Failed to clear queued command: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -484,8 +503,10 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         let finalState = WorkoutActivityAttributes.ContentState(isPaused: false)
 
         Task { @MainActor in
-            // End ALL workout Live Activities (covers both locally-started and push-started)
-            for activity in Activity<WorkoutActivityAttributes>.activities {
+            // End every workout Live Activity (covers both locally-started and push-started)
+            // except the phone workout's, which HealthKitWriterPlugin ends with its session.
+            // An end from the watch used to take the phone workout's card down with it.
+            for activity in Activity<WorkoutActivityAttributes>.activities where activity.id != phoneWorkoutLiveActivityId {
                 await activity.end(
                     .init(state: finalState, staleDate: nil),
                     dismissalPolicy: .immediate
@@ -500,9 +521,11 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     func updateWatchWorkoutLiveActivityPaused(_ isPaused: Bool, accumulatedPauseTime: Double = 0) {
         let newState = WorkoutActivityAttributes.ContentState(isPaused: isPaused, accumulatedPauseTime: accumulatedPauseTime)
 
-        Task {
-            // Update ALL workout activities (covers both locally-started and push-started)
-            for activity in Activity<WorkoutActivityAttributes>.activities {
+        // Main actor: phoneWorkoutLiveActivityId is main-thread only
+        Task { @MainActor in
+            // Update every workout activity (covers both locally-started and push-started)
+            // except the phone workout's: its pause state and pause time are its own.
+            for activity in Activity<WorkoutActivityAttributes>.activities where activity.id != phoneWorkoutLiveActivityId {
                 await activity.update(.init(state: newState, staleDate: nil))
             }
         }
@@ -593,7 +616,6 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         request.timeoutInterval = 15
 
         print("[WatchSession] Calling cloud function at: \(urlString)")
-        print("[WatchSession] Using ID token prefix: \(String(idToken.prefix(20)))...")
 
         // Firebase v2 callable function expects { data: {} } body
         let body: [String: Any] = ["data": [:]]
@@ -617,19 +639,15 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
                 return
             }
 
-            // Log raw response for debugging
-            let responseStr = String(data: data, encoding: .utf8) ?? "non-utf8"
-            print("[WatchSession] Raw response: \(responseStr)")
-
+            // The body carries the custom token, a credential for this account: log only the
+            // HTTP status above and the response's keys, never its contents.
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                print("[WatchSession] Failed to parse JSON")
-                // Send the raw response back to watch so we can see it in watch console
-                let preview = String(responseStr.prefix(200))
-                completion(["error": "Not JSON: \(preview)"])
+                print("[WatchSession] Failed to parse JSON (\(data.count) bytes)")
+                completion(["error": "Unexpected response from the token service"])
                 return
             }
 
-            print("[WatchSession] Parsed JSON keys: \(json.keys)")
+            print("[WatchSession] Parsed JSON keys: \(Array(json.keys))")
 
             // Firebase v2 callable functions return { result: { token: "..." } }
             // but may also return { token: "..." } directly

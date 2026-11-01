@@ -126,6 +126,22 @@ struct SharedDefaults {
         return change
     }
 
+    /// Removes everything written for the signed-in account (sign-out): the complication's
+    /// rings, streaks and steps, and the celebration flags. The complications read zeros
+    /// until the next sign-in loads. The distance unit is a display preference and stays.
+    static func clearUserData() {
+        guard let defaults = shared else { return }
+        for key in [
+            masterStreakKey, liftsStreakKey, cardioStreakKey, recoveryStreakKey,
+            liftsCompletedKey, liftsGoalKey, cardioCompletedKey, cardioGoalKey,
+            recoveryCompletedKey, recoveryGoalKey, todayStepsKey, weekStepsKey, stepsGoalKey,
+            todayCaloriesKey, lastUpdatedKey, injuryModeActiveKey, weekStartKey,
+            dailyGoalsCelebratedKey, weekCategoryCelebratedKey
+        ] {
+            defaults.removeObject(forKey: key)
+        }
+    }
+
     // MARK: - Read (called from widget extension)
 
     /// The stored data as it stands at `date`. Progress written in an earlier week reads as

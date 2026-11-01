@@ -17,6 +17,7 @@ import { SwipeableProvider, SwipeableActivityItem, SwipeableContext, globalIsPul
 import WeekStatsModal from './components/WeekStatsModal';
 import MonthStatsModal from './components/MonthStatsModal';
 import ActivityDetailModal from './components/ActivityDetailModal';
+import SectionErrorBoundary from './components/SectionErrorBoundary';
 import TrendsView from './components/TrendsView';
 import OwnProfileModal from './components/OwnProfileModal';
 import { resolveUnit, unitLabel, formatDistanceValue, milesToDisplay, formatPace } from './utils/distance';
@@ -3515,6 +3516,7 @@ export default function ProfilePage(props) {
       />
 
       {/* Activity Detail Modal for calendar day view */}
+      <SectionErrorBoundary name="dayActivityDetail" variant="modal" open={!!selectedDayActivity} onClose={() => setSelectedDayActivity(null)}>
       <ActivityDetailModal
         isOpen={!!selectedDayActivity}
         onClose={() => setSelectedDayActivity(null)}
@@ -3536,6 +3538,7 @@ export default function ProfilePage(props) {
         onChallenge={(activity) => { onChallengeActivity && onChallengeActivity(activity); setSelectedDayActivity(null); }}
         friends={friends}
       />
+      </SectionErrorBoundary>
     </div>
 
     {showSelfProfile && (

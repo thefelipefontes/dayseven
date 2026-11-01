@@ -71,9 +71,11 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
   // streak rows show 🌴/🛡️ rather than a red ✗ (mirrors the Activity Calendar cells).
   const isVacation = !!weekData?.isVacation;
   const isShielded = !!weekData?.isShielded;
-  // Held under the every-week rule (utils/streakShield): goals it met still count, the rest
-  // were held. An old-style shield covered every goal.
+  // Held under the every-week rule (utils/streakShield): goals it met still count, and the
+  // Winning Streak goals it missed were held. A bonus Recovery streak isn't part of the hold,
+  // so a miss there still reads ✗ (utils/streaks). An old-style shield covered every goal.
   const isHeld = !!weekData?.isHeld;
+  const heldRow = (cat, met) => isHeld && !met && (cat === 'master' || weekRequired.includes(cat));
   const isInjury = !!weekData?.isInjury;
   const injuryFrozenCats = weekData?.injuryFrozenCats || [];
   // A category row is injury-frozen if injury was active that week and the category was paused.
@@ -86,7 +88,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
   const streakIcon = (met, color, cat, count, goal) => {
     if (isVacation) return <span style={{ fontSize: '13px', lineHeight: 1 }}>🌴</span>;
     if (injuryFrozenRow(cat)) return <span style={{ fontSize: '13px', lineHeight: 1 }}>🩹</span>;
-    if (isShielded && !(isHeld && met)) return <span style={{ fontSize: '13px', lineHeight: 1 }}>🛡️</span>;
+    if (isHeld ? heldRow(cat, met) : isShielded) return <span style={{ fontSize: '13px', lineHeight: 1 }}>🛡️</span>;
     if (!met && isLiveWeek) {
       return <span className="text-xs font-bold" style={{ color: '#777' }}>{count === undefined ? '—' : `${count}/${goal}`}</span>;
     }
@@ -95,8 +97,8 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
   const streakRowStyle = (met, rgb, cat) => {
     if (isVacation) return { backgroundColor: 'rgba(255,149,0,0.1)', border: '1px solid rgba(255,149,0,0.2)' };
     if (injuryFrozenRow(cat)) return { backgroundColor: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)' };
-    if (isHeld && !met) return { backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)' };
-    if (isShielded || met) return { backgroundColor: `rgba(${rgb},0.1)`, border: `1px solid rgba(${rgb},0.2)` };
+    if (heldRow(cat, met)) return { backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)' };
+    if ((isShielded && !isHeld) || met) return { backgroundColor: `rgba(${rgb},0.1)`, border: `1px solid rgba(${rgb},0.2)` };
     return { backgroundColor: 'rgba(255,255,255,0.05)', border: 'none' };
   };
 

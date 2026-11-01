@@ -13244,15 +13244,16 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
           // met one goal this week reads as streak 1 and would be told about a shield
           // that protects nothing. What matters is a category the user has NOT yet met
           // this week that is carrying a streak into it — that's the run a missed week
-          // would break.
+          // would break. A bonus Recovery streak doesn't count: a hold doesn't cover it
+          // (utils/streaks).
           const atRiskStreak =
             (liftsRemaining > 0 && userData.streaks.lifts > 0) ||
             (cardioRemaining > 0 && userData.streaks.cardio > 0) ||
-            (recoveryRemaining > 0 && userData.streaks.recovery > 0) ||
+            (recoveryNeeded && recoveryRemaining > 0 && userData.streaks.recovery > 0) ||
             (!thisWeekJudged.steps && !injuryFrozen.includes('steps') && (userData.streaks.steps || 0) > 0) ||
             (userData.streaks.master > 0 && !thisWeekJudged.all);
           if (!(daysLeft <= 3 && atRiskStreak)) return null;
-          // Won already: nothing to hold. (A bonus Recovery streak can still read as at risk.)
+          // Won already: nothing to hold.
           if (thisWeekJudged.all) return null;
 
           if (!isPro) {

@@ -14,6 +14,7 @@ Paste each field into App Store Connect → App Information / Version page. Limi
 Know where your streak stands.
 
 • Your Sunday summary now tells you when the Streak Shield held your week, and what it takes to grow your streak
+• See when friends are on vacation 🌴, on an injury pause 🩹, or had their last week held by the Streak Shield 🛡️, on their profile and the leaderboard
 • New to the every-week Streak Shield? A quick note on Home shows how it works
 • Recovery, your bonus goal, now counts the same every week: hit it and its streak grows, miss it and it resets, even in a week your shield held
 • Fixes and polish

@@ -15,7 +15,7 @@ const formatDate = (date) => {
 //               Demo accounts don't persist celebrations, so it plays again on
 //               every fresh launch; afterwards "Week won · tap to replay" on Home
 //               replays it.
-export const DEMO_SCENARIO = 'finish';
+export const DEMO_SCENARIO = 'midweek';
 
 const daysAgo = (n) => {
   const d = new Date();

@@ -62,3 +62,6 @@ ios/App/Dayseven Watch Widgets 2/
 # Secrets — never commit. The APNs key lives in Secret Manager (APNS_AUTH_KEY).
 *.p8
 functions/apns/
+
+# Marketing assets (Instagram posts and their sources) stay local, never in this public repo.
+marketing/

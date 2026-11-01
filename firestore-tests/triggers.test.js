@@ -29,14 +29,26 @@ async function waitFor(check, what, timeoutMs = 30000) {
   }
 }
 
-async function createAuthUser() {
+// An emulator account, signed in just now: { uid, idToken }.
+async function signUp() {
   const res = await fetch(`${AUTH}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=fake`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: `${uid('u')}@example.com`, password: 'emulator-only', returnSecureToken: true }),
   });
-  return (await res.json()).localId;
+  const json = await res.json();
+  return { uid: json.localId, idToken: json.idToken };
 }
+
+async function createAuthUser() {
+  return (await signUp()).uid;
+}
+
+const authAccountExists = async (idToken) => (await fetch(`${AUTH}/identitytoolkit.googleapis.com/v1/accounts:lookup?key=fake`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ idToken }),
+})).ok;
 
 const webhook = (event, secret = SECRET) => fetch(`${FUNCTIONS}/revenueCatWebhook`, {
   method: 'POST',
@@ -136,9 +148,9 @@ describe('Cloud Function triggers', () => {
       const reactor = uid('reactor');
       await setDoc(doc(db, 'users', reactor), { username: 'reactor', displayName: 'Reactor', subscriptionRequired: true });
       await setDoc(doc(db, 'userTokens', ghost), { tokens: ['old-device'] });
-      // onReactionCreated → sendNotificationToUser(ghost)
-      await setDoc(doc(db, 'users', ghost, 'activityReactions', '1', 'reactions', reactor), {
-        reactorUid: reactor, reactorName: 'Spoofed Name', reactionType: '🔥', createdAt: new Date().toISOString(),
+      // onCommentCreated → sendNotificationToUser(ghost)
+      await setDoc(doc(db, 'users', ghost, 'activityComments', '1', 'comments', 'c1'), {
+        commenterUid: reactor, commenterName: 'Spoofed Name', text: 'hi', createdAt: new Date().toISOString(),
       });
       await waitFor(async () => !(await exists(`userTokens/${ghost}`)), 'orphaned tokens removed');
       assert.equal(await exists(`users/${ghost}`), false);
@@ -192,6 +204,47 @@ describe('Cloud Function triggers', () => {
     });
   });
 
+  describe('account deletion', () => {
+    const callDeleteAccount = (idToken) => fetch(`${FUNCTIONS}/deleteAccount`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+      body: JSON.stringify({ data: {} }),
+    });
+
+    async function seedAccount(id) {
+      const friend = uid('friend');
+      await setDoc(doc(db, 'users', id), { username: id.slice(0, 15), subscriptionRequired: true });
+      await setDoc(doc(db, 'users', id, 'dailyHealth', '2026-10-28'), { date: '2026-10-28', steps: 5000 });
+      await setDoc(doc(db, 'users', friend), { username: friend.slice(0, 15), subscriptionRequired: true });
+      await setDoc(doc(db, 'users', friend, 'activityReactions', '5', 'reactions', id), { reactorUid: id, reactionType: '🔥' });
+      return friend;
+    }
+
+    it('deleteAccount removes the data, then the Auth account', async () => {
+      const { uid: id, idToken } = await signUp();
+      const friend = await seedAccount(id);
+      const res = await callDeleteAccount(idToken);
+      assert.equal(res.status, 200);
+      assert.deepEqual((await res.json()).result, { deleted: true });
+      assert.equal(await exists(`users/${id}`), false);
+      assert.equal(await exists(`users/${id}/dailyHealth/2026-10-28`), false);
+      assert.equal(await exists(`users/${friend}/activityReactions/5/reactions/${id}`), false);
+      assert.equal(await exists(`users/${friend}`), true);
+      assert.equal(await authAccountExists(idToken), false);
+    });
+
+    it('deleting the Auth account some other way still clears the data', async () => {
+      const { uid: id, idToken } = await signUp();
+      const friend = await seedAccount(id);
+      await fetch(`${AUTH}/identitytoolkit.googleapis.com/v1/accounts:delete?key=fake`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken }),
+      });
+      await waitFor(async () => !(await exists(`users/${id}/dailyHealth/2026-10-28`))
+        && !(await exists(`users/${friend}/activityReactions/5/reactions/${id}`)), 'cleanup after Auth deletion');
+      assert.equal(await exists(`users/${id}`), false);
+    });
+  });
+
   describe('revenueCatWebhook', () => {
     const now = Date.now();
     const DAY = 24 * 60 * 60 * 1000;
@@ -225,6 +278,14 @@ describe('Cloud Function triggers', () => {
       const res = await webhook({ type: 'RENEWAL', app_user_id: id, expiration_at_ms: now + 30 * DAY, event_timestamp_ms: now - DAY });
       assert.equal((await res.json()).result, 'stale');
       assert.equal((await read(`users/${id}`)).subscription.entitlementActive, false);
+    });
+
+    it('a SANDBOX event changes nothing', async () => {
+      const id = uid('sandbox');
+      await setDoc(doc(db, 'users', id), { username: 'sandboxer', subscriptionRequired: true, subscription: { entitlementActive: true, status: 'active', environment: 'PRODUCTION' } });
+      const res = await webhook({ type: 'EXPIRATION', environment: 'SANDBOX', app_user_id: id, expiration_at_ms: now - 1000, event_timestamp_ms: now });
+      assert.equal((await res.json()).skipped, 'sandbox');
+      assert.equal((await read(`users/${id}`)).subscription.entitlementActive, true);
     });
 
     it('a TEST event changes nothing', async () => {

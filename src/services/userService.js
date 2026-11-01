@@ -1,4 +1,4 @@
-import { doc, getDoc, getDocFromServer, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, limit, writeBatch, onSnapshot, runTransaction } from 'firebase/firestore';
+import { doc, getDoc, getDocFromServer, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, limit, onSnapshot, runTransaction } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { Capacitor } from '@capacitor/core';
@@ -6,6 +6,7 @@ import { FirebaseFirestore } from '@capacitor-firebase/firestore';
 import { FirebaseStorage } from '@capacitor-firebase/storage';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import * as Sentry from '@sentry/react';
+import { callFunction } from './cloudFunctions';
 
 // Convert a Date to YYYY-MM-DD string in local timezone (avoids UTC date shifting)
 const toLocalDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -1396,134 +1397,24 @@ export async function deleteActivityPhoto(photoURL) {
   }
 }
 
-export async function deleteUserAccount(uid, username) {
+// Deletes the account on the server (the deleteAccount Cloud Function): every doc and file
+// it left anywhere — friends' lists, comments and reactions on friends' activities,
+// challenges, daily health, photos — and then the Auth account, last. The server wants a
+// sign-in from the last few minutes, as Firebase's own account delete does; without one
+// this throws an error whose code is 'auth/requires-recent-login', and the caller signs the
+// user in again and calls it once more.
+export async function deleteUserAccount(uid) {
   try {
-    if (isNative) {
-      // Native: Delete username document
-      if (username) {
-        try {
-          await FirebaseFirestore.deleteDocument({
-            reference: `usernames/${username.toLowerCase()}`
-          });
-        } catch (e) {
-          // username deletion failed
-        }
-      }
-
-      // Native: Get and delete friends subcollection
-      try {
-        const { snapshots: friendSnapshots } = await FirebaseFirestore.getCollection({
-          reference: `users/${uid}/friends`
-        });
-        if (friendSnapshots) {
-          for (const snap of friendSnapshots) {
-            // Remove this user from their friend's list
-            try {
-              await FirebaseFirestore.deleteDocument({
-                reference: `users/${snap.data.friendUid}/friends/${uid}`
-              });
-            } catch (e) {
-              // Friend may have already removed us
-            }
-            // Delete from our list
-            await FirebaseFirestore.deleteDocument({
-              reference: `users/${uid}/friends/${snap.id}`
-            });
-          }
-        }
-      } catch (e) {
-        // friends deletion failed
-      }
-
-      // Native: Delete friend requests involving this user
-      for (const side of ['fromUid', 'toUid']) {
-        try {
-          const { snapshots: requestSnapshots } = await FirebaseFirestore.getCollection({
-            reference: 'friendRequests',
-            compositeFilter: {
-              type: 'and',
-              queryConstraints: [{ type: 'where', fieldPath: side, opStr: '==', value: uid }]
-            }
-          });
-          for (const snap of (requestSnapshots || [])) {
-            await FirebaseFirestore.deleteDocument({ reference: `friendRequests/${snap.id}` });
-          }
-        } catch (e) {
-          // friend requests deletion failed
-        }
-      }
-
-      // Native: Delete push tokens, so this device stops getting the old account's
-      // notifications (the server also removes them when the user doc goes)
-      try {
-        await FirebaseFirestore.deleteDocument({ reference: `userTokens/${uid}` });
-      } catch (e) {
-        // tokens may not exist
-      }
-
-      // Native: Delete the user document
-      await FirebaseFirestore.deleteDocument({
-        reference: `users/${uid}`
-      });
-
-    } else {
-      // Web SDK implementation
-      const batch = writeBatch(db);
-
-      // Delete username document
-      if (username) {
-        const usernameRef = doc(db, 'usernames', username.toLowerCase());
-        batch.delete(usernameRef);
-      }
-
-      // Get and delete friends - also remove from their friend lists
-      try {
-        const friendsRef = collection(db, 'users', uid, 'friends');
-        const friendsSnapshot = await getDocs(friendsRef);
-
-        for (const friendDoc of friendsSnapshot.docs) {
-          const friendData = friendDoc.data();
-          // Remove this user from their friend's list
-          const reverseFriendRef = doc(db, 'users', friendData.friendUid, 'friends', uid);
-          batch.delete(reverseFriendRef);
-          // Delete from our list
-          batch.delete(friendDoc.ref);
-        }
-      } catch (e) {
-        // friends processing failed
-      }
-
-      // Delete friend requests involving this user
-      try {
-        const sentRequestsQuery = query(collection(db, 'friendRequests'), where('fromUid', '==', uid));
-        const sentSnapshot = await getDocs(sentRequestsQuery);
-        sentSnapshot.docs.forEach(doc => batch.delete(doc.ref));
-
-        const receivedRequestsQuery = query(collection(db, 'friendRequests'), where('toUid', '==', uid));
-        const receivedSnapshot = await getDocs(receivedRequestsQuery);
-        receivedSnapshot.docs.forEach(doc => batch.delete(doc.ref));
-      } catch (e) {
-        // friend requests deletion failed
-      }
-
-      // Delete push tokens (the server also removes them when the user doc goes)
-      batch.delete(doc(db, 'userTokens', uid));
-
-      // Delete the user document
-      const userRef = doc(db, 'users', uid);
-      batch.delete(userRef);
-
-      // Commit all deletes
-      await batch.commit();
-    }
-
-    // Clear all caches for this user
-    clearUserCache(uid);
-
-    return true;
+    await callFunction('deleteAccount', {}, { freshToken: true });
   } catch (error) {
+    if (error.message === 'requires-recent-login') error.code = 'auth/requires-recent-login';
     throw error;
   }
+
+  // Clear all caches for this user
+  clearUserCache(uid);
+
+  return true;
 }
 
 // Daily Health Data - for syncing HealthKit data to Firestore for desktop access

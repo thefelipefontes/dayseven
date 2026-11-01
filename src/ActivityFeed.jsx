@@ -1463,8 +1463,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       setFeedActivities(limitedActivities);
 
       // Tag activities that fulfilled a challenge (for the "Completed challenge" pill).
-      // Single batched query against `challenges` filtered by winnerUids array-contains-any
-      // the post authors in this feed — self + friends.
+      // One call for the challenges the post authors in this feed (self + friends) won.
       try {
         const winnerUids = Array.from(new Set([
           user?.uid,

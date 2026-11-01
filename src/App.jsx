@@ -7030,21 +7030,10 @@ const DeleteAccountModal = ({ isOpen, onClose, user, userProfile, onDeleteComple
         }
       }
 
-      // Delete user data from Firestore
-      await deleteUserAccount(user.uid, userProfile?.username);
-
-      // Delete Firebase Auth account — try directly first, re-auth only if needed
-      const deleteAuthAccount = async () => {
-        if (Capacitor.isNativePlatform()) {
-          const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
-          await FirebaseAuthentication.deleteUser();
-        } else {
-          await auth.currentUser.delete();
-        }
-      };
-
+      // The server deletes all the account's data, then the Auth account last. It needs a
+      // recent sign-in — try directly first, re-auth only if needed.
       try {
-        await deleteAuthAccount();
+        await deleteUserAccount(user.uid);
       } catch (authErr) {
         const code = authErr.code || authErr.message || '';
         if (code.includes('requires-recent-login')) {
@@ -7075,7 +7064,7 @@ const DeleteAccountModal = ({ isOpen, onClose, user, userProfile, onDeleteComple
               await signInWithPopup(auth, provider);
             }
           }
-          await deleteAuthAccount();
+          await deleteUserAccount(user.uid);
         } else {
           throw authErr;
         }

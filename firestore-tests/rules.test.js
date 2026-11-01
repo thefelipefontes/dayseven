@@ -166,6 +166,17 @@ for (const stage of ['transitional', 'strict']) {
       });
     });
 
+    describe('pushRateLimits', () => {
+      it('server only: neither side can read, reset or write a counter', async () => {
+        const id = 'reaction_bob_alice';
+        await seed((db) => setDoc(doc(db, 'pushRateLimits', id), { kind: 'reaction', fromUid: 'bob', toUid: 'alice', sent: [1] }));
+        await assertFails(getDoc(doc(as('bob'), 'pushRateLimits', id)));
+        await assertFails(getDoc(doc(as('alice'), 'pushRateLimits', id)));
+        await assertFails(deleteDoc(doc(as('bob'), 'pushRateLimits', id)));
+        await assertFails(setDoc(doc(as('bob'), 'pushRateLimits', 'comment_bob_alice'), { sent: [] }));
+      });
+    });
+
     // ---------------------------------------------------------------- friend requests + friends
 
     describe('friendRequests', () => {
@@ -454,16 +465,45 @@ for (const stage of ['transitional', 'strict']) {
       it('expiresAt differing from respondByAt is denied', () =>
         assertFails(create('alice', challengeDoc('alice', ['bob'], { respondByAt: iso(8 * HOUR), expiresAt: iso(30 * HOUR) }))));
 
-      it('participant and completed-challenge reads', async () => {
+      it('participant reads', async () => {
         const c = challengeDoc('alice', ['bob']);
         await seedChallenge(c);
         await assertSucceeds(getDoc(doc(as('bob'), 'challenges', c.id)));
         await assertFails(getDoc(doc(as('carol'), 'challenges', c.id)));
         await assertSucceeds(getDocs(query(collection(as('bob'), 'challenges'), where('participantUids', 'array-contains', 'bob'))));
+      });
+
+      it('a friend of a participant reads an open challenge: denied', async () => {
+        const c = challengeDoc('alice', ['dave']);
+        await seedChallenge(c);
+        await assertFails(getDoc(doc(as('bob'), 'challenges', c.id)));
+      });
+
+      describe('completed challenges', () => {
+        // alice challenged dave, dave won. bob is alice's friend; carol knows nobody.
         const done = challengeDoc('alice', ['dave'], { status: 'completed', winnerUids: ['dave'] });
-        await seedChallenge(done);
-        await assertSucceeds(getDocs(query(collection(as('carol'), 'challenges'),
-          where('status', '==', 'completed'), where('winnerUids', 'array-contains', 'dave'))));
+        beforeEach(() => seedChallenge(done));
+
+        it('participants read it', () => assertSucceeds(getDoc(doc(as('dave'), 'challenges', done.id))));
+        it('a friend of a participant reads it', () => assertSucceeds(getDoc(doc(as('bob'), 'challenges', done.id))));
+        it('a stranger reading it is denied', () => assertFails(getDoc(doc(as('carol'), 'challenges', done.id))));
+        it('a stranger listing them by winner is denied', () =>
+          assertFails(getDocs(query(collection(as('carol'), 'challenges'),
+            where('status', '==', 'completed'), where('winnerUids', 'array-contains', 'dave')))));
+        // App versions up to 1.8.4 list friends' wins this way; the feed now asks the
+        // completedChallengesForFeed function, since a query can't check friendship.
+        it('even a friend listing them by winner is denied', () =>
+          assertFails(getDocs(query(collection(as('alice'), 'challenges'),
+            where('status', '==', 'completed'), where('winnerUids', 'array-contains', 'dave')))));
+        it('a friend of a later participant reads a group win', async () => {
+          // eve is friends with participant 4 only.
+          const group = challengeDoc('alice', ['bob', 'dave', 'carol'], { status: 'completed', winnerUids: ['carol'] });
+          await seed(async (db) => {
+            await setDoc(doc(db, 'challenges', group.id), group.doc);
+            await setDoc(doc(db, 'users', 'carol', 'friends', 'eve'), { friendUid: 'eve', addedAt: iso() });
+          });
+          await assertSucceeds(getDoc(doc(as('eve'), 'challenges', group.id)));
+        });
       });
 
       // acceptChallenge() in challengeService.js

@@ -5,7 +5,8 @@ Emulator tests for:
 - `firestore.rules` (transitional) and `firestore.strict.rules`. Every case runs against both files.
 - The Cloud Function triggers and the RevenueCat webhook (functions + auth emulators).
 - The hourly scheduled jobs. They run in-process, with FCM stubbed and the clock shifted.
-- The webhook's event mapping, as plain unit tests.
+- Trigger and callable handlers (push limits, milestones, account deletion), in-process with FCM and Storage stubbed.
+- The webhook's event mapping and the week rule (functions/weekRule.js), as plain unit tests.
 
 ## Run
 

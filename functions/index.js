@@ -1473,6 +1473,18 @@ exports.sendWeeklySummary = onSchedule(
         weekLine = `${workouts} workouts, ${recovery} recovery sessions, ${caloriesLabel} cal.`;
       }
 
+      // Held by the Streak Shield (utils/streakShield): not won, but 70% with every goal at
+      // least halfway, for a user on the every-week rule (holdFrom is set by the app from
+      // 1.8.4; older builds still use the old shield). Only when there was a Winning Streak
+      // to hold: the phone saves streaks.master as the week runs, and the week before must
+      // have kept it, or that saved count is stale.
+      const holdFrom = userData.streakShield?.holdFrom;
+      const heldStreak = !allGoalsMet && !!holdFrom && weekStartStr >= holdFrom && canHold(lastWeek)
+        && (userData.streaks?.master || 0) > 0
+        && await weekKeptStreak(userId, userData, addDaysToDateStr(weekStartStr, -7), localToday)
+        ? userData.streaks.master
+        : 0;
+
       if (totalCount === 0) {
         await sendNotificationToUser(
           userId,
@@ -1504,6 +1516,23 @@ exports.sendWeeklySummary = onSchedule(
         await db.collection('users').doc(userId).update({
           pendingSharePrompt: { type: 'weekly', sentAt: new Date().toISOString() }
         });
+      } else if (heldStreak) {
+        // The streak held: say so, in place of the regular summary. No share prompt; the
+        // tap lands on Home's "Last week held" card.
+        await sendNotificationToUser(
+          userId,
+          'You Held Your Streak 🛡️',
+          `${lastWeek.percent}% of your week, with every goal at least halfway. Win this week to reach ${heldStreak + 1} weeks.`,
+          {
+            type: NotificationType.WEEKLY_SUMMARY,
+            workouts: workouts.toString(),
+            recovery: recovery.toString(),
+            totalCalories: totalCalories.toString(),
+            allGoalsMet: 'false',
+            held: 'true',
+            showSharePrompt: 'false',
+          }
+        );
       } else {
         // Regular summary
         await sendNotificationToUser(

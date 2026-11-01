@@ -186,6 +186,38 @@ describe('scheduled jobs', () => {
     assert.equal(pushesTo('nostepsweek')[0].notification.body, '1 workouts, 100 cal. Tap to share with friends!');
   });
 
+  it('weekly summary: a held week says the streak held, only when there was one to hold', async () => {
+    const goals = { liftsPerWeek: 2, cardioPerWeek: 2 };
+    const wonWeekBefore = [
+      { id: 1, type: 'Strength Training', date: '2026-10-19' }, { id: 2, type: 'Strength Training', date: '2026-10-20' },
+      { id: 3, type: 'Running', date: '2026-10-21' }, { id: 4, type: 'Running', date: '2026-10-22' },
+    ];
+    // Last week: 1 of 2 strength, 2 of 2 cardio = 75%, every goal halfway.
+    const heldLastWeek = [
+      { id: 5, type: 'Strength Training', date: '2026-10-26' },
+      { id: 6, type: 'Running', date: '2026-10-27' }, { id: 7, type: 'Running', date: '2026-10-29' },
+    ];
+    const base = (activities, extra) => ({
+      notificationPreferences: { timezone: 'UTC' }, winningRuleFrom: '2026-09-06', goals, activities,
+      streaks: { master: 3 }, streakShield: { holdFrom: '2026-10-18' }, ...extra,
+    });
+    await user('held', base([...wonWeekBefore, ...heldLastWeek]));
+    // An older build that never set holdFrom still judges by the old shield.
+    await user('oldbuild', base([...wonWeekBefore, ...heldLastWeek], { streakShield: {} }));
+    // The week before was lost, so the saved 3 is stale: there was no streak to hold.
+    await user('stale', base(heldLastWeek));
+    await user('nostreak', base([...wonWeekBefore, ...heldLastWeek], { streaks: { master: 0 } }));
+    await at('2026-11-01T10:05:00Z', () => jobs.sendWeeklySummary.run({}));
+
+    assert.equal(pushesTo('held').length, 1);
+    assert.equal(pushesTo('held')[0].notification.title, 'You Held Your Streak 🛡️');
+    assert.equal(pushesTo('held')[0].notification.body, '75% of your week, with every goal at least halfway. Win this week to reach 4 weeks.');
+    assert.equal((await db.collection('users').doc('held').get()).data().pendingSharePrompt, undefined);
+    for (const uid of ['oldbuild', 'stale', 'nostreak']) {
+      assert.equal(pushesTo(uid)[0].notification.title, 'Your Week in Review', uid);
+    }
+  });
+
   it('an entitlement a day past its stored expiry is no access (a missed EXPIRATION)', async () => {
     const prefs = { notificationPreferences: { timezone: 'UTC', dailyReminders: true, dailyReminderTime: '09:00' } };
     const sub = (expiresAt) => ({ forceProTier: false, subscription: { entitlementActive: true, status: 'active', expiresAt } });

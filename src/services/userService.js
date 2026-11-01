@@ -1089,7 +1089,14 @@ async function fileToBase64(file) {
   });
 }
 
+// Offline, the native Storage upload retries for up to 10 minutes before failing, and the
+// activity save waits on it. Fail fast instead: the save carries on without the photo.
+const PHOTO_UPLOAD_TIMEOUT_MS = 60000;
+
 export async function uploadActivityPhoto(uid, activityId, file) {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    throw new Error('Offline: photo not uploaded');
+  }
   const timestamp = Date.now();
   const storagePath = `activityPhotos/${uid}/${activityId}/${timestamp}`;
   let downloadURL;
@@ -1107,7 +1114,7 @@ export async function uploadActivityPhoto(uid, activityId, file) {
     });
 
     // Upload using native Firebase Storage
-    await new Promise((resolve, reject) => {
+    await withTimeout(new Promise((resolve, reject) => {
       FirebaseStorage.uploadFile(
         {
           path: storagePath,
@@ -1121,7 +1128,7 @@ export async function uploadActivityPhoto(uid, activityId, file) {
           }
         }
       );
-    });
+    }), PHOTO_UPLOAD_TIMEOUT_MS);
 
     // Clean up temp file
     try {
@@ -1139,7 +1146,7 @@ export async function uploadActivityPhoto(uid, activityId, file) {
   } else {
     // Web SDK fallback
     const photoRef = ref(storage, storagePath);
-    await uploadBytes(photoRef, file);
+    await withTimeout(uploadBytes(photoRef, file), PHOTO_UPLOAD_TIMEOUT_MS);
     downloadURL = await getDownloadURL(photoRef);
   }
 

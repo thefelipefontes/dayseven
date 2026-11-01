@@ -21,6 +21,10 @@ Every week counts now.
 • Pinch, pan and rotate route maps, with a compass to point north again
 • The activity details sheet stays put while you move around the map
 • Activity share cards are now 4:5, and show your week as it stood after that session
+• Log workouts with no signal. They're saved on your phone and sync when you're back online
+• If the Apple Watch app closes mid-workout, it picks the workout back up instead of losing it
+• Your iPhone and Apple Watch no longer overwrite each other when both save at once
+• Deleting your account now removes all of your data, photos included
 • Fixes and polish
 ```
 

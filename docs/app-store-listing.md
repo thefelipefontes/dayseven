@@ -8,23 +8,32 @@ Paste each field into App Store Connect → App Information / Version page. Limi
 
 ---
 
+## What's New in 1.8.5 (4000 max)
+
+```
+Know where your streak stands.
+
+• Your Sunday summary now tells you when the Streak Shield held your week, and what it takes to grow your streak
+• New to the every-week Streak Shield? A quick note on Home shows how it works
+• Recovery, your bonus goal, now counts the same every week: hit it and its streak grows, miss it and it resets, even in a week your shield held
+• Fixes and polish
+```
+
+---
+
 ## What's New in 1.8.4 (4000 max)
+
+As submitted (the condensed version):
 
 ```
 Every week counts now.
 
-• Win your week and your Winning Streak grows. Fall short but reach 70% of your week, with at least half of each goal, and your streak holds instead of resetting
-• The Streak Shield now works every week, on its own, with no waiting between shields
-• Late in the week, Home shows how close you are to holding your streak and what's left to win the week
-• Held weeks show a 🛡️ in your Profile calendar, and the Streak Shield sheet shows your progress on each goal
-• Route maps on your walks and runs show real streets again
-• Pinch, pan and rotate route maps, with a compass to point north again
-• The activity details sheet stays put while you move around the map
-• Activity share cards are now 4:5, and show your week as it stood after that session
-• Log workouts with no signal. They're saved on your phone and sync when you're back online
-• If the Apple Watch app closes mid-workout, it picks the workout back up instead of losing it
-• Your iPhone and Apple Watch no longer overwrite each other when both save at once
-• Deleting your account now removes all of your data, photos included
+• Fall short of winning your week? Reach 70% of it, with at least half of each goal, and your streak holds instead of resetting. It works every week, on its own
+• Home and Profile show how close you are to holding your streak, and which weeks you held
+• Route maps show real streets again, and you can pinch, pan and rotate them
+• Log workouts with no signal. They sync when you're back online
+• If the Apple Watch app closes mid-workout, it picks the workout back up
+• Share cards are now 4:5, and deleting your account removes all of your data
 • Fixes and polish
 ```
 

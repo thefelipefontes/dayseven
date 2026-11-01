@@ -1296,16 +1296,23 @@ const OfflineIndicator = () => {
   const [showBanner, setShowBanner] = useState(false);
 
   useEffect(() => {
+    // Both messages show briefly, then get out of the way. Logging works offline (changes
+    // wait in the activity outbox), so a pill pinned over the top of every sheet for the
+    // whole time offline only hid the controls under it.
+    let hideTimer = null;
+    const flash = (ms) => {
+      setShowBanner(true);
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => setShowBanner(false), ms);
+    };
     const handleOnline = () => {
       setIsOnline(true);
-      // Show "back online" briefly then hide
-      setShowBanner(true);
-      setTimeout(() => setShowBanner(false), 2000);
+      flash(2000);
     };
 
     const handleOffline = () => {
       setIsOnline(false);
-      setShowBanner(true);
+      flash(3000);
     };
 
     window.addEventListener('online', handleOnline);
@@ -1313,10 +1320,11 @@ const OfflineIndicator = () => {
 
     // Show banner initially if offline
     if (!navigator.onLine) {
-      setShowBanner(true);
+      flash(3000);
     }
 
     return () => {
+      clearTimeout(hideTimer);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
@@ -1326,7 +1334,9 @@ const OfflineIndicator = () => {
 
   return (
     <div
-      className="fixed top-0 left-0 right-0 z-[100] flex items-center justify-center transition-all duration-300"
+      // pointer-events-none: this full-width strip sits over the top bar of whatever sheet is
+      // open (Cancel / Save), and used to swallow taps on it. The pill is only a notice.
+      className="fixed top-0 left-0 right-0 z-[100] flex items-center justify-center transition-all duration-300 pointer-events-none"
       style={{
         paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)',
         transform: showBanner ? 'translateY(0)' : 'translateY(-100%)',

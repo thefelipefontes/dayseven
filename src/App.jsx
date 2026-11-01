@@ -15008,6 +15008,13 @@ export default function DaySevenApp() {
         const demoHealthKit = getDemoHealthKitData();
         setActivities(demoActivities);
         activitiesRef.current = demoActivities;
+        // The home screen widget reads its Strength/Cardio counts from weeklyProgress, which
+        // the regular load path sets; without this it stays at 0 for demo accounts.
+        setWeeklyProgress(calculateWeeklyProgress(demoActivities));
+        // Celebrated-this-week flags come from localStorage, which only real accounts write.
+        // A week the real account already won on this device would otherwise block the demo's
+        // celebration, so demo sessions always start the week uncelebrated.
+        setWeekCelebrations({ ...emptyWeekCelebrations, week: getCurrentWeekKey() });
         setUserProfile(prev => (prev ? { ...prev, ...getDemoProfileOverride() } : prev));
         setUserData(demoUserData);
         setCalendarData(getDemoCalendarData(demoActivities));

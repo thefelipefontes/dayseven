@@ -1,4 +1,4 @@
-import { doc, getDoc, getDocFromServer, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, limit, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, getDocFromServer, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, limit, onSnapshot, runTransaction } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { Capacitor } from '@capacitor/core';
@@ -50,11 +50,13 @@ export const clearUserCache = (uid) => {
   cache.timestamps.delete(`customActivities_${uid}`);
 };
 
-// Sign-out: drop every cached read and the stale-write counts, so the next sign-in (the
-// same account or another) starts from fresh reads before anything is saved.
+// Sign-out: drop every cached read, so the next sign-in (the same account or another)
+// starts from fresh reads before anything is saved. Unsent activity changes stay in
+// localStorage and go out the next time that account signs in.
 export const resetUserServiceSession = () => {
   Object.values(cache).forEach((v) => { if (v instanceof Map) v.clear(); });
-  lastKnownServerActivityCount.clear();
+  serverActivitiesLoaded.clear();
+  outboxMemory.clear();
 };
 
 // Helper function to add timeout to Firestore operations (for web SDK fallback)
@@ -116,11 +118,12 @@ const jsToFirestoreValue = (value) => {
   return { stringValue: String(value) };
 };
 
-// Highest activity count seen on the server, per user, for the stale-write guard in
-// saveUserActivities. Per uid on purpose: a single module-wide number was raised by
-// reading friends' activities (Friends feed, leaderboard), after which the signed-in
-// user's own smaller list was silently refused — new workouts didn't save.
-const lastKnownServerActivityCount = new Map();
+// Users whose activities were read successfully this session. A failed read shows as an
+// empty list, so anything that would act on "the whole history" (records, the launch
+// recalc) checks this before trusting what it has.
+const serverActivitiesLoaded = new Set();
+
+export const activitiesLoadedFromServer = (uid) => serverActivitiesLoaded.has(uid);
 
 export async function createUserProfile(user) {
   const path = `users/${user.uid}`;
@@ -359,7 +362,11 @@ function parseFirestoreValue(val) {
   return null;
 }
 
-export async function updateUserProfile(uid, data) {
+// `replace: true` writes each top-level field in `data` whole. The default merge is a deep
+// merge, so a key removed from a nested map (an injury week dropped from
+// injuryMode.frozenWeeks, an old week in weeklyPlan.weeks) stays on the server and comes
+// back on the next launch. Only replace fields the caller holds in full.
+export async function updateUserProfile(uid, data, { replace = false } = {}) {
   const path = `users/${uid}`;
 
   // Optimistically update cache if we have it
@@ -370,9 +377,16 @@ export async function updateUserProfile(uid, data) {
   }
 
   try {
-    // Use setDocument with merge instead of updateDocument to prevent
-    // Firestore SDK offline cache issues from wiping unrelated fields
-    if (isNative) {
+    if (replace) {
+      // updateData/updateDoc set each top-level key to exactly this value.
+      if (isNative) {
+        await FirebaseFirestore.updateDocument({ reference: path, data });
+      } else {
+        await withTimeout(updateDoc(doc(db, 'users', uid), data));
+      }
+    } else if (isNative) {
+      // Use setDocument with merge instead of updateDocument to prevent
+      // Firestore SDK offline cache issues from wiping unrelated fields
       await FirebaseFirestore.setDocument({
         reference: path,
         data: data,
@@ -389,77 +403,318 @@ export async function updateUserProfile(uid, data) {
   }
 }
 
-export async function saveUserActivities(uid, activities, { allowDecrease = false } = {}) {
-  const cleanedActivities = activities.map(activity => {
-    return Object.fromEntries(
-      Object.entries(activity).filter(([_, value]) => value !== undefined)
-    );
+// ---------------------------------------------------------------------------
+// Activity writes: an outbox of changes, sent by read-modify-write.
+//
+// Every change to the activities array (add, edit, delete) is an operation keyed by
+// activity id, kept in a per-user outbox that survives a relaunch (localStorage). Sending
+// it reads the server's current array along with the document's updateTime, applies the
+// queued operations, and writes back with that updateTime as a precondition, the same
+// way the Watch's FirestoreService.batchSave does. If anything changed the document in
+// between (usually the Watch), Firestore rejects the write and we re-read and try again.
+//
+// What this replaces: the phone used to PATCH its whole in-memory list with no
+// precondition, and swallow every failure. An activity logged with no signal was never
+// saved and then vanished at the next foreground refresh, which replaced the local list
+// with the server copy; and a stale list could overwrite what the Watch had just saved.
+//
+// Operations are idempotent (upsert by id, delete by id), so applying the outbox to a
+// list that already reflects some of it is harmless. That is what lets every fresh read
+// merge in the unsent changes (getUserActivities) without double-adding anything.
+// ---------------------------------------------------------------------------
+
+const outboxKey = (uid) => `activityOutbox:${uid}`;
+// The live copy, per uid. localStorage is the durable copy, and it can refuse a write
+// (quota, private mode); the session keeps working from memory when it does.
+const outboxMemory = new Map();
+let outboxSeq = 0;
+
+const readOutbox = (uid) => {
+  if (outboxMemory.has(uid)) return outboxMemory.get(uid);
+  let ops = [];
+  try {
+    const parsed = JSON.parse(localStorage.getItem(outboxKey(uid)) || '[]');
+    if (Array.isArray(parsed)) ops = parsed.filter(o => o && o.id != null && (o.op === 'delete' || (o.op === 'upsert' && o.activity)));
+  } catch (e) {
+    ops = [];
+  }
+  outboxMemory.set(uid, ops);
+  return ops;
+};
+
+const writeOutbox = (uid, ops) => {
+  outboxMemory.set(uid, ops);
+  try {
+    if (ops.length > 0) localStorage.setItem(outboxKey(uid), JSON.stringify(ops));
+    else localStorage.removeItem(outboxKey(uid));
+  } catch (e) {
+    Sentry.captureException(e, { tags: { phase: 'activityOutbox.persist' }, extra: { pending: ops.length } });
+  }
+};
+
+export const hasPendingActivityChanges = (uid) => !!uid && readOutbox(uid).length > 0;
+
+// Apply outbox operations to a list of activities. New activities go to the front, in the
+// order they were queued — the same place the app puts a freshly logged one.
+const applyActivityOps = (list, ops) => {
+  let result = [...(list || [])];
+  const added = [];
+  for (const o of ops || []) {
+    const key = String(o.id);
+    if (o.op === 'delete') {
+      result = result.filter(a => String(a?.id) !== key);
+      for (let i = added.length - 1; i >= 0; i--) if (String(added[i].id) === key) added.splice(i, 1);
+    } else if (o.op === 'upsert' && o.activity) {
+      const i = result.findIndex(a => String(a?.id) === key);
+      const j = added.findIndex(a => String(a.id) === key);
+      if (i >= 0) result[i] = o.activity;
+      else if (j >= 0) added[j] = o.activity;
+      else added.push(o.activity);
+    }
+  }
+  return [...added, ...result];
+};
+
+// Entries the screens can't render — a missing or non-string `date` crashed Home's sort in
+// a loop. Hidden from reads only: writes keep the server's array as it is, so nothing is
+// deleted on the user's behalf.
+const reportedMalformed = new Set();
+const withoutMalformed = (uid, list) => {
+  const ok = (list || []).filter(a => a && typeof a === 'object' && typeof a.date === 'string');
+  if (ok.length !== (list || []).length && !reportedMalformed.has(uid)) {
+    reportedMalformed.add(uid);
+    console.warn(`[getUserActivities] skipped ${(list || []).length - ok.length} malformed activities`);
+    Sentry.captureMessage('Malformed activities skipped', { level: 'warning', extra: { skipped: (list || []).length - ok.length } });
+  }
+  return ok;
+};
+
+// Strip undefined (Firestore rejects it) and anything JSON can't hold, so what is sent is
+// exactly what the outbox persisted.
+const cleanActivity = (activity) => JSON.parse(JSON.stringify(activity));
+
+const getIdToken = async (forceRefresh = false) => {
+  const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+  const { token } = await FirebaseAuthentication.getIdToken(forceRefresh ? { forceRefresh: true } : undefined);
+  return token;
+};
+
+const activitiesDocUrl = (uid) => `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/users/${uid}`;
+
+// Activities are parsed field by field; a value type we don't handle is left out rather
+// than guessed at.
+const parseRestActivityValue = (val) => {
+  if (val.stringValue !== undefined) return val.stringValue;
+  if (val.integerValue !== undefined) return parseInt(val.integerValue);
+  if (val.doubleValue !== undefined) return val.doubleValue;
+  if (val.booleanValue !== undefined) return val.booleanValue;
+  if (val.nullValue !== undefined) return null;
+  if (val.arrayValue) return (val.arrayValue.values || []).map(parseRestActivityValue);
+  if (val.mapValue) {
+    const obj = {};
+    for (const [k, v] of Object.entries(val.mapValue.fields || {})) {
+      obj[k] = parseRestActivityValue(v);
+    }
+    return obj;
+  }
+  return undefined;
+};
+
+// users/{uid}.activities over REST, plus the document's updateTime for use as a write
+// precondition. Throws on any failure: an error body (401/429/5xx) has no fields and used
+// to parse as "no activities", which could then be saved over the real history.
+const fetchActivitiesREST = async (uid, token) => {
+  const response = await withTimeout(fetch(`${activitiesDocUrl(uid)}?mask.fieldPaths=activities`, {
+    headers: { 'Authorization': `Bearer ${token}` },
+    cache: 'no-store'
+  }), 15000);
+  if (!response.ok) {
+    const error = new Error(`REST ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+  const json = await response.json();
+  const values = json?.fields?.activities?.arrayValue?.values || [];
+  const activities = values.map(v => {
+    const parsed = {};
+    for (const [key, val] of Object.entries(v.mapValue?.fields || {})) {
+      const parsedVal = parseRestActivityValue(val);
+      if (parsedVal !== undefined) parsed[key] = parsedVal;
+    }
+    return parsed;
   });
+  return { activities, updateTime: json?.updateTime || null };
+};
 
-  // Guard against stale writes: never overwrite Firestore with fewer activities
-  // unless explicitly allowed (e.g., user deleted an activity on the phone).
-  // This catches race conditions from SDK offline queue replays, stale closures, etc.
-  // Never write a list for a user whose server list hasn't been read successfully this
-  // session: a failed read shows as an empty list, and saving the next workout on top of
-  // it would replace the whole history with that one workout.
-  if (!lastKnownServerActivityCount.has(uid)) {
-    console.warn('[saveUserActivities] BLOCKED write: activities were never loaded for this user');
-    return;
-  }
-  const knownServerCount = lastKnownServerActivityCount.get(uid) || 0;
-  if (!allowDecrease && cleanedActivities.length < knownServerCount) {
-    console.warn(`[saveUserActivities] BLOCKED stale write: tried to save ${cleanedActivities.length} but server has ${knownServerCount}`);
-    return;
+const preconditionError = () => {
+  const error = new Error('activities changed since they were read');
+  error.code = 'precondition-failed';
+  return error;
+};
+
+// One read-modify-write over REST. Throws `precondition-failed` when the document changed
+// after our read (or the write contended with another one), so the caller re-reads.
+const writeOpsOnceREST = async (uid, ops, token) => {
+  const { activities: serverList, updateTime } = await fetchActivitiesREST(uid, token);
+  const next = applyActivityOps(serverList, ops);
+  if (!updateTime) {
+    // Shouldn't happen (every read of an existing document carries one). Without it the
+    // write below has no conflict check, so make it visible.
+    console.warn('[activityOutbox] read returned no updateTime; writing without a precondition');
+    Sentry.captureMessage('activityOutbox: no updateTime on read', { level: 'warning' });
   }
 
-  // Update cache immediately (optimistic update)
-  cache.userActivities.set(uid, cleanedActivities);
+  let url = `${activitiesDocUrl(uid)}?updateMask.fieldPaths=activities`;
+  url += updateTime
+    ? `&currentDocument.updateTime=${encodeURIComponent(updateTime)}`
+    : '&currentDocument.exists=true';
+  const response = await withTimeout(fetch(url, {
+    method: 'PATCH',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ fields: { activities: jsToFirestoreValue(next) } }),
+    cache: 'no-store'
+  }), 15000);
+
+  if (!response.ok) {
+    const text = await response.text();
+    let status = null;
+    try { status = JSON.parse(text)?.error?.status || null; } catch (e) { /* not JSON */ }
+    if (status === 'FAILED_PRECONDITION' || status === 'ABORTED' || response.status === 409) {
+      throw preconditionError();
+    }
+    const error = new Error(`REST save failed: ${response.status} ${text.slice(0, 200)}`);
+    error.status = response.status;
+    throw error;
+  }
+  return next;
+};
+
+// Send these operations. Returns the array as written. Throws when they could not be sent.
+//
+// Native writes go over REST, never the Firestore SDK: the SDK queues writes while the app
+// is backgrounded and replays them on foreground, and those replays used to overwrite what
+// the Watch had saved in between.
+const writeOpsToServer = async (uid, ops) => {
+  if (!isNative) {
+    // A transaction is the web SDK's read-modify-write: it re-runs if the document changes
+    // underneath it, and fails while offline.
+    const userRef = doc(db, 'users', uid);
+    let written = null;
+    await withTimeout(runTransaction(db, async (tx) => {
+      const snap = await tx.get(userRef);
+      if (!snap.exists()) throw new Error('user document missing');
+      written = applyActivityOps(snap.data().activities || [], ops);
+      tx.update(userRef, { activities: written });
+    }), 20000);
+    return written;
+  }
+
+  let token = await getIdToken();
+  let refreshedToken = false;
+  let networkRetried = false;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await writeOpsOnceREST(uid, ops, token);
+    } catch (error) {
+      if (error.status === 401 && !refreshedToken) {
+        refreshedToken = true;
+        token = await getIdToken(true);
+        continue;
+      }
+      if (error.code === 'precondition-failed' && attempt < 5) {
+        await new Promise(resolve => setTimeout(resolve, 150 + Math.random() * 350));
+        continue;
+      }
+      // One quick retry for a dropped request (a fetch TypeError or our timeout). A 4xx
+      // means the server answered, so retrying right away won't change it.
+      if (!error.status && error.code !== 'precondition-failed' && !networkRetried) {
+        networkRetried = true;
+        await new Promise(resolve => setTimeout(resolve, 800));
+        continue;
+      }
+      throw error;
+    }
+  }
+};
+
+// One pass: send everything queued right now, then drop exactly those operations.
+// Anything queued while this was in flight stays for the next pass.
+const flushOnce = async (uid) => {
+  const ops = readOutbox(uid);
+  if (ops.length === 0) return;
+  const written = await writeOpsToServer(uid, ops);
+  const sent = new Set(ops.map(o => o.seq));
+  const remaining = readOutbox(uid).filter(o => !sent.has(o.seq));
+  writeOutbox(uid, remaining);
+  serverActivitiesLoaded.add(uid);
+  cache.userActivities.set(uid, withoutMalformed(uid, applyActivityOps(written, remaining)));
   cache.timestamps.set(`activities_${uid}`, Date.now());
-  lastKnownServerActivityCount.set(uid, cleanedActivities.length);
+  console.log('[activityOutbox] sent', ops.length, 'change(s);', written.length, 'activities on server');
+};
+
+const flushState = new Map(); // uid -> { running: Promise | null, again: boolean }
+
+// Send the outbox. Resolves once everything queued before (and during) the call is on the
+// server; rejects if a pass fails, leaving the changes queued. Safe to call often: calls
+// that overlap share one run, which keeps going while new changes arrive.
+export function flushActivityOutbox(uid) {
+  if (!uid) return Promise.resolve();
+  let state = flushState.get(uid);
+  if (state?.running) {
+    state.again = true;
+    return state.running;
+  }
+  state = { running: null, again: false };
+  flushState.set(uid, state);
+  state.running = (async () => {
+    try {
+      do {
+        state.again = false;
+        await flushOnce(uid);
+      } while (state.again);
+    } finally {
+      state.running = null;
+    }
+  })();
+  return state.running;
+}
+
+// Queue activity changes and send them. `upserts` are whole activity objects (added or
+// edited); `deletes` are activity ids. Resolves once the server has them. On failure it
+// throws with `error.queued = true`: the changes are kept, shown in every read, and sent
+// on the next foreground, reconnect or retry tick.
+export async function saveActivityChanges(uid, { upserts = [], deletes = [] } = {}) {
+  if (!uid) throw new Error('saveActivityChanges: no uid');
+  if (upserts.some(a => a && a.id == null)) {
+    // Ops are keyed by id; one without can't be applied or matched later.
+    console.warn('[saveActivityChanges] skipped an activity with no id');
+    Sentry.captureMessage('saveActivityChanges: activity without id', { level: 'warning' });
+  }
+  const ops = [
+    ...upserts.filter(a => a && a.id != null).map(a => ({ op: 'upsert', id: String(a.id), activity: cleanActivity(a) })),
+    ...deletes.filter(id => id != null).map(id => ({ op: 'delete', id: String(id) })),
+  ].map(o => ({ ...o, seq: `${Date.now()}-${outboxSeq++}` }));
+  if (ops.length === 0) return;
+
+  // A newer change to the same activity replaces the queued one.
+  const ids = new Set(ops.map(o => o.id));
+  writeOutbox(uid, [...readOutbox(uid).filter(o => !ids.has(o.id)), ...ops]);
+  if (cache.userActivities.has(uid)) {
+    cache.userActivities.set(uid, withoutMalformed(uid, applyActivityOps(cache.userActivities.get(uid), ops)));
+    cache.timestamps.set(`activities_${uid}`, Date.now());
+  }
 
   try {
-    await withRetry(async () => {
-      if (isNative) {
-        // Use REST API for writes to bypass Firestore SDK's offline persistence queue.
-        // The native SDK queues writes when the app is backgrounded and replays them
-        // when the app is foregrounded. If the phone's JS was suspended with stale
-        // React state, those queued writes overwrite watch-saved data with stale data.
-        // REST writes go directly to the server with no local queue.
-        const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
-        const { token } = await FirebaseAuthentication.getIdToken();
-        const restUrl = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/users/${uid}?updateMask.fieldPaths=activities`;
-
-        const body = {
-          fields: {
-            activities: jsToFirestoreValue(cleanedActivities)
-          }
-        };
-
-        const response = await fetch(restUrl, {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(body),
-          cache: 'no-store'
-        });
-
-        if (!response.ok) {
-          const text = await response.text();
-          throw new Error(`REST save failed: ${response.status} ${text}`);
-        }
-        console.log('[saveUserActivities] REST save successful:', cleanedActivities.length, 'activities');
-      } else {
-        const userRef = doc(db, 'users', uid);
-        await withTimeout(setDoc(userRef, { activities: cleanedActivities }, { merge: true }));
-      }
-    });
+    await flushActivityOutbox(uid);
   } catch (error) {
-    console.error('[saveUserActivities] Save failed:', error.message);
-    // Cache is already updated, so user sees changes immediately
-    // Error will be logged but won't block the UI
-    // On next refresh, data will sync
+    console.warn('[saveActivityChanges] not sent yet, kept in outbox:', error.message);
+    const queued = new Error(`Saved on this device; not synced yet (${error.message})`);
+    queued.queued = true;
+    queued.cause = error;
+    throw queued;
   }
 }
 
@@ -476,53 +731,13 @@ export async function getUserActivities(uid, forceRefresh = false) {
     if (isNative && forceRefresh) {
       // Bypass Capacitor Firestore cache by calling REST API directly
       try {
-        const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
-        const { token } = await FirebaseAuthentication.getIdToken();
-        const restUrl = `https://firestore.googleapis.com/v1/projects/dayseven-f1a89/databases/(default)/documents/users/${uid}?mask.fieldPaths=activities`;
-        console.log('[getUserActivities] REST fetch starting...');
-        const response = await fetch(restUrl, {
-          headers: { 'Authorization': `Bearer ${token}` },
-          cache: 'no-store'
-        });
-        console.log('[getUserActivities] REST response status:', response.status);
-        // An error body (401/429/5xx) has no fields and used to parse as "no activities",
-        // which got cached and could then be saved over the real history. Fall back instead.
-        if (!response.ok) throw new Error(`REST ${response.status}`);
-        const json = await response.json();
-        // Parse Firestore REST format
-        const parseFirestoreValue = (val) => {
-          if (val.stringValue !== undefined) return val.stringValue;
-          if (val.integerValue !== undefined) return parseInt(val.integerValue);
-          if (val.doubleValue !== undefined) return val.doubleValue;
-          if (val.booleanValue !== undefined) return val.booleanValue;
-          if (val.nullValue !== undefined) return null;
-          if (val.arrayValue) return (val.arrayValue.values || []).map(parseFirestoreValue);
-          if (val.mapValue) {
-            const obj = {};
-            for (const [k, v] of Object.entries(val.mapValue.fields || {})) {
-              obj[k] = parseFirestoreValue(v);
-            }
-            return obj;
-          }
-          return undefined;
-        };
-        const activitiesField = json?.fields?.activities;
-        if (activitiesField?.arrayValue?.values) {
-          activities = activitiesField.arrayValue.values.map(v => {
-            const fields = v.mapValue?.fields || {};
-            const parsed = {};
-            for (const [key, val] of Object.entries(fields)) {
-              const parsedVal = parseFirestoreValue(val);
-              if (parsedVal !== undefined) parsed[key] = parsedVal;
-            }
-            return parsed;
-          });
-          console.log('[getUserActivities] REST got', activities.length, 'activities');
-        } else {
-          console.log('[getUserActivities] REST: no activities array in response, keys:', Object.keys(json?.fields || {}));
-          activities = [];
-        }
+        ({ activities } = await fetchActivitiesREST(uid, await getIdToken()));
+        console.log('[getUserActivities] REST got', activities.length, 'activities');
       } catch (restErr) {
+        // This session's own copy beats the native SDK's cache, which never sees the REST
+        // writes and can be days old: offline, falling back to it hid recently synced
+        // workouts. Use the SDK only when there's nothing better (a cold launch offline).
+        if (cache.userActivities.has(uid)) throw restErr;
         console.warn('[getUserActivities] REST failed, using Capacitor:', restErr);
         const { snapshot } = await withTimeout(FirebaseFirestore.getDocument({ reference: path }));
         activities = snapshot?.data?.activities || [];
@@ -536,18 +751,19 @@ export async function getUserActivities(uid, forceRefresh = false) {
       activities = userDoc.exists() ? (userDoc.data().activities || []) : [];
     }
 
-    // Cache the result and update server count tracker
+    // Unsent changes from this device go on top of whatever the server has, so a refresh
+    // never takes away a workout that just hasn't synced yet.
+    activities = withoutMalformed(uid, applyActivityOps(activities, readOutbox(uid)));
     cache.userActivities.set(uid, activities);
     cache.timestamps.set(`activities_${uid}`, Date.now());
-    lastKnownServerActivityCount.set(uid, Math.max(lastKnownServerActivityCount.get(uid) || 0, activities.length));
+    serverActivitiesLoaded.add(uid);
 
     return activities;
   } catch (error) {
-    // Return cached data if available, even if expired
-    if (cache.userActivities.has(uid)) {
-      return cache.userActivities.get(uid);
-    }
-    return [];
+    // Return cached data if available, even if expired. Either way, include the outbox:
+    // offline, the unsent changes are the part the user is most likely looking for.
+    const base = cache.userActivities.get(uid) || [];
+    return withoutMalformed(uid, applyActivityOps(base, readOutbox(uid)));
   }
 }
 
@@ -778,7 +994,9 @@ export async function getCustomActivities(uid, forceRefresh = false) {
     if (cache.customActivities.has(uid)) {
       return cache.customActivities.get(uid);
     }
-    return [];
+    // null, not []: the caller must not take a failed read for "no custom activities" and
+    // let the next edit save a one-item list over the real one.
+    return null;
   }
 }
 
@@ -1013,7 +1231,9 @@ export async function getPersonalRecords(uid) {
 
     return { personalRecords, streaks };
   } catch (error) {
-    return { personalRecords: null, streaks: null };
+    // `failed` tells "couldn't read" apart from "has no records yet": the launch recalc
+    // must not save over records it never saw.
+    return { personalRecords: null, streaks: null, failed: true };
   }
 }
 
@@ -1090,7 +1310,14 @@ async function fileToBase64(file) {
   });
 }
 
+// Offline, the native Storage upload retries for up to 10 minutes before failing, and the
+// activity save waits on it. Fail fast instead: the save carries on without the photo.
+const PHOTO_UPLOAD_TIMEOUT_MS = 60000;
+
 export async function uploadActivityPhoto(uid, activityId, file) {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    throw new Error('Offline: photo not uploaded');
+  }
   const timestamp = Date.now();
   const storagePath = `activityPhotos/${uid}/${activityId}/${timestamp}`;
   let downloadURL;
@@ -1108,7 +1335,7 @@ export async function uploadActivityPhoto(uid, activityId, file) {
     });
 
     // Upload using native Firebase Storage
-    await new Promise((resolve, reject) => {
+    await withTimeout(new Promise((resolve, reject) => {
       FirebaseStorage.uploadFile(
         {
           path: storagePath,
@@ -1122,7 +1349,7 @@ export async function uploadActivityPhoto(uid, activityId, file) {
           }
         }
       );
-    });
+    }), PHOTO_UPLOAD_TIMEOUT_MS);
 
     // Clean up temp file
     try {
@@ -1140,7 +1367,7 @@ export async function uploadActivityPhoto(uid, activityId, file) {
   } else {
     // Web SDK fallback
     const photoRef = ref(storage, storagePath);
-    await uploadBytes(photoRef, file);
+    await withTimeout(uploadBytes(photoRef, file), PHOTO_UPLOAD_TIMEOUT_MS);
     downloadURL = await getDownloadURL(photoRef);
   }
 

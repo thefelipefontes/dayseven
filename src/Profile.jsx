@@ -17,6 +17,7 @@ import { SwipeableProvider, SwipeableActivityItem, SwipeableContext, globalIsPul
 import WeekStatsModal from './components/WeekStatsModal';
 import MonthStatsModal from './components/MonthStatsModal';
 import ActivityDetailModal from './components/ActivityDetailModal';
+import SectionErrorBoundary from './components/SectionErrorBoundary';
 import TrendsView from './components/TrendsView';
 import OwnProfileModal from './components/OwnProfileModal';
 import { resolveUnit, unitLabel, formatDistanceValue, milesToDisplay, formatPace } from './utils/distance';
@@ -919,7 +920,9 @@ export default function ProfilePage(props) {
           cwStart.setHours(0, 0, 0, 0);
           const cwStartStr = `${cwStart.getFullYear()}-${String(cwStart.getMonth() + 1).padStart(2, '0')}-${String(cwStart.getDate()).padStart(2, '0')}`;
 
-          const anyRemaining = !judgeWeekFromActivities(activities, cwStartStr, profileWeekCtx).all;
+          const cwJudged = judgeWeekFromActivities(activities, cwStartStr, profileWeekCtx);
+          // Not at risk once the week already holds the streak (utils/streakShield).
+          const anyRemaining = !cwJudged.all && !canHold(cwJudged);
 
           const hasActiveStreak = (userData?.streaks?.master || 0) > 0
             || (userData?.streaks?.lifts || 0) > 0
@@ -3513,6 +3516,7 @@ export default function ProfilePage(props) {
       />
 
       {/* Activity Detail Modal for calendar day view */}
+      <SectionErrorBoundary name="dayActivityDetail" variant="modal" open={!!selectedDayActivity} onClose={() => setSelectedDayActivity(null)}>
       <ActivityDetailModal
         isOpen={!!selectedDayActivity}
         onClose={() => setSelectedDayActivity(null)}
@@ -3534,6 +3538,7 @@ export default function ProfilePage(props) {
         onChallenge={(activity) => { onChallengeActivity && onChallengeActivity(activity); setSelectedDayActivity(null); }}
         friends={friends}
       />
+      </SectionErrorBoundary>
     </div>
 
     {showSelfProfile && (

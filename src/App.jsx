@@ -16,7 +16,7 @@ import SettingsPage from './Settings';
 import ProfilePage from './Profile';
 import { isChallengeable, getChallengesForUser, activityMatchesChallengeRule, describeMatchRule, evaluateActivityAgainstChallenge, applyOptimisticChallengeCompletions, applyChallengeIntent, subscribeToChallenges, bucketChallenges, countOutgoingThisMonth } from './services/challengeService';
 import ChallengeMatchChooser from './components/ChallengeMatchChooser';
-import { createUserProfile, getUserProfile, updateUserProfile, updateDisplayName, updateUsername, saveUserActivities, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, deleteActivityPhoto, saveUserGoals, getUserGoals, savePendingGoals, clearPendingGoals, setOnboardingComplete, setTourComplete, savePersonalRecords, getPersonalRecords, saveDailyHealthData, getDailyHealthData, getDailyHealthHistory, subscribeToUserChallengeStats, resetUserServiceSession } from './services/userService';
+import { createUserProfile, getUserProfile, updateUserProfile, updateDisplayName, updateUsername, saveActivityChanges, flushActivityOutbox, hasPendingActivityChanges, activitiesLoadedFromServer, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, deleteActivityPhoto, saveUserGoals, getUserGoals, savePendingGoals, clearPendingGoals, setOnboardingComplete, setTourComplete, savePersonalRecords, getPersonalRecords, saveDailyHealthData, getDailyHealthData, getDailyHealthHistory, subscribeToUserChallengeStats, resetUserServiceSession } from './services/userService';
 import { isSundayToday, nextSundayDateStr, isPendingDue, formatApplyOn } from './utils/goalsSchedule';
 import { getFriends, getReactions, getFriendRequests, getComments, addReply, getReplies, deleteReply, addReaction, removeReaction, addComment, cleanupActivitySocialData } from './services/friendService';
 
@@ -53,6 +53,7 @@ import MonthStatsModal from './components/MonthStatsModal';
 import ActivityDetailModal from './components/ActivityDetailModal';
 import TrendsView from './components/TrendsView';
 import { resolveUnit, formatDistance, formatPaceFromMinutesAndMiles } from './utils/distance';
+import SectionErrorBoundary from './components/SectionErrorBoundary';
 
 // Flag to suppress foreground refresh while photo picker is open
 // (prevents re-render glitch when returning from iOS photo picker)
@@ -1296,16 +1297,23 @@ const OfflineIndicator = () => {
   const [showBanner, setShowBanner] = useState(false);
 
   useEffect(() => {
+    // Both messages show briefly, then get out of the way. Logging works offline (changes
+    // wait in the activity outbox), so a pill pinned over the top of every sheet for the
+    // whole time offline only hid the controls under it.
+    let hideTimer = null;
+    const flash = (ms) => {
+      setShowBanner(true);
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => setShowBanner(false), ms);
+    };
     const handleOnline = () => {
       setIsOnline(true);
-      // Show "back online" briefly then hide
-      setShowBanner(true);
-      setTimeout(() => setShowBanner(false), 2000);
+      flash(2000);
     };
 
     const handleOffline = () => {
       setIsOnline(false);
-      setShowBanner(true);
+      flash(3000);
     };
 
     window.addEventListener('online', handleOnline);
@@ -1313,10 +1321,11 @@ const OfflineIndicator = () => {
 
     // Show banner initially if offline
     if (!navigator.onLine) {
-      setShowBanner(true);
+      flash(3000);
     }
 
     return () => {
+      clearTimeout(hideTimer);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
@@ -1326,7 +1335,9 @@ const OfflineIndicator = () => {
 
   return (
     <div
-      className="fixed top-0 left-0 right-0 z-[100] flex items-center justify-center transition-all duration-300"
+      // pointer-events-none: this full-width strip sits over the top bar of whatever sheet is
+      // open (Cancel / Save), and used to swallow taps on it. The pill is only a notice.
+      className="fixed top-0 left-0 right-0 z-[100] flex items-center justify-center transition-all duration-300 pointer-events-none"
       style={{
         paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)',
         transform: showBanner ? 'translateY(0)' : 'translateY(-100%)',
@@ -11883,8 +11894,9 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
   // Get latest activities for display (sorted by date/time, most recent first)
   const allLatestActivities = [...activities]
     .sort((a, b) => {
-      // Sort by date first (most recent first)
-      const dateCompare = b.date.localeCompare(a.date);
+      // Sort by date first (most recent first). Reads drop activities without a date, so
+      // this is belt-and-braces: a missing one used to throw here on every render.
+      const dateCompare = String(b.date || '').localeCompare(String(a.date || ''));
       if (dateCompare !== 0) return dateCompare;
       // If same date, sort by time (most recent first)
       if (a.time && b.time) {
@@ -13240,6 +13252,8 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             (!thisWeekJudged.steps && !injuryFrozen.includes('steps') && (userData.streaks.steps || 0) > 0) ||
             (userData.streaks.master > 0 && !thisWeekJudged.all);
           if (!(daysLeft <= 3 && atRiskStreak)) return null;
+          // Won already: nothing to hold. (A bonus Recovery streak can still read as at risk.)
+          if (thisWeekJudged.all) return null;
 
           if (!isPro) {
             return (
@@ -13309,6 +13323,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
 
 
       {/* Activity Detail Modal */}
+      <SectionErrorBoundary name="activityDetail" variant="modal" open={!!selectedActivity} onClose={() => setSelectedActivity(null)}>
       <ActivityDetailModal
         isOpen={!!selectedActivity}
         onClose={() => setSelectedActivity(null)}
@@ -13324,6 +13339,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         onChallenge={onChallengeActivity}
         friends={friends}
       />
+      </SectionErrorBoundary>
 
     </div>
   );
@@ -13830,12 +13846,25 @@ export default function DaySevenApp() {
       console.log(`[Backfill] corrected ${updates.map(u => `${u.date}: ${stored[u.date]?.steps ?? 0} → ${u.steps} steps`).join(', ')}`);
 
       await Promise.all(updates.map(u => saveDailyHealthData(uid, u.date, u.steps, u.calories).catch(() => {})));
-      setHealthHistory(prev => {
+      const mergeUpdates = (list) => {
         const byDate = {};
-        (prev || []).forEach(e => { if (e?.date) byDate[e.date] = e; });
+        (list || []).forEach(e => { if (e?.date) byDate[e.date] = e; });
         updates.forEach(u => { byDate[u.date] = { ...(byDate[u.date] || {}), ...u }; });
         return Object.values(byDate).sort((a, b) => b.date.localeCompare(a.date));
-      });
+      };
+      healthHistoryRef.current = mergeUpdates(healthHistoryRef.current);
+      setHealthHistory(prev => mergeUpdates(prev));
+
+      // The load-time streak walk ran before these steps arrived, so a week they complete
+      // (or hold) read as missed and its streak was saved as reset. Walk again with them.
+      const recalculated = recalculateStreaksFromHistory(activitiesRef.current, userDataRef.current?.goals);
+      const storedStreaks = userDataRef.current?.streaks || {};
+      if (recalculated && Object.keys(recalculated).some(k => (recalculated[k] || 0) !== (storedStreaks[k] || 0))) {
+        const streaks = { ...storedStreaks, ...recalculated };
+        userDataRef.current = { ...(userDataRef.current || {}), streaks };
+        setUserData(prev => ({ ...prev, streaks: { ...prev.streaks, ...recalculated } }));
+        updateUserProfile(uid, { streaks }).catch(() => {});
+      }
     } catch (e) {
       // The next open or resume retries.
       console.log('[Backfill] failed:', e?.message || e);
@@ -14376,7 +14405,8 @@ export default function DaySevenApp() {
     setRecordsLoaded(false);
     setProfileStateLoaded(false);
     setRecentHealthReady(false);
-    hasLoadedCustomActivities.current = false;
+    setCustomActivitiesLoaded(false);
+    savedCustomActivitiesRef.current = null;
     lastHealthBackfillRef.current = 0;
     resetUserServiceSession();
 
@@ -14489,18 +14519,32 @@ export default function DaySevenApp() {
   const runCalorieBackfill = async ({ onProgress, limit } = {}) => {
     if (!user) return { success: false, reason: 'no_user' };
 
-    const result = await backfillHkCalories(activitiesRef.current || activities, { onProgress, limit });
+    const base = activitiesRef.current || activities;
+    const result = await backfillHkCalories(base, { onProgress, limit });
 
     if (!result.success || result.stamped === 0) return result;
 
-    const updated = result.activities;
+    // The pass awaits HealthKit once per workout, so the list can change underneath it
+    // (a log, a delete, a Watch save). Carry just the stamps onto the list as it is now
+    // rather than putting the starting snapshot back. backfillHkCalories keeps order and
+    // length, and returns a new object only for the ones it stamped.
+    const stamps = new Map();
+    result.activities.forEach((a, i) => { if (a !== base[i]) stamps.set(String(a.id), a.hkCalories); });
+    const stamped = [];
+    const updated = (activitiesRef.current || []).map(a => {
+      if (!stamps.has(String(a.id))) return a;
+      const next = { ...a, hkCalories: stamps.get(String(a.id)) };
+      stamped.push(next);
+      return next;
+    });
     activitiesRef.current = updated;
     lastFirestoreActivityCount.current = updated.length;
     activitiesFromFirestore.current = true; // Prevent debounced save — saving directly
     setActivities(updated);
     try {
-      await saveUserActivities(user.uid, updated);
+      await saveActivityChanges(user.uid, { upserts: stamped });
     } catch (error) {
+      // Queued: the stamps are kept and sent on the next foreground or reconnect.
       return { success: false, reason: 'save_failed' };
     }
 
@@ -14804,14 +14848,39 @@ export default function DaySevenApp() {
     // ratchet up: the walk can only see activities we actually loaded, so a legitimately
     // earned record is never lowered by a recalculation.
     const cur = existingRecords?._currentStreaks || {};
-    return {
+    return ratchetRecords({
       ...newRecords,
       longestMasterStreak: Math.max(longest.master, existingRecords?.longestMasterStreak || 0, cur.master || 0),
       longestStrengthStreak: Math.max(longest.lifts, existingRecords?.longestStrengthStreak || 0, cur.lifts || 0),
       longestCardioStreak: Math.max(longest.cardio, existingRecords?.longestCardioStreak || 0, cur.cardio || 0),
       longestRecoveryStreak: Math.max(longest.recovery, existingRecords?.longestRecoveryStreak || 0, cur.recovery || 0),
       longestStepsStreak: Math.max(longest.steps || 0, existingRecords?.longestStepsStreak || 0, cur.steps || 0),
-    };
+    }, existingRecords);
+  };
+
+  // The same ratchet for every other record. The weekly ones are the reason: steps and
+  // calories come from a 365-day health window, so a record set 14 months ago — or any of
+  // them, after a failed health read — recomputed lower and was saved over the real one.
+  // Paces are lower-is-better, and a stored pace outside the range the recalc accepts is
+  // let go so the recalc can still clear a corrupt value.
+  const ratchetRecords = (computed, stored) => {
+    const out = { ...computed };
+    const valueOf = (r) => (r && typeof r === 'object' ? r.value : r);
+    const paceRange = { fastestPace: [3, 30], fastestCyclingPace: [0.5, 30] };
+    Object.keys(stored || {}).forEach(key => {
+      if (key.startsWith('_')) return; // recalc inputs, not records
+      const storedValue = valueOf(stored[key]);
+      if (typeof storedValue !== 'number' || !Number.isFinite(storedValue)) return;
+      const computedValue = valueOf(out[key]);
+      const range = paceRange[key];
+      if (range) {
+        if (storedValue < range[0] || storedValue > range[1]) return;
+        if (typeof computedValue !== 'number' || storedValue < computedValue) out[key] = stored[key];
+      } else if (typeof computedValue !== 'number' || storedValue > computedValue) {
+        out[key] = stored[key];
+      }
+    });
+    return out;
   };
 
   // Handle user authentication (shared by onAuthStateChanged and native login)
@@ -15028,16 +15097,17 @@ export default function DaySevenApp() {
               updateUserProfile(user.uid, { winningRuleFrom: ruleFrom }).catch(() => {});
             }
           }
-          // Load streak shield data
+          // Load streak shield data. Written to the ref too, so the load-time streak recalc
+          // below sees held weeks; without it a held week reads as missed and the streak
+          // it held is saved as reset.
           if (profileForStreaks?.streakShield) {
-            setUserData(prev => ({
-              ...prev,
-              streakShield: {
-                ...profileForStreaks.streakShield,
-                lastUsedWeek: profileForStreaks.streakShield.lastUsedWeek ?? null,
-                shieldedWeeks: profileForStreaks.streakShield.shieldedWeeks ?? []
-              }
-            }));
+            const loadedShield = {
+              ...profileForStreaks.streakShield,
+              lastUsedWeek: profileForStreaks.streakShield.lastUsedWeek ?? null,
+              shieldedWeeks: profileForStreaks.streakShield.shieldedWeeks ?? []
+            };
+            userDataRef.current = { ...(userDataRef.current || {}), streakShield: loadedShield };
+            setUserData(prev => ({ ...prev, streakShield: loadedShield }));
           }
           // Load vacation mode data
           if (profileForStreaks?.vacationMode) {
@@ -15250,18 +15320,24 @@ export default function DaySevenApp() {
           const requests = await getFriendRequests(user.uid);
           setPendingFriendRequests(requests.length);
 
-          // Load user's custom activities
+          // Load user's custom activities. null = the read failed: leave saving off for
+          // this session rather than let an edit overwrite a list we never saw.
           const userCustomActivities = await getCustomActivities(user.uid);
-          if (userCustomActivities.length > 0) {
-            setUserData(prev => ({
-              ...prev,
-              customActivities: userCustomActivities
-            }));
+          if (userCustomActivities) {
+            savedCustomActivitiesRef.current = JSON.stringify(userCustomActivities);
+            if (userCustomActivities.length > 0) {
+              setUserData(prev => ({
+                ...prev,
+                customActivities: userCustomActivities
+              }));
+            }
+            setCustomActivitiesLoaded(true);
           }
 
           // Load user's personal records, then recalculate from activities to ensure accuracy
           const recordsResult = await getPersonalRecords(user.uid);
-          const userRecords = recordsResult?.personalRecords ?? recordsResult;
+          const recordsReadFailed = !!recordsResult?.failed;
+          const userRecords = recordsResult?.personalRecords || null;
 
           // Recalculate records from activities and health history to ensure they're accurate
           // This fixes any corruption from race conditions or data issues. Pass current
@@ -15294,8 +15370,13 @@ export default function DaySevenApp() {
               personalRecords: { ...prev.personalRecords, ...recalculatedRecords }
             }));
 
-            // Save recalculated records if they differ from stored records
-            if (JSON.stringify(recalculatedRecords) !== JSON.stringify(userRecords)) {
+            // Save recalculated records if they differ from stored records. Never from a
+            // failed read: with the stored records unseen there's nothing to ratchet
+            // against, and an empty or unread history recomputes as zeros.
+            const canSaveRecords = !recordsReadFailed
+              && (userActivities || []).length > 0
+              && activitiesLoadedFromServer(user.uid);
+            if (canSaveRecords && JSON.stringify(recalculatedRecords) !== JSON.stringify(userRecords)) {
               savePersonalRecords(user.uid, recalculatedRecords);
             }
           } catch (recalcError) {
@@ -15308,8 +15389,10 @@ export default function DaySevenApp() {
             }
           }
 
-          // Mark records as loaded (even if null - means user has no records yet)
-          setRecordsLoaded(true);
+          // Mark records as loaded (even if null - means user has no records yet). Not
+          // after a failed read: "loaded" lets the new-record checks and the streak-record
+          // ratchet write the record map, and they'd write it from placeholders.
+          if (!recordsReadFailed) setRecordsLoaded(true);
 
           // Initialize push notifications on native platforms. Gated on both
           // hasCompletedOnboarding AND username so first-launch dialogs don't
@@ -15331,6 +15414,7 @@ export default function DaySevenApp() {
       setAuthLoading(false);
       setRecordsLoaded(false); // Reset on logout
       setProfileStateLoaded(false);
+      setCustomActivitiesLoaded(false);
     }
   }, []);
 
@@ -15685,22 +15769,19 @@ export default function DaySevenApp() {
 
           const uid = userRef.current?.uid;
           if (uid) {
-            try {
-              const freshActivities = freshActivitiesForSync ?? await getUserActivities(uid, true);
-              const merged = [...autoImportedActivities, ...freshActivities];
-              lastFirestoreActivityCount.current = merged.length;
-              activitiesRef.current = merged;
-              activitiesFromFirestore.current = true; // Prevent debounced save — saving directly
-              lastFirestoreSyncTime.current = Date.now();
-              setActivities(merged);
-              saveUserActivities(uid, merged).catch(() => {});
-            } catch (e) {
-              setActivities(prev => {
-                const updated = [...autoImportedActivities, ...prev];
-                saveUserActivities(uid, updated).catch(() => {});
-                return updated;
-              });
-            }
+            // Fresh read, which already carries any of this device's unsent changes. Only the
+            // new workouts are sent: the server's list is re-read at write time, so nothing
+            // saved elsewhere in the meantime is overwritten.
+            const freshActivities = freshActivitiesForSync ?? await getUserActivities(uid, true);
+            const merged = [...autoImportedActivities, ...freshActivities];
+            lastFirestoreActivityCount.current = merged.length;
+            activitiesRef.current = merged;
+            activitiesFromFirestore.current = true; // Prevent debounced save — saving directly
+            lastFirestoreSyncTime.current = Date.now();
+            setActivities(merged);
+            saveActivityChanges(uid, { upserts: autoImportedActivities }).catch(() => {}); // queued if offline
+            // Auto-logged workouts count toward goals like logged ones, so the streaks move too.
+            recalcAndPersistStreaks(merged);
           } else {
             setActivities(prev => [...autoImportedActivities, ...prev]);
           }
@@ -15783,22 +15864,19 @@ export default function DaySevenApp() {
           if (newActivities.length > 0) {
             const uid = userRef.current?.uid;
             if (uid) {
-              try {
-                const freshActivities = freshActivitiesForSync ?? await getUserActivities(uid, true);
-                const merged = [...newActivities, ...freshActivities];
-                lastFirestoreActivityCount.current = merged.length;
-                activitiesRef.current = merged;
-                activitiesFromFirestore.current = true; // Prevent debounced save — saving directly
-                lastFirestoreSyncTime.current = Date.now();
-                setActivities(merged);
-                saveUserActivities(uid, merged).catch(() => {});
-              } catch (e) {
-                setActivities(prev => {
-                  const updated = [...newActivities, ...prev];
-                  saveUserActivities(uid, updated).catch(() => {});
-                  return updated;
-                });
-              }
+              // Fresh read, which already carries any of this device's unsent changes. Only the
+              // new workouts are sent: the server's list is re-read at write time, so nothing
+              // saved elsewhere in the meantime is overwritten.
+              const freshActivities = freshActivitiesForSync ?? await getUserActivities(uid, true);
+              const merged = [...newActivities, ...freshActivities];
+              lastFirestoreActivityCount.current = merged.length;
+              activitiesRef.current = merged;
+              activitiesFromFirestore.current = true; // Prevent debounced save — saving directly
+              lastFirestoreSyncTime.current = Date.now();
+              setActivities(merged);
+              saveActivityChanges(uid, { upserts: newActivities }).catch(() => {}); // queued if offline
+              // Auto-logged workouts count toward goals like logged ones, so the streaks move too.
+              recalcAndPersistStreaks(merged);
             } else {
               setActivities(prev => [...newActivities, ...prev]);
             }
@@ -15931,8 +16009,9 @@ export default function DaySevenApp() {
         lastFirestoreActivityCount.current = merged.length;
         lastFirestoreSyncTime.current = Date.now();
         setActivities(merged);
-        await saveUserActivities(uid, merged);
+        await saveActivityChanges(uid, { upserts: deduped });
       } catch (e) {
+        // Queued if it was the network: the outbox sends them on the next foreground.
         console.error('[App] Failed to write onboarding activities:', e);
       }
     }
@@ -16109,27 +16188,11 @@ export default function DaySevenApp() {
             await new Promise(r => setTimeout(r, 100));
             syncHealthKit();
 
-            // Healing check: the Firestore SDK's offline persistence queue may flush
-            // stale writes from BEFORE the import-only fix was deployed. These writes
-            // happen at the native level (below JS) and can overwrite watch-saved data.
-            // After a delay (giving the SDK time to flush), re-read Firestore and
-            // re-stamp the correct data if it was overwritten.
-            // Compares against, and re-saves, the CURRENT local list, not the resume
-            // snapshot: re-saving the snapshot brought back anything deleted in those
-            // 5 seconds (and dropped anything added).
-            const capturedUid = user.uid;
-            setTimeout(async () => {
-              try {
-                const verifyActivities = await getUserActivities(capturedUid, true);
-                const localActivities = activitiesRef.current || [];
-                if (verifyActivities.length < localActivities.length) {
-                  console.warn(`[VisibilityHeal] Stale SDK flush detected: server has ${verifyActivities.length} but local has ${localActivities.length} — re-saving`);
-                  await saveUserActivities(capturedUid, localActivities);
-                }
-              } catch (e) {
-                // Non-critical — healing check failed
-              }
-            }, 5000);
+            // There used to be a "healing" re-save here: 5 s after foreground, if the
+            // server had fewer activities than the phone, the phone's whole list was
+            // written back. That also brought back anything the Watch had deleted. What
+            // the phone has that the server doesn't is now exactly its outbox, which the
+            // foreground flush (see the activity outbox effect) sends.
           } catch (e) {
             syncHealthKit();
           }
@@ -16388,6 +16451,29 @@ export default function DaySevenApp() {
   // Track if initial load is complete to avoid saving on mount
   const hasLoadedActivities = useRef(false);
 
+  // Send this device's unsent activity changes (the outbox in userService): at sign-in,
+  // whenever the app comes to the foreground, when the network comes back, and every
+  // minute while anything is still waiting. Each send re-reads the server's list, so it
+  // is safe to fire often.
+  useEffect(() => {
+    const uid = user?.uid;
+    if (!uid) return;
+    const flush = () => {
+      if (!hasPendingActivityChanges(uid)) return;
+      flushActivityOutbox(uid).then(() => notifyWatchDataChanged()).catch(() => {});
+    };
+    const onVisible = () => { if (document.visibilityState === 'visible') flush(); };
+    flush();
+    window.addEventListener('online', flush);
+    document.addEventListener('visibilitychange', onVisible);
+    const interval = setInterval(flush, 60 * 1000);
+    return () => {
+      window.removeEventListener('online', flush);
+      document.removeEventListener('visibilitychange', onVisible);
+      clearInterval(interval);
+    };
+  }, [user?.uid]);
+
   // Save activities to Firestore when they change
   useEffect(() => {
     if (!user) {
@@ -16465,27 +16551,29 @@ export default function DaySevenApp() {
     return () => clearTimeout(timeoutId);
   }, [activities, user]);
 
-  // Save custom activities to Firestore when they change
-  const hasLoadedCustomActivities = useRef(false);
+  // Save custom activities to Firestore when they change — only once the saved list has
+  // actually been read. "Skip the first change" wasn't enough: if the read failed or hadn't
+  // landed yet, the user's next add saved a one-item list over all their others. Compared
+  // with the last list read or written (set where they load in handleUserAuth), like the
+  // HealthKit type preferences below.
+  const [customActivitiesLoaded, setCustomActivitiesLoaded] = useState(false);
+  const savedCustomActivitiesRef = useRef(null);
   useEffect(() => {
-    if (!user || !userData) return;
-
-    // Skip the initial load
-    if (!hasLoadedCustomActivities.current) {
-      hasLoadedCustomActivities.current = true;
-      return;
-    }
+    if (!user || !userData || !customActivitiesLoaded) return;
 
     // Persist whenever the list is an array — including empty, so deleting the last
     // custom activity removes it from Firestore instead of resurrecting it on reload.
     if (Array.isArray(userData.customActivities)) {
+      const json = JSON.stringify(userData.customActivities);
+      if (json === savedCustomActivitiesRef.current) return;
       const timeoutId = setTimeout(() => {
+        savedCustomActivitiesRef.current = json;
         saveCustomActivities(user.uid, userData.customActivities);
       }, 500);
 
       return () => clearTimeout(timeoutId);
     }
-  }, [userData?.customActivities, user]);
+  }, [userData?.customActivities, user, customActivitiesLoaded]);
 
   // Auto-save HealthKit type preferences to Firestore when they change. Compared with the
   // last value read or written (set when they load in handleUserAuth): the old "skip the
@@ -16688,6 +16776,30 @@ export default function DaySevenApp() {
   const recalculateStreaksFromHistory = (allActivities, goals) => {
     const result = computeStreakHistory(allActivities, goals);
     return result ? result.current : null;
+  };
+
+  // Recalculate streaks after an activity change and persist them. Reads goals and the
+  // signed-in user off refs, so it is safe from syncHealthKit, which is memoized once.
+  const recalcAndPersistStreaks = (allActivities, goals = userDataRef.current?.goals) => {
+    const recalculated = recalculateStreaksFromHistory(allActivities, goals);
+    if (!recalculated) return;
+    setUserData(prev => ({
+      ...prev,
+      streaks: {
+        ...prev.streaks,
+        ...recalculated
+      }
+    }));
+    // Persist recalculated streaks once the state above has reached userDataRef.
+    const uid = userRef.current?.uid;
+    if (uid) {
+      setTimeout(() => {
+        const latestData = userDataRef.current;
+        updateUserProfile(uid, {
+          streaks: latestData.streaks
+        }).catch(() => {});
+      }, 200);
+    }
   };
 
   // Shared entry point: applies the demo-account guard and pulls shield / vacation / injury
@@ -16916,11 +17028,12 @@ export default function DaySevenApp() {
       userDataRef.current = updated;
       const recalculated = recalculateStreaksFromHistory(activities, goals);
       userDataRef.current = prevRef;
-      if (recalculated) {
-        updated.streaks = { ...prev.streaks, ...recalculated };
-        if (user?.uid) updateUserProfile(user.uid, { injuryMode: updatedIm, streaks: updated.streaks }).catch(() => {});
-      } else if (user?.uid) {
-        updateUserProfile(user.uid, { injuryMode: updatedIm }).catch(() => {});
+      if (recalculated) updated.streaks = { ...prev.streaks, ...recalculated };
+      if (user?.uid) {
+        // Replace, not merge: a merge leaves the pruned weeks in injuryMode.frozenWeeks on
+        // the server, and they came back frozen after the next launch.
+        updateUserProfile(user.uid, { injuryMode: updatedIm }, { replace: true }).catch(() => {});
+        if (recalculated) updateUserProfile(user.uid, { streaks: updated.streaks }).catch(() => {});
       }
       return updated;
     });
@@ -16960,7 +17073,9 @@ export default function DaySevenApp() {
   const handleSaveWeeklyPlan = useCallback((weeklyPlan) => {
     setUserData(prev => ({ ...prev, weeklyPlan }));
     if (user?.uid) {
-      updateUserProfile(user.uid, { weeklyPlan }).catch(err =>
+      // Replace, not merge: the planner sends only this week under `weeks`, and a deep merge
+      // kept every past week on the server, so the map grew forever.
+      updateUserProfile(user.uid, { weeklyPlan }, { replace: true }).catch(err =>
         console.log('[WeeklyPlan] save failed:', err?.message));
     }
   }, [user?.uid]);
@@ -17006,17 +17121,20 @@ export default function DaySevenApp() {
   // save path in handleActivitySaved so it survives reloads and watch sync.
   const handleCaptureLocation = (activityId, location) => {
     const next = (location && (location.city || location.state || location.country)) ? location : null;
-    setActivities(prev => {
-      const updated = prev.map(a => a.id === activityId ? { ...a, location: next } : a);
-      activitiesFromFirestore.current = true;
-      lastFirestoreSyncTime.current = Date.now();
-      lastFirestoreActivityCount.current = updated.length;
-      activitiesRef.current = updated;
-      if (user?.uid && !isDemoAccount(userProfileRef.current, userRef.current)) {
-        saveUserActivities(user.uid, updated).then(() => notifyWatchDataChanged()).catch(() => {});
-      }
-      return updated;
-    });
+    const current = activitiesRef.current || [];
+    const target = current.find(a => a.id === activityId);
+    if (!target) return;
+    const changed = { ...target, location: next };
+    const updated = current.map(a => a.id === activityId ? changed : a);
+    activitiesFromFirestore.current = true;
+    lastFirestoreSyncTime.current = Date.now();
+    lastFirestoreActivityCount.current = updated.length;
+    activitiesRef.current = updated;
+    setActivities(updated);
+    if (user?.uid && !isDemoAccount(userProfileRef.current, userRef.current)) {
+      // Queued if offline; nothing to tell the user about a location.
+      saveActivityChanges(user.uid, { upserts: [changed] }).then(() => notifyWatchDataChanged()).catch(() => {});
+    }
   };
 
   const handleActivitySaved = async (activity) => {
@@ -17055,6 +17173,11 @@ export default function DaySevenApp() {
     // Remove photoFile from activity object (don't save file object to Firestore)
     const { photoFile, challengeAfterSave, ...activityData } = activity;
 
+    // The list as it is now, not as it was when this save started: the photo upload above
+    // can take seconds, and a Watch save or foreground refresh may have landed meanwhile.
+    // Building from the render-time `activities` put that older list back.
+    const latestActivities = activitiesRef.current || activities;
+
     let newActivity;
     let updatedActivities;
 
@@ -17065,7 +17188,8 @@ export default function DaySevenApp() {
       // adding muscle groups from the "needs details" banner) strips its
       // healthKitUUID, and the next HK sync no longer recognizes the workout and
       // re-imports it as a duplicate needs-details entry.
-      const existingActivity = activities.find(a => a.id === activityData.id);
+      const existingActivity = latestActivities.find(a => a.id === activityData.id)
+        || activities.find(a => a.id === activityData.id);
       newActivity = {
         ...activityData,
         photoURL,
@@ -17090,7 +17214,9 @@ export default function DaySevenApp() {
             ? existingActivity?.linkedHealthKitStartDate
             : undefined),
       };
-      updatedActivities = activities.map(a => a.id === activityData.id ? newActivity : a);
+      updatedActivities = latestActivities.some(a => a.id === activityData.id)
+        ? latestActivities.map(a => a.id === activityData.id ? newActivity : a)
+        : [newActivity, ...latestActivities];
       
       // Also update calendar data - remove old entry and add updated one
       const updatedCalendar = { ...calendarData };
@@ -17130,7 +17256,7 @@ export default function DaySevenApp() {
       };
 
       // Add to activities list
-      updatedActivities = [newActivity, ...activities];
+      updatedActivities = [newActivity, ...latestActivities];
 
       // Update calendar data
       const dateKey = activityData.date;
@@ -17163,10 +17289,18 @@ export default function DaySevenApp() {
     // recordings don't pollute the real Firestore doc. Local state still
     // updates above; just skip the remote write.
     if (user?.uid && !isDemoAccount(userProfileRef.current, userRef.current)) {
-      saveUserActivities(user.uid, updatedActivities).then(() => {
+      // Only this activity is sent; the server's list is re-read at write time.
+      saveActivityChanges(user.uid, { upserts: [newActivity] }).then(() => {
         notifyWatchDataChanged();
       }).catch(err => {
         console.error('[handleActivitySaved] Direct save failed:', err);
+        // It's kept on the phone and sent on the next foreground or reconnect; say so,
+        // rather than letting it look synced.
+        setToastMessage(err?.queued
+          ? "Saved on your phone. It'll sync when you're back online."
+          : "Couldn't save this activity. Try again.");
+        setToastType(err?.queued ? 'success' : 'error');
+        setShowToast(true);
       });
     }
 
@@ -17245,8 +17379,12 @@ export default function DaySevenApp() {
         .catch(() => {});
     }
 
-    // Skip celebration for edits
-    if (isEdit) return;
+    // Skip celebration for edits — but not the streak recalc: an edit can move an activity
+    // to another day or category, which changes which weeks were won.
+    if (isEdit) {
+      recalcAndPersistStreaks(updatedActivities);
+      return;
+    }
 
     // Challenge a friend — only when the user turned it on in the log screen. (It used to open
     // after every logged activity: a freemium-era nudge, dropped now the app is paid-only.)
@@ -17658,30 +17796,15 @@ export default function DaySevenApp() {
 
     // Safety net: recalculate streaks from actual activity history to ensure correctness
     // (handles edge cases like delete-then-re-add where state might be stale)
-    const recalculated = recalculateStreaksFromHistory(updatedActivities, goals);
-    if (recalculated) {
-      setUserData(prev => ({
-        ...prev,
-        streaks: {
-          ...prev.streaks,
-          ...recalculated
-        }
-      }));
-      // Persist recalculated streaks
-      if (user?.uid) {
-        setTimeout(() => {
-          const latestData = userDataRef.current;
-          updateUserProfile(user.uid, {
-            streaks: latestData.streaks
-          }).catch(() => {});
-        }, 200);
-      }
-    }
+    recalcAndPersistStreaks(updatedActivities, goals);
   };
 
   const handleDeleteActivity = (activityId) => {
+    // Work from the latest list (activitiesRef), not the render-time one, so a Watch save
+    // or refresh that just landed isn't dropped by this delete.
+    const currentActivities = activitiesRef.current || activities;
     // Find the activity to delete
-    const activityToDelete = activities.find(a => a.id === activityId);
+    const activityToDelete = currentActivities.find(a => a.id === activityId);
     if (!activityToDelete) return;
 
     // Haptic feedback for delete action
@@ -17696,7 +17819,7 @@ export default function DaySevenApp() {
     }
 
     // Remove from activities
-    const updatedActivities = activities.filter(a => a.id !== activityId);
+    const updatedActivities = currentActivities.filter(a => a.id !== activityId);
     setActivities(updatedActivities);
 
     // Prevent debounced save from interfering with the direct save below
@@ -17727,8 +17850,8 @@ export default function DaySevenApp() {
     setWeeklyProgress(newProgress);
     pushWidgetData(newProgress);
 
-    // Recalculate single-activity personal records from remaining activities
-    const recalculateRecords = () => {
+    // Recalculate single-activity personal records from a list of activities
+    const recalculateRecords = (list) => {
       const currentRecords = userDataRef.current.personalRecords || {};
       const newRecords = {
         highestCalories: { value: 0, activityType: null },
@@ -17745,7 +17868,7 @@ export default function DaySevenApp() {
       // Recovery activity types
       const recoveryTypes = ['Cold Plunge', 'Sauna', 'Contrast Therapy', 'Massage', 'Chiropractic'];
 
-      updatedActivities.forEach(activity => {
+      list.forEach(activity => {
         const isWarmup = activity.countToward === 'warmup' || activity.customActivityCategory === 'warmup';
         if (isWarmup) return; // Warm-up activities don't count toward any records
 
@@ -17817,19 +17940,39 @@ export default function DaySevenApp() {
       };
     };
 
-    const updatedRecords = recalculateRecords();
+    // Records only ever ratchet up (the launch recalc never lowers one), so a delete is the
+    // one place a record may come down: when the deleted activity is the one holding it.
+    // That is a key the list supported before the delete (recomputed value == stored) and
+    // no longer does. Only those keys change, here and on the server; a stored record the
+    // list never supported (an activity removed elsewhere, a partial load) is left alone.
+    const prevRecords = userDataRef.current.personalRecords || {};
+    const recordsBefore = recalculateRecords(currentActivities);
+    const recordsAfter = recalculateRecords(updatedActivities);
+    const recordValueOf = (r) => (r && typeof r === 'object' ? r.value : r);
+    const loweredRecords = {};
+    Object.keys(recordsAfter).forEach(key => {
+      const stored = recordValueOf(prevRecords[key]);
+      if (recordValueOf(recordsBefore[key]) === stored && recordValueOf(recordsAfter[key]) !== stored) {
+        loweredRecords[key] = recordsAfter[key];
+      }
+    });
+    const updatedRecords = { ...prevRecords, ...loweredRecords };
 
     // Update userData with new records
     setUserData(prev => ({
       ...prev,
       personalRecords: updatedRecords
     }));
+    if (user?.uid && recordsLoadedRef.current && Object.keys(loweredRecords).length > 0
+      && !isDemoAccount(userProfileRef.current, userRef.current)) {
+      savePersonalRecords(user.uid, loweredRecords).catch(() => {});
+    }
 
     // Check if deleting this activity drops any category below its goal. If so, clear that
     // category's celebrated flag (and master's) so re-completing celebrates again. Streak
     // counts themselves come from the full recalculation below.
     const goals = userData.goals;
-    const oldJudged = judgeWeekFor(activities);          // this week before the delete
+    const oldJudged = judgeWeekFor(currentActivities);   // this week before the delete
     const newJudged = judgeWeekFor(updatedActivities);   // and after
     const currentWeekKey = getCurrentWeekKey();
     const wc = weekCelebrations.week === currentWeekKey ? { ...weekCelebrations } : { ...emptyWeekCelebrations, week: currentWeekKey };
@@ -17867,9 +18010,11 @@ export default function DaySevenApp() {
     // Persist deletion to Firestore (direct save — no longer relies on debounced useEffect)
     // Demo accounts skip the remote write so marketing recordings stay ephemeral.
     if (user?.uid && !isDemoAccount(userProfileRef.current, userRef.current)) {
-      saveUserActivities(user.uid, updatedActivities, { allowDecrease: true }).then(() => {
+      // An explicit delete by id. Sending the shorter list (with the count guard switched
+      // off) could also drop anything the Watch had added since this list was loaded.
+      saveActivityChanges(user.uid, { deletes: [activityId] }).then(() => {
         notifyWatchDataChanged();
-      }).catch(() => {});
+      }).catch(() => {}); // queued if offline: the delete is sent on the next foreground
       // Always persist recalculated streaks after delete
       setTimeout(() => {
         const latestData = userDataRef.current;
@@ -18171,6 +18316,7 @@ export default function DaySevenApp() {
       />
 
       {/* Finish Workout Modal */}
+      <SectionErrorBoundary name="finishWorkout" variant="modal" open={showFinishWorkout} onClose={() => setShowFinishWorkout(false)}>
       <FinishWorkoutModal
         isOpen={showFinishWorkout}
         workout={activeWorkout}
@@ -18327,6 +18473,7 @@ export default function DaySevenApp() {
           triggerHaptic(ImpactStyle.Heavy);
         }}
       />
+      </SectionErrorBoundary>
 
       {/* Fixed Header for Home tab - collapses on scroll */}
       {activeTab === 'home' && (() => {
@@ -18425,6 +18572,7 @@ export default function DaySevenApp() {
           ) : (
             <>
               {activeTab === 'home' && (
+                <SectionErrorBoundary name="home">
                 <HomeTab
                   healthHistory={healthHistory}
                   pendingChallenges={pendingReceivedChallenges}
@@ -18543,12 +18691,14 @@ export default function DaySevenApp() {
                     setShowStampModal(true);
                   }}
                 />
+                </SectionErrorBoundary>
               )}
               {activeTab === 'plan' && (
                 // Plan tab — the weekly planner as a full page (it used to be a collapsible
                 // strip on Home). Home keeps a "Planned today" line from the same plan.
                 // minHeight: just past the visible area (same math as Challenges) so iOS
                 // rubber-band engages even when the plan is shorter than the screen.
+                <SectionErrorBoundary name="plan">
                 <div className="pt-2 pb-32" style={{ minHeight: 'calc(100dvh - env(safe-area-inset-top, 0px) - 16px + 1px)' }}>
                   <WeeklyPlanner
                     asPage
@@ -18563,8 +18713,10 @@ export default function DaySevenApp() {
                     stepsPerDay={userData?.goals?.stepsPerDay || 10000}
                   />
                 </div>
+                </SectionErrorBoundary>
               )}
               {activeTab === 'feed' && (
+                <SectionErrorBoundary name="friends">
                 <ActivityFeed
                   user={user}
                   userProfile={userProfile}
@@ -18615,8 +18767,10 @@ export default function DaySevenApp() {
                     }
                   }}
                 />
+                </SectionErrorBoundary>
               )}
               {activeTab === 'profile' && (
+                <SectionErrorBoundary name="profile">
                 <ProfilePage
                   user={user}
                   userProfile={userProfile}
@@ -18706,6 +18860,7 @@ export default function DaySevenApp() {
                     }
                   }}
                 />
+                </SectionErrorBoundary>
               )}
             </>
           )}
@@ -18729,6 +18884,7 @@ export default function DaySevenApp() {
                 WebkitBackdropFilter: 'blur(20px)',
               }}
             />
+            <SectionErrorBoundary name="settings" variant="modal" onClose={() => { setShowSettings(false); setSettingsScrollTo(null); }}>
             <SettingsPage
               scrollTo={settingsScrollTo}
               onClose={() => { setShowSettings(false); setSettingsScrollTo(null); }}
@@ -18818,6 +18974,7 @@ export default function DaySevenApp() {
               injuryYearlyCap={INJURY_YEARLY_CAP}
               injuryRemainingWeeks={injuryRemainingWeeks()}
             />
+            </SectionErrorBoundary>
           </div>
         )}
         <style>{`
@@ -18971,6 +19128,7 @@ export default function DaySevenApp() {
         />
       )}
 
+      <SectionErrorBoundary name="addActivity" variant="modal" open={showAddActivity} onClose={() => { setShowAddActivity(false); setPendingActivity(null); setDefaultActivityDate(null); }}>
       <AddActivityModal
         isOpen={showAddActivity}
         onClose={() => {
@@ -19123,7 +19281,9 @@ export default function DaySevenApp() {
         activeChallenges={accepterActiveChallenges}
         friendsByUid={Object.fromEntries(friends.map(f => [f.uid, f]))}
       />
+      </SectionErrorBoundary>
 
+      <SectionErrorBoundary name="challengeFriend" variant="modal" open={!!challengeModalActivity} onClose={() => { setChallengeModalActivity(null); setPreSelectedChallengeFriend(null); }}>
       <ChallengeFriendModal
         isOpen={!!challengeModalActivity}
         onClose={() => {
@@ -19151,6 +19311,7 @@ export default function DaySevenApp() {
           setPreSelectedChallengeFriend(null);
         }}
       />
+      </SectionErrorBoundary>
 
       {/* Workout Picker Modal (shown from "See other workouts" or when multiple pending) */}
       {showWorkoutPicker && (healthKitData.pendingWorkouts || []).filter(w => !dismissedWorkoutUUIDs.includes(w.healthKitUUID)).length > 0 && (
@@ -19239,6 +19400,7 @@ export default function DaySevenApp() {
         />
       )}
 
+      <SectionErrorBoundary name="share" variant="modal" open={showShare} onClose={() => { setShowShare(false); setShareWeekRange(null); setShareMonthRange(null); }}>
       <ShareModal
         isOpen={showShare}
         onClose={() => {
@@ -19639,6 +19801,7 @@ export default function DaySevenApp() {
         };
         })()) : shareStatsRef.current}
       />
+      </SectionErrorBoundary>
 
       <CelebrationOverlay
         // Hold off on celebrations while the Challenge a friend modal is up — playing them
@@ -19661,6 +19824,7 @@ export default function DaySevenApp() {
         }}
       />
 
+      <SectionErrorBoundary name="weekCelebration" variant="modal" open={showWeekStreakCelebration && !challengeModalActivity} onClose={() => setShowWeekStreakCelebration(false)}>
       <WeekStreakCelebration
         show={showWeekStreakCelebration && !challengeModalActivity}
         streakCount={userData?.streaks?.master || 1}
@@ -19696,7 +19860,9 @@ export default function DaySevenApp() {
           setPendingToast(null);
         }}
       />
+      </SectionErrorBoundary>
 
+      <SectionErrorBoundary name="stamp" variant="modal" open={showStampModal} onClose={() => { setShowStampModal(false); setStampActivity(null); setStampRouteCoords([]); }}>
       <ActivityStampModal
         isOpen={showStampModal}
         onClose={() => {
@@ -19756,6 +19922,7 @@ export default function DaySevenApp() {
         getActivityCategory={getActivityCategory}
         userProfile={userProfile}
       />
+      </SectionErrorBoundary>
 
       <Toast
         // Same deferral as the celebration overlays — record toasts and any other queued
@@ -19871,7 +20038,7 @@ export default function DaySevenApp() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
                 </svg>
                 <p className="text-xs leading-relaxed" style={{ color: '#FF9500' }}>
-                  Your goals go back to normal — hit this week's to keep your streak, or it'll break like usual.
+                  Your goals go back to normal. Win this week to grow your streak, or get to 70% with every goal at least halfway to hold it.
                 </p>
               </div>
             </div>
@@ -19899,6 +20066,7 @@ export default function DaySevenApp() {
       )}
 
       {showFriends && (
+        <SectionErrorBoundary name="friendsList" variant="modal" onClose={() => { setShowFriends(false); setFriendsInitialTab('friends'); }}>
         <Friends
           user={user}
           userProfile={userProfile}
@@ -19929,6 +20097,7 @@ export default function DaySevenApp() {
             setChallengePickerForFriend(friend);
           }}
         />
+        </SectionErrorBoundary>
       )}
 
       {/* Activity picker — opened from a friend profile to challenge them with a past workout */}
@@ -19946,6 +20115,7 @@ export default function DaySevenApp() {
       />
 
       {/* Pick a past activity to apply to an active challenge (from the "Use past activity" CTA) */}
+      <SectionErrorBoundary name="applyPastActivity" variant="modal" open={!!applyPastActivityChallenge} onClose={() => setApplyPastActivityChallenge(null)}>
       <ChallengeApplyPastActivityModal
         isOpen={!!applyPastActivityChallenge}
         onClose={() => setApplyPastActivityChallenge(null)}
@@ -20001,8 +20171,10 @@ export default function DaySevenApp() {
 
           // Persist the photoURL onto the activity so server-side fulfillChallengeForUser
           // (reads matched.photoURL) accepts it. Update local state + Firestore in lockstep.
-          const updatedActivities = (activitiesRef.current || activities).map(a =>
-            String(a.id) === String(activity.id) ? { ...a, photoURL } : a
+          const latestActivities = activitiesRef.current || activities;
+          const withPhoto = { ...(latestActivities.find(a => String(a.id) === String(activity.id)) || activity), photoURL };
+          const updatedActivities = latestActivities.map(a =>
+            String(a.id) === String(activity.id) ? withPhoto : a
           );
           activitiesRef.current = updatedActivities;
           setActivities(updatedActivities);
@@ -20010,7 +20182,9 @@ export default function DaySevenApp() {
           lastFirestoreSyncTime.current = Date.now();
           lastFirestoreActivityCount.current = updatedActivities.length;
           try {
-            await saveUserActivities(user.uid, updatedActivities);
+            // Has to be on the server before the challenge is applied (the function reads
+            // the photoURL there), so a queued save counts as a failure here.
+            await saveActivityChanges(user.uid, { upserts: [withPhoto] });
           } catch (err) {
             console.error('[ApplyPastActivity] failed to persist photoURL:', err);
             setToastMessage("Photo saved but couldn't update activity. Try again.");
@@ -20092,6 +20266,7 @@ export default function DaySevenApp() {
           }
         }}
       />
+      </SectionErrorBoundary>
 
       {/* Challenge match chooser — surfaced via push when an activity matched 2+ challenges */}
       <ChallengeMatchChooser

@@ -120,6 +120,15 @@ class OfflineQueueManager {
         return (merged, changed)
     }
 
+    /// Forget everything queued (sign-out). Flushed after the next sign-in, it would land in
+    /// that account instead.
+    func clearAll() {
+        defaults?.removeObject(forKey: Self.pendingActivitiesKey)
+        defaults?.removeObject(forKey: Self.pendingUpdatesKey)
+        defaults?.removeObject(forKey: Self.pendingDeletionsKey)
+        print("[OfflineQueue] Cleared all queued work")
+    }
+
     /// Remove what a flush wrote. Work queued while the flush was in flight stays queued.
     func removeFlushed(inserts: [ActivityID], updates: [ActivityDetailsUpdate], deletions: [ActivityID]) {
         save(pendingActivities.filter { !inserts.contains($0.id) }, forKey: Self.pendingActivitiesKey)

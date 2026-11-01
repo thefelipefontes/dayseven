@@ -2,6 +2,7 @@ import CategoryIcon from './CategoryIcon';
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getUserProfile } from '../services/userService';
+import { friendStatus, FRIEND_STATUS } from '../utils/friendStatus';
 import ZoomablePhoto from './ZoomablePhoto';
 
 /**
@@ -110,6 +111,9 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
   const cardioStreak = streaks.cardio ?? friend?.cardioStreak ?? 0;
   const recoveryStreak = streaks.recovery ?? friend?.recoveryStreak ?? 0;
   const stepsStreak = streaks.steps ?? friend?.stepsStreak ?? 0;
+  // On vacation, on an injury pause, or held last week (utils/friendStatus). Needs the full
+  // profile, so it shows only for friends (and on your own card).
+  const status = FRIEND_STATUS[friendStatus(profile)];
 
   // Records should never read lower than the current streak — that's a data invariant
   // (a "longest ever" can't be less than what's happening right now). Clamp on display
@@ -209,6 +213,13 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
                   <span style={{ color: '#FFD60A' }}>· {masterStreak}🔥</span>
                 )}
               </div>
+              {status && (
+                <div className="mt-2.5 inline-flex items-center gap-1.5 text-xs rounded-full px-3 py-1" style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: '#d4d4d8' }}>
+                  <span>{status.emoji}</span>
+                  <span>{status.label}</span>
+                  <span className="text-gray-500">· {status.detail}</span>
+                </div>
+              )}
             </div>
           </div>
 

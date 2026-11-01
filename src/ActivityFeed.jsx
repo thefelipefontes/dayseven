@@ -9,6 +9,7 @@ import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import ActivityIcon from './components/ActivityIcon';
 import FriendProfileCard from './components/FriendProfileCard';
 import ZoomablePhoto from './components/ZoomablePhoto';
+import { friendStatus, FRIEND_STATUS } from './utils/friendStatus';
 import { isDemoAccount, getDemoLeaderboardFriends, getDemoActivities, getDemoHealthHistory, getDemoUserData, getDemoChallengeStats, getDemoUserLeaderboardOverride } from './demoData';
 import { resolveUnit, unitLabel, formatDistanceValue, milesToDisplay } from './utils/distance';
 import { getActivityCategory, countsAsLifting, countsAsCardio, countsAsRecovery } from './utils/activityCategory';
@@ -1772,6 +1773,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           photoURL: userProfile?.photoURL,
           ...currentUserStats,
           challengeStats: userProfile?.challengeStats || null,
+          status: friendStatus(userProfile),
           isCurrentUser: true
         };
 
@@ -1813,7 +1815,9 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               displayName: friend.displayName,
               photoURL: friend.photoURL,
               ...friendStats,
-              challengeStats: friendProfile?.challengeStats || null
+              challengeStats: friendProfile?.challengeStats || null,
+              // 🌴 / 🩹 / 🛡️ next to their name (utils/friendStatus)
+              status: friendStatus(friendProfile)
             };
           } catch (error) {
             console.error(`[Leaderboard] FULL FAILURE for ${friend.username}:`, error.message, error.stack);
@@ -2294,6 +2298,9 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               <p className={`font-medium truncate ${userData.isCurrentUser ? 'text-green-400' : 'text-white'}`}>
                 {userData.isCurrentUser ? 'You' : (userData.displayName || userData.username)}
               </p>
+              {FRIEND_STATUS[userData.status] && (
+                <span className="text-[13px] flex-shrink-0" aria-label={FRIEND_STATUS[userData.status].label}>{FRIEND_STATUS[userData.status].emoji}</span>
+              )}
               {trend === 'up' && <span className="text-green-400 text-xs">↑</span>}
               {trend === 'down' && <span className="text-red-400 text-xs">↓</span>}
             </div>
@@ -2457,10 +2464,15 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             </div>
           </div>
 
-          {/* Name */}
-          <p className={`text-xs font-medium truncate max-w-[80px] ${userData.isCurrentUser ? 'text-green-400' : 'text-white'}`} style={touchPassthroughStyle}>
-            {userData.isCurrentUser ? 'You' : (userData.displayName?.split(' ')[0] || userData.username)}
-          </p>
+          {/* Name, with the 🌴 / 🩹 / 🛡️ status kept outside the truncation */}
+          <div className="flex items-center gap-0.5 max-w-[92px]" style={touchPassthroughStyle}>
+            <p className={`text-xs font-medium truncate min-w-0 ${userData.isCurrentUser ? 'text-green-400' : 'text-white'}`} style={touchPassthroughStyle}>
+              {userData.isCurrentUser ? 'You' : (userData.displayName?.split(' ')[0] || userData.username)}
+            </p>
+            {FRIEND_STATUS[userData.status] && (
+              <span className="text-[11px] flex-shrink-0" style={touchPassthroughStyle} aria-label={FRIEND_STATUS[userData.status].label}>{FRIEND_STATUS[userData.status].emoji}</span>
+            )}
+          </div>
 
           {/* Score */}
           <p className="text-white font-bold text-sm" style={touchPassthroughStyle}>{formatValue(getValue(userData))}</p>

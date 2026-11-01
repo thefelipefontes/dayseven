@@ -11528,7 +11528,7 @@ const WinningStreakInfoSheet = ({ isOpen, onClose, required = ['lifts', 'cardio'
   );
 };
 
-const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, healthHistory = [], onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onDismissShieldNotice = () => {}, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, openActivityTarget = null, onOpenActivityTargetHandled = () => {}, showHkEmptyHint = false, hkAccessBlocked = false, onDismissHkEmptyHint = () => {}, onOpenHealthSettings = () => {}, showNotifReask = false, onAcceptNotifReask = () => {}, onDismissNotifReask = () => {}, onReplayCelebration = () => {}, pendingChallenges = [], onOpenPlan = () => {}, onShowWinningStreakInfo = () => {} }) => {
+const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, healthHistory = [], onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onDismissShieldNotice = () => {}, onShieldIntro = () => {}, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, openActivityTarget = null, onOpenActivityTargetHandled = () => {}, showHkEmptyHint = false, hkAccessBlocked = false, onDismissHkEmptyHint = () => {}, onOpenHealthSettings = () => {}, showNotifReask = false, onAcceptNotifReask = () => {}, onDismissNotifReask = () => {}, onReplayCelebration = () => {}, pendingChallenges = [], onOpenPlan = () => {}, onShowWinningStreakInfo = () => {} }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
   const [dismissConfirmWorkouts, setDismissConfirmWorkouts] = useState(null); // Workouts pending dismiss confirmation
@@ -11537,6 +11537,8 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
   const [workoutPickerDragY, setWorkoutPickerDragY] = useState(0);
   const [workoutPickerTouchStart, setWorkoutPickerTouchStart] = useState(null);
   const [showShieldInfo, setShowShieldInfo] = useState(false);
+  // Counts each day the one-time Streak Shield card is on screen; it retires after three.
+  const markShieldIntroShown = useCallback((el) => { if (el) onShieldIntro('shown'); }, [onShieldIntro]);
 
   // Lock body scroll when workout picker modal is open
   useEffect(() => {
@@ -13186,6 +13188,30 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             </button>
           );
 
+          // For people subscribed before the every-week hold (onboarding explains it to anyone
+          // newer): a one-time card, shown only when no other shield line is, until it's tapped
+          // or dismissed, and on three days at most.
+          const intro = userProfile?.shieldIntro || {};
+          const introDays = intro.days || [];
+          const shieldIntroCard = isPro && !intro.seen && (introDays.length < 3 || introDays.includes(getTodayDate())) ? (
+            <div ref={markShieldIntroShown} className="mt-3 rounded-2xl p-3.5 flex items-start gap-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+              <span className="text-xl leading-none mt-0.5">🛡️</span>
+              <button onClick={() => { onShieldIntro('seen'); setShowShieldInfo(true); }} className="flex-1 min-w-0 text-left active:opacity-60">
+                <p className="text-white text-sm font-semibold">Your Streak Shield now works every week</p>
+                <p className="text-gray-400 text-xs mt-0.5 leading-snug">Can't win a week? Get to {SHIELD_MIN_PERCENT}% of it, with every goal at least halfway, and your streak holds instead of resetting.</p>
+                <p className="text-gray-300 text-xs font-semibold mt-2">See how it works ›</p>
+              </button>
+              <button
+                onClick={() => onShieldIntro('seen')}
+                aria-label="Dismiss"
+                className="w-6 h-6 flex items-center justify-center rounded-full flex-shrink-0 text-gray-400 active:opacity-60"
+                style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+          ) : null;
+
           // The shield just held a closed week: say so once, until dismissed. This is the
           // moment it was earned, so it names the percentage that earned it.
           const savedWeek = shield.lastUsedWeek;
@@ -13252,9 +13278,9 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             (recoveryNeeded && recoveryRemaining > 0 && userData.streaks.recovery > 0) ||
             (!thisWeekJudged.steps && !injuryFrozen.includes('steps') && (userData.streaks.steps || 0) > 0) ||
             (userData.streaks.master > 0 && !thisWeekJudged.all);
-          if (!(daysLeft <= 3 && atRiskStreak)) return null;
+          if (!(daysLeft <= 3 && atRiskStreak)) return shieldIntroCard;
           // Won already: nothing to hold.
-          if (thisWeekJudged.all) return null;
+          if (thisWeekJudged.all) return shieldIntroCard;
 
           if (!isPro) {
             return (
@@ -14962,7 +14988,7 @@ export default function DaySevenApp() {
       // Apply pre-signup answers in the background. We don't await so the rest
       // of handleUserAuth (background IIFE) can run in parallel.
       if (shouldApplyPreSignup) {
-        finalizeOnboardingFlow(user.uid, preSignup)
+        finalizeOnboardingFlow(user.uid, { ...preSignup, sawStreakPages: true })
           .then(() => {
             localStorage.removeItem('preSignupOnboarding');
             setPreSignupDone(false);
@@ -15942,7 +15968,7 @@ export default function DaySevenApp() {
   // mark onboarded. The paywall fires *after* username is set (post-signup)
   // and HK/push permissions were already requested in the pre-signup
   // pre-screens so we don't re-prompt here.
-  const finalizeOnboardingFlow = useCallback(async (uid, { goals, privacy, extra, linkedWorkouts, onboardingCredits, distanceUnit, weeklyPlan }) => {
+  const finalizeOnboardingFlow = useCallback(async (uid, { goals, privacy, extra, linkedWorkouts, onboardingCredits, distanceUnit, weeklyPlan, sawStreakPages = false }) => {
     const goalsToSave = {
       liftsPerWeek: goals.liftsPerWeek,
       cardioPerWeek: goals.cardioPerWeek,
@@ -15955,6 +15981,13 @@ export default function DaySevenApp() {
     // Weekly plan set during onboarding (skippable — may be a pre-filled default).
     if (weeklyPlan) {
       await updateUserProfile(uid, { weeklyPlan });
+    }
+
+    // Onboarding's streak pages already explained the Streak Shield, so Home's one-time
+    // card for existing subscribers never shows.
+    if (sawStreakPages) {
+      await updateUserProfile(uid, { shieldIntro: { seen: true } });
+      setUserProfile(prev => prev ? { ...prev, shieldIntro: { seen: true } } : prev);
     }
 
     const unitToSave = distanceUnit === 'km' ? 'km' : 'mi';
@@ -16882,6 +16915,23 @@ export default function DaySevenApp() {
       return { ...prev, streakShield };
     });
   };
+
+  // Home's one-time Streak Shield card: 'seen' once it's tapped or dismissed, 'shown' to
+  // count a day it was on screen. Kept on the profile, so it doesn't come back on another
+  // device or after a reinstall.
+  const updateShieldIntro = useCallback((action) => {
+    const uid = userRef.current?.uid;
+    if (!uid) return;
+    setUserProfile(prev => {
+      if (!prev) return prev;
+      const intro = prev.shieldIntro || {};
+      const today = getTodayDate();
+      if (action === 'seen' ? intro.seen : (intro.days || []).includes(today)) return prev;
+      const shieldIntro = action === 'seen' ? { ...intro, seen: true } : { ...intro, days: [...(intro.days || []), today] };
+      updateUserProfile(uid, { shieldIntro }).catch(() => {});
+      return { ...prev, shieldIntro };
+    });
+  }, []);
 
   // Turn vacation mode off. `countCurrentWeekTowardStreak` decides how the week
   // the user is ending in is treated: when true the current week is dropped from
@@ -18681,6 +18731,7 @@ export default function DaySevenApp() {
                     }
                   }}
                   onDismissShieldNotice={dismissShieldNotice}
+                  onShieldIntro={updateShieldIntro}
                   onDeactivateVacation={requestVacationDeactivation}
                   onRequestResumeInjury={() => setShowHomeResumeConfirm(true)}
                   canResumeInjury={canResumeFromInjury()}

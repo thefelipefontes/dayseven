@@ -213,6 +213,7 @@ struct WorkoutSummaryView: View {
                 // on screen; autoSaveTask lets us wait for the save to *finish*.
                 let fallbackId = savedActivityId
                 let saveTask = autoSaveTask
+                let account = appVM.signedInUid
 
                 // Dismiss the summary immediately. Never make the user wait on a
                 // Firestore round-trip to leave this screen — previously the delete
@@ -235,7 +236,7 @@ struct WorkoutSummaryView: View {
                     }
 
                     if let activityId {
-                        await appVM.deleteActivity(withId: activityId)
+                        await appVM.deleteActivity(withId: activityId, account: account)
                     } else {
                         // Auto-save never produced an id — fall back to a phone
                         // refresh so it re-reads the correct state from Firestore.

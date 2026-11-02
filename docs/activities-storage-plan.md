@@ -1,6 +1,6 @@
 # Moving activities out of the user doc
 
-Status: plan only. Nothing has been migrated or deployed. Written 2026-11-01, while 1.8.5 was being shipped.
+Status: Phase 0 is done and ships in 1.8.5 ([#86](https://github.com/thefelipefontes/dayseven/pull/86)). Phases 1–4 are still a plan, and no activities have been migrated. Written 2026-11-01, updated 2026-11-02.
 
 ## In short
 
@@ -12,7 +12,7 @@ Status: plan only. Nothing has been migrated or deployed. Written 2026-11-01, wh
   - The feed and leaderboard read each friend's whole doc. The leaderboard reads it 3 times per friend.
   - The precondition on every phone and Watch save conflicts with *any* write to the user doc: badge counts, streaks, goals, server counters.
 - **Recommendation:**
-  1. Do **Phase 0 in 1.8.6**. It removes most of the repeated reads without touching the data model.
+  1. **Phase 0 in 1.8.5** (done, [#86](https://github.com/thefelipefontes/dayseven/pull/86)). It removes most of the repeated reads without touching the data model.
   2. Then move activities into **one doc per week**: `users/{uid}/activityWeeks/{weekKey}`, holding the same array shape as today. Do this as 1.9.0, behind a per-user switch. Two server-side mirrors keep older phone and Watch builds working.
   3. Delete the old array only once version stamps show no one is left on a pre-1.9.0 build.
 
@@ -274,23 +274,28 @@ The markers plus "write only when different" stop the two mirrors from feeding e
 
 | Phase | Ships as | What changes | Move on when |
 |---|---|---|---|
-| 0 | **app 1.8.6** + a functions deploy | Fewer repeated reads, version stamp, update gate. No data change | 1.8.6 is out |
+| 0 (done, [#86](https://github.com/thefelipefontes/dayseven/pull/86)) | **app 1.8.5** + a functions deploy | Fewer repeated reads, version stamp, update gate. No data change | 1.8.5 is out |
 | 1 | server only | Week docs exist and mirror the array; backfill | parity script clean for a week |
 | 2 | server only | Scheduled jobs and activity triggers read week docs | a week of normal pushes and challenge fulfilment |
 | 3 | **app 1.9.0** (phone, Watch, web) + server | Clients read and write week docs once flipped; reverse mirror on | Felipe, then testers, then everyone flipped |
 | 4 | **1.9.x cleanup release** + server | Arrays deleted, mirrors off, legacy code removed | no pre-1.9.0 client seen for 4 weeks |
 
-### Phase 0: 1.8.6, no data change
+### Phase 0: 1.8.5, no data change (done)
+
+Built in [#86](https://github.com/thefelipefontes/dayseven/pull/86). It differs from the original plan in three ways:
+- **Goals come from the first profile read (#1), not the combined read.** Home needs goals before the RevenueCat login finishes, and the combined read runs after that login.
+- **The version comes from the Xcode project at build time,** through `vite.config.js`, because `@capacitor/app` isn't installed.
+- **`config/minAppVersion` needed a new rule:** public read of that one doc, in both rules files.
 
 **App:**
 - **Cold start, 7 whole-doc reads down to 3.**
   - #4 and #5 become one forced unmasked REST read, which returns the profile, the activities and the `updateTime`.
-  - #3, #6 and #7 take goals, custom activities and records from that result.
+  - #6 and #7 take custom activities and records from that result. #3's goals come from #1.
   - #1, the first-render read, stays as it is, because it is part of the startup gate behind the old "stuck on 7" bug.
   - #2, the `challengeStats` listener, stays.
 - **Launch writes happen only when the value changed:** `goals`/`goalHistory` (`App.jsx:15048`), `unreadBadgeCount` and the timezone. Each one avoided saves five trigger runs, one listener re-download and one possible outbox conflict.
 - **Leaderboard: 3 reads per friend down to 1.** All three calls read the same doc.
-- **Version stamp.** When the value changes, the phone writes `clientInfo: {app, build, platform}` and the Watch writes `watchClientInfo`. That happens once per update, not per launch. This is how Phase 4 knows when old builds are gone. Builds before 1.8.6 can't report, so "active recently but no stamp" counts as old.
+- **Version stamp.** When the value changes, the phone writes `clientInfo: {app, build, platform}` and the Watch writes `watchClientInfo`. That happens once per update, not per launch. This is how Phase 4 knows when old builds are gone. Builds before 1.8.5 can't report, so "active recently but no stamp" counts as old.
 - **Update gate.** On launch the app reads `config/minAppVersion`. Below it, a full-screen "Update DaySeven" with an App Store link. It stays unused until Phase 4. It has to ship early, because only builds that contain it can be stopped.
 
 **Functions:**
@@ -402,7 +407,7 @@ The markers plus "write only when different" stop the two mirrors from feeding e
 
 ## 6. Decisions for Felipe
 
-1. **Timing.** Phase 0 in 1.8.6 is worth doing now on its own. Phases 1–4 aren't urgent at the measured pace. Doing them while there are 148 users and few old builds is easier than later. Suggested: Phases 1–2 after 1.8.6, and 1.9.0 when it fits the roadmap.
+1. **Timing.** Phase 0 is done in 1.8.5. Phases 1–4 aren't urgent at the measured pace. Doing them while there are 148 users and few old builds is easier than later. Suggested: Phases 1–2 after 1.8.5, and 1.9.0 when it fits the roadmap.
 2. **Update gate.** OK to show a blocking "Update DaySeven" screen once 1.9.0 is the minimum?
 3. **Week docs vs one doc per activity:** recommendation above.
 4. **Leaderboard.** Read friends' week docs (fine at 8 friends × 40 weeks), or add a per-user weekly-totals doc when it's built?

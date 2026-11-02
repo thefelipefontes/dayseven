@@ -44,6 +44,11 @@ struct WorkoutSplit: Equatable, Identifiable {
     static func == (lhs: WorkoutSplit, rhs: WorkoutSplit) -> Bool { lhs.id == rhs.id }
 }
 
+/// Which came first, HealthKit's answer or the timeout. Only touched on the main actor.
+private final class HealthKitAnswer {
+    var isDone = false
+}
+
 private let metersPerMile: Double = 1609.34
 private let metersPerKm: Double = 1000.0
 
@@ -54,6 +59,7 @@ enum WorkoutError: Error, LocalizedError {
     case alreadyActive
     case healthKitNotAvailable
     case startFailed(String)
+    case healthKitTimedOut
 
     var errorDescription: String? {
         switch self {
@@ -61,6 +67,7 @@ enum WorkoutError: Error, LocalizedError {
         case .alreadyActive: return "A workout is already active"
         case .healthKitNotAvailable: return "HealthKit not available"
         case .startFailed(let msg): return "Failed to start: \(msg)"
+        case .healthKitTimedOut: return "Apple Health isn't responding. Restart your Apple Watch and try again."
         }
     }
 }
@@ -277,7 +284,9 @@ class WorkoutManager: NSObject, ObservableObject {
 
         session.startActivity(with: now)
         do {
-            try await builder.beginCollection(at: now)
+            // Doesn't cover enableCollection above: if healthd isn't answering at all, that blocks
+            // the main thread before getting here.
+            try await withHealthKitTimeout { try await builder.beginCollection(at: now) }
         } catch {
             // The session is already running. Left alone it kept running with nothing on
             // screen to end it (isActive never turned true), holding the heart-rate sensor.
@@ -405,6 +414,13 @@ class WorkoutManager: NSObject, ObservableObject {
         builder = recoveredBuilder
         recovered.delegate = self
         recoveredBuilder.delegate = self
+        // A recovered builder comes back ignoring the session's events, though it was hearing
+        // them before the crash. Left off, it never learns of a pause or resume after recovery:
+        // a paused workout stays paused in HealthKit however long it runs on, and a later pause
+        // counts as active time. HealthKit's duration then disagrees with the clock on screen.
+        // The header calls changing this after beginCollection undefined. If a watch ever
+        // disagrees, adding the events by hand with addWorkoutEvents also works.
+        recoveredBuilder.shouldCollectWorkoutEvents = true
 
         // The builder comes back without a data source, and without one it stops collecting.
         let config = recovered.workoutConfiguration
@@ -540,22 +556,24 @@ class WorkoutManager: NSObject, ObservableObject {
 
         session.end()
 
-        // These HealthKit calls can take 3-5+ seconds
-        do {
-            try await builder.endCollection(at: endDate)
-        } catch {
-            print("[WorkoutManager] endCollection error: \(error.localizedDescription)")
-        }
-        // Nothing after `isEnding = true` may throw. A finishWorkout throw used to escape
-        // here with isEnding and isActive still set: End stuck on "Saving..." for good, no
-        // summary, and the workout never reached DaySeven. If HealthKit can't store it, keep
-        // going with the metrics captured above so it is at least saved here. This also saves
-        // the route: it belongs to the builder.
+        // These HealthKit calls can take 3-5+ seconds. Nothing after `isEnding = true` may throw
+        // or wait for good, or End stays on "Saving..." with no summary and the workout never
+        // reaches DaySeven. If HealthKit can't store it, or doesn't answer, keep going with the
+        // metrics captured above so it is at least saved here. Finishing also saves the route:
+        // it belongs to the builder.
         var workout: HKWorkout?
         do {
-            workout = try await builder.finishWorkout()
+            workout = try await withHealthKitTimeout {
+                do {
+                    try await builder.endCollection(at: endDate)
+                } catch {
+                    print("[WorkoutManager] endCollection error: \(error.localizedDescription)")
+                }
+                return try await builder.finishWorkout()
+            }
+            print("[WorkoutManager] Workout stored: \(workout?.duration ?? -1)s, events \(workout?.workoutEvents?.map(\.type.rawValue) ?? [])")
         } catch {
-            print("[WorkoutManager] finishWorkout error — saving from captured metrics: \(error.localizedDescription)")
+            print("[WorkoutManager] finishWorkout failed, session state \(session.state.rawValue) — saving from captured metrics: \(error.localizedDescription)")
         }
         isOutdoorWorkout = false
 
@@ -589,6 +607,40 @@ class WorkoutManager: NSObject, ObservableObject {
         self.lastPauseDate = nil
 
         return result
+    }
+
+    // MARK: - HealthKit Timeout
+
+    private static let healthKitTimeout: TimeInterval = 15
+
+    /// Waits for `work`, for no longer than `healthKitTimeout`. HealthKit's calls have no timeout
+    /// of their own and can't be cancelled, and nothing promises they return. If one never did,
+    /// End would stay on "Saving..." for good and Start on "Starting...". The call stays pending
+    /// in HealthKit after a timeout, and whatever it returns then is dropped.
+    private func withHealthKitTimeout<T>(_ work: @escaping () async throws -> T) async throws -> T {
+        let answered = HealthKitAnswer()
+        return try await withCheckedThrowingContinuation { continuation in
+            Task { @MainActor in
+                let result: Result<T, Error>
+                do {
+                    result = .success(try await work())
+                } catch {
+                    result = .failure(error)
+                }
+                guard !answered.isDone else {
+                    print("[WorkoutManager] HealthKit answered after the timeout")
+                    return
+                }
+                answered.isDone = true
+                continuation.resume(with: result)
+            }
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: UInt64(Self.healthKitTimeout * 1_000_000_000))
+                guard !answered.isDone else { return }
+                answered.isDone = true
+                continuation.resume(throwing: WorkoutError.healthKitTimedOut)
+            }
+        }
     }
 
     // MARK: - Pause / Resume

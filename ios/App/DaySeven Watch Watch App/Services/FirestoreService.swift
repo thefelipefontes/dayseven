@@ -14,6 +14,7 @@ struct UserDocument {
     let injuryActive: Bool
     let injuryFrozen: [String]
     let weekCelebrations: [String: Any]
+    let watchClientVersion: String?
     let updateTime: String?
 }
 
@@ -137,11 +138,42 @@ class FirestoreService {
             }
         }
 
+        // The Watch build this account last reported (see stampWatchClientInfo).
+        var watchClientVersion: String?
+        if let infoWrapper = data["watchClientInfo"] as? [String: Any],
+           let infoMapValue = infoWrapper["mapValue"] as? [String: Any],
+           let infoMap = infoMapValue["fields"] as? [String: Any],
+           let app = stringFromFirestore(infoMap["app"]),
+           let build = stringFromFirestore(infoMap["build"]) {
+            watchClientVersion = "\(app) (\(build))"
+        }
+
         return UserDocument(
             goals: goals, streaks: streaks, activities: activities, personalRecords: personalRecords,
             distanceUnit: distanceUnit, injuryActive: injuryActive, injuryFrozen: injuryFrozen,
-            weekCelebrations: weekCelebrations, updateTime: updateTime
+            weekCelebrations: weekCelebrations, watchClientVersion: watchClientVersion, updateTime: updateTime
         )
+    }
+
+    // MARK: - Version Stamp
+
+    /// Records which Watch build this account runs, once per update, so a later release can
+    /// tell when old builds are gone. The phone writes its own, `clientInfo`. Best effort: a
+    /// failed write just tries again on the next load.
+    func stampWatchClientInfo(uid: String, stored: String?) async {
+        guard let app = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
+              let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String,
+              stored != "\(app) (\(build))" else { return }
+        let info: [String: Any] = [
+            "app": ["stringValue": app],
+            "build": ["stringValue": build],
+            "platform": ["stringValue": "watchos"],
+        ]
+        do {
+            try await updateDocument("users/\(uid)", fields: ["watchClientInfo": ["mapValue": ["fields": info]]])
+        } catch {
+            print("[Firestore] watchClientInfo write failed: \(error)")
+        }
     }
 
     // MARK: - Update Streaks

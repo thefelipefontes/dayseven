@@ -16,7 +16,7 @@ import SettingsPage from './Settings';
 import ProfilePage from './Profile';
 import { isChallengeable, getChallengesForUser, activityMatchesChallengeRule, describeMatchRule, evaluateActivityAgainstChallenge, applyOptimisticChallengeCompletions, applyChallengeIntent, subscribeToChallenges, bucketChallenges, countOutgoingThisMonth } from './services/challengeService';
 import ChallengeMatchChooser from './components/ChallengeMatchChooser';
-import { createUserProfile, getUserProfile, updateUserProfile, updateDisplayName, updateUsername, saveActivityChanges, flushActivityOutbox, hasPendingActivityChanges, activitiesLoadedFromServer, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, deleteActivityPhoto, saveUserGoals, getUserGoals, savePendingGoals, clearPendingGoals, setOnboardingComplete, setTourComplete, savePersonalRecords, getPersonalRecords, saveDailyHealthData, getDailyHealthData, getDailyHealthHistory, subscribeToUserChallengeStats, resetUserServiceSession } from './services/userService';
+import { createUserProfile, getUserProfile, updateUserProfile, updateDisplayName, updateUsername, saveActivityChanges, flushActivityOutbox, hasPendingActivityChanges, activitiesLoadedFromServer, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, deleteActivityPhoto, saveUserGoals, getUserGoals, savePendingGoals, clearPendingGoals, setOnboardingComplete, setTourComplete, savePersonalRecords, getPersonalRecords, saveDailyHealthData, getDailyHealthData, getDailyHealthHistory, subscribeToUserChallengeStats, resetUserServiceSession, readUserDoc } from './services/userService';
 import { isSundayToday, nextSundayDateStr, isPendingDue, formatApplyOn } from './utils/goalsSchedule';
 import { getFriends, getReactions, getFriendRequests, getComments, addReply, getReplies, deleteReply, addReaction, removeReaction, addComment, cleanupActivitySocialData } from './services/friendService';
 
@@ -34,6 +34,8 @@ import { isDemoAccount, getDemoActivities, getDemoUserData, getDemoProfileOverri
 import { Dumbbell, Footprints } from 'lucide-react';
 import { IconRun, IconSnowflake } from '@tabler/icons-react';
 import { triggerHaptic } from './utils/haptics';
+import UpdateRequired from './components/UpdateRequired';
+import { APP_VERSION, APP_BUILD, isVersionBelow, fetchMinAppVersion } from './utils/appVersion';
 import { toLocalDateStr, getTodayDate, getCurrentYear, parseLocalDate, formatFriendlyDate } from './utils/dateHelpers';
 import { FOCUS_AREA_GROUPS, ALL_FOCUS_AREAS, FOCUS_AREA_MIGRATION, normalizeFocusAreas } from './utils/focusAreas';
 import { initialUserData } from './utils/initialUserData';
@@ -41,7 +43,7 @@ import { getDefaultCountToward, getActivityCategory, countsAsLifting, countsAsCa
 import { computeStreaks } from './utils/streaks';
 import ShieldLadder from './components/ShieldLadder';
 import { planAutoShield, goalsShortOfHalf, isHoldWeek, SHIELD_MIN_PERCENT } from './utils/streakShield';
-import { judgeWeekFromActivities, judgeWeek, countWeekActivities, weekGoalsResolver, weekKeyFromDate, weekKeyFromDateStr, weekContext, stepsByDateFrom, weekStepsTotal, winningCategories, hasRecentSteps, stepsDailyShare } from './utils/weekGoals';
+import { goalsInHistory, judgeWeekFromActivities, judgeWeek, countWeekActivities, weekGoalsResolver, weekKeyFromDate, weekKeyFromDateStr, weekContext, stepsByDateFrom, weekStepsTotal, winningCategories, hasRecentSteps, stepsDailyShare } from './utils/weekGoals';
 import { manualCaloriesForDate, needsHkCaloriesBackfill } from './utils/calories';
 import { reverseGeocode, formatLocation } from './utils/geocode';
 import SectionIcon from './components/SectionIcon';
@@ -386,6 +388,14 @@ const withThisWeekGoals = (history, goals) => {
     },
   ].sort((a, b) => (a.fromWeek || '').localeCompare(b.fromWeek || ''));
 };
+
+// JSON with object keys in a fixed order. A doc's maps don't come back in the order they were
+// written, so a plain JSON comparison can call two equal values different.
+const stableJson = (value) => JSON.stringify(value, (_, v) => (
+  v && typeof v === 'object' && !Array.isArray(v)
+    ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+    : v
+));
 
 // Every week a vacation covered: from its start through day 14 (when it auto-ends) or now,
 // whichever comes first, plus whatever was already recorded. Recording only the week the app
@@ -13640,6 +13650,17 @@ export default function DaySevenApp() {
   const userProfileRef = useRef(userProfile);
   useEffect(() => { userProfileRef.current = userProfile; }, [userProfile]);
 
+  // Stop a build older than config/minAppVersion. Not awaited by anything, and a failed read
+  // means no gate, so this can never hold up or block a launch. iPhone only: the web app is
+  // always the latest.
+  const [updateRequired, setUpdateRequired] = useState(false);
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform() || !APP_VERSION) return;
+    fetchMinAppVersion().then((minVersion) => {
+      if (minVersion && isVersionBelow(APP_VERSION, minVersion)) setUpdateRequired(true);
+    });
+  }, []);
+
   // Mirror what gates the native "New Workout Detected" notification, which fires
   // from a HealthKit background wake where no JS runs. The notification fields go
   // across once per sign-in, from the freshly loaded profile; after that
@@ -15037,15 +15058,20 @@ export default function DaySevenApp() {
       // Load remaining data in background (don't await)
       (async () => {
         try {
-          // Load user's goals from Firestore (if they exist)
-          const userGoals = await getUserGoals(user.uid);
+          // The goals came with the profile read above; read them separately only if that
+          // read failed. Home needs them now, ahead of the RevenueCat login below.
+          const userGoals = profile ? (profile.goals || null) : await getUserGoals(user.uid);
           if (userGoals) {
             setUserData(prev => ({
               ...prev,
               goals: userGoals
             }));
-            // Re-persist goals to Firestore to ensure they stay synced
-            saveUserGoals(user.uid, userGoals).catch(() => {});
+            // Saving what was just read only has something to add when goalHistory doesn't
+            // have it yet. Every write to the user doc fires its triggers and the challenge
+            // stats listener.
+            if (!goalsInHistory(userGoals, profile?.goalHistory, getCurrentWeekKey())) {
+              saveUserGoals(user.uid, userGoals).catch(() => {});
+            }
           } else {
             // Goals came back empty. This can mean "never set" OR a transient
             // read failure (getUserGoals returns null on timeout). Only "repair"
@@ -15083,9 +15109,11 @@ export default function DaySevenApp() {
             }
           }
 
-          // Re-fetch profile with forceRefresh to bypass native SDK cache
-          // (watch may have updated streaks/weekCelebrations via REST API)
-          const freshProfile = await getUserProfile(user.uid, true);
+          // Re-fetch with forceRefresh to bypass native SDK cache (watch may have updated
+          // streaks/weekCelebrations via REST API). One read for everything the load below
+          // needs from the user doc; null falls back to reading each piece separately.
+          const userDoc = await readUserDoc(user.uid);
+          const freshProfile = userDoc ? userDoc.profile : await getUserProfile(user.uid, true);
 
           // Load streaks and celebration state from fresh Firestore data
           const profileForStreaks = freshProfile || profile;
@@ -15229,12 +15257,22 @@ export default function DaySevenApp() {
           // user's real ones.
           setProfileStateLoaded(!!profileForStreaks);
 
+          // Which build this account runs, written once per update (the Watch writes its own,
+          // watchClientInfo). It's how a later release can tell when old builds are gone.
+          // iPhone only: the web app is always the latest.
+          if (Capacitor.isNativePlatform() && freshProfile && APP_VERSION
+              && (freshProfile.clientInfo?.app !== APP_VERSION || freshProfile.clientInfo?.build !== APP_BUILD)) {
+            updateUserProfile(user.uid, {
+              clientInfo: { app: APP_VERSION, build: APP_BUILD, platform: Capacitor.getPlatform() },
+            }).catch(() => {});
+          }
+
           // Load user's activities from Firestore (force refresh to pick up watch-saved activities),
           // and daily health history (365 days for the full-year Trends view) alongside it.
           // History has to land BEFORE the streak recalc below: weekly steps are part of
           // judging a week, and this recalc used to run with no step data at all.
           const [userActivities, healthHistoryData] = await Promise.all([
-            getUserActivities(user.uid, true),
+            userDoc ? userDoc.activities : getUserActivities(user.uid, true),
             getDailyHealthHistory(user.uid, 365),
           ]);
           healthHistoryRef.current = healthHistoryData; // visible to the recalc synchronously
@@ -15243,6 +15281,8 @@ export default function DaySevenApp() {
           // background; merges into healthHistory when it lands).
           backfillRecentHealthDays();
           lastFirestoreActivityCount.current = userActivities.length;
+          // The streaks as they stand after this load, for the records recalc below.
+          let streaksAfterLoad = profileForStreaks?.streaks || null;
           if (userActivities.length > 0) {
             activitiesFromFirestore.current = true; // Skip debounced save — data is already in Firestore
         lastFirestoreSyncTime.current = Date.now(); // Timestamp-based protection window
@@ -15291,8 +15331,9 @@ export default function DaySevenApp() {
                   }
                 }));
                 // Persist corrected streaks
+                streaksAfterLoad = { ...storedStreaks, ...recalculated };
                 updateUserProfile(user.uid, {
-                  streaks: { ...storedStreaks, ...recalculated }
+                  streaks: streaksAfterLoad
                 }).catch(() => {});
               }
             }
@@ -15356,7 +15397,7 @@ export default function DaySevenApp() {
 
           // Load user's custom activities. null = the read failed: leave saving off for
           // this session rather than let an edit overwrite a list we never saw.
-          const userCustomActivities = await getCustomActivities(user.uid);
+          const userCustomActivities = userDoc ? (userDoc.profile.customActivities || []) : await getCustomActivities(user.uid);
           if (userCustomActivities) {
             savedCustomActivitiesRef.current = JSON.stringify(userCustomActivities);
             if (userCustomActivities.length > 0) {
@@ -15369,7 +15410,9 @@ export default function DaySevenApp() {
           }
 
           // Load user's personal records, then recalculate from activities to ensure accuracy
-          const recordsResult = await getPersonalRecords(user.uid);
+          const recordsResult = userDoc
+            ? { personalRecords: userDoc.profile.personalRecords || null, streaks: streaksAfterLoad }
+            : await getPersonalRecords(user.uid);
           const recordsReadFailed = !!recordsResult?.failed;
           const userRecords = recordsResult?.personalRecords || null;
 
@@ -15410,7 +15453,7 @@ export default function DaySevenApp() {
             const canSaveRecords = !recordsReadFailed
               && (userActivities || []).length > 0
               && activitiesLoadedFromServer(user.uid);
-            if (canSaveRecords && JSON.stringify(recalculatedRecords) !== JSON.stringify(userRecords)) {
+            if (canSaveRecords && stableJson(recalculatedRecords) !== stableJson(userRecords)) {
               savePersonalRecords(user.uid, recalculatedRecords);
             }
           } catch (recalcError) {
@@ -15553,7 +15596,10 @@ export default function DaySevenApp() {
     if (!Capacitor.isNativePlatform() || !uid) return;
     try {
       clearBadge();
-      updateUserProfile(uid, { unreadBadgeCount: 0 });
+      // Only with something to clear: this runs on every launch.
+      if (userProfileRef.current?.unreadBadgeCount) {
+        updateUserProfile(uid, { unreadBadgeCount: 0 });
+      }
 
       // Keep the user's timezone current so scheduled notifications fire at their
       // LOCAL time (the server falls back to Eastern when it's missing). Merge-safe:
@@ -18143,6 +18189,8 @@ export default function DaySevenApp() {
   }, [user?.uid, recordsLoaded, healthHistory, healthKitData.todaySteps, activities, weekCelebrations, showCelebration, showWeekStreakCelebration, userData?.injuryMode?.isActive]);
 
   // Show loading spinner while checking auth
+  if (updateRequired) return <UpdateRequired />;
+
   if (authLoading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">

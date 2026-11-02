@@ -17,6 +17,7 @@ Know where your streak stands.
 • See when friends are on vacation 🌴, on an injury pause 🩹, or had their last week held by the Streak Shield 🛡️, on their profile and the leaderboard
 • New to the every-week Streak Shield? A quick note on Home shows how it works
 • Recovery, your bonus goal, now counts the same every week: hit it and its streak grows, miss it and it resets, even in a week your shield held
+• Uses less data when the app opens and on the leaderboard
 • Fixes and polish
 ```
 

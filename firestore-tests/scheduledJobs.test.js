@@ -218,6 +218,18 @@ describe('scheduled jobs', () => {
     }
   });
 
+  it('a push badges the stored unread count plus itself, and clears nothing else', async () => {
+    await user('badged', {
+      notificationPreferences: { timezone: 'UTC' }, unreadBadgeCount: 4,
+      activities: [{ id: 1, type: 'Running', date: '2026-10-26', calories: 100 }],
+    });
+    await at('2026-11-01T10:05:00Z', () => jobs.sendWeeklySummary.run({}));
+    assert.equal(pushesTo('badged')[0].apns.payload.aps.badge, 5);
+    const after = (await db.collection('users').doc('badged').get()).data();
+    assert.equal(after.unreadBadgeCount, 5);
+    assert.equal(after.activities.length, 1);
+  });
+
   it('an entitlement a day past its stored expiry is no access (a missed EXPIRATION)', async () => {
     const prefs = { notificationPreferences: { timezone: 'UTC', dailyReminders: true, dailyReminderTime: '09:00' } };
     const sub = (expiresAt) => ({ forceProTier: false, subscription: { entitlementActive: true, status: 'active', expiresAt } });

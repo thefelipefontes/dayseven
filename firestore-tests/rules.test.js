@@ -166,6 +166,21 @@ for (const stage of ['transitional', 'strict']) {
       });
     });
 
+    describe('config', () => {
+      it('anyone can read the minimum app version, signed in or not', async () => {
+        await assertSucceeds(getDoc(doc(anon(), 'config', 'minAppVersion')));
+        await assertSucceeds(getDoc(doc(as('alice'), 'config', 'minAppVersion')));
+      });
+      it('nobody can set it from a client', async () => {
+        await assertFails(setDoc(doc(as('alice'), 'config', 'minAppVersion'), { minVersion: '0.1' }));
+        await assertFails(setDoc(doc(anon(), 'config', 'minAppVersion'), { minVersion: '0.1' }));
+      });
+      it('the rest of config stays server-only', async () => {
+        await assertFails(getDoc(doc(as('alice'), 'config', 'lifecycleNotifications')));
+        await assertFails(getDoc(doc(anon(), 'config', 'lifecycleNotifications')));
+      });
+    });
+
     describe('pushRateLimits', () => {
       it('server only: neither side can read, reset or write a counter', async () => {
         const id = 'reaction_bob_alice';

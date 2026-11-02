@@ -343,7 +343,8 @@ async function getUserTokens(userId) {
  * Reads from users/{uid} document's notificationPreferences field
  */
 async function getUserPreferences(userId) {
-  const userDoc = await db.collection('users').doc(userId).get();
+  // Just this field: the user doc carries the whole activity history.
+  const [userDoc] = await db.getAll(db.collection('users').doc(userId), { fieldMask: ['notificationPreferences'] });
   if (!userDoc.exists) return getDefaultPreferences();
   const prefs = userDoc.data().notificationPreferences;
   if (!prefs) return getDefaultPreferences();
@@ -568,7 +569,8 @@ async function sendNotificationToUser(userId, title, body, data = {}, options = 
     // A deleted account's tokens can outlive it (and the device may now belong to a new
     // account). Never push for an account that no longer exists; drop its tokens instead.
     const userRef = db.collection('users').doc(userId);
-    const userSnap = await userRef.get();
+    // Just these fields: the user doc carries the whole activity history.
+    const [userSnap] = await db.getAll(userRef, { fieldMask: ['notificationPreferences', 'unreadBadgeCount'] });
     if (!userSnap.exists) {
       await db.collection('userTokens').doc(userId).delete().catch(() => {});
       return { success: false, reason: 'no_user' };
@@ -590,9 +592,8 @@ async function sendNotificationToUser(userId, title, body, data = {}, options = 
       ...(socialTypes.includes(data.type) ? { unreadFeedCount: FieldValue.increment(1) } : {}),
     });
 
-    // Read the updated badge count for APNS payload
-    const updatedUser = await userRef.get();
-    const badgeCount = updatedUser.data()?.unreadBadgeCount || 1;
+    // The badge count for the APNS payload, including this push
+    const badgeCount = (userSnap.data().unreadBadgeCount || 0) + 1;
 
     // Build the message
     const message = {
@@ -1996,10 +1997,21 @@ exports.sendWinbackReminders = onSchedule(
       const sentStage = userData.winbackStage || 0;
       if (sentStage >= 3) return;                // sequence complete (3 stages)
 
+      // Highest stage now due beyond what we last sent. One message per run.
+      // Stage clock starts when they LOST access (lapsed subs/trials) — not raw
+      // account age — so a lapsed trial gets the full day 1/3/7 sequence from the
+      // lapse. Never-subscribed users have no expiry, so they fall back to signup.
+      // Every variant runs on the same days, so this needs no copy yet, and most runs
+      // stop here without reading the whole doc below.
+      const sub = userData.subscription;
+      const clockStart = (sub && !subscriptionActive(sub) && sub.expiresAt) ? sub.expiresAt : userData.createdAt;
+      const age = daysSince(clockStart);
+      const dueStage = [...NEVER_SUBSCRIBED].reverse().find((s) => age >= s.minDays && s.stage > sentStage)?.stage;
+      if (!dueStage) return;
+
       // Pick the copy variant. A win-back target WITH a subscription record has
       // already used their trial (entitlement inactive) → resubscribe, no trial
       // offer; split by whether they built anything worth keeping.
-      const sub = userData.subscription;
       let stages;
       if (!sub) {
         stages = NEVER_SUBSCRIBED;
@@ -2009,15 +2021,7 @@ exports.sendWinbackReminders = onSchedule(
         const hasProgress = (userData.streaks?.master || 0) > 0 || realActivities.length > 0;
         stages = hasProgress ? LAPSED_WITH_PROGRESS : LAPSED_NO_PROGRESS;
       }
-
-      // Highest stage now due beyond what we last sent. One message per run.
-      // Stage clock starts when they LOST access (lapsed subs/trials) — not raw
-      // account age — so a lapsed trial gets the full day 1/3/7 sequence from the
-      // lapse. Never-subscribed users have no expiry, so they fall back to signup.
-      const clockStart = (sub && !subscriptionActive(sub) && sub.expiresAt) ? sub.expiresAt : userData.createdAt;
-      const age = daysSince(clockStart);
-      const due = [...stages].reverse().find((s) => age >= s.minDays && s.stage > sentStage);
-      if (!due) return;
+      const due = stages.find((s) => s.stage === dueStage);
 
       const result = await sendNotificationToUser(
         userId, due.title, due.body,

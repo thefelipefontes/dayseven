@@ -1,8 +1,23 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { readFileSync } from 'node:fs'
+
+// The version and build the Xcode project archives, for utils/appVersion.
+const xcodeSetting = (name) => {
+  try {
+    const project = readFileSync(new URL('./ios/App/App.xcodeproj/project.pbxproj', import.meta.url), 'utf8')
+    return project.match(new RegExp(`${name} = ([^;]+);`))?.[1]?.trim() ?? null
+  } catch {
+    return null
+  }
+}
 
 export default defineConfig({
   plugins: [react()],
+  define: {
+    __APP_VERSION__: JSON.stringify(xcodeSetting('MARKETING_VERSION')),
+    __APP_BUILD__: JSON.stringify(xcodeSetting('CURRENT_PROJECT_VERSION')),
+  },
   server: {
     allowedHosts: true
   },

@@ -225,3 +225,17 @@ export const stepsDailyShare = (goal, total, today, daysLeft) => {
   const after = d > 1 && today > share ? up100((goal - total) / (d - 1)) : share;
   return { share, after, leftToday: Math.max(0, share - today), lastDay: d <= 1 };
 };
+
+/**
+ * Does goalHistory already have these goals as the ones in force for `weekKey`? Saving the
+ * same goals again only has something to add when it doesn't.
+ */
+export const goalsInHistory = (goals, goalHistory, weekKey) => {
+  const inForce = (Array.isArray(goalHistory) ? goalHistory : [])
+    .filter((h) => h?.fromWeek && h.fromWeek <= weekKey)
+    .sort((a, b) => a.fromWeek.localeCompare(b.fromWeek))
+    .pop();
+  if (!inForce) return false;
+  return ['liftsPerWeek', 'cardioPerWeek', 'recoveryPerWeek', 'stepsPerDay']
+    .every((k) => (inForce[k] ?? null) === (goals?.[k] ?? null));
+};

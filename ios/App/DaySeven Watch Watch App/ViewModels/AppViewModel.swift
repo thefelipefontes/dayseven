@@ -250,6 +250,9 @@ class AppViewModel: ObservableObject {
                 lastKnownActivityCount = activities.count
 
                 lastLoadTime = Date()
+
+                let storedVersion = userData.watchClientVersion
+                Task { await firestoreService.stampWatchClientInfo(uid: uid, stored: storedVersion) }
             }
 
             print("[LoadUserData] Loaded \(activities.count) activities — lifts: \(weeklyProgress.lifts.completed)/\(goals.liftsPerWeek), cardio: \(weeklyProgress.cardio.completed)/\(goals.cardioPerWeek), recovery: \(weeklyProgress.recovery.completed)/\(goals.recoveryPerWeek)")

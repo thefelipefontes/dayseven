@@ -479,7 +479,7 @@ const applyActivityOps = (list, ops) => {
 // a loop. Hidden from reads only: writes keep the server's array as it is, so nothing is
 // deleted on the user's behalf.
 const reportedMalformed = new Set();
-const withoutMalformed = (uid, list) => {
+export const withoutMalformed = (uid, list) => {
   const ok = (list || []).filter(a => a && typeof a === 'object' && typeof a.date === 'string');
   if (ok.length !== (list || []).length && !reportedMalformed.has(uid)) {
     reportedMalformed.add(uid);
@@ -534,8 +534,12 @@ const fetchActivitiesREST = async (uid, token) => {
     throw error;
   }
   const json = await response.json();
+  return { activities: activitiesFromRestDoc(json), updateTime: json?.updateTime || null };
+};
+
+const activitiesFromRestDoc = (json) => {
   const values = json?.fields?.activities?.arrayValue?.values || [];
-  const activities = values.map(v => {
+  return values.map(v => {
     const parsed = {};
     for (const [key, val] of Object.entries(v.mapValue?.fields || {})) {
       const parsedVal = parseRestActivityValue(val);
@@ -543,7 +547,6 @@ const fetchActivitiesREST = async (uid, token) => {
     }
     return parsed;
   });
-  return { activities, updateTime: json?.updateTime || null };
 };
 
 const preconditionError = () => {
@@ -764,6 +767,47 @@ export async function getUserActivities(uid, forceRefresh = false) {
     // offline, the unsent changes are the part the user is most likely looking for.
     const base = cache.userActivities.get(uid) || [];
     return withoutMalformed(uid, applyActivityOps(base, readOutbox(uid)));
+  }
+}
+
+// The launch load's one read of the user doc. The profile, activities, custom activities and
+// records all live on it, and each used to read the whole doc for itself. Fills the same
+// caches those readers do. Returns null when the read fails or there's no doc, so the caller
+// falls back to those readers and their offline paths.
+export async function readUserDoc(uid) {
+  try {
+    let profile;
+    let activities;
+    if (isNative) {
+      const response = await withTimeout(fetch(activitiesDocUrl(uid), {
+        headers: { 'Authorization': `Bearer ${await getIdToken()}` },
+        cache: 'no-store'
+      }), 15000);
+      if (!response.ok) return null;
+      const json = await response.json();
+      if (!json?.fields) return null;
+      profile = parseFirestoreFields(json.fields);
+      activities = activitiesFromRestDoc(json);
+    } else {
+      const userDoc = await withTimeout(getDoc(doc(db, 'users', uid)));
+      if (!userDoc.exists()) return null;
+      profile = userDoc.data();
+      activities = profile.activities || [];
+    }
+
+    activities = withoutMalformed(uid, applyActivityOps(activities, readOutbox(uid)));
+    const now = Date.now();
+    cache.userProfiles.set(uid, profile);
+    cache.timestamps.set(`profile_${uid}`, now);
+    cache.userActivities.set(uid, activities);
+    cache.timestamps.set(`activities_${uid}`, now);
+    serverActivitiesLoaded.add(uid);
+    console.log('[readUserDoc] got', activities.length, 'activities');
+
+    return { profile, activities };
+  } catch (error) {
+    console.warn('[readUserDoc] failed, using the separate reads:', error);
+    return null;
   }
 }
 

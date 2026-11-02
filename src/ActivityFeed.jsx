@@ -1,6 +1,6 @@
 import CategoryIcon from './components/CategoryIcon';
 import React, { useState, useEffect, useCallback, useRef, useMemo, createContext, useContext } from 'react';
-import { getUserActivities, getPersonalRecords, getDailyHealthHistory, getUserProfile } from './services/userService';
+import { getUserActivities, getPersonalRecords, getDailyHealthHistory, getUserProfile, withoutMalformed } from './services/userService';
 import { addReaction, getReactions, removeReaction, addComment, getComments, deleteComment, addReply, getReplies, deleteReply, getFriends } from './services/friendService';
 import { getCompletedChallengesByWinners } from './services/challengeService';
 import { doc, getDoc } from 'firebase/firestore';
@@ -1786,12 +1786,12 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         // other concurrent Capacitor calls in the same Promise.all batch
         const friendDataPromises = friends.map(async (friend) => {
           try {
-            // Step 1: Fetch activities, records, and profile (for challengeStats)
-            const [friendActivities, friendRecords, friendProfile] = await Promise.all([
-              getUserActivities(friend.uid).catch(e => { console.error(`[Leaderboard] getUserActivities failed for ${friend.username}:`, e.message); return []; }),
-              getPersonalRecords(friend.uid).catch(e => { console.error(`[Leaderboard] getPersonalRecords failed for ${friend.username}:`, e.message); return null; }),
-              getUserProfile(friend.uid).catch(() => null)
-            ]);
+            // Step 1: One read of their doc: activities, records and challengeStats all live on it
+            const friendProfile = await getUserProfile(friend.uid).catch(e => { console.error(`[Leaderboard] getUserProfile failed for ${friend.username}:`, e.message); return null; });
+            const friendActivities = withoutMalformed(friend.uid, friendProfile?.activities);
+            const friendRecords = friendProfile
+              ? { personalRecords: friendProfile.personalRecords || null, streaks: friendProfile.streaks || null }
+              : null;
 
             // Step 2: Fetch health data separately so any failure can't corrupt the above
             let friendHealthHistory = [];

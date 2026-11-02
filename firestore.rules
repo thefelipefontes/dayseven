@@ -378,6 +378,13 @@ service cloud.firestore {
       allow read, write: if isUser(userId);
     }
 
+    // The oldest app version allowed to run (the "Update DaySeven" screen). Readable by anyone:
+    // it's checked at launch, before sign-in. Set from the console. The rest of config stays
+    // server-only.
+    match /config/minAppVersion {
+      allow read: if true;
+    }
+
     // Friend challenges. Read: participants, and once a challenge is completed, their
     // friends too (the friends feed shows "Completed [sender]'s challenge"). A query can't
     // check friendship, so queries are for participants only; the feed gets its friends'

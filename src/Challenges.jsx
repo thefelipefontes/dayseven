@@ -16,6 +16,7 @@ import {
   availableChallengeMetrics,
   formatPace,
   getChallengeOutcome,
+  getSentChallengeResult,
   requestCancelChallenge,
   respondToCancelRequest,
 } from './services/challengeService';
@@ -877,13 +878,20 @@ function MiniAvatar({ photoURL, initial, size, borderColor }) {
   );
 }
 
-// Result pill shown on resolved challenges (Completed bucket). Win = green, Loss = red.
-// Sender's perspective shows their friend's outcome; recipient sees their own.
-function ResultPill({ outcome }) {
-  if (outcome !== 'won' && outcome !== 'lost') return null;
-  const isWin = outcome === 'won';
-  const color = isWin ? '#00FF94' : '#FF453A';
-  const label = isWin ? 'Won' : 'Lost';
+// Result pill shown on resolved challenges (Completed bucket). Someone who accepted sees
+// their own Won / Lost. The sender isn't a contestant, so they see how their friends did.
+function ResultPill({ outcome, sent }) {
+  let color;
+  let label;
+  if (sent) {
+    color = sent.completed ? '#00FF94' : '#a1a1aa';
+    label = sent.completed ? 'Completed' : 'Missed';
+  } else if (outcome === 'won' || outcome === 'lost') {
+    color = outcome === 'won' ? '#00FF94' : '#FF453A';
+    label = outcome === 'won' ? 'Won' : 'Lost';
+  } else {
+    return null;
+  }
   return (
     <span
       className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0"
@@ -1091,17 +1099,18 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
     const states = Object.values(challenge.participants);
     const completed = states.filter(p => p.status === 'completed').length;
     const total = states.length;
-    groupProgress = `${completed} of ${total} complete`;
+    groupProgress = `${completed} of ${total} completed`;
   }
 
   // Status label only shows when it carries new info — not for active 1v1 ("In progress"
   // is redundant with the burst-icon + visible countdown). Group sender keeps the
-  // "X of Y complete" progress line because that's actually informative.
+  // "X of Y completed" progress line because that's actually informative.
   let statusLabel = null;
   if (isChallenger) {
     if (challenge.status === 'pending') statusLabel = 'Waiting for response';
     else if (challenge.status === 'active' && isGroup) statusLabel = groupProgress;
-    else if (challenge.status === 'completed') statusLabel = groupProgress || 'Completed';
+    // A completed 1v1 has no line of its own: its result pill says it.
+    else if (challenge.status === 'completed' && isGroup) statusLabel = groupProgress;
     else if (challenge.status === 'expired') statusLabel = isGroup ? 'No one finished in time' : "Didn't finish in time";
   } else {
     if (myStatus === 'pending') statusLabel = isGroup ? 'Group challenge for you' : 'Wants to challenge you';
@@ -1132,8 +1141,8 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
   const showCancelBanner = cancelRequest;
   // Pending shows accept-window countdown (visible to both sides);
   // active shows workout countdown to challenger always, and accepter once they've accepted.
-  // Resolved challenges (completed/expired) suppress the chip — the Won/Lost result pill
-  // already conveys the outcome, and "Expired" duplicates "Lost".
+  // Resolved challenges (completed/expired) suppress the chip — the result pill already
+  // conveys the outcome, and "Expired" duplicates "Lost".
   const isResolved = challenge.status === 'completed' || challenge.status === 'expired'
     || myStatus === 'completed' || myStatus === 'expired';
   const showCountdown = !isResolved && (isPendingPhase
@@ -1163,9 +1172,10 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
     ? () => { triggerHaptic(ImpactStyle.Light); onSeeDetails(challenge); }
     : null;
 
-  // Resolved-outcome badge (Won / Lost). Sender's perspective shows their friend's outcome;
-  // recipient sees their own. Null while the challenge is still pending/active.
+  // Resolved-outcome badge: Won / Lost for someone who accepted, how their friends did for
+  // the sender. Both null while the challenge is still pending/active.
   const outcome = getChallengeOutcome(challenge, currentUid);
+  const sentResult = isChallenger ? getSentChallengeResult(challenge) : null;
 
   // Tapping the avatar stack (single or crossover) opens the *other person*'s profile —
   // never your own. The challenge avatars always reference the opponent in this app.
@@ -1217,9 +1227,9 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
             onAvatarTap={handleOpenOpponentProfile}
           />
           <div className="flex items-center gap-1">
-            {!outcome && challenge.status !== 'completed' && <PerspectivePill isChallenger={isChallenger} />}
-            {outcome ? (
-              <ResultPill outcome={outcome} />
+            {!outcome && !sentResult && challenge.status !== 'completed' && <PerspectivePill isChallenger={isChallenger} />}
+            {outcome || sentResult ? (
+              <ResultPill outcome={outcome} sent={sentResult} />
             ) : (
               <StatePill state={challenge.status} />
             )}

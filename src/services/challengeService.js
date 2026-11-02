@@ -406,7 +406,7 @@ export async function createChallenge({ challengerUid, challengerName, friendUid
  * and what their current status is. Handles both new (participants map)
  * and legacy 1v1 (friendUid/friendStatus) shapes.
  */
-function getMyParticipantStatus(challenge, uid) {
+export function getMyParticipantStatus(challenge, uid) {
   if (challenge?.participants && challenge.participants[uid]) {
     return challenge.participants[uid].status;
   }
@@ -966,19 +966,36 @@ export function bucketChallenges(challenges, uid) {
 }
 
 /**
- * Per-perspective outcome of a resolved challenge. Used by the card's Win/Loss badge.
- * Returns 'won' | 'lost' | null. Null = inconclusive (group challenger with mixed results).
+ * The win or loss of someone who accepted a challenge. Null for the sender, who isn't a
+ * contestant: the server only scores the people who accept (winnerUids, challengeStats), so
+ * a sent challenge is never a win or loss of theirs. See getSentChallengeResult for what
+ * they see instead. Returns 'won' | 'lost' | null.
  */
 export function getChallengeOutcome(challenge, uid) {
   if (!challenge) return null;
-  const isChallenger = challenge.challengerUid === uid;
-  if (isChallenger) {
-    if (challenge.status === 'completed') return 'won';
-    if (challenge.status === 'expired') return 'lost';
-    return null;
-  }
+  if (challenge.challengerUid === uid) return null;
   const myStatus = getMyParticipantStatus(challenge, uid);
   if (myStatus === 'completed') return 'won';
   if (myStatus === 'expired') return 'lost';
   return null;
+}
+
+/**
+ * How the people a challenge was sent to did, once it has resolved; null while it's running.
+ * { completed, missed: whether nobody finished, completedCount, total, isGroup }
+ */
+export function getSentChallengeResult(challenge) {
+  if (!challenge || (challenge.status !== 'completed' && challenge.status !== 'expired')) return null;
+  const isGroup = challenge.type === 'group';
+  const states = isGroup && challenge.participants ? Object.values(challenge.participants) : [];
+  const completedCount = isGroup
+    ? states.filter((p) => p.status === 'completed').length
+    : (challenge.status === 'completed' ? 1 : 0);
+  return {
+    completed: completedCount > 0,
+    missed: completedCount === 0,
+    completedCount,
+    total: isGroup ? states.length : 1,
+    isGroup,
+  };
 }

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { describeMatchRule, getChallengeOutcome } from '../services/challengeService';
+import { describeMatchRule, getChallengeOutcome, getSentChallengeResult, getMyParticipantStatus } from '../services/challengeService';
 import { getUserProfile } from '../services/userService';
 import ActivityIcon from './ActivityIcon';
 import ZoomablePhoto from './ZoomablePhoto';
@@ -15,7 +15,22 @@ const CATEGORY_COLOR = {
 // Maps a challenge's status (+ accepter perspective) to a presentation pill.
 // Resolved-without-winner states (cancelled/declined/accept_expired) use a
 // muted treatment so the modal still opens but doesn't pretend there's a result.
-function getStatusPresentation(challenge, currentUid) {
+function getStatusPresentation(challenge, currentUid, opponentName) {
+  // The sender isn't a contestant, so they see how their friends did, not a win or loss.
+  if (challenge.challengerUid === currentUid) {
+    const sent = getSentChallengeResult(challenge);
+    if (sent) {
+      const firstName = (opponentName || 'Friend').split(' ')[0];
+      if (sent.isGroup) {
+        return sent.completed
+          ? { label: `${sent.completedCount} of ${sent.total} completed`, color: '#00FF94' }
+          : { label: 'No one completed', color: '#a1a1aa' };
+      }
+      return sent.completed
+        ? { label: `${firstName} completed`, color: '#00FF94' }
+        : { label: `${firstName} missed it`, color: '#a1a1aa' };
+    }
+  }
   const outcome = getChallengeOutcome(challenge, currentUid);
   if (challenge.status === 'pending') {
     return { label: 'Pending', color: 'rgba(255,255,255,0.65)' };
@@ -189,7 +204,7 @@ export default function ChallengeDetailModal({
   const opponentWins = opponentStats.wins || 0;
   const opponentLosses = opponentStats.losses || 0;
 
-  const status = getStatusPresentation(challenge, currentUid);
+  const status = getStatusPresentation(challenge, currentUid, opponentName);
   const outcome = getChallengeOutcome(challenge, currentUid);
 
   // Countdown selection mirrors the card's logic: pending uses respondByAt,
@@ -224,10 +239,14 @@ export default function ChallengeDetailModal({
         || null)
     : null;
 
-  // Winner highlighting on the panel border. Only fires when challenge.status === 'completed'.
+  // Gold ring for whoever finished it: yourself if you accepted, or the friend you sent it
+  // to. Only fires when challenge.status === 'completed'. Never on the sender, who isn't a
+  // contestant, including for someone who missed a group challenge others finished.
   const meIsWinner = challenge.status === 'completed' && outcome === 'won';
   const opponentIsWinner =
-    challenge.status === 'completed' && outcome === 'lost';
+    challenge.status === 'completed'
+    && isChallenger
+    && getMyParticipantStatus(challenge, opponentUid) === 'completed';
 
   // Action visibility — mirrors ChallengeCard's logic so behavior matches the
   // inline buttons users already know. The modal drops the card's `!compact`

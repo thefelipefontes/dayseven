@@ -11,7 +11,8 @@ import React, { useEffect } from 'react';
 
 // Traced from the app icon (public/icon.png) in its 1024 grid: the open D with round
 // caps, the grey bar on its left, and the solid 7, which a thick stroke through its middle
-// reveals as it draws.
+// reveals as it draws. The icon sits the mark a little right of centre; the viewBox is
+// shifted 45.25 so the loader centres it.
 const D_PATH = 'M352 312.1 L352 305.2 A43.2 43.2 0 0 1 395.2 262 L561.1 262 C693.7 262 762.5 353 762.5 511.5 C762.5 670 693.7 762 561.1 762 L395.2 762 A43.2 43.2 0 0 1 352 718.8 L352 711.9';
 const BAR_PATH = 'M352 312.1 L352 711.9';
 const SEVEN_PATH = 'M452.3 399.7 L588.6 399.7 L588.6 427.4 L517.85 582.5 L471.85 582.5 L539.85 433.8 L452.3 433.8 Z';
@@ -38,7 +39,7 @@ export const releaseLaunchOverlay = () => {
 };
 
 export const D7LoaderMark = () => (
-  <svg className="d7-loader" viewBox="0 0 1024 1024" aria-hidden="true">
+  <svg className="d7-loader" viewBox="45.25 0 1024 1024" aria-hidden="true">
     <defs>
       <mask id="d7-loader-7-mask-app" maskUnits="userSpaceOnUse">
         <path className="d7-loader-7-trace" d={SEVEN_TRACE_PATH} pathLength="100" />

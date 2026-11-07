@@ -35,6 +35,7 @@ import { Dumbbell, Footprints } from 'lucide-react';
 import { IconRun, IconSnowflake } from '@tabler/icons-react';
 import { triggerHaptic } from './utils/haptics';
 import UpdateRequired from './components/UpdateRequired';
+import ImportedWorkoutsBanner from './components/ImportedWorkoutsBanner';
 import { APP_VERSION, APP_BUILD, isVersionBelow, fetchMinAppVersion } from './utils/appVersion';
 import { toLocalDateStr, getTodayDate, getCurrentYear, parseLocalDate, formatFriendlyDate, signupWeekStartStr } from './utils/dateHelpers';
 import { FOCUS_AREA_GROUPS, ALL_FOCUS_AREAS, FOCUS_AREA_MIGRATION, normalizeFocusAreas } from './utils/focusAreas';
@@ -11538,7 +11539,7 @@ const WinningStreakInfoSheet = ({ isOpen, onClose, required = ['lifts', 'cardio'
   );
 };
 
-const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, healthHistory = [], onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onDismissShieldNotice = () => {}, onShieldIntro = () => {}, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, openActivityTarget = null, onOpenActivityTargetHandled = () => {}, showHkEmptyHint = false, hkAccessBlocked = false, onDismissHkEmptyHint = () => {}, onOpenHealthSettings = () => {}, showNotifReask = false, onAcceptNotifReask = () => {}, onDismissNotifReask = () => {}, onReplayCelebration = () => {}, pendingChallenges = [], onOpenPlan = () => {}, onShowWinningStreakInfo = () => {} }) => {
+const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, healthHistory = [], onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onDismissShieldNotice = () => {}, onShieldIntro = () => {}, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImported = [], onDismissAutoImported, onShareStamp, friends = [], onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, openActivityTarget = null, onOpenActivityTargetHandled = () => {}, showHkEmptyHint = false, hkAccessBlocked = false, onDismissHkEmptyHint = () => {}, onOpenHealthSettings = () => {}, showNotifReask = false, onAcceptNotifReask = () => {}, onDismissNotifReask = () => {}, onReplayCelebration = () => {}, pendingChallenges = [], onOpenPlan = () => {}, onShowWinningStreakInfo = () => {} }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
   const [dismissConfirmWorkouts, setDismissConfirmWorkouts] = useState(null); // Workouts pending dismiss confirmation
@@ -11979,38 +11980,15 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
       {/* Banners about logging — workouts detected or imported from Apple Health, strength
           sessions missing muscle groups, Health/notification access — sit with Today's
           Activity, where those workouts land. */}
-      {/* Auto-Imported Summary Banner - Shows after onboarding auto-import */}
-      {autoImportedCount > 0 && (
-        <div className="mb-3">
-          <div
-            className="w-full p-3 rounded-xl flex items-center gap-3"
-            style={{ backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.3)' }}
-          >
-            <span className="text-lg">✅</span>
-            <div className="flex-1">
-              <div className="text-xs font-semibold" style={{ color: '#00FF94' }}>
-                {autoImportedCount} {autoImportedCount === 1 ? 'activity' : 'activities'} imported from Apple Health
-              </div>
-              <div className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
-                Your recent workouts have been auto-saved
-              </div>
-            </div>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onDismissAutoImported?.();
-              }}
-              className="p-1 rounded-full"
-              style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="2" strokeLinecap="round">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Auto-Imported Summary Banner - shows after onboarding auto-import. Current copies,
+          so an edit shows and a deleted one drops out. */}
+      <ImportedWorkoutsBanner
+        imported={autoImported
+          .map((a) => activities.find((x) => String(x.id) === String(a.id)))
+          .filter(Boolean)}
+        onOpen={setSelectedActivity}
+        onDismiss={onDismissAutoImported}
+      />
 
       {/* Pending Workout Banners - Green for known types, Yellow for uncategorized */}
       {(() => {
@@ -13595,7 +13573,9 @@ export default function DaySevenApp() {
   });
 
   // Count of workouts auto-imported from Apple Health during onboarding (for summary banner)
-  const [autoImportedCount, setAutoImportedCount] = useState(0);
+  // This week's workouts the first sync after onboarding saved (the ones not linked during
+  // onboarding), for the banner on Home.
+  const [autoImported, setAutoImported] = useState([]);
 
 
   // Track dismissed workout UUIDs (to not show them again)
@@ -15790,14 +15770,6 @@ export default function DaySevenApp() {
             .filter(a => a.healthKitUUID)
             .map(a => a.healthKitUUID)
         );
-        // Nothing from before the week the account was created: those workouts predate
-        // DaySeven, so they mustn't count toward streaks or ask for details. Only the first
-        // sync after onboarding used to skip them, so the next one imported the rest of
-        // HealthKit's 30 days as new. Filtered here, before the fresh read below, so they
-        // don't cost a read on every sync either.
-        const importFrom = signupWeekStartStr(userProfileRef.current?.createdAt);
-        if (importFrom) newWorkouts = newWorkouts.filter((w) => !w.date || w.date >= importFrom);
-
 
         // Also filter out linked workouts (where activity has linkedHealthKitUUID)
         const linkedUUIDs = new Set(
@@ -15817,6 +15789,14 @@ export default function DaySevenApp() {
         // Collapse cross-source duplicates (same workout written to HealthKit
         // by Apple Watch + Strava + Garmin Connect, etc.).
         let newWorkouts = dedupeCrossSource(newWorkoutsRaw);
+
+        // Nothing from before the week the account was created: those workouts predate
+        // DaySeven, so they mustn't count toward streaks or ask for details. Only the first
+        // sync after onboarding used to skip them, so the next one imported the rest of
+        // HealthKit's 30 days as new. Filtered here, before the fresh read below, so they
+        // don't cost a read on every sync either.
+        const importFrom = signupWeekStartStr(userProfileRef.current?.createdAt);
+        if (importFrom) newWorkouts = newWorkouts.filter((w) => !w.date || w.date >= importFrom);
 
         // Final idempotency guard. The UUID filter above keyed off a snapshot of
         // activitiesRef taken when this run started; re-read the freshest list
@@ -15902,7 +15882,7 @@ export default function DaySevenApp() {
           }));
 
           // Show summary banner on homescreen
-          setAutoImportedCount(onboardingWorkouts.length);
+          setAutoImported(autoImportedActivities);
 
           justOnboardedRef.current = false;
         } else {
@@ -18798,8 +18778,8 @@ export default function DaySevenApp() {
                   onDeactivateVacation={requestVacationDeactivation}
                   onRequestResumeInjury={() => setShowHomeResumeConfirm(true)}
                   canResumeInjury={canResumeFromInjury()}
-                  autoImportedCount={autoImportedCount}
-                  onDismissAutoImported={() => setAutoImportedCount(0)}
+                  autoImported={autoImported}
+                  onDismissAutoImported={() => setAutoImported([])}
                   onShareStamp={(activity, routeCoords) => {
                     setStampActivity(activity);
                     setStampRouteCoords(routeCoords || []);

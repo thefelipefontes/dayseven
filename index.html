@@ -25,19 +25,25 @@
       html, body { background: #000; }
       #initial-loader { position: fixed; inset: 0; z-index: 2147483647; background: #000; display: flex; align-items: center; justify-content: center; }
       /* The D7 logo drawing itself: the D, then the 7, a beat with the full mark, a fade,
-         and again. Shapes traced from the app icon (public/icon.png); the viewBox is shifted
+         and again. The first pass is quick, the whole logo in 0.7 s, so even a fast launch
+         shows all of it (LaunchLoader.jsx holds the hand-off until then); later passes take
+         the slower 2.4 s loop. Shapes traced from the app icon (public/icon.png); the viewBox is shifted
          to centre the mark, which the icon sits a little right of centre. Shared with the
          in-app loader (src/components/LaunchLoader.jsx). */
       .d7-loader { width: 220px; height: 220px; overflow: visible; animation: d7-loader-fade 2.4s infinite; }
-      .d7-loader-d { fill: none; stroke: #fff; stroke-width: 60; stroke-linecap: round; stroke-linejoin: round; animation: d7-loader-d 2.4s cubic-bezier(.7,0,.3,1) infinite; }
-      .d7-loader-bar { fill: none; stroke: #333; stroke-width: 60; animation: d7-loader-bar 2.4s ease-out infinite; }
+      .d7-loader-d { fill: none; stroke: #fff; stroke-width: 60; stroke-linecap: round; stroke-linejoin: round; animation: d7-loader-d-first 2.4s cubic-bezier(.7,0,.3,1), d7-loader-d 2.4s cubic-bezier(.7,0,.3,1) 2.4s infinite; }
+      .d7-loader-bar { fill: none; stroke: #333; stroke-width: 60; animation: d7-loader-bar-first 2.4s ease-out, d7-loader-bar 2.4s ease-out 2.4s infinite; }
       .d7-loader-7 { fill: #fff; }
       /* The 7 is solid, so a thick stroke through its middle, drawn like a line, reveals it. */
-      .d7-loader-7-trace { fill: none; stroke: #fff; stroke-width: 72; stroke-linecap: square; stroke-linejoin: miter; stroke-dasharray: 100; animation: d7-loader-7 2.4s cubic-bezier(.7,0,.3,1) infinite; }
+      .d7-loader-7-trace { fill: none; stroke: #fff; stroke-width: 72; stroke-linecap: square; stroke-linejoin: miter; stroke-dasharray: 100; animation: d7-loader-7-first 2.4s cubic-bezier(.7,0,.3,1), d7-loader-7 2.4s cubic-bezier(.7,0,.3,1) 2.4s infinite; }
       @keyframes d7-loader-fade { 0%, 82% { opacity: 1; } 100% { opacity: 0; } }
       @keyframes d7-loader-d { 0% { stroke-dasharray: 0 100; } 40%, 100% { stroke-dasharray: 100 0; } }
       @keyframes d7-loader-bar { 0% { opacity: 0; } 30%, 100% { opacity: 1; } }
       @keyframes d7-loader-7 { 0%, 35% { stroke-dashoffset: 100; } 62%, 100% { stroke-dashoffset: 0; } }
+      /* First pass: the D by 0.4 s, the 7 from 0.3 to 0.7 s, then the full mark holds. */
+      @keyframes d7-loader-d-first { 0% { stroke-dasharray: 0 100; } 16.667%, 100% { stroke-dasharray: 100 0; } }
+      @keyframes d7-loader-bar-first { 0% { opacity: 0; } 12.5%, 100% { opacity: 1; } }
+      @keyframes d7-loader-7-first { 0%, 12.5% { stroke-dashoffset: 100; } 29.167%, 100% { stroke-dashoffset: 0; } }
       @media (prefers-reduced-motion: reduce) {
         .d7-loader, .d7-loader-d, .d7-loader-bar, .d7-loader-7-trace { animation: none; }
         .d7-loader-d { stroke-dasharray: none; }

@@ -21,6 +21,38 @@ const SEVEN_TRACE_PATH = 'M452.3 416.75 L570.65 416.75 L494.85 582.5';
 let loadersMounted = 0;
 let hideTimer = null;
 
+// The overlay's first pass draws the whole logo in 0.7 s (index.html). Home is often ready
+// sooner, so the hand-off waits for it: a quick launch shows the full logo, not half a D.
+// The wait is capped, so a drawing that isn't advancing never holds Home up.
+const FIRST_DRAW_MS = 700;
+const MAX_LOGO_WAIT_MS = 1000;
+
+const msUntilLogoDrawn = () => {
+  try {
+    const svg = document.querySelector('#initial-loader .d7-loader');
+    const anims = svg?.getAnimations?.() || [];
+    const fade = anims.find((a) => a.animationName === 'd7-loader-fade') || anims[0];
+    // Reduce Motion has no animation: the logo is already whole. A drawing that hasn't
+    // started yet has no currentTime: all of it is still to come.
+    const elapsed = fade ? Number(fade.currentTime ?? 0) : NaN;
+    return Number.isFinite(elapsed) ? Math.max(0, FIRST_DRAW_MS - elapsed) : 0;
+  } catch {
+    return 0;
+  }
+};
+
+// Hide once the logo is drawn. Checks again when the timer fires, in case the drawing
+// started later than it looked.
+const scheduleHide = (delay, since = Date.now()) => {
+  clearTimeout(hideTimer);
+  hideTimer = setTimeout(() => {
+    const wait = msUntilLogoDrawn();
+    const left = MAX_LOGO_WAIT_MS - (Date.now() - since);
+    if (wait > 0 && left > 0) scheduleHide(Math.min(wait, left), since);
+    else hideLaunchOverlay();
+  }, delay);
+};
+
 export const hideLaunchOverlay = () => {
   const el = document.getElementById('initial-loader');
   if (!el) return;
@@ -34,8 +66,7 @@ export const hideLaunchOverlay = () => {
 // overlay. Children's effects run first, so a mounted <LaunchLoader /> has counted itself.
 export const releaseLaunchOverlay = () => {
   if (loadersMounted > 0) return;
-  clearTimeout(hideTimer);
-  hideTimer = setTimeout(hideLaunchOverlay, 0);
+  scheduleHide(msUntilLogoDrawn());
 };
 
 export const D7LoaderMark = () => (
@@ -58,7 +89,7 @@ export default function LaunchLoader() {
     return () => {
       loadersMounted -= 1;
       // A moment's grace: one loading screen handing over to another keeps the overlay.
-      if (loadersMounted === 0) hideTimer = setTimeout(hideLaunchOverlay, 50);
+      if (loadersMounted === 0) scheduleHide(Math.max(50, msUntilLogoDrawn()));
     };
   }, []);
 

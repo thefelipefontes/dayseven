@@ -14441,6 +14441,7 @@ export default function DaySevenApp() {
     setUnreadFeedCount(0);
     setIsPro(false);
     setProStatusResolved(false);
+    setIsLoading(true); // The next sign-in shows Home's skeleton until its data is in.
     setDevAuthEmail(null);
     // Close any open modals + reset to home tab so the next sign-in lands on a
     // clean Home, not the Settings overlay (which would render on top of Home
@@ -15058,6 +15059,7 @@ export default function DaySevenApp() {
         setHealthHistory(getDemoHealthHistory(365));
         setFriends(getDemoFriends());
         setIsPro(true); // Show pro features in demo
+        setIsLoading(false);
         return;
       }
 
@@ -15301,6 +15303,8 @@ export default function DaySevenApp() {
           // Fill in any days this week / last week the app wasn't open for (runs in the
           // background; merges into healthHistory when it lands).
           backfillRecentHealthDays();
+          // Home's skeleton ends with the data: batched with setActivities below.
+          setIsLoading(false);
           lastFirestoreActivityCount.current = userActivities.length;
           // The streaks as they stand after this load, for the records recalc below.
           let streaksAfterLoad = profileForStreaks?.streaks || null;
@@ -15502,6 +15506,7 @@ export default function DaySevenApp() {
         } catch (error) {
           // Still mark as loaded on error so we don't block record checking forever
           setRecordsLoaded(true);
+          setIsLoading(false);
         }
       })();
     } else {
@@ -16411,11 +16416,15 @@ export default function DaySevenApp() {
     checkAuth();
   }, [handleUserAuth]);
 
-  // Simulate initial load
+  // Home shows its skeleton until the launch read has set the activities (handleUserAuth
+  // ends it). It used to be a fixed 800ms from mount, which held Home back 0.3-0.4s after
+  // the data was in on every launch, and showed Home empty when the data was slower.
+  // Never more than 3s, so a slow or failed read still reaches Home.
   useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 800);
+    if (!isLoading || !user) return undefined;
+    const timer = setTimeout(() => setIsLoading(false), 3000);
     return () => clearTimeout(timer);
-  }, []);
+  }, [isLoading, user]);
 
   // RevenueCat init runs once at startup. On native we read the cached
   // Firebase user via the Capacitor plugin (the JS SDK's onAuthStateChanged

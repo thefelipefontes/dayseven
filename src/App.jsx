@@ -36,7 +36,7 @@ import { IconRun, IconSnowflake } from '@tabler/icons-react';
 import { triggerHaptic } from './utils/haptics';
 import UpdateRequired from './components/UpdateRequired';
 import { APP_VERSION, APP_BUILD, isVersionBelow, fetchMinAppVersion } from './utils/appVersion';
-import { toLocalDateStr, getTodayDate, getCurrentYear, parseLocalDate, formatFriendlyDate } from './utils/dateHelpers';
+import { toLocalDateStr, getTodayDate, getCurrentYear, parseLocalDate, formatFriendlyDate, signupWeekStartStr } from './utils/dateHelpers';
 import { FOCUS_AREA_GROUPS, ALL_FOCUS_AREAS, FOCUS_AREA_MIGRATION, normalizeFocusAreas } from './utils/focusAreas';
 import { initialUserData } from './utils/initialUserData';
 import { getDefaultCountToward, getActivityCategory, countsAsLifting, countsAsCardio, countsAsRecovery } from './utils/activityCategory';
@@ -15790,6 +15790,14 @@ export default function DaySevenApp() {
             .filter(a => a.healthKitUUID)
             .map(a => a.healthKitUUID)
         );
+        // Nothing from before the week the account was created: those workouts predate
+        // DaySeven, so they mustn't count toward streaks or ask for details. Only the first
+        // sync after onboarding used to skip them, so the next one imported the rest of
+        // HealthKit's 30 days as new. Filtered here, before the fresh read below, so they
+        // don't cost a read on every sync either.
+        const importFrom = signupWeekStartStr(userProfileRef.current?.createdAt);
+        if (importFrom) newWorkouts = newWorkouts.filter((w) => !w.date || w.date >= importFrom);
+
 
         // Also filter out linked workouts (where activity has linkedHealthKitUUID)
         const linkedUUIDs = new Set(

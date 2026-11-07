@@ -35,6 +35,7 @@ import { Dumbbell, Footprints } from 'lucide-react';
 import { IconRun, IconSnowflake } from '@tabler/icons-react';
 import { triggerHaptic } from './utils/haptics';
 import UpdateRequired from './components/UpdateRequired';
+import LaunchLoader, { releaseLaunchOverlay } from './components/LaunchLoader';
 import { lastKnownPro, rememberPro } from './utils/proStatusCache';
 import { APP_VERSION, APP_BUILD, isVersionBelow, fetchMinAppVersion } from './utils/appVersion';
 import { toLocalDateStr, getTodayDate, getCurrentYear, parseLocalDate, formatFriendlyDate } from './utils/dateHelpers';
@@ -13330,6 +13331,9 @@ function WelcomePaywallStep({ onDone, applyProStatus }) {
 }
 
 export default function DaySevenApp() {
+  // index.html's launch loader stays up while a screen is loading; if the first screen
+  // isn't one (the welcome screen, say), let it go.
+  useEffect(() => { releaseLaunchOverlay(); }, []);
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -18162,19 +18166,7 @@ export default function DaySevenApp() {
   // Show loading spinner while checking auth
   if (updateRequired) return <UpdateRequired />;
 
-  const launchLoader = (
-    <div className="min-h-screen bg-black flex items-center justify-center">
-      <div className="relative w-[60px] h-[60px]">
-        {/* Spinning circle */}
-        <svg className="absolute top-0 left-0 w-[60px] h-[60px] animate-spin" viewBox="0 0 60 60" style={{ animationDuration: '1.5s' }}>
-          <circle cx="30" cy="30" r="26" fill="none" stroke="#333" strokeWidth="5"/>
-          <circle cx="30" cy="30" r="26" fill="none" stroke="#fff" strokeWidth="5" strokeLinecap="round" strokeDasharray="130 360"/>
-        </svg>
-        {/* Number 7 */}
-        <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-2xl font-bold text-white">7</span>
-      </div>
-    </div>
-  );
+  const launchLoader = <LaunchLoader />;
 
   if (authLoading) return launchLoader;
 

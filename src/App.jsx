@@ -15075,6 +15075,11 @@ export default function DaySevenApp() {
       // Load remaining data in background (don't await)
       (async () => {
         try {
+          // Start the daily health history now: it doesn't depend on anything below, and
+          // waiting for the user-doc read to finish first added 100-200ms before Home could
+          // show. getDailyHealthHistory never throws, so nothing is left unhandled if a
+          // read below fails first.
+          const healthHistoryPromise = getDailyHealthHistory(user.uid, 365);
           // The goals came with the profile read above; read them separately only if that
           // read failed. Home needs them now, ahead of the RevenueCat login below.
           const userGoals = profile ? (profile.goals || null) : await getUserGoals(user.uid);
@@ -15296,7 +15301,7 @@ export default function DaySevenApp() {
           // judging a week, and this recalc used to run with no step data at all.
           const [userActivities, healthHistoryData] = await Promise.all([
             userDoc ? userDoc.activities : getUserActivities(user.uid, true),
-            getDailyHealthHistory(user.uid, 365),
+            healthHistoryPromise,
           ]);
           healthHistoryRef.current = healthHistoryData; // visible to the recalc synchronously
           setHealthHistory(healthHistoryData);

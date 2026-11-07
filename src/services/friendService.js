@@ -75,7 +75,7 @@ const withRetry = async (fn, maxRetries = 2, delayMs = 500) => {
 // fields a Cloud Function keeps for everyone signed in to read. A user doc itself is only
 // readable by its owner and their friends. Falls back to the user doc for a profile not
 // mirrored yet (that read succeeds only for friends, and only the shape matters here).
-async function getPublicProfile(uid) {
+export async function getPublicProfile(uid) {
   const pick = (data) => ({
     uid,
     username: data?.username,
@@ -690,6 +690,17 @@ export async function addComment(activityId, ownerUid, commenterUid, commenterNa
   }
 }
 
+// When a comment or reply was written, in ms. The app stores an ISO string, the web a
+// server timestamp, which the native plugin hands back as a Timestamp: `new Date()` makes
+// NaN of that, and a NaN in the sort left mixed threads out of order.
+const createdAtMillis = (value) => {
+  if (!value) return 0;
+  if (typeof value.toMillis === 'function') return value.toMillis();
+  if (typeof value.seconds === 'number') return value.seconds * 1000 + Math.floor((value.nanoseconds || 0) / 1e6);
+  const ms = new Date(value).getTime();
+  return Number.isNaN(ms) ? 0 : ms;
+};
+
 export async function getComments(ownerUid, activityId) {
   const activityIdStr = String(activityId);
 
@@ -709,11 +720,7 @@ export async function getComments(ownerUid, activityId) {
         ...snap.data
       }));
 
-      return comments.sort((a, b) => {
-        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return aTime - bTime;
-      });
+      return comments.sort((a, b) => createdAtMillis(a.createdAt) - createdAtMillis(b.createdAt));
     } else {
       const commentsRef = collection(db, 'users', ownerUid, 'activityComments', activityIdStr, 'comments');
       const q = query(commentsRef, orderBy('createdAt', 'asc'));
@@ -815,11 +822,7 @@ export async function getReplies(ownerUid, activityId, commentId) {
         ...snap.data
       }));
 
-      return replies.sort((a, b) => {
-        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return aTime - bTime;
-      });
+      return replies.sort((a, b) => createdAtMillis(a.createdAt) - createdAtMillis(b.createdAt));
     } else {
       const repliesRef = collection(db, 'users', ownerUid, 'activityComments', activityIdStr, 'comments', commentId, 'replies');
       const q = query(repliesRef, orderBy('createdAt', 'asc'));

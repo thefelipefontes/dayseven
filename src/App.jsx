@@ -1175,91 +1175,6 @@ const HeatMapCalendar = ({ data, onSelectDate, selectedDate, onSelectWeek }) => 
   );
 };
 
-// Skeleton Loading Components
-const SkeletonPulse = ({ className = "", style = {} }) => (
-  <div 
-    className={`animate-pulse rounded-lg ${className}`}
-    style={{ backgroundColor: 'rgba(255,255,255,0.05)', ...style }}
-  />
-);
-
-const SkeletonCard = () => (
-  <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-    <div className="flex items-center gap-3 mb-4">
-      <SkeletonPulse className="w-10 h-10 rounded-full" />
-      <div className="flex-1">
-        <SkeletonPulse className="h-4 w-24 mb-2" />
-        <SkeletonPulse className="h-3 w-16" />
-      </div>
-    </div>
-    <SkeletonPulse className="h-20 w-full" />
-  </div>
-);
-
-const SkeletonActivityRow = () => (
-  <div className="p-3 rounded-xl flex items-center gap-3" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-    <SkeletonPulse className="w-8 h-8 rounded-lg" />
-    <div className="flex-1">
-      <SkeletonPulse className="h-4 w-32 mb-2" />
-      <SkeletonPulse className="h-3 w-20" />
-    </div>
-    <SkeletonPulse className="h-4 w-12" />
-  </div>
-);
-
-const SkeletonGoalRings = () => (
-  <div className="p-5 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-    <div className="flex items-center justify-around">
-      {[1, 2, 3].map(i => (
-        <div key={i} className="flex flex-col items-center">
-          <SkeletonPulse className="w-[72px] h-[72px] rounded-full" />
-          <SkeletonPulse className="h-3 w-16 mt-2" />
-        </div>
-      ))}
-    </div>
-  </div>
-);
-
-const HomeTabSkeleton = () => (
-  <div className="pb-32 animate-pulse">
-    {/* Daily Stats Skeleton */}
-    <div className="px-4 mb-4">
-      <SkeletonPulse className="h-4 w-32 mb-3" />
-      <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-        <div className="space-y-4">
-          <div className="flex items-center gap-3">
-            <SkeletonPulse className="w-6 h-6 rounded" />
-            <div className="flex-1">
-              <SkeletonPulse className="h-2 w-full rounded-full" />
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <SkeletonPulse className="w-6 h-6 rounded" />
-            <div className="flex-1">
-              <SkeletonPulse className="h-2 w-full rounded-full" />
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-    
-    {/* Goals Skeleton */}
-    <div className="mx-4 mb-4">
-      <SkeletonPulse className="h-4 w-40 mb-3" />
-      <SkeletonGoalRings />
-    </div>
-    
-    {/* Activities Skeleton */}
-    <div className="mx-4 mb-4">
-      <SkeletonPulse className="h-4 w-28 mb-3" />
-      <div className="space-y-2">
-        <SkeletonActivityRow />
-        <SkeletonActivityRow />
-      </div>
-    </div>
-  </div>
-);
-
 // Animated Counter Component - smoothly animates number changes
 const AnimatedCounter = ({ value, duration = 500, className = "" }) => {
   const [displayValue, setDisplayValue] = useState(value);
@@ -18403,6 +18318,10 @@ export default function DaySevenApp() {
     );
   }
 
+  // Launch: one loading screen. The loader stays until the launch read has set Home's data
+  // (or 3s pass), so Home appears finished instead of as a skeleton first.
+  if (isLoading) return launchLoader;
+
   // Custom refresh indicator component
   return (
     <div
@@ -18734,9 +18653,6 @@ export default function DaySevenApp() {
             animation: `${tabDirection === 0 ? 'fadeIn' : tabDirection === 1 ? 'slideInRight' : 'slideInLeft'} 200ms ease-out`
           }}
         >
-          {isLoading ? (
-            <HomeTabSkeleton />
-          ) : (
             <>
               {activeTab === 'home' && (
                 <SectionErrorBoundary name="home">
@@ -19031,7 +18947,6 @@ export default function DaySevenApp() {
                 </SectionErrorBoundary>
               )}
             </>
-          )}
         </div>
         {showSettings && (
           // data-modal-overlay opts this out of the page-level pull-to-refresh.

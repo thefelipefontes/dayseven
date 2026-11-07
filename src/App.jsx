@@ -26,7 +26,7 @@ import { Capacitor } from '@capacitor/core';
 import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, fetchHealthDataForDate, fetchDailyHealthRange, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, pushDistanceUnitToWatch, fetchWorkoutRoute, updateWidgetData, updateLiveActivityState, startWatchWorkoutLiveActivity, endAllLiveActivities, checkActiveLiveActivity, showLocationDeniedDialog, getHealthConnectionStatus, backfillHkCalories, isHealthKitReadAuthorized, syncWorkoutDetectionPrefs } from './services/healthService';
 import NotificationSettings from './NotificationSettings';
 import { initializePushNotifications, handleNotificationNavigation, removeFCMToken, clearBadge, clearAllNotifications, shouldShowNotification, getNotificationPreferences, logNotificationOpen, getNotificationPermissionStatus, requestNotificationPermission, workoutDetectionFields } from './services/notificationService';
-import { initializeRevenueCat, loginRevenueCat, checkProStatus, getPlanType, addCustomerInfoListener, logoutRevenueCat, presentPaywall, presentCustomerCenter, restorePurchases, setDevAuthEmail, getOfferings } from './services/subscriptionService';
+import { initializeRevenueCat, loginRevenueCat, checkProStatus, getPlanType, addCustomerInfoListener, logoutRevenueCat, presentPaywall, presentCustomerCenter, restorePurchases, setDevAuthEmail, getOfferings, isPaywallOpen } from './services/subscriptionService';
 import ActivityIcon, { ICON_PICKER_CATEGORIES, CATEGORY_COLORS as ICON_CATEGORY_COLORS } from './components/ActivityIcon';
 import RouteMapView, { ll2px, bestFit, snapshotBasemap } from './components/RouteMapView';
 import MuscleBodyMap from './components/MuscleBodyMap';
@@ -34,6 +34,7 @@ import { isDemoAccount, getDemoActivities, getDemoUserData, getDemoProfileOverri
 import { Dumbbell, Footprints } from 'lucide-react';
 import { IconRun, IconSnowflake } from '@tabler/icons-react';
 import { triggerHaptic } from './utils/haptics';
+import AppTour from './components/AppTour';
 import UpdateRequired from './components/UpdateRequired';
 import { APP_VERSION, APP_BUILD, isVersionBelow, fetchMinAppVersion } from './utils/appVersion';
 import { toLocalDateStr, getTodayDate, getCurrentYear, parseLocalDate, formatFriendlyDate } from './utils/dateHelpers';
@@ -516,423 +517,6 @@ const initialRunningBreakdown = {
 const initialRecoveryBreakdown = {
   '2026': {},
   'all-time': {}
-};
-
-// App Tour Component - Guides new users through the app
-const AppTour = ({ step, onNext, onBack, onSkip, targetRef, onSwitchTab, homeTabRef }) => {
-  const [position, setPosition] = useState({ top: 0, left: 0, width: 0, height: 0 });
-  const [homePosition, setHomePosition] = useState({ top: 0, left: 0, width: 0, height: 0 });
-  const [isReady, setIsReady] = useState(false);
-
-  const tourSteps = [
-    {
-      title: 'Log Activity',
-      description: 'Tap here to log workouts, runs, recovery sessions, and more.',
-      position: 'above',
-      tab: 'home',
-      features: null
-    },
-    {
-      title: 'Weekly Goals',
-      description: 'Track your weekly progress here. Hit Strength, Cardio and your weekly Steps to win the week and grow your streak. Recovery is a bonus.',
-      position: 'below',
-      tab: 'home',
-      features: null
-    },
-    {
-      title: 'Plan',
-      description: 'Plan your week: drop strength, cardio and recovery sessions onto the days you\'ll do them.',
-      position: 'above',
-      tab: 'plan',
-      features: [
-        { emoji: '🗓️', text: 'Drag sessions onto days' },
-        { emoji: '✨', text: 'Suggest a plan in one tap' },
-        { emoji: '👟', text: 'See the steps each day needs' },
-        { emoji: '✅', text: 'Tap to log a planned session' }
-      ]
-    },
-    {
-      title: 'Friends',
-      description: 'Stay motivated together with friends.',
-      position: 'above',
-      tab: 'feed',
-      features: [
-        { emoji: '👥', text: 'See friend activity' },
-        { emoji: '🎉', text: 'React & comment' },
-        { emoji: '🏅', text: 'Leaderboard (streaks and activities)' },
-        { emoji: '⚡', text: 'Challenge friends head-to-head' },
-        { emoji: '➕', text: 'Add new friends' }
-      ]
-    },
-    {
-      title: 'Profile',
-      description: 'Your fitness home base.',
-      position: 'above',
-      tab: 'profile',
-      features: [
-        { emoji: '📊', text: 'See your stats' },
-        { emoji: '📅', text: 'Browse your history' },
-        { emoji: '🎯', text: 'Set goals & share wins' }
-      ]
-    }
-  ];
-
-  const currentStep = tourSteps[step] || tourSteps[0];
-
-  // Track previous tab for detecting tab changes
-  const prevTabRef = useRef(currentStep.tab);
-
-  // Switch to the appropriate tab when step changes
-  useEffect(() => {
-    if (currentStep.tab && onSwitchTab) {
-      onSwitchTab(currentStep.tab);
-    }
-    // Scroll to top when entering a new step
-    window.scrollTo({ top: 0, behavior: 'instant' });
-  }, [step, currentStep.tab, onSwitchTab]);
-
-  useEffect(() => {
-    const isTabChange = prevTabRef.current !== currentStep.tab;
-    prevTabRef.current = currentStep.tab;
-
-    // Only show loading state for tab changes
-    if (isTabChange) {
-      setIsReady(false);
-    }
-
-    const capturePosition = () => {
-      if (targetRef?.current) {
-        // Use requestAnimationFrame to ensure we get the correct position after paint
-        requestAnimationFrame(() => {
-          if (targetRef?.current) {
-            const rect = targetRef.current.getBoundingClientRect();
-            setPosition({
-              top: rect.top,
-              left: rect.left,
-              width: rect.width,
-              height: rect.height
-            });
-            // Also capture Home button position for steps 0-1
-            if (homeTabRef?.current) {
-              const homeRect = homeTabRef.current.getBoundingClientRect();
-              setHomePosition({
-                top: homeRect.top,
-                left: homeRect.left,
-                width: homeRect.width,
-                height: homeRect.height
-              });
-            }
-            setIsReady(true);
-          } else {
-            // Fallback - try again after a short delay
-            setTimeout(capturePosition, 50);
-          }
-        });
-      } else {
-        // Ref not ready yet, try again
-        setTimeout(capturePosition, 50);
-      }
-    };
-
-    const updatePosition = () => {
-      // Fixed elements are the bottom nav tabs: Challenges (2), Friends (3), Profile (4)
-      const isFixedElement = step >= 2 && step <= 4;
-
-      if (!isFixedElement) {
-        // Scroll to top first to reset position
-        window.scrollTo({ top: 0, behavior: 'instant' });
-
-        // Wait a frame, then scroll element into view
-        requestAnimationFrame(() => {
-          if (targetRef?.current) {
-            const rect = targetRef.current.getBoundingClientRect();
-            const scrollTarget = window.scrollY + rect.top - 100; // 100px padding from top
-            window.scrollTo({ top: Math.max(0, scrollTarget), behavior: 'instant' });
-          }
-          // Capture position immediately
-          capturePosition();
-        });
-      } else {
-        // For fixed elements, capture position after tab switch
-        setTimeout(capturePosition, isTabChange ? 50 : 0);
-      }
-    };
-
-    // Shorter delay - only need time for tab switch if changing tabs
-    const timer = setTimeout(updatePosition, isTabChange ? 50 : 0);
-    return () => clearTimeout(timer);
-  }, [targetRef, step, currentStep.tab]);
-
-  // Disable scrolling while tour is active
-  useEffect(() => {
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, []);
-
-  // Don't render until position is calculated
-  if (!isReady || position.width === 0) {
-    return (
-      <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center">
-        <div className="animate-pulse text-white">Loading...</div>
-      </div>
-    );
-  }
-
-  // Calculate tooltip position based on target element
-  const getTooltipStyle = () => {
-    const padding = 16;
-    const tooltipWidth = 280;
-
-    // Center tooltip horizontally over the target element
-    const isNavBarStep = step >= 2 && step <= 4;
-    const centerOnElement = position.left + position.width / 2 - tooltipWidth / 2;
-    const clampedLeft = Math.max(16, Math.min(centerOnElement, window.innerWidth - tooltipWidth - 16));
-
-    if (isNavBarStep) {
-      // For nav bar items (History, Friends, Profile), use fixed position from bottom
-      // Center tooltip over the actual tab button
-      return {
-        bottom: 124, // Fixed distance from bottom of screen
-        left: clampedLeft
-      };
-    } else if (currentStep.position === 'above') {
-      // For other 'above' positioned items (not nav bar)
-      const tooltipHeight = 160;
-      return {
-        top: position.top - tooltipHeight - 16,
-        left: clampedLeft
-      };
-    } else {
-      // Position tooltip below the target element
-      return {
-        top: position.top + position.height + padding,
-        left: clampedLeft
-      };
-    }
-  };
-
-  // Calculate arrow position
-  const getArrowStyle = () => {
-    const tooltipStyle = getTooltipStyle();
-    const tooltipLeft = typeof tooltipStyle.left === 'number' ? tooltipStyle.left : 16;
-    const arrowLeft = position.left + position.width / 2 - tooltipLeft - 8; // 8 = half arrow width
-
-    if (currentStep.position === 'above') {
-      return {
-        bottom: '-8px',
-        left: Math.max(16, Math.min(arrowLeft, 280 - 32)) // Keep arrow within tooltip bounds
-      };
-    } else {
-      return {
-        top: '-8px',
-        left: Math.max(16, Math.min(arrowLeft, 280 - 32))
-      };
-    }
-  };
-
-  // Small padding around highlight box (just for the green border)
-  const highlightPadding = 4;
-
-  // Calculate the cutout rectangle
-  const cutout = {
-    top: position.top - highlightPadding,
-    left: position.left - highlightPadding,
-    width: position.width + highlightPadding * 2,
-    height: position.height + highlightPadding * 2,
-  };
-
-  // Calculate Home button cutout for step 1
-  const homeCutout = step === 1 && homePosition.width > 0 ? {
-    top: homePosition.top - highlightPadding,
-    left: homePosition.left - highlightPadding,
-    width: homePosition.width + highlightPadding * 2,
-    height: homePosition.height + highlightPadding * 2,
-  } : null;
-
-  return (
-    <div className="fixed inset-0 z-[100]" style={{ pointerEvents: 'none' }}>
-      {/* Dark overlay with SVG mask for multiple cutouts */}
-      <svg
-        className="fixed inset-0 w-full h-full transition-all duration-300"
-        style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-        onClick={() => {
-          triggerHaptic(ImpactStyle.Light);
-          onSkip();
-        }}
-      >
-        <defs>
-          <mask id="tour-mask">
-            {/* White = visible (dark overlay), Black = hidden (cutout) */}
-            <rect x="0" y="0" width="100%" height="100%" fill="white" />
-            {/* Main target cutout */}
-            <rect
-              x={cutout.left}
-              y={cutout.top}
-              width={cutout.width}
-              height={cutout.height}
-              rx="12"
-              fill="black"
-            />
-            {/* Home button cutout for step 1 */}
-            {homeCutout && (
-              <rect
-                x={homeCutout.left}
-                y={homeCutout.top}
-                width={homeCutout.width}
-                height={homeCutout.height}
-                rx="12"
-                fill="black"
-              />
-            )}
-          </mask>
-        </defs>
-        <rect
-          x="0"
-          y="0"
-          width="100%"
-          height="100%"
-          fill="rgba(0,0,0,0.65)"
-          mask="url(#tour-mask)"
-        />
-      </svg>
-
-      {/* Highlight ring around target element */}
-      <div
-        className="fixed rounded-xl transition-all duration-300"
-        style={{
-          top: cutout.top,
-          left: cutout.left,
-          width: cutout.width,
-          height: cutout.height,
-          border: '2px solid #00FF94',
-          boxShadow: '0 0 20px rgba(0, 255, 148, 0.4)',
-          pointerEvents: 'none'
-        }}
-      />
-
-      {/* Highlight ring around Home button for step 1 (Weekly Goals) */}
-      {homeCutout && (
-        <div
-          className="fixed rounded-xl transition-all duration-300"
-          style={{
-            top: homeCutout.top,
-            left: homeCutout.left,
-            width: homeCutout.width,
-            height: homeCutout.height,
-            border: '2px solid rgba(255, 255, 255, 0.6)',
-            boxShadow: '0 0 12px rgba(255, 255, 255, 0.3)',
-            pointerEvents: 'none'
-          }}
-        />
-      )}
-
-      {/* Tooltip */}
-      <div
-        className="fixed p-4 rounded-2xl transition-all duration-300"
-        style={{
-          ...getTooltipStyle(),
-          width: 280,
-          backgroundColor: '#1a1a1a',
-          border: '1px solid rgba(255,255,255,0.1)',
-          pointerEvents: 'auto'
-        }}
-      >
-        {/* Arrow */}
-        <div
-          className="absolute w-4 h-4 rotate-45"
-          style={{
-            ...getArrowStyle(),
-            backgroundColor: '#1a1a1a',
-            borderLeft: currentStep.position === 'below' ? '1px solid rgba(255,255,255,0.1)' : 'none',
-            borderTop: currentStep.position === 'below' ? '1px solid rgba(255,255,255,0.1)' : 'none',
-            borderRight: currentStep.position === 'above' ? '1px solid rgba(255,255,255,0.1)' : 'none',
-            borderBottom: currentStep.position === 'above' ? '1px solid rgba(255,255,255,0.1)' : 'none'
-          }}
-        />
-
-        {/* Step indicator */}
-        <div className="flex gap-1 mb-3">
-          {tourSteps.map((_, i) => (
-            <div
-              key={i}
-              className="h-1 rounded-full transition-all duration-200"
-              style={{
-                width: i === step ? 24 : 8,
-                backgroundColor: i === step ? '#00FF94' : 'rgba(255,255,255,0.2)'
-              }}
-            />
-          ))}
-        </div>
-
-        {/* Content */}
-        <h3 className="text-white font-semibold text-base mb-1">{currentStep.title}</h3>
-        <p className="text-gray-400 text-sm mb-2">{currentStep.description}</p>
-
-        {/* Features list */}
-        {currentStep.features && (
-          <div className="mb-3 py-2 px-2.5 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-            {currentStep.features.map((feature, index) => (
-              <div key={index} className="flex items-center gap-2 py-1">
-                <span className="text-sm">{feature.emoji}</span>
-                <span className="text-xs text-gray-400">{feature.text}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {!currentStep.features && <div className="mb-2" />}
-
-        {/* Actions */}
-        <div className="flex items-center justify-between">
-          <button
-            onClick={() => {
-              triggerHaptic(ImpactStyle.Light);
-              onSkip();
-            }}
-            className="text-gray-500 text-sm px-3 py-2"
-          >
-            Skip tour
-          </button>
-          <div className="flex items-center gap-2">
-            {step > 0 && (
-              <button
-                onClick={() => {
-                  triggerHaptic(ImpactStyle.Light);
-                  onBack();
-                }}
-                className="px-3 py-2 rounded-full text-sm font-medium transition-all duration-150"
-                style={{
-                  backgroundColor: 'rgba(255,255,255,0.1)',
-                  color: 'rgba(255,255,255,0.7)'
-                }}
-                onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.95)'}
-                onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
-              >
-                Back
-              </button>
-            )}
-            <button
-              onClick={() => {
-                triggerHaptic(ImpactStyle.Light);
-                onNext();
-              }}
-              className="px-4 py-2 rounded-full text-sm font-medium transition-all duration-150"
-              style={{
-                backgroundColor: '#00FF94',
-                color: '#000'
-              }}
-              onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.95)'}
-              onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
-            >
-              {step === tourSteps.length - 1 ? "Let's go!" : 'Next'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
 };
 
 // Utility Components
@@ -16439,12 +16023,26 @@ export default function DaySevenApp() {
     const onMainApp = !!userProfile?.username && !showWelcomePaywall && !showDiscordInvite && isPro;
     if (!isLoading && isOnboarded && userProfile && userProfile.hasCompletedTour !== true && onMainApp && !tourShownRef.current) {
       tourShownRef.current = true;
-      // Delay to ensure home tab UI is fully rendered.
-      const timer = setTimeout(() => {
+      // Delay to ensure home tab UI is fully rendered. A purchase makes isPro true while
+      // the paywall is still closing, so also wait for it to be gone, and for the app to
+      // be in the foreground.
+      let timer;
+      let started = false;
+      const start = () => {
+        if (isPaywallOpen() || document.visibilityState !== 'visible') {
+          timer = setTimeout(start, 400);
+          return;
+        }
+        started = true;
         setActiveTab('home');
         setShowTour(true);
-      }, 1000);
-      return () => clearTimeout(timer);
+      };
+      timer = setTimeout(start, 1000);
+      return () => {
+        clearTimeout(timer);
+        // Re-arm if this run was cut short before the tour began.
+        if (!started) tourShownRef.current = false;
+      };
     }
   }, [isLoading, isOnboarded, userProfile?.hasCompletedTour, userProfile?.username, showWelcomePaywall, showDiscordInvite, isPro]);
 
@@ -19007,6 +18605,10 @@ export default function DaySevenApp() {
               onUpdatePhoto={handleUpdatePhoto}
               onShare={() => setShowShare(true)}
               onStartTour={() => {
+                // Close Settings first: it covers Home and the nav bar, so the tour's
+                // spotlights would show the Settings page instead of what they point at.
+                setShowSettings(false);
+                setSettingsScrollTo(null);
                 setTourStep(0);
                 setActiveTab('home');
                 setShowTour(true);
@@ -19232,6 +18834,7 @@ export default function DaySevenApp() {
           targetRef={getTourTargetRef()}
           onSwitchTab={setActiveTab}
           homeTabRef={homeTabRef}
+          fabRef={logActivityRef}
         />
       )}
 

@@ -15167,7 +15167,10 @@ export default function DaySevenApp() {
           // Goal history — which goals were in force from which week. The streak walk
           // judges each past week against these rather than today's goals, so lowering a
           // goal can't retroactively mark earlier weeks as met (see utils/streaks).
+          // Written to the ref too, like the shield and vacation below: the load-time
+          // recalc reads the ref, and nothing guarantees a render before it runs.
           if (profileForStreaks?.goalHistory) {
+            userDataRef.current = { ...(userDataRef.current || {}), goalHistory: profileForStreaks.goalHistory };
             setUserData(prev => ({ ...prev, goalHistory: profileForStreaks.goalHistory }));
           }
           // Saved Apple Health type preferences (icon/category for uncategorized types).
@@ -15201,9 +15204,13 @@ export default function DaySevenApp() {
             userDataRef.current = { ...(userDataRef.current || {}), streakShield: loadedShield };
             setUserData(prev => ({ ...prev, streakShield: loadedShield }));
           }
-          // Load vacation mode data
+          // Load vacation mode data. Every branch writes the ref, so the load-time recalc
+          // below always sees the vacation weeks: when only the state was set, a launch
+          // that reached the recalc before a render read none, counted those weeks as
+          // missed, and saved streaks cut short at the last vacation.
           if (profileForStreaks?.vacationMode) {
             const vm = profileForStreaks.vacationMode;
+            userDataRef.current = { ...(userDataRef.current || {}), vacationMode: vm };
             // Auto-deactivate if vacation exceeded 14 days
             if (vm.isActive && vm.startDate) {
               const start = new Date(vm.startDate + 'T12:00:00');
@@ -15313,6 +15320,8 @@ export default function DaySevenApp() {
           const todayHealth = await todayHealthPromise;
           if (todayHealth) {
             const [steps, calories] = todayHealth;
+            // The ref too: the load-time recalc reads today's steps from it.
+            healthKitDataRef.current = { ...(healthKitDataRef.current || {}), todaySteps: steps ?? healthKitDataRef.current?.todaySteps ?? 0 };
             setHealthKitData(prev => ({
               ...prev,
               todaySteps: steps ?? prev.todaySteps ?? 0,

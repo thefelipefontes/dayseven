@@ -9,8 +9,13 @@ import React, { useEffect } from 'react';
 // it is one element and the drawing never restarts at the hand-off. After that (a later
 // sign-in, say), <LaunchLoader /> draws the same logo itself.
 
-const D_PATH = 'M250 160 L250 864 L500 864 C740 864 820 680 820 512 C820 344 740 160 500 160 L250 160';
-const SEVEN_PATH = 'M400 330 L600 330 L460 694';
+// Traced from the app icon (public/icon.png) in its 1024 grid: the open D with round
+// caps, the grey bar on its left, and the solid 7, which a thick stroke through its middle
+// reveals as it draws.
+const D_PATH = 'M352 312.1 L352 305.2 A43.2 43.2 0 0 1 395.2 262 L561.1 262 C693.7 262 762.5 353 762.5 511.5 C762.5 670 693.7 762 561.1 762 L395.2 762 A43.2 43.2 0 0 1 352 718.8 L352 711.9';
+const BAR_PATH = 'M352 312.1 L352 711.9';
+const SEVEN_PATH = 'M452.3 399.7 L588.6 399.7 L588.6 427.4 L517.85 582.5 L471.85 582.5 L539.85 433.8 L452.3 433.8 Z';
+const SEVEN_TRACE_PATH = 'M452.3 416.75 L570.65 416.75 L494.85 582.5';
 
 let loadersMounted = 0;
 let hideTimer = null;
@@ -34,8 +39,14 @@ export const releaseLaunchOverlay = () => {
 
 export const D7LoaderMark = () => (
   <svg className="d7-loader" viewBox="0 0 1024 1024" aria-hidden="true">
+    <defs>
+      <mask id="d7-loader-7-mask-app" maskUnits="userSpaceOnUse">
+        <path className="d7-loader-7-trace" d={SEVEN_TRACE_PATH} pathLength="100" />
+      </mask>
+    </defs>
+    <path className="d7-loader-bar" d={BAR_PATH} />
     <path className="d7-loader-d" d={D_PATH} pathLength="100" />
-    <path className="d7-loader-7" d={SEVEN_PATH} pathLength="100" />
+    <path className="d7-loader-7" d={SEVEN_PATH} mask="url(#d7-loader-7-mask-app)" />
   </svg>
 );
 

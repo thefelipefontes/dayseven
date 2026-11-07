@@ -35,6 +35,7 @@ import { Dumbbell, Footprints } from 'lucide-react';
 import { IconRun, IconSnowflake } from '@tabler/icons-react';
 import { triggerHaptic } from './utils/haptics';
 import UpdateRequired from './components/UpdateRequired';
+import { lastKnownPro, rememberPro } from './utils/proStatusCache';
 import { APP_VERSION, APP_BUILD, isVersionBelow, fetchMinAppVersion } from './utils/appVersion';
 import { toLocalDateStr, getTodayDate, getCurrentYear, parseLocalDate, formatFriendlyDate } from './utils/dateHelpers';
 import { FOCUS_AREA_GROUPS, ALL_FOCUS_AREAS, FOCUS_AREA_MIGRATION, normalizeFocusAreas } from './utils/focusAreas';
@@ -13584,6 +13585,10 @@ export default function DaySevenApp() {
   const [feedActiveView, setFeedActiveView] = useState('feed'); // 'feed' or 'leaderboard'
   const [isHomeWorkoutPickerOpen, setIsHomeWorkoutPickerOpen] = useState(false); // Track if HomeTab's workout picker is open
   const [isPro, setIsPro] = useState(false); // RevenueCat "dayseven Pro" entitlement
+  // Whether RevenueCat has answered on this launch (or given up). Until it has, the hard
+  // paywall shows the launch loader rather than the lock screen, which used to flash for
+  // subscribers on every cold start.
+  const [proStatusResolved, setProStatusResolved] = useState(false);
 
   // HealthKit data state
   const [healthKitData, setHealthKitData] = useState({
@@ -13702,7 +13707,16 @@ export default function DaySevenApp() {
     // so they only get access from a real subscription or a forceProTier comp.
     const grandfathered = !!p && p.subscriptionRequired !== true;
     setIsPro(rcStatus || override || grandfathered);
+    rememberPro(userRef.current?.uid, Boolean(rcStatus || override));
+    setProStatusResolved(true);
   }, []);
+  // RevenueCat normally answers in a second or two. If it never does (offline, an error),
+  // stop waiting, so an account without a subscription still reaches the lock screen.
+  useEffect(() => {
+    if (!user || authLoading || proStatusResolved) return undefined;
+    const timer = setTimeout(() => setProStatusResolved(true), 8000);
+    return () => clearTimeout(timer);
+  }, [user, authLoading, proStatusResolved]);
   // Lifetime buyers have nothing to renew or cancel, so Settings shows them a
   // different row. Resolved from the entitlement's expirationDate rather than
   // threaded through every applyProStatus call site — see getPlanType.
@@ -14426,6 +14440,7 @@ export default function DaySevenApp() {
     setPendingFriendRequests(0);
     setUnreadFeedCount(0);
     setIsPro(false);
+    setProStatusResolved(false);
     setDevAuthEmail(null);
     // Close any open modals + reset to home tab so the next sign-in lands on a
     // clean Home, not the Settings overlay (which would render on top of Home
@@ -15103,10 +15118,16 @@ export default function DaySevenApp() {
                 addCustomerInfoListener(({ isPro: newIsPro }) => {
                   applyProStatus(newIsPro);
                 });
+              } else {
+                setProStatusResolved(true);
               }
             } catch (rcError) {
               console.error('[App] RevenueCat init error:', rcError);
+              setProStatusResolved(true);
             }
+          } else {
+            // RevenueCat only runs in the app.
+            setProStatusResolved(true);
           }
 
           // Re-fetch with forceRefresh to bypass native SDK cache (watch may have updated
@@ -18191,21 +18212,21 @@ export default function DaySevenApp() {
   // Show loading spinner while checking auth
   if (updateRequired) return <UpdateRequired />;
 
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="relative w-[60px] h-[60px]">
-          {/* Spinning circle */}
-          <svg className="absolute top-0 left-0 w-[60px] h-[60px] animate-spin" viewBox="0 0 60 60" style={{ animationDuration: '1.5s' }}>
-            <circle cx="30" cy="30" r="26" fill="none" stroke="#333" strokeWidth="5"/>
-            <circle cx="30" cy="30" r="26" fill="none" stroke="#fff" strokeWidth="5" strokeLinecap="round" strokeDasharray="130 360"/>
-          </svg>
-          {/* Number 7 */}
-          <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-2xl font-bold text-white">7</span>
-        </div>
+  const launchLoader = (
+    <div className="min-h-screen bg-black flex items-center justify-center">
+      <div className="relative w-[60px] h-[60px]">
+        {/* Spinning circle */}
+        <svg className="absolute top-0 left-0 w-[60px] h-[60px] animate-spin" viewBox="0 0 60 60" style={{ animationDuration: '1.5s' }}>
+          <circle cx="30" cy="30" r="26" fill="none" stroke="#333" strokeWidth="5"/>
+          <circle cx="30" cy="30" r="26" fill="none" stroke="#fff" strokeWidth="5" strokeLinecap="round" strokeDasharray="130 360"/>
+        </svg>
+        {/* Number 7 */}
+        <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-2xl font-bold text-white">7</span>
       </div>
-    );
-  }
+    </div>
+  );
+
+  if (authLoading) return launchLoader;
 
   // Pre-signup onboarding: survey → results → HK pre-screen → workout linking →
   // notif pre-screen. Permission prompts fire here (pre-signup) so they're the
@@ -18318,9 +18339,14 @@ export default function DaySevenApp() {
   // inline from userProfile so existing & comped users never flash the lock
   // screen while the isPro state catches up on cold start. Demo accounts return
   // early from handleUserAuth with isPro=true, so they never reach here.
+  // Subscribers: until RevenueCat answers on this launch, trust its last answer on this
+  // device, so they go straight in instead of seeing the lock screen flash first.
   const isGrandfathered = userProfile.subscriptionRequired !== true;
-  const hasFullAccess = isPro || isGrandfathered || userProfile.forceProTier === true;
+  const knownSubscriber = !proStatusResolved && lastKnownPro(user.uid);
+  const hasFullAccess = isPro || isGrandfathered || userProfile.forceProTier === true || knownSubscriber;
   if (!hasFullAccess) {
+    // Nothing remembered and no answer yet: stay on the launch loader.
+    if (!proStatusResolved) return launchLoader;
     return (
       <LockedScreen
         userProfile={userProfile}

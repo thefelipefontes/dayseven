@@ -15075,6 +15075,13 @@ export default function DaySevenApp() {
       // Load remaining data in background (don't await)
       (async () => {
         try {
+          // Today's steps and calories straight from HealthKit, alongside the data reads below,
+          // so Home's first frame has them. Home shows as soon as the activities are set,
+          // and until the HealthKit sync landed it read 0 steps today: a short ring, a red
+          // "Last day" line and "Streak safe" instead of "Week won". Local queries, quick.
+          const todayHealthPromise = Capacitor.isNativePlatform() && !profile?.disableHealthKitSync && isHealthKitReadAuthorized()
+            ? Promise.all([fetchTodaySteps(), fetchTodayCalories()]).catch(() => null)
+            : Promise.resolve(null);
           // The goals came with the profile read above; read them separately only if that
           // read failed. Home needs them now, ahead of the RevenueCat login below.
           const userGoals = profile ? (profile.goals || null) : await getUserGoals(user.uid);
@@ -15303,6 +15310,16 @@ export default function DaySevenApp() {
           // Fill in any days this week / last week the app wasn't open for (runs in the
           // background; merges into healthHistory when it lands).
           backfillRecentHealthDays();
+          const todayHealth = await todayHealthPromise;
+          if (todayHealth) {
+            const [steps, calories] = todayHealth;
+            setHealthKitData(prev => ({
+              ...prev,
+              todaySteps: steps ?? prev.todaySteps ?? 0,
+              todayCalories: calories ?? prev.todayCalories ?? 0,
+              isConnected: prev.isConnected || steps > 0 || calories > 0,
+            }));
+          }
           // Home's skeleton ends with the data: batched with setActivities below.
           setIsLoading(false);
           lastFirestoreActivityCount.current = userActivities.length;

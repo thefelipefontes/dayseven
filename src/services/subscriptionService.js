@@ -258,6 +258,12 @@ export const addCustomerInfoListener = async (callback) => {
   }
 };
 
+// Whether a RevenueCat paywall is on screen. A purchase makes the user Pro while the
+// paywall is still up, so anything that should wait for it to close (the first-run tour)
+// checks this.
+let _paywallOpen = false;
+export const isPaywallOpen = () => _paywallOpen;
+
 /**
  * Present the RevenueCat paywall UI.
  * Always shows the paywall regardless of current entitlement status.
@@ -302,7 +308,13 @@ export const presentPaywall = async (options = {}) => {
       }
     }
 
-    const { result } = await RevenueCatUI.presentPaywall(paywallOptions);
+    let result;
+    _paywallOpen = true;
+    try {
+      ({ result } = await RevenueCatUI.presentPaywall(paywallOptions));
+    } finally {
+      _paywallOpen = false;
+    }
 
     switch (result) {
       case PAYWALL_RESULT.PURCHASED:
@@ -337,6 +349,7 @@ export const presentPaywall = async (options = {}) => {
 export const presentPaywallIfNeeded = async () => {
   if (!isNative || !RevenueCatUI) return null;
 
+  _paywallOpen = true;
   try {
     const { result } = await RevenueCatUI.presentPaywallIfNeeded({
       requiredEntitlementIdentifier: ENTITLEMENT_ID,
@@ -345,6 +358,8 @@ export const presentPaywallIfNeeded = async () => {
   } catch (error) {
     console.error('[SubscriptionService] presentPaywallIfNeeded error:', error);
     return null;
+  } finally {
+    _paywallOpen = false;
   }
 };
 

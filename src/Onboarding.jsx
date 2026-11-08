@@ -1116,7 +1116,8 @@ function activityRing(activity) {
   if (activity.countToward === 'cardio') return 'cardio';
   if (activity.countToward === 'recovery') return 'recovery';
   if (activity.type === 'Strength Training') return 'strength';
-  if (['Running','Cycle','Sports','Stair Climbing','Elliptical','Rowing','Walking','Hiking','Swimming'].includes(activity.type)) return 'cardio';
+  // Not Walking: a walk counts toward no goal in the app (utils/activityCategory).
+  if (['Running','Cycle','Sports','Stair Climbing','Elliptical','Rowing','Hiking','Swimming'].includes(activity.type)) return 'cardio';
   if (['Cold Plunge','Sauna','Contrast Therapy','Massage','Chiropractic','Yoga','Pilates'].includes(activity.type)) return 'recovery';
   return null;
 }
@@ -1162,7 +1163,9 @@ function LinkingScreen({ weeklyGoals, hkAuthorized, answers, initialLinked, init
       try {
         const workouts = await fetchHealthKitWorkouts(7);
         if (cancelled) return;
-        const weekOnly = (workouts || []).filter(w => isInCurrentWeek(w.date));
+        // No walks: they don't fill a ring, and offering one made it look like a cardio
+        // session.
+        const weekOnly = (workouts || []).filter(w => isInCurrentWeek(w.date) && w.type !== 'Walking');
         setHkWorkouts(weekOnly);
       } catch (e) {
         if (!cancelled) setHkWorkouts([]);

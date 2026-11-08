@@ -11,6 +11,7 @@ import FriendProfileCard from './components/FriendProfileCard';
 import ZoomablePhoto from './components/ZoomablePhoto';
 import SwipeableComment, { SwipeableCommentContext } from './components/SwipeableComment';
 import { friendStatus, FRIEND_STATUS } from './utils/friendStatus';
+import { readFeedSnapshot, scheduleFeedSnapshotSave } from './utils/feedSnapshot';
 import { isDemoAccount, getDemoLeaderboardFriends, getDemoActivities, getDemoHealthHistory, getDemoUserData, getDemoChallengeStats, getDemoUserLeaderboardOverride } from './demoData';
 import { resolveUnit, unitLabel, formatDistanceValue, milesToDisplay } from './utils/distance';
 import { getActivityCategory, countsAsLifting, countsAsCardio, countsAsRecovery } from './utils/activityCategory';
@@ -972,14 +973,35 @@ const MemoizedActivityCard = React.memo(({
   );
 });
 
+// Empty-state art for the Friends tab: an add button with open crew slots circling it, one in
+// each ring colour. The whole orbit layer spins as an HTML element, which WebKit handles more
+// reliably than transforms on inner SVG groups.
+const CrewOrbit = () => (
+  <div className="relative" style={{ width: 150, height: 124 }} aria-hidden="true">
+    <svg width="150" height="124" viewBox="0 0 150 124" fill="none" className="absolute inset-0 animate-[spin_14s_linear_infinite_reverse] motion-reduce:animate-none">
+      <circle cx="75" cy="62" r="50" stroke="#444" strokeWidth="2" strokeDasharray="3 8" />
+      <circle cx="75" cy="12" r="11" fill="#000" stroke="#00FF94" strokeWidth="3" />
+      <circle cx="118" cy="87" r="11" fill="#000" stroke="#FF9500" strokeWidth="3" />
+      <circle cx="32" cy="87" r="11" fill="#000" stroke="#BF5AF2" strokeWidth="3" />
+    </svg>
+    <svg width="150" height="124" viewBox="0 0 150 124" fill="none" className="absolute inset-0">
+      <circle cx="75" cy="62" r="24" fill="#fff" />
+      <path d="M75 51v22M64 62h22" stroke="#000" strokeWidth="5" strokeLinecap="round" />
+    </svg>
+  </div>
+);
+
 const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingRequestsCount = 0, onActiveViewChange, feedCacheRef, isPro = false, onPresentPaywall, onOpenChallenge, suppressPullToRefresh = false, challengesContent = null, challengesBadge = 0, viewRequest = null, postTarget = null, onPostTargetMissing }) => {
   // Hydrate from the parent-owned cache when re-mounting on tab switch — skips
   // the spinner and renders the previously-loaded feed instantly. The background
   // loadFeed call still runs to refresh data. Cache is uid-tagged so it isn't
-  // reused across user switches.
-  const cachedFeed = feedCacheRef?.current && feedCacheRef.current.uid === user?.uid
-    ? feedCacheRef.current
-    : null;
+  // reused across user switches. The first mount after a launch has no parent cache,
+  // so it falls back to the snapshot saved on this device.
+  const [cachedFeed] = useState(() => (
+    feedCacheRef?.current && feedCacheRef.current.uid === user?.uid
+      ? feedCacheRef.current
+      : readFeedSnapshot(user?.uid)
+  ));
   const [feedActivities, setFeedActivities] = useState(() => cachedFeed?.activities || []);
   const [activityReactions, setActivityReactions] = useState(() => cachedFeed?.reactions || {});
   const [activityComments, setActivityComments] = useState(() => cachedFeed?.comments || {});
@@ -1143,6 +1165,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       replies: commentReplies,
       challengeMap: activityChallengeMap,
     };
+    if (!isDemoAccount(userProfile, user)) scheduleFeedSnapshotSave(feedCacheRef);
   }, [feedCacheRef, user?.uid, isLoading, feedActivities, activityReactions, activityComments, commentReplies, activityChallengeMap]);
 
   const reactionEmojis = ['💪', '🔥', '👏', '❤️'];
@@ -1468,10 +1491,14 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       const limitedActivities = flatActivities.slice(0, 50);
       freshFeedRef.current = true;
       setFeedActivities(limitedActivities);
+      // The posts are what the spinner was waiting for. Reactions, comments and challenge pills
+      // fill in on the cards as they arrive.
+      setIsLoading(false);
 
       // Tag activities that fulfilled a challenge (for the "Completed challenge" pill).
       // One call for the challenges the post authors in this feed (self + friends) won.
-      try {
+      // Runs alongside the reactions fetch below instead of ahead of it.
+      const challengeTagging = (async () => { try {
         const winnerUids = Array.from(new Set([
           user?.uid,
           ...friendList.map(f => f.uid),
@@ -1517,7 +1544,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         }
       } catch (err) {
         console.error('[ActivityFeed] challenge tagging failed:', err);
-      }
+      } })();
 
       // Only fetch reactions/comments for the first batch of visible activities
       // This reduces initial Firestore calls from 100+ to ~20
@@ -1556,6 +1583,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       setActivityReactions(reactionsMap);
       setActivityComments(commentsMap);
       setCommentReplies(repliesMap);
+      await challengeTagging;
 
       // Fetch remaining activities' reactions/comments in the background
       if (limitedActivities.length > INITIAL_FETCH_COUNT) {
@@ -1599,7 +1627,9 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     setIsLoading(false);
     setIsRefreshing(false);
     setLocalIsRefreshing(false);
-  }, [friends, user, userProfile]);
+    // Only the profile fields used above: any other profile save would otherwise refetch the
+    // whole feed.
+  }, [friends, user?.uid, user?.email, userProfile?.username, userProfile?.displayName, userProfile?.photoURL, userProfile?.demoMode]);
 
   // Keep ref in sync with state for use in event handlers
   useEffect(() => {
@@ -2610,7 +2640,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         <FriendsHeaderTop />
         <SegmentedControl activeView={activeView} setActiveView={setActiveView} challengesBadge={challengesBadge} />
         <div className="text-center py-12 px-6">
-          <div className="text-5xl mb-4">👥</div>
+          <div className="flex justify-center mb-4"><CrewOrbit /></div>
           <p className="text-white font-medium mb-2">Find your workout buddies</p>
           <p className="text-gray-500 text-sm mb-6">Add friends to see their workouts and cheer them on!</p>
           <TouchButton

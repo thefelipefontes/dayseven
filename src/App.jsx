@@ -34,6 +34,7 @@ import { isDemoAccount, getDemoActivities, getDemoUserData, getDemoProfileOverri
 import { Dumbbell, Footprints } from 'lucide-react';
 import { IconRun, IconSnowflake } from '@tabler/icons-react';
 import { triggerHaptic } from './utils/haptics';
+import { clearFeedSnapshot } from './utils/feedSnapshot';
 import AppTour from './components/AppTour';
 import UpdateRequired from './components/UpdateRequired';
 import LaunchLoader, { releaseLaunchOverlay } from './components/LaunchLoader';
@@ -11055,11 +11056,12 @@ const WinningStreakInfoSheet = ({ isOpen, onClose, required = ['lifts', 'cardio'
   );
 };
 
-const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, healthHistory = [], onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onDismissShieldNotice = () => {}, onShieldIntro = () => {}, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImported = [], onDismissAutoImported, onShareStamp, friends = [], onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, openActivityTarget = null, onOpenActivityTargetHandled = () => {}, showHkEmptyHint = false, hkAccessBlocked = false, onDismissHkEmptyHint = () => {}, onOpenHealthSettings = () => {}, showNotifReask = false, onAcceptNotifReask = () => {}, onDismissNotifReask = () => {}, onReplayCelebration = () => {}, pendingChallenges = [], onOpenPlan = () => {}, onShowWinningStreakInfo = () => {} }) => {
+const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, healthHistory = [], onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onDismissShieldNotice = () => {}, onShieldIntro = () => {}, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImported = [], onDismissAutoImported, onShareStamp, friends = [], onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, openActivityTarget = null, onOpenActivityTargetHandled = () => {}, showHkEmptyHint = false, hkAccessBlocked = false, onDismissHkEmptyHint = () => {}, onOpenHealthSettings = () => {}, showNotifReask = false, onAcceptNotifReask = () => {}, onDismissNotifReask = () => {}, onReplayCelebration = () => {}, pendingChallenges = [], onOpenPlan = () => {}, onShowWinningStreakInfo = () => {} }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
   const [dismissConfirmWorkouts, setDismissConfirmWorkouts] = useState(null); // Workouts pending dismiss confirmation
   const [showVacationDeactivateConfirm, setShowVacationDeactivateConfirm] = useState(false);
+  const [showRemoveRecoveryConfirm, setShowRemoveRecoveryConfirm] = useState(false);
   const [showWorkoutPicker, setShowWorkoutPicker] = useState(false);
   const [workoutPickerDragY, setWorkoutPickerDragY] = useState(0);
   const [workoutPickerTouchStart, setWorkoutPickerTouchStart] = useState(null);
@@ -12339,6 +12341,41 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
           </div>
         )}
 
+        {showRemoveRecoveryConfirm && (
+          <div data-modal-overlay className="fixed inset-0 z-[9999] flex items-end justify-center" onClick={() => setShowRemoveRecoveryConfirm(false)}>
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+            <div
+              className="relative w-full max-w-md rounded-t-2xl p-5 text-center"
+              style={{ backgroundColor: '#1a1a1a', paddingBottom: 'calc(20px + env(safe-area-inset-bottom))' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-white font-semibold text-[17px]">Remove Recovery from your goals?</h3>
+              <p className="text-gray-400 text-[13px] mt-1.5 mb-4 leading-snug">
+                {(userData.streaks?.recovery || 0) > 0 && 'Your Recovery streak stops. '}It doesn't affect your Winning Streak, and you can turn it back on in Edit Goals.
+              </p>
+              <button
+                onClick={() => {
+                  setShowRemoveRecoveryConfirm(false);
+                  setShowRecoveryBreakdown(false);
+                  triggerHaptic(ImpactStyle.Medium);
+                  onRemoveRecoveryGoal?.();
+                }}
+                className="w-full py-3 rounded-xl text-sm font-semibold"
+                style={{ backgroundColor: 'rgba(255,255,255,0.08)', color: '#FF6B5E' }}
+              >
+                Remove
+              </button>
+              <button
+                onClick={() => setShowRemoveRecoveryConfirm(false)}
+                className="w-full py-3 mt-2 rounded-xl text-sm font-semibold text-white"
+                style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+              >
+                Keep
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Weekly Goals - tour highlight wraps header + card */}
         <div ref={weeklyGoalsRef}>
           <div className="mb-3">
@@ -12666,6 +12703,17 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                   </div>
                 ))}
               </div>
+              {/* Only while Recovery really is a bonus: on the older rule the Winning Streak still
+                  needs it, and a goal of 0 can never be met. */}
+              {!recoveryNeeded && (
+                <button
+                  onClick={() => { triggerHaptic(ImpactStyle.Light); setShowRemoveRecoveryConfirm(true); }}
+                  className="w-full mt-3 py-1 text-[12px] active:opacity-70 transition-opacity"
+                  style={{ color: '#777' }}
+                >
+                  Remove from goals
+                </button>
+              )}
             </div>
           )}
 
@@ -13959,11 +14007,31 @@ export default function DaySevenApp() {
     setHistoryStatsSubView('records');
   };
 
+  // Recovery is only a bonus, so unlike Edit Goals this applies now instead of waiting for
+  // Sunday. A change already queued for Sunday must not bring it back.
+  const handleRemoveRecoveryGoal = async () => {
+    const { goals: prevGoals, goalHistory: prevHistory, pendingGoals: prevPending } = userData;
+    const goals = { ...prevGoals, recoveryPerWeek: 0 };
+    const pending = prevPending ? { ...prevPending, recoveryPerWeek: 0 } : null;
+    const prevRecoveryGoal = prevGoals.recoveryPerWeek;
+    setUserData(prev => ({ ...prev, goals, pendingGoals: pending, goalHistory: withThisWeekGoals(prev.goalHistory, goals) }));
+    setWeeklyProgress(prev => ({ ...prev, recovery: { ...prev.recovery, goal: 0 } }));
+    try {
+      await saveUserGoals(user.uid, goals);
+      if (pending) await savePendingGoals(user.uid, pending);
+    } catch (error) {
+      console.error('[Goals] Failed to remove Recovery:', error);
+      setUserData(prev => ({ ...prev, goals: prevGoals, pendingGoals: prevPending, goalHistory: prevHistory }));
+      setWeeklyProgress(prev => ({ ...prev, recovery: { ...prev.recovery, goal: prevRecoveryGoal } }));
+    }
+  };
+
   // Handle sign out
   const handleSignOut = async () => {
     // Capture user ID and token before clearing state (needed for cleanup)
     const currentUserId = user?.uid;
     const currentToken = fcmTokenRef.current;
+    clearFeedSnapshot();
 
     // Immediately clear user state to show login screen
     setUser(null);
@@ -18349,6 +18417,7 @@ export default function DaySevenApp() {
                   onAcceptNotifReask={handleAcceptNotifReask}
                   onDismissNotifReask={consumeNotifReask}
                   onShowWinningStreakInfo={openWinningStreakInfo}
+                  onRemoveRecoveryGoal={handleRemoveRecoveryGoal}
                   onReplayCelebration={() => {
                     // Pure replay — no streak/celebration state is written. The modal
                     // resets itself whenever `show` goes false, so re-showing it plays

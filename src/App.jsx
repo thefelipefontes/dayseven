@@ -18,7 +18,7 @@ import { isChallengeable, getChallengesForUser, activityMatchesChallengeRule, de
 import ChallengeMatchChooser from './components/ChallengeMatchChooser';
 import { createUserProfile, getUserProfile, updateUserProfile, updateDisplayName, updateUsername, saveActivityChanges, flushActivityOutbox, hasPendingActivityChanges, activitiesLoadedFromServer, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, deleteActivityPhoto, saveUserGoals, getUserGoals, savePendingGoals, clearPendingGoals, setOnboardingComplete, setTourComplete, savePersonalRecords, getPersonalRecords, saveDailyHealthData, getDailyHealthData, getDailyHealthHistory, subscribeToUserChallengeStats, resetUserServiceSession, readUserDoc } from './services/userService';
 import { isSundayToday, nextSundayDateStr, isPendingDue, formatApplyOn } from './utils/goalsSchedule';
-import { getFriends, getReactions, getFriendRequests, getComments, addReply, getReplies, deleteReply, addReaction, removeReaction, addComment, cleanupActivitySocialData } from './services/friendService';
+import { getFriends, getReactions, getFriendRequests, getComments, addReply, getReplies, deleteReply, addReaction, removeReaction, addComment, cleanupActivitySocialData, getPublicProfile } from './services/friendService';
 
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
@@ -36,6 +36,8 @@ import { IconRun, IconSnowflake } from '@tabler/icons-react';
 import { triggerHaptic } from './utils/haptics';
 import UpdateRequired from './components/UpdateRequired';
 import ImportedWorkoutsBanner from './components/ImportedWorkoutsBanner';
+import InAppNotificationBanner from './components/InAppNotificationBanner';
+import { describeInAppNotification } from './utils/inAppNotification';
 import { APP_VERSION, APP_BUILD, isVersionBelow, fetchMinAppVersion } from './utils/appVersion';
 import { toLocalDateStr, getTodayDate, getCurrentYear, parseLocalDate, formatFriendlyDate, signupWeekStartStr } from './utils/dateHelpers';
 import { FOCUS_AREA_GROUPS, ALL_FOCUS_AREAS, FOCUS_AREA_MIGRATION, normalizeFocusAreas } from './utils/focusAreas';
@@ -11874,6 +11876,12 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
   const [showStepsBreakdown, setShowStepsBreakdown] = useState(false);
   const [showRecentActivity, setShowRecentActivity] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState(null);
+  // Set when a comment notification opens the activity, so its comments start open.
+  // Cleared on close, however it closes, so a later tap opens it the usual way.
+  const [selectedActivityShowsComments, setSelectedActivityShowsComments] = useState(false);
+  useEffect(() => {
+    if (!selectedActivity) setSelectedActivityShowsComments(false);
+  }, [selectedActivity]);
   const [needsDetailsExpanded, setNeedsDetailsExpanded] = useState(false);
 
   // Deep-link from "add muscle groups" notification: when DaySevenApp updates
@@ -11886,6 +11894,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
     if (!openActivityTarget?.activityId) return;
     const found = activities.find(a => String(a.id) === String(openActivityTarget.activityId));
     if (found) {
+      setSelectedActivityShowsComments(Boolean(openActivityTarget.showComments));
       setSelectedActivity(found);
       onOpenActivityTargetHandled();
     }
@@ -13343,6 +13352,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         isOpen={!!selectedActivity}
         onClose={() => setSelectedActivity(null)}
         activity={selectedActivity}
+        initialShowComments={selectedActivityShowsComments}
         onDelete={onDeleteActivity}
         onEdit={onEditActivity}
         user={user}
@@ -13457,6 +13467,12 @@ export default function DaySevenApp() {
   const [friendsInitialTab, setFriendsInitialTab] = useState('friends');
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);
   const [friends, setFriends] = useState([]);
+  const friendsRef = useRef([]);
+  useEffect(() => { friendsRef.current = friends; }, [friends]);
+  // The push showing as a banner because it arrived with the app open, and the handler a
+  // tap on it shares with a tap on the push itself.
+  const [inAppBanner, setInAppBanner] = useState(null);
+  const notificationTapRef = useRef(null);
   const [challengeModalActivity, setChallengeModalActivity] = useState(null); // activity to challenge a friend with (null = modal closed)
   const [outgoingThisMonthChallengeCount, setOutgoingThisMonthChallengeCount] = useState(0);
   // Set when a challenge notification is tapped — tells ChallengesTab which segment/sub
@@ -13486,6 +13502,9 @@ export default function DaySevenApp() {
   // Set when an "add muscle groups" notification is tapped — HomeTab reads this
   // and opens the matching activity's detail modal. Shape: { activityId, nonce }.
   const [homeOpenActivityTarget, setHomeOpenActivityTarget] = useState(null);
+  // The post a comment, reply or reaction notification opens in the Friends feed:
+  // { ownerUid, activityId, openComments, commentId, replyFrom, nonce }.
+  const [feedPostTarget, setFeedPostTarget] = useState(null);
   // Empty-state hint for third-party-wearable users (Garmin/Whoop/Polar/etc.)
   // who granted HK permission but haven't enabled write-to-HealthKit inside
   // their device's companion app. We surface a one-time, dismissible tip on
@@ -15598,21 +15617,99 @@ export default function DaySevenApp() {
         }
       } catch {}
 
+      // A tap on a push, or on the banner a push shows when it arrives with the app open.
+      const openNotification = (notification, actionId) => {
+        clearBadge();
+        clearAllNotifications();
+        // Conversion nudges (trial ending): drop the user straight onto the
+        // paywall instead of just opening the app.
+        const tapType = notification?.notification?.data?.type || notification?.data?.type;
+        const tapStage = notification?.notification?.data?.stage || notification?.data?.stage || null;
+        logNotificationOpen(tapType, tapStage); // best-effort open tracking (server pairs it with 'sent')
+        if ((tapType === 'trial_ending' || tapType === 'trial_final') && Capacitor.isNativePlatform()) {
+          presentPaywall()
+            .then(async ({ purchased }) => {
+              if (purchased) { const s = await checkProStatus(); applyProStatus(s); }
+            })
+            .catch(() => {});
+          return;
+        }
+        handleNotificationNavigation(notification, (tab, opts) => {
+          setActiveTab(tab);
+          if (opts?.friendsView) {
+            setFriendsInitialTab(opts.friendsView);
+            setShowFriends(true);
+          }
+          if (tab === 'challenges') {
+            // Challenges moved into Friends — land on Friends → Challenges.
+            setActiveTab('feed');
+            setFriendsViewRequest({ view: 'challenges', nonce: Date.now() });
+            if (opts?.challengesSegment) {
+              setChallengesNavTarget({ segment: opts.challengesSegment, nonce: Date.now() });
+            }
+          }
+        }, {
+          onOpenActivity: (activityId) => {
+            setHomeOpenActivityTarget({ activityId: String(activityId), nonce: Date.now() });
+          },
+          // No owner means the push is about this user's own post.
+          onOpenPost: ({ ownerUid, ...post }) => {
+            setFeedPostTarget({ ...post, ownerUid: ownerUid || uid, nonce: Date.now() });
+          },
+          onShowChallengePicker: ({ activityId, challengeIds }) => {
+            openChallengeChooser({ activityId, challengeIds });
+          },
+          onShowSharePrompt: (summaryData) => {
+            localStorage.removeItem('pendingSharePrompt');
+            if (uid) {
+              updateUserProfile(uid, { pendingSharePrompt: null }).catch(() => {});
+            }
+            const today = new Date();
+            const lastSunday = new Date(today);
+            lastSunday.setDate(today.getDate() - today.getDay() - 7);
+            const lastSaturday = new Date(lastSunday);
+            lastSaturday.setDate(lastSunday.getDate() + 6);
+            setTimeout(() => {
+              setShareWeekRange({ startDate: lastSunday, endDate: lastSaturday });
+              setShowShare(true);
+            }, 500);
+          },
+        });
+      };
+      notificationTapRef.current = openNotification;
+
       const { cleanup, token } = await initializePushNotifications(
         uid,
         async (notification) => {
           const prefs = userProfileRef.current?.notificationPreferences;
           if (prefs && !shouldShowNotification(notification, prefs)) return;
 
-          const title = notification?.notification?.title || notification?.title;
-          const body = notification?.notification?.body || notification?.body;
-          if (title || body) {
-            setToastMessage(body || title);
-            setToastType('success');
-            setShowToast(true);
+          const model = describeInAppNotification(notification, { activities: activitiesRef.current });
+          if (model.name) {
+            const key = Date.now();
+            const friend = model.uid ? friendsRef.current.find((f) => f.uid === model.uid) : null;
+            setInAppBanner({
+              key,
+              model,
+              // The foreground event wraps the push in { notification }; a tapped push
+              // reaches openNotification unwrapped, and its routing reads `.data` directly.
+              notification: notification?.notification || notification,
+              photoURL: friend?.photoURL || null,
+              personName: friend?.displayName || model.person,
+            });
+            // Someone who isn't a friend yet (a friend request): fetch their photo, and
+            // add it if the banner is still up.
+            if (model.uid && !friend) {
+              getPublicProfile(model.uid).then((profile) => {
+                if (!profile?.photoURL && !profile?.displayName) return;
+                setInAppBanner((current) => (current?.key === key
+                  ? { ...current, photoURL: profile.photoURL || null, personName: profile.displayName || current.personName }
+                  : current));
+              });
+            }
           }
           // Push arrived while the app is in the foreground — the user is looking
-          // at it (we just showed an in-app toast), so clear the badge and
+          // at it (we just showed the in-app banner), so clear the badge and
           // re-baseline the server count rather than bumping the icon badge.
           clearBadge();
           if (uid) updateUserProfile(uid, { unreadBadgeCount: 0 }).catch(() => {});
@@ -15631,60 +15728,7 @@ export default function DaySevenApp() {
             }));
           }
         },
-        (notification, actionId) => {
-          clearBadge();
-          clearAllNotifications();
-          // Conversion nudges (trial ending): drop the user straight onto the
-          // paywall instead of just opening the app.
-          const tapType = notification?.notification?.data?.type || notification?.data?.type;
-          const tapStage = notification?.notification?.data?.stage || notification?.data?.stage || null;
-          logNotificationOpen(tapType, tapStage); // best-effort open tracking (server pairs it with 'sent')
-          if ((tapType === 'trial_ending' || tapType === 'trial_final') && Capacitor.isNativePlatform()) {
-            presentPaywall()
-              .then(async ({ purchased }) => {
-                if (purchased) { const s = await checkProStatus(); applyProStatus(s); }
-              })
-              .catch(() => {});
-            return;
-          }
-          handleNotificationNavigation(notification, (tab, opts) => {
-            setActiveTab(tab);
-            if (opts?.friendsView) {
-              setFriendsInitialTab(opts.friendsView);
-              setShowFriends(true);
-            }
-            if (tab === 'challenges') {
-              // Challenges moved into Friends — land on Friends → Challenges.
-              setActiveTab('feed');
-              setFriendsViewRequest({ view: 'challenges', nonce: Date.now() });
-              if (opts?.challengesSegment) {
-                setChallengesNavTarget({ segment: opts.challengesSegment, nonce: Date.now() });
-              }
-            }
-          }, {
-            onOpenActivity: (activityId) => {
-              setHomeOpenActivityTarget({ activityId: String(activityId), nonce: Date.now() });
-            },
-            onShowChallengePicker: ({ activityId, challengeIds }) => {
-              openChallengeChooser({ activityId, challengeIds });
-            },
-            onShowSharePrompt: (summaryData) => {
-              localStorage.removeItem('pendingSharePrompt');
-              if (uid) {
-                updateUserProfile(uid, { pendingSharePrompt: null }).catch(() => {});
-              }
-              const today = new Date();
-              const lastSunday = new Date(today);
-              lastSunday.setDate(today.getDate() - today.getDay() - 7);
-              const lastSaturday = new Date(lastSunday);
-              lastSaturday.setDate(lastSunday.getDate() + 6);
-              setTimeout(() => {
-                setShareWeekRange({ startDate: lastSunday, endDate: lastSaturday });
-                setShowShare(true);
-              }, 500);
-            },
-          });
-        }
+        openNotification
       );
       notificationCleanupRef.current = cleanup;
       fcmTokenRef.current = token;
@@ -18795,6 +18839,14 @@ export default function DaySevenApp() {
                   userProfile={userProfile}
                   friends={friends}
                   viewRequest={friendsViewRequest}
+                  postTarget={feedPostTarget}
+                  onPostTargetMissing={(target) => {
+                    // Older than anything the feed shows. Your own post can still open
+                    // from Home; a friend's stays on the feed.
+                    if (target.ownerUid !== user?.uid) return;
+                    setActiveTab('home');
+                    setHomeOpenActivityTarget({ activityId: target.activityId, showComments: target.openComments, nonce: Date.now() });
+                  }}
                   challengesBadge={pendingReceivedChallenges.length}
                   challengesContent={
                 <ChallengesTab
@@ -20006,6 +20058,18 @@ export default function DaySevenApp() {
         onTap={toastType === 'record' ? navigateToHallOfFame : null}
         type={toastType}
       />
+
+      {inAppBanner && (
+        <InAppNotificationBanner
+          key={inAppBanner.key}
+          model={inAppBanner.model}
+          photoURL={inAppBanner.photoURL}
+          personName={inAppBanner.personName}
+          onTap={() => notificationTapRef.current?.(inAppBanner.notification)}
+          // Only clear it if a newer push hasn't already replaced it.
+          onDone={() => setInAppBanner((current) => (current?.key === inAppBanner.key ? null : current))}
+        />
+      )}
 
       {/* Vacation spill choice — shown when ending a vacation that carried past
           its starting week. Lets the user keep the current week frozen or count

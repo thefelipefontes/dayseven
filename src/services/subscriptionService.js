@@ -72,6 +72,40 @@ const loadSDK = async () => {
 // session. RevenueCat only allows a single configure() per launch; subsequent
 // user changes must go through logIn() / logOut().
 let _configured = false;
+// The configure in progress, if any. configure() waits for the native SDK, so
+// the launch effect and the post-auth login can overlap.
+let _configuring = null;
+
+const configureRevenueCat = async (userId) => {
+  try {
+    const loaded = await loadSDK();
+    if (!loaded) {
+      debugLog('INIT FAILED: SDK not loaded');
+      return false;
+    }
+
+    // Logging is optional, so a failure here shouldn't stop configure below.
+    try {
+      await Purchases.setLogLevel({ level: LOG_LEVEL.INFO });
+    } catch (error) {
+      debugLog('SET LOG LEVEL FAILED', error?.message);
+    }
+
+    // userId may be null → RC creates an anonymous appUserID for this device.
+    // The `appUserID` field is optional; omit it for the anonymous case so
+    // the SDK doesn't try to identify with `null` as a literal string.
+    const configureOpts = { apiKey: REVENUECAT_API_KEY };
+    if (userId) configureOpts.appUserID = userId;
+    await Purchases.configure(configureOpts);
+    _configured = true;
+
+    console.log('[SubscriptionService] RevenueCat initialized for user:', userId || '(anonymous)');
+    return true;
+  } catch (error) {
+    debugLog('INIT ERROR', error.message);
+    return false;
+  }
+};
 
 /**
  * Initialize RevenueCat. Call once at app start.
@@ -90,6 +124,11 @@ let _configured = false;
  */
 export const initializeRevenueCat = async (userId) => {
   if (!isNative) return false;
+
+  // Wait for a configure in progress instead of starting a second one. If it
+  // fails, this call retries below.
+  while (_configuring) await _configuring;
+
   if (_configured) {
     // Already configured. If a userId is now available, alias the anonymous
     // session to it via logIn — otherwise just no-op.
@@ -101,29 +140,8 @@ export const initializeRevenueCat = async (userId) => {
     return true;
   }
 
-  try {
-    const loaded = await loadSDK();
-    if (!loaded) {
-      debugLog('INIT FAILED: SDK not loaded');
-      return false;
-    }
-
-    await Purchases.setLogLevel({ level: LOG_LEVEL.INFO });
-
-    // userId may be null → RC creates an anonymous appUserID for this device.
-    // The `appUserID` field is optional; omit it for the anonymous case so
-    // the SDK doesn't try to identify with `null` as a literal string.
-    const configureOpts = { apiKey: REVENUECAT_API_KEY };
-    if (userId) configureOpts.appUserID = userId;
-    await Purchases.configure(configureOpts);
-    _configured = true;
-
-    console.log('[SubscriptionService] RevenueCat initialized for user:', userId || '(anonymous)');
-    return true;
-  } catch (error) {
-    debugLog('INIT ERROR', error.message);
-    return false;
-  }
+  _configuring = configureRevenueCat(userId).finally(() => { _configuring = null; });
+  return _configuring;
 };
 
 /**

@@ -627,6 +627,22 @@ export const handleNotificationNavigation = (notification, navigate, options = {
     case NotificationType.REACTION:
     case NotificationType.COMMENT:
     case NotificationType.REPLY:
+      navigate('feed');
+      // Open the post itself, with its comments for a comment or reply, at that comment.
+      // Comments and reactions are on the recipient's own post; a reply names the post's
+      // owner, and its commentId is the comment replied to (the reply is the newest one
+      // from fromUserId).
+      if (options.onOpenPost && data.activityId) {
+        options.onOpenPost({
+          ownerUid: data.activityOwnerId || null,
+          activityId: String(data.activityId),
+          openComments: type !== NotificationType.REACTION,
+          commentId: type !== NotificationType.REACTION ? (data.commentId || null) : null,
+          replyFrom: type === NotificationType.REPLY ? (data.fromUserId || null) : null,
+        });
+      }
+      break;
+
     case NotificationType.FRIEND_WORKOUT:
       navigate('feed');
       break;

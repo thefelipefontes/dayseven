@@ -9,14 +9,15 @@ import { formatFriendlyDate } from '../utils/dateHelpers';
 import { normalizeFocusAreas } from '../utils/focusAreas';
 import { fetchWorkoutRoute } from '../services/healthService';
 import { reverseGeocode, formatLocation } from '../utils/geocode';
-import { getReactions, addReaction, removeReaction, getComments, addComment } from '../services/friendService';
+import { getReactions, addReaction, removeReaction, getComments, addComment, deleteComment } from '../services/friendService';
+import SwipeableComment, { SwipeableCommentContext } from './SwipeableComment';
 import { isChallengeable } from '../services/challengeService';
 import { resolveUnit, unitLabel, formatDistanceValue, formatPaceFromMinutesAndMiles } from '../utils/distance';
 
 // One shared empty route, so "no route" keeps the same reference across renders.
 const NO_ROUTE = [];
 
-const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user, userProfile, onShareStamp, onCaptureLocation, isPro, onPresentPaywall, onChallenge, friends = [] }) => {
+const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user, userProfile, onShareStamp, onCaptureLocation, isPro, onPresentPaywall, onChallenge, friends = [], initialShowComments = false }) => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -28,6 +29,8 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
   const [showComments, setShowComments] = useState(false);
   const [newComment, setNewComment] = useState('');
   const [loadingInteractions, setLoadingInteractions] = useState(false);
+  // Which comment has its swipe-to-delete open, so only one is at a time.
+  const [openCommentId, setOpenCommentId] = useState(null);
 
   // Route map state
   // The route is kept with the id of the activity it was loaded for, so a late result for
@@ -60,6 +63,8 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
   useEffect(() => {
     if (isOpen && activity?.id && activityOwnerId) {
       fetchInteractions();
+      // Opened from a comment notification: show the comments straight away.
+      if (initialShowComments) setShowComments(true);
     } else if (!isOpen) {
       // Reset state when modal closes
       setReactions([]);
@@ -174,9 +179,10 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
     if (!user || !activity?.id || !activityOwnerId || !newComment.trim()) return;
 
     try {
-      await addComment(activity.id, activityOwnerId, user.uid, userProfile?.displayName, userProfile?.photoURL, newComment.trim());
+      const commentId = await addComment(activity.id, activityOwnerId, user.uid, userProfile?.displayName, userProfile?.photoURL, newComment.trim());
       setComments(prev => [...prev, {
-        id: Date.now().toString(),
+        // The real id, so the comment can be deleted straight away.
+        id: commentId || Date.now().toString(),
         commenterUid: user.uid,
         commenterName: userProfile?.displayName,
         commenterPhoto: userProfile?.photoURL,
@@ -185,6 +191,16 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
       }]);
       setNewComment('');
       triggerHaptic(ImpactStyle.Light);
+    } catch (err) {
+    }
+  };
+
+  // The activity's owner can delete any comment on it; anyone else only their own.
+  const handleDeleteComment = async (commentId) => {
+    if (!activity?.id || !activityOwnerId) return;
+    try {
+      await deleteComment(activityOwnerId, activity.id, commentId);
+      setComments(prev => prev.filter(c => c.id !== commentId));
     } catch (err) {
     }
   };
@@ -639,9 +655,16 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
               {showComments && (
                 <div className="space-y-3">
                   {comments.length > 0 && (
+                    <SwipeableCommentContext.Provider value={{ openId: openCommentId, setOpenId: setOpenCommentId }}>
                     <div className="space-y-2">
                       {comments.map((comment) => (
-                        <div key={comment.id} className="flex gap-2 items-start">
+                        <SwipeableComment
+                          key={comment.id}
+                          commentId={comment.id}
+                          canDelete={Boolean(user?.uid) && (comment.commenterUid === user.uid || activityOwnerId === user.uid)}
+                          onDelete={() => handleDeleteComment(comment.id)}
+                        >
+                        <div className="flex gap-2 items-start">
                           <div className="w-7 h-7 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0">
                             {comment.commenterPhoto ? (
                               <img src={comment.commenterPhoto} alt={comment.commenterName} className="w-full h-full object-cover" />
@@ -659,8 +682,10 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
                             </span>
                           </div>
                         </div>
+                        </SwipeableComment>
                       ))}
                     </div>
+                    </SwipeableCommentContext.Provider>
                   )}
 
                   {/* Comment Input */}

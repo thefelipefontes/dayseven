@@ -1,5 +1,5 @@
 import CategoryIcon from './components/CategoryIcon';
-import React, { useState, useEffect, useCallback, useRef, useMemo, createContext, useContext } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { getUserActivities, getPersonalRecords, getDailyHealthHistory, getUserProfile, withoutMalformed } from './services/userService';
 import { addReaction, getReactions, removeReaction, addComment, getComments, deleteComment, addReply, getReplies, deleteReply, getFriends } from './services/friendService';
 import { getCompletedChallengesByWinners } from './services/challengeService';
@@ -9,6 +9,7 @@ import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import ActivityIcon from './components/ActivityIcon';
 import FriendProfileCard from './components/FriendProfileCard';
 import ZoomablePhoto from './components/ZoomablePhoto';
+import SwipeableComment, { SwipeableCommentContext } from './components/SwipeableComment';
 import { friendStatus, FRIEND_STATUS } from './utils/friendStatus';
 import { isDemoAccount, getDemoLeaderboardFriends, getDemoActivities, getDemoHealthHistory, getDemoUserData, getDemoChallengeStats, getDemoUserLeaderboardOverride } from './demoData';
 import { resolveUnit, unitLabel, formatDistanceValue, milesToDisplay } from './utils/distance';
@@ -303,115 +304,6 @@ const FeedPullToRefreshIndicator = ({ pullDistance, isRefreshing, threshold = 28
   );
 };
 
-// Context for swipeable comments
-const SwipeableCommentContext = createContext({ openId: null, setOpenId: () => {} });
-
-// Swipeable Comment Component for swipe-to-delete
-const SwipeableComment = ({ children, commentId, onDelete, canDelete }) => {
-  const { openId, setOpenId } = useContext(SwipeableCommentContext);
-  const [swipeX, setSwipeX] = useState(0);
-  const [startX, setStartX] = useState(null);
-  const [startSwipeX, setStartSwipeX] = useState(0);
-  const [isSwiping, setIsSwiping] = useState(false);
-  const deleteButtonWidth = 70;
-  const snapThreshold = 30;
-
-  // Close this item if another one becomes open
-  useEffect(() => {
-    if (openId !== commentId && swipeX !== 0) {
-      setSwipeX(0);
-    }
-  }, [openId, commentId, swipeX]);
-
-  const handleTouchStart = (e) => {
-    if (!canDelete) return;
-    setStartX(e.touches[0].clientX);
-    setStartSwipeX(swipeX);
-    setIsSwiping(true);
-  };
-
-  const handleTouchMove = (e) => {
-    if (!canDelete || startX === null) return;
-    const currentX = e.touches[0].clientX;
-    const diff = currentX - startX;
-
-    if (diff < 0) {
-      setOpenId(commentId);
-    }
-
-    const newSwipeX = Math.max(-deleteButtonWidth - 20, Math.min(0, startSwipeX + diff));
-    setSwipeX(newSwipeX);
-  };
-
-  const handleTouchEnd = () => {
-    if (!canDelete) return;
-    setIsSwiping(false);
-    setStartX(null);
-
-    if (swipeX < -snapThreshold) {
-      setSwipeX(-deleteButtonWidth);
-      setOpenId(commentId);
-    } else {
-      setSwipeX(0);
-      if (openId === commentId) {
-        setOpenId(null);
-      }
-    }
-  };
-
-  const handleDelete = (e) => {
-    e.stopPropagation();
-    setSwipeX(0);
-    setOpenId(null);
-    onDelete();
-  };
-
-  if (!canDelete) {
-    return <div>{children}</div>;
-  }
-
-  return (
-    <div className="relative overflow-hidden rounded-lg">
-      {/* Delete button - positioned on the right, only visible when swiping */}
-      <div
-        className="absolute inset-y-0 right-0 flex items-center rounded-r-lg"
-        style={{
-          width: Math.abs(swipeX) + deleteButtonWidth,
-          backgroundColor: '#FF453A',
-          opacity: swipeX < 0 ? 1 : 0,
-          pointerEvents: swipeX < 0 ? 'auto' : 'none',
-          justifyContent: 'flex-end',
-          paddingRight: 8
-        }}
-      >
-        <button
-          onClick={handleDelete}
-          className="h-full flex items-center justify-center"
-          style={{ width: 40 }}
-        >
-          <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
-        </button>
-      </div>
-
-      {/* Content */}
-      <div
-        className="relative"
-        style={{
-          transform: `translateX(${swipeX}px)`,
-          transition: isSwiping ? 'none' : 'transform 0.3s ease-out'
-        }}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-      >
-        {children}
-      </div>
-    </div>
-  );
-};
-
 // TouchButton component - uses native DOM event listeners for tap detection
 // This allows window-level capture listeners to still receive touch events for pull-to-refresh
 const TouchButton = ({ onClick, disabled = false, className, style, children, touchAction = 'pan-y' }) => {
@@ -606,6 +498,7 @@ const MemoizedActivityCard = React.memo(({
   isPro,
   onPresentPaywall,
   onPhotoFullscreenChange,
+  focus = null,
 }) => {
   const { friend, type, duration, calories, distance, date, time, id, customEmoji, customIcon, sportEmoji, strengthType, focusAreas, focusArea } = activity;
   const viewerUnit = resolveUnit(userProfile);
@@ -622,6 +515,48 @@ const MemoizedActivityCard = React.memo(({
   const [expandedReplies, setExpandedReplies] = useState({});
   const inputRef = useRef(null);
   const replyInputRef = useRef(null);
+
+  // Opened from a comment or reply notification (`focus`): scroll to that comment, or for
+  // a reply open its thread and scroll to the newest reply from that person, then light it
+  // up for a moment. Waits until it's in `comments`/`commentReplies`, since the feed
+  // fetches the new comment after opening the post. `uncapped` lifts the comments' height
+  // cap so a newest comment past it isn't clipped.
+  const [highlightId, setHighlightId] = useState(null);
+  const [uncapped, setUncapped] = useState(false);
+  const handledFocusRef = useRef(null);
+  const focusTimersRef = useRef([]);
+  useEffect(() => () => focusTimersRef.current.forEach(clearTimeout), []);
+  useEffect(() => { if (!showComments) setUncapped(false); }, [showComments]);
+  useEffect(() => {
+    if (!focus?.nonce || handledFocusRef.current === focus.nonce) return;
+    const comment = comments.find((c) => c.id === focus.commentId);
+    if (!comment) return;
+    let selector = `[data-comment-id="${comment.id}"]`;
+    let target = comment.id;
+    if (focus.replyFrom) {
+      const reply = [...(commentReplies?.[comment.id] || [])].reverse()
+        .find((r) => r.replierUid === focus.replyFrom);
+      if (!reply) return;
+      setExpandedReplies((prev) => ({ ...prev, [comment.id]: true }));
+      selector = `[data-reply-id="${reply.id}"]`;
+      target = `reply-${reply.id}`;
+    }
+    handledFocusRef.current = focus.nonce;
+    setUncapped(true);
+    setHighlightId(target);
+    focusTimersRef.current.push(
+      // After the feed's own scroll to the comments section, which runs at 350ms.
+      setTimeout(() => document.querySelector(selector)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 450),
+      setTimeout(() => setHighlightId(null), 2600),
+    );
+  }, [focus?.nonce, comments, commentReplies]);
+  const highlightStyle = (key) => ({
+    transition: 'background-color 0.8s ease-out',
+    ...(highlightId === key ? { backgroundColor: '#3f3f46' } : {}),
+  });
+  // A post's owner can delete any comment or reply on it (the rules allow the same);
+  // everyone else only their own.
+  const isOwnPost = Boolean(user?.uid) && user.uid === friend.uid;
 
   // Set up the ref callback
   useEffect(() => {
@@ -668,7 +603,7 @@ const MemoizedActivityCard = React.memo(({
   const reactorPhotos = reactions.filter(r => r.reactorPhoto).slice(0, 3);
 
   return (
-    <div className="bg-zinc-900 rounded-xl p-4 mb-3">
+    <div className="bg-zinc-900 rounded-xl p-4 mb-3" data-post-key={activityKey}>
       {/* Header - Friend info */}
       <div className="flex items-center gap-3 mb-3">
         <TouchButton onClick={() => onSelectFriend(friend)} className="flex-shrink-0">
@@ -834,7 +769,7 @@ const MemoizedActivityCard = React.memo(({
           </div>
 
           {/* Inline Comments Section */}
-          <div className="overflow-hidden transition-all duration-300 ease-out" style={{ maxHeight: showComments ? '1000px' : '0', opacity: showComments ? 1 : 0 }}>
+          <div className="overflow-hidden transition-all duration-300 ease-out" data-post-comments={activityKey} style={{ maxHeight: showComments ? (uncapped ? 'none' : '1000px') : '0', opacity: showComments ? 1 : 0 }}>
             <div className="pt-3 mt-3 border-t border-zinc-800">
               {comments.length > 0 && (
                 <SwipeableCommentContext.Provider value={{ openId: openCommentId, setOpenId: setOpenCommentId }}>
@@ -843,10 +778,10 @@ const MemoizedActivityCard = React.memo(({
                       const replies = commentReplies?.[comment.id] || [];
                       const isExpanded = expandedReplies[comment.id];
                       return (
-                        <div key={comment.id} className="py-1">
+                        <div key={comment.id} className="py-1" data-comment-id={comment.id}>
                           <SwipeableComment
                             commentId={comment.id}
-                            canDelete={comment.commenterUid === user.uid}
+                            canDelete={comment.commenterUid === user.uid || isOwnPost}
                             onDelete={() => onDeleteComment(comment.id)}
                           >
                             <div className="flex gap-2 items-start">
@@ -858,7 +793,7 @@ const MemoizedActivityCard = React.memo(({
                                 )}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <div className="bg-zinc-800 rounded-2xl px-3 py-2">
+                                <div className="bg-zinc-800 rounded-2xl px-3 py-2" style={highlightStyle(comment.id)}>
                                   <span className="text-white text-xs font-medium">{comment.commenterName}</span>
                                   <p className="text-gray-300 text-sm break-words">{comment.text}</p>
                                 </div>
@@ -890,10 +825,10 @@ const MemoizedActivityCard = React.memo(({
                           {isExpanded && replies.length > 0 && (
                             <div className="ml-9 mt-2 space-y-2 border-l-2 border-zinc-700 pl-3">
                               {replies.map((reply) => (
-                                <div key={reply.id}>
+                                <div key={reply.id} data-reply-id={reply.id}>
                                   <SwipeableComment
                                     commentId={`reply-${reply.id}`}
-                                    canDelete={reply.replierUid === user.uid}
+                                    canDelete={reply.replierUid === user.uid || isOwnPost}
                                     onDelete={() => onDeleteReply(comment.id, reply.id)}
                                   >
                                     <div className="flex gap-2 items-start">
@@ -905,7 +840,7 @@ const MemoizedActivityCard = React.memo(({
                                         )}
                                       </div>
                                       <div className="flex-1 min-w-0">
-                                        <div className="bg-zinc-800/70 rounded-2xl px-3 py-1.5">
+                                        <div className="bg-zinc-800/70 rounded-2xl px-3 py-1.5" style={highlightStyle(`reply-${reply.id}`)}>
                                           <span className="text-white text-[11px] font-medium">{reply.replierName}</span>
                                           <p className="text-gray-300 text-xs break-words">{reply.text}</p>
                                         </div>
@@ -1037,7 +972,7 @@ const MemoizedActivityCard = React.memo(({
   );
 });
 
-const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingRequestsCount = 0, onActiveViewChange, feedCacheRef, isPro = false, onPresentPaywall, onOpenChallenge, suppressPullToRefresh = false, challengesContent = null, challengesBadge = 0, viewRequest = null }) => {
+const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingRequestsCount = 0, onActiveViewChange, feedCacheRef, isPro = false, onPresentPaywall, onOpenChallenge, suppressPullToRefresh = false, challengesContent = null, challengesBadge = 0, viewRequest = null, postTarget = null, onPostTargetMissing }) => {
   // Hydrate from the parent-owned cache when re-mounting on tab switch — skips
   // the spinner and renders the previously-loaded feed instantly. The background
   // loadFeed call still runs to refresh data. Cache is uid-tagged so it isn't
@@ -1107,6 +1042,76 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     }
   }, [leaderboardData]);
   const [expandedComments, setExpandedComments] = useState({}); // Track which activities have expanded comments
+
+  // A tapped comment, reply or reaction notification asks for one post (postTarget):
+  // show the feed, open that post's comments, and scroll to them. A post that isn't
+  // among the ones the feed shows goes back to the parent to open some other way.
+  // freshFeedRef: set once loadFeed has replaced the cached feed, the point at which a
+  // post that's still missing really isn't in the feed.
+  const freshFeedRef = useRef(false);
+  const handledPostTargetRef = useRef(null);
+  // The comment inside that post to land on: { key, commentId, replyFrom, nonce }. The
+  // card scrolls to it once it's loaded.
+  const [postFocus, setPostFocus] = useState(null);
+  const postScrollTimerRef = useRef(null);
+  useEffect(() => () => clearTimeout(postScrollTimerRef.current), []);
+  useEffect(() => {
+    if (!postTarget?.nonce || handledPostTargetRef.current === postTarget.nonce) return undefined;
+    const key = `${postTarget.ownerUid}-${postTarget.activityId}`;
+    const activity = feedActivities.find((a) => a.id && `${a.friend.uid}-${a.id}` === key);
+    const markHandled = () => { handledPostTargetRef.current = postTarget.nonce; };
+
+    if (!activity) {
+      if (freshFeedRef.current) {
+        markHandled();
+        onPostTargetMissing?.(postTarget);
+        return undefined;
+      }
+      // Wait for loadFeed, but not forever if it fails.
+      const giveUp = setTimeout(() => {
+        if (handledPostTargetRef.current === postTarget.nonce) return;
+        markHandled();
+        onPostTargetMissing?.(postTarget);
+      }, 8000);
+      return () => clearTimeout(giveUp);
+    }
+
+    markHandled();
+    setActiveView('feed');
+    if (postTarget.openComments) setExpandedComments((prev) => ({ ...prev, [key]: true }));
+    if (postTarget.commentId) {
+      setPostFocus({ key, commentId: postTarget.commentId, replyFrom: postTarget.replyFrom || null, nonce: postTarget.nonce });
+    }
+    const scrollToPost = () => {
+      const attr = postTarget.openComments ? 'data-post-comments' : 'data-post-key';
+      const el = document.querySelector(`[${attr}="${key}"]`);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    };
+    // The notification is about something new, so don't trust a cached feed for this post.
+    Promise.all([
+      getReactions(activity.friend.uid, activity.id),
+      getComments(activity.friend.uid, activity.id),
+    ]).then(async ([reactions, comments]) => {
+      const replies = {};
+      await Promise.all(comments.map(async (comment) => {
+        const list = await getReplies(activity.friend.uid, activity.id, comment.id);
+        if (list.length > 0) replies[comment.id] = list;
+      }));
+      setActivityReactions((prev) => ({ ...prev, [key]: reactions }));
+      setActivityComments((prev) => ({ ...prev, [key]: comments }));
+      setCommentReplies((prev) => ({ ...prev, [key]: replies }));
+      // The new comment can make the section taller: settle on it again, unless the card
+      // is scrolling to the comment itself.
+      if (postTarget.openComments && !postTarget.commentId) {
+        clearTimeout(postScrollTimerRef.current);
+        postScrollTimerRef.current = setTimeout(scrollToPost, 350);
+      }
+    }).catch(() => {});
+    // After the comments finish expanding (a 300ms transition).
+    clearTimeout(postScrollTimerRef.current);
+    postScrollTimerRef.current = setTimeout(scrollToPost, 350);
+    return undefined;
+  }, [postTarget?.nonce, feedActivities]);
 
   // Local pull-to-refresh state (only for feed cards area)
   const [localPullDistance, setLocalPullDistance] = useState(0);
@@ -1461,6 +1466,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
 
       // Limit to most recent 50 activities
       const limitedActivities = flatActivities.slice(0, 50);
+      freshFeedRef.current = true;
       setFeedActivities(limitedActivities);
 
       // Tag activities that fulfilled a challenge (for the "Completed challenge" pill).
@@ -3298,6 +3304,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               comments={activityComments[key] || EMPTY_ARRAY}
               commentReplies={commentReplies[key] || EMPTY_OBJECT}
               showComments={expandedComments[key] || false}
+              focus={postFocus?.key === key ? postFocus : null}
               challengeMeta={challengeMeta}
               user={user}
               userProfile={userProfile}

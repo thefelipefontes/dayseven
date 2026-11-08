@@ -57,6 +57,8 @@ export const resetUserServiceSession = () => {
   Object.values(cache).forEach((v) => { if (v instanceof Map) v.clear(); });
   serverActivitiesLoaded.clear();
   outboxMemory.clear();
+  // Health history kept on the device for you and your friends, not for whoever's next.
+  clearStoredHealthHistory();
 };
 
 // Helper function to add timeout to Firestore operations (for web SDK fallback)
@@ -1466,6 +1468,43 @@ export async function deleteUserAccount(uid) {
 // Cache for daily health data
 const dailyHealthCache = new Map();
 
+// Each person's daily health kept on this device, so a launch, a pull-to-refresh or the
+// leaderboard reads only the recent days from Firestore, not up to a year of docs (one
+// read per day, per person, for you and every friend). The recent days are always
+// re-read: today's steps keep changing, and the app backfills this week and last. Older
+// days come from here, with a full re-read once a week in case one changed. Cleared on
+// sign-out.
+const STORED_HEALTH_PREFIX = 'dailyHealthHistory:';
+const STORED_HEALTH_FULL_EVERY_MS = 7 * 24 * 60 * 60 * 1000;
+const STORED_HEALTH_RECENT_DAYS = 16;
+
+const readStoredHealth = (uid) => {
+  try {
+    const stored = JSON.parse(localStorage.getItem(STORED_HEALTH_PREFIX + uid) || 'null');
+    return stored && Array.isArray(stored.entries) && stored.days > 0 && stored.fullAt > 0 ? stored : null;
+  } catch {
+    return null;
+  }
+};
+
+const writeStoredHealth = (uid, stored) => {
+  try {
+    localStorage.setItem(STORED_HEALTH_PREFIX + uid, JSON.stringify(stored));
+  } catch {
+    // Storage full or unavailable: the next read is just a full one.
+  }
+};
+
+export const clearStoredHealthHistory = () => {
+  try {
+    Object.keys(localStorage)
+      .filter((key) => key.startsWith(STORED_HEALTH_PREFIX))
+      .forEach((key) => localStorage.removeItem(key));
+  } catch {
+    // Nothing stored, or storage unavailable.
+  }
+};
+
 /**
  * Save daily health data (steps and calories) to Firestore
  * @param {string} uid - User ID
@@ -1555,39 +1594,61 @@ export async function getDailyHealthData(uid, date) {
  * @returns {Promise<Array<{date: string, steps: number, calories: number, lastUpdated: string}>>}
  */
 export async function getDailyHealthHistory(uid, days = 30) {
+  const today = new Date();
+  const daysAgoStr = (n) => {
+    const d = new Date(today);
+    d.setDate(d.getDate() - n);
+    return toLocalDateStr(d);
+  };
+  const cutoffStr = daysAgoStr(days);
+  // What this device kept from earlier reads, if it covers the window and is recent enough.
+  const stored = isNative ? readStoredHealth(uid) : null;
+  const usable = stored && stored.days >= days && Date.now() - stored.fullAt < STORED_HEALTH_FULL_EVERY_MS;
+
   try {
-    const results = [];
-    const today = new Date();
+    let results = [];
 
     if (isNative) {
       // Only the window asked for: the unfiltered read downloaded every day ever stored
       // (two years is ~730 docs) at launch, on every pull-to-refresh and once per friend on
-      // the leaderboard. The client-side check below stays as a guard.
-      const cutoffDate = new Date(today);
-      cutoffDate.setDate(cutoffDate.getDate() - days);
-      const cutoffStr = toLocalDateStr(cutoffDate);
+      // the leaderboard. With a usable stored copy, only the recent days are read. The
+      // client-side check below stays as a guard.
+      const recentStr = daysAgoStr(STORED_HEALTH_RECENT_DAYS);
+      const fromStr = usable && recentStr > cutoffStr ? recentStr : cutoffStr;
       const collectionPath = `users/${uid}/dailyHealth`;
       const { snapshots } = await FirebaseFirestore.getCollection({
         reference: collectionPath,
         compositeFilter: {
           type: 'and',
           queryConstraints: [
-            { type: 'where', fieldPath: 'date', opStr: '>=', value: cutoffStr },
+            { type: 'where', fieldPath: 'date', opStr: '>=', value: fromStr },
           ],
         },
       });
 
-      if (snapshots) {
-
-        for (const snap of snapshots) {
-          if (snap.data && snap.data.date >= cutoffStr) {
-            results.push(snap.data);
-            // Update cache
-            dailyHealthCache.set(`${uid}_${snap.data.date}`, { ...snap.data, _cachedAt: Date.now() });
-          }
+      const fresh = [];
+      for (const snap of snapshots || []) {
+        if (snap.data && snap.data.date >= fromStr) {
+          fresh.push(snap.data);
+          // Update cache
+          dailyHealthCache.set(`${uid}_${snap.data.date}`, { ...snap.data, _cachedAt: Date.now() });
         }
       }
+
+      if (usable) {
+        // Older days from the stored copy, kept for its whole window even when this call
+        // asks for fewer days.
+        const keepFromStr = daysAgoStr(stored.days);
+        const older = stored.entries.filter((e) => e?.date && e.date >= keepFromStr && e.date < fromStr);
+        const all = [...fresh, ...older];
+        writeStoredHealth(uid, { fullAt: stored.fullAt, days: stored.days, entries: all });
+        results = all.filter((e) => e.date >= cutoffStr);
+      } else {
+        writeStoredHealth(uid, { fullAt: Date.now(), days, entries: fresh });
+        results = fresh;
+      }
     } else {
+      results = [];
       // For web, fetch documents for each day
       // This approach is simpler and avoids complex queries
       const promises = [];
@@ -1611,6 +1672,12 @@ export async function getDailyHealthHistory(uid, days = 30) {
 
     return results;
   } catch (error) {
+    // Offline or a failed read: what this device kept beats nothing.
+    if (stored) {
+      return stored.entries
+        .filter((e) => e?.date && e.date >= cutoffStr)
+        .sort((a, b) => b.date.localeCompare(a.date));
+    }
     return [];
   }
 }

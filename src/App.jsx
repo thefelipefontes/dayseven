@@ -15014,6 +15014,11 @@ export default function DaySevenApp() {
       // Load remaining data in background (don't await)
       (async () => {
         try {
+          // Start the daily health history now: it doesn't depend on anything below, and
+          // waiting for the user-doc read to finish first added 100-200ms before Home could
+          // show. getDailyHealthHistory never throws, so nothing is left unhandled if a
+          // read below fails first.
+          const healthHistoryPromise = getDailyHealthHistory(user.uid, 365);
           // Today's steps and calories straight from HealthKit, alongside the data reads below,
           // so Home's first frame has them. Home shows as soon as the activities are set,
           // and until the HealthKit sync landed it read 0 steps today: a short ring, a red
@@ -15249,7 +15254,7 @@ export default function DaySevenApp() {
           // judging a week, and this recalc used to run with no step data at all.
           const [userActivities, healthHistoryData] = await Promise.all([
             userDoc ? userDoc.activities : getUserActivities(user.uid, true),
-            getDailyHealthHistory(user.uid, 365),
+            healthHistoryPromise,
           ]);
           healthHistoryRef.current = healthHistoryData; // visible to the recalc synchronously
           setHealthHistory(healthHistoryData);

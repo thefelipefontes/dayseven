@@ -21,28 +21,48 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;600;700&display=swap" rel="stylesheet">
-  </head>
-  <body>
-    <div id="root">
-      <!-- Initial loading screen (shown before React mounts) -->
-      <div id="initial-loader" style="min-height: 100vh; background: #000; display: flex; align-items: center; justify-content: center;">
-        <div style="position: relative; width: 60px; height: 60px;">
-          <!-- Spinning circle -->
-          <svg style="position: absolute; top: 0; left: 0; width: 60px; height: 60px; animation: spin 1.5s linear infinite;" viewBox="0 0 60 60">
-            <circle cx="30" cy="30" r="26" fill="none" stroke="#333" stroke-width="5"/>
-            <circle cx="30" cy="30" r="26" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-dasharray="130 360" style="transform-origin: center;"/>
-          </svg>
-          <!-- Number 7 -->
-          <span style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif; font-size: 24px; font-weight: 700; color: #fff;">7</span>
-        </div>
-      </div>
-    </div>
-    <script type="module" src="/src/main.jsx"></script>
     <style>
-      @keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
+      html, body { background: #000; }
+      #initial-loader { position: fixed; inset: 0; z-index: 2147483647; background: #000; display: flex; align-items: center; justify-content: center; }
+      /* The D7 logo drawing itself: the D, then the 7, a beat with the full mark, a fade,
+         and again. The first pass is quick, the whole logo in 0.7 s, so even a fast launch
+         shows all of it (LaunchLoader.jsx holds the hand-off until then); later passes take
+         the slower 2.4 s loop. Shapes traced from the app icon (public/icon.png); the viewBox is shifted
+         to centre the mark, which the icon sits a little right of centre. Shared with the
+         in-app loader (src/components/LaunchLoader.jsx). */
+      .d7-loader { width: 176px; height: 176px; overflow: visible; animation: d7-loader-fade 2.4s infinite; }
+      .d7-loader-d { fill: none; stroke: #fff; stroke-width: 60; stroke-linecap: round; stroke-linejoin: round; animation: d7-loader-d-first 2.4s cubic-bezier(.7,0,.3,1), d7-loader-d 2.4s cubic-bezier(.7,0,.3,1) 2.4s infinite; }
+      .d7-loader-bar { fill: none; stroke: #333; stroke-width: 60; animation: d7-loader-bar-first 2.4s ease-out, d7-loader-bar 2.4s ease-out 2.4s infinite; }
+      .d7-loader-7 { fill: #fff; }
+      /* The 7 is solid, so a thick stroke through its middle, drawn like a line, reveals it. */
+      .d7-loader-7-trace { fill: none; stroke: #fff; stroke-width: 72; stroke-linecap: square; stroke-linejoin: miter; stroke-dasharray: 100; animation: d7-loader-7-first 2.4s cubic-bezier(.7,0,.3,1), d7-loader-7 2.4s cubic-bezier(.7,0,.3,1) 2.4s infinite; }
+      @keyframes d7-loader-fade { 0%, 82% { opacity: 1; } 100% { opacity: 0; } }
+      @keyframes d7-loader-d { 0% { stroke-dasharray: 0 100; } 40%, 100% { stroke-dasharray: 100 0; } }
+      @keyframes d7-loader-bar { 0% { opacity: 0; } 30%, 100% { opacity: 1; } }
+      @keyframes d7-loader-7 { 0%, 35% { stroke-dashoffset: 100; } 62%, 100% { stroke-dashoffset: 0; } }
+      /* First pass: the D by 0.4 s, the 7 from 0.3 to 0.7 s, then the full mark holds. */
+      @keyframes d7-loader-d-first { 0% { stroke-dasharray: 0 100; } 16.667%, 100% { stroke-dasharray: 100 0; } }
+      @keyframes d7-loader-bar-first { 0% { opacity: 0; } 12.5%, 100% { opacity: 1; } }
+      @keyframes d7-loader-7-first { 0%, 12.5% { stroke-dashoffset: 100; } 29.167%, 100% { stroke-dashoffset: 0; } }
+      @media (prefers-reduced-motion: reduce) {
+        .d7-loader, .d7-loader-d, .d7-loader-bar, .d7-loader-7-trace { animation: none; }
+        .d7-loader-d { stroke-dasharray: none; }
+        .d7-loader-7-trace { stroke-dashoffset: 0; }
       }
     </style>
+  </head>
+  <body>
+    <!-- Launch loader: paints before any JS runs, above the app. The app keeps it up while
+         a screen is loading and fades it out after (src/components/LaunchLoader.jsx). -->
+    <div id="initial-loader" aria-hidden="true">
+      <svg class="d7-loader" viewBox="45.25 0 1024 1024">
+        <defs><mask id="d7-loader-7-mask-boot" maskUnits="userSpaceOnUse"><path class="d7-loader-7-trace" d="M452.3 416.75 L570.65 416.75 L494.85 582.5" pathLength="100"/></mask></defs>
+        <path class="d7-loader-bar" d="M352 312.1 L352 711.9"/>
+        <path class="d7-loader-d" d="M352 312.1 L352 305.2 A43.2 43.2 0 0 1 395.2 262 L561.1 262 C693.7 262 762.5 353 762.5 511.5 C762.5 670 693.7 762 561.1 762 L395.2 762 A43.2 43.2 0 0 1 352 718.8 L352 711.9" pathLength="100"/>
+        <path class="d7-loader-7" d="M452.3 399.7 L588.6 399.7 L588.6 427.4 L517.85 582.5 L471.85 582.5 L539.85 433.8 L452.3 433.8 Z" mask="url(#d7-loader-7-mask-boot)"/>
+      </svg>
+    </div>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

@@ -35,6 +35,8 @@ import { Dumbbell, Footprints } from 'lucide-react';
 import { IconRun, IconSnowflake } from '@tabler/icons-react';
 import { triggerHaptic } from './utils/haptics';
 import UpdateRequired from './components/UpdateRequired';
+import LaunchLoader, { releaseLaunchOverlay } from './components/LaunchLoader';
+import { lastKnownPro, rememberPro } from './utils/proStatusCache';
 import ImportedWorkoutsBanner from './components/ImportedWorkoutsBanner';
 import InAppNotificationBanner from './components/InAppNotificationBanner';
 import { describeInAppNotification } from './utils/inAppNotification';
@@ -1176,91 +1178,6 @@ const HeatMapCalendar = ({ data, onSelectDate, selectedDate, onSelectWeek }) => 
     </div>
   );
 };
-
-// Skeleton Loading Components
-const SkeletonPulse = ({ className = "", style = {} }) => (
-  <div 
-    className={`animate-pulse rounded-lg ${className}`}
-    style={{ backgroundColor: 'rgba(255,255,255,0.05)', ...style }}
-  />
-);
-
-const SkeletonCard = () => (
-  <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-    <div className="flex items-center gap-3 mb-4">
-      <SkeletonPulse className="w-10 h-10 rounded-full" />
-      <div className="flex-1">
-        <SkeletonPulse className="h-4 w-24 mb-2" />
-        <SkeletonPulse className="h-3 w-16" />
-      </div>
-    </div>
-    <SkeletonPulse className="h-20 w-full" />
-  </div>
-);
-
-const SkeletonActivityRow = () => (
-  <div className="p-3 rounded-xl flex items-center gap-3" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-    <SkeletonPulse className="w-8 h-8 rounded-lg" />
-    <div className="flex-1">
-      <SkeletonPulse className="h-4 w-32 mb-2" />
-      <SkeletonPulse className="h-3 w-20" />
-    </div>
-    <SkeletonPulse className="h-4 w-12" />
-  </div>
-);
-
-const SkeletonGoalRings = () => (
-  <div className="p-5 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-    <div className="flex items-center justify-around">
-      {[1, 2, 3].map(i => (
-        <div key={i} className="flex flex-col items-center">
-          <SkeletonPulse className="w-[72px] h-[72px] rounded-full" />
-          <SkeletonPulse className="h-3 w-16 mt-2" />
-        </div>
-      ))}
-    </div>
-  </div>
-);
-
-const HomeTabSkeleton = () => (
-  <div className="pb-32 animate-pulse">
-    {/* Daily Stats Skeleton */}
-    <div className="px-4 mb-4">
-      <SkeletonPulse className="h-4 w-32 mb-3" />
-      <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-        <div className="space-y-4">
-          <div className="flex items-center gap-3">
-            <SkeletonPulse className="w-6 h-6 rounded" />
-            <div className="flex-1">
-              <SkeletonPulse className="h-2 w-full rounded-full" />
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <SkeletonPulse className="w-6 h-6 rounded" />
-            <div className="flex-1">
-              <SkeletonPulse className="h-2 w-full rounded-full" />
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-    
-    {/* Goals Skeleton */}
-    <div className="mx-4 mb-4">
-      <SkeletonPulse className="h-4 w-40 mb-3" />
-      <SkeletonGoalRings />
-    </div>
-    
-    {/* Activities Skeleton */}
-    <div className="mx-4 mb-4">
-      <SkeletonPulse className="h-4 w-28 mb-3" />
-      <div className="space-y-2">
-        <SkeletonActivityRow />
-        <SkeletonActivityRow />
-      </div>
-    </div>
-  </div>
-);
 
 // Animated Counter Component - smoothly animates number changes
 const AnimatedCounter = ({ value, duration = 500, className = "" }) => {
@@ -13402,6 +13319,9 @@ function WelcomePaywallStep({ onDone, applyProStatus }) {
 }
 
 export default function DaySevenApp() {
+  // index.html's launch loader stays up while a screen is loading; if the first screen
+  // isn't one (the welcome screen, say), let it go.
+  useEffect(() => { releaseLaunchOverlay(); }, []);
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -13581,6 +13501,10 @@ export default function DaySevenApp() {
   const [feedActiveView, setFeedActiveView] = useState('feed'); // 'feed' or 'leaderboard'
   const [isHomeWorkoutPickerOpen, setIsHomeWorkoutPickerOpen] = useState(false); // Track if HomeTab's workout picker is open
   const [isPro, setIsPro] = useState(false); // RevenueCat "dayseven Pro" entitlement
+  // Whether RevenueCat has answered on this launch (or given up). Until it has, the hard
+  // paywall shows the launch loader rather than the lock screen, which used to flash for
+  // subscribers on every cold start.
+  const [proStatusResolved, setProStatusResolved] = useState(false);
 
   // HealthKit data state
   const [healthKitData, setHealthKitData] = useState({
@@ -13722,7 +13646,16 @@ export default function DaySevenApp() {
     // so they only get access from a real subscription or a forceProTier comp.
     const grandfathered = !!p && p.subscriptionRequired !== true;
     setIsPro(rcStatus || override || grandfathered);
+    rememberPro(userRef.current?.uid, Boolean(rcStatus || override));
+    setProStatusResolved(true);
   }, []);
+  // RevenueCat normally answers in a second or two. If it never does (offline, an error),
+  // stop waiting, so an account without a subscription still reaches the lock screen.
+  useEffect(() => {
+    if (!user || authLoading || proStatusResolved) return undefined;
+    const timer = setTimeout(() => setProStatusResolved(true), 8000);
+    return () => clearTimeout(timer);
+  }, [user, authLoading, proStatusResolved]);
   // Lifetime buyers have nothing to renew or cancel, so Settings shows them a
   // different row. Resolved from the entitlement's expirationDate rather than
   // threaded through every applyProStatus call site — see getPlanType.
@@ -14446,6 +14379,8 @@ export default function DaySevenApp() {
     setPendingFriendRequests(0);
     setUnreadFeedCount(0);
     setIsPro(false);
+    setProStatusResolved(false);
+    setIsLoading(true); // The next sign-in shows Home's skeleton until its data is in.
     setDevAuthEmail(null);
     // Close any open modals + reset to home tab so the next sign-in lands on a
     // clean Home, not the Settings overlay (which would render on top of Home
@@ -15063,6 +14998,7 @@ export default function DaySevenApp() {
         setHealthHistory(getDemoHealthHistory(365));
         setFriends(getDemoFriends());
         setIsPro(true); // Show pro features in demo
+        setIsLoading(false);
         return;
       }
 
@@ -15078,6 +15014,13 @@ export default function DaySevenApp() {
       // Load remaining data in background (don't await)
       (async () => {
         try {
+          // Today's steps and calories straight from HealthKit, alongside the data reads below,
+          // so Home's first frame has them. Home shows as soon as the activities are set,
+          // and until the HealthKit sync landed it read 0 steps today: a short ring, a red
+          // "Last day" line and "Streak safe" instead of "Week won". Local queries, quick.
+          const todayHealthPromise = Capacitor.isNativePlatform() && !profile?.disableHealthKitSync && isHealthKitReadAuthorized()
+            ? Promise.all([fetchTodaySteps(), fetchTodayCalories()]).catch(() => null)
+            : Promise.resolve(null);
           // The goals came with the profile read above; read them separately only if that
           // read failed. Home needs them now, ahead of the RevenueCat login below.
           const userGoals = profile ? (profile.goals || null) : await getUserGoals(user.uid);
@@ -15123,10 +15066,16 @@ export default function DaySevenApp() {
                 addCustomerInfoListener(({ isPro: newIsPro }) => {
                   applyProStatus(newIsPro);
                 });
+              } else {
+                setProStatusResolved(true);
               }
             } catch (rcError) {
               console.error('[App] RevenueCat init error:', rcError);
+              setProStatusResolved(true);
             }
+          } else {
+            // RevenueCat only runs in the app.
+            setProStatusResolved(true);
           }
 
           // Re-fetch with forceRefresh to bypass native SDK cache (watch may have updated
@@ -15157,7 +15106,10 @@ export default function DaySevenApp() {
           // Goal history — which goals were in force from which week. The streak walk
           // judges each past week against these rather than today's goals, so lowering a
           // goal can't retroactively mark earlier weeks as met (see utils/streaks).
+          // Written to the ref too, like the shield and vacation below: the load-time
+          // recalc reads the ref, and nothing guarantees a render before it runs.
           if (profileForStreaks?.goalHistory) {
+            userDataRef.current = { ...(userDataRef.current || {}), goalHistory: profileForStreaks.goalHistory };
             setUserData(prev => ({ ...prev, goalHistory: profileForStreaks.goalHistory }));
           }
           // Saved Apple Health type preferences (icon/category for uncategorized types).
@@ -15191,9 +15143,13 @@ export default function DaySevenApp() {
             userDataRef.current = { ...(userDataRef.current || {}), streakShield: loadedShield };
             setUserData(prev => ({ ...prev, streakShield: loadedShield }));
           }
-          // Load vacation mode data
+          // Load vacation mode data. Every branch writes the ref, so the load-time recalc
+          // below always sees the vacation weeks: when only the state was set, a launch
+          // that reached the recalc before a render read none, counted those weeks as
+          // missed, and saved streaks cut short at the last vacation.
           if (profileForStreaks?.vacationMode) {
             const vm = profileForStreaks.vacationMode;
+            userDataRef.current = { ...(userDataRef.current || {}), vacationMode: vm };
             // Auto-deactivate if vacation exceeded 14 days
             if (vm.isActive && vm.startDate) {
               const start = new Date(vm.startDate + 'T12:00:00');
@@ -15300,6 +15256,20 @@ export default function DaySevenApp() {
           // Fill in any days this week / last week the app wasn't open for (runs in the
           // background; merges into healthHistory when it lands).
           backfillRecentHealthDays();
+          const todayHealth = await todayHealthPromise;
+          if (todayHealth) {
+            const [steps, calories] = todayHealth;
+            // The ref too: the load-time recalc reads today's steps from it.
+            healthKitDataRef.current = { ...(healthKitDataRef.current || {}), todaySteps: steps ?? healthKitDataRef.current?.todaySteps ?? 0 };
+            setHealthKitData(prev => ({
+              ...prev,
+              todaySteps: steps ?? prev.todaySteps ?? 0,
+              todayCalories: calories ?? prev.todayCalories ?? 0,
+              isConnected: prev.isConnected || steps > 0 || calories > 0,
+            }));
+          }
+          // Home's skeleton ends with the data: batched with setActivities below.
+          setIsLoading(false);
           lastFirestoreActivityCount.current = userActivities.length;
           // The streaks as they stand after this load, for the records recalc below.
           let streaksAfterLoad = profileForStreaks?.streaks || null;
@@ -15501,6 +15471,7 @@ export default function DaySevenApp() {
         } catch (error) {
           // Still mark as loaded on error so we don't block record checking forever
           setRecordsLoaded(true);
+          setIsLoading(false);
         }
       })();
     } else {
@@ -16400,11 +16371,15 @@ export default function DaySevenApp() {
     checkAuth();
   }, [handleUserAuth]);
 
-  // Simulate initial load
+  // Home shows its skeleton until the launch read has set the activities (handleUserAuth
+  // ends it). It used to be a fixed 800ms from mount, which held Home back 0.3-0.4s after
+  // the data was in on every launch, and showed Home empty when the data was slower.
+  // Never more than 3s, so a slow or failed read still reaches Home.
   useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 800);
+    if (!isLoading || !user) return undefined;
+    const timer = setTimeout(() => setIsLoading(false), 3000);
     return () => clearTimeout(timer);
-  }, []);
+  }, [isLoading, user]);
 
   // RevenueCat init runs once at startup. On native we read the cached
   // Firebase user via the Capacitor plugin (the JS SDK's onAuthStateChanged
@@ -18201,21 +18176,9 @@ export default function DaySevenApp() {
   // Show loading spinner while checking auth
   if (updateRequired) return <UpdateRequired />;
 
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="relative w-[60px] h-[60px]">
-          {/* Spinning circle */}
-          <svg className="absolute top-0 left-0 w-[60px] h-[60px] animate-spin" viewBox="0 0 60 60" style={{ animationDuration: '1.5s' }}>
-            <circle cx="30" cy="30" r="26" fill="none" stroke="#333" strokeWidth="5"/>
-            <circle cx="30" cy="30" r="26" fill="none" stroke="#fff" strokeWidth="5" strokeLinecap="round" strokeDasharray="130 360"/>
-          </svg>
-          {/* Number 7 */}
-          <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-2xl font-bold text-white">7</span>
-        </div>
-      </div>
-    );
-  }
+  const launchLoader = <LaunchLoader />;
+
+  if (authLoading) return launchLoader;
 
   // Pre-signup onboarding: survey → results → HK pre-screen → workout linking →
   // notif pre-screen. Permission prompts fire here (pre-signup) so they're the
@@ -18328,9 +18291,14 @@ export default function DaySevenApp() {
   // inline from userProfile so existing & comped users never flash the lock
   // screen while the isPro state catches up on cold start. Demo accounts return
   // early from handleUserAuth with isPro=true, so they never reach here.
+  // Subscribers: until RevenueCat answers on this launch, trust its last answer on this
+  // device, so they go straight in instead of seeing the lock screen flash first.
   const isGrandfathered = userProfile.subscriptionRequired !== true;
-  const hasFullAccess = isPro || isGrandfathered || userProfile.forceProTier === true;
+  const knownSubscriber = !proStatusResolved && lastKnownPro(user.uid);
+  const hasFullAccess = isPro || isGrandfathered || userProfile.forceProTier === true || knownSubscriber;
   if (!hasFullAccess) {
+    // Nothing remembered and no answer yet: stay on the launch loader.
+    if (!proStatusResolved) return launchLoader;
     return (
       <LockedScreen
         userProfile={userProfile}
@@ -18351,6 +18319,10 @@ export default function DaySevenApp() {
       />
     );
   }
+
+  // Launch: one loading screen. The loader stays until the launch read has set Home's data
+  // (or 3s pass), so Home appears finished instead of as a skeleton first.
+  if (isLoading) return launchLoader;
 
   // Custom refresh indicator component
   return (
@@ -18683,9 +18655,6 @@ export default function DaySevenApp() {
             animation: `${tabDirection === 0 ? 'fadeIn' : tabDirection === 1 ? 'slideInRight' : 'slideInLeft'} 200ms ease-out`
           }}
         >
-          {isLoading ? (
-            <HomeTabSkeleton />
-          ) : (
             <>
               {activeTab === 'home' && (
                 <SectionErrorBoundary name="home">
@@ -18988,7 +18957,6 @@ export default function DaySevenApp() {
                 </SectionErrorBoundary>
               )}
             </>
-          )}
         </div>
         {showSettings && (
           // data-modal-overlay opts this out of the page-level pull-to-refresh.

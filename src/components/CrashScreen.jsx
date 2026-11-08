@@ -5,7 +5,14 @@
 //
 // Reload rather than resetError — these errors are usually deterministic, so re-rendering
 // the same tree crashes again; a reload re-runs auth and startup from scratch.
-const CrashScreen = ({ eventId }) => (
+import React, { useEffect } from 'react';
+import { hideLaunchOverlay } from './LaunchLoader';
+
+const CrashScreen = ({ eventId }) => {
+  // A crash during launch never reaches the app's own release of the launch loader,
+  // which sits above everything: take it down so this screen shows.
+  useEffect(() => { hideLaunchOverlay(); }, []);
+  return (
   <div className="min-h-screen bg-black flex flex-col items-center justify-center px-8 text-center">
     <div className="relative w-[60px] h-[60px] mb-6">
       <svg className="absolute top-0 left-0 w-[60px] h-[60px]" viewBox="0 0 60 60">
@@ -28,6 +35,7 @@ const CrashScreen = ({ eventId }) => (
       <p className="text-gray-600 text-[10px] mt-6 select-all">Error ID: {eventId}</p>
     )}
   </div>
-);
+  );
+};
 
 export default CrashScreen;

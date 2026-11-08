@@ -8,6 +8,21 @@ Paste each field into App Store Connect → App Information / Version page. Limi
 
 ---
 
+## What's New in 1.8.6 (4000 max)
+
+```
+Smoother from the first tap.
+
+• Notifications now drop in at the top of the screen while you're in the app. Tap a comment to jump straight to it
+• Swipe left on a comment to delete it: your own anywhere, or anyone's on your activities
+• Comment threads read in order, oldest to newest
+• Opening the app is faster and cleaner, with the DaySeven logo drawing itself while it loads
+• New accounts start with just this week's workouts from Apple Health, so there's nothing old to sort through
+• Fixes and polish
+```
+
+---
+
 ## What's New in 1.8.5 (4000 max)
 
 ```

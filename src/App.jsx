@@ -13630,6 +13630,27 @@ export default function DaySevenApp() {
   const userProfileRef = useRef(userProfile);
   useEffect(() => { userProfileRef.current = userProfile; }, [userProfile]);
 
+  // HealthKit workouts that are new to this account: not saved or linked already, not
+  // dismissed, one per real workout across sources (Apple Watch + Strava + Garmin can
+  // each write the same one), and none from before the week the account was created,
+  // since those predate DaySeven and mustn't count toward streaks or ask for details.
+  // The sync and pull-to-refresh both use this. Refresh had its own copy without the
+  // last three filters, so a pull brought back a month of old and dismissed workouts.
+  const selectNewHealthKitWorkouts = (workouts, activities) => {
+    const saved = new Set();
+    (activities || []).forEach((a) => {
+      if (a.healthKitUUID) saved.add(a.healthKitUUID);
+      if (a.linkedHealthKitUUID) saved.add(a.linkedHealthKitUUID);
+    });
+    const dismissed = new Set(dismissedWorkoutUUIDsRef.current);
+    let fresh = dedupeCrossSource((workouts || []).filter(
+      (w) => w.healthKitUUID && !saved.has(w.healthKitUUID) && !dismissed.has(w.healthKitUUID)
+    ));
+    const importFrom = signupWeekStartStr(userProfileRef.current?.createdAt);
+    if (importFrom) fresh = fresh.filter((w) => !w.date || w.date >= importFrom);
+    return fresh;
+  };
+
   // Stop a build older than config/minAppVersion. Not awaited by anything, and a failed read
   // means no gate, so this can never hold up or block a launch. iPhone only: the web app is
   // always the latest.
@@ -15533,22 +15554,7 @@ export default function DaySevenApp() {
           );
           const result = await Promise.race([healthKitPromise, timeoutPromise]);
           if (result.success) {
-            // Find workouts that aren't already in activities
-            const existingUUIDs = new Set(
-              userActivities
-                .filter(a => a.healthKitUUID)
-                .map(a => a.healthKitUUID)
-            );
-            const linkedUUIDs = new Set(
-              userActivities
-                .filter(a => a.linkedHealthKitUUID)
-                .map(a => a.linkedHealthKitUUID)
-            );
-            const newWorkouts = result.workouts.filter(
-              w => w.healthKitUUID &&
-                   !existingUUIDs.has(w.healthKitUUID) &&
-                   !linkedUUIDs.has(w.healthKitUUID)
-            );
+            const newWorkouts = selectNewHealthKitWorkouts(result.workouts, userActivities);
 
             const hasHealthData = (result.todaySteps > 0 || result.todayCalories > 0);
             setHealthKitData(prev => ({
@@ -15764,39 +15770,11 @@ export default function DaySevenApp() {
             .catch(() => setHkAccessBlocked(false));
         }
 
-        // Find workouts that aren't already in activities (by healthKitUUID) and not dismissed
-        const existingUUIDs = new Set(
-          currentActivities
-            .filter(a => a.healthKitUUID)
-            .map(a => a.healthKitUUID)
-        );
-
-        // Also filter out linked workouts (where activity has linkedHealthKitUUID)
-        const linkedUUIDs = new Set(
-          currentActivities
-            .filter(a => a.linkedHealthKitUUID)
-            .map(a => a.linkedHealthKitUUID)
-        );
-
-        // Filter workouts - exclude already saved, linked, and dismissed activities
-        const dismissedSet = new Set(dismissedWorkoutUUIDsRef.current);
-        const newWorkoutsRaw = result.workouts.filter(
-          w => w.healthKitUUID &&
-               !existingUUIDs.has(w.healthKitUUID) &&
-               !linkedUUIDs.has(w.healthKitUUID) &&
-               !dismissedSet.has(w.healthKitUUID)
-        );
-        // Collapse cross-source duplicates (same workout written to HealthKit
-        // by Apple Watch + Strava + Garmin Connect, etc.).
-        let newWorkouts = dedupeCrossSource(newWorkoutsRaw);
-
-        // Nothing from before the week the account was created: those workouts predate
-        // DaySeven, so they mustn't count toward streaks or ask for details. Only the first
-        // sync after onboarding used to skip them, so the next one imported the rest of
-        // HealthKit's 30 days as new. Filtered here, before the fresh read below, so they
-        // don't cost a read on every sync either.
-        const importFrom = signupWeekStartStr(userProfileRef.current?.createdAt);
-        if (importFrom) newWorkouts = newWorkouts.filter((w) => !w.date || w.date >= importFrom);
+        // New workouts only. The signup-week cut happens here, before the fresh read below,
+        // so pre-signup workouts don't cost a read on every sync either. (Only the first sync
+        // after onboarding used to skip them, so the next one imported the rest of HealthKit's
+        // 30 days as new.)
+        let newWorkouts = selectNewHealthKitWorkouts(result.workouts, currentActivities);
 
         // Final idempotency guard. The UUID filter above keyed off a snapshot of
         // activitiesRef taken when this run started; re-read the freshest list

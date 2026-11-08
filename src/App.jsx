@@ -2824,7 +2824,11 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
 };
 
 // Pull-to-Refresh Hook with Haptic Feedback - uses native event listeners on #root
-const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled = true } = {}) => {
+// containerRef: the page this refreshes. Only a pull that starts on it counts. The
+// listeners are window-level, so without this a pull on any full-screen gate rendered
+// instead of the app (lock screen, Welcome paywall, update screen, launch loader)
+// refreshed Home's data behind it, with a haptic.
+const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled = true, containerRef = null } = {}) => {
   const [pullDistance, setPullDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -2875,6 +2879,13 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
       return Math.max(rootScroll, windowScroll, docScroll, bodyScroll, appScroll);
     };
 
+    // Whether a touch is on the page this refreshes (always, if no page was given).
+    const onPage = (target) => {
+      if (!containerRef) return true;
+      const page = containerRef.current;
+      return !!(page && target && page.contains(target));
+    };
+
     const handleTouchStart = (e) => {
       if (isRefreshingRef.current) return;
       if (!e.touches || e.touches.length === 0) return;
@@ -2884,6 +2895,7 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
       if (e.target && e.target.closest && e.target.closest('[data-modal-overlay]')) {
         return;
       }
+      if (!onPage(e.target)) return;
 
       const touch = e.touches[0];
       const now = Date.now();
@@ -2928,6 +2940,7 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
       if (e.target && e.target.closest && e.target.closest('[data-modal-overlay]')) {
         return;
       }
+      if (!onPage(e.target)) return;
 
       // Find our tracked touch
       let touch = null;
@@ -16303,6 +16316,7 @@ export default function DaySevenApp() {
   const { pullDistance, isRefreshing } = usePullToRefresh(refreshData, {
     threshold: 80,
     resistance: 0.5,
+    containerRef: scrollContainerRef,
     enabled: isOnboarded === true
       && !showAddActivity
       && !isHomeWorkoutPickerOpen
@@ -16315,6 +16329,7 @@ export default function DaySevenApp() {
       && !applyPastActivityChallenge
       && !isChallengeDetailOpen
       && !showHomeResumeConfirm
+      && !showTour
   });
 
   // Listen to auth state

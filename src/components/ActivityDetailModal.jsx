@@ -1,3 +1,4 @@
+import AvatarImage from './AvatarImage';
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import ActivityIcon from './ActivityIcon';
@@ -692,7 +693,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
                   <div className="flex gap-2 items-center">
                     <div className="w-7 h-7 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0">
                       {userProfile?.photoURL ? (
-                        <img src={userProfile.photoURL} alt="You" className="w-full h-full object-cover" />
+                        <AvatarImage src={userProfile.photoURL} alt="You" />
                       ) : (
                         <span className="text-white text-[10px]">{userProfile?.displayName?.[0]?.toUpperCase() || '?'}</span>
                       )}

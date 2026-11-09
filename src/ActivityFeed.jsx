@@ -1,3 +1,4 @@
+import AvatarImage from './components/AvatarImage';
 import CategoryIcon from './components/CategoryIcon';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { getUserActivities, getPersonalRecords, getDailyHealthHistory, getUserProfile, withoutMalformed } from './services/userService';
@@ -448,12 +449,11 @@ const ProfilePhoto = React.memo(({ photoURL, displayName, size = 40 }) => (
     }}
   >
     {photoURL ? (
-      <img
+      <AvatarImage
         src={photoURL}
         alt={displayName}
-        className="w-full h-full object-cover"
         draggable={false}
-        style={{
+        imgStyle={{
           touchAction: 'pan-y',
           pointerEvents: 'none',
           WebkitTouchCallout: 'none',
@@ -865,7 +865,7 @@ const MemoizedActivityCard = React.memo(({
                             <div className="ml-9 mt-2 flex items-center gap-2">
                               <div className="w-6 h-6 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0">
                                 {userProfile?.photoURL ? (
-                                  <img src={userProfile.photoURL} alt="You" className="w-full h-full object-cover" />
+                                  <AvatarImage src={userProfile.photoURL} alt="You" />
                                 ) : (
                                   <span className="text-white text-[9px]">{userProfile?.displayName?.[0]?.toUpperCase() || '?'}</span>
                                 )}
@@ -932,7 +932,7 @@ const MemoizedActivityCard = React.memo(({
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0">
                   {userProfile?.photoURL ? (
-                    <img src={userProfile.photoURL} alt="You" className="w-full h-full object-cover" />
+                    <AvatarImage src={userProfile.photoURL} alt="You" />
                   ) : (
                     <span className="text-white text-[10px]">{userProfile?.displayName?.[0]?.toUpperCase() || '?'}</span>
                   )}

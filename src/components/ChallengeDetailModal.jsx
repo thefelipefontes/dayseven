@@ -1,3 +1,4 @@
+import AvatarImage from './AvatarImage';
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { describeMatchRule, getChallengeOutcome, getSentChallengeResult, getMyParticipantStatus } from '../services/challengeService';
@@ -677,7 +678,7 @@ function CompetitorPanel({ name, photoURL, initial, streak, wins, losses, isWinn
         }}
       >
         {photoURL ? (
-          <img src={photoURL} alt="" className="w-full h-full object-cover" />
+          <AvatarImage src={photoURL} alt="" />
         ) : (
           <span className="text-white text-2xl font-semibold">{initial}</span>
         )}
@@ -714,7 +715,7 @@ function ProofThumb({ photoURL, fallbackIcon, tint, onTap }) {
         className="w-10 h-10 rounded-xl overflow-hidden flex-shrink-0 active:opacity-80 transition-opacity"
         style={{ border: `1px solid ${tint}40` }}
       >
-        <img src={photoURL} alt="" className="w-full h-full object-cover" />
+        <AvatarImage src={photoURL} alt="" />
       </button>
     );
   }

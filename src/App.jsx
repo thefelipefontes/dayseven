@@ -35,6 +35,7 @@ import { Dumbbell, Footprints } from 'lucide-react';
 import { IconRun, IconSnowflake } from '@tabler/icons-react';
 import { triggerHaptic } from './utils/haptics';
 import { clearFeedSnapshot } from './utils/feedSnapshot';
+import { clearAvatarCache, rememberAvatar } from './utils/avatarCache';
 import AppTour from './components/AppTour';
 import UpdateRequired from './components/UpdateRequired';
 import LaunchLoader, { releaseLaunchOverlay } from './components/LaunchLoader';
@@ -14032,6 +14033,7 @@ export default function DaySevenApp() {
     const currentUserId = user?.uid;
     const currentToken = fcmTokenRef.current;
     clearFeedSnapshot();
+    clearAvatarCache();
 
     // Immediately clear user state to show login screen
     setUser(null);
@@ -14124,6 +14126,7 @@ export default function DaySevenApp() {
   const handleUpdatePhoto = async (file) => {
     if (!user) return;
     const newPhotoURL = await uploadProfilePhoto(user.uid, file);
+    rememberAvatar(newPhotoURL);
     setUserProfile(prev => ({ ...prev, photoURL: newPhotoURL }));
   };
 

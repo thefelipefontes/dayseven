@@ -1,3 +1,4 @@
+import AvatarImage from './components/AvatarImage';
 import React, { useState, useEffect, useRef } from 'react';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import {
@@ -24,6 +25,20 @@ const triggerHaptic = async (style = ImpactStyle.Medium) => {
 };
 
 const FREE_FRIEND_LIMIT = 3;
+
+// Outside Friends so a re-render doesn't remount it and restart the photo load.
+const ProfilePhoto = ({ photoURL, displayName, size = 48 }) => (
+  <div
+    className="rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden"
+    style={{ width: size, height: size }}
+  >
+    {photoURL ? (
+      <AvatarImage src={photoURL} alt={displayName} />
+    ) : (
+      <span className="text-white text-lg">{displayName?.[0]?.toUpperCase() || '?'}</span>
+    )}
+  </div>
+);
 
 const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenChallenge, initialTab = 'friends' }) => {
   const [activeTab, setActiveTab] = useState(initialTab);
@@ -165,19 +180,6 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
     if (hasReceivedRequest(uid)) return 'received';
     return 'add';
   };
-
-  const ProfilePhoto = ({ photoURL, displayName, size = 48 }) => (
-    <div
-      className="rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden"
-      style={{ width: size, height: size }}
-    >
-      {photoURL ? (
-        <img src={photoURL} alt={displayName} className="w-full h-full object-cover" />
-      ) : (
-        <span className="text-white text-lg">{displayName?.[0]?.toUpperCase() || '?'}</span>
-      )}
-    </div>
-  );
 
   const UserRow = ({ userData, rightContent, onProfileClick }) => (
     <div className="flex items-center justify-between py-3 px-4">

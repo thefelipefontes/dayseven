@@ -1,3 +1,4 @@
+import AvatarImage from './components/AvatarImage';
 import React, { useState, useEffect, useRef } from 'react';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import {
@@ -745,7 +746,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
                       }}
                     >
                       <div className="w-10 h-10 rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center text-white text-sm">
-                        {f.photoURL ? <img src={f.photoURL} className="w-full h-full object-cover" alt="" /> : (f.displayName || f.username || '?').charAt(0).toUpperCase()}
+                        {f.photoURL ? <AvatarImage src={f.photoURL} /> : (f.displayName || f.username || '?').charAt(0).toUpperCase()}
                       </div>
                       <div className="flex-1 text-left">
                         <p className="text-white text-sm font-medium">{f.displayName || f.username}</p>
@@ -868,7 +869,7 @@ function MiniAvatar({ photoURL, initial, size, borderColor }) {
       }}
     >
       {photoURL ? (
-        <img src={photoURL} alt="" className="w-full h-full object-cover" />
+        <AvatarImage src={photoURL} alt="" />
       ) : (
         <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: Math.round(size * 0.45), fontWeight: 600 }}>
           {(initial || '?').toUpperCase()}

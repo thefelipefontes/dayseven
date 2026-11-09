@@ -1,3 +1,4 @@
+import AvatarImage from './components/AvatarImage';
 import CategoryIcon from './components/CategoryIcon';
 import { SHIELD_MIN_PERCENT } from './utils/streakShield';
 import React, { useState, useEffect, useRef } from 'react';
@@ -801,7 +802,7 @@ export default function SettingsPage({ user, userProfile, userData, onSignOut, o
                 className="relative w-16 h-16 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden group transition-all duration-150 active:scale-95"
               >
                 {userProfile?.photoURL ? (
-                  <img src={userProfile.photoURL} alt="Profile" className="w-full h-full object-cover" />
+                  <AvatarImage src={userProfile.photoURL} alt="Profile" />
                 ) : (
                   <span className="text-2xl text-white">
                     {userProfile?.displayName?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || '?'}

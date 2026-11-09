@@ -1,3 +1,4 @@
+import AvatarImage from './components/AvatarImage';
 import React, { useState, useEffect, useMemo, useRef, createContext, useContext, useCallback } from 'react';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import ActivityIcon from './components/ActivityIcon';
@@ -808,7 +809,7 @@ export default function ProfilePage(props) {
             style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}
           >
             {userProfile?.photoURL ? (
-              <img src={userProfile.photoURL} alt="" className="w-full h-full object-cover" />
+              <AvatarImage src={userProfile.photoURL} alt="" />
             ) : (
               <span className="text-white text-xl font-semibold">{initial}</span>
             )}

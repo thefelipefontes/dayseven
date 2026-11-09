@@ -1,3 +1,4 @@
+import AvatarImage from './AvatarImage';
 import CategoryIcon from './CategoryIcon';
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -197,7 +198,7 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
                 }}
               >
                 {friend?.photoURL ? (
-                  <img src={friend.photoURL} alt="" className="w-full h-full object-cover" />
+                  <AvatarImage src={friend.photoURL} alt="" />
                 ) : (
                   <span className="text-white text-xl font-semibold">{initial}</span>
                 )}

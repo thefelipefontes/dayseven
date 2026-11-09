@@ -1,3 +1,4 @@
+import AvatarImage from './components/AvatarImage';
 import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import {
@@ -290,7 +291,7 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
           style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}
         >
           {userProfile?.photoURL ? (
-            <img src={userProfile.photoURL} alt="" className="w-full h-full object-cover" />
+            <AvatarImage src={userProfile.photoURL} alt="" />
           ) : (
             <span className="text-white text-xl font-semibold">{initial}</span>
           )}

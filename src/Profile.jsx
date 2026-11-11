@@ -3453,6 +3453,7 @@ export default function ProfilePage(props) {
             // Sun–Sat steps for the day strip; null for days that haven't happened yet.
             stepsByDay: weekDates.map(d => (d > todayKey ? null : (healthDataByDate[d]?.steps || 0))),
             todayIndex: weekDates.indexOf(todayKey),
+            stepsDates: weekDates,
             isCurrentWeek: weekDates.includes(todayKey),
             miles: miles,
             activities: weekActivities,

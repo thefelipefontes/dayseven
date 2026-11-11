@@ -2401,6 +2401,10 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
       if (e.target && e.target.closest && e.target.closest('[data-modal-overlay]')) {
         return;
       }
+      // Scrubbable charts (Home's steps strip) own their touches too.
+      if (e.target && e.target.closest && e.target.closest('[data-no-pull-refresh]')) {
+        return;
+      }
       if (!onPage(e.target)) return;
 
       const touch = e.touches[0];
@@ -2444,6 +2448,10 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
       // Same as touchstart — if the move is inside a modal, the page-level
       // pull-to-refresh has no business observing it.
       if (e.target && e.target.closest && e.target.closest('[data-modal-overlay]')) {
+        return;
+      }
+      // Scrubbable charts (Home's steps strip) own their touches too.
+      if (e.target && e.target.closest && e.target.closest('[data-no-pull-refresh]')) {
         return;
       }
       if (!onPage(e.target)) return;
@@ -11391,6 +11399,17 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
   const [showCardioBreakdown, setShowCardioBreakdown] = useState(false);
   const [showRecoveryBreakdown, setShowRecoveryBreakdown] = useState(false);
   const [showStepsBreakdown, setShowStepsBreakdown] = useState(false);
+  // Steps breakdown scrubbing (same as the Week and Month views): the day under the finger.
+  const [stepsScrubIndex, setStepsScrubIndex] = useState(null);
+  const stepsStripRef = useRef(null);
+  const scrubStepsTo = (clientX) => {
+    const el = stepsStripRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const i = Math.max(0, Math.min(6, Math.floor(((clientX - rect.left) / rect.width) * 7)));
+    if (stepsScrubIndex !== i) Haptics.selectionChanged().catch(() => {});
+    setStepsScrubIndex(i);
+  };
   const [showRecentActivity, setShowRecentActivity] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState(null);
   // Set when a comment notification opens the activity, so its comments start open.
@@ -12571,9 +12590,37 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
             <div className="mt-4 pt-4 border-t border-white/10">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-xs text-gray-400">Steps this week</div>
-                <div className="text-xs font-bold">{formatK(weekSteps.total)} <span className="font-medium" style={{ color: '#777' }}>/ {formatK(weekSteps.goal)}</span></div>
+                {(() => {
+                  if (stepsScrubIndex === null) {
+                    return <div className="text-xs font-bold">{formatK(weekSteps.total)} <span className="font-medium" style={{ color: '#777' }}>/ {formatK(weekSteps.goal)}</span></div>;
+                  }
+                  const d = new Date();
+                  d.setHours(12, 0, 0, 0);
+                  d.setDate(d.getDate() - weekSteps.dayIndex + stepsScrubIndex);
+                  const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                  const isFuture = stepsScrubIndex > weekSteps.dayIndex;
+                  const daySteps = homeWeekCtx.stepsByDate[key] || 0;
+                  return (
+                    <div className="text-xs font-bold">
+                      <span className="font-medium" style={{ color: '#999' }}>{d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · </span>
+                      {isFuture ? <span style={{ color: '#777' }}>—</span> : <span style={{ color: daySteps >= weekSteps.goal / 7 ? '#BF5AF2' : '#fff' }}>{daySteps.toLocaleString()} steps</span>}
+                    </div>
+                  );
+                })()}
               </div>
-              <div className="flex gap-[5px] items-end">
+              {/* Slide a finger across to read a day's exact steps. data-no-pull-refresh keeps
+                  Home's pull-to-refresh from starting on a slightly downward scrub. */}
+              <div
+                ref={stepsStripRef}
+                data-no-pull-refresh
+                className="flex gap-[5px] items-end select-none"
+                style={{ touchAction: 'none' }}
+                onPointerDown={(e) => { e.currentTarget.setPointerCapture?.(e.pointerId); scrubStepsTo(e.clientX); }}
+                onPointerMove={(e) => { if (stepsScrubIndex !== null || e.pointerType === 'mouse') scrubStepsTo(e.clientX); }}
+                onPointerUp={() => setStepsScrubIndex(null)}
+                onPointerCancel={() => setStepsScrubIndex(null)}
+                onPointerLeave={(e) => { if (e.pointerType === 'mouse') setStepsScrubIndex(null); }}
+              >
                 {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((label, i) => {
                   const d = new Date();
                   d.setHours(12, 0, 0, 0);
@@ -12583,11 +12630,12 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
                   const isToday = i === weekSteps.dayIndex;
                   const daySteps = isFuture ? 0 : (homeWeekCtx.stepsByDate[key] || 0);
                   const dailyGoal = weekSteps.goal / 7;
+                  const isScrubbed = i === stepsScrubIndex;
                   return (
-                    <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                    <div key={i} className="flex-1 flex flex-col items-center gap-1 transition-opacity duration-100" style={{ opacity: stepsScrubIndex !== null && !isScrubbed ? 0.45 : 1 }}>
                       <div className="text-[9px]" style={{ color: isFuture ? 'transparent' : '#777' }}>{isFuture ? '·' : formatK(daySteps)}</div>
                       <div className="w-full h-[34px] rounded-[5px] flex items-end overflow-hidden" style={{ backgroundColor: isFuture ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.06)' }}>
-                        <div className="w-full rounded-[5px]" style={{ height: `${Math.min(100, (daySteps / dailyGoal) * 100)}%`, backgroundColor: daySteps >= dailyGoal ? '#BF5AF2' : 'rgba(191,90,242,0.55)' }} />
+                        <div className="w-full rounded-[5px]" style={{ height: `${Math.min(100, (daySteps / dailyGoal) * 100)}%`, backgroundColor: isScrubbed && !isFuture ? '#fff' : daySteps >= dailyGoal ? '#BF5AF2' : 'rgba(191,90,242,0.55)' }} />
                       </div>
                       <div className="text-[9px]" style={{ color: isToday ? '#fff' : '#777', fontWeight: isToday ? 700 : 400 }}>{label}</div>
                     </div>

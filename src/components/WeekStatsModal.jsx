@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Haptics } from '@capacitor/haptics';
 import SectionIcon from './SectionIcon';
 import { SwipeableProvider, SwipeableActivityItem } from './SwipeableActivityItem';
 import ActivityIcon from './ActivityIcon';
@@ -10,6 +11,9 @@ import { stepsDailyShare } from '../utils/weekGoals';
 const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity, onSelectActivity, onShare, userData }) => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+  // Day strip scrubbing (same as the Month view): the day under the finger, or null.
+  const [scrubIndex, setScrubIndex] = useState(null);
+  const stripRef = useRef(null);
   
   useEffect(() => {
     if (isOpen) {
@@ -59,6 +63,19 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
   const weekStepsGoal = dailyStepsGoal * 7;
   const weekStepsTotal = weekData?.steps || 0;
   const formatK = (n) => `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  // Slide a finger across the day strip to read a day's exact steps in the card header,
+  // with a selection tick on each new day.
+  const scrubTo = (clientX) => {
+    const el = stripRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const i = Math.max(0, Math.min(6, Math.floor(((clientX - rect.left) / rect.width) * 7)));
+    if (scrubIndex !== i) Haptics.selectionChanged().catch(() => {});
+    setScrubIndex(i);
+  };
+  const endScrub = () => setScrubIndex(null);
+  const scrubSteps = scrubIndex !== null ? (weekData?.stepsByDay?.[scrubIndex] ?? null) : undefined;
+  const scrubDate = scrubIndex !== null ? weekData?.stepsDates?.[scrubIndex] : null;
 
   // Every week shows Strength, Cardio, Steps with Recovery as the bonus. Whether the week
   // counted still follows the rule it was judged by (utils/weekGoals): weeks before the
@@ -250,20 +267,37 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
           <div className="p-3.5 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-xs text-gray-400 flex items-center gap-2"><CategoryIcon category="steps" size={16} />Steps</span>
-              <span className="text-xs font-bold">{formatK(weekStepsTotal)} <span className="font-medium" style={{ color: '#777' }}>/ {formatK(weekStepsGoal)}</span></span>
+              {scrubIndex !== null ? (
+                <span className="text-xs font-bold">
+                  <span className="font-medium" style={{ color: '#999' }}>{scrubDate ? new Date(`${scrubDate}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][scrubIndex]} · </span>
+                  {scrubSteps === null ? <span style={{ color: '#777' }}>—</span> : <span style={{ color: scrubSteps >= dailyStepsGoal ? '#BF5AF2' : '#fff' }}>{scrubSteps.toLocaleString()} steps</span>}
+                </span>
+              ) : (
+                <span className="text-xs font-bold">{formatK(weekStepsTotal)} <span className="font-medium" style={{ color: '#777' }}>/ {formatK(weekStepsGoal)}</span></span>
+              )}
             </div>
             {/* Sun–Sat day strip — the same bars as Home's Steps breakdown: a full bar is the
                 daily share of the weekly goal, short days are fine. */}
-            <div className="flex gap-[5px] items-end mt-2">
+            <div
+              ref={stripRef}
+              className="flex gap-[5px] items-end mt-2 select-none"
+              style={{ touchAction: 'none' }}
+              onPointerDown={(e) => { e.currentTarget.setPointerCapture?.(e.pointerId); scrubTo(e.clientX); }}
+              onPointerMove={(e) => { if (scrubIndex !== null || e.pointerType === 'mouse') scrubTo(e.clientX); }}
+              onPointerUp={endScrub}
+              onPointerCancel={endScrub}
+              onPointerLeave={(e) => { if (e.pointerType === 'mouse') endScrub(); }}
+            >
               {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((label, i) => {
                 const daySteps = weekData?.stepsByDay?.[i] ?? null;
                 const isFuture = daySteps === null;
                 const isToday = isLiveWeek && i === weekData?.todayIndex;
+                const isScrubbed = i === scrubIndex;
                 return (
-                  <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                  <div key={i} className="flex-1 flex flex-col items-center gap-1 transition-opacity duration-100" style={{ opacity: scrubIndex !== null && !isScrubbed ? 0.45 : 1 }}>
                     <div className="text-[9px]" style={{ color: isFuture ? 'transparent' : '#777' }}>{isFuture ? '·' : formatK(daySteps)}</div>
                     <div className="w-full h-[34px] rounded-[5px] flex items-end overflow-hidden" style={{ backgroundColor: isFuture ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.06)' }}>
-                      <div className="w-full rounded-[5px]" style={{ height: `${isFuture ? 0 : Math.min(100, (daySteps / dailyStepsGoal) * 100)}%`, backgroundColor: !isFuture && daySteps >= dailyStepsGoal ? '#BF5AF2' : 'rgba(191,90,242,0.55)' }} />
+                      <div className="w-full rounded-[5px]" style={{ height: `${isFuture ? 0 : Math.min(100, (daySteps / dailyStepsGoal) * 100)}%`, backgroundColor: isScrubbed && !isFuture ? '#fff' : !isFuture && daySteps >= dailyStepsGoal ? '#BF5AF2' : 'rgba(191,90,242,0.55)' }} />
                     </div>
                     <div className="text-[9px]" style={{ color: isToday ? '#fff' : '#777', fontWeight: isToday ? 700 : 400 }}>{label}</div>
                   </div>

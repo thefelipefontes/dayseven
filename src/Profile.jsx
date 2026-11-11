@@ -3450,6 +3450,9 @@ export default function ProfilePage(props) {
             // today", so it needs today's steps to take them back off.
             stepsToday: weekDates.includes(todayKey) ? (healthDataByDate[todayKey]?.steps || 0) : 0,
             daysElapsed,
+            // Sun–Sat steps for the day strip; null for days that haven't happened yet.
+            stepsByDay: weekDates.map(d => (d > todayKey ? null : (healthDataByDate[d]?.steps || 0))),
+            todayIndex: weekDates.indexOf(todayKey),
             isCurrentWeek: weekDates.includes(todayKey),
             miles: miles,
             activities: weekActivities,
@@ -3507,7 +3510,9 @@ export default function ProfilePage(props) {
             activities: monthActivities,
             dates: monthDates,
             calories: monthCalories,
-            steps: monthSteps
+            steps: monthSteps,
+            // Per-day steps for the month sparkline, aligned with `dates`.
+            stepsByDay: monthDates.map(d => healthDataByDate[d]?.steps || 0)
           };
         })() : null}
         monthLabel={selectedMonth ? new Date(selectedMonth.year, selectedMonth.month).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : ''}

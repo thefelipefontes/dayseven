@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Haptics } from '@capacitor/haptics';
 import SectionIcon from './SectionIcon';
 import CategoryIcon from './CategoryIcon';
 import { normalizeFocusAreas } from '../utils/focusAreas';
@@ -22,6 +23,9 @@ const RecoveryBonusRow = ({ count, suffix = '' }) => (
 const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, userData, activities, healthHistory, distanceUnit = 'mi' }) => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+  // Steps sparkline scrubbing: the day under the finger, or null when not touching.
+  const [scrubIndex, setScrubIndex] = useState(null);
+  const sparkRef = useRef(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -71,6 +75,35 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
     const goalFor = weekGoalsResolver(goals, userData?.goalHistory || []);
     return monthDates.reduce((sum, d) => sum + (goalFor(weekKeyFromDateStr(d))?.stepsPerDay || 0), 0);
   })();
+  // Month sparkline: one bar per day against that day's goal (the stepsPerDay in force that
+  // week). Days after today stay empty and don't count toward the average.
+  const monthStepsDays = (() => {
+    const goalFor = weekGoalsResolver(goals, userData?.goalHistory || []);
+    const now = new Date();
+    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    return monthDates.map((d, i) => ({
+      date: d,
+      steps: monthData?.stepsByDay?.[i] || 0,
+      goal: goalFor(weekKeyFromDateStr(d))?.stepsPerDay || 10000,
+      isFuture: d > todayKey,
+    }));
+  })();
+  const monthDaysElapsed = Math.max(1, monthStepsDays.filter(d => !d.isFuture).length);
+  const sparkMax = Math.max(...monthStepsDays.map(d => d.steps), ...monthStepsDays.map(d => d.goal * 1.5), 1);
+  const sparkGoal = monthStepsDays[0]?.goal || 10000;
+  const formatK = (n) => `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  // Slide a finger across the bars to read any day: the day under it is highlighted and the
+  // card header shows its date and steps. A selection tick on each new day, like iOS pickers.
+  const scrubTo = (clientX) => {
+    const el = sparkRef.current;
+    if (!el || monthStepsDays.length === 0) return;
+    const rect = el.getBoundingClientRect();
+    const i = Math.max(0, Math.min(monthStepsDays.length - 1, Math.floor(((clientX - rect.left) / rect.width) * monthStepsDays.length)));
+    if (scrubIndex !== i) Haptics.selectionChanged().catch(() => {});
+    setScrubIndex(i);
+  };
+  const endScrub = () => setScrubIndex(null);
+  const scrubDay = scrubIndex !== null ? monthStepsDays[scrubIndex] : null;
   const distUnit = unitLabel(distanceUnit);
   const totalMinutes = monthActivities.reduce((sum, a) => sum + (parseInt(a.duration) || 0), 0);
   const daysActive = new Set(monthActivities.map(a => a.date)).size;
@@ -92,6 +125,10 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
     });
 
     let liftWeeks = 0, cardioWeeks = 0, recoveryWeeks = 0, stepsWeeks = 0, allGoalsWeeks = 0;
+    // Weeks the steps sentence can judge: finished ones, plus the current week once it's hit.
+    let stepsWeeksJudged = 0;
+    const nowD = new Date();
+    const todayKey = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}-${String(nowD.getDate()).padStart(2, '0')}`;
     const won = []; // per week, oldest first — drives the little bars on the Weeks Won card
     const totalWeeks = Object.keys(weekMap).length;
 
@@ -108,11 +145,15 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
       if (judged.cardio) cardioWeeks++;
       if (judged.recovery) recoveryWeeks++;
       if (judged.steps) stepsWeeks++;
+      const sat = new Date(`${weekKey}T12:00:00`);
+      sat.setDate(sat.getDate() + 6);
+      const satKey = `${sat.getFullYear()}-${String(sat.getMonth() + 1).padStart(2, '0')}-${String(sat.getDate()).padStart(2, '0')}`;
+      if (satKey < todayKey || judged.steps) stepsWeeksJudged++;
       if (judged.all) allGoalsWeeks++;
       won.push(!!judged.all);
     });
 
-    return { lift: liftWeeks, cardio: cardioWeeks, recovery: recoveryWeeks, steps: stepsWeeks, all: allGoalsWeeks, total: totalWeeks, won, stepsTracked: ctx.stepsTracked };
+    return { lift: liftWeeks, cardio: cardioWeeks, recovery: recoveryWeeks, steps: stepsWeeks, stepsWeeksJudged, all: allGoalsWeeks, total: totalWeeks, won, stepsTracked: ctx.stepsTracked };
   };
 
   const weeksData = calculateWeeksHittingGoals();
@@ -245,6 +286,60 @@ const MonthStatsModal = ({ isOpen, onClose, monthData, monthLabel, onShare, user
               <SectionIcon type="chart" />
               <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Month Totals</span>
             </div>
+            {/* Steps — every day of the month as a thin bar, full colour when it reached that
+                day's goal; the dashed line is the daily goal. The sentence carries the weekly
+                verdict, since the steps goal is judged by the week. */}
+            {totalSteps > 0 && (
+              <div className="p-3.5 rounded-xl mb-2" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-gray-400 flex items-center gap-2"><CategoryIcon category="steps" size={16} />Steps</span>
+                  {scrubDay ? (
+                    <span className="text-xs font-bold">
+                      <span className="font-medium" style={{ color: '#999' }}>{new Date(`${scrubDay.date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · </span>
+                      {scrubDay.isFuture ? <span style={{ color: '#777' }}>—</span> : <span style={{ color: scrubDay.steps >= scrubDay.goal ? '#BF5AF2' : '#fff' }}>{scrubDay.steps.toLocaleString()} steps</span>}
+                    </span>
+                  ) : (
+                    <span className="text-xs font-bold">{formatK(totalSteps)}{monthStepsGoal > 0 && <span className="font-medium" style={{ color: '#777' }}> / {formatK(monthStepsGoal)}</span>}</span>
+                  )}
+                </div>
+                <div
+                  ref={sparkRef}
+                  className="relative flex gap-[2px] items-end h-11 select-none"
+                  style={{ touchAction: 'none' }}
+                  onPointerDown={(e) => { e.currentTarget.setPointerCapture?.(e.pointerId); scrubTo(e.clientX); }}
+                  onPointerMove={(e) => { if (scrubIndex !== null || e.pointerType === 'mouse') scrubTo(e.clientX); }}
+                  onPointerUp={endScrub}
+                  onPointerCancel={endScrub}
+                  onPointerLeave={(e) => { if (e.pointerType === 'mouse') endScrub(); }}
+                >
+                  {monthStepsDays.map((d, i) => (
+                    <div
+                      key={d.date}
+                      className="flex-1 rounded-[2px] transition-opacity duration-100"
+                      style={{
+                        height: d.isFuture ? '100%' : `${Math.max(2, (d.steps / sparkMax) * 100)}%`,
+                        backgroundColor: d.isFuture
+                          ? (i === scrubIndex ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.03)')
+                          : i === scrubIndex ? '#fff' : d.steps >= d.goal ? '#BF5AF2' : 'rgba(191,90,242,0.55)',
+                        opacity: scrubIndex !== null && i !== scrubIndex ? 0.45 : 1,
+                      }}
+                    />
+                  ))}
+                  <div className="absolute left-0 right-0 pointer-events-none" style={{ bottom: `${(sparkGoal / sparkMax) * 100}%`, borderTop: '1px dashed rgba(255,255,255,0.35)' }} />
+                </div>
+                <div className="flex justify-between text-[9px] mt-1" style={{ color: '#777' }}>
+                  {[0, Math.floor((monthStepsDays.length - 1) / 2), monthStepsDays.length - 1].map(i => monthStepsDays[i] && (
+                    <span key={i}>{new Date(`${monthStepsDays[i].date}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                  ))}
+                </div>
+                <p className="text-[12.5px] mt-2 leading-snug" style={{ color: '#ccc' }}>
+                  {weeksData.stepsTracked && weeksData.stepsWeeksJudged > 0 && (
+                    <><span className="font-semibold" style={{ color: weeksData.steps > 0 ? '#BF5AF2' : '#ccc' }}>{weeksData.steps} of {weeksData.stepsWeeksJudged} {weeksData.stepsWeeksJudged === 1 ? 'week' : 'weeks'} hit the steps goal.</span>{' '}</>
+                  )}
+                  ~{formatK(totalSteps / monthDaysElapsed)} a day.
+                </p>
+              </div>
+            )}
             {/* One quiet row rather than four boxes — these are totals to glance at, not goals. */}
             <div className="flex py-3.5 px-1 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.04)' }}>
               {[

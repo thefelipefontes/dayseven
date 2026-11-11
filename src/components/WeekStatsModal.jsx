@@ -252,11 +252,23 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
               <span className="text-xs text-gray-400 flex items-center gap-2"><CategoryIcon category="steps" size={16} />Steps</span>
               <span className="text-xs font-bold">{formatK(weekStepsTotal)} <span className="font-medium" style={{ color: '#777' }}>/ {formatK(weekStepsGoal)}</span></span>
             </div>
-            <div className="h-1.5 rounded-full relative" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
-              <div className="h-full rounded-full" style={{ width: `${Math.min((weekStepsTotal / weekStepsGoal) * 100, 100)}%`, backgroundColor: 'rgba(191,90,242,0.5)' }} />
-              {isLiveWeek && daysElapsed > 1 && weekStepsTotal < weekStepsGoal && (
-                <div className="absolute rounded-full" style={{ left: `calc(${((daysElapsed - 1) / 7) * 100}% - 1px)`, top: '-4px', width: '2px', height: '14px', backgroundColor: '#fff' }} />
-              )}
+            {/* Sun–Sat day strip — the same bars as Home's Steps breakdown: a full bar is the
+                daily share of the weekly goal, short days are fine. */}
+            <div className="flex gap-[5px] items-end mt-2">
+              {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((label, i) => {
+                const daySteps = weekData?.stepsByDay?.[i] ?? null;
+                const isFuture = daySteps === null;
+                const isToday = isLiveWeek && i === weekData?.todayIndex;
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                    <div className="text-[9px]" style={{ color: isFuture ? 'transparent' : '#777' }}>{isFuture ? '·' : formatK(daySteps)}</div>
+                    <div className="w-full h-[34px] rounded-[5px] flex items-end overflow-hidden" style={{ backgroundColor: isFuture ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.06)' }}>
+                      <div className="w-full rounded-[5px]" style={{ height: `${isFuture ? 0 : Math.min(100, (daySteps / dailyStepsGoal) * 100)}%`, backgroundColor: !isFuture && daySteps >= dailyStepsGoal ? '#BF5AF2' : 'rgba(191,90,242,0.55)' }} />
+                    </div>
+                    <div className="text-[9px]" style={{ color: isToday ? '#fff' : '#777', fontWeight: isToday ? 700 : 400 }}>{label}</div>
+                  </div>
+                );
+              })}
             </div>
             <p className="text-[12.5px] mt-2 leading-snug" style={{ color: '#ccc' }}>
               {(() => {

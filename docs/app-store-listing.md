@@ -8,6 +8,32 @@ Paste each field into App Store Connect → App Information / Version page. Limi
 
 ---
 
+## What's New in 1.8.8 (4000 max)
+
+```
+See every step of your week.
+
+• Daily step bars now appear in the calendar's Week view, plus a new day-by-day steps chart in the Month view
+• Slide your finger across any steps chart, including the one on Home, to see that day's exact count
+• Fixes and polish
+```
+
+---
+
+## What's New in 1.8.7 (4000 max)
+
+```
+Your crew, faster.
+
+• The Friends tab opens faster, with your feed ready right away
+• Profile photos appear instantly, with no more empty circles
+• Recovery is a bonus, so now you can take it off your weekly goals. Tap Recovery on Home, then Remove from goals
+• A fresh new look on the Friends tab for when you're just getting started
+• Fixes and polish
+```
+
+---
+
 ## What's New in 1.8.6 (4000 max)
 
 ```

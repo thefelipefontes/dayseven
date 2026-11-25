@@ -16,6 +16,7 @@ import { readFeedSnapshot, scheduleFeedSnapshotSave } from './utils/feedSnapshot
 import { isDemoAccount, getDemoLeaderboardFriends, getDemoActivities, getDemoHealthHistory, getDemoUserData, getDemoChallengeStats, getDemoUserLeaderboardOverride } from './demoData';
 import { resolveUnit, unitLabel, formatDistanceValue, milesToDisplay } from './utils/distance';
 import { getActivityCategory, countsAsLifting, countsAsCardio, countsAsRecovery } from './utils/activityCategory';
+import { CARD_SURFACE, hexToRgb } from './utils/designTokens';
 
 // Convert a Date to YYYY-MM-DD string in local timezone (avoids UTC date shifting)
 const toLocalDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -401,10 +402,10 @@ const FRIENDS_VIEWS = [
 ];
 const SegmentedControl = ({ activeView, setActiveView, challengesBadge = 0 }) => (
   <div className="px-4 pb-4" style={{ touchAction: 'pan-y' }}>
-    <div className="relative flex p-1 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)', touchAction: 'pan-y' }}>
+    <div className="relative flex p-1 rounded-[14px]" style={{ backgroundColor: 'rgba(255,255,255,0.05)', touchAction: 'pan-y' }}>
       {/* Sliding pill indicator - uses transform for smooth hardware-accelerated animation */}
       <div
-        className="absolute top-1 bottom-1 left-1 rounded-lg"
+        className="absolute top-1 bottom-1 left-1 rounded-[10px]"
         style={{
           backgroundColor: 'rgba(255,255,255,0.1)',
           width: `calc((100% - 8px) / ${FRIENDS_VIEWS.length})`,
@@ -416,17 +417,18 @@ const SegmentedControl = ({ activeView, setActiveView, challengesBadge = 0 }) =>
         <TouchButton
           key={tab.key}
           onClick={() => setActiveView(tab.key)}
-          className="flex-1 py-2 px-2 rounded-lg text-sm font-medium relative z-10 text-center flex items-center justify-center gap-1.5"
+          className="flex-1 py-2.5 px-2 rounded-[10px] text-[15px] font-semibold relative z-10 text-center flex items-center justify-center gap-2"
           style={{
-            color: activeView === tab.key ? 'white' : 'rgba(255,255,255,0.5)',
+            color: activeView === tab.key ? 'white' : '#888',
             transition: 'color 0.2s ease-out'
           }}
         >
           {tab.label}
           {tab.key === 'challenges' && challengesBadge > 0 && (
+            // White count badge (Nov 2026 redesign; yellow now reads as gold, the streak's colour)
             <span
-              className="text-[10px] px-1.5 rounded-full font-semibold"
-              style={{ backgroundColor: '#FFD60A', color: 'black', minWidth: 18, lineHeight: '16px' }}
+              className="inline-flex items-center justify-center rounded-full text-[12px] font-extrabold"
+              style={{ backgroundColor: '#fff', color: '#000', minWidth: 20, height: 20, padding: '0 6px' }}
             >
               {challengesBadge}
             </span>
@@ -621,16 +623,16 @@ const MemoizedActivityCard = React.memo(({
     ? (focusAreas || (focusArea ? [focusArea] : [])).join(', ')
     : (activity.subtype || '');
 
-  // For "Other" activities, prefer customIcon (new format) over customEmoji (old format)
-  const useEmoji = (type === 'Other' && customIcon) ? null // Will use ActivityIcon with customIcon
-    : (type === 'Other' && customEmoji) ? customEmoji
-    : (type === 'Sports' && sportEmoji) ? sportEmoji
-    : null;
-
-  // Category color tint for the icon background + icon color override
+  // Category color: a soft tint behind the line icon, the icon in the full color (as on Home)
   const category = getActivityCategory(activity);
-  const categoryBg = category === 'lifting' ? 'rgba(0,255,148,0.15)' : category === 'cardio' ? 'rgba(255,149,0,0.15)' : category === 'recovery' ? 'rgba(0,209,255,0.15)' : undefined;
   const categoryIconColor = category === 'lifting' ? '#00FF94' : category === 'cardio' ? '#FF9500' : category === 'recovery' ? '#00D1FF' : undefined;
+  const categoryBg = categoryIconColor ? `rgba(${hexToRgb(categoryIconColor)},0.16)` : 'rgba(255,255,255,0.06)';
+  // Stats line: numbers bold white, units grey, separated by dots ("34 min · 402 cal · 4.3 mi")
+  const statParts = [
+    duration ? (duration < 60 ? [String(duration), 'min'] : [formatDuration(duration), '']) : null,
+    calories ? [String(calories), 'cal'] : null,
+    distance ? [formatDistanceValue(distance, viewerUnit, 1), unitLabel(viewerUnit)] : null,
+  ].filter(Boolean);
 
   // Count reactions by type
   const reactionCounts = {};
@@ -642,19 +644,19 @@ const MemoizedActivityCard = React.memo(({
   const reactorPhotos = reactions.filter(r => r.reactorPhoto).slice(0, 3);
 
   return (
-    <div className="bg-zinc-900 rounded-xl p-4 mb-3" data-post-key={activityKey}>
+    <div className="p-4 mb-3" style={CARD_SURFACE} data-post-key={activityKey}>
       {/* Header - Friend info */}
-      <div className="flex items-center gap-3 mb-3">
+      <div className="flex items-center gap-3 mb-3.5">
         <TouchButton onClick={() => onSelectFriend(friend)} className="flex-shrink-0">
-          <ProfilePhoto photoURL={friend.photoURL} displayName={friend.displayName} />
+          <ProfilePhoto photoURL={friend.photoURL} displayName={friend.displayName} size={42} />
         </TouchButton>
         <div className="flex-1 min-w-0">
           <TouchButton onClick={() => onSelectFriend(friend)} className="text-left block w-full">
-            <p className="text-white font-medium truncate">{friend.displayName || friend.username}</p>
-            <p className="text-gray-500 text-xs truncate">@{friend.username}</p>
+            <p className="text-white text-[16px] font-semibold truncate">{friend.displayName || friend.username}</p>
+            <p className="text-[13px] truncate" style={{ color: '#777' }}>@{friend.username}</p>
           </TouchButton>
         </div>
-        <span className="text-gray-500 text-xs flex-shrink-0">{formatTimeAgo(date, time)}</span>
+        <span className="text-[13px] flex-shrink-0" style={{ color: '#777' }}>{formatTimeAgo(date, time)}</span>
       </div>
 
       {/* Challenge attribution pill — sits above the activity body so it reads as
@@ -692,18 +694,24 @@ const MemoizedActivityCard = React.memo(({
 
       {/* Activity details */}
       <div className="flex items-center gap-3">
-        <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: categoryBg || 'rgb(39,39,42)' }}>
-          {useEmoji ? <span className="text-2xl">{useEmoji}</span> : <ActivityIcon type={type} strengthType={strengthType} size={24} customIcon={customIcon} color={categoryIconColor} />}
+        {/* The same line icon Home uses, on a tile tinted in the category color */}
+        <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: categoryBg }}>
+          <ActivityIcon type={type} subtype={activity.subtype} strengthType={strengthType} size={24} customIcon={customIcon} customEmoji={customEmoji} sportEmoji={sportEmoji} countToward={activity.countToward} customActivityCategory={activity.customActivityCategory} color={categoryIconColor} />
         </div>
-        <div className="flex-1">
-          <p className="text-white font-medium">
-            {displayType}{displaySubtype ? ` ${type === 'Strength Training' ? '-' : '•'} ${displaySubtype}` : ''}
+        <div className="flex-1 min-w-0">
+          <p className="text-white text-[16px] font-semibold">
+            {displayType}{displaySubtype ? ` · ${displaySubtype}` : ''}
           </p>
-          <div className="flex items-center gap-3 mt-1">
-            {duration && <span className="text-gray-400 text-sm">⏱ {formatDuration(duration)}</span>}
-            {calories && <span className="text-gray-400 text-sm"><CategoryIcon category="calories" size={12} className="inline align-[-2px] mr-1" />{calories} cal</span>}
-            {distance && <span className="text-gray-400 text-sm">📍 {formatDistanceValue(distance, viewerUnit, 1)} {unitLabel(viewerUnit)}</span>}
-          </div>
+          {statParts.length > 0 && (
+            <p className="text-[14px] mt-[3px]" style={{ color: '#8a8a8a' }}>
+              {statParts.map(([n, u], i) => (
+                <React.Fragment key={i}>
+                  {i > 0 && <span style={{ color: '#555', margin: '0 3px' }}>·</span>}
+                  <b className="text-white font-bold">{n}</b>{u ? ` ${u}` : ''}
+                </React.Fragment>
+              ))}
+            </p>
+          )}
         </div>
       </div>
 
@@ -716,7 +724,7 @@ const MemoizedActivityCard = React.memo(({
         })();
         return (
         <>
-          <TouchButton onClick={() => { if (feedPhotoLocked) { onPresentPaywall?.(); return; } setShowFullscreenPhoto(true); }} className="mt-3 rounded-xl overflow-hidden w-full relative group block">
+          <TouchButton onClick={() => { if (feedPhotoLocked) { onPresentPaywall?.(); return; } setShowFullscreenPhoto(true); }} className="mt-3 rounded-[14px] overflow-hidden w-full relative group block">
             <img src={activity.photoURL} alt="Activity" className="w-full h-auto max-h-80 object-cover" style={feedPhotoLocked ? { filter: 'blur(12px)', transform: 'scale(1.05)' } : undefined} />
             {feedPhotoLocked && (
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30">
@@ -764,9 +772,9 @@ const MemoizedActivityCard = React.memo(({
 
       {/* Reactions and Comments section */}
       {id && (
-        <div className="mt-3 pt-3 border-t border-zinc-800">
+        <div className="mt-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5">
               {reactionEmojis.map((emoji) => {
                 const count = reactionCounts[emoji] || 0;
                 const isSelected = userReaction?.reactionType === emoji;
@@ -774,10 +782,11 @@ const MemoizedActivityCard = React.memo(({
                   <TouchButton
                     key={emoji}
                     onClick={() => onReaction(activity, emoji)}
-                    className={`flex items-center gap-1 px-2 py-1 rounded-full transition-all duration-150 ${isSelected ? 'bg-zinc-700 ring-1 ring-white/20' : 'bg-zinc-800 hover:bg-zinc-700'}`}
+                    className="flex items-center gap-[5px] px-2.5 py-1.5 rounded-full transition-all duration-150"
+                    style={isSelected ? { backgroundColor: 'rgba(255,255,255,0.12)', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.18)' } : { backgroundColor: 'rgba(255,255,255,0.06)' }}
                   >
-                    <span className="text-sm">{emoji}</span>
-                    {count > 0 && <span className={`text-xs ${isSelected ? 'text-white' : 'text-gray-400'}`}>{count}</span>}
+                    <span className="text-[14px]">{emoji}</span>
+                    {count > 0 && <span className="text-[14px] font-semibold" style={{ color: '#ddd' }}>{count}</span>}
                   </TouchButton>
                 );
               })}
@@ -786,19 +795,20 @@ const MemoizedActivityCard = React.memo(({
                   onToggleComments();
                   // Don't auto-focus keyboard - let user tap "Add a comment" to focus
                 }}
-                className={`flex items-center gap-1 px-2 py-1 rounded-full transition-all duration-150 ${showComments ? 'bg-zinc-700 ring-1 ring-white/20' : 'bg-zinc-800 hover:bg-zinc-700'}`}
+                className="flex items-center gap-[5px] px-2.5 py-1.5 rounded-full transition-all duration-150"
+                style={showComments ? { backgroundColor: 'rgba(255,255,255,0.12)', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.18)' } : { backgroundColor: 'rgba(255,255,255,0.06)' }}
               >
-                <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="w-4 h-4" style={{ color: '#aaa' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                 </svg>
-                {comments.length > 0 && <span className="text-xs text-gray-400">{comments.length}</span>}
+                {comments.length > 0 && <span className="text-[14px] font-semibold" style={{ color: '#ddd' }}>{comments.length}</span>}
               </TouchButton>
             </div>
 
             {reactorPhotos.length > 0 && (
               <div className="flex items-center -space-x-2">
                 {reactorPhotos.map((reactor, idx) => (
-                  <div key={reactor.reactorUid || idx} className="w-6 h-6 rounded-full border-2 border-zinc-900 overflow-hidden">
+                  <div key={reactor.reactorUid || idx} className="w-[26px] h-[26px] rounded-full overflow-hidden" style={{ boxShadow: '0 0 0 2px #121212' }}>
                     <img src={reactor.reactorPhoto} alt={reactor.reactorName} className="w-full h-full object-cover" />
                   </div>
                 ))}
@@ -2608,8 +2618,8 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     <div className="px-4 pt-2 pb-4" style={{ touchAction: 'pan-y' }}>
       <div className="flex items-center justify-between" style={{ touchAction: 'pan-y' }}>
         <div>
-          <h1 className="text-xl font-bold text-white">Friends</h1>
-          <p className="text-xs text-gray-500">
+          <h1 className="text-white" style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.6px', lineHeight: 1.1 }}>Friends</h1>
+          <p className="text-[14px] mt-[3px]" style={{ color: '#777' }}>
             {friends?.length || 0} friend{friends?.length !== 1 ? 's' : ''}
           </p>
         </div>
@@ -2618,13 +2628,13 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             triggerHaptic(ImpactStyle.Medium);
             onOpenFriends();
           }}
-          className="flex items-center gap-2 px-4 py-2 rounded-full transition-all duration-150 relative"
-          style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+          className="flex items-center gap-2 px-4 py-[9px] rounded-full transition-all duration-150 relative"
+          style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
         >
-          <svg className="w-4 h-4" fill="none" stroke="white" viewBox="0 0 24 24" strokeWidth={2}>
+          <svg className="w-[18px] h-[18px]" fill="none" stroke="white" viewBox="0 0 24 24" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0ZM3 19.235v-.11a6.375 6.375 0 0 1 12.75 0v.109A12.318 12.318 0 0 1 9.374 21c-2.331 0-4.512-.645-6.374-1.766Z" />
           </svg>
-          <span className="text-sm font-medium text-white">Add</span>
+          <span className="text-[16px] font-semibold text-white">Add</span>
           {pendingRequestsCount > 0 && (
             <span
               className="absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold text-white"

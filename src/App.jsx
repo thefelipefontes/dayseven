@@ -56,7 +56,7 @@ import { manualCaloriesForDate, needsHkCaloriesBackfill } from './utils/calories
 import { reverseGeocode, formatLocation } from './utils/geocode';
 import SectionIcon from './components/SectionIcon';
 import CategoryIcon from './components/CategoryIcon';
-import WeekGoalsHero, { CheckBadge } from './components/WeekGoalsHero';
+import WeekGoalsHero, { CheckBadge, Collapse } from './components/WeekGoalsHero';
 import { CATEGORY_COLORS, CARD_SURFACE, CARD_BG_SOLID, GOLD, TEXT_MUTED, TEXT_FAINT } from './utils/designTokens';
 import LongPressMenu from './components/LongPressMenu';
 import { SwipeableProvider, SwipeableActivityItem, SwipeableContext, globalIsPulling } from './components/SwipeableActivityItem';
@@ -11047,7 +11047,7 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
   const recoveryBonusPill = (
     <div className="mt-5 flex justify-center">
       <button
-        onClick={() => { triggerHaptic(ImpactStyle.Light); setShowRecoveryBreakdown(!showRecoveryBreakdown); }}
+        onClick={() => { triggerHaptic(ImpactStyle.Light); toggleBreakdown('recovery'); }}
         className="inline-flex items-center gap-1.5 px-3 py-[5px] rounded-full text-[12px] active:opacity-70 transition-opacity"
         style={{ backgroundColor: 'rgba(0,209,255,0.06)', color: '#aaa' }}
       >
@@ -11189,10 +11189,13 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
     : 0;
 
   // State for expanding breakdowns
-  const [showStrengthBreakdown, setShowStrengthBreakdown] = useState(false);
-  const [showCardioBreakdown, setShowCardioBreakdown] = useState(false);
-  const [showRecoveryBreakdown, setShowRecoveryBreakdown] = useState(false);
-  const [showStepsBreakdown, setShowStepsBreakdown] = useState(false);
+  // One goal breakdown open at a time; each opens right under its own row.
+  const [openBreakdown, setOpenBreakdown] = useState(null); // 'lifts' | 'cardio' | 'steps' | 'recovery' | null
+  const toggleBreakdown = (key) => setOpenBreakdown((cur) => (cur === key ? null : key));
+  const showStrengthBreakdown = openBreakdown === 'lifts';
+  const showCardioBreakdown = openBreakdown === 'cardio';
+  const showRecoveryBreakdown = openBreakdown === 'recovery';
+  const showStepsBreakdown = openBreakdown === 'steps';
   // Steps breakdown scrubbing (same as the Week and Month views): the day under the finger.
   const [stepsScrubIndex, setStepsScrubIndex] = useState(null);
   const stepsStripRef = useRef(null);
@@ -11278,6 +11281,144 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
 
   // Today's Activity: today's steps (a count) and today's workouts. Sits under This Week's
   // Goals — the week is the headline ("win the week, not the day").
+  // Steps breakdown: the Sun–Sat day strip, under the Steps row.
+  const stepsBreakdown = (
+    <div className="pt-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs text-gray-400">Steps this week</div>
+        {(() => {
+          if (stepsScrubIndex === null) {
+            return <div className="text-xs font-bold">{formatK(weekSteps.total)} <span className="font-medium" style={{ color: '#777' }}>/ {formatK(weekSteps.goal)}</span></div>;
+          }
+          const d = new Date();
+          d.setHours(12, 0, 0, 0);
+          d.setDate(d.getDate() - weekSteps.dayIndex + stepsScrubIndex);
+          const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          const isFuture = stepsScrubIndex > weekSteps.dayIndex;
+          const daySteps = homeWeekCtx.stepsByDate[key] || 0;
+          return (
+            <div className="text-xs font-bold">
+              <span className="font-medium" style={{ color: '#999' }}>{d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · </span>
+              {isFuture ? <span style={{ color: '#777' }}>—</span> : <span style={{ color: daySteps >= weekSteps.goal / 7 ? '#BF5AF2' : '#fff' }}>{daySteps.toLocaleString()} steps</span>}
+            </div>
+          );
+        })()}
+      </div>
+      {/* Slide a finger across to read a day's exact steps. data-no-pull-refresh keeps
+          Home's pull-to-refresh from starting on a slightly downward scrub. */}
+      <div
+        ref={stepsStripRef}
+        data-no-pull-refresh
+        className="flex gap-[5px] items-end select-none"
+        style={{ touchAction: 'none' }}
+        onPointerDown={(e) => { e.currentTarget.setPointerCapture?.(e.pointerId); scrubStepsTo(e.clientX); }}
+        onPointerMove={(e) => { if (stepsScrubIndex !== null || e.pointerType === 'mouse') scrubStepsTo(e.clientX); }}
+        onPointerUp={() => setStepsScrubIndex(null)}
+        onPointerCancel={() => setStepsScrubIndex(null)}
+        onPointerLeave={(e) => { if (e.pointerType === 'mouse') setStepsScrubIndex(null); }}
+      >
+        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((label, i) => {
+          const d = new Date();
+          d.setHours(12, 0, 0, 0);
+          d.setDate(d.getDate() - weekSteps.dayIndex + i);
+          const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          const isFuture = i > weekSteps.dayIndex;
+          const isToday = i === weekSteps.dayIndex;
+          const daySteps = isFuture ? 0 : (homeWeekCtx.stepsByDate[key] || 0);
+          const dailyGoal = weekSteps.goal / 7;
+          const isScrubbed = i === stepsScrubIndex;
+          return (
+            <div key={i} className="flex-1 flex flex-col items-center gap-1 transition-opacity duration-100" style={{ opacity: stepsScrubIndex !== null && !isScrubbed ? 0.45 : 1 }}>
+              <div className="text-[9px]" style={{ color: isFuture ? 'transparent' : '#777' }}>{isFuture ? '·' : formatK(daySteps)}</div>
+              <div className="w-full h-[34px] rounded-[5px] flex items-end overflow-hidden" style={{ backgroundColor: isFuture ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.06)' }}>
+                <div className="w-full rounded-[5px]" style={{ height: `${Math.min(100, (daySteps / dailyGoal) * 100)}%`, backgroundColor: isScrubbed && !isFuture ? '#fff' : daySteps >= dailyGoal ? '#BF5AF2' : 'rgba(191,90,242,0.55)' }} />
+              </div>
+              <div className="text-[9px]" style={{ color: isToday ? '#fff' : '#777', fontWeight: isToday ? 700 : 400 }}>{label}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="text-[10px] text-gray-500 mt-2 text-center">A full bar is {formatK(weekSteps.goal / 7)} — short days are fine, it's the week that counts.</div>
+    </div>
+  );
+  // Strength breakdown, under the Strength row.
+  const liftsBreakdown = (
+    <div className="pt-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs text-gray-400">Muscle groups trained</div>
+        {(weekProgress.lifts?.groups?.length || 0) > 0 && (
+          <div className="text-[10px] text-gray-500 flex items-center gap-1 flex-wrap justify-end">
+            {weekProgress.lifts.groups.map((g, i) => (
+              <React.Fragment key={g.label}>
+                {i > 0 && ' · '}
+                <ActivityIcon type={g.sample.type} subtype={g.sample.subtype} strengthType={g.sample.strengthType} customIcon={g.sample.customIcon} customEmoji={g.sample.customEmoji} customActivityCategory={g.sample.customActivityCategory} size={10} /> {g.count} {g.label}
+              </React.Fragment>
+            ))}
+          </div>
+        )}
+      </div>
+      {Object.keys(weekProgress.lifts?.muscleGroups || {}).length > 0 ? (
+        <div className="grid grid-cols-3 gap-2 text-center">
+          {Object.entries(weekProgress.lifts.muscleGroups).sort((a, b) => b[1] - a[1]).map(([area, count]) => (
+            <div key={area} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+              <div className="text-lg font-bold">{count}</div>
+              <div className="text-[10px] text-gray-400">{area}</div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-xs text-gray-500 text-center py-2">No focus areas logged yet</div>
+      )}
+    </div>
+  );
+  // Cardio breakdown, under the Cardio row.
+  const cardioBreakdown = (
+    <div className="pt-4">
+      <div className="text-xs text-gray-400 mb-2">Cardio Breakdown</div>
+      {(weekProgress.cardio?.groups?.length || 0) > 0 ? (
+        <div className="grid grid-cols-3 gap-2 text-center">
+          {weekProgress.cardio.groups.map((g) => (
+            <div key={g.label} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+              <div className="text-lg font-bold">{g.count}</div>
+              <div className="flex items-center justify-center gap-1 text-[10px] text-gray-400 min-w-0"><ActivityIcon type={g.sample.type} subtype={g.sample.subtype} strengthType={g.sample.strengthType} customIcon={g.sample.customIcon} customEmoji={g.sample.customEmoji} customActivityCategory={g.sample.customActivityCategory} size={10} /> <span className="truncate">{g.label}</span></div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-xs text-gray-500 text-center py-2">No cardio logged this week</div>
+      )}
+    </div>
+  );
+  // Recovery breakdown, under the Recovery bonus pill.
+  const recoveryBreakdown = (
+    <div className="pt-4">
+      <div className="text-xs text-gray-400 mb-2">Recovery Breakdown</div>
+      {(weekProgress.recovery?.groups?.length || 0) > 0 ? (
+        <div className="grid grid-cols-3 gap-2 text-center">
+          {weekProgress.recovery.groups.map((g) => (
+            <div key={g.label} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+              <div className="text-lg font-bold">{g.count}</div>
+              <div className="flex items-center justify-center gap-1 text-[10px] text-gray-400 min-w-0"><ActivityIcon type={g.sample.type} subtype={g.sample.subtype} strengthType={g.sample.strengthType} customIcon={g.sample.customIcon} customEmoji={g.sample.customEmoji} customActivityCategory={g.sample.customActivityCategory} size={10} /> <span className="truncate">{g.label}</span></div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-xs text-gray-500 text-center py-2">No recovery logged this week</div>
+      )}
+      {/* Only while Recovery really is a bonus: on the older rule the Winning Streak still
+          needs it, and a goal of 0 can never be met. */}
+      {!recoveryNeeded && (
+        <button
+          onClick={() => { triggerHaptic(ImpactStyle.Light); setShowRemoveRecoveryConfirm(true); }}
+          className="w-full mt-3 py-1 text-[12px] active:opacity-70 transition-opacity"
+          style={{ color: '#777' }}
+        >
+          Remove from goals
+        </button>
+      )}
+    </div>
+  );
+
   const todayActivitySection = (
     <>
     {/* Daily Stats - Single Card */}
@@ -12171,7 +12312,7 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
               <button
                 onClick={() => {
                   setShowRemoveRecoveryConfirm(false);
-                  setShowRecoveryBreakdown(false);
+                  setOpenBreakdown(null);
                   triggerHaptic(ImpactStyle.Medium);
                   onRemoveRecoveryGoal?.();
                 }}
@@ -12217,16 +12358,19 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
             percent={overallPercent}
             daysLeft={daysLeft}
             rows={[
-              { key: 'lifts', label: 'Strength', color: CATEGORY_COLORS.lifts, kind: 'blocks', done: weekProgress.lifts.completed || 0, goal: weekProgress.lifts.goal || 0, streak: userData.streaks?.lifts || 0, paused: RING_STREAK_PAUSED[streakPaused('lifts')] || null, expanded: showStrengthBreakdown, onToggle: () => setShowStrengthBreakdown(!showStrengthBreakdown) },
-              { key: 'cardio', label: 'Cardio', color: CATEGORY_COLORS.cardio, kind: 'blocks', done: weekProgress.cardio?.completed || 0, goal: weekProgress.cardio?.goal || 0, streak: userData.streaks?.cardio || 0, paused: RING_STREAK_PAUSED[streakPaused('cardio')] || null, expanded: showCardioBreakdown, onToggle: () => setShowCardioBreakdown(!showCardioBreakdown) },
+              { key: 'lifts', label: 'Strength', color: CATEGORY_COLORS.lifts, kind: 'blocks', done: weekProgress.lifts.completed || 0, goal: weekProgress.lifts.goal || 0, streak: userData.streaks?.lifts || 0, paused: RING_STREAK_PAUSED[streakPaused('lifts')] || null, expanded: showStrengthBreakdown, onToggle: () => toggleBreakdown('lifts'), detail: liftsBreakdown },
+              { key: 'cardio', label: 'Cardio', color: CATEGORY_COLORS.cardio, kind: 'blocks', done: weekProgress.cardio?.completed || 0, goal: weekProgress.cardio?.goal || 0, streak: userData.streaks?.cardio || 0, paused: RING_STREAK_PAUSED[streakPaused('cardio')] || null, expanded: showCardioBreakdown, onToggle: () => toggleBreakdown('cardio'), detail: cardioBreakdown },
               // Steps — the week's steps against stepsPerDay × 7. Counts toward the Winning
               // Streak (utils/weekGoals); Recovery is the bonus row below.
-              { key: 'steps', label: 'Steps', color: CATEGORY_COLORS.steps, kind: 'steps', total: weekSteps.total, goal: weekSteps.goal, dayIndex: weekSteps.dayIndex, formatK, streak: userData.streaks?.steps || 0, paused: RING_STREAK_PAUSED[streakPaused('steps')] || null, expanded: showStepsBreakdown, onToggle: () => setShowStepsBreakdown(!showStepsBreakdown) },
+              { key: 'steps', label: 'Steps', color: CATEGORY_COLORS.steps, kind: 'steps', total: weekSteps.total, goal: weekSteps.goal, dayIndex: weekSteps.dayIndex, formatK, streak: userData.streaks?.steps || 0, paused: RING_STREAK_PAUSED[streakPaused('steps')] || null, expanded: showStepsBreakdown, onToggle: () => toggleBreakdown('steps'), detail: stepsBreakdown },
             ]}
           />
 
           {/* Recovery bonus pill (Recovery off, goal 0: none) */}
-          {(userData?.goals?.recoveryPerWeek ?? 2) > 0 && recoveryBonusPill}
+          {(userData?.goals?.recoveryPerWeek ?? 2) > 0 && (<>
+            {recoveryBonusPill}
+            <Collapse open={showRecoveryBreakdown}>{recoveryBreakdown}</Collapse>
+          </>)}
 
           {/* Status line — one slot under the goal bars for the week's single most important
               message. It replaced the stack of banners (vacation, injury, week won, streak at
@@ -12315,148 +12459,6 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
 
             return row(<CategoryIcon category="steps" size={14} />, stepsPaceSentence);
           })()}
-
-          {/* Steps breakdown — Sun–Sat day strip (tap the Steps ring) */}
-          {showStepsBreakdown && (
-            <div className="mt-4 pt-4 border-t border-white/10">
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-xs text-gray-400">Steps this week</div>
-                {(() => {
-                  if (stepsScrubIndex === null) {
-                    return <div className="text-xs font-bold">{formatK(weekSteps.total)} <span className="font-medium" style={{ color: '#777' }}>/ {formatK(weekSteps.goal)}</span></div>;
-                  }
-                  const d = new Date();
-                  d.setHours(12, 0, 0, 0);
-                  d.setDate(d.getDate() - weekSteps.dayIndex + stepsScrubIndex);
-                  const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-                  const isFuture = stepsScrubIndex > weekSteps.dayIndex;
-                  const daySteps = homeWeekCtx.stepsByDate[key] || 0;
-                  return (
-                    <div className="text-xs font-bold">
-                      <span className="font-medium" style={{ color: '#999' }}>{d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · </span>
-                      {isFuture ? <span style={{ color: '#777' }}>—</span> : <span style={{ color: daySteps >= weekSteps.goal / 7 ? '#BF5AF2' : '#fff' }}>{daySteps.toLocaleString()} steps</span>}
-                    </div>
-                  );
-                })()}
-              </div>
-              {/* Slide a finger across to read a day's exact steps. data-no-pull-refresh keeps
-                  Home's pull-to-refresh from starting on a slightly downward scrub. */}
-              <div
-                ref={stepsStripRef}
-                data-no-pull-refresh
-                className="flex gap-[5px] items-end select-none"
-                style={{ touchAction: 'none' }}
-                onPointerDown={(e) => { e.currentTarget.setPointerCapture?.(e.pointerId); scrubStepsTo(e.clientX); }}
-                onPointerMove={(e) => { if (stepsScrubIndex !== null || e.pointerType === 'mouse') scrubStepsTo(e.clientX); }}
-                onPointerUp={() => setStepsScrubIndex(null)}
-                onPointerCancel={() => setStepsScrubIndex(null)}
-                onPointerLeave={(e) => { if (e.pointerType === 'mouse') setStepsScrubIndex(null); }}
-              >
-                {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((label, i) => {
-                  const d = new Date();
-                  d.setHours(12, 0, 0, 0);
-                  d.setDate(d.getDate() - weekSteps.dayIndex + i);
-                  const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-                  const isFuture = i > weekSteps.dayIndex;
-                  const isToday = i === weekSteps.dayIndex;
-                  const daySteps = isFuture ? 0 : (homeWeekCtx.stepsByDate[key] || 0);
-                  const dailyGoal = weekSteps.goal / 7;
-                  const isScrubbed = i === stepsScrubIndex;
-                  return (
-                    <div key={i} className="flex-1 flex flex-col items-center gap-1 transition-opacity duration-100" style={{ opacity: stepsScrubIndex !== null && !isScrubbed ? 0.45 : 1 }}>
-                      <div className="text-[9px]" style={{ color: isFuture ? 'transparent' : '#777' }}>{isFuture ? '·' : formatK(daySteps)}</div>
-                      <div className="w-full h-[34px] rounded-[5px] flex items-end overflow-hidden" style={{ backgroundColor: isFuture ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.06)' }}>
-                        <div className="w-full rounded-[5px]" style={{ height: `${Math.min(100, (daySteps / dailyGoal) * 100)}%`, backgroundColor: isScrubbed && !isFuture ? '#fff' : daySteps >= dailyGoal ? '#BF5AF2' : 'rgba(191,90,242,0.55)' }} />
-                      </div>
-                      <div className="text-[9px]" style={{ color: isToday ? '#fff' : '#777', fontWeight: isToday ? 700 : 400 }}>{label}</div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="text-[10px] text-gray-500 mt-2 text-center">A full bar is {formatK(weekSteps.goal / 7)} — short days are fine, it's the week that counts.</div>
-            </div>
-          )}
-
-
-          {/* Strength Breakdown - Expandable */}
-          {showStrengthBreakdown && (
-            <div className="mt-4 pt-4 border-t border-white/10">
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-xs text-gray-400">Muscle groups trained</div>
-                {(weekProgress.lifts?.groups?.length || 0) > 0 && (
-                  <div className="text-[10px] text-gray-500 flex items-center gap-1 flex-wrap justify-end">
-                    {weekProgress.lifts.groups.map((g, i) => (
-                      <React.Fragment key={g.label}>
-                        {i > 0 && ' · '}
-                        <ActivityIcon type={g.sample.type} subtype={g.sample.subtype} strengthType={g.sample.strengthType} customIcon={g.sample.customIcon} customEmoji={g.sample.customEmoji} customActivityCategory={g.sample.customActivityCategory} size={10} /> {g.count} {g.label}
-                      </React.Fragment>
-                    ))}
-                  </div>
-                )}
-              </div>
-              {Object.keys(weekProgress.lifts?.muscleGroups || {}).length > 0 ? (
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  {Object.entries(weekProgress.lifts.muscleGroups).sort((a, b) => b[1] - a[1]).map(([area, count]) => (
-                    <div key={area} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                      <div className="text-lg font-bold">{count}</div>
-                      <div className="text-[10px] text-gray-400">{area}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-xs text-gray-500 text-center py-2">No focus areas logged yet</div>
-              )}
-            </div>
-          )}
-          
-          {/* Cardio Breakdown - Expandable */}
-          {showCardioBreakdown && (
-            <div className="mt-4 pt-4 border-t border-white/10">
-              <div className="text-xs text-gray-400 mb-2">Cardio Breakdown</div>
-              {(weekProgress.cardio?.groups?.length || 0) > 0 ? (
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  {weekProgress.cardio.groups.map((g) => (
-                    <div key={g.label} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                      <div className="text-lg font-bold">{g.count}</div>
-                      <div className="flex items-center justify-center gap-1 text-[10px] text-gray-400 min-w-0"><ActivityIcon type={g.sample.type} subtype={g.sample.subtype} strengthType={g.sample.strengthType} customIcon={g.sample.customIcon} customEmoji={g.sample.customEmoji} customActivityCategory={g.sample.customActivityCategory} size={10} /> <span className="truncate">{g.label}</span></div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-xs text-gray-500 text-center py-2">No cardio logged this week</div>
-              )}
-            </div>
-          )}
-          
-          {/* Recovery Breakdown - Expandable */}
-          {showRecoveryBreakdown && (userData?.goals?.recoveryPerWeek ?? 2) > 0 && (
-            <div className="mt-4 pt-4 border-t border-white/10">
-              <div className="text-xs text-gray-400 mb-2">Recovery Breakdown</div>
-              {(weekProgress.recovery?.groups?.length || 0) > 0 ? (
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  {weekProgress.recovery.groups.map((g) => (
-                    <div key={g.label} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                      <div className="text-lg font-bold">{g.count}</div>
-                      <div className="flex items-center justify-center gap-1 text-[10px] text-gray-400 min-w-0"><ActivityIcon type={g.sample.type} subtype={g.sample.subtype} strengthType={g.sample.strengthType} customIcon={g.sample.customIcon} customEmoji={g.sample.customEmoji} customActivityCategory={g.sample.customActivityCategory} size={10} /> <span className="truncate">{g.label}</span></div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-xs text-gray-500 text-center py-2">No recovery logged this week</div>
-              )}
-              {/* Only while Recovery really is a bonus: on the older rule the Winning Streak still
-                  needs it, and a goal of 0 can never be met. */}
-              {!recoveryNeeded && (
-                <button
-                  onClick={() => { triggerHaptic(ImpactStyle.Light); setShowRemoveRecoveryConfirm(true); }}
-                  className="w-full mt-3 py-1 text-[12px] active:opacity-70 transition-opacity"
-                  style={{ color: '#777' }}
-                >
-                  Remove from goals
-                </button>
-              )}
-            </div>
-          )}
 
           {/* (The gold Week Progress bar that sat here is now the big number at the top.) */}
         </div>

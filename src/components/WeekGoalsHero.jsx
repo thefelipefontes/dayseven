@@ -47,6 +47,27 @@ export const CheckBadge = ({ color, size = 20, ...rest }) => (
   </span>
 );
 
+// Slides its content open and shut (a 0fr → 1fr grid row, so no measuring). The content stays
+// mounted while shut so closing can animate too; `inert` keeps it out of reach meanwhile.
+// iOS before 17.4 can't animate grid rows and just snaps open, which is fine.
+export const Collapse = ({ open, children }) => {
+  const [reduced] = useState(prefersReducedMotion);
+  return (
+    <div
+      aria-hidden={!open}
+      inert={open ? undefined : ''}
+      style={{
+        display: 'grid',
+        gridTemplateRows: open ? '1fr' : '0fr',
+        transition: reduced ? 'none' : 'grid-template-rows 300ms cubic-bezier(.2,.8,.2,1), opacity 300ms ease',
+        opacity: open ? 1 : 0,
+      }}
+    >
+      <div style={{ overflow: 'hidden', minHeight: 0 }}>{children}</div>
+    </div>
+  );
+};
+
 // Which blocks a row lights: one per session up to the goal (extra sessions don't add blocks).
 const litCount = (r) => (r.kind === 'blocks' ? Math.min(r.done, r.goal) : 0);
 const isMet = (r) => (r.kind === 'steps' ? r.goal > 0 && r.total >= r.goal : r.goal > 0 && r.done >= r.goal);
@@ -72,7 +93,8 @@ function buildPlan(rows) {
  * @param {number} percent   the week's progress, 0–100 (HomeTab's overallPercent)
  * @param {number} daysLeft  including today
  * @param {Array}  rows      [{ key, label, color, kind: 'blocks'|'steps', done, goal, total, dayIndex,
- *                             streak, paused: {emoji,color}|null, expanded, onToggle, formatK }]
+ *                             streak, paused: {emoji,color}|null, expanded, onToggle, formatK,
+ *                             detail: the breakdown that opens under the row }]
  */
 export default function WeekGoalsHero({ percent, daysLeft, rows }) {
   const rootRef = useRef(null);
@@ -211,14 +233,14 @@ export default function WeekGoalsHero({ percent, daysLeft, rows }) {
         </div>
       </div>
 
-      {/* One row per goal, 22px apart. Tapping a row opens its breakdown below the card body. */}
+      {/* One row per goal, 22px apart. Tapping a row opens its breakdown right under it. */}
       <div className="flex flex-col" style={{ gap: 22 }}>
         {rows.map((r) => {
           const met = isMet(r);
           const rgbColor = r.color;
           return (
+            <div key={r.key}>
             <button
-              key={r.key}
               className="w-full block text-left transition-transform duration-150"
               onClick={r.onToggle}
               onTouchStart={(e) => { pressIn(e); triggerHaptic(ImpactStyle.Light); }}
@@ -289,6 +311,8 @@ export default function WeekGoalsHero({ percent, daysLeft, rows }) {
                 </div>
               )}
             </button>
+            {r.detail && <Collapse open={!!r.expanded}>{r.detail}</Collapse>}
+            </div>
           );
         })}
       </div>

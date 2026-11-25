@@ -6,6 +6,8 @@ import { triggerHaptic, ImpactStyle } from './utils/haptics';
 import { toLocalDateStr } from './utils/dateHelpers';
 import { getActivityCategory } from './utils/activityCategory';
 import { hasRecentSteps, stepsDailyShare } from './utils/weekGoals';
+import { CheckBadge } from './components/WeekGoalsHero';
+import { BAR, CARD_SURFACE, CARD_BG_SOLID, TEXT_MUTED, TEXT_FAINT, hexToRgb, trackColor, doneGlow } from './utils/designTokens';
 
 // ---------------------------------------------------------------------------
 // Weekly Planner
@@ -566,9 +568,32 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
 
   if (totalGoal === 0) return null; // no standards set yet
 
+  // Plan tab (Nov 2026 redesign, "filled vs outline"): a done session is a soft fill of its
+  // colour with a check; one still to do is a dashed outline in its colour, a slot to fill.
+  // Onboarding keeps the original pills until its own redesign.
+  const pagePillStyle = (cat, done, sel = false) => {
+    const col = CATS[cat].color, rgb = hexToRgb(col);
+    return done
+      ? { color: col, backgroundColor: `rgba(${rgb},0.2)`, border: `1px solid ${sel ? col : 'transparent'}` }
+      : { color: col, backgroundColor: 'transparent', border: sel ? `1px solid ${col}` : `1px dashed rgba(${rgb},0.55)` };
+  };
+  const checkMark = (
+    <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12l5 5l10 -10" /></svg>
+  );
   const Pill = ({ pill, from, index, done = false }) => {
     const c = CATS[pill.cat];
     const sel = from === 'tray' && selected && selected.cat === pill.cat;
+    if (asPage) return (
+      <button
+        onPointerDown={(e) => onPillPointerDown(e, pill, from, index)}
+        onClick={(e) => { e.stopPropagation(); onPillClick(pill, from, index); }}
+        className="inline-flex items-center gap-1 rounded-full px-[11px] py-1 text-[12.5px] font-semibold transition-transform active:scale-95 select-none"
+        style={{ touchAction: 'none', ...pagePillStyle(pill.cat, done, sel), boxShadow: sel ? `0 0 0 2px ${c.bg}` : 'none' }}
+      >
+        {done ? checkMark : <CategoryIcon category={c.cat} size={12} color="currentColor" />}
+        {chipLabel(pill)}
+      </button>
+    );
     return (
       <button
         onPointerDown={(e) => onPillPointerDown(e, pill, from, index)}
@@ -707,6 +732,11 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
   const pickerType = picker ? (plan[picker.day]?.[picker.index]?.type ?? null) : null;
   const placedTotal = placedByCat.strength + placedByCat.cardio + placedByCat.recovery;
 
+  // Header buttons: the mock's large Goals pill when it's alone; both compact while Suggest
+  // shows too, so "This Week's Plan" never wraps on a 375pt phone.
+  const showHeaderSuggest = showSuggest && (undoPlan || trayByCat.length > 0);
+  const headerBtnSize = showHeaderSuggest ? 'px-2.5 py-1.5 text-[12px]' : 'px-3.5 py-[7px] text-[15px]';
+
   return (
     <div className="px-4 mb-4" ref={cardRef}>
       {/* Header — tap to expand/collapse the planner (a static page title on the Plan tab) */}
@@ -725,11 +755,11 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
             {/* Suggest, as a small header button: only while sessions are still unplaced (an
                 empty week is when it helps), then Undo right after a suggestion. It used to be
                 a big card that also sat under a fully planned week. */}
-            {showSuggest && (undoPlan || trayByCat.length > 0) && (
+            {showHeaderSuggest && (
               <button
                 onClick={undoPlan ? undoSuggestion : applySuggestion}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[12px] font-semibold active:scale-95 transition-transform"
-                style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: '#ccc' }}
+                className={`flex items-center gap-1 rounded-full font-semibold text-white active:scale-95 transition-transform ${headerBtnSize}`}
+                style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
               >
                 {undoPlan ? '↶ Undo' : '✨ Suggest'}
               </button>
@@ -737,10 +767,10 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
             {onEditGoals && (
               <button
                 onClick={() => { triggerHaptic(ImpactStyle.Light); onEditGoals(); }}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[12px] font-semibold active:scale-95 transition-transform"
-                style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: '#ccc' }}
+                className={`flex items-center gap-1.5 rounded-full font-semibold text-white active:scale-95 transition-transform ${headerBtnSize}`}
+                style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
               >
-                <SectionIcon type="target" size={13} color="#ccc" /> Goals
+                <SectionIcon type="target" size={showHeaderSuggest ? 13 : 16} color="#fff" /> Goals
               </button>
             )}
           </div>
@@ -763,58 +793,73 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
       </button>
       )}
 
-      {/* Plan tab: how the plan is going — done vs placed per category, days left, what's next */}
-      {asPage && (placedTotal > 0 || showSteps) && (
-        <div className="mb-3 p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+      {/* Plan tab: how the plan is going. Same look as Home's goals card (Nov 2026 redesign):
+          a big "done/placed" number, one block per planned session in its colour, the week's
+          steps as one bar with the pace notch, then what's up next. */}
+      {asPage && (placedTotal > 0 || showSteps) && (() => {
+        const bigStyle = { fontWeight: 800, lineHeight: 1, display: 'flex', alignItems: 'baseline', fontVariantNumeric: 'tabular-nums' };
+        const smallStyle = { fontWeight: 700, color: TEXT_FAINT, letterSpacing: 0, marginLeft: 2 };
+        const capsStyle = { fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: TEXT_MUTED };
+        const stepsHit = weekStepsTotal >= weekStepsGoal;
+        const stepsColor = '#BF5AF2';
+        return (
+        <div className="mb-3 p-5" style={CARD_SURFACE}>
           {placedTotal > 0 && (<>
-          <div className="flex items-baseline justify-between">
-            <span className="text-[14px] font-semibold text-white">{doneTotal} of {placedTotal} planned sessions done</span>
-            <span className="text-[12px]" style={{ color: '#777' }}>{daysLeft === 1 ? 'Last day' : `${daysLeft} days left`}</span>
+          <div className="flex items-end justify-between" style={{ paddingBottom: 16, marginBottom: 16, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+            <div>
+              <div style={{ ...bigStyle, fontSize: 44, letterSpacing: '-2px' }}>{doneTotal}<small style={{ ...smallStyle, fontSize: 22 }}>/{placedTotal}</small></div>
+              <div style={{ ...capsStyle, marginTop: 9 }}>Planned sessions done</div>
+            </div>
+            <div className="text-right">
+              <div style={{ ...bigStyle, fontSize: 28, letterSpacing: '-0.8px', justifyContent: 'flex-end' }}>{daysLeft}</div>
+              <div style={{ ...capsStyle, marginTop: 7 }}>{daysLeft === 1 ? 'Day left' : 'Days left'}</div>
+            </div>
           </div>
-          <div className="flex gap-1 mt-2.5">
-            {CAT_ORDER.filter(cat => placedByCat[cat] > 0).map(cat => (
-              <div key={cat} className="flex gap-0.5" style={{ flex: placedByCat[cat] }}>
-                {Array.from({ length: placedByCat[cat] }).map((_, j) => (
-                  <div key={j} className="flex-1 h-1.5 rounded-full" style={{ backgroundColor: j < doneByCat[cat] ? CATS[cat].color : `${CATS[cat].color}33` }} />
-                ))}
-              </div>
-            ))}
+          {/* One block per planned session, grouped Strength → Cardio → Recovery, done first */}
+          <div className="flex" style={{ gap: BAR.gap }}>
+            {CAT_ORDER.flatMap(cat => Array.from({ length: placedByCat[cat] }, (_, j) => (
+              <i key={`${cat}-${j}`} className="flex-1 block" style={{ height: BAR.height, borderRadius: BAR.radius, backgroundColor: j < doneByCat[cat] ? CATS[cat].color : trackColor(CATS[cat].color) }} />
+            )))}
           </div>
           </>)}
-          {showSteps && (
-            <div className={placedTotal > 0 ? 'mt-3' : ''}>
-              <div className="flex items-baseline justify-between text-[12px]">
-                <span className="flex items-center gap-1.5" style={{ color: '#BF5AF2' }}>
-                  <CategoryIcon category="steps" size={12} />
-                  <span className="font-semibold">{fmtK(weekStepsTotal)}</span>
-                  <span style={{ color: '#777' }}>of {fmtK(weekStepsGoal)} steps</span>
-                </span>
-                <span style={{ color: weekStepsTotal >= weekStepsGoal ? '#BF5AF2' : '#777' }}>
-                  {weekStepsTotal >= weekStepsGoal ? '✓ Goal hit' : `${fmtK(todayStepTarget)} a day`}
-                </span>
+          {showSteps && (<>
+            <div className="flex items-end justify-between" style={{ margin: placedTotal > 0 ? '18px 0 10px' : '0 0 10px' }}>
+              <div className="flex items-center gap-2 text-[15px] font-semibold">
+                <CategoryIcon category="steps" size={18} />
+                <span>Steps</span>
+                {stepsHit && <CheckBadge color={stepsColor} />}
               </div>
-              <div className="h-1.5 rounded-full mt-1.5 overflow-hidden" style={{ backgroundColor: 'rgba(191,90,242,0.2)' }}>
-                <div className="h-full rounded-full" style={{ width: `${Math.min(100, (weekStepsTotal / weekStepsGoal) * 100)}%`, backgroundColor: '#BF5AF2' }} />
-              </div>
+              <div style={{ ...bigStyle, fontSize: 22, letterSpacing: '-0.5px' }}>{fmtK(weekStepsTotal)}<small style={{ ...smallStyle, fontSize: 14 }}>/{fmtK(weekStepsGoal)}</small></div>
             </div>
-          )}
-          {placedTotal > 0 && <div className="mt-3 pt-3 flex items-center flex-wrap gap-1.5 text-[12px]" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+            <div className="relative" style={{ height: BAR.height, borderRadius: BAR.radius, backgroundColor: trackColor(stepsColor) }}>
+              <i className="absolute left-0 top-0 bottom-0 block" style={{ width: `${Math.min(100, (weekStepsTotal / weekStepsGoal) * 100)}%`, borderRadius: BAR.radius, backgroundColor: stepsColor, boxShadow: stepsHit ? doneGlow(stepsColor) : 'none' }} />
+              {/* Pace notch: where the daily goal × finished days would put the bar (same rule as Home) */}
+              {todayIdx > 0 && !stepsHit && (
+                <b className="absolute block" style={{ top: -5, bottom: -5, width: 2, marginLeft: -1, left: `${(todayIdx / 7) * 100}%`, background: '#fff', borderRadius: 1, boxShadow: `0 0 0 2px ${CARD_BG_SOLID}` }} />
+              )}
+            </div>
+            <div className="flex justify-end text-[12px]" style={{ color: TEXT_MUTED, marginTop: 9 }}>
+              {stepsHit ? 'Goal hit' : `${fmtK(todayStepTarget)} a day`}
+            </div>
+          </>)}
+          {placedTotal > 0 && <div className="flex items-center flex-wrap gap-1.5" style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
             {upNext ? (
               <>
-                <span className="mr-0.5" style={{ color: '#aaa' }}>Up next</span>
+                <span style={{ ...capsStyle, marginRight: 4 }}>Up next</span>
                 {upNext.pills.map((p, i) => (
-                  <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: CATS[p.cat].bg, color: CATS[p.cat].color }}>
-                    <CategoryIcon category={CATS[p.cat].cat} size={11} color="currentColor" />{chipLabel(p)}
+                  <span key={i} className="inline-flex items-center gap-1 rounded-full px-[11px] py-1 text-[12.5px] font-semibold" style={pagePillStyle(p.cat, false)}>
+                    <CategoryIcon category={CATS[p.cat].cat} size={12} color="currentColor" />{chipLabel(p)}
                   </span>
                 ))}
-                <span style={{ color: '#777' }}>· {upNext.when}</span>
+                <span className="text-[13px]" style={{ color: TEXT_MUTED }}>· {upNext.when}</span>
               </>
             ) : (
-              <span style={{ color: '#30D158' }}>✓ Everything planned is done</span>
+              <span className="flex items-center gap-2 text-[13px]" style={{ color: '#ccc' }}><CheckBadge color="#ffffff" size={18} />Everything planned is done</span>
             )}
           </div>}
         </div>
-      )}
+        );
+      })()}
 
       {showSuggest && !asPage && suggestAtTop && suggestBlock}
 
@@ -847,17 +892,17 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
       {/* Plan tab: splits the summary above from the day-by-day planner, and says which week this is */}
       {asPage && (
         <div className="mt-6 mb-2.5 flex items-center justify-between px-1">
-          <span className="text-[17px] font-semibold text-white">Your week</span>
-          <span className="text-[12px]" style={{ color: '#777' }}>{rangeLabel}</span>
+          <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Your week</span>
+          <span className="text-[13px]" style={{ color: '#777' }}>{rangeLabel}</span>
         </div>
       )}
       {asPage && showSteps && daysLeft > 1 && weekStepsTotal < weekStepsGoal && (
         <div className="-mt-1 mb-2 px-1 flex justify-end text-[10.5px]" style={{ color: '#777' }}>
-          <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-2.5 rounded-sm" style={{ border: '1px dashed rgba(191,90,242,0.5)' }} /> steps needed each day to hit {fmtK(weekStepsGoal)}</span>
+          <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-2.5 rounded-sm" style={{ border: '1px dashed rgba(255,255,255,0.3)' }} /> steps needed each day to hit {fmtK(weekStepsGoal)}</span>
         </div>
       )}
       {expanded && (
-      <div className="p-4 rounded-2xl relative" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+      <div className={`${asPage ? 'p-3' : 'p-4 rounded-2xl'} relative`} style={asPage ? CARD_SURFACE : { backgroundColor: 'rgba(255,255,255,0.03)' }}>
         {/* Plan tab, everything placed: the "All placed" line would just repeat the header
             count, so the tray is hidden. It's still where you drag a session to take it off
             the plan, so it comes back as an overlay while a drag is on (an overlay, not an
@@ -922,13 +967,14 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
                   minHeight: 46,
                   backgroundColor: hoverKey === d.key
                     ? 'rgba(255,255,255,0.07)'
-                    : isToday ? 'rgba(255,255,255,0.04)' : 'transparent',
-                  border: `1px solid ${hoverKey === d.key ? 'rgba(255,255,255,0.2)' : isToday ? 'rgba(255,255,255,0.08)' : 'transparent'}`,
+                    : isToday ? (asPage ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.04)') : 'transparent',
+                  border: `1px solid ${hoverKey === d.key ? 'rgba(255,255,255,0.2)' : isToday ? (asPage ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.08)') : 'transparent'}`,
                 }}
               >
                 <div className="w-10 shrink-0 pt-1">
                   <div className="text-[13px] font-semibold" style={{ color: isToday ? '#fff' : '#aaa' }}>{d.label}</div>
-                  {isToday && <div className="text-[9px] font-bold" style={{ color: '#0A84FF' }}>TODAY</div>}
+                  {/* Plan tab: neutral white, not blue (colour is kept for the goal categories) */}
+                  {isToday && <div className="text-[9px] font-bold" style={asPage ? { color: '#fff', letterSpacing: '0.06em' } : { color: '#0A84FF' }}>TODAY</div>}
                 </div>
                 <div className="flex-1 flex flex-wrap gap-1.5 items-center min-h-[28px]">
                   {dayPills.length === 0 ? (
@@ -943,19 +989,24 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
                 {showSteps && (() => {
                   const i = DAYS.indexOf(d);
                   const goalHit = weekStepsTotal >= weekStepsGoal;
-                  const icon = <CategoryIcon category="steps" size={10} color="currentColor" />;
-                  if (i < todayIdx) return (
-                    <span className="shrink-0 pt-1.5 flex items-center gap-1 text-[11px]" style={{ color: daySteps[i] >= stepsPerDay ? '#BF5AF2' : '#777' }}>{icon}{fmtK(daySteps[i])}</span>
-                  );
+                  // Plan tab: the icon carries the purple; the number is white when the day hit
+                  // its steps (and today), grey otherwise. Onboarding never shows steps.
+                  const icon = <CategoryIcon category="steps" size={10} />;
+                  if (i < todayIdx) {
+                    const hit = daySteps[i] >= stepsPerDay;
+                    return (
+                      <span className="shrink-0 pt-1.5 flex items-center gap-1 text-[11px]" style={{ color: hit ? '#fff' : TEXT_MUTED, fontWeight: hit ? 600 : 400 }}>{icon}{fmtK(daySteps[i])}</span>
+                    );
+                  }
                   if (i === todayIdx) return (
-                    <span className="shrink-0 pt-1.5 flex items-center gap-1 text-[11px]" style={{ color: goalHit || stepsToday >= todayStepTarget ? '#BF5AF2' : '#aaa' }}>
-                      {icon}{fmtK(stepsToday)}{!goalHit && <span style={{ color: '#777' }}>/{fmtK(todayStepTarget)}</span>}
+                    <span className="shrink-0 pt-1.5 flex items-center gap-1 text-[11px] font-semibold text-white">
+                      {icon}{fmtK(stepsToday)}{!goalHit && <span className="font-normal" style={{ color: '#777' }}>/{fmtK(todayStepTarget)}</span>}
                     </span>
                   );
                   if (goalHit) return null;
                   // Days ahead: the target, in a dashed "slot to fill" (key under "Your week")
                   return (
-                    <span className="shrink-0 mt-1 flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-md" style={{ color: '#9d7bb0', border: '1px dashed rgba(191,90,242,0.35)' }}>{icon}{fmtK(laterStepTarget)}</span>
+                    <span className="shrink-0 mt-1 flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-md" style={{ color: TEXT_MUTED, border: '1px dashed rgba(255,255,255,0.18)' }}>{icon}{fmtK(laterStepTarget)}</span>
                   );
                 })()}
               </div>
@@ -999,17 +1050,17 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
                 if (!repeatWeekly) promoteToTemplate.current = true;
                 setRepeatWeekly(v => !v);
               }}
-              className="flex items-center gap-1.5 text-[12px] font-semibold active:opacity-60 transition-opacity"
-              style={{ color: repeatWeekly ? '#30D158' : '#aaa' }}
+              className="flex items-center gap-1.5 text-[13px] font-semibold active:opacity-60 transition-opacity"
+              style={{ color: repeatWeekly ? '#aaa' : '#666' }}
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M17 2l4 4-4 4" /><path d="M3 11v-1a4 4 0 0 1 4-4h14" /><path d="M7 22l-4-4 4-4" /><path d="M21 13v1a4 4 0 0 1-4 4H3" />
               </svg>
               {repeatWeekly ? 'Repeats weekly' : 'Repeat weekly'}
             </button>
             {divergesFromTemplate && (
               <button onClick={promoteThisWeek} className="text-[12px] active:opacity-60 transition-opacity" style={{ color: '#aaa' }}>
-                Differs this week · <span className="font-semibold" style={{ color: '#30D158' }}>Update</span>
+                Differs this week · <span className="font-semibold text-white">Update</span>
               </button>
             )}
           </div>

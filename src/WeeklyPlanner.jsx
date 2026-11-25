@@ -7,7 +7,7 @@ import { toLocalDateStr } from './utils/dateHelpers';
 import { getActivityCategory } from './utils/activityCategory';
 import { hasRecentSteps, stepsDailyShare } from './utils/weekGoals';
 import { CheckBadge } from './components/WeekGoalsHero';
-import { BAR, CARD_SURFACE, CARD_BG_SOLID, TEXT_MUTED, TEXT_FAINT, hexToRgb, trackColor, doneGlow } from './utils/designTokens';
+import { CARD_SURFACE, CARD_BG_SOLID, TEXT_MUTED, hexToRgb, trackColor, doneGlow } from './utils/designTokens';
 
 // ---------------------------------------------------------------------------
 // Weekly Planner
@@ -793,56 +793,46 @@ export default function WeeklyPlanner({ goals, activities = [], weeklyPlan, onSa
       </button>
       )}
 
-      {/* Plan tab: how the plan is going. Same look as Home's goals card (Nov 2026 redesign):
-          a big "done/placed" number, one block per planned session in its colour, the week's
-          steps as one bar with the pace notch, then what's up next. */}
+      {/* Plan tab: a minimal check-in so the week list stays the main thing (Felipe's option A,
+          mocks/mock-system-light.html?board=plantop): "N of N planned sessions done", one block per
+          planned session in its colour, the week's steps with the pace notch, then what's up next.
+          No big number on Plan. */}
       {asPage && (placedTotal > 0 || showSteps) && (() => {
-        const bigStyle = { fontWeight: 800, lineHeight: 1, display: 'flex', alignItems: 'baseline', fontVariantNumeric: 'tabular-nums' };
-        const smallStyle = { fontWeight: 700, color: TEXT_FAINT, letterSpacing: 0, marginLeft: 2 };
-        const capsStyle = { fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: TEXT_MUTED };
         const stepsHit = weekStepsTotal >= weekStepsGoal;
         const stepsColor = '#BF5AF2';
+        const capsStyle = { fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: TEXT_MUTED };
         return (
-        <div className="mb-3 p-5" style={CARD_SURFACE}>
+        <div className="mb-3" style={{ ...CARD_SURFACE, padding: '15px 16px 13px' }}>
           {placedTotal > 0 && (<>
-          <div className="flex items-end justify-between" style={{ paddingBottom: 16, marginBottom: 16, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-            <div>
-              <div style={{ ...bigStyle, fontSize: 44, letterSpacing: '-2px' }}>{doneTotal}<small style={{ ...smallStyle, fontSize: 22 }}>/{placedTotal}</small></div>
-              <div style={{ ...capsStyle, marginTop: 9 }}>Planned sessions done</div>
-            </div>
-            <div className="text-right">
-              <div style={{ ...bigStyle, fontSize: 28, letterSpacing: '-0.8px', justifyContent: 'flex-end' }}>{daysLeft}</div>
-              <div style={{ ...capsStyle, marginTop: 7 }}>{daysLeft === 1 ? 'Day left' : 'Days left'}</div>
-            </div>
+          <div className="flex items-baseline justify-between" style={{ marginBottom: 10 }}>
+            <span style={{ fontSize: 15, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}><b style={{ fontWeight: 800 }}>{doneTotal}</b> of {placedTotal} planned {placedTotal === 1 ? 'session' : 'sessions'} done</span>
+            <span style={{ fontSize: 12.5, color: TEXT_MUTED }}>{daysLeft} {daysLeft === 1 ? 'day' : 'days'} left</span>
           </div>
           {/* One block per planned session, grouped Strength → Cardio → Recovery, done first */}
-          <div className="flex" style={{ gap: BAR.gap }}>
+          <div className="flex" style={{ gap: 4 }}>
             {CAT_ORDER.flatMap(cat => Array.from({ length: placedByCat[cat] }, (_, j) => (
-              <i key={`${cat}-${j}`} className="flex-1 block" style={{ height: BAR.height, borderRadius: BAR.radius, backgroundColor: j < doneByCat[cat] ? CATS[cat].color : trackColor(CATS[cat].color) }} />
+              <i key={`${cat}-${j}`} className="flex-1 block" style={{ height: 8, borderRadius: 4, backgroundColor: j < doneByCat[cat] ? CATS[cat].color : trackColor(CATS[cat].color) }} />
             )))}
           </div>
           </>)}
           {showSteps && (<>
-            <div className="flex items-end justify-between" style={{ margin: placedTotal > 0 ? '18px 0 10px' : '0 0 10px' }}>
-              <div className="flex items-center gap-2 text-[15px] font-semibold">
-                <CategoryIcon category="steps" size={18} />
-                <span>Steps</span>
-                {stepsHit && <CheckBadge color={stepsColor} />}
-              </div>
-              <div style={{ ...bigStyle, fontSize: 22, letterSpacing: '-0.5px' }}>{fmtK(weekStepsTotal)}<small style={{ ...smallStyle, fontSize: 14 }}>/{fmtK(weekStepsGoal)}</small></div>
+            <div className="flex items-baseline justify-between" style={{ margin: placedTotal > 0 ? '13px 0 7px' : '0 0 7px' }}>
+              <span className="flex items-center gap-1.5" style={{ fontSize: 13.5 }}>
+                <span className="flex self-center"><CategoryIcon category="steps" size={13} /></span>
+                <b style={{ fontWeight: 700 }}>{fmtK(weekStepsTotal)}</b>
+                <span style={{ color: TEXT_MUTED }}>of {fmtK(weekStepsGoal)} steps</span>
+              </span>
+              <span style={{ fontSize: 12.5, color: TEXT_MUTED }}>{stepsHit ? 'Goal hit' : `${fmtK(todayStepTarget)} a day`}</span>
             </div>
-            <div className="relative" style={{ height: BAR.height, borderRadius: BAR.radius, backgroundColor: trackColor(stepsColor) }}>
-              <i className="absolute left-0 top-0 bottom-0 block" style={{ width: `${Math.min(100, (weekStepsTotal / weekStepsGoal) * 100)}%`, borderRadius: BAR.radius, backgroundColor: stepsColor, boxShadow: stepsHit ? doneGlow(stepsColor) : 'none' }} />
+            <div className="relative" style={{ height: 8, borderRadius: 4, backgroundColor: trackColor(stepsColor) }}>
+              <i className="absolute left-0 top-0 bottom-0 block" style={{ width: `${Math.min(100, (weekStepsTotal / weekStepsGoal) * 100)}%`, borderRadius: 4, backgroundColor: stepsColor, boxShadow: stepsHit ? doneGlow(stepsColor) : 'none' }} />
               {/* Pace notch: where the daily goal × finished days would put the bar (same rule as Home) */}
               {todayIdx > 0 && !stepsHit && (
-                <b className="absolute block" style={{ top: -5, bottom: -5, width: 2, marginLeft: -1, left: `${(todayIdx / 7) * 100}%`, background: '#fff', borderRadius: 1, boxShadow: `0 0 0 2px ${CARD_BG_SOLID}` }} />
+                <b className="absolute block" style={{ top: -3, bottom: -3, width: 2, marginLeft: -1, left: `${(todayIdx / 7) * 100}%`, background: '#fff', borderRadius: 1, boxShadow: `0 0 0 2px ${CARD_BG_SOLID}` }} />
               )}
             </div>
-            <div className="flex justify-end text-[12px]" style={{ color: TEXT_MUTED, marginTop: 9 }}>
-              {stepsHit ? 'Goal hit' : `${fmtK(todayStepTarget)} a day`}
-            </div>
           </>)}
-          {placedTotal > 0 && <div className="flex items-center flex-wrap gap-1.5" style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+          {placedTotal > 0 && <div className="flex items-center flex-wrap" style={{ gap: 8, marginTop: 13, paddingTop: 11, borderTop: '1px solid rgba(255,255,255,0.07)' }}>
             {upNext ? (
               <>
                 <span style={{ ...capsStyle, marginRight: 4 }}>Up next</span>

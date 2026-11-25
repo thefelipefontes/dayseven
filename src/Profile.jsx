@@ -28,7 +28,10 @@ import { manualCaloriesForDate } from './utils/calories';
 import { canHold, goalsShortOfHalf, isHoldWeek, SHIELD_MIN_PERCENT } from './utils/streakShield';
 import ShieldLadder from './components/ShieldLadder';
 import { CheckBadge as GoalCheckBadge } from './components/WeekGoalsHero';
-import { CARD_SURFACE, GOLD, TEXT_MUTED, NUM, CATEGORY_COLORS as CATEGORY_COLORS_BY_CAT } from './utils/designTokens';
+import { CARD_SURFACE, GOLD, TEXT_MUTED, NUM, hexToRgb, CATEGORY_COLORS as CATEGORY_COLORS_BY_CAT } from './utils/designTokens';
+
+// Caps labels on the Stats cards (Nov 2026 redesign)
+const CAPS_LABEL = { fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8a8a8a' };
 
 
 
@@ -736,6 +739,7 @@ export default function ProfilePage(props) {
 
     return {
       workouts: filteredActivities.filter(a => countsAsLifting(a) || countsAsCardio(a)).length,
+      activeMinutes: filteredActivities.reduce((sum, a) => sum + (parseInt(a.duration, 10) || 0), 0),
       recovery: recoveryActs.length,
       liftingCount: lifts.length,
       miles: totalMiles,
@@ -1509,35 +1513,44 @@ export default function ProfilePage(props) {
                 >
                 <div
                   onClick={() => { triggerHaptic(ImpactStyle.Light); setSelectedDayActivity(activity); }}
-                  className="w-full p-3 flex items-center gap-3 text-left cursor-pointer transition-opacity active:opacity-70"
-                  style={{ backgroundColor: '#0D0D0D' }}
+                  className="w-full flex items-center gap-3 text-left cursor-pointer transition-opacity active:opacity-70"
+                  style={{ backgroundColor: '#0D0D0D', padding: '12px 14px' }}
                 >
-                  <ActivityIcon type={activity.type} subtype={activity.subtype} size={20} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} countToward={activity.countToward} customActivityCategory={activity.customActivityCategory} />
+                  {(() => {
+                    // Home's Today's Activity row: the line icon on a tile in its category tint
+                    const cat = getActivityCategory(activity);
+                    const hex = cat === 'cardio' ? '#FF9500' : cat === 'recovery' ? '#00D1FF' : (cat === 'lifting' || cat === 'lifting+cardio') ? '#00FF94' : null;
+                    return (
+                      <div className="flex items-center justify-center flex-shrink-0" style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: hex ? `rgba(${hexToRgb(hex)},0.16)` : 'rgba(255,255,255,0.06)' }}>
+                        <ActivityIcon type={activity.type} subtype={activity.subtype} size={20} color={hex || undefined} sportEmoji={activity.sportEmoji} customEmoji={activity.customEmoji} customIcon={activity.customIcon} countToward={activity.countToward} customActivityCategory={activity.customActivityCategory} />
+                      </div>
+                    );
+                  })()}
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold truncate">{
+                    <div className="truncate" style={{ fontSize: 15, fontWeight: 600 }}>{
                       activity.type === 'Other' ? (activity.subtype || 'Other')
                       : activity.type === 'Strength Training' ? (() => {
                         const st = activity.strengthType || 'Strength Training';
                         const areas = normalizeFocusAreas(activity.focusAreas || (activity.focusArea ? [activity.focusArea] : []));
-                        if (areas.length > 0) return `${st} - ${areas.join(', ')}`;
+                        if (areas.length > 0) return `${st} · ${areas.join(', ')}`;
                         return activity.subtype || st;
                       })()
-                      : (activity.subtype ? `${activity.type} • ${activity.subtype}` : activity.type)
+                      : (activity.subtype ? `${activity.type} · ${activity.subtype}` : activity.type)
                     }</div>
-                    <div className="text-[11px] text-gray-500 flex items-center gap-2">
-                      <span>{formatFriendlyDate(activity.date)}{activity.time ? ` at ${activity.time}` : ''}{activity.duration ? ` (${activity.duration} min)` : ''}</span>
+                    <div className="flex items-center gap-2 min-w-0" style={{ fontSize: 12.5, color: '#8a8a8a', marginTop: 2 }}>
+                      <span className="truncate">{formatFriendlyDate(activity.date)}{activity.time ? ` at ${activity.time}` : ''}{activity.duration ? ` · ${activity.duration} min` : ''}</span>
                       {(activity.healthKitUUID || activity.linkedHealthKitUUID || activity.source === 'healthkit' || activity.fromAppleHealth) && (
-                        <span className="flex items-center gap-1 text-cyan-400">
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <span className="flex items-center gap-1 flex-shrink-0" style={{ color: '#aaa' }}>
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
                             <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
                           </svg>
-                          <span className="text-[10px]">{activity.sourceDevice || 'Apple Health'}</span>
+                          <span>{activity.sourceDevice || 'Apple Health'}</span>
                         </span>
                       )}
                     </div>
                   </div>
-                  <span className="text-gray-600 text-xs">›</span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0" aria-hidden="true"><path d="M9 6l6 6l-6 6" /></svg>
                 </div>
                 </SwipeableActivityItem>
               ))}
@@ -1545,8 +1558,8 @@ export default function ProfilePage(props) {
               {hasMore && (
                 <button
                   onClick={() => { triggerHaptic(ImpactStyle.Light); setHistoryLatestExpanded(v => !v); }}
-                  className="w-full py-2 text-center text-xs font-medium transition-all duration-150 rounded-xl"
-                  style={{ color: 'rgba(255,255,255,0.5)' }}
+                  className="w-full py-3 text-center transition-all duration-150 rounded-xl"
+                  style={{ color: '#aaa', fontSize: 13, fontWeight: 600 }}
                 >
                   {historyLatestExpanded ? 'See less' : `See ${sortedActivities.length - 3} more`}
                 </button>
@@ -2019,96 +2032,88 @@ export default function ProfilePage(props) {
           {statsSubView === 'overview' && (
             <>
 
-              {/* Main Stats Row - Strength / Cardio / Steps (the three goals that win the week) */}
-              <div className="grid grid-cols-3 gap-2.5 mb-3">
-                <div className="p-3.5 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(0, 255, 148, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
-                  <div className="text-3xl font-black" style={{ color: '#00FF94' }}>{totalsData.liftingCount || 0}</div>
-                  <div className="text-xs text-gray-400 flex items-center gap-1 mt-1">
-                    <span><CategoryIcon category="lifts" size={14} /></span>
-                    <span>Strength</span>
+              {/* One big number: workouts in the period, then a row per goal (Nov 2026 redesign,
+                  mocks/mock-profile-extras.html statsOverview('new')). */}
+              {(() => {
+                const cardioCount = Object.values(totalsData.cardio || {}).reduce((a, b) => a + b, 0);
+                const periodLabel = { 'this-week': 'this week', 'last-7-days': 'last 7 days', 'this-month': 'this month', 'last-month': 'last month', 'last-30-days': 'last 30 days', 'all-time': 'all time' }[totalsView]
+                  || (/^\d{4}$/.test(totalsView) ? `in ${totalsView}` : (monthOptions.find(m => m.value === totalsView)?.label ? `in ${monthOptions.find(m => m.value === totalsView).label}` : ''));
+                const mins = totalsData.activeMinutes || 0;
+                const activeTime = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
+                const stepsText = periodSteps >= 1000000 ? `${(periodSteps / 1000000).toFixed(1)}M` : periodSteps >= 1000 ? `${(periodSteps / 1000).toFixed(1)}k` : periodSteps.toLocaleString();
+                const Row = ({ cat, name, value, unit, bonus = false, last = false }) => (
+                  <div className="flex items-center gap-3" style={{ padding: '13px 0', borderBottom: last ? 'none' : '1px solid rgba(255,255,255,0.06)' }}>
+                    <span className="flex items-center justify-center flex-shrink-0" style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: `rgba(${hexToRgb(CATEGORY_COLORS_BY_CAT[cat])},0.14)` }}>
+                      <CategoryIcon category={cat} size={17} />
+                    </span>
+                    <span className="flex-1 flex items-center gap-2" style={{ fontSize: 15, fontWeight: 600 }}>
+                      {name}
+                      {bonus && <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.12em', padding: '2px 6px', borderRadius: 999, boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.22)', color: '#aaa' }}>BONUS</span>}
+                    </span>
+                    <span style={NUM.value}>{value}{unit && <span style={{ ...NUM.valueSmall, marginLeft: 4 }}>{unit}</span>}</span>
                   </div>
-                </div>
-                <div className="p-3.5 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(255, 149, 0, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
-                  <div className="text-3xl font-black" style={{ color: '#FF9500' }}>{Object.values(totalsData.cardio || {}).reduce((a, b) => a + b, 0)}</div>
-                  <div className="text-xs text-gray-400 flex items-center gap-1 mt-1">
-                    <span><CategoryIcon category="cardio" size={14} /></span>
-                    <span>Cardio</span>
-                  </div>
-                </div>
-                <div className="p-3.5 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(191, 90, 242, 0.08) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
-                  <div className={`${periodSteps >= 10000 ? 'text-[26px] leading-9' : 'text-3xl'} font-black`} style={{ color: '#BF5AF2' }}>{(periodSteps >= 1000000 ? `${(periodSteps / 1000000).toFixed(1)}M` : periodSteps >= 1000 ? `${(periodSteps / 1000).toFixed(1)}K` : periodSteps.toLocaleString())}</div>
-                  <div className="text-xs text-gray-400 flex items-center gap-1 mt-1">
-                    <span><CategoryIcon category="steps" size={14} /></span>
-                    <span>Steps</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Recovery: a bonus, not one of the three goals that win the week */}
-              <div className="mb-3 px-3.5 py-2.5 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(0,209,255,0.06)', border: '1px solid rgba(0,209,255,0.18)' }}>
-                <div className="flex items-center gap-2">
-                  <CategoryIcon category="recovery" size={14} />
-                  <span className="text-sm text-white">Recovery</span>
-                  <span className="text-sm font-bold" style={{ color: '#00D1FF' }}>{totalsData.recovery}</span>
-                  <span className="text-xs text-gray-400">{totalsData.recovery === 1 ? 'session' : 'sessions'}</span>
-                </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ color: '#00D1FF', backgroundColor: 'rgba(0,209,255,0.12)', letterSpacing: '0.04em' }}>BONUS</span>
-              </div>
-
-              {/* Distance */}
-              <div className="grid grid-cols-1 gap-2.5 mb-4">
-                {/* Total Distance with breakdown */}
-                <div className="p-3.5 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(255, 87, 87, 0.06) 0%, rgba(39, 39, 42, 0.5) 100%)' }}>
-                  <div className="text-2xl font-black" style={{ color: '#FF5757' }}>{milesToDisplay(totalsData.miles, distanceUnit).toFixed(1)}</div>
-                  <div className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
-                    <span>📍</span>
-                    <span>Total {distanceUnit === 'km' ? 'KMs' : 'Miles'}</span>
-                  </div>
-                  {totalsData.miles > 0 && (
-                    <div className="mt-2 pt-2 space-y-1" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                      {totalsData.milesRan > 0 && (
-                        <div className="flex items-center justify-between text-[10px]">
-                          <span className="text-gray-500">🏃 Ran</span>
-                          <span className="text-gray-400 font-medium">{formatDistanceValue(totalsData.milesRan, distanceUnit, 1)} {distanceUnitText}</span>
-                        </div>
-                      )}
-                      {totalsData.milesBiked > 0 && (
-                        <div className="flex items-center justify-between text-[10px]">
-                          <span className="text-gray-500">🚴 Biked</span>
-                          <span className="text-gray-400 font-medium">{formatDistanceValue(totalsData.milesBiked, distanceUnit, 1)} {distanceUnitText}</span>
-                        </div>
-                      )}
-                      {totalsData.milesWalked > 0 && (
-                        <div className="flex items-center justify-between text-[10px]">
-                          <span className="text-gray-500">🚶 Walked</span>
-                          <span className="text-gray-400 font-medium">{formatDistanceValue(totalsData.milesWalked, distanceUnit, 1)} {distanceUnitText}</span>
-                        </div>
-                      )}
+                );
+                return (
+                  <div className="mb-3" style={{ ...CARD_SURFACE, padding: '18px 20px 6px' }}>
+                    <div className="flex items-end justify-between" style={{ paddingBottom: 16, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                      <div>
+                        <div style={{ ...NUM.big, lineHeight: 0.8 }}>{totalsData.workouts || 0}</div>
+                        <div style={{ ...CAPS_LABEL, marginTop: 10 }}>{totalsData.workouts === 1 ? 'Workout' : 'Workouts'} {periodLabel}</div>
+                      </div>
+                      <div className="text-right">
+                        <div style={NUM.value}>{activeTime}</div>
+                        <div style={{ ...CAPS_LABEL, marginTop: 6 }}>Active time</div>
+                      </div>
                     </div>
-                  )}
+                    <Row cat="lifts" name="Strength" value={totalsData.liftingCount || 0} unit={totalsData.liftingCount === 1 ? 'session' : 'sessions'} />
+                    <Row cat="cardio" name="Cardio" value={cardioCount} unit={cardioCount === 1 ? 'session' : 'sessions'} />
+                    <Row cat="steps" name="Steps" value={stepsText} unit="" />
+                    <Row cat="recovery" name="Recovery" bonus value={totalsData.recovery || 0} unit={totalsData.recovery === 1 ? 'session' : 'sessions'} last />
+                  </div>
+                );
+              })()}
+
+              {/* Distance, with the runs / rides / walks it came from */}
+              <div className="mb-4" style={{ ...CARD_SURFACE, padding: '14px 18px' }}>
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-2" style={{ fontSize: 15, fontWeight: 600 }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#aaa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 11a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" /><path d="M17.657 16.657l-4.243 4.243a2 2 0 0 1 -2.827 0l-4.244 -4.243a8 8 0 1 1 11.314 0z" /></svg>
+                    Distance
+                  </span>
+                  <span style={NUM.value}>{milesToDisplay(totalsData.miles, distanceUnit).toFixed(1)}<span style={{ ...NUM.valueSmall, marginLeft: 3 }}>{distanceUnitText}</span></span>
                 </div>
+                {totalsData.miles > 0 && (
+                  <div className="flex flex-wrap" style={{ gap: '6px 18px', marginTop: 10, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.06)', fontSize: 13, color: '#aaa' }}>
+                    {[['Running', 'Ran', totalsData.milesRan], ['Cycle', 'Biked', totalsData.milesBiked], ['Walking', 'Walked', totalsData.milesWalked]].filter(([, , n]) => n > 0).map(([type, label, n]) => (
+                      <span key={label} className="flex items-center gap-1.5">
+                        <ActivityIcon type={type} size={14} color="#FF9500" />
+                        {label} <b className="text-white">{formatDistanceValue(n, distanceUnit, 1)} {distanceUnitText}</b>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Strength Breakdown */}
               <div className="mb-6">
-                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3"><CategoryIcon category="lifts" size={12} className="inline align-[-2px] mr-1" />Muscle groups trained {(() => {
-                  const labels = { 'this-week': '(this week)', 'this-month': '(this month)', 'last-month': '(last month)', 'last-30-days': '(last 30 days)', 'all-time': '(all time)' };
+                <div className="flex items-center gap-1.5" style={{ ...CAPS_LABEL, color: '#aaa', margin: '0 0 10px 2px' }}><CategoryIcon category="lifts" size={13} />Muscle groups · {(() => {
+                  const labels = { 'this-week': 'this week', 'last-7-days': 'last 7 days', 'this-month': 'this month', 'last-month': 'last month', 'last-30-days': 'last 30 days', 'all-time': 'all time' };
                   if (labels[totalsView]) return labels[totalsView];
-                  if (/^\d{4}$/.test(totalsView)) return `(${totalsView})`;
+                  if (/^\d{4}$/.test(totalsView)) return totalsView;
                   const monthMatch = monthOptions.find(m => m.value === totalsView);
-                  return monthMatch ? `(${monthMatch.label})` : '';
+                  return monthMatch ? monthMatch.label : '';
                 })()}</div>
-                <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <div style={{ ...CARD_SURFACE, padding: '16px 18px' }}>
                   {Object.keys(totalsData.lifting || {}).length > 0 ? (
                     <div>
-                      <div className="mb-4">
+                      <div className="mb-3">
                         <MuscleBodyMap muscleData={totalsData.lifting} />
                       </div>
-                      <div className="space-y-2">
+                      <div className="grid grid-cols-2" style={{ gap: '8px 22px' }}>
                         {Object.entries(totalsData.lifting).map(([type, count]) => (
-                          <div key={type} className="flex items-center justify-between">
-                            <span className="text-gray-400">{type}</span>
-                            <span className="font-bold">{count}</span>
+                          <div key={type} className="flex items-center justify-between" style={{ fontSize: 14 }}>
+                            <span style={{ color: '#aaa' }}>{type}</span>
+                            <b style={{ fontSize: 15 }}>{count}</b>
                           </div>
                         ))}
                       </div>
@@ -2121,8 +2126,8 @@ export default function ProfilePage(props) {
 
               {/* Cardio Breakdown */}
               <div className="mb-6">
-                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3"><CategoryIcon category="cardio" size={12} className="inline align-[-2px] mr-1" />Cardio Breakdown</div>
-                <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <div className="flex items-center gap-1.5" style={{ ...CAPS_LABEL, color: '#aaa', margin: '0 0 10px 2px' }}><CategoryIcon category="cardio" size={13} />Cardio breakdown</div>
+                <div style={{ ...CARD_SURFACE, padding: '16px 18px' }}>
                   {Object.keys(totalsData.cardio || {}).length > 0 ? (
                     <div className="space-y-2">
                       {Object.entries(totalsData.cardio).map(([type, count]) => (
@@ -2140,7 +2145,7 @@ export default function ProfilePage(props) {
 
               {/* Recovery Breakdown */}
               <div className="mb-6">
-                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3"><CategoryIcon category="recovery" size={12} className="inline align-[-2px] mr-1" />Recovery Breakdown</div>
+                <div className="flex items-center gap-1.5" style={{ ...CAPS_LABEL, color: '#aaa', margin: '0 0 10px 2px' }}><CategoryIcon category="recovery" size={13} />Recovery breakdown</div>
                 {Object.keys(totalsData.recoveryBreakdown || {}).length > 0 ? (
                   <div className="space-y-2">
                     {Object.entries(totalsData.recoveryBreakdown).map(([type, count]) => (
@@ -2162,260 +2167,99 @@ export default function ProfilePage(props) {
             </>
           )}
 
-          {/* Records Sub-View */}
-          {statsSubView === 'records' && (
-            <div className="space-y-6">
-              {/* Hall of Fame Header */}
-              <div className="mb-4">
-                <div className="flex items-center gap-2">
-                  <SectionIcon type="trophy" />
-                  <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Hall of Fame</span>
-                </div>
-                <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Your personal bests</p>
+          {/* Records Sub-View (Nov 2026 redesign, mocks/mock-profile-extras.html statsRecords('new')):
+              the longest winning streak is the gold hero; every other record is a line-icon row. */}
+          {statsSubView === 'records' && (() => {
+            const hm = (m) => { const h = Math.floor(m / 60); return h > 0 ? `${h}h ${m % 60}m` : `${m % 60}m`; };
+            const dist = (v) => `${formatDistanceValue(v, distanceUnit, 1)} ${distanceUnitText}`;
+            const pace = (v) => formatPace(v * 60, distanceUnit);
+            const LINE = {
+              bolt: ['M13 3l0 7l6 0l-8 11l0 -7l-6 0l8 -11'],
+              target: ['M12 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0', 'M12 7a5 5 0 1 0 5 5', 'M13 3.055a9 9 0 1 0 7.941 7.945', 'M15 9l-3 3', 'M15 6v3h3l3 -3h-3v-3z'],
+              pin: ['M9 11a3 3 0 1 0 6 0a3 3 0 0 0 -6 0', 'M17.657 16.657l-4.243 4.243a2 2 0 0 1 -2.827 0l-4.244 -4.243a8 8 0 1 1 11.314 0z'],
+            };
+            const Line = ({ d, color }) => (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d.map((p) => <path key={p} d={p} />)}</svg>
+            );
+            const ORANGE = '#FF9500';
+            const tile = (hex, icon) => ({ hex, icon });
+            const single = [
+              { ...tile('#FF6B6B', <CategoryIcon category="calories" size={16} />), label: 'Highest calorie workout', rec: records.highestCalories, fmt: (v) => `${v} cal` },
+              { ...tile('#00FF94', <CategoryIcon category="lifts" size={16} />), label: 'Longest strength session', rec: records.longestStrength, fmt: hm, noType: true },
+              { ...tile(ORANGE, <CategoryIcon category="cardio" size={16} />), label: 'Longest cardio session', rec: records.longestCardio, fmt: hm },
+              { ...tile(ORANGE, <ActivityIcon type="Running" size={16} color={ORANGE} />), label: 'Furthest run', rec: records.longestRun, fmt: dist, noType: true },
+              { ...tile(ORANGE, <ActivityIcon type="Cycle" size={16} color={ORANGE} />), label: 'Furthest ride', rec: records.longestCycle, fmt: dist, noType: true },
+              { ...tile(ORANGE, <ActivityIcon type="Walking" size={16} color={ORANGE} />), label: 'Furthest walk', rec: records.longestWalk, fmt: dist, noType: true },
+              { ...tile(ORANGE, <Line d={LINE.bolt} color={ORANGE} />), label: 'Fastest run pace', rec: records.fastestPace, fmt: pace, noType: true },
+              { ...tile(ORANGE, <ActivityIcon type="Cycle" size={16} color={ORANGE} />), label: 'Fastest ride pace', rec: records.fastestCyclingPace, fmt: pace, noType: true },
+            ];
+            const weekly = [
+              { ...tile('#aaaaaa', <Line d={LINE.target} color="#ccc" />), label: 'Most workouts', value: records.mostWorkoutsWeek || null },
+              { ...tile('#FF6B6B', <CategoryIcon category="calories" size={16} />), label: 'Most calories', value: records.mostCaloriesWeek ? `${records.mostCaloriesWeek.toLocaleString()} cal` : null },
+              { ...tile('#aaaaaa', <Line d={LINE.pin} color="#ccc" />), label: distanceUnit === 'km' ? 'Most km' : 'Most miles', value: records.mostMilesWeek ? dist(records.mostMilesWeek) : null },
+              { ...tile('#BF5AF2', <CategoryIcon category="steps" size={16} />), label: 'Most steps', value: records.mostStepsWeek ? records.mostStepsWeek.toLocaleString() : null },
+            ];
+            const RecordRows = ({ rows }) => (
+              <div style={{ ...CARD_SURFACE, padding: '2px 16px' }}>
+                {rows.map((r, i) => (
+                  <div key={r.label} className="flex items-center gap-3" style={{ padding: '10px 0', borderTop: i ? '1px solid rgba(255,255,255,0.06)' : 'none' }}>
+                    <span className="flex items-center justify-center flex-shrink-0" style={{ width: 30, height: 30, borderRadius: 9, backgroundColor: `rgba(${hexToRgb(r.hex)},0.14)` }}>{r.icon}</span>
+                    <span className="flex-1 min-w-0" style={{ fontSize: 13.5, color: '#ccc' }}>
+                      {r.label}
+                      {r.sub && <span className="block" style={{ fontSize: 11, color: '#777', marginTop: 1 }}>{r.sub}</span>}
+                    </span>
+                    <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.1px' }}>{r.value ?? '—'}</span>
+                  </div>
+                ))}
               </div>
-
-              {/* Streaks Section */}
+            );
+            const longest = records.longestMasterStreak || 0;
+            return (
               <div>
-                <div className="text-xs text-gray-600 uppercase tracking-wider mb-3">Streak Records</div>
-                <div className="p-4 rounded-2xl bg-zinc-900/50 space-y-4">
-                  {/* Master Streak - Featured */}
-                  <div className="flex items-center justify-between pb-3 border-b border-white/5">
-                    <div className="flex items-center gap-3">
-                      <span className="text-lg">🏆</span>
-                      <div>
-                        <div className="text-xs text-gray-500">Longest Winning Streak</div>
-                        <div className="text-2xl font-black text-white">
-                          {records.longestMasterStreak ? `${records.longestMasterStreak} ${records.longestMasterStreak === 1 ? 'week' : 'weeks'}` : '—'}
-                        </div>
-                      </div>
-                    </div>
+                {/* Hall of Fame Header */}
+                <div className="mb-4">
+                  <div className="flex items-center gap-2">
+                    <SectionIcon type="trophy" color={GOLD} />
+                    <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Hall of Fame</span>
                   </div>
+                  <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Your personal bests</p>
+                </div>
 
-                  {/* Other Streaks */}
-                  <div className="grid grid-cols-4 gap-2">
+                {/* Longest winning streak: the screen's one big number, in gold */}
+                <div className="mb-4" style={{ ...CARD_SURFACE, padding: '18px 20px' }}>
+                  <div className="flex items-end justify-between" style={{ paddingBottom: 16, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
                     <div>
-                      <div className="text-[10px] text-gray-600 mb-1"><CategoryIcon category="lifts" size={11} className="inline align-[-2px] mr-1" />Strength</div>
-                      <div className="text-lg font-bold text-white">
-                        {records.longestStrengthStreak ? `${records.longestStrengthStreak}w` : '—'}
+                      <div className="flex items-baseline gap-1.5">
+                        <span style={{ ...NUM.big, lineHeight: 0.8, color: longest ? GOLD : '#555', textShadow: longest ? '0 0 22px rgba(255,215,0,0.35)' : 'none' }}>{longest || '—'}</span>
+                        {longest > 0 && <span style={{ fontSize: 22, fontWeight: 700, color: 'rgba(255,215,0,0.8)' }}>{longest === 1 ? 'week' : 'weeks'}</span>}
                       </div>
+                      <div style={{ ...CAPS_LABEL, marginTop: 10, color: 'rgba(255,215,0,0.9)' }}>Longest winning streak</div>
                     </div>
-                    <div>
-                      <div className="text-[10px] text-gray-600 mb-1"><CategoryIcon category="cardio" size={11} className="inline align-[-2px] mr-1" />Cardio</div>
-                      <div className="text-lg font-bold text-white">
-                        {records.longestCardioStreak ? `${records.longestCardioStreak}w` : '—'}
+                    <span style={{ fontSize: 22 }}>🔥</span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-2" style={{ marginTop: 14 }}>
+                    {[['lifts', 'Strength', records.longestStrengthStreak], ['cardio', 'Cardio', records.longestCardioStreak], ['steps', 'Steps', records.longestStepsStreak], ['recovery', 'Recovery', records.longestRecoveryStreak]].map(([cat, label, n]) => (
+                      <div key={cat}>
+                        <div className="flex items-center gap-[5px]" style={{ fontSize: 11, fontWeight: 600, color: '#aaa' }}><CategoryIcon category={cat} size={13} />{label}</div>
+                        <div style={{ ...NUM.value, marginTop: 5 }}>{n ? <>{n}<span style={NUM.valueSmall}>w</span></> : '—'}</div>
                       </div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] text-gray-600 mb-1"><CategoryIcon category="steps" size={11} className="inline align-[-2px] mr-1" />Steps</div>
-                      <div className="text-lg font-bold text-white">
-                        {records.longestStepsStreak ? `${records.longestStepsStreak}w` : '—'}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] text-gray-600 mb-1"><CategoryIcon category="recovery" size={11} className="inline align-[-2px] mr-1" />Recovery</div>
-                      <div className="text-lg font-bold text-white">
-                        {records.longestRecoveryStreak ? `${records.longestRecoveryStreak}w` : '—'}
-                      </div>
-                    </div>
+                    ))}
                   </div>
                 </div>
-              </div>
 
-              {/* Single Workout Records */}
-              <div>
-                <div className="text-xs text-gray-600 uppercase tracking-wider mb-3">Single Workout Records</div>
-                <div className="p-4 rounded-2xl bg-zinc-900/50 space-y-3">
-                  {/* Highest Calorie Workout */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm">🔥</span>
-                      <div className="text-xs text-gray-500">Highest Calorie Workout</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-base font-bold text-white">
-                        {getRecordValue(records.highestCalories) ? `${getRecordValue(records.highestCalories)} cal` : '—'}
-                      </div>
-                      {getRecordType(records.highestCalories) && (
-                        <div className="text-[9px] text-gray-600">{getRecordType(records.highestCalories)}</div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="border-t border-white/5" />
-
-                  {/* Longest Strength */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm"><CategoryIcon category="lifts" size={14} /></span>
-                      <div className="text-xs text-gray-500">Longest Strength Session</div>
-                    </div>
-                    <div className="text-base font-bold text-white">
-                      {getRecordValue(records.longestStrength) ? (() => {
-                        const duration = getRecordValue(records.longestStrength);
-                        const hours = Math.floor(duration / 60);
-                        const mins = duration % 60;
-                        return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
-                      })() : '—'}
-                    </div>
-                  </div>
-
-                  <div className="border-t border-white/5" />
-
-                  {/* Longest Cardio */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm"><CategoryIcon category="cardio" size={14} /></span>
-                      <div className="text-xs text-gray-500">Longest Cardio Session</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-base font-bold text-white">
-                        {getRecordValue(records.longestCardio) ? (() => {
-                          const duration = getRecordValue(records.longestCardio);
-                          const hours = Math.floor(duration / 60);
-                          const mins = duration % 60;
-                          return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
-                        })() : '—'}
-                      </div>
-                      {getRecordType(records.longestCardio) && (
-                        <div className="text-[9px] text-gray-600">{getRecordType(records.longestCardio)}</div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="border-t border-white/5" />
-
-                  {/* Furthest Run */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm"><CategoryIcon category="cardio" size={14} /></span>
-                      <div className="text-xs text-gray-500">Furthest Run</div>
-                    </div>
-                    <div className="text-base font-bold text-white">
-                      {getRecordValue(records.longestRun) ? `${formatDistanceValue(getRecordValue(records.longestRun), distanceUnit, 1)} ${distanceUnitText}` : '—'}
-                    </div>
-                  </div>
-
-                  <div className="border-t border-white/5" />
-
-                  {/* Furthest Cycle */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm">🚴</span>
-                      <div className="text-xs text-gray-500">Furthest Cycle</div>
-                    </div>
-                    <div className="text-base font-bold text-white">
-                      {getRecordValue(records.longestCycle) ? `${formatDistanceValue(getRecordValue(records.longestCycle), distanceUnit, 1)} ${distanceUnitText}` : '—'}
-                    </div>
-                  </div>
-
-                  <div className="border-t border-white/5" />
-
-                  {/* Furthest Walk */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm">🚶</span>
-                      <div className="text-xs text-gray-500">Furthest Walk</div>
-                    </div>
-                    <div className="text-base font-bold text-white">
-                      {getRecordValue(records.longestWalk) ? `${formatDistanceValue(getRecordValue(records.longestWalk), distanceUnit, 1)} ${distanceUnitText}` : '—'}
-                    </div>
-                  </div>
-
-                  <div className="border-t border-white/5" />
-
-                  {/* Fastest Running Pace */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm">⚡</span>
-                      <div className="text-xs text-gray-500">Fastest Run Pace</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-base font-bold text-white">
-                        {getRecordValue(records.fastestPace) ? (() => {
-                          // records.fastestPace is min/mile (decimal). Convert to seconds-per-mile,
-                          // then let formatPace handle unit conversion.
-                          const minPerMile = getRecordValue(records.fastestPace);
-                          return formatPace(minPerMile * 60, distanceUnit);
-                        })() : '—'}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="border-t border-white/5" />
-
-                  {/* Fastest Cycling Pace */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm">🚴</span>
-                      <div className="text-xs text-gray-500">Fastest Cycle Pace</div>
-                    </div>
-                    <div className="text-base font-bold text-white">
-                      {getRecordValue(records.fastestCyclingPace) ? (() => {
-                        const minPerMile = getRecordValue(records.fastestCyclingPace);
-                        return formatPace(minPerMile * 60, distanceUnit);
-                      })() : '—'}
-                    </div>
-                  </div>
+                <div style={{ ...CAPS_LABEL, margin: '0 0 10px 2px' }}>Single workout records</div>
+                <div className="mb-4">
+                  <RecordRows rows={single.map((r) => {
+                    const v = getRecordValue(r.rec);
+                    return { ...r, value: v ? r.fmt(v) : null, sub: !r.noType ? getRecordType(r.rec) : null };
+                  })} />
                 </div>
+
+                <div style={{ ...CAPS_LABEL, margin: '0 0 10px 2px' }}>Weekly records</div>
+                <RecordRows rows={weekly} />
               </div>
-
-              {/* Weekly Records */}
-              <div>
-                <div className="text-xs text-gray-600 uppercase tracking-wider mb-3">Weekly Records</div>
-                <div className="p-4 rounded-2xl bg-zinc-900/50 space-y-3">
-                  {/* Most Workouts */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm">🎯</span>
-                      <div className="text-xs text-gray-500">Most Workouts</div>
-                    </div>
-                    <div className="text-base font-bold text-white">
-                      {records.mostWorkoutsWeek || '—'}
-                    </div>
-                  </div>
-
-                  <div className="border-t border-white/5" />
-
-                  {/* Most Calories */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm">🔥</span>
-                      <div className="text-xs text-gray-500">Most Calories</div>
-                    </div>
-                    <div className="text-base font-bold text-white">
-                      {records.mostCaloriesWeek ? `${records.mostCaloriesWeek.toLocaleString()} cal` : '—'}
-                    </div>
-                  </div>
-
-                  <div className="border-t border-white/5" />
-
-                  {/* Most Distance */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm">📍</span>
-                      <div className="text-xs text-gray-500">Most {distanceUnit === 'km' ? 'KMs' : 'Miles'}</div>
-                    </div>
-                    <div className="text-base font-bold text-white">
-                      {records.mostMilesWeek ? `${formatDistanceValue(records.mostMilesWeek, distanceUnit, 1)} ${distanceUnitText}` : '—'}
-                    </div>
-                  </div>
-
-                  <div className="border-t border-white/5" />
-
-                  {/* Most Steps */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <CategoryIcon category="steps" size={14} />
-                      <div className="text-xs text-gray-500">Most Steps</div>
-                    </div>
-                    <div className="text-base font-bold" style={{ color: records.mostStepsWeek ? '#BF5AF2' : 'white' }}>
-                      {records.mostStepsWeek ? records.mostStepsWeek.toLocaleString() : '—'}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Trends Sub-View */}
           {statsSubView === 'trends' && (
@@ -2552,8 +2396,11 @@ export default function ProfilePage(props) {
           <div ref={progressPhotosRef} className="px-4 pb-32">
             {/* Header */}
             <div className="mb-4">
-              <h2 className="text-lg font-bold text-white">Compare</h2>
-              <p className="text-xs text-gray-500">Compare your fitness journey over time</p>
+              <div className="flex items-center gap-2">
+                <SectionIcon type="compare" />
+                <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Compare</span>
+              </div>
+              <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Your progress photos, side by side</p>
             </div>
 
             {/* First-visit progress photos hints */}
@@ -2600,12 +2447,12 @@ export default function ProfilePage(props) {
                   }}
                   className="px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-200"
                   style={{
-                    backgroundColor: photoFilter === filter.key ? '#00FF94' : 'rgba(255,255,255,0.05)',
-                    color: photoFilter === filter.key ? 'black' : 'rgba(255,255,255,0.5)'
+                    backgroundColor: photoFilter === filter.key ? '#fff' : 'rgba(255,255,255,0.06)',
+                    color: photoFilter === filter.key ? '#000' : '#bbb'
                   }}
                 >
                   <span className="inline-flex items-center gap-1">
-                    {filter.cat && <CategoryIcon category={filter.cat} size={12} color="currentColor" />}
+                    {filter.cat && <CategoryIcon category={filter.cat} size={12} />}
                     {filter.label}
                   </span>
                 </button>
@@ -2700,7 +2547,7 @@ export default function ProfilePage(props) {
                         if (!activity) return null;
                         return (
                           <div className="flex-1">
-                            <div className="relative aspect-square rounded-xl overflow-hidden" style={{ boxShadow: '0 0 0 2px #00FF94' }}>
+                            <div className="relative aspect-square rounded-xl overflow-hidden" style={{ boxShadow: '0 0 0 2px #fff' }}>
                               <img src={activity.photoURL} alt={activity.type} className="w-full h-full object-cover" />
                               <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-900/80 text-white">
                                 {selectedPhotos.length === 2 ? 'BEFORE' : '1'}
@@ -2714,7 +2561,7 @@ export default function ProfilePage(props) {
                       {/* Arrow or placeholder */}
                       <div className="flex items-center justify-center">
                         {selectedPhotos.length === 2 ? (
-                          <svg className="w-6 h-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
                           </svg>
                         ) : (
@@ -2730,9 +2577,9 @@ export default function ProfilePage(props) {
                         if (!activity) return null;
                         return (
                           <div className="flex-1">
-                            <div className="relative aspect-square rounded-xl overflow-hidden" style={{ boxShadow: '0 0 0 2px #00FF94' }}>
+                            <div className="relative aspect-square rounded-xl overflow-hidden" style={{ boxShadow: '0 0 0 2px #fff' }}>
                               <img src={activity.photoURL} alt={activity.type} className="w-full h-full object-cover" />
-                              <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-medium bg-green-500 text-black">
+                              <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-medium bg-white text-black">
                                 AFTER
                               </div>
                             </div>
@@ -2752,8 +2599,8 @@ export default function ProfilePage(props) {
                     {selectedPhotos.length === 2 && (
                       <button
                         onClick={() => setShowCompareModal(true)}
-                        className="w-full mt-3 py-2.5 rounded-xl font-semibold text-center transition-all duration-150 active:scale-98"
-                        style={{ backgroundColor: '#00FF94', color: 'black' }}
+                        className="w-full mt-3 font-bold text-center transition-all duration-150 active:scale-98 bg-white text-black active:bg-[#e5e5e5]"
+                        style={{ padding: '12px 0', borderRadius: 14 }}
                       >
                         Compare Photos
                       </button>
@@ -2789,7 +2636,7 @@ export default function ProfilePage(props) {
                           onClick={() => handlePhotoSelect(activity.id)}
                           className="relative aspect-square rounded-xl overflow-hidden transition-all duration-150"
                           style={{
-                            boxShadow: isSelected ? '0 0 0 2px #00FF94' : 'none'
+                            boxShadow: isSelected ? '0 0 0 2px #fff' : 'none'
                           }}
                         >
                           <img
@@ -2814,7 +2661,7 @@ export default function ProfilePage(props) {
                           </div>
                           {/* Selection indicator */}
                           {isSelected && (
-                            <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-green-500 flex items-center justify-center">
+                            <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white flex items-center justify-center">
                               <span className="text-black text-xs font-bold">{selectionIndex + 1}</span>
                             </div>
                           )}
@@ -2854,7 +2701,7 @@ export default function ProfilePage(props) {
                               {group.activities.length} photo{group.activities.length !== 1 ? 's' : ''}
                             </span>
                             {selectedInMonth > 0 && (
-                              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-green-500 text-black">
+                              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-white text-black">
                                 {selectedInMonth} selected
                               </span>
                             )}
@@ -2887,7 +2734,7 @@ export default function ProfilePage(props) {
                                   onClick={() => handlePhotoSelect(activity.id)}
                                   className="relative aspect-square rounded-xl overflow-hidden transition-all duration-150"
                                   style={{
-                                    boxShadow: isSelected ? '0 0 0 2px #00FF94' : 'none'
+                                    boxShadow: isSelected ? '0 0 0 2px #fff' : 'none'
                                   }}
                                 >
                                   <img
@@ -2912,7 +2759,7 @@ export default function ProfilePage(props) {
                                   </div>
                                   {/* Selection indicator */}
                                   {isSelected && (
-                                    <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-green-500 flex items-center justify-center">
+                                    <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white flex items-center justify-center">
                                       <span className="text-black text-xs font-bold">{selectionIndex + 1}</span>
                                     </div>
                                   )}
@@ -2995,7 +2842,7 @@ export default function ProfilePage(props) {
                         {/* After */}
                         <div className="flex-1">
                           <div className="text-center mb-2">
-                            <span className="text-xs font-medium px-2 py-1 rounded-full bg-green-500/20 text-green-400">AFTER</span>
+                            <span className="px-2 py-1 rounded-full bg-white text-black" style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.1em' }}>AFTER</span>
                           </div>
                           <div className="aspect-[3/4] rounded-xl overflow-hidden bg-zinc-900" id="after-photo-container">
                             <img

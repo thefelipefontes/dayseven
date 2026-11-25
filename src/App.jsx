@@ -11966,7 +11966,7 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
           </div>
         ) : (
           <p className="text-[15px] leading-snug" style={{ color: '#aaa' }}>
-            <span className="font-semibold text-white">No workout yet today.</span> A rest day still counts toward a winning week.
+            <span className="font-semibold text-white">No workout yet today.</span> Your steps still count toward the week.
           </p>
         )}
 

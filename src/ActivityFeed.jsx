@@ -91,7 +91,9 @@ const calculateLeaderboardStats = (rawActivities, healthHistory, recordsData) =>
     const strength = periodActivities.filter(countsAsLifting);
     const recovery = periodActivities.filter(countsAsRecovery);
     const cardio = periodActivities.filter(countsAsCardio);
-    const goalSessions = periodActivities.filter(a => countsAsLifting(a) || countsAsCardio(a) || countsAsRecovery(a));
+    // "Workouts" = strength + cardio sessions, the same definition as Hall of Fame's
+    // Most Workouts. Recovery is a bonus and has its own board. A Circuit counts once.
+    const goalSessions = periodActivities.filter(a => countsAsLifting(a) || countsAsCardio(a));
     const coldPlunge = periodActivities.filter(a => a.type === 'Cold Plunge');
     const sauna = periodActivities.filter(a => a.type === 'Sauna');
     const yoga = periodActivities.filter(a => a.type === 'Yoga');

@@ -75,6 +75,21 @@ struct ActiveWorkoutView: View {
         return recoveryTypes.contains(activityType.lowercased())
     }
 
+    /// The workout's category look: the pin, the mile split and the summary use its colour
+    private var look: CategoryLook {
+        if isStrengthActivity { return .strength }
+        if let toward = preSelectedCountToward {
+            switch toward {
+            case "strength": return .strength
+            case "cardio": return .cardio
+            case "recovery": return .recovery
+            default: break
+            }
+        }
+        guard let def = ActivityTypes.all.first(where: { $0.name == activityType }) else { return .cardio }
+        return def.isHybrid ? .neutral : CategoryLook(def.category)
+    }
+
     /// Whether this is a strength activity (wider metric spacing)
     private var isStrengthActivity: Bool {
         activityType.lowercased() == "strength" || activityType.lowercased() == "strength training"
@@ -99,7 +114,7 @@ struct ActiveWorkoutView: View {
                     Spacer()
                     if showSavingOverlay {
                         ProgressView()
-                            .tint(.green)
+                            .tint(.white)
                             .scaleEffect(1.5)
                         Text("Saving workout...")
                             .font(.system(size: 16, weight: .semibold))
@@ -113,7 +128,7 @@ struct ActiveWorkoutView: View {
                 ZStack {
                     activeWorkoutContent
                     if let split = displayedSplit {
-                        SplitOverlayView(split: split)
+                        SplitOverlayView(split: split, color: look.color)
                             .transition(.opacity.combined(with: .scale(scale: 0.92)))
                     }
                 }
@@ -138,16 +153,17 @@ struct ActiveWorkoutView: View {
                         .font(.system(size: 11))
                         .foregroundColor(.gray)
                         .multilineTextAlignment(.center)
-                    Button("Go Back") {
+                    Button {
                         navigationPath = NavigationPath()
+                    } label: {
+                        PillLabel(title: "Go Back", fontSize: 14) { EmptyView() }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.green)
+                    .buttonStyle(.plain)
                 }
                 .padding()
             } else {
                 ProgressView("Starting...")
-                    .tint(.green)
+                    .tint(.white)
             }
         }
         .navigationBarBackButtonHidden(isStarted || shouldShowSummary)
@@ -223,131 +239,29 @@ struct ActiveWorkoutView: View {
     // MARK: - Full Stats Page (big numbers, no buttons)
 
     private var fullStatsPage: some View {
-        VStack(spacing: 0) {
-            // Push content down to vertically center everything
-            Spacer()
-
-            // Elapsed time — massive white timer
-            // When watch dims (always-on), show seconds only (no centiseconds)
-            ElapsedClockText(workoutMgr: wm, isLuminanceReduced: isLuminanceReduced)
-                .font(.system(size: 70, weight: .bold, design: .monospaced))
-                .foregroundColor(.white)
-                .minimumScaleFactor(0.4)
-                .lineLimit(1)
-
-            // Heart Rate Zone Bar
-            HeartRateZoneBarView(
-                currentZone: wm.currentZone,
-                heartRate: wm.heartRate,
-                maxHR: wm.estimatedMaxHR,
-                zoneSeconds: wm.currentZoneSeconds
-            )
-            .padding(.horizontal, 4)
-            .padding(.top, 4)
-
-            // Time in zone — small, centered, colored to match active zone
-            HStack(spacing: 4) {
-                Text(formatZoneTime(wm.currentZoneSeconds))
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                Text("TIME IN ZONE")
-                    .font(.system(size: 9, weight: .medium))
-            }
-            .foregroundColor(wm.currentZone.color)
-            .padding(.top, 3)
-            .padding(.bottom, 4)
-
-            // Metrics row — distance activities show HR + Cal + Distance in one compact row
-            if tracksDistance {
-                HStack(alignment: .top, spacing: 8) {
-                    // Heart Rate
-                    VStack(spacing: 0) {
-                        Text("\(Int(wm.heartRate))")
-                            .font(.system(size: 24, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
-                        HStack(spacing: 2) {
-                            Image(systemName: "heart.fill")
-                                .foregroundColor(.red)
-                                .font(.system(size: 8))
-                            Text("BPM")
-                                .font(.system(size: 9, weight: .medium))
-                                .foregroundColor(.gray)
-                        }
-                    }
-
-                    // Calories
-                    VStack(spacing: 0) {
-                        Text("\(Int(wm.activeCalories))")
-                            .font(.system(size: 24, weight: .bold, design: .rounded))
-                            .foregroundColor(.orange)
-                        HStack(spacing: 2) {
-                            Image(systemName: "flame.fill")
-                                .foregroundColor(.orange)
-                                .font(.system(size: 8))
-                            Text("CAL")
-                                .font(.system(size: 9, weight: .medium))
-                                .foregroundColor(.gray)
-                        }
-                    }
-
-                    // Distance
-                    VStack(spacing: 0) {
-                        Text(wm.distance > 10 ? String(format: "%.2f", wm.distance / metersPerUnit) : "0.00")
-                            .font(.system(size: 24, weight: .bold, design: .rounded))
-                            .foregroundColor(.blue)
-                        if wm.distance <= 10 && wm.elapsedTime > 60 {
-                            Text("Check Settings")
-                                .font(.system(size: 8, weight: .medium))
-                                .foregroundColor(.orange)
-                        } else {
-                            Text(distanceUnitLabel)
-                                .font(.system(size: 9, weight: .medium))
-                                .foregroundColor(.gray)
-                        }
-                    }
-                }
-            } else {
-                // Non-distance activities: HR + Calories, larger
-                HStack(alignment: .top, spacing: isStrengthActivity ? 24 : 12) {
-                    // Heart Rate
-                    VStack(spacing: 0) {
-                        Text("\(Int(wm.heartRate))")
-                            .font(.system(size: 34, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
-                        HStack(spacing: 3) {
-                            Image(systemName: "heart.fill")
-                                .foregroundColor(.red)
-                                .font(.system(size: 10))
-                            Text("BPM")
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundColor(.gray)
-                        }
-                        Text("AVG \(Int(wm.averageHeartRate))")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.gray)
-                            .padding(.top, 1)
-                    }
-
-                    // Calories
-                    VStack(spacing: 0) {
-                        Text("\(Int(wm.activeCalories))")
-                            .font(.system(size: 34, weight: .bold, design: .rounded))
-                            .foregroundColor(.orange)
-                        HStack(spacing: 3) {
-                            Image(systemName: "flame.fill")
-                                .foregroundColor(.orange)
-                                .font(.system(size: 10))
-                            Text("CAL")
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundColor(.gray)
-                        }
-                    }
-                }
-            }
-
-            // Push content up to vertically center everything
-            Spacer()
+        WorkoutMetricsPage(
+            currentZone: wm.currentZone,
+            heartRate: wm.heartRate,
+            maxHR: wm.estimatedMaxHR,
+            zoneSeconds: wm.currentZoneSeconds,
+            tracksDistance: tracksDistance,
+            averageHeartRate: wm.averageHeartRate,
+            activeCalories: wm.activeCalories,
+            distanceText: wm.distance > 10 ? String(format: "%.2f", wm.distance / metersPerUnit) : "0.00",
+            // "Check Settings" when GPS has given no distance a minute in
+            noGPS: wm.distance <= 10 && wm.elapsedTime > 60,
+            distanceUnitLabel: distanceUnitLabel,
+            pinColor: look.color,
+            isStrength: isStrengthActivity
+        ) {
+            // When the watch dims (always-on), whole seconds only
+            ElapsedClockText(workoutMgr: wm, isLuminanceReduced: isLuminanceReduced, splitHundredths: true, size: 50)
         }
     }
+
+    /// The phone's live-workout icon colours: a red heart and a coral flame
+    static let heartColor = Color(red: 1.0, green: 0.271, blue: 0.227)  // #FF453A
+    static let calColor = TodaySection.calColor                         // #FF6B6B
 
     // MARK: - Recovery Stats Page (Sauna / Cold Plunge — big timer + HR)
 
@@ -396,9 +310,7 @@ struct ActiveWorkoutView: View {
                     Text("\(Int(wm.heartRate))")
                         .font(.system(size: 40, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
-                    Image(systemName: "heart.fill")
-                        .foregroundColor(.red)
-                        .font(.system(size: 18))
+                    WeekLineIcon(icon: .heart, color: Self.heartColor, size: 20, lineWidth: 2.4)
                 }
 
                 Spacer()
@@ -540,6 +452,125 @@ struct ActiveWorkoutView: View {
     }
 }
 
+// MARK: - Metrics Page
+
+/// The workout page (board 40): the clock as the one big number, the zone bar with the time
+/// in the zone, then BPM, CAL and distance as small cards like the phone's live workout.
+struct WorkoutMetricsPage<Clock: View>: View {
+    let currentZone: HeartRateZone
+    let heartRate: Double
+    let maxHR: Double
+    let zoneSeconds: Int
+    let tracksDistance: Bool
+    let averageHeartRate: Double
+    let activeCalories: Double
+    let distanceText: String
+    let noGPS: Bool
+    let distanceUnitLabel: String
+    let pinColor: Color
+    let isStrength: Bool
+    @ViewBuilder let clock: () -> Clock
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Spacer()
+
+            // Shrinks to fit the width only, so the cards below can't squeeze it
+            clock()
+                .foregroundColor(.white)
+                .minimumScaleFactor(0.4)
+                .lineLimit(1)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HeartRateZoneBarView(
+                currentZone: currentZone,
+                heartRate: heartRate,
+                maxHR: maxHR,
+                zoneSeconds: zoneSeconds
+            )
+            .padding(.horizontal, 4)
+            .padding(.top, 6)
+
+            // Time in zone: the time in the zone's colour, then grey caps
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(Self.zoneTime(zoneSeconds))
+                    .font(.system(size: 11, weight: .bold))
+                    .monospacedDigit()
+                    .foregroundColor(currentZone.color)
+                CapsText("In zone \(currentZone.rawValue)", size: 8.5)
+            }
+            .padding(.top, 4)
+            .padding(.bottom, 7)
+
+            if tracksDistance {
+                HStack(spacing: 5) {
+                    metricCard(icon: .heart, iconColor: ActiveWorkoutView.heartColor, label: "BPM", value: "\(Int(heartRate))")
+                    metricCard(icon: .calories, iconColor: ActiveWorkoutView.calColor, label: "CAL", value: "\(Int(activeCalories))")
+                    metricCard(icon: .pin, iconColor: pinColor,
+                               label: noGPS ? "Check Settings" : distanceUnitLabel,
+                               labelColor: noGPS ? AppColors.cardio : WeekColors.muted,
+                               value: distanceText)
+                }
+                .padding(.horizontal, 2)
+            } else {
+                // Non-distance activities: BPM (with its average) and CAL
+                HStack(spacing: 6) {
+                    metricCard(icon: .heart, iconColor: ActiveWorkoutView.heartColor, label: "BPM", value: "\(Int(heartRate))",
+                               detail: "AVG \(Int(averageHeartRate))")
+                    metricCard(icon: .calories, iconColor: ActiveWorkoutView.calColor, label: "CAL", value: "\(Int(activeCalories))")
+                }
+                .padding(.horizontal, isStrength ? 6 : 2)
+            }
+
+            Spacer()
+        }
+    }
+
+    /// A small card: the icon and grey caps label above a white value
+    private func metricCard(icon: WeekLineIcon.Icon, iconColor: Color, label: String,
+                            labelColor: Color = WeekColors.muted, value: String, detail: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 3) {
+                WeekLineIcon(icon: icon, color: iconColor, size: 10, lineWidth: 2.4)
+                CapsText(label, size: 8, color: labelColor)
+                    .minimumScaleFactor(0.7)
+            }
+            Text(value)
+                .font(.system(size: 18, weight: .bold))
+                .monospacedDigit()
+                .foregroundColor(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6) // narrow screens only
+                .fixedSize(horizontal: false, vertical: true)
+            if let detail {
+                Text(detail)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(WeekColors.muted)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(EdgeInsets(top: 6, leading: 7, bottom: 7, trailing: 7))
+        .background(TodayCard(cornerRadius: 11))
+        .accessibilityElement(children: .combine)
+    }
+
+    static func zoneTime(_ seconds: Int) -> String {
+        String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+}
+
+/// The workout clock's look: SF Pro heavy with monospaced digits, the hundredths smaller and grey.
+func workoutClockText(_ elapsed: TimeInterval, wholeSecondsOnly: Bool, size: CGFloat) -> Text {
+    let whole = Text(formatElapsedTime(Int(elapsed)))
+        .font(.system(size: size, weight: .heavy)).monospacedDigit().tracking(-size * 0.03)
+    if wholeSecondsOnly { return whole }
+    let hundredths = Int((elapsed - Double(Int(elapsed))) * 100)
+    return whole + Text(String(format: ".%02d", hundredths))
+        .font(.system(size: (size * 0.52).rounded(), weight: .heavy))
+        .monospacedDigit()
+        .foregroundColor(WeekColors.muted)
+}
+
 // MARK: - Elapsed Clock
 
 /// The workout clock, drawn from wall-clock time. Hundredths at 30fps while the screen is
@@ -548,6 +579,10 @@ struct ActiveWorkoutView: View {
 private struct ElapsedClockText: View {
     let workoutMgr: WorkoutManager
     let isLuminanceReduced: Bool
+    /// The workout page's clock: SF Pro heavy, the hundredths smaller and grey. Off, the
+    /// caller's font applies (the recovery timer keeps its own look).
+    var splitHundredths = false
+    var size: CGFloat = 62
 
     private var interval: TimeInterval {
         isLuminanceReduced || workoutMgr.isPaused ? 1.0 : 1.0 / 30.0
@@ -556,7 +591,11 @@ private struct ElapsedClockText: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: interval)) { context in
             let elapsed = workoutMgr.activeElapsed(at: context.date)
-            Text(isLuminanceReduced ? formatElapsedTime(Int(elapsed)) : formatElapsedTimePrecise(elapsed))
+            if splitHundredths {
+                workoutClockText(elapsed, wholeSecondsOnly: isLuminanceReduced, size: size)
+            } else {
+                Text(isLuminanceReduced ? formatElapsedTime(Int(elapsed)) : formatElapsedTimePrecise(elapsed))
+            }
         }
     }
 }
@@ -574,6 +613,8 @@ private struct ElapsedClockText: View {
 /// slower vs your average).
 private struct SplitOverlayView: View {
     let split: WorkoutSplit
+    /// The workout's category colour (not the old green)
+    var color: Color = AppColors.cardio
 
     private var unitLabel: String { split.unit == "km" ? "KM" : "MILE" }
     private var paceSuffix: String { split.unit == "km" ? "/km" : "/mi" }
@@ -583,7 +624,7 @@ private struct SplitOverlayView: View {
             Text("\(unitLabel) \(split.splitNumber)")
                 .font(.system(size: 13, weight: .semibold))
                 .tracking(2)
-                .foregroundColor(.green)
+                .foregroundColor(color)
             // Big: pace for the mile/km just completed — "how fast right now"
             Text("\(formatPace(split.splitSecondsPerUnit)) \(paceSuffix)")
                 .font(.system(size: 32, weight: .bold, design: .rounded))

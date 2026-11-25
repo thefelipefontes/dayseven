@@ -10,21 +10,24 @@ struct SignInView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 14) {
+            VStack(spacing: 10) {
                 // App icon/branding
-                VStack(spacing: 8) {
+                VStack(spacing: 3) {
                     Image("IconTransparent")
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 120, height: 120)
+                        .frame(width: 64, height: 64)
+                        .accessibilityHidden(true)
 
                     Text("DaySeven")
-                        .font(.headline)
+                        .font(.system(size: 18, weight: .heavy))
+                        .tracking(-0.3)
                         .foregroundColor(.white)
+                        .padding(.top, 5)
 
-                    Text("Sign in to sync your data")
-                        .font(.caption2)
-                        .foregroundColor(.gray)
+                    Text("Sign in to see your week")
+                        .font(.system(size: 12))
+                        .foregroundColor(WeekColors.muted)
                         .multilineTextAlignment(.center)
                 }
 
@@ -35,23 +38,18 @@ struct SignInView: View {
                         await phoneService.requestSignInFromPhone()
                     }
                 } label: {
-                    HStack(spacing: 6) {
+                    // The main action: a white pill with a black phone line icon
+                    PillLabel(title: phoneService.isRequesting ? "Connecting..." : "Sign in via iPhone",
+                              verticalPadding: 10) {
                         if phoneService.isRequesting {
                             ProgressView()
                                 .tint(.black)
                                 .scaleEffect(0.7)
+                                .frame(width: 14, height: 14)
                         } else {
-                            Image(systemName: "iphone")
-                                .font(.system(size: 14))
+                            WeekLineIcon(icon: .phone, color: .black, size: 14, lineWidth: 2.2)
                         }
-                        Text(phoneService.isRequesting ? "Connecting..." : "Sign in via iPhone")
-                            .font(.system(size: 14, weight: .semibold))
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background(Color.green)
-                    .foregroundColor(.black)
-                    .cornerRadius(12)
                 }
                 .buttonStyle(.plain)
                 .disabled(phoneService.isRequesting)
@@ -62,20 +60,6 @@ struct SignInView: View {
                         .foregroundColor(.gray)
                         .multilineTextAlignment(.center)
                 }
-
-                // Divider
-                HStack {
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.3))
-                        .frame(height: 1)
-                    Text("or")
-                        .font(.system(size: 10))
-                        .foregroundColor(.gray)
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.3))
-                        .frame(height: 1)
-                }
-                .padding(.horizontal, 8)
 
                 // Sign in with Apple (fallback — creates separate Apple account)
                 SignInWithAppleButton(.signIn) { request in
@@ -91,8 +75,11 @@ struct SignInView: View {
                         appVM.authService.handleSignInError(error)
                     }
                 }
+                // Apple's own button, unrestyled beyond the corner radius Apple allows. White
+                // reads best on black (its black style disappears into the background).
                 .signInWithAppleButtonStyle(.white)
                 .frame(height: 40)
+                .clipShape(Capsule())
 
                 // Error messages
                 if let error = phoneService.errorMessage {

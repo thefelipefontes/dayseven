@@ -23,7 +23,10 @@ import {
 } from './services/challengeService';
 import { resolveUnit, unitLabel, formatDistanceValue, milesToDisplay, paceLabel, formatPace as formatPaceWithUnit } from './utils/distance';
 import { getFriends } from './services/friendService';
-import { CARD_SURFACE } from './utils/designTokens';
+import { CARD_SURFACE, hexToRgb } from './utils/designTokens';
+import CategoryIcon from './components/CategoryIcon';
+import ActivityIcon from './components/ActivityIcon';
+import { formatFriendlyDate } from './utils/dateHelpers';
 import { isDemoAccount, getDemoChallenges } from './demoData';
 import ChallengeDetailModal from './components/ChallengeDetailModal';
 import FriendProfileCard from './components/FriendProfileCard';
@@ -38,6 +41,38 @@ const CATEGORY_COLOR = {
   lifting: '#00FF94',
   cardio: '#FF9500',
   recovery: '#00D1FF',
+};
+const CATEGORY_ICON_KEY = { lifting: 'lifts', cardio: 'cardio', recovery: 'recovery' };
+
+// Shared bits for the challenge sheets (Nov 2026 redesign, mocks/mock-workouts.html board=challenge)
+const SHEET_LABEL = { fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#8a8a8a', marginBottom: 9 };
+// A selected option in the challenge's category colour: faint fill, 1.5px ring, white text.
+const pickedStyle = (on, color) => ({
+  backgroundColor: on ? `rgba(${hexToRgb(color)},0.14)` : 'rgba(255,255,255,0.05)',
+  boxShadow: on ? `inset 0 0 0 1.5px rgba(${hexToRgb(color)},0.75)` : 'none',
+  border: '1px solid transparent',
+  color: on ? '#fff' : '#aaa',
+});
+const CameraIcon = ({ color = '#ccc', size = 16 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="flex-shrink-0">
+    <path d="M5 7h1a2 2 0 0 0 2 -2a1 1 0 0 1 1 -1h6a1 1 0 0 1 1 1a2 2 0 0 0 2 2h1a2 2 0 0 1 2 2v9a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2" />
+    <path d="M9 13a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" />
+  </svg>
+);
+const WhiteToggle = ({ on }) => (
+  <div className="relative flex-shrink-0 ml-3 transition-colors" style={{ width: 40, height: 22, borderRadius: 11, backgroundColor: on ? '#fff' : 'rgba(255,255,255,0.15)' }}>
+    <div className="absolute transition-all" style={{ top: 2, left: on ? 20 : 2, width: 18, height: 18, borderRadius: 9, backgroundColor: on ? '#000' : '#fff' }} />
+  </div>
+);
+// "RUN · 4.30 MI" / "MATCH: …" line under a sheet title, in the category colour.
+const CategoryCaps = ({ category, children }) => {
+  const color = CATEGORY_COLOR[category] || '#aaa';
+  return (
+    <div className="flex items-center justify-center gap-[5px]" style={{ marginTop: 3 }}>
+      {CATEGORY_ICON_KEY[category] && <CategoryIcon category={CATEGORY_ICON_KEY[category]} size={12} color={color} />}
+      <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color }}>{children}</span>
+    </div>
+  );
 };
 
 function formatRemaining(expiresAt) {
@@ -323,15 +358,14 @@ export function ChallengeApplyPastActivityModal({ isOpen, onClose, activities = 
         <div className="w-10 h-1 bg-zinc-700 rounded-full" />
       </div>
 
-      <div className="flex items-center justify-between px-4 pb-3">
+      <div className="flex items-start justify-between px-4" style={{ paddingBottom: 14 }}>
         <button onClick={handleClose} className="text-gray-400 text-sm font-medium">Cancel</button>
-        <h1 className="text-white text-base font-semibold">Pick an activity</h1>
+        <div className="text-center">
+          <h1 className="text-white text-base font-semibold">Pick a workout</h1>
+          <CategoryCaps category={cat}>Match: {ruleLabel}</CategoryCaps>
+        </div>
         <div className="w-12" />
       </div>
-
-      <p className="text-xs px-4 pb-3" style={{ color }}>
-        Must match: {ruleLabel}
-      </p>
 
       <div className="flex-1 overflow-y-auto pb-8 px-4">
         {eligible.length === 0 ? (
@@ -341,9 +375,9 @@ export function ChallengeApplyPastActivityModal({ isOpen, onClose, activities = 
           </div>
         ) : (
           <div className="space-y-2">
-            <div className="mb-2 p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
-              <label className="text-[11px] uppercase tracking-wider text-gray-500 block mb-1.5">
-                💬 Add a message with the win
+            <div className="mb-2 p-3" style={{ borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.04)' }}>
+              <label className="block" style={{ ...SHEET_LABEL, marginBottom: 6 }}>
+                Add a message with the win
               </label>
               <textarea
                 value={completionMessage}
@@ -357,11 +391,12 @@ export function ChallengeApplyPastActivityModal({ isOpen, onClose, activities = 
             </div>
             {requiresPhoto && (
               <div
-                className="mb-2 p-3 rounded-xl"
-                style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.35)' }}
+                className="mb-3 flex items-start gap-2"
+                style={{ padding: '10px 12px', borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.05)' }}
               >
-                <p className="text-xs" style={{ color: '#FFD60A' }}>
-                  📸 This challenge requires a photo. Tap any activity below — we'll prompt for a photo if it's missing one.
+                <CameraIcon color="#ccc" size={14} />
+                <p className="text-xs" style={{ color: '#ccc', lineHeight: 1.4 }}>
+                  This challenge requires a photo. Tap any workout below — we'll prompt for a photo if it's missing one.
                 </p>
               </div>
             )}
@@ -380,28 +415,31 @@ export function ChallengeApplyPastActivityModal({ isOpen, onClose, activities = 
                     }
                     onPick?.(activity, messageOrUndefined);
                   }}
-                  className="w-full p-3 rounded-xl text-left transition-colors"
+                  className="w-full p-3 text-left transition-colors"
                   style={{
-                    backgroundColor: photoBlocked ? 'rgba(255,214,10,0.04)' : 'rgba(255,255,255,0.04)',
-                    border: `1px solid ${photoBlocked ? 'rgba(255,214,10,0.25)' : `${color}25`}`,
+                    borderRadius: 16,
+                    backgroundColor: 'rgba(255,255,255,0.05)',
+                    // Every listed workout qualifies (the list is pre-filtered), so each gets the outline
+                    boxShadow: `inset 0 0 0 1.5px rgba(${hexToRgb(color)},0.5)`,
                   }}
                 >
-                  <div className="flex items-start gap-3">
+                  <div className="flex items-center gap-3">
                     <div
-                      className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
-                      style={{ backgroundColor: `${color}20` }}
+                      className="flex items-center justify-center flex-shrink-0"
+                      style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: `rgba(${hexToRgb(color)},0.16)` }}
                     >
-                      <span style={{ color, fontSize: 16 }}>⚡</span>
+                      <ActivityIcon type={activity.type} subtype={activity.subtype} size={20} color={color} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-white text-sm font-medium truncate">
+                      <p className="text-white text-sm font-semibold truncate">
                         {activity.type === 'Other' ? (activity.subtype || 'Other') : activity.type}
                         {activity.subtype && activity.type !== 'Other' && ` · ${activity.subtype}`}
                       </p>
-                      <p className="text-gray-500 text-xs">{activity.date}{activity.duration ? ` · ${activity.duration} min` : ''}{activity.distance ? ` · ${formatDistanceValue(activity.distance, resolveUnit(userProfile), 1)} ${unitLabel(resolveUnit(userProfile))}` : ''}</p>
+                      <p className="text-xs" style={{ color: '#8a8a8a' }}>{formatFriendlyDate(activity.date)}{activity.duration ? ` · ${activity.duration} min` : ''}{activity.distance ? ` · ${formatDistanceValue(activity.distance, resolveUnit(userProfile), 1)} ${unitLabel(resolveUnit(userProfile))}` : ''}</p>
                       {photoBlocked && (
-                        <p className="text-[11px] mt-1 font-semibold" style={{ color: '#FFD60A' }}>
-                          📸 Tap to add a photo and apply
+                        <p className="mt-1 flex items-center gap-[5px]" style={{ fontSize: 11.5, color: '#aaa' }}>
+                          <CameraIcon color="#aaa" size={12} />
+                          Needs a photo · tap to add one
                         </p>
                       )}
                     </div>
@@ -552,9 +590,20 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
         <div className="w-10 h-1 bg-zinc-700 rounded-full" />
       </div>
 
-      <div className="flex items-center justify-between px-4 pb-3">
+      <div className="flex items-start justify-between px-4" style={{ paddingBottom: 10 }}>
         <button onClick={handleClose} className="text-gray-400 text-sm font-medium transition-all duration-150 active:scale-90 active:opacity-70">Skip</button>
-        <h1 className="text-white text-lg font-semibold">Challenge a friend</h1>
+        <div className="text-center">
+          <h1 className="text-white font-bold" style={{ fontSize: 17 }}>Challenge a friend</h1>
+          {matchRule && (() => {
+            // "RUN · 4.30 MI": the workout and its headline number, in the category colour
+            const u = resolveUnit(userProfile);
+            const d = parseFloat(activity?.distance) || 0;
+            const mins = parseInt(activity?.duration, 10) || 0;
+            const name = activity?.type === 'Running' ? 'Run' : activity?.type === 'Cycle' ? 'Ride' : (activity?.type === 'Other' ? (activity?.subtype || 'Workout') : activity?.type);
+            const value = d ? `${formatDistanceValue(d, u, 2)} ${unitLabel(u)}` : mins ? `${mins} min` : '';
+            return <CategoryCaps category={matchRule.category}>{name}{value ? ` · ${value}` : ''}</CategoryCaps>;
+          })()}
+        </div>
         <div className="w-10" />
       </div>
 
@@ -569,7 +618,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
           {/* Scrollable middle */}
           <div className="flex-1 overflow-y-auto px-4 pb-3">
             {/* Title (optional) */}
-            <p className="text-xs text-gray-400 mb-2">Title (optional)</p>
+            <p style={SHEET_LABEL}>Title (optional)</p>
             <input
               type="text"
               value={title}
@@ -577,7 +626,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
               maxLength={60}
               placeholder="e.g. Saturday long run"
               className="w-full mb-4 px-3 py-3 rounded-xl text-white placeholder-gray-600 text-sm focus:outline-none"
-              style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+              style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
             />
 
             {/* Metric picker — only when 2+ are available (distance cardio with miles + minutes).
@@ -595,7 +644,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
               const ruleColor = CATEGORY_COLOR[matchRule.category] || '#777';
               return (
                 <>
-                  <p className="text-xs text-gray-400 mb-2">Match on</p>
+                  <p style={SHEET_LABEL}>Match on</p>
                   <div className="flex gap-2 mb-3">
                     {metrics.map(m => {
                       const isSelected = metric === m;
@@ -603,15 +652,11 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
                         <button
                           key={m}
                           onClick={() => { setMetric(m); triggerHaptic(ImpactStyle.Light); }}
-                          className="flex-1 py-2 rounded-xl text-xs font-medium transition-all duration-150 active:scale-95"
-                          style={{
-                            backgroundColor: isSelected ? `${ruleColor}1A` : 'rgba(255,255,255,0.04)',
-                            color: isSelected ? 'white' : 'rgba(255,255,255,0.6)',
-                            border: `1px solid ${isSelected ? ruleColor : 'transparent'}`,
-                          }}
+                          className="flex-1 rounded-xl transition-all duration-150 active:scale-95"
+                          style={{ ...pickedStyle(isSelected, ruleColor), padding: '9px 0', fontSize: 12.5 }}
                         >
                           <div className="font-semibold">{titles[m]}</div>
-                          <div className="text-[10px] mt-0.5 opacity-80">{labels[m]}</div>
+                          <div style={{ fontSize: 10.5, marginTop: 2, color: isSelected ? '#ddd' : '#777' }}>{labels[m]}</div>
                         </button>
                       );
                     })}
@@ -621,30 +666,19 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
             })()}
 
             {/* Match rule preview */}
-            <div
-              className="mb-4 p-3 rounded-xl"
-              style={{
-                backgroundColor: `${CATEGORY_COLOR[matchRule.category] || '#777'}10`,
-                border: `1px solid ${CATEGORY_COLOR[matchRule.category] || '#777'}30`
-              }}
-            >
-              <p className="text-xs text-gray-400 mb-0.5">They'll need to:</p>
-              <p className="text-white font-medium">{describeMatchRule(matchRule, resolveUnit(userProfile))}</p>
-            </div>
+            <p className="mb-4" style={{ fontSize: 12, color: '#8a8a8a' }}>
+              They'll need to: <b className="text-white" style={{ fontWeight: 600 }}>{describeMatchRule(matchRule, resolveUnit(userProfile))}</b>
+            </p>
 
             {/* Window picker */}
-            <p className="text-xs text-gray-400 mb-2">Time to complete</p>
+            <p style={SHEET_LABEL}>Time to complete</p>
             <div className="flex gap-2 mb-5">
               {CHALLENGE_WINDOW_HOURS.map(hrs => (
                 <button
                   key={hrs}
                   onClick={() => { setWindowHours(hrs); triggerHaptic(ImpactStyle.Light); }}
-                  className="flex-1 py-3 rounded-xl text-sm font-medium transition-all duration-150 active:scale-95"
-                  style={{
-                    backgroundColor: windowHours === hrs ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)',
-                    color: windowHours === hrs ? 'white' : 'rgba(255,255,255,0.6)',
-                    border: windowHours === hrs ? '1px solid rgba(255,255,255,0.2)' : '1px solid transparent'
-                  }}
+                  className="flex-1 py-3 rounded-xl text-sm font-semibold transition-all duration-150 active:scale-95"
+                  style={pickedStyle(windowHours === hrs, CATEGORY_COLOR[matchRule.category] || '#aaa')}
                 >
                   {hrs}h
                 </button>
@@ -664,30 +698,25 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
                 setRequirePhoto(p => !p);
                 triggerHaptic(ImpactStyle.Light);
               }}
-              className="w-full flex items-center justify-between p-3 rounded-xl mb-5 text-left transition-all duration-150 active:scale-[0.98]"
+              className="w-full flex items-center gap-3 p-3 mb-5 text-left transition-all duration-150 active:scale-[0.98]"
               style={{
-                backgroundColor: requirePhoto ? 'rgba(255,214,10,0.08)' : 'rgba(255,255,255,0.04)',
-                border: `1px solid ${requirePhoto ? 'rgba(255,214,10,0.3)' : 'transparent'}`,
+                borderRadius: 14,
+                backgroundColor: 'rgba(255,255,255,0.05)',
                 opacity: canRequirePhoto ? 1 : 0.55,
               }}
             >
-              <div>
-                <p className="text-sm font-medium text-white">📸 Require photo proof</p>
-                <p className="text-[11px] mt-0.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
+              <div className="flex items-center justify-center flex-shrink-0" style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.08)' }}>
+                <CameraIcon color="#ddd" size={16} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-white">Require photo proof</p>
+                <p className="mt-0.5" style={{ fontSize: 11.5, color: '#8a8a8a' }}>
                   {canRequirePhoto
                     ? 'They must attach a photo to their workout for it to count.'
                     : 'Add a photo to your own activity first to require one from them.'}
                 </p>
               </div>
-              <div
-                className="w-10 h-6 rounded-full relative transition-colors flex-shrink-0 ml-3"
-                style={{ backgroundColor: requirePhoto ? '#FFD60A' : 'rgba(255,255,255,0.15)' }}
-              >
-                <div
-                  className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all"
-                  style={{ left: requirePhoto ? '18px' : '2px' }}
-                />
-              </div>
+              <WhiteToggle on={requirePhoto} />
             </button>
 
             {/* Free-tier gate: 1 challenge per calendar month */}
@@ -708,7 +737,7 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
 
             {/* Friend picker (multi-select) */}
             <div className="flex items-center justify-between mb-2">
-              <p className="text-xs text-gray-400">{isGroup ? `Pick friends (${selectedCount} selected)` : 'Pick a friend'}</p>
+              <p style={{ ...SHEET_LABEL, marginBottom: 0 }}>{isGroup ? `Pick friends (${selectedCount} selected)` : 'Pick a friend'}</p>
               {selectedCount > 0 && (
                 <button onClick={() => setSelectedFriendUids(new Set())} className="text-xs text-gray-500">Clear</button>
               )}
@@ -727,14 +756,10 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
                       key={opt.key}
                       onClick={() => { setSendMode(opt.key); triggerHaptic(ImpactStyle.Light); }}
                       className="flex-1 py-2 rounded-md text-center transition-all duration-150 active:scale-95"
-                      style={{
-                        backgroundColor: active ? 'rgba(255,214,10,0.15)' : 'transparent',
-                        color: active ? '#FFD60A' : 'rgba(255,255,255,0.5)',
-                        border: active ? '1px solid rgba(255,214,10,0.3)' : '1px solid transparent',
-                      }}
+                      style={{ ...pickedStyle(active, CATEGORY_COLOR[matchRule?.category] || '#aaa'), ...(active ? {} : { backgroundColor: 'transparent' }) }}
                     >
                       <div className="text-sm font-semibold">{opt.label}</div>
-                      <div className="text-[10px] mt-0.5" style={{ color: active ? 'rgba(255,214,10,0.7)' : 'rgba(255,255,255,0.35)' }}>{opt.sublabel}</div>
+                      <div className="text-[10px] mt-0.5" style={{ color: active ? '#ddd' : '#777' }}>{opt.sublabel}</div>
                     </button>
                   );
                 })}
@@ -753,10 +778,11 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
                     <button
                       key={f.uid}
                       onClick={() => toggleFriend(f.uid)}
-                      className="w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-150 active:scale-[0.98]"
+                      className="w-full flex items-center gap-3 transition-all duration-150 active:scale-[0.98]"
                       style={{
-                        backgroundColor: selected ? 'rgba(255,255,255,0.08)' : 'transparent',
-                        border: selected ? '1px solid rgba(255,255,255,0.15)' : '1px solid transparent'
+                        padding: '10px 12px',
+                        borderRadius: 14,
+                        backgroundColor: selected ? 'rgba(255,255,255,0.06)' : 'transparent',
                       }}
                     >
                       <div className="w-10 h-10 rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center text-white text-sm">
@@ -767,10 +793,11 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
                         {f.username && f.displayName && <p className="text-gray-500 text-xs">@{f.username}</p>}
                       </div>
                       <div
-                        className="w-5 h-5 rounded-md flex items-center justify-center transition-colors"
+                        className="flex items-center justify-center transition-colors flex-shrink-0"
                         style={{
-                          backgroundColor: selected ? '#FFD60A' : 'transparent',
-                          border: selected ? '1px solid #FFD60A' : '1px solid rgba(255,255,255,0.2)'
+                          width: 24, height: 24, borderRadius: 12,
+                          backgroundColor: selected ? '#fff' : 'transparent',
+                          boxShadow: selected ? 'none' : 'inset 0 0 0 1.5px rgba(255,255,255,0.25)'
                         }}
                       >
                         {selected && (
@@ -801,9 +828,11 @@ export function ChallengeFriendModal({ isOpen, onClose, user, userProfile, activ
             <button
               onClick={handleSend}
               disabled={selectedCount === 0 || isSubmitting}
-              className="w-full py-3.5 rounded-xl font-semibold transition-all duration-150 active:scale-[0.98]"
+              className="w-full py-3.5 font-bold transition-all duration-150 active:scale-[0.98]"
               style={{
-                backgroundColor: selectedCount > 0 ? '#FFD60A' : 'rgba(255,255,255,0.1)',
+                borderRadius: 14,
+                fontSize: 15,
+                backgroundColor: selectedCount > 0 ? '#fff' : 'rgba(255,255,255,0.1)',
                 color: selectedCount > 0 ? 'black' : 'rgba(255,255,255,0.4)',
                 opacity: isSubmitting ? 0.6 : 1
               }}

@@ -56,6 +56,8 @@ import { manualCaloriesForDate, needsHkCaloriesBackfill } from './utils/calories
 import { reverseGeocode, formatLocation } from './utils/geocode';
 import SectionIcon from './components/SectionIcon';
 import CategoryIcon from './components/CategoryIcon';
+import WeekGoalsHero, { CheckBadge } from './components/WeekGoalsHero';
+import { CATEGORY_COLORS, CARD_SURFACE, GOLD, TEXT_MUTED, TEXT_FAINT } from './utils/designTokens';
 import LongPressMenu from './components/LongPressMenu';
 import { SwipeableProvider, SwipeableActivityItem, SwipeableContext, globalIsPulling } from './components/SwipeableActivityItem';
 import WeekStatsModal from './components/WeekStatsModal';
@@ -527,145 +529,15 @@ const initialRecoveryBreakdown = {
 };
 
 // Utility Components
-const ProgressRing = ({ progress, size = 60, strokeWidth = 4, color = '#00FF94', animate = true }) => {
-  const [mounted, setMounted] = useState(false);
-  const radius = (size - strokeWidth) / 2;
-  const circumference = radius * 2 * Math.PI;
-  const targetOffset = circumference - (Math.min(progress, 100) / 100) * circumference;
-  
-  useEffect(() => {
-    // Trigger animation after mount
-    const timer = setTimeout(() => setMounted(true), 50);
-    return () => clearTimeout(timer);
-  }, []);
-  
-  return (
-    <svg width={size} height={size} className="transform -rotate-90">
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        fill="none"
-        stroke="rgba(255,255,255,0.1)"
-        strokeWidth={strokeWidth}
-      />
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        fill="none"
-        stroke={color}
-        strokeWidth={strokeWidth}
-        strokeDasharray={circumference}
-        strokeDashoffset={animate && mounted ? targetOffset : circumference}
-        strokeLinecap="round"
-        style={{ 
-          transition: 'stroke-dashoffset 1s ease-out'
-        }}
-      />
-    </svg>
-  );
-};
 
-// The per-category streak line under each Home ring. The master (hybrid) streak already
-// sits in the sticky header, so what's missing on Home is the per-category runs — those
-// otherwise only exist on Profile, which is the trip this saves.
-//
-// Renders a fixed-height blank line when there's no streak rather than nothing at all, so
-// the three rings stay baseline-aligned no matter who has what going. A paused streak shows
-// why: 🩹 in injury purple, or 🌴 in the vacation-mode cyan.
-//
-// The marker stays an emoji while the activity labels above are line icons — that contrast
-// is deliberate. It keeps 🔥 as the single warm accent in the card and matches the emoji
-// the header's master-streak badge uses.
+// Why a goal's streak is on hold, if it is: 🩹 in injury purple, or 🌴 in the vacation-mode
+// cyan. Home's goal rows (components/WeekGoalsHero) show it in place of the 🔥.
 const RING_STREAK_PAUSED = {
   vacation: { emoji: '🌴', color: '#00D1FF' },
   injury: { emoji: '🩹', color: '#A78BFA' },
 };
-const RingStreak = ({ weeks = 0, color, paused = null }) => {
-  const pause = RING_STREAK_PAUSED[paused];
-  return (
-    <div
-      className="text-[11px] font-bold mt-0.5 h-[15px] leading-[15px]"
-      style={{ color: pause ? pause.color : color }}
-    >
-      {weeks > 0 ? `${pause ? pause.emoji : '🔥'} ${weeks}w` : ''}
-    </div>
-  );
-};
-
-// Ring label + its expand chevron. The chevron is absolutely positioned so it sits OUTSIDE
-// the centering box: the ring, "💪 Strength", and the streak line below then all share one
-// center axis, with only the chevron hanging off to the right. Left in the flow it would
-// drag the title left of the ring and push the streak line off-axis with it.
-//
-// The mark is a line icon tinted to the ring's own color, which ties label to ring in a way
-// the old emoji couldn't. It comes from CategoryIcon so Home, Profile, the share cards and
-// every stats modal draw these three marks from one mapping.
-const RingLabel = ({ category, label, expanded }) => (
-  <div className="text-sm font-medium mt-2">
-    <span className="relative inline-flex items-center gap-[5px]">
-      <CategoryIcon category={category} size={16} className="flex-shrink-0" />
-      <span>{label}</span>
-      <span className="text-[10px] text-gray-500 absolute left-full ml-1 top-1/2 -translate-y-1/2">
-        {expanded ? '▲' : '▼'}
-      </span>
-    </span>
-  </div>
-);
-
-const ProgressBar = ({ progress, color = '#00FF94', height = 4 }) => (
-  <div className="w-full rounded-full overflow-hidden" style={{ height, backgroundColor: 'rgba(255,255,255,0.1)' }}>
-    <div 
-      className="h-full rounded-full transition-all duration-500"
-      style={{ width: `${Math.min(progress, 100)}%`, backgroundColor: color }}
-    />
-  </div>
-);
 
 // ActivityIcon is imported from ./components/ActivityIcon
-
-// Animated Counter Component - smoothly animates number changes
-const AnimatedCounter = ({ value, duration = 500, className = "" }) => {
-  const [displayValue, setDisplayValue] = useState(value);
-  const previousValue = useRef(value);
-  const animationRef = useRef(null);
-
-  useEffect(() => {
-    if (previousValue.current === value) return;
-
-    const startValue = previousValue.current;
-    const endValue = value;
-    const startTime = performance.now();
-
-    const animate = (currentTime) => {
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-
-      // Ease out cubic for smooth deceleration
-      const easeOut = 1 - Math.pow(1 - progress, 3);
-      const current = startValue + (endValue - startValue) * easeOut;
-
-      setDisplayValue(Math.round(current));
-
-      if (progress < 1) {
-        animationRef.current = requestAnimationFrame(animate);
-      } else {
-        previousValue.current = value;
-      }
-    };
-
-    animationRef.current = requestAnimationFrame(animate);
-
-    return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
-    };
-  }, [value, duration]);
-
-  return <span className={className}>{displayValue}</span>;
-};
 
 // Offline Indicator Component
 const OfflineIndicator = () => {
@@ -11169,11 +11041,11 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
     };
   }, [healthHistory, weekProgress.steps?.today, weekProgress.steps?.goal]);
   const formatK = (n) => `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
-  // Recovery bonus: a small, faintly tinted pill centered right under the rings — grouped with
+  // Recovery bonus: a small, faintly tinted pill centered right under the goal bars — grouped with
   // the goals, but small enough not to read as a fourth ring. (On the Week Progress line it
   // read as feeding the percentage, which it doesn't.) Tap for the breakdown.
   const recoveryBonusPill = (
-    <div className="mt-3.5 flex justify-center">
+    <div className="mt-5 flex justify-center">
       <button
         onClick={() => { triggerHaptic(ImpactStyle.Light); setShowRecoveryBreakdown(!showRecoveryBreakdown); }}
         className="inline-flex items-center gap-1.5 px-3 py-[5px] rounded-full text-[12px] active:opacity-70 transition-opacity"
@@ -11194,18 +11066,18 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
     ? `${formatK(weekSteps.leftToday)} more today`
     : `${formatK(weekSteps.perDayToFinish)} a day`;
   const stepsPaceSentence = weekSteps.total >= weekSteps.goal ? (
-    <><span className="font-semibold" style={{ color: '#00FF94' }}>Steps done.</span> {formatK(weekSteps.goal)} for the week — everything from here is extra.</>
+    <><span className="font-semibold text-white">Steps done.</span> {formatK(weekSteps.goal)} for the week — everything from here is extra.</>
   ) : weekSteps.dayIndex === 0 ? (
     <><span className="font-semibold text-white">New week.</span> {stepsRate} wins it.</>
   ) : weekSteps.lastDay ? (
     // Saturday: "to make up" and "more today" would be the same number twice.
     <><span className="font-semibold text-white">Last day.</span> {stepsRate} wins the week.</>
   ) : Math.abs(weekSteps.aheadBy) < 500 ? (
-    <><span className="font-semibold" style={{ color: '#00FF94' }}>On pace going into today.</span> {stepsRate} wins it.</>
+    <><span className="font-semibold text-white">On pace going into today.</span> {stepsRate} wins it.</>
   ) : weekSteps.aheadBy > 0 ? (
-    <><span className="font-semibold" style={{ color: '#00FF94' }}>{formatK(weekSteps.aheadBy)} ahead going into today.</span> {stepsRate} wins it.</>
+    <><span className="font-semibold text-white">{formatK(weekSteps.aheadBy)} ahead going into today.</span> {stepsRate} wins it.</>
   ) : (
-    <><span className="font-semibold" style={{ color: '#FFC800' }}>{formatK(-weekSteps.aheadBy)} behind going into today.</span> {stepsRate} still wins it.</>
+    <><span className="font-semibold text-white">{formatK(-weekSteps.aheadBy)} behind going into today.</span> {stepsRate} still wins it.</>
   );
   const showCaloriesOnHome = userProfile?.privacySettings?.showCaloriesOnHome === true;
 
@@ -11865,22 +11737,22 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
           </div>
         )}
 
-      <div className="p-4 rounded-2xl space-y-3" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+      {/* Same surface and bold numbers as the goals card above (Nov 2026 redesign, mock F1). */}
+      <div className="p-4 space-y-3.5" style={CARD_SURFACE}>
         {/* Steps today, against today's share of the week (utils/weekGoals stepsDailyShare) —
-            fixed for the day, reset each morning from how the week stands. The count turns
-            purple once today's share is walked. No share once the week's steps are done, or
-            for users whose Winning Streak doesn't count steps. */}
+            fixed for the day, reset each morning from how the week stands. No share once the
+            week's steps are done, or for users whose Winning Streak doesn't count steps. */}
         {(() => {
           const todaySteps = weekProgress.steps?.today || 0;
           const showShare = thisWeekJudged.required.includes('steps') && weekSteps.total < weekSteps.goal && weekSteps.perDayToFinish > 0;
           return (
-            <div className="flex items-center gap-3">
-              <span className="text-lg"><CategoryIcon category="steps" size={18} /></span>
-              <div className="flex-1 flex items-baseline justify-between">
-                <span className="text-xs text-gray-400">Steps today</span>
-                <span className="text-[13.5px] font-semibold" style={{ color: showShare && todaySteps >= weekSteps.perDayToFinish ? '#BF5AF2' : undefined }}>
+            <div className="flex items-center gap-3.5">
+              <CategoryIcon category="steps" size={20} className="flex-shrink-0" />
+              <div className="flex-1 flex items-center justify-between">
+                <span className="text-[15px]" style={{ color: '#aaa' }}>Steps today</span>
+                <span className="flex items-baseline" style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.5px', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                   {todaySteps.toLocaleString()}
-                  {showShare && <span className="font-medium" style={{ color: '#777' }}> / {formatK(weekSteps.perDayToFinish)}</span>}
+                  {showShare && <span style={{ fontSize: 14, fontWeight: 700, color: TEXT_FAINT, letterSpacing: '-0.2px', marginLeft: 1 }}>/{formatK(weekSteps.perDayToFinish)}</span>}
                 </span>
               </div>
             </div>
@@ -11892,18 +11764,19 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
         <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
         {/* Today's sessions from the weekly plan (Plan tab) */}
         {plannedTodayItems.length > 0 && (
-          <button onClick={onOpenPlan} className="w-full flex items-center gap-3 text-left">
-            {/* Grey like the row label: the calendar isn't a goal category, so no colour */}
-            <span className="text-lg"><SectionIcon type="calendar" size={18} color="#aaa" /></span>
+          <button onClick={onOpenPlan} className="w-full flex items-center gap-3.5 text-left">
+            {/* Grey: the calendar isn't a goal category, so no colour */}
+            <span className="flex-shrink-0"><SectionIcon type="calendar" size={20} color={TEXT_MUTED} /></span>
             <div className="flex-1 flex items-center justify-between gap-2">
-              <span className="text-xs text-gray-400">Planned today</span>
-              <div className="flex flex-wrap justify-end gap-1.5">
+              <span className="text-[15px]" style={{ color: '#aaa' }}>Planned today</span>
+              <div className="flex flex-wrap justify-end gap-x-3 gap-y-1.5">
                 {plannedTodayItems.map((p, i) => (
-                  // Plain text, not a pill — only the icon carries colour (a done item turns
-                  // its label the category colour with a check).
-                  <span key={i} className="flex items-center gap-1 text-[12px] font-semibold"
-                    style={{ color: p.done ? PLAN_CAT[p.cat].color : '#ccc' }}>
-                    {p.done ? '✓' : <CategoryIcon category={PLAN_CAT[p.cat].icon} size={12} />} {p.label}
+                  // Name in white; the colour is the icon while it's to do, and the goals
+                  // card's check badge once it's done.
+                  <span key={i} className="flex items-center gap-2 text-[16px] font-bold text-white">
+                    {!p.done && <CategoryIcon category={PLAN_CAT[p.cat].icon} size={18} />}
+                    <span>{p.label}</span>
+                    {p.done && <CheckBadge color={PLAN_CAT[p.cat].color} />}
                   </span>
                 ))}
               </div>
@@ -11936,23 +11809,23 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
                 <button
                   key={act.id || i}
                   onClick={() => { triggerHaptic(ImpactStyle.Light); setSelectedActivity(act); }}
-                  className="w-full flex items-center gap-3 py-1.5 text-left active:opacity-70 transition-opacity"
+                  className="w-full flex items-center gap-3.5 py-1 text-left active:opacity-70 transition-opacity"
                 >
-                  <div className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `rgba(${tint},0.1)` }}>
-                    <ActivityIcon type={act.type} subtype={act.subtype} size={17} sportEmoji={act.sportEmoji} customEmoji={act.customEmoji} customIcon={act.customIcon} countToward={act.countToward} customActivityCategory={act.customActivityCategory} />
+                  <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `rgba(${tint},0.16)` }}>
+                    <ActivityIcon type={act.type} subtype={act.subtype} size={22} sportEmoji={act.sportEmoji} customEmoji={act.customEmoji} customIcon={act.customIcon} countToward={act.countToward} customActivityCategory={act.customActivityCategory} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-[13.5px] font-semibold truncate">{name}</div>
-                    <div className="text-[11.5px] text-gray-400 truncate">{details.join('  ·  ')}</div>
+                    <div className="text-[16px] font-semibold truncate">{name}</div>
+                    <div className="text-[13.5px] truncate mt-0.5" style={{ color: TEXT_MUTED }}>{details.join(' · ')}</div>
                   </div>
-                  <span className="text-gray-600 text-xs">›</span>
+                  <span className="text-gray-600 text-sm">›</span>
                 </button>
               );
             })}
           </div>
         ) : (
-          <p className="text-[12.5px] leading-snug" style={{ color: '#aaa' }}>
-            <span className="font-semibold" style={{ color: '#ccc' }}>No workout yet today.</span> A rest day still counts toward a winning week.
+          <p className="text-[15px] leading-snug" style={{ color: '#aaa' }}>
+            <span className="font-semibold text-white">No workout yet today.</span> A rest day still counts toward a winning week.
           </p>
         )}
 
@@ -11960,11 +11833,11 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
             no bar, same row style as Steps today. */}
         {showCaloriesOnHome && (<>
         <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
-        <div className="flex items-center gap-3">
-          <span className="text-lg"><CategoryIcon category="calories" size={18} /></span>
-          <div className="flex-1 flex items-baseline justify-between">
-            <span className="text-xs text-gray-400">Active calories today</span>
-            <span className="text-[13.5px] font-semibold">{weekProgress.calories.burned.toLocaleString()}</span>
+        <div className="flex items-center gap-3.5">
+          <CategoryIcon category="calories" size={20} className="flex-shrink-0" />
+          <div className="flex-1 flex items-center justify-between">
+            <span className="text-[15px]" style={{ color: '#aaa' }}>Active calories today</span>
+            <span style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.5px', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{weekProgress.calories.burned.toLocaleString()}</span>
           </div>
         </div>
         </>)}
@@ -11976,9 +11849,9 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
             <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
             <button
               onClick={() => { triggerHaptic(ImpactStyle.Light); setShowRecentActivity(v => !v); }}
-              className="w-full flex items-center justify-between pt-3 text-left"
+              className="w-full flex items-center justify-between pt-3.5 text-left"
             >
-              <span className="text-xs text-gray-400">Recent activity</span>
+              <span className="text-[15px]" style={{ color: '#aaa' }}>Recent activity</span>
               <span className="text-[10px] text-gray-500">{showRecentActivity ? '▲' : '▼'}</span>
             </button>
             {showRecentActivity && (
@@ -12333,102 +12206,38 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
               // whose meaning changed: the days left are now headroom, not a deadline.
               : weekComplete
                 ? `${daysLeft} day${daysLeft !== 1 ? 's' : ''} left in the week`
-                : `${hasExistingStreak ? 'Hit these to keep your streaks alive' : `Hit ${thisWeekJudged.required.length === 2 ? 'both' : 'all three'} this week to start your Winning Streak`} · ${daysLeft} day${daysLeft !== 1 ? 's' : ''} left`}</p>
+                // The days left sit in the card's header now, so no trailing "· N days left".
+                : (hasExistingStreak ? 'Hit these to keep your streaks alive' : `Hit ${thisWeekJudged.required.length === 2 ? 'both' : 'all three'} this week to start your Winning Streak`)}</p>
           </div>
 
-          {/* Individual Goals - The Main Event */}
-          <div className="p-5 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-          <div className="flex items-center justify-around">
-            {/* Strength */}
-            <button
-              className="text-center transition-all duration-150"
-              onClick={() => setShowStrengthBreakdown(!showStrengthBreakdown)}
-              onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.93)'; triggerHaptic(ImpactStyle.Light); }}
-              onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
-              onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.93)'}
-              onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
-              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-            >
-              <div className="relative inline-block">
-                <ProgressRing progress={liftsPercent} size={72} strokeWidth={6} color="#00FF94" />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-xl font-black"><AnimatedCounter value={weekProgress.lifts.completed} />/{weekProgress.lifts.goal}</span>
-                </div>
-              </div>
-              <RingLabel category="lifts" label="Strength" expanded={showStrengthBreakdown} />
-              <RingStreak weeks={userData.streaks?.lifts} color="#00FF94" paused={streakPaused('lifts')} />
-            </button>
-            
-            {/* Cardio */}
-            <button
-              className="text-center transition-all duration-150"
-              onClick={() => setShowCardioBreakdown(!showCardioBreakdown)}
-              onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.93)'; triggerHaptic(ImpactStyle.Light); }}
-              onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
-              onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.93)'}
-              onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
-              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-            >
-              <div className="relative inline-block">
-                <ProgressRing progress={cardioPercent} size={72} strokeWidth={6} color="#FF9500" />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-xl font-black"><AnimatedCounter value={weekProgress.cardio?.completed || 0} />/{weekProgress.cardio?.goal || 0}</span>
-                </div>
-              </div>
-              <RingLabel category="cardio" label="Cardio" expanded={showCardioBreakdown} />
-              <RingStreak weeks={userData.streaks?.cardio} color="#FF9500" paused={streakPaused('cardio')} />
-            </button>
-            
-            {/* Steps — the week's steps against stepsPerDay × 7. Counts toward the Winning
-                Streak (utils/weekGoals); Recovery moved to the bonus row below. */}
-            <button
-              className="text-center transition-all duration-150"
-              onClick={() => setShowStepsBreakdown(!showStepsBreakdown)}
-              onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.93)'; triggerHaptic(ImpactStyle.Light); }}
-              onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
-              onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.93)'}
-              onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
-              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-            >
-              <div className="relative inline-block">
-                <ProgressRing progress={Math.min((weekSteps.total / weekSteps.goal) * 100, 100)} size={72} strokeWidth={6} color="#BF5AF2" />
-                {/* Pace tick: where the daily goal × finished days would put the ring */}
-                {weekSteps.dayIndex > 0 && weekSteps.total < weekSteps.goal && (() => {
-                  const a = (weekSteps.dayIndex / 7) * 2 * Math.PI - Math.PI / 2;
-                  const r = (72 - 6) / 2;
-                  return (
-                    <svg width={72} height={72} className="absolute inset-0 pointer-events-none">
-                      <line
-                        x1={36 + (r - 4) * Math.cos(a)} y1={36 + (r - 4) * Math.sin(a)}
-                        x2={36 + (r + 4) * Math.cos(a)} y2={36 + (r + 4) * Math.sin(a)}
-                        stroke="#fff" strokeWidth={2} strokeLinecap="round"
-                      />
-                    </svg>
-                  );
-                })()}
-                <div className="absolute inset-0 flex flex-col items-center justify-center leading-none">
-                  <span className="text-lg font-black">{Math.round(weekSteps.total / 1000)}k</span>
-                  <span className="text-[9px] mt-0.5" style={{ color: '#777' }}>/ {formatK(weekSteps.goal)}</span>
-                </div>
-              </div>
-              <RingLabel category="steps" label="Steps" expanded={showStepsBreakdown} />
-              <RingStreak weeks={userData.streaks?.steps} color="#BF5AF2" paused={streakPaused('steps')} />
-            </button>
-          </div>
+          {/* Individual Goals - The Main Event: the week's % on top, then one row per goal
+              (Nov 2026 redesign, components/WeekGoalsHero — it also plays the Light up intro). */}
+          <div className="p-5" style={CARD_SURFACE}>
+          <WeekGoalsHero
+            percent={overallPercent}
+            daysLeft={daysLeft}
+            rows={[
+              { key: 'lifts', label: 'Strength', color: CATEGORY_COLORS.lifts, kind: 'blocks', done: weekProgress.lifts.completed || 0, goal: weekProgress.lifts.goal || 0, streak: userData.streaks?.lifts || 0, paused: RING_STREAK_PAUSED[streakPaused('lifts')] || null, expanded: showStrengthBreakdown, onToggle: () => setShowStrengthBreakdown(!showStrengthBreakdown) },
+              { key: 'cardio', label: 'Cardio', color: CATEGORY_COLORS.cardio, kind: 'blocks', done: weekProgress.cardio?.completed || 0, goal: weekProgress.cardio?.goal || 0, streak: userData.streaks?.cardio || 0, paused: RING_STREAK_PAUSED[streakPaused('cardio')] || null, expanded: showCardioBreakdown, onToggle: () => setShowCardioBreakdown(!showCardioBreakdown) },
+              // Steps — the week's steps against stepsPerDay × 7. Counts toward the Winning
+              // Streak (utils/weekGoals); Recovery is the bonus row below.
+              { key: 'steps', label: 'Steps', color: CATEGORY_COLORS.steps, kind: 'steps', total: weekSteps.total, goal: weekSteps.goal, dayIndex: weekSteps.dayIndex, formatK, streak: userData.streaks?.steps || 0, paused: RING_STREAK_PAUSED[streakPaused('steps')] || null, expanded: showStepsBreakdown, onToggle: () => setShowStepsBreakdown(!showStepsBreakdown) },
+            ]}
+          />
 
           {/* Recovery bonus pill (Recovery off, goal 0: none) */}
           {(userData?.goals?.recoveryPerWeek ?? 2) > 0 && recoveryBonusPill}
 
-          {/* Status line — one slot under the rings for the week's single most important
+          {/* Status line — one slot under the goal bars for the week's single most important
               message. It replaced the stack of banners (vacation, injury, week won, streak at
               risk) that used to sit above the card; in order of priority, the first that
               applies wins, and the steps pace sentence is the everyday fallback. The status
               rows carry no icon: the bold coloured label already says what they are. */}
           {(() => {
             const row = (icon, body, action, centered = false) => (
-              <div className="mt-4 pt-3 border-t border-white/10 flex items-center gap-2">
+              <div className="mt-[22px] pt-3 border-t border-white/10 flex items-center gap-2">
                 {icon && <span className="self-start mt-[1px] flex-shrink-0">{icon}</span>}
-                <p className={`flex-1 text-[12.5px] leading-snug${centered ? ' text-center' : ''}`} style={{ color: '#ccc' }}>{body}</p>
+                <p className={`flex-1 text-[13px] leading-snug${centered ? ' text-center' : ''}`} style={{ color: '#ccc' }}>{body}</p>
                 {action}
               </div>
             );
@@ -12463,8 +12272,8 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
                 <button onClick={onReplayCelebration} className="w-full text-left active:opacity-70 transition-opacity">
                   {row(
                     null,
-                    <><span className="font-semibold" style={{ color: '#00FF94' }}>Week won.</span> Your winning streak is safe · tap to replay</>,
-                    <svg width="7" height="12" viewBox="0 0 7 12" fill="none" style={{ color: '#00FF94', flexShrink: 0 }}>
+                    <><span className="font-semibold" style={{ color: GOLD }}>Week won.</span> Your winning streak is safe · tap to replay</>,
+                    <svg width="7" height="12" viewBox="0 0 7 12" fill="none" style={{ color: GOLD, flexShrink: 0 }}>
                       <path d="M1 1L6 6L1 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
                     </svg>
                   )}
@@ -12498,7 +12307,7 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
                 null,
                 <><span className="font-semibold" style={{ color: '#FF6B5E' }}>{daysLeft === 1 ? 'Last day:' : 'To go:'}</span> {toGo.join(', ')}{stepsNote && <span style={{ color: '#777' }}> ({stepsNote})</span>}</>,
                 null,
-                true // centered under the rings
+                true // centered under the bars
                   )}
                 </button>
               );
@@ -12649,15 +12458,7 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
             </div>
           )}
 
-          {/* Overall Progress Bar */}
-          <div className="mt-4 pt-4 border-t border-white/10">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-gray-400">Week Progress <span className="font-bold ml-1" style={{ color: overallPercent >= 100 ? '#FFD700' : 'white' }}><AnimatedCounter value={overallPercent} />%</span></span>
-            </div>
-            {/* Gold like the winning-streak badge — finishing this bar is what extends that
-                streak. (Green read as part of the Strength ring right above it.) */}
-            <ProgressBar progress={overallPercent} height={4} color="#FFD700" />
-          </div>
+          {/* (The gold Week Progress bar that sat here is now the big number at the top.) */}
         </div>
 
         {/* Streak Shield — quiet grey lines under the card rather than a banner above it

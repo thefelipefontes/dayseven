@@ -139,7 +139,7 @@ const ORIGIN_MESSAGE = {
 };
 
 const ORIGIN_TIMEFRAME = {
-  lifter_adding_cardio:  "In 8 weeks, your lifts will feel easier and your body will look more athletic. That's what adding the engine does.",
+  lifter_adding_cardio:  "In 8 weeks, your lifts will feel easier and your conditioning will catch up. That's what adding the engine does.",
   runner_adding_muscle:  "In 8 weeks, you'll be stronger, more built, and running faster than you were when you were only running.",
   already_hybrid:        "In 4 weeks, you'll know exactly what a complete week looks like — and you won't want to close anything less.",
   starting_from_scratch: "In 6 weeks, you'll have built a streak worth protecting. That's when it stops feeling like effort and starts feeling like identity.",

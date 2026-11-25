@@ -57,7 +57,7 @@ import { reverseGeocode, formatLocation } from './utils/geocode';
 import SectionIcon from './components/SectionIcon';
 import CategoryIcon from './components/CategoryIcon';
 import WeekGoalsHero, { CheckBadge, Collapse } from './components/WeekGoalsHero';
-import { CATEGORY_COLORS, CARD_SURFACE, CARD_BG_SOLID, GOLD, TEXT_MUTED, TEXT_FAINT } from './utils/designTokens';
+import { CATEGORY_COLORS, CARD_SURFACE, CARD_BG_SOLID, GOLD, TEXT_MUTED, NUM } from './utils/designTokens';
 import LongPressMenu from './components/LongPressMenu';
 import { SwipeableProvider, SwipeableActivityItem, SwipeableContext, globalIsPulling } from './components/SwipeableActivityItem';
 import WeekStatsModal from './components/WeekStatsModal';
@@ -11891,9 +11891,9 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
               <CategoryIcon category="steps" size={20} className="flex-shrink-0" />
               <div className="flex-1 flex items-center justify-between">
                 <span className="text-[15px]" style={{ color: '#aaa' }}>Steps today</span>
-                <span className="flex items-baseline" style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.5px', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                <span className="flex items-baseline" style={{ ...NUM.value, fontVariantNumeric: 'tabular-nums' }}>
                   {todaySteps.toLocaleString()}
-                  {showShare && <span style={{ fontSize: 14, fontWeight: 700, color: TEXT_FAINT, letterSpacing: '-0.2px', marginLeft: 1 }}>/{formatK(weekSteps.perDayToFinish)}</span>}
+                  {showShare && <span style={{ ...NUM.valueSmall, marginLeft: 1 }}>/{formatK(weekSteps.perDayToFinish)}</span>}
                 </span>
               </div>
             </div>
@@ -11978,7 +11978,7 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
           <CategoryIcon category="calories" size={20} className="flex-shrink-0" />
           <div className="flex-1 flex items-center justify-between">
             <span className="text-[15px]" style={{ color: '#aaa' }}>Active calories today</span>
-            <span style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.5px', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{weekProgress.calories.burned.toLocaleString()}</span>
+            <span style={{ ...NUM.value, fontVariantNumeric: 'tabular-nums' }}>{weekProgress.calories.burned.toLocaleString()}</span>
           </div>
         </div>
         </>)}

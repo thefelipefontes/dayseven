@@ -221,7 +221,8 @@ struct WeekStepsBar: View {
 // MARK: - Line icons (the same paths Home uses, drawn from their SVG source)
 
 struct WeekLineIcon: View {
-    enum Icon { case strength, cardio, steps, dumbbell, run, snowflake, calories, pin, chevronDown }
+    enum Icon { case strength, cardio, steps, recovery, dumbbell, run, snowflake, calories, pin, chevronDown,
+                body, circuit, bike, heart, phone, check, xmark, chevronRight, pace, clock }
 
     let icon: Icon
     let color: Color
@@ -263,6 +264,18 @@ struct WeekLineIcon: View {
             "M9 11a3 3 0 1 0 6 0a3 3 0 0 0 -6 0",
             "M17.657 16.657l-4.243 4.243a2 2 0 0 1 -2.827 0l-4.244 -4.243a8 8 0 1 1 11.314 0z"]
         case .chevronDown: return ["M6 9l6 6l6 -6"]
+        case .recovery: return ["M12 21a9 9 0 1 1 0 -18a9 9 0 0 1 0 18z", "M8 12c1.5 -2 2.5 -2 4 0s2.5 2 4 0"]
+        case .body: return ["M11 4a1 1 0 1 0 2 0a1 1 0 1 0 -2 0", "M6 20l3 -6l3 1l3 -1l3 6", "M4 8l8 1l8 -1", "M12 9v6"]
+        case .circuit: return ["M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4", "M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"]
+        case .bike: return ["M2 18a3 3 0 1 0 6 0a3 3 0 1 0 -6 0", "M16 18a3 3 0 1 0 6 0a3 3 0 1 0 -6 0",
+                            "M12 19v-4l-3 -3l5 -4l2 3h3", "M16 5a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"]
+        case .heart: return ["M19.5 12.572l-7.5 7.428l-7.5 -7.428a5 5 0 1 1 7.5 -6.566a5 5 0 1 1 7.5 6.572"]
+        case .phone: return ["M9 2.5h6a2.5 2.5 0 0 1 2.5 2.5v14a2.5 2.5 0 0 1 -2.5 2.5h-6a2.5 2.5 0 0 1 -2.5 -2.5v-14a2.5 2.5 0 0 1 2.5 -2.5z", "M11 18.5h2"]
+        case .check: return ["M5 12l5 5l10 -10"]
+        case .xmark: return ["M6 6l12 12", "M18 6l-12 12"]
+        case .chevronRight: return ["M9 6l6 6l-6 6"]
+        case .pace: return ["M4 13a8 8 0 1 0 16 0a8 8 0 1 0 -16 0", "M12 13l3 -3", "M10 3h4"]
+        case .clock: return ["M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0", "M12 7v5l3 3"]
         }
     }
 
@@ -633,10 +646,148 @@ struct TodaySection: View {
 }
 
 /// The phone's card surface: a faint white gradient, rounded 14.
-private struct TodayCard: View {
+struct TodayCard: View {
+    var cornerRadius: CGFloat = 14
     var body: some View {
-        RoundedRectangle(cornerRadius: 14)
+        RoundedRectangle(cornerRadius: cornerRadius)
             .fill(LinearGradient(colors: [Color.white.opacity(0.085), Color.white.opacity(0.05)],
                                  startPoint: .top, endPoint: .bottom))
+    }
+}
+
+// MARK: - Shared pieces for the rest of the watch (boards 40 and 41)
+
+/// The play glyph: a filled triangle with softened corners.
+struct PlayGlyph: View {
+    let color: Color
+    let size: CGFloat
+
+    var body: some View {
+        let s = size / 24
+        Path { p in
+            p.move(to: CGPoint(x: 8 * s, y: 5.5 * s))
+            p.addLine(to: CGPoint(x: 19 * s, y: 12 * s))
+            p.addLine(to: CGPoint(x: 8 * s, y: 18.5 * s))
+            p.closeSubpath()
+        }
+        .fill(color)
+        .overlay(
+            Path { p in
+                p.move(to: CGPoint(x: 8 * s, y: 5.5 * s))
+                p.addLine(to: CGPoint(x: 19 * s, y: 12 * s))
+                p.addLine(to: CGPoint(x: 8 * s, y: 18.5 * s))
+                p.closeSubpath()
+            }
+            .stroke(color, style: StrokeStyle(lineWidth: 1.6 * s, lineJoin: .round))
+        )
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+}
+
+/// A category's colour, line icon and name, as Home draws them.
+enum CategoryLook {
+    case strength, cardio, recovery, neutral
+
+    init(_ category: ActivityCategoryType?) {
+        switch category {
+        case .strength: self = .strength
+        case .cardio: self = .cardio
+        case .recovery: self = .recovery
+        case nil: self = .neutral
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .strength: return AppColors.strength
+        case .cardio: return AppColors.cardio
+        case .recovery: return AppColors.recovery
+        case .neutral: return .white
+        }
+    }
+
+    /// The badge and play-button tint (hybrid activities have no category yet: neutral white)
+    var tint: Color { color.opacity(self == .neutral ? 0.14 : 0.2) }
+    var badgeTint: Color { color.opacity(self == .neutral ? 0.12 : 0.16) }
+
+    var icon: WeekLineIcon.Icon {
+        switch self {
+        case .strength: return .strength
+        case .cardio: return .cardio
+        case .recovery, .neutral: return .recovery
+        }
+    }
+}
+
+/// An activity's icon: Home's line icon where there is one, else its SF Symbol.
+struct ActivityIcon: View {
+    let name: String
+    let sfSymbol: String
+    let color: Color
+    let size: CGFloat
+
+    private var line: WeekLineIcon.Icon? {
+        switch name {
+        case "Weightlifting", "Strength Training": return .dumbbell
+        case "Bodyweight": return .body
+        case "Circuit": return .circuit
+        case "Running": return .run
+        case "Cycle": return .bike
+        default: return nil
+        }
+    }
+
+    var body: some View {
+        if let line {
+            WeekLineIcon(icon: line, color: color, size: size)
+        } else {
+            Image(systemName: sfSymbol)
+                .font(.system(size: size * 0.9, weight: .medium))
+                .foregroundColor(color)
+                .frame(width: size, height: size)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
+/// White caps label, the watch's small grey headings.
+struct CapsText: View {
+    let text: String
+    var size: CGFloat = 10
+    var color: Color = WeekColors.muted
+
+    init(_ text: String, size: CGFloat = 10, color: Color = WeekColors.muted) {
+        self.text = text; self.size = size; self.color = color
+    }
+
+    var body: some View {
+        Text(text.uppercased())
+            .font(.system(size: size, weight: .bold))
+            .tracking(size * 0.13)
+            .foregroundColor(color)
+            .lineLimit(1)
+    }
+}
+
+/// A full-width pill: white with black content for the main action.
+struct PillLabel<Icon: View>: View {
+    let title: String
+    var background: Color = .white
+    var foreground: Color = .black
+    var fontSize: CGFloat = 14
+    var verticalPadding: CGFloat = 9
+    @ViewBuilder let icon: () -> Icon
+
+    var body: some View {
+        HStack(spacing: 6) {
+            icon()
+            Text(title).font(.system(size: fontSize, weight: .bold))
+        }
+        .foregroundColor(foreground)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, verticalPadding)
+        .background(Capsule().fill(background))
+        .contentShape(Capsule())
     }
 }

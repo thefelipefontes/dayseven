@@ -6,6 +6,15 @@ import { getUserProfile } from '../services/userService';
 import ActivityIcon from './ActivityIcon';
 import ZoomablePhoto from './ZoomablePhoto';
 import { resolveUnit, unitLabel, formatDistanceValue } from '../utils/distance';
+import CategoryIcon from './CategoryIcon';
+import { GOLD, NUM, hexToRgb } from '../utils/designTokens';
+
+// Nov 2026 redesign (mock-extras.html challengeDetail): neutral sheet, the category as an
+// icon + caps label, white primary / grey secondary / red destructive buttons.
+const CATEGORY_LABEL = { lifting: 'Strength', cardio: 'Cardio', recovery: 'Recovery' };
+const CATEGORY_ICON = { lifting: 'lifts', cardio: 'cardio', recovery: 'recovery' };
+const BTN_PRIMARY = { backgroundColor: '#fff', color: '#000' };
+const BTN_SECONDARY = { backgroundColor: 'rgba(255,255,255,0.08)', color: '#ddd' };
 
 const CATEGORY_COLOR = {
   lifting: '#00FF94',
@@ -183,6 +192,7 @@ export default function ChallengeDetailModal({
 
   const category = challenge.matchRule?.category;
   const color = CATEGORY_COLOR[category] || '#777';
+  const rgb = hexToRgb(color);
 
   const meName = userProfile?.displayName || userProfile?.username || 'You';
   const mePhotoURL = userProfile?.photoURL || null;
@@ -302,54 +312,50 @@ export default function ChallengeDetailModal({
     >
       <div className="min-h-full flex items-center justify-center p-4">
         <div
-          className="w-full max-w-sm rounded-3xl overflow-hidden transition-all duration-300 ease-out"
+          className="relative w-full max-w-sm overflow-hidden transition-all duration-300 ease-out"
           style={{
-            backgroundColor: '#0F0F10',
-            border: `1px solid ${color}25`,
+            borderRadius: 28,
+            background: 'linear-gradient(180deg, #1a1a1c, #121214)',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), inset 0 0 0 1px rgba(255,255,255,0.05)',
             transform: isAnimating ? 'scale(1) translateY(0)' : 'scale(0.95) translateY(20px)',
             opacity: isAnimating ? 1 : 0,
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Hero — gold "Challenge Details" header (matches the trophy-case
-              aesthetic from FriendProfileCard) + status pill + optional flavor title.
-              The aurora is gold rather than the category color so the modal feels
-              like a "card you opened from your trophy shelf" instead of a generic
-              category-tinted panel. */}
-          <div className="relative pt-5 pb-3 px-5 text-center">
-            <div
-              className="absolute inset-0 pointer-events-none"
-              style={{
-                background:
-                  'radial-gradient(ellipse 80% 60% at 50% 0%, rgba(255,214,10,0.22) 0%, rgba(255,214,10,0.06) 38%, transparent 72%)',
-              }}
-            />
+          {/* Category glow (Felipe's option A): a soft wash of the challenge's colour at the
+              top of the sheet. The header, the Live dot and the "Match this" row carry the
+              same colour; buttons, VS, record and streak stay neutral/gold. */}
+          <div
+            className="absolute left-0 right-0 top-0 pointer-events-none"
+            style={{ height: 260, background: `radial-gradient(ellipse 85% 62% at 50% 0%, rgba(${rgb},0.24) 0%, rgba(${rgb},0.07) 42%, transparent 74%)` }}
+          />
+          {/* Hero: category icon + caps label, status pill, optional flavor title. */}
+          <div className="relative pb-3 px-5 text-center" style={{ paddingTop: 22 }}>
             <div className="relative flex flex-col items-center">
-              <p
-                className="text-[11px] font-bold uppercase tracking-[0.18em] mb-2"
-                style={{ color: '#FFD60A' }}
-              >
-                Challenge Details
-              </p>
+              {/* The category as an icon + caps label ("CARDIO CHALLENGE") */}
+              <div className="flex items-center gap-1.5 mb-2.5">
+                {CATEGORY_ICON[category] && <CategoryIcon category={CATEGORY_ICON[category]} size={14} />}
+                <p className="uppercase" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', color }}>
+                  {CATEGORY_LABEL[category] ? `${CATEGORY_LABEL[category]} challenge` : 'Challenge'}
+                </p>
+              </div>
               <div className="flex items-center gap-2">
+                {/* Neutral status pill; Live gets a small dot in the category colour */}
                 <span
-                  className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wider"
-                  style={{
-                    color: status.color,
-                    backgroundColor: `${status.color}1A`,
-                    border: `1px solid ${status.color}40`,
-                  }}
+                  className="inline-flex items-center gap-1.5 rounded-full uppercase text-white"
+                  style={{ padding: '3px 10px', fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', backgroundColor: 'rgba(255,255,255,0.08)' }}
                 >
+                  {challenge.status === 'active' && <i className="block rounded-full" style={{ width: 6, height: 6, backgroundColor: color, boxShadow: `0 0 7px rgba(${rgb},0.9)` }} />}
                   {status.label}
                 </span>
                 {countdownText && (
-                  <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.55)' }}>
-                    · {countdownText} {countdownSuffix}
+                  <span className="text-[12px]" style={{ color: '#9a9a9a' }}>
+                    {countdownText} {countdownSuffix}
                   </span>
                 )}
               </div>
               {challenge.title && (
-                <p className="mt-1.5 text-[13px] italic" style={{ color: 'rgba(255,255,255,0.7)' }}>
+                <p className="mt-2 text-[13px] italic" style={{ color: 'rgba(255,255,255,0.7)' }}>
                   “{challenge.title}”
                 </p>
               )}
@@ -373,12 +379,8 @@ export default function ChallengeDetailModal({
               />
               <div className="flex-shrink-0 flex items-center justify-center">
                 <span
-                  className="px-3 py-1 rounded-full text-[12px] font-black tracking-wider"
-                  style={{
-                    color: '#0F0F10',
-                    backgroundColor: '#FFD60A',
-                    boxShadow: '0 0 18px rgba(255,214,10,0.45)',
-                  }}
+                  className="px-3 py-1 rounded-full text-[12px] font-extrabold"
+                  style={{ color: '#fff', letterSpacing: '0.1em', boxShadow: 'inset 0 0 0 1.5px rgba(255,255,255,0.3)' }}
                 >
                   VS
                 </span>
@@ -404,21 +406,16 @@ export default function ChallengeDetailModal({
               icon slot when present; tap to lightbox for the full shot. */}
           {ca && (
             <div className="px-4 pb-3">
-              <SectionHeader emoji="🎯" label="The Bet" />
-              <div
-                className="rounded-xl p-3 flex items-center gap-3"
-                style={{
-                  backgroundColor: 'rgba(255,255,255,0.03)',
-                  border: `1px solid ${color}1A`,
-                }}
-              >
+              <SectionHeader label="The Bet" />
+              <div className="p-3 flex items-center gap-3" style={{ borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.05)' }}>
                 <ProofThumb
                   photoURL={challengerPhotoURL}
                   fallbackIcon={
                     <ActivityIcon
                       type={ca.type}
                       subtype={ca.subtype}
-                      size={22}
+                      size={20}
+                      color={color}
                       sportEmoji={ca.sportEmoji}
                       customEmoji={ca.customEmoji}
                       customIcon={ca.customIcon}
@@ -428,7 +425,7 @@ export default function ChallengeDetailModal({
                   onTap={challengerPhotoURL ? () => setLightboxURL(challengerPhotoURL) : null}
                 />
                 <div className="flex-1 min-w-0">
-                  <p className="text-[11px] text-gray-500 mb-0.5">
+                  <p className="text-[11px] mb-0.5" style={{ color: '#8a8a8a' }}>
                     {challenge.challengerName || 'Challenger'} completed
                   </p>
                   <p className="text-white text-sm font-semibold">{formatActivity(ca, viewerUnit)}</p>
@@ -440,24 +437,16 @@ export default function ChallengeDetailModal({
           {/* Match this — the rule that fulfills. After completion, swap the icon
               for the accepter's proof photo so the modal turns into a trophy view. */}
           <div className="px-4 pb-3">
-            <SectionHeader
-              emoji={accepterFulfillingPhotoURL ? '🏆' : '⚡'}
-              label={accepterFulfillingPhotoURL ? 'The Proof' : 'Match This'}
-            />
-            <div
-              className="rounded-xl p-3 flex items-center gap-3"
-              style={{
-                backgroundColor: 'rgba(255,255,255,0.03)',
-                border: `1px solid ${color}1A`,
-              }}
-            >
+            <SectionHeader label={accepterFulfillingPhotoURL ? 'The Proof' : 'Match This'} />
+            <div className="p-3 flex items-center gap-3" style={{ borderRadius: 16, backgroundColor: `rgba(${rgb},0.08)`, boxShadow: `inset 0 0 0 1px rgba(${rgb},0.32)` }}>
               <ProofThumb
                 photoURL={accepterFulfillingPhotoURL}
                 fallbackIcon={
                   <ActivityIcon
                     type={challenge.matchRule?.activityType || ca?.type}
                     subtype={ca?.subtype}
-                    size={22}
+                    size={20}
+                    color={color}
                   />
                 }
                 tint={color}
@@ -466,8 +455,12 @@ export default function ChallengeDetailModal({
               <div className="flex-1 min-w-0">
                 <p className="text-white text-sm font-semibold">{matchRuleLabel}</p>
                 {challenge.requirePhoto && !accepterFulfillingPhotoURL && (
-                  <p className="text-[11px] mt-1" style={{ color: '#FFD60A' }}>
-                    📸 Photo required
+                  <p className="text-[11.5px] mt-1 flex items-center gap-[5px]" style={{ color: '#aaa' }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#aaa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M5 7h1a2 2 0 0 0 2 -2a1 1 0 0 1 1 -1h6a1 1 0 0 1 1 1a2 2 0 0 0 2 2h1a2 2 0 0 1 2 2v9a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2" />
+                      <path d="M9 13a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" />
+                    </svg>
+                    Photo required
                   </p>
                 )}
               </div>
@@ -480,11 +473,8 @@ export default function ChallengeDetailModal({
           {cancelRequest && (
             <div className="px-4 pb-3">
               <div
-                className="p-3 rounded-xl"
-                style={{
-                  backgroundColor: 'rgba(255,214,10,0.08)',
-                  border: '1px solid rgba(255,214,10,0.25)',
-                }}
+                className="p-3"
+                style={{ borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.05)' }}
               >
                 <p className="text-xs" style={{ color: 'rgba(255,255,255,0.85)' }}>
                   {isCancelRequester
@@ -495,14 +485,15 @@ export default function ChallengeDetailModal({
                   <div className="flex gap-2 mt-2.5">
                     <button
                       onClick={() => runAndClose(onRespondCancel, challenge, false)}
-                      className="flex-1 py-2 rounded-md text-sm font-medium bg-zinc-800 text-gray-300"
+                      className="flex-1 py-2 rounded-xl text-sm font-semibold"
+                      style={BTN_SECONDARY}
                     >
                       Keep going
                     </button>
                     <button
                       onClick={() => runAndClose(onRespondCancel, challenge, true)}
-                      className="flex-1 py-2 rounded-md text-sm font-semibold"
-                      style={{ backgroundColor: '#FFD60A', color: 'black' }}
+                      className="flex-1 py-2 rounded-xl text-sm font-bold"
+                      style={BTN_PRIMARY}
                     >
                       Cancel it
                     </button>
@@ -521,14 +512,15 @@ export default function ChallengeDetailModal({
               <div className="flex gap-2">
                 <button
                   onClick={() => runAndClose(onDecline, challenge)}
-                  className="flex-1 py-2.5 rounded-xl bg-zinc-800 text-gray-300 text-sm font-medium transition-all duration-150 active:scale-95"
+                  className="flex-1 py-[11px] rounded-[14px] text-sm font-semibold transition-all duration-150 active:scale-95"
+                  style={BTN_SECONDARY}
                 >
                   Decline
                 </button>
                 <button
                   onClick={() => runAndClose(onAccept, challenge)}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150 active:scale-95"
-                  style={{ backgroundColor: color, color: 'black' }}
+                  className="flex-1 py-[11px] rounded-[14px] text-sm font-bold transition-all duration-150 active:scale-95"
+                  style={BTN_PRIMARY}
                 >
                   Accept
                 </button>
@@ -540,19 +532,15 @@ export default function ChallengeDetailModal({
               <div className="flex gap-2">
                 <button
                   onClick={() => runAndClose(onApplyPastActivity, challenge)}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 active:scale-95"
-                  style={{
-                    backgroundColor: 'transparent',
-                    color: 'rgba(255,255,255,0.85)',
-                    border: `1px solid ${color}55`,
-                  }}
+                  className="flex-1 py-[11px] rounded-[14px] text-sm font-semibold transition-all duration-150 active:scale-95"
+                  style={BTN_SECONDARY}
                 >
                   Use completed activity
                 </button>
                 <button
                   onClick={() => runAndClose(onStartWorkout, challenge)}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150 active:scale-95"
-                  style={{ backgroundColor: color, color: 'black' }}
+                  className="flex-1 py-[11px] rounded-[14px] text-sm font-bold transition-all duration-150 active:scale-95"
+                  style={BTN_PRIMARY}
                 >
                   Start activity
                 </button>
@@ -565,7 +553,8 @@ export default function ChallengeDetailModal({
                 <div className="flex gap-2">
                   <button
                     onClick={() => setConfirmCancel(false)}
-                    className="flex-1 py-2.5 rounded-xl bg-zinc-800 text-gray-300 text-sm font-medium transition-all duration-150 active:scale-95"
+                    className="flex-1 py-[11px] rounded-[14px] text-sm font-semibold transition-all duration-150 active:scale-95"
+                    style={BTN_SECONDARY}
                   >
                     Keep it
                   </button>
@@ -598,7 +587,8 @@ export default function ChallengeDetailModal({
                 <div className="flex gap-2">
                   <button
                     onClick={() => setConfirmRequestCancel(false)}
-                    className="flex-1 py-2.5 rounded-xl bg-zinc-800 text-gray-300 text-sm font-medium transition-all duration-150 active:scale-95"
+                    className="flex-1 py-[11px] rounded-[14px] text-sm font-semibold transition-all duration-150 active:scale-95"
+                    style={BTN_SECONDARY}
                   >
                     Nevermind
                   </button>
@@ -662,7 +652,7 @@ function CompetitorPanel({ name, photoURL, initial, streak, wins, losses, isWinn
   const Tag = onTap ? 'button' : 'div';
   // Winner gets a gold ring + soft glow on the avatar — without a surrounding
   // box this is the only visual signal of victory in the head-to-head.
-  const ringColor = isWinner ? '#FFD60A' : 'rgba(255,255,255,0.15)';
+  const ringColor = isWinner ? '#FFD60A' : 'rgba(255,255,255,0.14)';
   const ringWidth = isWinner ? 3 : 2;
   return (
     <Tag
@@ -687,18 +677,15 @@ function CompetitorPanel({ name, photoURL, initial, streak, wins, losses, isWinn
         {name}
       </p>
       {streak > 0 && (
-        <p className="text-[11px] mt-0.5" style={{ color: '#FFD60A' }}>
-          🔥 {streak}
+        <p className="text-[12px] mt-[3px] flex items-center justify-center gap-[3px]">
+          <span style={{ fontSize: 11, lineHeight: 1 }}>🔥</span>
+          <b style={{ color: GOLD, fontWeight: 800 }}>{streak}</b>
         </p>
       )}
+      {/* One plain record, no green/red */}
       <div className="mt-1.5 flex items-baseline gap-1">
-        <span className="text-xl font-black" style={{ color: '#00FF94' }}>
-          {wins}
-        </span>
-        <span className="text-gray-600 text-sm">-</span>
-        <span className="text-xl font-black" style={{ color: '#FF453A' }}>
-          {losses}
-        </span>
+        <span className="text-white" style={NUM.value}>{wins}–{losses}</span>
+        <span className="uppercase" style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', color: '#8a8a8a', marginLeft: 4 }}>W–L</span>
       </div>
     </Tag>
   );
@@ -721,21 +708,18 @@ function ProofThumb({ photoURL, fallbackIcon, tint, onTap }) {
   }
   return (
     <div
-      className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
-      style={{ backgroundColor: `${tint}20` }}
+      className="w-10 h-10 rounded-[10px] flex items-center justify-center flex-shrink-0"
+      style={{ backgroundColor: tint && tint.startsWith('#') && tint.length === 7 ? `rgba(${hexToRgb(tint)},0.16)` : 'rgba(255,255,255,0.08)' }}
     >
       {fallbackIcon}
     </div>
   );
 }
 
-function SectionHeader({ emoji, label }) {
+function SectionHeader({ label }) {
   return (
-    <div className="flex items-center gap-1.5 mb-1.5 px-1">
-      <span className="text-[12px]">{emoji}</span>
-      <span className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">
-        {label}
-      </span>
+    <div className="uppercase mb-2 px-1" style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', color: '#8a8a8a' }}>
+      {label}
     </div>
   );
 }

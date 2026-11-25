@@ -57,7 +57,7 @@ import { reverseGeocode, formatLocation } from './utils/geocode';
 import SectionIcon from './components/SectionIcon';
 import CategoryIcon from './components/CategoryIcon';
 import WeekGoalsHero, { CheckBadge } from './components/WeekGoalsHero';
-import { CATEGORY_COLORS, CARD_SURFACE, GOLD, TEXT_MUTED, TEXT_FAINT } from './utils/designTokens';
+import { CATEGORY_COLORS, CARD_SURFACE, CARD_BG_SOLID, GOLD, TEXT_MUTED, TEXT_FAINT } from './utils/designTokens';
 import LongPressMenu from './components/LongPressMenu';
 import { SwipeableProvider, SwipeableActivityItem, SwipeableContext, globalIsPulling } from './components/SwipeableActivityItem';
 import WeekStatsModal from './components/WeekStatsModal';
@@ -11857,9 +11857,9 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
             {showRecentActivity && (
               <SwipeableProvider>
                 {/* Rows match today's workout row, a size smaller: category-tinted icon tile,
-                    no box. The solid background is the card's own colour (3% white over the
-                    page ≈ #111) — invisible, but it covers the delete action while swiping. */}
-                <div className="mt-1.5 space-y-0.5">
+                    no box. Transparent on the card; solid only while swiped, to cover the
+                    delete action (swipeBackground). */}
+                <div className="mt-2 space-y-1">
                   {latestActivities.map((act) => {
                     const rtint = { recovery: '0,209,255', cardio: '255,149,0' }[getActivityCategory(act)] || '0,255,148';
                     return (
@@ -11868,17 +11868,17 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
                       activity={act}
                       onDelete={(a) => onDeleteActivity && onDeleteActivity(a.id)}
                       onEdit={onEditActivity}
+                      swipeBackground={CARD_BG_SOLID}
                     >
                       <div
                         onClick={() => { triggerHaptic(ImpactStyle.Light); setSelectedActivity(act); }}
-                        className="w-full py-[5px] flex items-center gap-3 text-left cursor-pointer active:opacity-70 transition-opacity"
-                        style={{ backgroundColor: '#111111' }}
+                        className="w-full py-1.5 flex items-center gap-3.5 text-left cursor-pointer active:opacity-70 transition-opacity"
                       >
-                        <div className="w-7 h-7 rounded-[9px] flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `rgba(${rtint},0.1)` }}>
-                          <ActivityIcon type={act.type} subtype={act.subtype} size={15} sportEmoji={act.sportEmoji} customEmoji={act.customEmoji} customIcon={act.customIcon} countToward={act.countToward} customActivityCategory={act.customActivityCategory} />
+                        <div className="w-10 h-10 rounded-[11px] flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `rgba(${rtint},0.16)` }}>
+                          <ActivityIcon type={act.type} subtype={act.subtype} size={20} sportEmoji={act.sportEmoji} customEmoji={act.customEmoji} customIcon={act.customIcon} countToward={act.countToward} customActivityCategory={act.customActivityCategory} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-[13px] font-semibold truncate">{
+                          <div className="text-[15px] font-semibold truncate">{
                             act.type === 'Other' ? (act.subtype || 'Other')
                             : act.type === 'Strength Training' ? (() => {
                               const st = act.strengthType || 'Strength Training';
@@ -11887,11 +11887,11 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
                             })()
                             : (act.subtype ? `${act.type} · ${act.subtype}` : act.type)
                           }</div>
-                          <div className="text-[11px] text-gray-400 truncate">
+                          <div className="text-[13px] truncate mt-0.5" style={{ color: TEXT_MUTED }}>
                             {formatFriendlyDate(act.date)}{act.time ? ` · ${act.time}` : ''}{act.duration ? ` · ${act.duration} min` : ''}
                           </div>
                         </div>
-                        <span className="text-gray-600 text-xs">›</span>
+                        <span className="text-gray-600 text-sm">›</span>
                       </div>
                     </SwipeableActivityItem>
                     );
@@ -11902,7 +11902,7 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
             {showRecentActivity && onNavigateToHistory && (
               <button
                 onClick={() => { triggerHaptic(ImpactStyle.Light); onNavigateToHistory(); }}
-                className="w-full text-center text-xs text-gray-400 pt-2"
+                className="w-full text-center text-[13px] text-gray-400 pt-3"
               >
                 See all activity ›
               </button>

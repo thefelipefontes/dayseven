@@ -33,6 +33,11 @@ const DetailIcon = ({ d, color, size = 16, strokeWidth = 2 }) => (
 );
 const HEALTH_HEART = 'M12 21.6c-.4 0-.8-.2-1.1-.4C6.2 17.7 2.4 14.3 2.4 9.6 2.4 6.6 4.7 4.4 7.6 4.4c1.7 0 3.3.8 4.4 2.1 1.1-1.3 2.7-2.1 4.4-2.1 2.9 0 5.2 2.2 5.2 5.2 0 4.7-3.8 8.1-8.5 11.6-.3.2-.7.4-1.1.4z';
 const CAPS = { fontSize: 9.5, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8a8a8a' };
+// Cards on the lifted sheet: a touch lighter than the sheet, with a hairline edge
+const SHEET_CARD = {
+  background: 'linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.05))',
+  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), inset 0 0 0 1px rgba(255,255,255,0.05)',
+};
 const NEUTRAL_BTN = { backgroundColor: 'rgba(255,255,255,0.08)', color: '#ddd' };
 
 // One shared empty route, so "no route" keeps the same reference across renders.
@@ -347,6 +352,9 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
   const catMeta = CATEGORY_META[category] || null;
   const color = catMeta?.color || '#aaa';
   const u = resolveUnit(userProfile);
+  const fromHealth = !!(activity.fromAppleHealth || activity.healthKitUUID || activity.linkedHealthKitUUID || activity.source === 'healthkit');
+  // Your own workout with no reactions: the Health line and the Comments chip share one row
+  const sourceInCommentsRow = !!user && fromHealth && activityOwnerId === user?.uid && reactions.length === 0;
   const hasDistance = parseFloat(activity.distance) > 0;
   const durationText = activity.duration
     ? (activity.duration >= 60 ? `${Math.floor(activity.duration / 60)}h ${activity.duration % 60}m` : `${activity.duration}m`)
@@ -360,20 +368,28 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
     <div
       data-modal-overlay="true"
       className="fixed inset-0 z-50 flex items-end justify-center transition-all duration-300"
-      style={{ backgroundColor: isAnimating ? 'rgba(0,0,0,0.9)' : 'rgba(0,0,0,0)' }}
+      style={{ backgroundColor: isAnimating ? 'rgba(0,0,0,0.62)' : 'rgba(0,0,0,0)' }}
       onClick={(e) => e.target === e.currentTarget && handleClose()}
     >
       <div
-        className="w-full max-w-lg rounded-t-3xl overflow-hidden flex flex-col"
+        className="w-full max-w-lg overflow-hidden flex flex-col"
         style={{
-          backgroundColor: '#000',
+          // Felipe's option A, "Lifted sheet": its own dark-grey surface with a top highlight,
+          // so the sheet's top reads against the dimmed page behind it.
+          borderRadius: '28px 28px 0 0',
+          background: 'linear-gradient(180deg, #1c1c1f, #131315 340px)',
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12)',
           transform: !isAnimating ? 'translateY(100%)' : `translateY(${dragY}px)`,
           transition: isDragging ? 'none' : 'transform 300ms ease-out',
           maxHeight: '85vh'
         }}
       >
+        {/* Grab handle */}
+        <div className="flex justify-center flex-shrink-0" style={{ paddingTop: 8 }}>
+          <i className="block" style={{ width: 38, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.28)' }} />
+        </div>
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-white/10 flex-shrink-0">
+        <div className="flex items-center justify-between flex-shrink-0" style={{ padding: '6px 16px 10px' }}>
           <button
             onClick={handleClose}
             className="text-gray-400 text-sm transition-all duration-150 px-2 py-1 rounded-lg"
@@ -434,9 +450,10 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
                   : activity.countToward === 'warmup' ? 'Warm up' : activity.type === 'Walking' ? 'Casual walk' : null;
                 if (!detailText && !countsText) return null;
                 return (
-                  <div className="truncate" style={{ fontSize: 13, color: '#8a8a8a', marginTop: 1 }}>
-                    {detailText}{detailText && countsText ? ' · ' : ''}{countsText}
-                  </div>
+                  <>
+                    {detailText && <div style={{ fontSize: 13, color: '#8a8a8a', marginTop: 1 }}>{detailText}</div>}
+                    {countsText && <div style={{ fontSize: 13, color: '#8a8a8a', marginTop: 1 }}>{catMeta ? <>Counts toward <span style={{ color, fontWeight: 600 }}>{catMeta.label}</span></> : countsText}</div>}
+                  </>
                 );
               })()}
               {(activity.avgHr || activity.maxHr) && (
@@ -452,7 +469,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
 
           {/* Stats: distance is the one big number (duration when there's no distance) */}
           {(hasDistance || durationText || activity.calories) && (
-            <div className="mb-3" style={{ borderRadius: 22, padding: '18px 18px 16px', background: 'linear-gradient(180deg, rgba(255,255,255,0.065), rgba(255,255,255,0.035))', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), inset 0 0 0 1px rgba(255,255,255,0.035)' }}>
+            <div className="mb-3" style={{ borderRadius: 22, padding: '18px 18px 16px', ...SHEET_CARD }}>
               <div className="flex items-baseline gap-1.5">
                 <span style={{ ...NUM.big, lineHeight: 0.85 }}>{hasDistance ? formatDistanceValue(activity.distance, u, 2) : (durationText || activity.calories)}</span>
                 <span style={{ fontSize: 18, fontWeight: 700, color: '#8a8a8a' }}>{hasDistance ? unitLabel(u) : durationText ? '' : 'cal'}</span>
@@ -479,7 +496,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
           )}
 
           {/* Date & Time */}
-          <div className="mb-3 flex items-center gap-2.5" style={{ borderRadius: 16, padding: '12px 14px', backgroundColor: 'rgba(255,255,255,0.05)' }}>
+          <div className="mb-3 flex items-center gap-2.5" style={{ borderRadius: 16, padding: '12px 14px', backgroundColor: 'rgba(255,255,255,0.065)' }}>
             <DetailIcon d={DETAIL_ICON.cal} color="#aaa" />
             <span className="text-sm font-medium">{formatFriendlyDate(activity.date)}</span>
             {activity.time && <span style={{ fontSize: 13, color: '#8a8a8a' }}>· {activity.time}</span>}
@@ -487,7 +504,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
 
           {/* Location — auto-captured from the GPS route, removable by the owner */}
           {location && (location.city || location.state || location.country) && (
-            <div className="mb-3 flex items-center justify-between" style={{ borderRadius: 16, padding: '10px 10px 10px 14px', backgroundColor: 'rgba(255,255,255,0.05)' }}>
+            <div className="mb-3 flex items-center justify-between" style={{ borderRadius: 16, padding: '10px 10px 10px 14px', backgroundColor: 'rgba(255,255,255,0.065)' }}>
               <div className="flex items-center gap-2.5 min-w-0">
                 <DetailIcon d={DETAIL_ICON.pin} color="#aaa" />
                 <div className="text-sm font-medium truncate">{formatLocation(location)}</div>
@@ -540,7 +557,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
             return (
               <div className="mb-4">
                 <div className="mb-2" style={CAPS}>Muscles worked</div>
-                <div className="p-4 rounded-xl flex flex-col items-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <div className="p-4 flex flex-col items-center" style={{ ...SHEET_CARD, borderRadius: 20 }}>
                   <MuscleBodyMap muscleData={muscleData} scale={0.62} hideLabels />
                   <div className="flex flex-wrap gap-1.5 mt-3 justify-center">
                     {pillAreas.map(a => (
@@ -554,7 +571,7 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
 
           {/* Notes */}
           {activity.notes && (
-            <div className="p-4 rounded-xl mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+            <div className="p-4 mb-4" style={{ borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.065)' }}>
               <div className="text-xs text-gray-500 mb-2">Notes</div>
               <div className="text-sm">{activity.notes}</div>
             </div>
@@ -610,9 +627,15 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
 
           {/* Reactions & Comments Section - show if user is logged in (below photo, Instagram-style) */}
           {user && (
-            <div className="mb-4 pt-3 border-t border-white/10">
+            <div className="mb-3" style={{ marginTop: 4 }}>
               {/* Reactions Row */}
               <div className="flex items-center justify-between mb-3">
+                {sourceInCommentsRow && (
+                  <span className="flex items-center gap-1.5 text-xs min-w-0" style={{ color: '#8a8a8a' }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" className="flex-shrink-0"><path fill="#FF2D55" d={HEALTH_HEART} /></svg>
+                    <span className="truncate">Synced from Apple Health{activity.sourceDevice ? ` · ${activity.sourceDevice === 'Apple Watch' || /apple watch/i.test(activity.sourceDevice) ? 'Watch' : activity.sourceDevice}` : ''}</span>
+                  </span>
+                )}
                 <div className="flex items-center gap-1">
                   {/* Only show reaction buttons if viewing someone else's activity */}
                   {activityOwnerId !== user?.uid ? (
@@ -653,12 +676,11 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
                   <button
                     onClick={() => setShowComments(!showComments)}
                     onTouchStart={() => triggerHaptic(ImpactStyle.Light)}
-                    className={`flex items-center gap-1 px-2 py-1 rounded-full transition-all duration-150 ${showComments ? 'bg-zinc-700 ring-1 ring-white/20' : 'bg-zinc-800 hover:bg-zinc-700'}`}
+                    className="flex items-center gap-1.5 rounded-full transition-all duration-150"
+                    style={{ padding: '6px 11px', fontSize: 12.5, fontWeight: 600, color: '#ddd', backgroundColor: showComments ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.08)' }}
                   >
-                    <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                    </svg>
-                    {comments.length > 0 && <span className="text-xs text-gray-400">{comments.length}</span>}
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ddd" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 9h8" /><path d="M8 13h6" /><path d="M18 4a3 3 0 0 1 3 3v8a3 3 0 0 1 -3 3h-5l-5 3v-3h-2a3 3 0 0 1 -3 -3v-8a3 3 0 0 1 3 -3h12z" /></svg>
+                    Comments{comments.length > 0 ? ` · ${comments.length}` : ''}
                   </button>
                 </div>
 
@@ -776,12 +798,12 @@ const ActivityDetailModal = ({ isOpen, onClose, activity, onDelete, onEdit, user
             document.body
           )}
 
-          {/* Source indicator */}
-          {(activity.fromAppleHealth || activity.healthKitUUID || activity.linkedHealthKitUUID || activity.source === 'healthkit') && (
+          {/* Source indicator (on its own line unless it already sits beside Comments) */}
+          {fromHealth && !sourceInCommentsRow && (
             <div className="flex items-center gap-1.5 text-xs mb-4" style={{ color: '#8a8a8a' }}>
               <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path fill="#FF2D55" d={HEALTH_HEART} /></svg>
               <span>Synced from Apple Health</span>
-              {activity.sourceDevice && <span>· {activity.sourceDevice}</span>}
+              {activity.sourceDevice && <span>· {/apple watch/i.test(activity.sourceDevice) ? 'Watch' : activity.sourceDevice}</span>}
             </div>
           )}
 

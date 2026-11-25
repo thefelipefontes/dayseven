@@ -184,8 +184,20 @@ struct WeekCornerView: View {
         let color = WidgetColors.week(model)
         ZStack {
             AccessoryWidgetBackground()
-            StreakMark(model: model, size: 11, stacked: true)
-                .minimumScaleFactor(0.7)
+            // Board 43, option B: flame and number side by side, as big as the circle allows
+            // (a stacked 7pt flame over an 11pt number was too small to read on the wrist)
+            HStack(spacing: 1.5) {
+                Image(systemName: model.streakPaused ? "bandage.fill" : "flame.fill")
+                    .font(.system(size: 13))
+                Text("\(model.streak)")
+                    .font(.system(size: 20, weight: .heavy))
+                    .tracking(-0.6)
+            }
+            .lineLimit(1)
+            .minimumScaleFactor(0.5) // two-digit streaks shrink to fit rather than clip
+            .padding(.horizontal, 3)
+            .foregroundColor(model.streakPaused ? WidgetColors.injury : WidgetColors.gold)
+            .widgetAccentable()
         }
         .widgetLabel {
             ProgressView(value: Double(model.percent) / 100) {
@@ -390,15 +402,18 @@ struct StepsCornerView: View {
     var body: some View {
         ZStack {
             AccessoryWidgetBackground()
-            VStack(spacing: 1) {
-                StepsIcon(color: accented ? .white : WidgetColors.steps, size: 8)
+            // Today's steps as big as the circle allows, the footprints small on top
+            VStack(spacing: 0) {
+                StepsIcon(color: accented ? .white : WidgetColors.steps, size: 7)
                     .widgetAccentable()
                 Text(WeekModel.k(model.todaySteps))
-                    .font(.system(size: 10, weight: .heavy))
+                    .font(.system(size: 15, weight: .heavy))
+                    .tracking(-0.4)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.6)
+                    .minimumScaleFactor(0.6) // "12.4k" shrinks to fit rather than clip
                     .foregroundColor(.white)
             }
+            .padding(.horizontal, 2)
         }
         .widgetLabel {
             ProgressView(value: model.fraction(.steps)) {

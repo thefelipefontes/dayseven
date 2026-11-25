@@ -27,6 +27,8 @@ import { judgeWeekFromActivities, judgeWeek, countWeekActivities, weekGoalsResol
 import { manualCaloriesForDate } from './utils/calories';
 import { canHold, goalsShortOfHalf, isHoldWeek, SHIELD_MIN_PERCENT } from './utils/streakShield';
 import ShieldLadder from './components/ShieldLadder';
+import { CheckBadge as GoalCheckBadge } from './components/WeekGoalsHero';
+import { CARD_SURFACE, GOLD, TEXT_MUTED, TEXT_FAINT, CATEGORY_COLORS as CATEGORY_COLORS_BY_CAT } from './utils/designTokens';
 
 
 
@@ -799,8 +801,8 @@ export default function ProfilePage(props) {
       {/* Profile card */}
       <div className="px-4 pt-2 pb-4">
         <div
-          className="rounded-2xl p-4 flex items-center gap-4"
-          style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}
+          className="p-4 flex items-center gap-4"
+          style={{ ...CARD_SURFACE, boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08)' }}
         >
           <button
             onClick={() => { triggerHaptic(ImpactStyle.Light); setShowSelfProfile(true); }}
@@ -815,21 +817,24 @@ export default function ProfilePage(props) {
             )}
           </button>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <p className="text-white text-base font-semibold truncate">
+            <div className="flex items-center gap-1.5">
+              <p className="text-white text-[18px] font-bold truncate">
                 {userProfile?.displayName || userProfile?.username || 'You'}
               </p>
               {(userData?.streaks?.master || 0) > 0 && (
-                <span className="text-sm flex-shrink-0" style={{ color: '#FFD60A' }}>
-                  {userData.streaks.master}🔥
+                <span className="flex-shrink-0 flex items-baseline gap-0.5">
+                  <span className="text-[18px] font-extrabold" style={{ color: GOLD }}>{userData.streaks.master}</span>
+                  <span className="text-[15px]">🔥</span>
                 </span>
               )}
             </div>
-            <p className="text-xs truncate" style={{ color: 'rgba(255,255,255,0.5)' }}>
-              {userProfile?.username && <>@{userProfile.username} · </>}
-              <span style={{ color: isPro ? '#FFD60A' : 'rgba(255,255,255,0.5)', fontWeight: isPro ? 600 : 400 }}>
-                {isPro ? 'Pro' : 'Free'}
-              </span>
+            <p className="text-[14px] truncate flex items-center" style={{ color: '#aaa' }}>
+              {userProfile?.username && <span className="truncate">@{userProfile.username}</span>}
+              {isPro ? (
+                <span className="ml-1.5 flex-shrink-0 text-[10px] font-extrabold px-1.5 py-[1px] rounded-[5px]" style={{ letterSpacing: '0.1em', border: '1px solid rgba(255,255,255,0.25)', color: '#ddd' }}>PRO</span>
+              ) : (
+                <span className="flex-shrink-0 whitespace-pre">{userProfile?.username ? ' · ' : ''}Free</span>
+              )}
             </p>
             {/* Compact shield + vacation status — tap each to open the action modal */}
             {(() => {
@@ -861,19 +866,19 @@ export default function ProfilePage(props) {
               let vacationColor;
               if (!isPro) {
                 vacationText = 'Pro only';
-                vacationColor = 'rgba(255,255,255,0.45)';
+                vacationColor = '#aaa';
               } else if (vacationActive) {
                 vacationText = 'Active';
                 vacationColor = '#FF9500';
               } else if (vacationsLeft > 0) {
                 vacationText = 'Available';
-                vacationColor = 'rgba(255,255,255,0.45)';
+                vacationColor = '#aaa';
               } else {
                 vacationText = 'Used up';
-                vacationColor = 'rgba(255,255,255,0.45)';
+                vacationColor = '#aaa';
               }
               return (
-                <div className="flex items-center gap-3 mt-1 text-[11px]" style={{ color: 'rgba(255,255,255,0.45)' }}>
+                <div className="flex items-center gap-3.5 mt-1 text-[13px]" style={{ color: '#aaa' }}>
                   <button
                     onClick={() => setQuickActionModal('shield')}
                     className="flex items-center gap-1 active:opacity-60"
@@ -896,7 +901,7 @@ export default function ProfilePage(props) {
             onClick={onOpenSettings}
             aria-label="Settings"
             className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 active:scale-95 transition-transform"
-            style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}
+            style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="3" />
@@ -938,7 +943,7 @@ export default function ProfilePage(props) {
 
           return (
             <div className="mt-3">
-              <p className="text-[11px] leading-snug text-center" style={{ color: 'rgba(255,255,255,0.45)' }}>
+              <p className="text-[12px] leading-snug text-center" style={{ color: '#aaa' }}>
                 {shieldAvailable
                   ? `At risk of losing your streak? Get to ${SHIELD_MIN_PERCENT}% of your week, with every goal at least halfway, to hold it 🛡️`
                   : 'At risk of losing your streak? Protect it by tapping 🛡️ or 🌴 above.'}
@@ -954,30 +959,34 @@ export default function ProfilePage(props) {
       <div ref={activeStreaksRef} className="mx-4 mb-4">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500 uppercase tracking-wider">Active Streaks</span>
+            <span className="text-[12px] uppercase" style={{ color: '#777', letterSpacing: '0.06em' }}>Active Streaks</span>
             <span>🔥</span>
           </div>
-          <div className="flex items-center gap-1.5 relative top-1">
-            <div className="w-3.5 h-3.5 rounded-full flex items-center justify-center bg-gray-600">
-              <span className="text-[8px] text-black font-bold leading-none">✓</span>
-            </div>
-            <span className="text-[9px] text-gray-600">= this week's goal hit</span>
+          <div className="flex items-center gap-1.5 relative top-0.5">
+            <GoalCheckBadge color="#aaaaaa" size={14} />
+            <span className="text-[9px]" style={{ color: '#555' }}>= this week's goal hit</span>
           </div>
         </div>
 
-        {/* Winning Streak - Hero */}
-        <div className="p-4 rounded-2xl mb-3" style={{ background: 'linear-gradient(135deg, rgba(255,215,0,0.15) 0%, rgba(255,149,0,0.1) 100%)', border: '1px solid rgba(255,215,0,0.3)' }}>
-          <div className="flex items-center gap-3 mb-2">
-            <span className="text-2xl">🏆</span>
+        {/* Winning Streak - Hero (Nov 2026 redesign): the streak as a big gold number on the
+            neutral card, longest on the right. Gold is the winning streak's colour app-wide. */}
+        <div className="p-5 mb-2.5" style={CARD_SURFACE}>
+          <div className="flex items-end justify-between">
             <div>
-              <div className="text-3xl font-black" style={{ color: '#FFD700' }}>{streaks.master} Weeks</div>
-              <div className="text-sm text-gray-300">Winning Streak</div>
-              {/* One-line definition, where people come to look at their streaks */}
-              <div className="text-xs text-gray-400 mt-0.5">Weeks in a row you hit all your weekly goals</div>
+              <div className="flex items-baseline" style={{ fontSize: 60, fontWeight: 800, letterSpacing: '-3px', lineHeight: 1, color: GOLD, fontVariantNumeric: 'tabular-nums' }}>
+                {streaks.master || 0}
+                <span style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.5px', marginLeft: 6, color: 'rgba(255,215,0,0.75)' }}>{streaks.master === 1 ? 'week' : 'weeks'}</span>
+              </div>
+              <div className="uppercase" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', marginTop: 10, color: 'rgba(255,215,0,0.9)' }}>Winning streak</div>
+            </div>
+            <div className="text-right">
+              <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.8px', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{Math.max(records.longestMasterStreak || 0, streaks.master || 0)}</div>
+              <div className="uppercase" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', marginTop: 7, color: TEXT_MUTED }}>Longest</div>
             </div>
           </div>
-          <div className="text-xs text-gray-500 mt-2 pt-2 border-t border-white/10">
-            Your longest: {Math.max(records.longestMasterStreak || 0, streaks.master || 0)} weeks
+          {/* One-line definition, where people come to look at their streaks */}
+          <div className="text-[12.5px]" style={{ color: TEXT_MUTED, marginTop: 14, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+            Weeks in a row you hit all your weekly goals
           </div>
         </div>
 
@@ -994,64 +1003,43 @@ export default function ProfilePage(props) {
           const cwCardioOk = cwJudged.cardio;
           const cwRecoveryOk = cwJudged.recovery;
 
-          const CheckBadge = ({ met, color }) => met ? (
-            <div className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full flex items-center justify-center" style={{ backgroundColor: color }}>
-              <span className="text-[9px] text-black font-bold leading-none">✓</span>
+          // One tile per goal that counts toward the Winning Streak: a big white streak count,
+          // the goal under it, and Home's check badge once this week's goal is hit.
+          const StreakTile = ({ cat, label, weeks, goal, met }) => (
+            <div className="p-3 relative" style={CARD_SURFACE}>
+              {met && <GoalCheckBadge color={CATEGORY_COLORS_BY_CAT[cat]} style={{ position: 'absolute', top: 10, right: 10 }} />}
+              <div className="flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: '#aaa' }}>
+                <CategoryIcon category={cat} size={14} />
+                <span>{label}</span>
+              </div>
+              <div className="flex items-baseline" style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.8px', lineHeight: 1, marginTop: 10, fontVariantNumeric: 'tabular-nums' }}>
+                {weeks}<span style={{ fontSize: 14, fontWeight: 700, color: TEXT_FAINT, marginLeft: 2, letterSpacing: 0 }}>w</span>
+              </div>
+              <div className="text-[11px]" style={{ color: '#777', marginTop: 6 }}>{goal}</div>
             </div>
-          ) : null;
+          );
 
           return (
             <>
             <div className="grid grid-cols-3 gap-2">
-              {/* Strength Streak */}
-              <div className="px-2.5 py-2 rounded-xl bg-zinc-800/60 relative overflow-hidden">
-                <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ backgroundColor: '#00FF94' }}></div>
-                <CheckBadge met={cwLiftsOk} color="#00FF94" />
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm"><CategoryIcon category="lifts" size={14} /></span>
-                  <span className="text-lg font-bold leading-tight" style={{ color: '#00FF94' }}>{streaks.lifts}</span>
-                </div>
-                <span className="text-[11px] text-gray-400">Strength</span>
-                <span className="text-[10px] text-gray-500 block">{goals.liftsPerWeek}+/week</span>
-              </div>
-
-              {/* Cardio Streak */}
-              <div className="px-2.5 py-2 rounded-xl bg-zinc-800/60 relative overflow-hidden">
-                <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ backgroundColor: '#FF9500' }}></div>
-                <CheckBadge met={cwCardioOk} color="#FF9500" />
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm"><CategoryIcon category="cardio" size={14} /></span>
-                  <span className="text-lg font-bold leading-tight" style={{ color: '#FF9500' }}>{streaks.cardio}</span>
-                </div>
-                <span className="text-[11px] text-gray-400">Cardio</span>
-                <span className="text-[10px] text-gray-500 block">{goals.cardioPerWeek}+/week</span>
-              </div>
-
-              {/* Steps Streak — weekly steps goal (stepsPerDay × 7); counts toward the Winning Streak */}
-              <div className="px-2.5 py-2 rounded-xl bg-zinc-800/60 relative overflow-hidden">
-                <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ backgroundColor: '#BF5AF2' }}></div>
-                <CheckBadge met={cwJudged.steps} color="#BF5AF2" />
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm"><CategoryIcon category="steps" size={14} /></span>
-                  <span className="text-lg font-bold leading-tight" style={{ color: '#BF5AF2' }}>{streaks.steps || 0}</span>
-                </div>
-                <span className="text-[11px] text-gray-400">Steps</span>
-                <span className="text-[10px] text-gray-500 block">{Math.round((goals.stepsPerDay || 10000) * 7 / 1000)}k/week</span>
-              </div>
+              <StreakTile cat="lifts" label="Strength" weeks={streaks.lifts || 0} goal={`${goals.liftsPerWeek}+/week`} met={cwLiftsOk} />
+              <StreakTile cat="cardio" label="Cardio" weeks={streaks.cardio || 0} goal={`${goals.cardioPerWeek}+/week`} met={cwCardioOk} />
+              {/* Steps — weekly steps goal (stepsPerDay × 7); counts toward the Winning Streak */}
+              <StreakTile cat="steps" label="Steps" weeks={streaks.steps || 0} goal={`${Math.round((goals.stepsPerDay || 10000) * 7 / 1000)}k/week`} met={cwJudged.steps} />
             </div>
 
             {/* Recovery — its own streak, a bonus: it doesn't count toward the Winning Streak.
                 Hidden when Recovery is off (goal 0). */}
             {(goals.recoveryPerWeek ?? 2) > 0 && (
-            <div className="mt-2 px-3 py-2 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(0,209,255,0.06)', border: '1px solid rgba(0,209,255,0.18)' }}>
-              <span className="flex items-center gap-2 text-xs">
-                <CategoryIcon category="recovery" size={13} />
+            <div className="mt-2 px-3 py-2.5 rounded-[14px] flex items-center justify-between" style={{ backgroundColor: 'rgba(255,255,255,0.04)', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.06)' }}>
+              <span className="flex items-center gap-2 text-[13px]">
+                <CategoryIcon category="recovery" size={14} />
                 <span className="text-white">Recovery</span>
-                <span className="font-bold" style={{ color: '#00D1FF' }}>{streaks.recovery || 0}w</span>
-                <span className="text-gray-500">{goals.recoveryPerWeek}+/week</span>
-                {cwRecoveryOk && <span className="text-[10px] font-bold" style={{ color: '#00D1FF' }}>✓</span>}
+                <span className="font-bold text-white">{streaks.recovery || 0}w</span>
+                <span style={{ color: '#777' }}>{goals.recoveryPerWeek}+/week</span>
+                {cwRecoveryOk && <GoalCheckBadge color={CATEGORY_COLORS_BY_CAT.recovery} size={16} />}
               </span>
-              <span className="text-[8px] font-bold tracking-wider uppercase px-1.5 py-[1px] rounded-full" style={{ backgroundColor: 'rgba(0,209,255,0.12)', color: '#00D1FF' }}>Bonus</span>
+              <span className="text-[9px] font-extrabold uppercase px-1.5 py-[1px] rounded-full" style={{ letterSpacing: '0.12em', border: '1px solid rgba(255,255,255,0.2)', color: '#aaa' }}>Bonus</span>
             </div>
             )}
             </>
@@ -1062,7 +1050,7 @@ export default function ProfilePage(props) {
       {/* View Toggles + Content Wrapper for Tour */}
       <div>
         {/* View Toggles */}
-        <div className="mx-4 mb-4 relative flex gap-2 p-1 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+        <div className="mx-4 mb-4 relative flex gap-2 p-1 rounded-[14px]" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
           {/* Sliding pill indicator */}
           <div
             className="absolute top-1 bottom-1 rounded-lg transition-all duration-300 ease-out"
@@ -1078,18 +1066,18 @@ export default function ProfilePage(props) {
           />
           <button
             onClick={() => setView('calendar')}
-            className="flex-1 py-2 rounded-lg text-sm font-medium transition-colors duration-200 relative z-10"
+            className="flex-1 py-2 rounded-lg text-[15px] font-semibold transition-colors duration-200 relative z-10"
             style={{
-              color: view === 'calendar' ? 'white' : 'rgba(255,255,255,0.5)'
+              color: view === 'calendar' ? 'white' : '#888'
             }}
           >
             Calendar
           </button>
           <button
             onClick={() => setView('stats')}
-            className="flex-1 py-2 rounded-lg text-sm font-medium transition-colors duration-200 relative z-10"
+            className="flex-1 py-2 rounded-lg text-[15px] font-semibold transition-colors duration-200 relative z-10"
             style={{
-              color: view === 'stats' ? 'white' : 'rgba(255,255,255,0.5)'
+              color: view === 'stats' ? 'white' : '#888'
             }}
           >
             Stats
@@ -1098,9 +1086,9 @@ export default function ProfilePage(props) {
             onClick={() => {
               setView('progress');
             }}
-            className="flex-1 py-2 rounded-lg text-sm font-medium transition-colors duration-200 relative z-10"
+            className="flex-1 py-2 rounded-lg text-[15px] font-semibold transition-colors duration-200 relative z-10"
             style={{
-              color: view === 'progress' ? 'white' : 'rgba(255,255,255,0.5)'
+              color: view === 'progress' ? 'white' : '#888'
             }}
           >
             Compare
@@ -1161,10 +1149,10 @@ export default function ProfilePage(props) {
                 setShowMonthStats(true);
               }}
               className="text-lg font-bold transition-all duration-150 flex items-center gap-1.5"
-              style={{ color: isCurrentMonth ? 'white' : '#00FF94' }}
+              style={{ color: isCurrentMonth ? 'white' : '#ccc' }}
             >
               {new Date(displayedYear, displayedMonth).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-              <span className="opacity-60"><SectionIcon type="chart" size={14} color={SECTION_ICON_TAPPABLE} /></span>
+              <span className="opacity-60"><SectionIcon type="chart" size={14} color="#aaa" /></span>
             </button>
             <button
               onClick={goToNextMonth}
@@ -1209,11 +1197,12 @@ export default function ProfilePage(props) {
                   const isInjury = isInjuryCalendarWeek(weekKey, userData?.injuryMode);
                   const weekEndDate = week.days[6]?.date || week.days[week.days.length - 1]?.date;
                   const isWeekLocked = !!(historyCutoffDate && weekEndDate < historyCutoffDate);
-                  // Vacation, injury, shield, and goals-met all keep the streak alive, so tint
-                  // the cell to read as "good"; vacation = orange, injury = violet accent.
-                  const isGood = goalsHit || isShielded || isVacation || isInjury;
-                  const bgDefault = isVacation ? 'rgba(255,149,0,0.15)' : isInjury ? 'rgba(167,139,250,0.15)' : isHeld ? 'rgba(255,255,255,0.08)' : (isGood ? 'rgba(0,255,148,0.15)' : 'rgba(255,255,255,0.05)');
-                  const bgPressed = isVacation ? 'rgba(255,149,0,0.28)' : isInjury ? 'rgba(167,139,250,0.28)' : isHeld ? 'rgba(255,255,255,0.14)' : (isGood ? 'rgba(0,255,148,0.25)' : 'rgba(255,255,255,0.1)');
+                  // Vacation and injury tint the cell (orange, violet); they keep the streak alive.
+                  // Nov 2026 redesign: a won week is a gold check badge on the neutral cell (gold is
+                  // the winning streak's colour); green no longer marks it. A shielded week was
+                  // kept, not won, so it reads like a held one.
+                  const bgDefault = isVacation ? 'rgba(255,149,0,0.15)' : isInjury ? 'rgba(167,139,250,0.15)' : (isHeld || (isShielded && !goalsHit)) ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.05)';
+                  const bgPressed = isVacation ? 'rgba(255,149,0,0.28)' : isInjury ? 'rgba(167,139,250,0.28)' : (isHeld || (isShielded && !goalsHit)) ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.1)';
                   return (
                     <button
                       onClick={() => {
@@ -1254,9 +1243,7 @@ export default function ProfilePage(props) {
                       ) : isShielded ? (
                         <span style={{ fontSize: '13px', lineHeight: 1 }}>🛡️</span>
                       ) : goalsHit ? (
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00FF94" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
+                        <GoalCheckBadge color={GOLD} size={22} />
                       ) : judged && !isWeekLocked ? (
                         // Not won (yet): how close it got. The live week in gold, like Home's
                         // Week Progress, with a faint outline to pick it out.
@@ -1269,7 +1256,7 @@ export default function ProfilePage(props) {
                           {judged.percent}%
                         </span>
                       ) : (
-                        <SectionIcon type="chart" size={12} color={SECTION_ICON_TAPPABLE} />
+                        <SectionIcon type="chart" size={12} color="#aaa" />
                       )}
                     </button>
                   );
@@ -1300,9 +1287,10 @@ export default function ProfilePage(props) {
                       }}
                       className="flex-1 aspect-square rounded-md flex flex-col items-center justify-center relative transition-all duration-150"
                       style={{
-                        backgroundColor: selectedDate === day.date ? 'rgba(0,255,148,0.2)' :
+                        // Today: a white outline (Nov 2026 redesign); green now only means Strength.
+                        backgroundColor: selectedDate === day.date ? 'rgba(255,255,255,0.12)' :
                                          dayActivities.length > 0 ? 'rgba(255,255,255,0.05)' : 'transparent',
-                        border: isToday ? '2px solid #00FF94' : 'none',
+                        boxShadow: isToday ? 'inset 0 0 0 1.5px rgba(255,255,255,0.45)' : 'none',
                         opacity: day.isOverflow ? 0.35 : (isFuture ? 0.3 : (isLocked ? 0.4 : 1))
                       }}
                       onTouchStart={(e) => {

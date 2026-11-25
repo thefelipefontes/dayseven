@@ -23,6 +23,7 @@ import {
 } from './services/challengeService';
 import { resolveUnit, unitLabel, formatDistanceValue, milesToDisplay, paceLabel, formatPace as formatPaceWithUnit } from './utils/distance';
 import { getFriends } from './services/friendService';
+import { CARD_SURFACE } from './utils/designTokens';
 import { isDemoAccount, getDemoChallenges } from './demoData';
 import ChallengeDetailModal from './components/ChallengeDetailModal';
 import FriendProfileCard from './components/FriendProfileCard';
@@ -983,15 +984,15 @@ function ChallengeIcon({ category, color, mePhotoURL, meInitial, opponentPhotoUR
           left: '50%',
           top: '50%',
           transform: 'translate(-50%, -50%)',
-          width: iconSize,
-          height: iconSize,
-          backgroundColor: color,
-          border: `2px solid ${cardBg}`,
-          boxSizing: 'border-box',
+          width: 22,
+          height: 22,
+          // Nov 2026 redesign: a small badge in the category colour (ring + glyph) on a dark disc
+          backgroundColor: '#161616',
+          boxShadow: `inset 0 0 0 1.5px ${color}99`,
           zIndex: 10,
         }}
       >
-        <ActivityGlyph category={category} size={Math.round(iconSize * 0.55)} color="black" />
+        <ActivityGlyph category={category} size={12} color={color} />
       </div>
     </div>
   );
@@ -1029,15 +1030,16 @@ function StatePill({ state }) {
 // accept or finish it, "Their move" when you're waiting on the other side. Replaced the
 // Sent / Received pill when Challenges moved into Friends with one list per status.
 function PerspectivePill({ isChallenger }) {
+  // Neutral (Nov 2026 redesign): white outline for your move, a quieter grey for theirs.
   const label = isChallenger ? 'Their move' : 'Your move';
-  const color = isChallenger ? '#aaa' : '#FFD60A';
   return (
     <span
-      className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0"
+      className="text-[10px] font-extrabold uppercase rounded-full flex-shrink-0 whitespace-nowrap"
       style={{
-        color,
-        backgroundColor: `${color}18`,
-        border: `1px solid ${color}40`,
+        color: isChallenger ? '#aaa' : '#fff',
+        letterSpacing: '0.08em',
+        padding: '3px 7px',
+        boxShadow: `inset 0 0 0 1px ${isChallenger ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.55)'}`,
         lineHeight: '12px',
       }}
     >
@@ -1174,8 +1176,8 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
     .replace(' left', '')
     .replace('Expired', 'Expired');
   const countdownChipLabel = isPendingPhase ? `accept · ${countdownChipText}` : countdownChipText;
-  const chipColor = isExpired ? '#FF453A' : (isUrgent ? '#FF453A' : 'rgba(255,255,255,0.65)');
-  const chipBg = (isExpired || isUrgent) ? 'rgba(255,69,58,0.12)' : 'rgba(255,255,255,0.06)';
+  const chipColor = isExpired ? '#FF453A' : (isUrgent ? '#FF453A' : '#ccc');
+  const chipBg = (isExpired || isUrgent) ? 'rgba(255,69,58,0.12)' : 'rgba(255,255,255,0.07)';
 
   // The entire card is tappable when onSeeDetails is wired —
   // opens the ChallengeDetailModal. Inline action buttons (Accept/Decline/Cancel/
@@ -1201,24 +1203,22 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
     <div
       role={handleCardTap ? 'button' : undefined}
       onClick={handleCardTap || undefined}
-      className={`relative p-3 rounded-xl ${handleCardTap ? 'active:opacity-70 transition-opacity cursor-pointer' : ''}`}
-      style={{
-        backgroundColor: 'rgba(255,255,255,0.03)',
-        border: `1px solid ${color}25`,
-      }}
+      className={`relative p-4 ${handleCardTap ? 'active:opacity-70 transition-opacity cursor-pointer' : ''}`}
+      style={CARD_SURFACE}
     >
       {/* Top-right countdown chip — frees a row inside the body. Color flips red <1h. */}
       {showCountdown && (
         <div
-          className="absolute px-2 py-0.5 rounded-md"
+          className="absolute rounded-lg"
           style={{
-            top: 8,
-            right: 8,
+            top: 16,
+            right: 16,
+            padding: '3px 9px',
             backgroundColor: chipBg,
             color: chipColor,
-            fontSize: 11,
-            fontWeight: 500,
-            lineHeight: '14px',
+            fontSize: 13,
+            fontWeight: 600,
+            lineHeight: '16px',
           }}
         >
           {countdownChipLabel}
@@ -1257,11 +1257,11 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
               {challenge.title}
             </p>
           )}
-          <p className="text-white text-sm font-semibold truncate">{primaryName}</p>
+          <p className="text-white text-[16px] font-bold truncate">{primaryName}</p>
           {statusLabel && (
             <p className="text-gray-500 text-xs">{statusLabel}</p>
           )}
-          <p className="text-white text-sm">{ruleLine}</p>
+          <p className="text-[16px] mt-0.5" style={{ color: '#ddd' }}>{ruleLine}</p>
           {/* Bottom meta row: photo-required tag (left) + cancel link (right). Shares one
               row to save vertical space. Negative margin-right escapes the inner row's
               chip-clearance padding so the cancel link sits flush with the card's edge. */}
@@ -1271,7 +1271,7 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
               style={{ marginRight: showCountdown ? -70 : 0 }}
             >
               {challenge.requirePhoto ? (
-                <p className="text-[11px]" style={{ color: '#FFD60A' }}>
+                <p className="text-[13px] mt-1" style={{ color: '#aaa' }}>
                   📸 Photo required
                 </p>
               ) : <span />}
@@ -1335,14 +1335,15 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
         <div className="flex gap-2 mt-3">
           <button
             onClick={(e) => { e.stopPropagation(); onDecline?.(challenge); }}
-            className="flex-1 py-2 rounded-lg text-sm font-medium bg-zinc-800 text-gray-300"
+            className="flex-1 py-3 rounded-xl text-[14px] font-bold"
+            style={{ color: '#ddd', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.2)' }}
           >
             Decline
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onAccept?.(challenge); }}
-            className="flex-1 py-2 rounded-lg text-sm font-semibold"
-            style={{ backgroundColor: color, color: 'black' }}
+            className="flex-1 py-3 rounded-xl text-[14px] font-bold"
+            style={{ backgroundColor: '#fff', color: 'black' }}
           >
             Accept
           </button>
@@ -1350,22 +1351,19 @@ export function ChallengeCard({ challenge, currentUid, userProfile, friendsByUid
       )}
 
       {showStartWorkout && (
-        <div className="flex gap-2 mt-3">
+        <div className="flex gap-2.5 mt-3.5">
           <button
             onClick={(e) => { e.stopPropagation(); triggerHaptic(ImpactStyle.Light); onApplyPastActivity?.(challenge); }}
-            className="flex-1 py-1.5 rounded-lg text-xs font-medium"
-            style={{
-              backgroundColor: 'transparent',
-              color: 'rgba(255,255,255,0.85)',
-              border: `1px solid ${color}55`,
-            }}
+            className="flex-1 py-3 rounded-xl text-[14px] font-bold"
+            style={{ color: '#ddd', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.2)' }}
           >
             Use completed activity
           </button>
+          {/* White: the one main action (Nov 2026 redesign) */}
           <button
             onClick={(e) => { e.stopPropagation(); triggerHaptic(ImpactStyle.Medium); onStartWorkout?.(challenge); }}
-            className="flex-1 py-1.5 rounded-lg text-xs font-semibold"
-            style={{ backgroundColor: color, color: 'black' }}
+            className="flex-1 py-3 rounded-xl text-[14px] font-bold"
+            style={{ backgroundColor: '#fff', color: 'black' }}
           >
             Start activity
           </button>

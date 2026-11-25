@@ -16,7 +16,7 @@ import { readFeedSnapshot, scheduleFeedSnapshotSave } from './utils/feedSnapshot
 import { isDemoAccount, getDemoLeaderboardFriends, getDemoActivities, getDemoHealthHistory, getDemoUserData, getDemoChallengeStats, getDemoUserLeaderboardOverride } from './demoData';
 import { resolveUnit, unitLabel, formatDistanceValue, milesToDisplay } from './utils/distance';
 import { getActivityCategory, countsAsLifting, countsAsCardio, countsAsRecovery } from './utils/activityCategory';
-import { CARD_SURFACE, hexToRgb } from './utils/designTokens';
+import { CARD_SURFACE, NUM, hexToRgb } from './utils/designTokens';
 
 // Convert a Date to YYYY-MM-DD string in local timezone (avoids UTC date shifting)
 const toLocalDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -165,8 +165,8 @@ const calculateLeaderboardStats = (rawActivities, healthHistory, recordsData) =>
   };
 };
 
-// Section header icon component - SVG line icons in brand cyan
-const SectionIcon = ({ type, size = 22, color = '#04d1ff' }) => {
+// Section header icon component - white line icons (Nov 2026 redesign; colour is for goals)
+const SectionIcon = ({ type, size = 22, color = '#ffffff' }) => {
   const icons = {
     leaderboard: (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -230,14 +230,13 @@ const ScrollablePill = ({ onClick, isSelected, color, textColor, children }) => 
     <div
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
-      className="px-2.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-200 flex-shrink-0 cursor-pointer select-none"
+      className="px-3 py-[7px] rounded-full text-[14px] font-semibold whitespace-nowrap transition-all duration-200 flex-shrink-0 cursor-pointer select-none"
       style={{
-        backgroundColor: isSelected ? color : 'rgba(255,255,255,0.05)',
-        color: isSelected ? textColor : 'rgba(255,255,255,0.5)',
-        // Unselected pills carry their category colour as an outline (and on the icon), so the
-        // row is scannable without a selection. Always a 1px border, so selecting one doesn't
-        // shift the row's layout.
-        border: `1px solid ${isSelected ? color : hexAlpha(color, 0.45)}`,
+        // Nov 2026 redesign: the selected chip is a soft tint of its colour with a thin outline
+        // in it; the others are quiet and keep their colour on the icon only.
+        backgroundColor: isSelected ? hexAlpha(color, 0.18) : 'rgba(255,255,255,0.05)',
+        color: isSelected ? color : '#ccc',
+        boxShadow: isSelected ? `inset 0 0 0 1px ${hexAlpha(color, 0.4)}` : 'none',
       }}
     >
       {children}
@@ -395,6 +394,17 @@ const TouchButton = ({ onClick, disabled = false, className, style, children, to
 
 // Segmented control component - defined outside ActivityFeed for stable reference (enables CSS animations)
 // Friends has three views: Feed, Leaderboard and Challenges (moved here from its own tab).
+// Leaderboard colours by category (Nov 2026 redesign): the podium, your position card and the
+// bars take the colour of the chip you picked. Workouts is white: it means all sessions.
+const LB_COLORS = {
+  calories: '#FF6B6B', steps: '#BF5AF2', workouts: '#FFFFFF',
+  strengthSessions: '#00FF94', cardioSessions: '#FF9500', recoverySessions: '#00D1FF',
+  master: '#FFD700', strength: '#00FF94', cardio: '#FF9500', stepsStreak: '#BF5AF2', recovery: '#00D1FF',
+  wins: '#FFD60A', currentStreak: '#FF9500', longestStreak: '#FFD700',
+};
+// Past this many sessions for the leader, rows fall back to a bar (blocks get too thin).
+const LB_MAX_BLOCKS = 14;
+
 const FRIENDS_VIEWS = [
   { key: 'feed', label: 'Feed' },
   { key: 'leaderboard', label: 'Leaderboard' },
@@ -2232,12 +2242,11 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   };
 
   const LeaderboardRow = ({ userData, rank, category, timeRange, maxValue, onTap }) => {
-    const getRankStyle = (rank) => {
-      if (rank === 1) return 'bg-gradient-to-r from-yellow-400 to-yellow-600 text-black';
-      if (rank === 2) return 'bg-gradient-to-r from-gray-300 to-gray-500 text-black';
-      if (rank === 3) return 'bg-gradient-to-r from-amber-600 to-amber-800 text-white';
-      return 'bg-zinc-700 text-white';
-    };
+    // Gold, silver and bronze rank badges; the rest neutral (Nov 2026 redesign)
+    const rankBadge = rank === 1 ? { backgroundColor: '#FFD700', color: '#000' }
+      : rank === 2 ? { backgroundColor: '#D7D7DE', color: '#000' }
+      : rank === 3 ? { backgroundColor: '#D08A4A', color: '#000' }
+      : { backgroundColor: 'rgba(255,255,255,0.08)', color: '#ccc' };
 
     const getValue = (tr = timeRange) => {
       const v = userData.volume || {};
@@ -2345,73 +2354,95 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         case 'stepsStreak': return '#BF5AF2';
         case 'calories': return '#FF6B6B';
         case 'steps': return '#BF5AF2';
-        case 'workouts': return '#FFD60A';
+        // White: Workouts means all sessions; its blocks carry the category colours
+        case 'workouts': return '#FFFFFF';
+        case 'wins': return '#FFD60A';
+        case 'currentStreak': return '#FF9500';
         default: return '#FFD700';
       }
     };
 
     const barColor = getCategoryColor();
+    // Session counts draw as blocks, one per session (Home's language); a week's worth fits.
+    // Steps, calories, streaks and wins keep a bar, as does a long range with big counts.
+    const isSessionBoard = ['strengthSessions', 'cardioSessions', 'recoverySessions', 'workouts'].includes(category);
+    const useBlocks = isSessionBoard && maxValue > 0 && maxValue <= LB_MAX_BLOCKS;
+    // Workouts (strength + cardio, a circuit once): each workout a block in its category's
+    // colour, half and half for a circuit.
+    const workoutBlocks = () => {
+      const vol = userData.volume || {};
+      const str = vol.strengthSessions?.[timeRange] || 0;
+      const car = vol.cardioSessions?.[timeRange] || 0;
+      const circuits = Math.max(0, str + car - value);
+      return [
+        ...Array(Math.max(0, str - circuits)).fill('#00FF94'),
+        ...Array(circuits).fill('linear-gradient(90deg, #00FF94 0 50%, #FF9500 50% 100%)'),
+        ...Array(Math.max(0, car - circuits)).fill('#FF9500'),
+      ].slice(0, value);
+    };
 
     return (
       <TouchButton
         onClick={() => !userData.isCurrentUser && onTap && onTap(userData)}
         disabled={userData.isCurrentUser}
-        className={`w-full p-3 rounded-xl mb-2 relative text-left transition-all duration-150 ${
-          userData.isCurrentUser ? 'bg-zinc-800 ring-1 ring-green-500/30' : 'bg-zinc-900 hover:bg-zinc-800/80'
-        }`}
+        className="w-full px-3.5 py-3 rounded-2xl mb-2 relative text-left transition-all duration-150"
+        style={userData.isCurrentUser
+          ? { backgroundColor: hexAlpha(barColor, 0.1), boxShadow: `inset 0 0 0 1px ${hexAlpha(barColor, 0.4)}` }
+          : { backgroundColor: 'rgba(255,255,255,0.04)' }}
       >
         {/* Content row — full width, all info readable regardless of bar width */}
         <div className="flex items-center gap-3">
-          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${getRankStyle(rank)}`}>
-            {rank === 1 ? '👑' : rank}
+          <div className="w-7 h-7 rounded-full flex items-center justify-center text-[13px] font-extrabold flex-shrink-0" style={rankBadge}>
+            {rank === 1 ? <span className="text-[14px]">👑</span> : rank}
           </div>
 
           <div className="flex-shrink-0">
-            <ProfilePhoto photoURL={userData.photoURL} displayName={userData.displayName} size={40} />
+            <ProfilePhoto photoURL={userData.photoURL} displayName={userData.displayName} size={38} />
           </div>
 
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1">
-              <p className={`font-medium truncate ${userData.isCurrentUser ? 'text-green-400' : 'text-white'}`}>
+              <p className="text-white text-[15px] font-semibold truncate">
                 {userData.isCurrentUser ? 'You' : (userData.displayName || userData.username)}
               </p>
               {FRIEND_STATUS[userData.status] && (
                 <span className="text-[13px] flex-shrink-0" aria-label={FRIEND_STATUS[userData.status].label}>{FRIEND_STATUS[userData.status].emoji}</span>
               )}
-              {trend === 'up' && <span className="text-green-400 text-xs">↑</span>}
-              {trend === 'down' && <span className="text-red-400 text-xs">↓</span>}
             </div>
             {!userData.isCurrentUser && (
-              <p className="text-gray-500 text-xs truncate">@{userData.username}</p>
+              <p className="text-[12px] truncate" style={{ color: '#777' }}>@{userData.username}</p>
             )}
           </div>
 
           <div className="text-right">
-            <p className="text-white font-bold">{formatValue(value)}</p>
-            <div className="flex items-center justify-end gap-1">
-              <p className="text-gray-500 text-xs">{getUnit(value)}</p>
-              {delta !== null && delta !== 0 && (category === 'calories' || category === 'steps') && (
-                <span className={`text-xs ${delta > 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {delta > 0 ? '+' : ''}{percentChange}%
-                </span>
-              )}
-            </div>
+            <p className="text-white" style={NUM.value}>{formatValue(value)}</p>
+            <p className="text-[11.5px] mt-1" style={{ color: '#777' }}>
+              {getUnit(value)}
+              {delta !== null && delta !== 0 && (category === 'calories' || category === 'steps') && <> · {delta > 0 ? '+' : '−'}{Math.abs(percentChange)}%</>}
+            </p>
           </div>
         </div>
 
-        {/* Chart bar — thin variable-width stripe at the bottom of the row.
-            No track behind it; empty space stays empty so 0-value rows show no bar.
-            Width is strictly proportional to the leader's value. */}
-        <div className="mt-3 h-1 relative">
-          <div
-            className="absolute left-0 top-0 h-full rounded-full"
-            style={{
-              width: `${progressPercent}%`,
-              backgroundColor: barColor,
-              transition: 'width 500ms ease-out',
-            }}
-          />
-        </div>
+        {useBlocks ? (
+          <div className="flex mt-2.5" style={{ gap: 3 }}>
+            {(category === 'workouts' ? workoutBlocks() : Array(value).fill(barColor)).map((bg, i) => (
+              <i key={i} className="flex-1 block" style={{ height: 7, borderRadius: 3.5, background: bg }} />
+            ))}
+            {Array.from({ length: Math.max(0, maxValue - value) }, (_, i) => <i key={`e${i}`} className="flex-1 block" style={{ height: 7 }} />)}
+          </div>
+        ) : (
+          // Chart bar on a faint track of its colour; width proportional to the leader's value.
+          <div className="mt-2.5 h-1 relative rounded-full" style={{ backgroundColor: hexAlpha(barColor, 0.15) }}>
+            <div
+              className="absolute left-0 top-0 h-full rounded-full"
+              style={{
+                width: `${progressPercent > 0 ? Math.max(2, progressPercent) : 0}%`,
+                backgroundColor: barColor,
+                transition: 'width 500ms ease-out',
+              }}
+            />
+          </div>
+        )}
       </TouchButton>
     );
   };
@@ -2458,6 +2489,17 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       userSelect: 'none',
     };
 
+    const podiumColor = LB_COLORS[category] || '#FFD700';
+    // Steps in the ranked category's colour (Nov 2026 redesign), fading down
+    const podiumFill = (place) => place === 1
+      ? `linear-gradient(180deg, ${podiumColor}, ${hexAlpha(podiumColor, 0.18)})`
+      : place === 2
+        ? `linear-gradient(180deg, ${hexAlpha(podiumColor, 0.7)}, ${hexAlpha(podiumColor, 0.12)})`
+        : `linear-gradient(180deg, ${hexAlpha(podiumColor, 0.5)}, ${hexAlpha(podiumColor, 0.08)})`;
+    // Dark place numbers on a light podium (white, gold), light ones on the rest
+    const lightPodium = ['#FFFFFF', '#FFD700', '#FFD60A'].includes(podiumColor);
+    const MEDALS = { 1: ['#FFD700', '#000'], 2: ['#D7D7DE', '#000'], 3: ['#D08A4A', '#000'] };
+
     const PodiumSpot = ({ userData, place, height }) => {
       // Use native DOM event listeners for tap detection - allows window capture to get events first
       const photoRef = useRef(null);
@@ -2503,39 +2545,26 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         >
           {/* Crown for 1st place */}
           {place === 1 && (
-            <div className="text-2xl mb-1 animate-bounce" style={touchPassthroughStyle}>👑</div>
+            <div className="mb-1 animate-bounce" style={{ ...touchPassthroughStyle, fontSize: 26, lineHeight: 1 }}>👑</div>
           )}
 
           {/* Profile photo with ring - tap detected via native DOM events to not block pull-to-refresh */}
           <div
             ref={photoRef}
-            className={`relative mb-2 ${place === 1 ? 'scale-110' : ''}`}
+            className="relative mb-2"
             style={{ ...touchPassthroughStyle, cursor: userData.isCurrentUser ? 'default' : 'pointer' }}
           >
-            <div
-              className={`rounded-full p-0.5 ${
-                place === 1 ? 'bg-gradient-to-r from-yellow-400 to-yellow-600' :
-                place === 2 ? 'bg-gradient-to-r from-gray-300 to-gray-500' :
-                'bg-gradient-to-r from-amber-600 to-amber-800'
-              }`}
-              style={touchPassthroughStyle}
-            >
-              <div className="rounded-full overflow-hidden bg-black" style={touchPassthroughStyle}>
-                <ProfilePhoto
-                  photoURL={userData.photoURL}
-                  displayName={userData.displayName}
-                  size={place === 1 ? 56 : 48}
-                />
-              </div>
+            <div className="rounded-full overflow-hidden bg-black" style={touchPassthroughStyle}>
+              <ProfilePhoto
+                photoURL={userData.photoURL}
+                displayName={userData.displayName}
+                size={place === 1 ? 62 : 54}
+              />
             </div>
-            {/* Place badge */}
+            {/* Place badge: gold, silver, bronze */}
             <div
-              className={`absolute -bottom-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                place === 1 ? 'bg-yellow-500 text-black' :
-                place === 2 ? 'bg-gray-400 text-black' :
-                'bg-amber-700 text-white'
-              }`}
-              style={{ ...touchPassthroughStyle, pointerEvents: 'none' }}
+              className="absolute rounded-full flex items-center justify-center text-[12px] font-extrabold"
+              style={{ ...touchPassthroughStyle, pointerEvents: 'none', right: -4, bottom: -4, width: 22, height: 22, backgroundColor: MEDALS[place][0], color: MEDALS[place][1], boxShadow: '0 0 0 2px #000' }}
             >
               {place}
             </div>
@@ -2543,7 +2572,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
 
           {/* Name, with the 🌴 / 🩹 / 🛡️ status kept outside the truncation */}
           <div className="flex items-center gap-0.5 max-w-[92px]" style={touchPassthroughStyle}>
-            <p className={`text-xs font-medium truncate min-w-0 ${userData.isCurrentUser ? 'text-green-400' : 'text-white'}`} style={touchPassthroughStyle}>
+            <p className="text-[14px] font-semibold truncate min-w-0 text-white" style={touchPassthroughStyle}>
               {userData.isCurrentUser ? 'You' : (userData.displayName?.split(' ')[0] || userData.username)}
             </p>
             {FRIEND_STATUS[userData.status] && (
@@ -2552,18 +2581,14 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           </div>
 
           {/* Score */}
-          <p className="text-white font-bold text-sm" style={touchPassthroughStyle}>{formatValue(getValue(userData))}</p>
+          <p className="text-white" style={{ ...touchPassthroughStyle, ...NUM.value, marginTop: 2 }}>{formatValue(getValue(userData))}</p>
 
-          {/* Podium bar */}
+          {/* Podium step, in the ranked category's colour */}
           <div
-            className={`w-20 rounded-t-lg mt-2 flex items-end justify-center ${
-              place === 1 ? 'bg-gradient-to-t from-yellow-600 to-yellow-400' :
-              place === 2 ? 'bg-gradient-to-t from-gray-500 to-gray-300' :
-              'bg-gradient-to-t from-amber-800 to-amber-600'
-            }`}
-            style={{ ...touchPassthroughStyle, height: `${height}px` }}
+            className="w-[104px] mt-2 flex items-end justify-center"
+            style={{ ...touchPassthroughStyle, height: `${height}px`, borderRadius: '14px 14px 0 0', background: podiumFill(place) }}
           >
-            <span className="text-2xl font-bold text-white/30 mb-2" style={touchPassthroughStyle}>{place}</span>
+            <span className="mb-1.5" style={{ ...touchPassthroughStyle, fontSize: 34, fontWeight: 800, lineHeight: 1, color: lightPodium ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.6)' }}>{place}</span>
           </div>
         </div>
       );
@@ -2571,10 +2596,10 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
 
     // Reorder for podium display: 2nd, 1st, 3rd
     return (
-      <div className="flex items-end justify-center gap-2 mb-6 pt-8" style={touchPassthroughStyle}>
-        <PodiumSpot userData={topThree[1]} place={2} height={60} />
-        <PodiumSpot userData={topThree[0]} place={1} height={80} />
-        <PodiumSpot userData={topThree[2]} place={3} height={40} />
+      <div className="flex items-end justify-center gap-2.5 mb-5 pt-6" style={touchPassthroughStyle}>
+        <PodiumSpot userData={topThree[1]} place={2} height={86} />
+        <PodiumSpot userData={topThree[0]} place={1} height={118} />
+        <PodiumSpot userData={topThree[2]} place={3} height={66} />
       </div>
     );
   };
@@ -2746,8 +2771,9 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     // Leading mark for a leaderboard label. currentColor so it tracks whatever the surrounding
     // text is doing (these render on both the muted "… Rankings" line and inside selected pills,
     // which flip to black text).
+    // The rankings line's icon in the ranked category's colour; the words stay grey (Nov 2026)
     const mark = (cat) => (
-      <CategoryIcon category={cat} size={12} color="currentColor" className="inline align-[-2px] mr-1" />
+      <CategoryIcon category={cat} size={14} color={LB_COLORS[leaderboardCategory] || 'currentColor'} className="inline align-[-3px] mr-2" />
     );
 
     const getCategoryLabel = () => {
@@ -2813,13 +2839,14 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                   }
                   setLeaderboardTimeRange(val);
                 }}
-                className="px-2.5 py-1.5 rounded-lg bg-zinc-800/50 border border-white/10 text-white text-xs appearance-none cursor-pointer shrink-0"
+                className="px-3 py-[7px] rounded-[10px] bg-transparent text-white text-[14px] font-semibold appearance-none cursor-pointer shrink-0"
                 style={{
+                  boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.14)',
                   backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23999'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
                   backgroundRepeat: 'no-repeat',
-                  backgroundPosition: 'right 6px center',
-                  backgroundSize: '12px',
-                  paddingRight: '24px'
+                  backgroundPosition: 'right 9px center',
+                  backgroundSize: '14px',
+                  paddingRight: '30px'
                 }}
               >
                 {leaderboardSection === 'activity' ? (
@@ -2843,11 +2870,11 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           </div>
 
           {/* Section Toggle - Activity / Streaks / Challenges */}
-          <div className="relative flex p-1 rounded-lg mb-3 max-w-[320px] mx-auto" style={{ backgroundColor: 'rgba(255,255,255,0.05)', touchAction: 'pan-y' }}>
+          <div className="relative flex p-1 rounded-xl mb-3 mx-[22px]" style={{ backgroundColor: 'rgba(255,255,255,0.05)', touchAction: 'pan-y' }}>
             <div
-              className="absolute top-1 bottom-1 rounded-md transition-all duration-300 ease-out"
+              className="absolute top-1 bottom-1 rounded-[9px] transition-all duration-300 ease-out"
               style={{
-                backgroundColor: leaderboardSection === 'activity' ? '#00FF94' : leaderboardSection === 'streak' ? '#FFD700' : '#FFD60A',
+                backgroundColor: '#fff',
                 width: 'calc((100% - 8px) / 3)',
                 left: leaderboardSection === 'activity'
                   ? '4px'
@@ -2879,8 +2906,8 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                     setLeaderboardCategory('wins');
                   }
                 }}
-                className="flex-1 py-1.5 rounded-md text-xs font-semibold transition-colors duration-200 relative z-10 text-center"
-                style={{ color: leaderboardSection === section.key ? 'black' : 'rgba(255,255,255,0.5)' }}
+                className="flex-1 py-[7px] rounded-[9px] text-[14px] font-semibold transition-colors duration-200 relative z-10 text-center"
+                style={{ color: leaderboardSection === section.key ? 'black' : '#888' }}
               >
                 {section.label}
               </TouchButton>
@@ -2888,12 +2915,12 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           </div>
 
           {/* Category Pills */}
-          <div className="flex gap-1.5 overflow-x-auto no-scrollbar mb-4 -mx-1 px-1" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <div className="flex gap-2 overflow-x-auto no-scrollbar mb-3.5 -mx-1 px-1" style={{ WebkitOverflowScrolling: 'touch' }}>
             {leaderboardSection === 'activity' ? (
               [
                 { key: 'calories', cat: 'calories', label: 'Calories', color: '#FF6B6B' },
                 { key: 'steps', cat: 'steps', label: 'Steps', color: '#BF5AF2' },
-                { key: 'workouts', cat: 'workouts', label: 'Workouts', color: '#FFD60A' },
+                { key: 'workouts', cat: 'workouts', label: 'Workouts', color: '#FFFFFF' },
                 { key: 'strengthSessions', cat: 'lifts', label: 'Strength', color: '#00FF94' },
                 { key: 'cardioSessions', cat: 'cardio', label: 'Cardio', color: '#FF9500' },
                 { key: 'recoverySessions', cat: 'recovery', label: 'Recovery', color: '#00D1FF' }
@@ -2905,7 +2932,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                   color={cat.color}
                   textColor="black"
                 >
-                  {cat.cat && <CategoryIcon category={cat.cat} size={12} color={leaderboardCategory === cat.key ? 'currentColor' : cat.color} className="inline align-[-2px] mr-1" />}{cat.label}
+                  {cat.cat && <CategoryIcon category={cat.cat} size={15} color={cat.color} className="inline align-[-3px] mr-1.5" />}{cat.label}
                 </ScrollablePill>
               ))
             ) : leaderboardSection === 'challenges' ? (
@@ -2921,7 +2948,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                   color={cat.color}
                   textColor="black"
                 >
-                  {cat.cat && <CategoryIcon category={cat.cat} size={12} color={leaderboardCategory === cat.key ? 'currentColor' : cat.color} className="inline align-[-2px] mr-1" />}{cat.label}
+                  {cat.cat && <CategoryIcon category={cat.cat} size={15} color={cat.color} className="inline align-[-3px] mr-1.5" />}{cat.label}
                 </ScrollablePill>
               ))
             ) : (
@@ -2941,7 +2968,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                   color={cat.color}
                   textColor={cat.key === 'master' ? 'black' : 'white'}
                 >
-                  {cat.cat && <CategoryIcon category={cat.cat} size={12} color={leaderboardCategory === cat.key ? 'currentColor' : cat.color} className="inline align-[-2px] mr-1" />}{cat.label}
+                  {cat.cat && <CategoryIcon category={cat.cat} size={15} color={cat.color} className="inline align-[-3px] mr-1.5" />}{cat.label}
                   {cat.bonus && <span className="ml-1 text-[9px] font-bold uppercase tracking-wide opacity-70">bonus</span>}
                 </ScrollablePill>
               ))
@@ -2960,45 +2987,36 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             </div>
           ) : (
             <>
-              {/* Your Position Card (if not in top 3) */}
-              {currentUserRank > 3 && (
-                <div className="bg-gradient-to-r from-green-900/30 to-green-800/20 rounded-xl p-3 mb-2 border border-green-500/20" style={{ touchAction: 'pan-y' }}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center">
-                        <span className="text-green-400 font-bold">#{currentUserRank}</span>
-                      </div>
-                      <div>
-                        <p className="text-green-400 font-medium">Your Position</p>
-                        <p className="text-gray-400 text-xs">Keep going to climb the ranks!</p>
-                      </div>
+              {/* Your Position Card (if not in top 3): your rank is the screen's one big number, the
+                  card tinted in the ranked category's colour (Nov 2026 redesign) */}
+              {currentUserRank > 3 && (() => {
+                const me = sortedLeaderboard.find(u => u.isCurrentUser);
+                const val = getSortValue(me);
+                const one = val === 1;
+                const lbColor = LB_COLORS[leaderboardCategory] || '#FFD700';
+                const shown = (leaderboardSection === 'activity' && (leaderboardCategory === 'calories' || leaderboardCategory === 'steps'))
+                  ? (val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val)
+                  : val;
+                const unit = leaderboardSection === 'activity'
+                  ? (leaderboardCategory === 'calories' ? 'cal' :
+                     leaderboardCategory === 'steps' ? (one ? 'step' : 'steps') :
+                     leaderboardCategory === 'workouts' ? (one ? 'workout' : 'workouts') : (one ? 'session' : 'sessions'))
+                  : leaderboardSection === 'challenges'
+                    ? (leaderboardCategory === 'wins' ? (one ? 'win' : 'wins') : 'streak')
+                    : 'streak';
+                return (
+                  <div className="flex items-center justify-between mb-2" style={{ padding: '16px 18px', borderRadius: 22, backgroundColor: hexAlpha(lbColor, 0.12), boxShadow: `inset 0 0 0 1px ${hexAlpha(lbColor, 0.35)}`, touchAction: 'pan-y' }}>
+                    <div>
+                      <div className="text-white" style={{ fontSize: 36, fontWeight: 800, letterSpacing: '-1.4px', lineHeight: 1 }}>#{currentUserRank}</div>
+                      <div className="uppercase" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', color: '#8a8a8a', marginTop: 7 }}>Your position</div>
                     </div>
                     <div className="text-right">
-                      <p className="text-white font-bold">
-                        {(() => {
-                          const userData = sortedLeaderboard.find(u => u.isCurrentUser);
-                          const val = getSortValue(userData);
-                          return (leaderboardSection === 'activity' && (leaderboardCategory === 'calories' || leaderboardCategory === 'steps'))
-                            ? (val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val)
-                            : val;
-                        })()}
-                      </p>
-                      <p className="text-gray-500 text-xs">
-                        {(() => {
-                          const one = getSortValue(sortedLeaderboard.find(u => u.isCurrentUser)) === 1;
-                          return leaderboardSection === 'activity'
-                            ? (leaderboardCategory === 'calories' ? 'cal' :
-                               leaderboardCategory === 'steps' ? (one ? 'step' : 'steps') :
-                               leaderboardCategory === 'workouts' ? (one ? 'workout' : 'workouts') : (one ? 'session' : 'sessions'))
-                            : leaderboardSection === 'challenges'
-                              ? (leaderboardCategory === 'wins' ? (one ? 'win' : 'wins') : 'streak')
-                              : 'streak';
-                        })()}
-                      </p>
+                      <div className="text-white" style={NUM.value}>{shown}</div>
+                      <div className="text-[12px] mt-1" style={{ color: '#777' }}>{unit} · keep climbing</div>
                     </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Podium for top 3 */}
               {topThree.length >= 3 && (
@@ -3011,9 +3029,19 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               )}
 
               {/* Rankings label */}
-              <div className="mb-3">
-                <p className="text-gray-500 text-xs uppercase tracking-wide">{getCategoryLabel()} Rankings</p>
+              <div className="mt-1 mb-2.5 flex items-center gap-2">
+                <p className="uppercase" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', color: '#8a8a8a' }}>
+                  {getCategoryLabel()} rankings
+                  {leaderboardSection === 'activity' && <> · {{ week: 'this week', month: 'this month', year: 'this year', all: 'all time' }[leaderboardTimeRange] || ''}</>}
+                </p>
               </div>
+              {leaderboardCategory === 'workouts' && maxValue > 0 && maxValue <= LB_MAX_BLOCKS && (
+                <div className="flex gap-3.5 -mt-1 mb-3 text-[12px]" style={{ color: '#8a8a8a' }}>
+                  {[['#00FF94', 'Strength'], ['#FF9500', 'Cardio'], ['linear-gradient(90deg, #00FF94 0 50%, #FF9500 50% 100%)', 'Circuit']].map(([bg, l]) => (
+                    <span key={l} className="flex items-center"><i className="inline-block mr-1.5" style={{ width: 10, height: 10, borderRadius: 3, background: bg }} />{l}</span>
+                  ))}
+                </div>
+              )}
 
               {/* Top 3 in list form (compact) */}
               {topThree.map((userData, index) => (

@@ -178,28 +178,33 @@ struct WeekCornerView: View {
     let model: WeekModel
     let accented: Bool
 
+    // Board 42, option C: the streak in the middle (like the round Week complication), the
+    // week's % along the bezel. The label is the % itself, or "WON" once the week is won.
     var body: some View {
         let color = WidgetColors.week(model)
         ZStack {
             AccessoryWidgetBackground()
-            HStack(alignment: .firstTextBaseline, spacing: 0) {
-                Text("\(model.percent)").font(.system(size: 13, weight: .heavy)).tracking(-0.4)
-                Text("%").font(.system(size: 7, weight: .heavy))
-            }
-            .lineLimit(1)
-            .minimumScaleFactor(0.6)
-            .foregroundColor(accented ? .white : color)
-            .widgetAccentable()
+            StreakMark(model: model, size: 11, stacked: true)
+                .minimumScaleFactor(0.7)
         }
         .widgetLabel {
             ProgressView(value: Double(model.percent) / 100) {
-                // Beside the bezel gauge a corner fits about five characters, so not "4 DAYS LEFT"
-                Text(model.won ? "WON" : "\(model.daysLeft) LEFT")
+                // Beside the bezel gauge a corner fits about five characters
+                Text(model.won ? "WON" : "\(model.percent)%")
+                    .foregroundColor(color)
             }
             .tint(color)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Week \(model.percent) percent, \(model.daysLeftText)")
+        .accessibilityLabel(model.won
+            ? "Week won. \(streakPhrase)"
+            : "Week \(model.percent) percent. \(streakPhrase)")
+    }
+
+    private var streakPhrase: String {
+        model.streakPaused
+            ? "Streak paused at \(model.streak)"
+            : "\(model.streak) week winning streak"
     }
 }
 
@@ -299,7 +304,7 @@ struct WeekInlineView: View {
     let model: WeekModel
 
     // Some faces set the inline slot in bold capitals and cut it short, so each line has a
-    // shorter fallback ("75% · 4 left", "Week won") for the narrow slots.
+    // shorter fallback ("75% · 4 days", "Week won") for the narrow slots.
     var body: some View {
         if model.won {
             ViewThatFits(in: .horizontal) {
@@ -309,7 +314,7 @@ struct WeekInlineView: View {
         } else {
             ViewThatFits(in: .horizontal) {
                 Text("\(model.percent)% · \(model.daysLeftText)")
-                Text("\(model.percent)% · \(model.daysLeft) left")
+                Text("\(model.percent)% · \(model.daysLeft) \(model.daysLeft == 1 ? "day" : "days")")
             }
         }
     }

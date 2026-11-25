@@ -615,9 +615,17 @@ struct SmallWidgetView: View {
                 Spacer(minLength: 4)
                 StreakChip(data: model.data, size: 15)
             }
-            CapsLabel(text: model.won ? "Week won" : "Week · \(model.daysLeftText)", size: 9.5,
-                      color: model.won ? WidgetColors.gold : WidgetColors.muted)
-                .padding(.top, 8)
+            // Won: gold caps. Otherwise just the days left, styled like the Medium's (board 38, option B)
+            if model.won {
+                CapsLabel(text: "Week won", size: 9.5, color: WidgetColors.gold)
+                    .padding(.top, 8)
+            } else {
+                Text(model.daysLeftText)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(Color(white: 0.667))
+                    .lineLimit(1)
+                    .padding(.top, 6)
+            }
             VStack(spacing: 10) {
                 ForEach([WeekModel.Goal.strength, .cardio, .steps], id: \.self) { g in
                     HStack(spacing: 6) {
@@ -629,7 +637,7 @@ struct SmallWidgetView: View {
                     .frame(height: 15)
                 }
             }
-            .padding(.top, 16)
+            .padding(.top, model.won ? 16 : 14)
             Spacer(minLength: 0)
         }
     }

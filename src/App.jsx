@@ -18,7 +18,7 @@ import { isChallengeable, getChallengesForUser, activityMatchesChallengeRule, de
 import ChallengeMatchChooser from './components/ChallengeMatchChooser';
 import { createUserProfile, getUserProfile, updateUserProfile, updateDisplayName, updateUsername, saveActivityChanges, flushActivityOutbox, hasPendingActivityChanges, activitiesLoadedFromServer, getUserActivities, saveCustomActivities, getCustomActivities, uploadProfilePhoto, uploadActivityPhoto, deleteActivityPhoto, saveUserGoals, getUserGoals, savePendingGoals, clearPendingGoals, setOnboardingComplete, setTourComplete, savePersonalRecords, getPersonalRecords, saveDailyHealthData, getDailyHealthData, getDailyHealthHistory, subscribeToUserChallengeStats, resetUserServiceSession, readUserDoc } from './services/userService';
 import { isSundayToday, nextSundayDateStr, isPendingDue, formatApplyOn } from './utils/goalsSchedule';
-import { getFriends, getReactions, getFriendRequests, getComments, addReply, getReplies, deleteReply, addReaction, removeReaction, addComment, cleanupActivitySocialData } from './services/friendService';
+import { getFriends, getReactions, getFriendRequests, getComments, addReply, getReplies, deleteReply, addReaction, removeReaction, addComment, cleanupActivitySocialData, getPublicProfile } from './services/friendService';
 
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
@@ -26,17 +26,25 @@ import { Capacitor } from '@capacitor/core';
 import { syncHealthKitData, fetchTodaySteps, fetchTodayCalories, fetchHealthDataForDate, fetchDailyHealthRange, saveWorkoutToHealthKit, fetchWorkoutMetricsForTimeRange, startLiveWorkout, endLiveWorkout, cancelLiveWorkout, getLiveWorkoutMetrics, addMetricsUpdateListener, getHealthKitActivityType, fetchLinkableWorkouts, queryHeartRateForTimeRange, queryMaxHeartRateFromHealthKit, isWatchReachable, startWatchWorkout, endWatchWorkout, pauseWatchWorkout, resumeWatchWorkout, getWatchWorkoutMetrics, cancelWatchWorkout, addWatchWorkoutStartedListener, addWatchWorkoutEndedListener, addWatchActivitySavedListener, notifyWatchDataChanged, pushDistanceUnitToWatch, fetchWorkoutRoute, updateWidgetData, updateLiveActivityState, startWatchWorkoutLiveActivity, endAllLiveActivities, checkActiveLiveActivity, showLocationDeniedDialog, getHealthConnectionStatus, backfillHkCalories, isHealthKitReadAuthorized, syncWorkoutDetectionPrefs } from './services/healthService';
 import NotificationSettings from './NotificationSettings';
 import { initializePushNotifications, handleNotificationNavigation, removeFCMToken, clearBadge, clearAllNotifications, shouldShowNotification, getNotificationPreferences, logNotificationOpen, getNotificationPermissionStatus, requestNotificationPermission, workoutDetectionFields } from './services/notificationService';
-import { initializeRevenueCat, loginRevenueCat, checkProStatus, getPlanType, addCustomerInfoListener, logoutRevenueCat, presentPaywall, presentCustomerCenter, restorePurchases, setDevAuthEmail, getOfferings } from './services/subscriptionService';
+import { initializeRevenueCat, loginRevenueCat, checkProStatus, getPlanType, addCustomerInfoListener, logoutRevenueCat, presentPaywall, presentCustomerCenter, restorePurchases, setDevAuthEmail, getOfferings, isPaywallOpen } from './services/subscriptionService';
 import ActivityIcon, { ICON_PICKER_CATEGORIES, CATEGORY_COLORS as ICON_CATEGORY_COLORS } from './components/ActivityIcon';
 import RouteMapView, { ll2px, bestFit, snapshotBasemap } from './components/RouteMapView';
 import MuscleBodyMap from './components/MuscleBodyMap';
 import { isDemoAccount, getDemoActivities, getDemoUserData, getDemoProfileOverride, getDemoHealthKitData, getDemoHealthHistory, getDemoCalendarData, getDemoFriends, getDemoChallengeStats } from './demoData';
-import { Dumbbell, Footprints } from 'lucide-react';
+import { Dumbbell } from 'lucide-react';
 import { IconRun, IconSnowflake } from '@tabler/icons-react';
 import { triggerHaptic } from './utils/haptics';
+import { clearFeedSnapshot } from './utils/feedSnapshot';
+import { clearAvatarCache, rememberAvatar } from './utils/avatarCache';
+import AppTour from './components/AppTour';
 import UpdateRequired from './components/UpdateRequired';
+import LaunchLoader, { releaseLaunchOverlay } from './components/LaunchLoader';
+import { lastKnownPro, rememberPro } from './utils/proStatusCache';
+import ImportedWorkoutsBanner from './components/ImportedWorkoutsBanner';
+import InAppNotificationBanner from './components/InAppNotificationBanner';
+import { describeInAppNotification } from './utils/inAppNotification';
 import { APP_VERSION, APP_BUILD, isVersionBelow, fetchMinAppVersion } from './utils/appVersion';
-import { toLocalDateStr, getTodayDate, getCurrentYear, parseLocalDate, formatFriendlyDate } from './utils/dateHelpers';
+import { toLocalDateStr, getTodayDate, getCurrentYear, parseLocalDate, formatFriendlyDate, signupWeekStartStr } from './utils/dateHelpers';
 import { FOCUS_AREA_GROUPS, ALL_FOCUS_AREAS, FOCUS_AREA_MIGRATION, normalizeFocusAreas } from './utils/focusAreas';
 import { initialUserData } from './utils/initialUserData';
 import { getDefaultCountToward, getActivityCategory, countsAsLifting, countsAsCardio, countsAsRecovery } from './utils/activityCategory';
@@ -48,6 +56,8 @@ import { manualCaloriesForDate, needsHkCaloriesBackfill } from './utils/calories
 import { reverseGeocode, formatLocation } from './utils/geocode';
 import SectionIcon from './components/SectionIcon';
 import CategoryIcon from './components/CategoryIcon';
+import WeekGoalsHero, { CheckBadge, Collapse } from './components/WeekGoalsHero';
+import { CATEGORY_COLORS, CARD_SURFACE, CARD_BG_SOLID, GOLD, TEXT_MUTED, NUM, goldMix, hexToRgb, TRACK_ALPHA } from './utils/designTokens';
 import LongPressMenu from './components/LongPressMenu';
 import { SwipeableProvider, SwipeableActivityItem, SwipeableContext, globalIsPulling } from './components/SwipeableActivityItem';
 import WeekStatsModal from './components/WeekStatsModal';
@@ -518,788 +528,16 @@ const initialRecoveryBreakdown = {
   'all-time': {}
 };
 
-// App Tour Component - Guides new users through the app
-const AppTour = ({ step, onNext, onBack, onSkip, targetRef, onSwitchTab, homeTabRef }) => {
-  const [position, setPosition] = useState({ top: 0, left: 0, width: 0, height: 0 });
-  const [homePosition, setHomePosition] = useState({ top: 0, left: 0, width: 0, height: 0 });
-  const [isReady, setIsReady] = useState(false);
-
-  const tourSteps = [
-    {
-      title: 'Log Activity',
-      description: 'Tap here to log workouts, runs, recovery sessions, and more.',
-      position: 'above',
-      tab: 'home',
-      features: null
-    },
-    {
-      title: 'Weekly Goals',
-      description: 'Track your weekly progress here. Hit Strength, Cardio and your weekly Steps to win the week and grow your streak. Recovery is a bonus.',
-      position: 'below',
-      tab: 'home',
-      features: null
-    },
-    {
-      title: 'Plan',
-      description: 'Plan your week: drop strength, cardio and recovery sessions onto the days you\'ll do them.',
-      position: 'above',
-      tab: 'plan',
-      features: [
-        { emoji: '🗓️', text: 'Drag sessions onto days' },
-        { emoji: '✨', text: 'Suggest a plan in one tap' },
-        { emoji: '👟', text: 'See the steps each day needs' },
-        { emoji: '✅', text: 'Tap to log a planned session' }
-      ]
-    },
-    {
-      title: 'Friends',
-      description: 'Stay motivated together with friends.',
-      position: 'above',
-      tab: 'feed',
-      features: [
-        { emoji: '👥', text: 'See friend activity' },
-        { emoji: '🎉', text: 'React & comment' },
-        { emoji: '🏅', text: 'Leaderboard (streaks and activities)' },
-        { emoji: '⚡', text: 'Challenge friends head-to-head' },
-        { emoji: '➕', text: 'Add new friends' }
-      ]
-    },
-    {
-      title: 'Profile',
-      description: 'Your fitness home base.',
-      position: 'above',
-      tab: 'profile',
-      features: [
-        { emoji: '📊', text: 'See your stats' },
-        { emoji: '📅', text: 'Browse your history' },
-        { emoji: '🎯', text: 'Set goals & share wins' }
-      ]
-    }
-  ];
-
-  const currentStep = tourSteps[step] || tourSteps[0];
-
-  // Track previous tab for detecting tab changes
-  const prevTabRef = useRef(currentStep.tab);
-
-  // Switch to the appropriate tab when step changes
-  useEffect(() => {
-    if (currentStep.tab && onSwitchTab) {
-      onSwitchTab(currentStep.tab);
-    }
-    // Scroll to top when entering a new step
-    window.scrollTo({ top: 0, behavior: 'instant' });
-  }, [step, currentStep.tab, onSwitchTab]);
-
-  useEffect(() => {
-    const isTabChange = prevTabRef.current !== currentStep.tab;
-    prevTabRef.current = currentStep.tab;
-
-    // Only show loading state for tab changes
-    if (isTabChange) {
-      setIsReady(false);
-    }
-
-    const capturePosition = () => {
-      if (targetRef?.current) {
-        // Use requestAnimationFrame to ensure we get the correct position after paint
-        requestAnimationFrame(() => {
-          if (targetRef?.current) {
-            const rect = targetRef.current.getBoundingClientRect();
-            setPosition({
-              top: rect.top,
-              left: rect.left,
-              width: rect.width,
-              height: rect.height
-            });
-            // Also capture Home button position for steps 0-1
-            if (homeTabRef?.current) {
-              const homeRect = homeTabRef.current.getBoundingClientRect();
-              setHomePosition({
-                top: homeRect.top,
-                left: homeRect.left,
-                width: homeRect.width,
-                height: homeRect.height
-              });
-            }
-            setIsReady(true);
-          } else {
-            // Fallback - try again after a short delay
-            setTimeout(capturePosition, 50);
-          }
-        });
-      } else {
-        // Ref not ready yet, try again
-        setTimeout(capturePosition, 50);
-      }
-    };
-
-    const updatePosition = () => {
-      // Fixed elements are the bottom nav tabs: Challenges (2), Friends (3), Profile (4)
-      const isFixedElement = step >= 2 && step <= 4;
-
-      if (!isFixedElement) {
-        // Scroll to top first to reset position
-        window.scrollTo({ top: 0, behavior: 'instant' });
-
-        // Wait a frame, then scroll element into view
-        requestAnimationFrame(() => {
-          if (targetRef?.current) {
-            const rect = targetRef.current.getBoundingClientRect();
-            const scrollTarget = window.scrollY + rect.top - 100; // 100px padding from top
-            window.scrollTo({ top: Math.max(0, scrollTarget), behavior: 'instant' });
-          }
-          // Capture position immediately
-          capturePosition();
-        });
-      } else {
-        // For fixed elements, capture position after tab switch
-        setTimeout(capturePosition, isTabChange ? 50 : 0);
-      }
-    };
-
-    // Shorter delay - only need time for tab switch if changing tabs
-    const timer = setTimeout(updatePosition, isTabChange ? 50 : 0);
-    return () => clearTimeout(timer);
-  }, [targetRef, step, currentStep.tab]);
-
-  // Disable scrolling while tour is active
-  useEffect(() => {
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, []);
-
-  // Don't render until position is calculated
-  if (!isReady || position.width === 0) {
-    return (
-      <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center">
-        <div className="animate-pulse text-white">Loading...</div>
-      </div>
-    );
-  }
-
-  // Calculate tooltip position based on target element
-  const getTooltipStyle = () => {
-    const padding = 16;
-    const tooltipWidth = 280;
-
-    // Center tooltip horizontally over the target element
-    const isNavBarStep = step >= 2 && step <= 4;
-    const centerOnElement = position.left + position.width / 2 - tooltipWidth / 2;
-    const clampedLeft = Math.max(16, Math.min(centerOnElement, window.innerWidth - tooltipWidth - 16));
-
-    if (isNavBarStep) {
-      // For nav bar items (History, Friends, Profile), use fixed position from bottom
-      // Center tooltip over the actual tab button
-      return {
-        bottom: 124, // Fixed distance from bottom of screen
-        left: clampedLeft
-      };
-    } else if (currentStep.position === 'above') {
-      // For other 'above' positioned items (not nav bar)
-      const tooltipHeight = 160;
-      return {
-        top: position.top - tooltipHeight - 16,
-        left: clampedLeft
-      };
-    } else {
-      // Position tooltip below the target element
-      return {
-        top: position.top + position.height + padding,
-        left: clampedLeft
-      };
-    }
-  };
-
-  // Calculate arrow position
-  const getArrowStyle = () => {
-    const tooltipStyle = getTooltipStyle();
-    const tooltipLeft = typeof tooltipStyle.left === 'number' ? tooltipStyle.left : 16;
-    const arrowLeft = position.left + position.width / 2 - tooltipLeft - 8; // 8 = half arrow width
-
-    if (currentStep.position === 'above') {
-      return {
-        bottom: '-8px',
-        left: Math.max(16, Math.min(arrowLeft, 280 - 32)) // Keep arrow within tooltip bounds
-      };
-    } else {
-      return {
-        top: '-8px',
-        left: Math.max(16, Math.min(arrowLeft, 280 - 32))
-      };
-    }
-  };
-
-  // Small padding around highlight box (just for the green border)
-  const highlightPadding = 4;
-
-  // Calculate the cutout rectangle
-  const cutout = {
-    top: position.top - highlightPadding,
-    left: position.left - highlightPadding,
-    width: position.width + highlightPadding * 2,
-    height: position.height + highlightPadding * 2,
-  };
-
-  // Calculate Home button cutout for step 1
-  const homeCutout = step === 1 && homePosition.width > 0 ? {
-    top: homePosition.top - highlightPadding,
-    left: homePosition.left - highlightPadding,
-    width: homePosition.width + highlightPadding * 2,
-    height: homePosition.height + highlightPadding * 2,
-  } : null;
-
-  return (
-    <div className="fixed inset-0 z-[100]" style={{ pointerEvents: 'none' }}>
-      {/* Dark overlay with SVG mask for multiple cutouts */}
-      <svg
-        className="fixed inset-0 w-full h-full transition-all duration-300"
-        style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-        onClick={() => {
-          triggerHaptic(ImpactStyle.Light);
-          onSkip();
-        }}
-      >
-        <defs>
-          <mask id="tour-mask">
-            {/* White = visible (dark overlay), Black = hidden (cutout) */}
-            <rect x="0" y="0" width="100%" height="100%" fill="white" />
-            {/* Main target cutout */}
-            <rect
-              x={cutout.left}
-              y={cutout.top}
-              width={cutout.width}
-              height={cutout.height}
-              rx="12"
-              fill="black"
-            />
-            {/* Home button cutout for step 1 */}
-            {homeCutout && (
-              <rect
-                x={homeCutout.left}
-                y={homeCutout.top}
-                width={homeCutout.width}
-                height={homeCutout.height}
-                rx="12"
-                fill="black"
-              />
-            )}
-          </mask>
-        </defs>
-        <rect
-          x="0"
-          y="0"
-          width="100%"
-          height="100%"
-          fill="rgba(0,0,0,0.65)"
-          mask="url(#tour-mask)"
-        />
-      </svg>
-
-      {/* Highlight ring around target element */}
-      <div
-        className="fixed rounded-xl transition-all duration-300"
-        style={{
-          top: cutout.top,
-          left: cutout.left,
-          width: cutout.width,
-          height: cutout.height,
-          border: '2px solid #00FF94',
-          boxShadow: '0 0 20px rgba(0, 255, 148, 0.4)',
-          pointerEvents: 'none'
-        }}
-      />
-
-      {/* Highlight ring around Home button for step 1 (Weekly Goals) */}
-      {homeCutout && (
-        <div
-          className="fixed rounded-xl transition-all duration-300"
-          style={{
-            top: homeCutout.top,
-            left: homeCutout.left,
-            width: homeCutout.width,
-            height: homeCutout.height,
-            border: '2px solid rgba(255, 255, 255, 0.6)',
-            boxShadow: '0 0 12px rgba(255, 255, 255, 0.3)',
-            pointerEvents: 'none'
-          }}
-        />
-      )}
-
-      {/* Tooltip */}
-      <div
-        className="fixed p-4 rounded-2xl transition-all duration-300"
-        style={{
-          ...getTooltipStyle(),
-          width: 280,
-          backgroundColor: '#1a1a1a',
-          border: '1px solid rgba(255,255,255,0.1)',
-          pointerEvents: 'auto'
-        }}
-      >
-        {/* Arrow */}
-        <div
-          className="absolute w-4 h-4 rotate-45"
-          style={{
-            ...getArrowStyle(),
-            backgroundColor: '#1a1a1a',
-            borderLeft: currentStep.position === 'below' ? '1px solid rgba(255,255,255,0.1)' : 'none',
-            borderTop: currentStep.position === 'below' ? '1px solid rgba(255,255,255,0.1)' : 'none',
-            borderRight: currentStep.position === 'above' ? '1px solid rgba(255,255,255,0.1)' : 'none',
-            borderBottom: currentStep.position === 'above' ? '1px solid rgba(255,255,255,0.1)' : 'none'
-          }}
-        />
-
-        {/* Step indicator */}
-        <div className="flex gap-1 mb-3">
-          {tourSteps.map((_, i) => (
-            <div
-              key={i}
-              className="h-1 rounded-full transition-all duration-200"
-              style={{
-                width: i === step ? 24 : 8,
-                backgroundColor: i === step ? '#00FF94' : 'rgba(255,255,255,0.2)'
-              }}
-            />
-          ))}
-        </div>
-
-        {/* Content */}
-        <h3 className="text-white font-semibold text-base mb-1">{currentStep.title}</h3>
-        <p className="text-gray-400 text-sm mb-2">{currentStep.description}</p>
-
-        {/* Features list */}
-        {currentStep.features && (
-          <div className="mb-3 py-2 px-2.5 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-            {currentStep.features.map((feature, index) => (
-              <div key={index} className="flex items-center gap-2 py-1">
-                <span className="text-sm">{feature.emoji}</span>
-                <span className="text-xs text-gray-400">{feature.text}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {!currentStep.features && <div className="mb-2" />}
-
-        {/* Actions */}
-        <div className="flex items-center justify-between">
-          <button
-            onClick={() => {
-              triggerHaptic(ImpactStyle.Light);
-              onSkip();
-            }}
-            className="text-gray-500 text-sm px-3 py-2"
-          >
-            Skip tour
-          </button>
-          <div className="flex items-center gap-2">
-            {step > 0 && (
-              <button
-                onClick={() => {
-                  triggerHaptic(ImpactStyle.Light);
-                  onBack();
-                }}
-                className="px-3 py-2 rounded-full text-sm font-medium transition-all duration-150"
-                style={{
-                  backgroundColor: 'rgba(255,255,255,0.1)',
-                  color: 'rgba(255,255,255,0.7)'
-                }}
-                onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.95)'}
-                onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
-              >
-                Back
-              </button>
-            )}
-            <button
-              onClick={() => {
-                triggerHaptic(ImpactStyle.Light);
-                onNext();
-              }}
-              className="px-4 py-2 rounded-full text-sm font-medium transition-all duration-150"
-              style={{
-                backgroundColor: '#00FF94',
-                color: '#000'
-              }}
-              onTouchStart={(e) => e.currentTarget.style.transform = 'scale(0.95)'}
-              onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
-            >
-              {step === tourSteps.length - 1 ? "Let's go!" : 'Next'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 // Utility Components
-const ProgressRing = ({ progress, size = 60, strokeWidth = 4, color = '#00FF94', animate = true }) => {
-  const [mounted, setMounted] = useState(false);
-  const radius = (size - strokeWidth) / 2;
-  const circumference = radius * 2 * Math.PI;
-  const targetOffset = circumference - (Math.min(progress, 100) / 100) * circumference;
-  
-  useEffect(() => {
-    // Trigger animation after mount
-    const timer = setTimeout(() => setMounted(true), 50);
-    return () => clearTimeout(timer);
-  }, []);
-  
-  return (
-    <svg width={size} height={size} className="transform -rotate-90">
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        fill="none"
-        stroke="rgba(255,255,255,0.1)"
-        strokeWidth={strokeWidth}
-      />
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        fill="none"
-        stroke={color}
-        strokeWidth={strokeWidth}
-        strokeDasharray={circumference}
-        strokeDashoffset={animate && mounted ? targetOffset : circumference}
-        strokeLinecap="round"
-        style={{ 
-          transition: 'stroke-dashoffset 1s ease-out'
-        }}
-      />
-    </svg>
-  );
-};
 
-// The per-category streak line under each Home ring. The master (hybrid) streak already
-// sits in the sticky header, so what's missing on Home is the per-category runs — those
-// otherwise only exist on Profile, which is the trip this saves.
-//
-// Renders a fixed-height blank line when there's no streak rather than nothing at all, so
-// the three rings stay baseline-aligned no matter who has what going. A paused streak shows
-// why: 🩹 in injury purple, or 🌴 in the vacation-mode cyan.
-//
-// The marker stays an emoji while the activity labels above are line icons — that contrast
-// is deliberate. It keeps 🔥 as the single warm accent in the card and matches the emoji
-// the header's master-streak badge uses.
+// Why a goal's streak is on hold, if it is: 🩹 in injury purple, or 🌴 in the vacation-mode
+// cyan. Home's goal rows (components/WeekGoalsHero) show it in place of the 🔥.
 const RING_STREAK_PAUSED = {
   vacation: { emoji: '🌴', color: '#00D1FF' },
   injury: { emoji: '🩹', color: '#A78BFA' },
 };
-const RingStreak = ({ weeks = 0, color, paused = null }) => {
-  const pause = RING_STREAK_PAUSED[paused];
-  return (
-    <div
-      className="text-[11px] font-bold mt-0.5 h-[15px] leading-[15px]"
-      style={{ color: pause ? pause.color : color }}
-    >
-      {weeks > 0 ? `${pause ? pause.emoji : '🔥'} ${weeks}w` : ''}
-    </div>
-  );
-};
-
-// Ring label + its expand chevron. The chevron is absolutely positioned so it sits OUTSIDE
-// the centering box: the ring, "💪 Strength", and the streak line below then all share one
-// center axis, with only the chevron hanging off to the right. Left in the flow it would
-// drag the title left of the ring and push the streak line off-axis with it.
-//
-// The mark is a line icon tinted to the ring's own color, which ties label to ring in a way
-// the old emoji couldn't. It comes from CategoryIcon so Home, Profile, the share cards and
-// every stats modal draw these three marks from one mapping.
-const RingLabel = ({ category, label, expanded }) => (
-  <div className="text-sm font-medium mt-2">
-    <span className="relative inline-flex items-center gap-[5px]">
-      <CategoryIcon category={category} size={16} className="flex-shrink-0" />
-      <span>{label}</span>
-      <span className="text-[10px] text-gray-500 absolute left-full ml-1 top-1/2 -translate-y-1/2">
-        {expanded ? '▲' : '▼'}
-      </span>
-    </span>
-  </div>
-);
-
-const ProgressBar = ({ progress, color = '#00FF94', height = 4 }) => (
-  <div className="w-full rounded-full overflow-hidden" style={{ height, backgroundColor: 'rgba(255,255,255,0.1)' }}>
-    <div 
-      className="h-full rounded-full transition-all duration-500"
-      style={{ width: `${Math.min(progress, 100)}%`, backgroundColor: color }}
-    />
-  </div>
-);
 
 // ActivityIcon is imported from ./components/ActivityIcon
-
-// Heat Map Calendar Component
-const HeatMapCalendar = ({ data, onSelectDate, selectedDate, onSelectWeek }) => {
-  const [viewMonths, setViewMonths] = useState(3); // Show last 3 months
-  
-  // Generate last N months of dates
-  const generateHeatMapData = () => {
-    const days = [];
-    const today = new Date();
-    const startDate = new Date(today);
-    startDate.setDate(1); // before setMonth, or the 29th–31st overflows into the next month
-    startDate.setMonth(startDate.getMonth() - viewMonths + 1);
-    
-    // Adjust to start from Sunday
-    const dayOfWeek = startDate.getDay();
-    startDate.setDate(startDate.getDate() - dayOfWeek);
-    
-    const endDate = new Date(today);
-    endDate.setDate(endDate.getDate() + (6 - today.getDay())); // End of current week
-    
-    const todayStr = toLocalDateStr(today);
-
-    let currentDate = new Date(startDate);
-    while (currentDate <= endDate) {
-      const dateStr = toLocalDateStr(currentDate);
-      const activities = data[dateStr] || [];
-      days.push({
-        date: dateStr,
-        day: currentDate.getDate(),
-        month: currentDate.getMonth(),
-        year: currentDate.getFullYear(),
-        activities,
-        activityCount: activities.length,
-        isToday: dateStr === todayStr,
-        isFuture: currentDate > today,
-        dayOfWeek: currentDate.getDay()
-      });
-      currentDate.setDate(currentDate.getDate() + 1);
-    }
-    return days;
-  };
-
-  const heatMapDays = generateHeatMapData();
-  
-  // Group by weeks for display
-  const weeks = [];
-  for (let i = 0; i < heatMapDays.length; i += 7) {
-    weeks.push(heatMapDays.slice(i, i + 7));
-  }
-
-  // Get intensity color based on activity count
-  const getIntensityColor = (count, isFuture) => {
-    if (isFuture) return 'rgba(255,255,255,0.02)';
-    if (count === 0) return 'rgba(255,255,255,0.05)';
-    if (count === 1) return 'rgba(0,255,148,0.3)';
-    if (count === 2) return 'rgba(0,255,148,0.5)';
-    return 'rgba(0,255,148,0.8)';
-  };
-
-  // Get month labels
-  const getMonthLabels = () => {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const labels = [];
-    let lastMonth = -1;
-    
-    weeks.forEach((week, weekIndex) => {
-      const firstDayOfWeek = week[0];
-      if (firstDayOfWeek && firstDayOfWeek.month !== lastMonth) {
-        labels.push({ month: months[firstDayOfWeek.month], weekIndex });
-        lastMonth = firstDayOfWeek.month;
-      }
-    });
-    return labels;
-  };
-
-  const monthLabels = getMonthLabels();
-
-  return (
-    <div className="mb-4">
-      {/* Month labels */}
-      <div className="flex mb-2 ml-8 text-[10px] text-gray-500">
-        {monthLabels.map((label, i) => (
-          <div 
-            key={i} 
-            className="absolute"
-            style={{ marginLeft: `${label.weekIndex * 14 + 32}px` }}
-          >
-            {label.month}
-          </div>
-        ))}
-      </div>
-      
-      <div className="flex gap-1 mt-6">
-        {/* Day labels */}
-        <div className="flex flex-col gap-1 text-[10px] text-gray-500 mr-1">
-          <span className="h-3"></span>
-          <span className="h-3">M</span>
-          <span className="h-3"></span>
-          <span className="h-3">W</span>
-          <span className="h-3"></span>
-          <span className="h-3">F</span>
-          <span className="h-3"></span>
-        </div>
-        
-        {/* Heat map grid */}
-        <div className="flex gap-[3px] overflow-x-auto pb-2">
-          {weeks.map((week, weekIndex) => (
-            <div key={weekIndex} className="flex flex-col gap-[3px]">
-              {week.map((day, dayIndex) => (
-                <button
-                  key={day.date}
-                  onClick={() => !day.isFuture && onSelectDate(day.date)}
-                  className="w-3 h-3 rounded-sm transition-all duration-200 hover:scale-125"
-                  style={{
-                    backgroundColor: getIntensityColor(day.activityCount, day.isFuture),
-                    border: selectedDate === day.date ? '1px solid #00FF94' : day.isToday ? '1px solid rgba(255,255,255,0.5)' : 'none',
-                    cursor: day.isFuture ? 'default' : 'pointer'
-                  }}
-                  title={`${day.date}: ${day.activityCount} activities`}
-                />
-              ))}
-            </div>
-          ))}
-        </div>
-      </div>
-      
-      {/* Legend */}
-      <div className="flex items-center justify-end gap-2 mt-3 text-[10px] text-gray-500">
-        <span>Less</span>
-        <div className="flex gap-1">
-          <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }} />
-          <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'rgba(0,255,148,0.3)' }} />
-          <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'rgba(0,255,148,0.5)' }} />
-          <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'rgba(0,255,148,0.8)' }} />
-        </div>
-        <span>More</span>
-      </div>
-    </div>
-  );
-};
-
-// Skeleton Loading Components
-const SkeletonPulse = ({ className = "", style = {} }) => (
-  <div 
-    className={`animate-pulse rounded-lg ${className}`}
-    style={{ backgroundColor: 'rgba(255,255,255,0.05)', ...style }}
-  />
-);
-
-const SkeletonCard = () => (
-  <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-    <div className="flex items-center gap-3 mb-4">
-      <SkeletonPulse className="w-10 h-10 rounded-full" />
-      <div className="flex-1">
-        <SkeletonPulse className="h-4 w-24 mb-2" />
-        <SkeletonPulse className="h-3 w-16" />
-      </div>
-    </div>
-    <SkeletonPulse className="h-20 w-full" />
-  </div>
-);
-
-const SkeletonActivityRow = () => (
-  <div className="p-3 rounded-xl flex items-center gap-3" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-    <SkeletonPulse className="w-8 h-8 rounded-lg" />
-    <div className="flex-1">
-      <SkeletonPulse className="h-4 w-32 mb-2" />
-      <SkeletonPulse className="h-3 w-20" />
-    </div>
-    <SkeletonPulse className="h-4 w-12" />
-  </div>
-);
-
-const SkeletonGoalRings = () => (
-  <div className="p-5 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-    <div className="flex items-center justify-around">
-      {[1, 2, 3].map(i => (
-        <div key={i} className="flex flex-col items-center">
-          <SkeletonPulse className="w-[72px] h-[72px] rounded-full" />
-          <SkeletonPulse className="h-3 w-16 mt-2" />
-        </div>
-      ))}
-    </div>
-  </div>
-);
-
-const HomeTabSkeleton = () => (
-  <div className="pb-32 animate-pulse">
-    {/* Daily Stats Skeleton */}
-    <div className="px-4 mb-4">
-      <SkeletonPulse className="h-4 w-32 mb-3" />
-      <div className="p-4 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-        <div className="space-y-4">
-          <div className="flex items-center gap-3">
-            <SkeletonPulse className="w-6 h-6 rounded" />
-            <div className="flex-1">
-              <SkeletonPulse className="h-2 w-full rounded-full" />
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <SkeletonPulse className="w-6 h-6 rounded" />
-            <div className="flex-1">
-              <SkeletonPulse className="h-2 w-full rounded-full" />
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-    
-    {/* Goals Skeleton */}
-    <div className="mx-4 mb-4">
-      <SkeletonPulse className="h-4 w-40 mb-3" />
-      <SkeletonGoalRings />
-    </div>
-    
-    {/* Activities Skeleton */}
-    <div className="mx-4 mb-4">
-      <SkeletonPulse className="h-4 w-28 mb-3" />
-      <div className="space-y-2">
-        <SkeletonActivityRow />
-        <SkeletonActivityRow />
-      </div>
-    </div>
-  </div>
-);
-
-// Animated Counter Component - smoothly animates number changes
-const AnimatedCounter = ({ value, duration = 500, className = "" }) => {
-  const [displayValue, setDisplayValue] = useState(value);
-  const previousValue = useRef(value);
-  const animationRef = useRef(null);
-
-  useEffect(() => {
-    if (previousValue.current === value) return;
-
-    const startValue = previousValue.current;
-    const endValue = value;
-    const startTime = performance.now();
-
-    const animate = (currentTime) => {
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-
-      // Ease out cubic for smooth deceleration
-      const easeOut = 1 - Math.pow(1 - progress, 3);
-      const current = startValue + (endValue - startValue) * easeOut;
-
-      setDisplayValue(Math.round(current));
-
-      if (progress < 1) {
-        animationRef.current = requestAnimationFrame(animate);
-      } else {
-        previousValue.current = value;
-      }
-    };
-
-    animationRef.current = requestAnimationFrame(animate);
-
-    return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
-    };
-  }, [value, duration]);
-
-  return <span className={className}>{displayValue}</span>;
-};
 
 // Offline Indicator Component
 const OfflineIndicator = () => {
@@ -1382,6 +620,21 @@ const OfflineIndicator = () => {
 };
 
 // Active Workout Indicator Component - Shows when a workout is in progress
+// Small line icons for the live workout's stat cells (tabler paths, as in mocks/mock-workouts.html).
+const LIVE_ICON = {
+  heart: ['M19.5 12.572l-7.5 7.428l-7.5 -7.428a5 5 0 1 1 7.5 -6.566a5 5 0 1 1 7.5 6.572'],
+  flame: ['M12 10.941c2.333 -3.308 .167 -7.823 -1 -8.941c0 3.395 -2.235 5.299 -3.667 6.706c-1.43 1.408 -2.333 3.621 -2.333 5.588c0 3.704 3.134 6.706 7 6.706s7 -3.002 7 -6.706c0 -1.712 -1.232 -4.403 -2.333 -5.588c-2.084 3.353 -3.249 3.353 -4.667 2.235'],
+  pin: ['M9 11a3 3 0 1 0 6 0a3 3 0 0 0 -6 0', 'M17.657 16.657l-4.243 4.243a2 2 0 0 1 -2.827 0l-4.244 -4.243a8 8 0 1 1 11.314 0z'],
+  camera: ['M5 7h1a2 2 0 0 0 2 -2a1 1 0 0 1 1 -1h6a1 1 0 0 1 1 1a2 2 0 0 0 2 2h1a2 2 0 0 1 2 2v9a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2', 'M9 13a3 3 0 1 0 6 0a3 3 0 0 0 -6 0'],
+  image: ['M15 8h.01', 'M3 6a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v12a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3v-12z', 'M3 16l5 -5c.928 -.893 2.072 -.893 3 0l5 5', 'M14 14l1 -1c.928 -.893 2.072 -.893 3 0l3 3'],
+  bolt: ['M13 3l0 7l6 0l-8 11l0 -7l-6 0l8 -11'],
+};
+const LiveStatIcon = ({ d, color, size = 12, strokeWidth = 2.4 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {d.map((p) => <path key={p} d={p} />)}
+  </svg>
+);
+
 const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFinishing, onResumedFromWatch, distanceUnit = 'mi' }) => {
   const _metersPerUnit = distanceUnit === 'km' ? 1000 : 1609.34;
   const _unitLabel = distanceUnit === 'km' ? 'KM' : 'MI';
@@ -1547,6 +800,12 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
   // Use frozen time when finishing, otherwise use live elapsed time
   const displayElapsed = frozenElapsed !== null ? frozenElapsed : elapsed;
 
+  // The workout's category colour (Nov 2026 redesign): the dot, the icon and its tile take it.
+  const liveCat = getActivityCategory(workout);
+  const liveColor = liveCat === 'cardio' ? '#FF9500' : liveCat === 'recovery' ? '#00D1FF' : (liveCat === 'lifting' || liveCat === 'lifting+cardio') ? '#00FF94' : '#aaa';
+  const liveRgb = hexToRgb(liveColor);
+  const liveIcon = (size) => customEmoji || <ActivityIcon type={workout.type} subtype={workout.subtype} strengthType={workout.strengthType} customIcon={workout.customIcon} sportEmoji={workout.sportEmoji} size={size} color={liveColor} />;
+
   // Compact pill view (default, or forced when finishing)
   if (!isExpanded || isFinishing) {
     return (
@@ -1558,31 +817,31 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
             ? { right: '16px' }
             : { left: '50%', transform: 'translateX(-50%)' }
           ),
-          backgroundColor: 'rgba(0,0,0,0.95)',
-          border: isFinishing ? '1px solid rgba(255,180,0,0.6)' : '1px solid rgba(0,255,148,0.4)',
+          backgroundColor: 'rgba(18,18,20,0.96)',
+          boxShadow: `inset 0 0 0 1px ${isFinishing ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.16)'}, 0 8px 24px rgba(0,0,0,0.5)`,
           backdropFilter: 'blur(20px)',
           borderRadius: '20px',
-          padding: '6px 12px',
+          padding: '7px 13px',
         }}
         onClick={() => !isFinishing && setIsExpanded(true)}
       >
-        {/* Status indicator dot - orange when finishing, green when recording */}
+        {/* Status dot in the category colour; it stops pulsing while finishing */}
         <span
           className={`w-2 h-2 rounded-full ${isFinishing ? '' : 'animate-pulse'}`}
-          style={{ backgroundColor: isFinishing ? '#FFB400' : '#00FF94' }}
+          style={{ backgroundColor: liveColor, boxShadow: `0 0 8px rgba(${liveRgb},0.9)` }}
         />
 
         {/* Activity icon */}
-        <span className="text-base flex items-center">{customEmoji || <ActivityIcon type={workout.type} subtype={workout.subtype} strengthType={workout.strengthType} customIcon={workout.customIcon} sportEmoji={workout.sportEmoji} size={16} />}</span>
+        <span className="text-base flex items-center">{liveIcon(15)}</span>
 
         {/* Timer - frozen when finishing */}
-        <span className="font-mono font-semibold text-sm" style={{ color: isFinishing ? '#FFB400' : '#00FF94' }}>
+        <span className="text-white" style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px', fontVariantNumeric: 'tabular-nums' }}>
           {formatElapsed(displayElapsed)}
         </span>
 
         {/* Expand hint - only show when not finishing */}
         {!isFinishing && (
-          <svg className="w-3 h-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+          <svg className="w-3 h-3" style={{ color: '#8a8a8a' }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
           </svg>
         )}
@@ -1597,27 +856,28 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
       style={{
         top: '0',
         paddingTop: 'env(safe-area-inset-top, 0px)',
-        backgroundColor: 'rgba(0,0,0,0.98)',
-        borderBottom: '1px solid rgba(0,255,148,0.3)',
+        background: 'linear-gradient(180deg, rgba(26,26,28,0.98), rgba(18,18,20,0.97))',
+        borderRadius: '0 0 28px 28px',
+        boxShadow: '0 20px 40px rgba(0,0,0,0.55), inset 0 -1px 0 rgba(255,255,255,0.06)',
         backdropFilter: 'blur(20px)',
       }}
     >
-      <div className="p-3">
+      <div style={{ padding: '14px 14px 16px' }}>
         {/* Header with collapse */}
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <span
               className="w-2 h-2 rounded-full animate-pulse"
-              style={{ backgroundColor: '#00FF94' }}
+              style={{ backgroundColor: liveColor, boxShadow: `0 0 8px rgba(${liveRgb},0.9)` }}
             />
-            <span className="text-xs text-gray-400 uppercase tracking-wider">Recording</span>
+            <span className="uppercase" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.15em', color: '#8a8a8a' }}>Recording</span>
           </div>
           <button
             onClick={() => setIsExpanded(false)}
-            className="p-1 rounded-lg"
-            style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+            className="flex items-center justify-center"
+            style={{ width: 28, height: 28, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.08)' }}
           >
-            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <svg className="w-3.5 h-3.5" style={{ color: '#aaa' }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
             </svg>
           </button>
@@ -1627,18 +887,18 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
           {/* Activity icon */}
           <div
             className="w-11 h-11 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-            style={{ backgroundColor: 'rgba(0,255,148,0.15)' }}
+            style={{ backgroundColor: `rgba(${liveRgb},0.16)` }}
           >
-            {customEmoji || <ActivityIcon type={workout.type} subtype={workout.subtype} strengthType={workout.strengthType} customIcon={workout.customIcon} sportEmoji={workout.sportEmoji} size={22} />}
+            {liveIcon(22)}
           </div>
 
-          {/* Workout info */}
+          {/* Workout info: the timer is the card's one big number */}
           <div className="flex-1 min-w-0">
-            <div className="font-medium text-sm text-white truncate">
+            <div className="text-sm text-white truncate" style={{ fontWeight: 600 }}>
               {typeName}
-              {subtypeName && <span className="text-gray-400 font-normal"> • {subtypeName}</span>}
+              {subtypeName && <span style={{ color: '#8a8a8a', fontWeight: 500 }}> · {subtypeName}</span>}
             </div>
-            <div className="text-xl font-mono font-bold" style={{ color: '#00FF94' }}>
+            <div className="text-white" style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-1.4px', lineHeight: 1.05, fontVariantNumeric: 'tabular-nums' }}>
               {formatElapsed(elapsed)}
             </div>
           </div>
@@ -1649,10 +909,10 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
               e.stopPropagation();
               setShowCancelConfirm(true);
             }}
-            className="p-2 rounded-lg transition-all"
-            style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+            className="flex items-center justify-center transition-all flex-shrink-0"
+            style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.08)' }}
           >
-            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <svg className="w-3.5 h-3.5" style={{ color: '#aaa' }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
@@ -1690,37 +950,34 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
           <>
         {/* Live metrics from watch or reminder for phone */}
         {workout.source === 'watch' ? (
-          <div className="mt-2 grid grid-cols-3 gap-2">
-            <div className="py-2 px-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              <div className="text-lg font-bold text-white">{liveMetrics.lastHr || '--'}</div>
-              <div className="text-[10px] text-gray-500 flex items-center justify-center gap-1">
-                <span style={{ color: '#FF3B30' }}>♥</span> BPM
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            {[
+              { label: 'bpm', value: liveMetrics.lastHr || '--', icon: <LiveStatIcon d={LIVE_ICON.heart} color="#FF453A" /> },
+              { label: 'cal', value: liveMetrics.calories || '0', icon: <LiveStatIcon d={LIVE_ICON.flame} color="#FF6B6B" /> },
+              { label: _unitLabel.toLowerCase(), value: liveMetrics.distance > 10 ? (liveMetrics.distance / _metersPerUnit).toFixed(2) : '0.00', icon: <LiveStatIcon d={LIVE_ICON.pin} color={liveColor} /> },
+            ].map((m) => (
+              <div key={m.label} style={{ padding: '10px 10px 9px', borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <div className="flex items-center gap-[5px] mb-[5px]">
+                  {m.icon}
+                  <span className="uppercase" style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.15em', color: '#8a8a8a' }}>{m.label}</span>
+                </div>
+                <div className="text-white" style={{ ...NUM.value, fontVariantNumeric: 'tabular-nums' }}>{m.value}</div>
               </div>
-            </div>
-            <div className="py-2 px-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              <div className="text-lg font-bold" style={{ color: '#FF6B6B' }}>{liveMetrics.calories || '0'}</div>
-              <div className="text-[10px] text-gray-500">CAL</div>
-            </div>
-            <div className="py-2 px-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              <div className="text-lg font-bold" style={{ color: '#5AC8FA' }}>
-                {liveMetrics.distance > 10 ? (liveMetrics.distance / _metersPerUnit).toFixed(2) : '0.00'}
-              </div>
-              <div className="text-[10px] text-gray-500">{_unitLabel}</div>
-            </div>
+            ))}
           </div>
         ) : (
-          <div className="mt-2 py-2 px-3 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-            <span className="text-xs text-gray-500">Track with your watch for heart rate & calories</span>
+          <div className="mt-3 py-2 px-3 text-center" style={{ borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.05)' }}>
+            <span className="text-xs" style={{ color: '#8a8a8a' }}>Track with your watch for heart rate & calories</span>
           </div>
         )}
 
         {/* Finish button */}
         <button
           onClick={onFinish}
-          className="w-full mt-3 py-2.5 rounded-xl font-semibold text-sm text-black transition-all active:scale-[0.98]"
-          style={{ backgroundColor: '#00FF94' }}
+          className="w-full transition-all active:scale-[0.98] bg-white text-black active:bg-[#e5e5e5]"
+          style={{ marginTop: 14, padding: '12px 0', borderRadius: 14, fontSize: 15, fontWeight: 700 }}
         >
-          {workout.source === 'watch' ? 'End Workout' : 'Finish Timer'}
+          {workout.source === 'watch' ? 'End workout' : 'Finish timer'}
         </button>
           </>
         )}
@@ -1733,7 +990,7 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
 // goal math, stats, share card and weekly planner can't drift apart. See the note there.
 
 // Finish Workout Modal - Shown when user taps "Finish Timer"
-const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linkedWorkoutUUIDs = [], activeChallenges = [], friendsByUid = {} }) => {
+const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linkedWorkoutUUIDs = [], activeChallenges = [], friendsByUid = {}, distanceUnit = 'mi' }) => {
   const [notes, setNotes] = useState('');
   const [calories, setCalories] = useState('');
   const [avgHr, setAvgHr] = useState('');
@@ -2174,6 +1431,12 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
   if (!isOpen || !workout) return null;
 
   const finishCustomEmoji = finishSportEmoji || workout.customEmoji || workout.sportEmoji || null;
+  // The workout's category colour: its tile, the linked row and every selected chip take it.
+  const finishCat = getActivityCategory({ ...workout, countToward: finishCountToward || workout.countToward });
+  const finishCatColor = finishCat === 'cardio' ? '#FF9500' : finishCat === 'recovery' ? '#00D1FF' : (finishCat === 'lifting' || finishCat === 'lifting+cardio') ? '#00FF94' : '#aaa';
+  const finishCatRgb = hexToRgb(finishCatColor);
+  const _milesToDisplay = (mi) => (mi ? parseFloat(mi) * (distanceUnit === 'km' ? 1.60934 : 1) : 0);
+  const _distanceUnitLabel = distanceUnit === 'km' ? 'km' : 'mi';
   const typeName = workout.type === 'Strength Training'
     ? (finishStrengthType || workout.strengthType || 'Strength')
     : workout.type;
@@ -2269,22 +1532,22 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
     >
       <div
         className="w-full max-w-lg rounded-t-3xl overflow-hidden"
-        style={{ backgroundColor: '#1A1A1A', maxHeight: '85vh' }}
+        style={{ background: 'linear-gradient(180deg, #1b1b1d, #141416)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08)', maxHeight: '85vh' }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-800" style={{ touchAction: 'none' }}>
+        <div className="flex items-center justify-between p-4" style={{ touchAction: 'none', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
           <button
             onClick={onClose}
             className="text-gray-400 font-medium px-2 py-1"
           >
             Cancel
           </button>
-          <h2 className="font-bold text-white">Save Workout</h2>
+          <h2 className="font-bold text-white" style={{ fontSize: 16 }}>Save workout</h2>
           <button
             onClick={handleSave}
             disabled={photoMissingForChallenge}
-            className="font-bold px-2 py-1"
-            style={{ color: photoMissingForChallenge ? 'rgba(0,255,148,0.3)' : '#00FF94' }}
+            className="bg-white text-black active:bg-[#e5e5e5]"
+            style={{ padding: '6px 14px', borderRadius: 999, fontWeight: 700, fontSize: 14, opacity: photoMissingForChallenge ? 0.3 : 1 }}
           >
             Save
           </button>
@@ -2293,29 +1556,37 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
         {/* Content */}
         <div ref={scrollContentRef} className="p-4 overflow-y-auto" style={{ maxHeight: 'calc(85vh - 60px)', overscrollBehavior: 'contain' }}>
           {/* Workout summary — compact inline header */}
-          <div className="flex items-center gap-3 mb-4 pb-4 border-b border-white/10">
+          <div className="flex items-center gap-3 pb-4" style={{ marginBottom: 18, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
             <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
-              style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}
+              className="w-11 h-11 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+              style={{ backgroundColor: `rgba(${finishCatRgb},0.16)` }}
             >
-              {finishCustomEmoji || <ActivityIcon type={workout.type} subtype={workout.subtype} strengthType={finishStrengthType || workout.strengthType} sportEmoji={workout.sportEmoji} size={22} />}
+              {finishCustomEmoji || <ActivityIcon type={workout.type} subtype={workout.subtype} strengthType={finishStrengthType || workout.strengthType} sportEmoji={workout.sportEmoji} size={22} color={finishCatColor} />}
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold text-white truncate">
                 {typeName}
-                {subtypeName && <span className="text-gray-400 font-normal"> · {subtypeName}</span>}
+                {subtypeName && <span style={{ color: '#8a8a8a', fontWeight: 500 }}> · {subtypeName}</span>}
               </div>
-              <div className="text-lg font-bold" style={{ color: '#00FF94' }}>
+              <div className="text-white" style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-1px', lineHeight: 1.05 }}>
                 {formatDuration(linkedWorkout?.duration || duration)}
               </div>
             </div>
+            {linkedWorkout?.distance > 0 && (
+              <div className="text-right flex-shrink-0">
+                <div className="text-white" style={NUM.value}>
+                  {_milesToDisplay(linkedWorkout.distance).toFixed(2)}<span style={{ fontSize: 12, color: '#666', fontWeight: 600 }}> {_distanceUnitLabel}</span>
+                </div>
+                <div className="uppercase" style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.15em', color: '#8a8a8a', marginTop: 3 }}>From Health</div>
+              </div>
+            )}
           </div>
 
           {/* Strength Training Pickers */}
           {workout?.type === 'Strength Training' && (
             <>
               <div className="mb-4">
-                <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Strength Type</label>
+                <label className="uppercase block" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', color: '#8a8a8a', marginBottom: 9 }}>Strength Type</label>
                 <div className="flex flex-wrap gap-2">
                   {['Weightlifting', 'Bodyweight', 'Circuit'].map((st) => {
                     const isSelected = finishStrengthType === st;
@@ -2325,9 +1596,11 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                         onClick={() => { setFinishStrengthType(st); triggerHaptic(ImpactStyle.Light); }}
                         className="px-3 py-1.5 rounded-full text-xs transition-all duration-200 flex items-center gap-1.5"
                         style={{
-                          backgroundColor: isSelected ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
-                          border: isSelected ? '1px solid #00FF94' : '1px solid transparent',
-                          color: isSelected ? '#00FF94' : 'white'
+                          backgroundColor: isSelected ? `rgba(${finishCatRgb},0.14)` : 'rgba(255,255,255,0.06)',
+                          boxShadow: isSelected ? `inset 0 0 0 1.5px rgba(${finishCatRgb},0.75)` : 'none',
+                          border: '1px solid transparent',
+                          color: isSelected ? '#fff' : '#ccc',
+                          fontWeight: isSelected ? 600 : 500
                         }}
                       >
                         <ActivityIcon type="Strength Training" strengthType={st} size={16} /> {st}
@@ -2337,7 +1610,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                 </div>
               </div>
               <div className="mb-4">
-                <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Focus Areas</label>
+                <label className="uppercase block" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', color: '#8a8a8a', marginBottom: 9 }}>Focus Areas</label>
                 <div className="grid grid-cols-3 gap-2">
                   {Object.entries(FOCUS_AREA_GROUPS).map(([groupName, members]) => {
                     const allSelected = members.every(m => finishFocusAreas.includes(m));
@@ -2354,9 +1627,10 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                           }}
                           className="px-2 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 text-center"
                           style={{
-                            backgroundColor: allSelected ? 'rgba(0,255,148,0.25)' : someSelected ? 'rgba(0,255,148,0.1)' : 'rgba(255,255,255,0.08)',
-                            border: allSelected ? '1px solid #00FF94' : someSelected ? '1px solid rgba(0,255,148,0.4)' : '1px solid rgba(255,255,255,0.15)',
-                            color: allSelected || someSelected ? '#00FF94' : 'rgba(255,255,255,0.7)'
+                            backgroundColor: allSelected ? `rgba(${finishCatRgb},0.14)` : someSelected ? `rgba(${finishCatRgb},0.07)` : 'rgba(255,255,255,0.06)',
+                            boxShadow: allSelected ? `inset 0 0 0 1.5px rgba(${finishCatRgb},0.75)` : someSelected ? `inset 0 0 0 1px rgba(${finishCatRgb},0.4)` : 'inset 0 0 0 1px rgba(255,255,255,0.12)',
+                            border: '1px solid transparent',
+                            color: allSelected || someSelected ? '#fff' : 'rgba(255,255,255,0.7)'
                           }}
                         >
                           {groupName}
@@ -2369,9 +1643,11 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                               onClick={() => { setFinishFocusAreas(prev => prev.includes(area) ? prev.filter(a => a !== area) : [...prev, area]); triggerHaptic(ImpactStyle.Light); }}
                               className="px-2 py-1.5 rounded-lg text-xs transition-all duration-200 text-center"
                               style={{
-                                backgroundColor: isSelected ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
-                                border: isSelected ? '1px solid #00FF94' : '1px solid transparent',
-                                color: isSelected ? '#00FF94' : 'white'
+                                backgroundColor: isSelected ? `rgba(${finishCatRgb},0.14)` : 'rgba(255,255,255,0.06)',
+                                boxShadow: isSelected ? `inset 0 0 0 1.5px rgba(${finishCatRgb},0.75)` : 'none',
+                                border: '1px solid transparent',
+                                color: isSelected ? '#fff' : '#ccc',
+                                fontWeight: isSelected ? 600 : 500
                               }}
                             >
                               {area}
@@ -2389,7 +1665,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
           {/* Subtype Picker — for activities that have subtypes */}
           {workout?.type && subtypeOptions[workout.type] && (
             <div className="mb-4">
-              <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">
+              <label className="uppercase block" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', color: '#8a8a8a', marginBottom: 9 }}>
                 {workout.type === 'Sports' ? 'Sport' : `${workout.type} Type`}
               </label>
               <div className="flex flex-wrap gap-2">
@@ -2410,9 +1686,11 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                       }}
                       className="px-3 py-1.5 rounded-full text-xs transition-all duration-200 flex items-center gap-1.5"
                       style={{
-                        backgroundColor: isSelected ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
-                        border: isSelected ? '1px solid #00FF94' : '1px solid transparent',
-                        color: isSelected ? '#00FF94' : 'white'
+                        backgroundColor: isSelected ? `rgba(${finishCatRgb},0.14)` : 'rgba(255,255,255,0.06)',
+                        boxShadow: isSelected ? `inset 0 0 0 1.5px rgba(${finishCatRgb},0.75)` : 'none',
+                        border: '1px solid transparent',
+                        color: isSelected ? '#fff' : '#ccc',
+                        fontWeight: isSelected ? 600 : 500
                       }}
                     >
                       {workout.type === 'Sports' ? <ActivityIcon type="Sports" subtype={stName} size={14} /> : stIcon ? <span>{stIcon}</span> : null}
@@ -2427,7 +1705,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
           {/* Count Toward — for all standard activity types */}
           {showFinishCountToward && (
             <div className="mb-4">
-              <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Count Toward</label>
+              <label className="uppercase block" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', color: '#8a8a8a', marginBottom: 9 }}>Count Toward</label>
               <div className="flex gap-2">
                 <button
                   onClick={() => {
@@ -2439,12 +1717,14 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                   }}
                   className="flex-1 p-2.5 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
                   style={{
-                    backgroundColor: (finishCountToward === 'lifting' || finishCountToward === 'lifting+cardio') ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
-                    border: (finishCountToward === 'lifting' || finishCountToward === 'lifting+cardio') ? '1px solid #00FF94' : '1px solid transparent',
-                    color: (finishCountToward === 'lifting' || finishCountToward === 'lifting+cardio') ? '#00FF94' : 'white'
+                    backgroundColor: (finishCountToward === 'lifting' || finishCountToward === 'lifting+cardio') ? 'rgba(0,255,148,0.14)' : 'rgba(255,255,255,0.05)',
+                    boxShadow: (finishCountToward === 'lifting' || finishCountToward === 'lifting+cardio') ? 'inset 0 0 0 1.5px rgba(0,255,148,0.75)' : 'none',
+                    border: '1px solid transparent',
+                    color: (finishCountToward === 'lifting' || finishCountToward === 'lifting+cardio') ? '#fff' : '#bbb',
+                    '--seg-icon': (finishCountToward === 'lifting' || finishCountToward === 'lifting+cardio') ? '#00FF94' : '#bbb'
                   }}
                 >
-                  <span><CategoryIcon category="lifts" size={14} color="currentColor" /></span> Strength
+                  <span><CategoryIcon category="lifts" size={14} color="var(--seg-icon)" /></span> Strength
                 </button>
                 <button
                   onClick={() => {
@@ -2456,23 +1736,27 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                   }}
                   className="flex-1 p-2.5 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
                   style={{
-                    backgroundColor: (finishCountToward === 'cardio' || finishCountToward === 'lifting+cardio') ? 'rgba(255,149,0,0.2)' : 'rgba(255,255,255,0.05)',
-                    border: (finishCountToward === 'cardio' || finishCountToward === 'lifting+cardio') ? '1px solid #FF9500' : '1px solid transparent',
-                    color: (finishCountToward === 'cardio' || finishCountToward === 'lifting+cardio') ? '#FF9500' : 'white'
+                    backgroundColor: (finishCountToward === 'cardio' || finishCountToward === 'lifting+cardio') ? 'rgba(255,149,0,0.14)' : 'rgba(255,255,255,0.05)',
+                    boxShadow: (finishCountToward === 'cardio' || finishCountToward === 'lifting+cardio') ? 'inset 0 0 0 1.5px rgba(255,149,0,0.75)' : 'none',
+                    border: '1px solid transparent',
+                    color: (finishCountToward === 'cardio' || finishCountToward === 'lifting+cardio') ? '#fff' : '#bbb',
+                    '--seg-icon': (finishCountToward === 'cardio' || finishCountToward === 'lifting+cardio') ? '#FF9500' : '#bbb'
                   }}
                 >
-                  <span><CategoryIcon category="cardio" size={14} color="currentColor" /></span> Cardio
+                  <span><CategoryIcon category="cardio" size={14} color="var(--seg-icon)" /></span> Cardio
                 </button>
                 <button
                   onClick={() => { setFinishCountToward('recovery'); triggerHaptic(ImpactStyle.Light); }}
                   className="flex-1 p-2.5 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
                   style={{
-                    backgroundColor: finishCountToward === 'recovery' ? 'rgba(0,209,255,0.2)' : 'rgba(255,255,255,0.05)',
-                    border: finishCountToward === 'recovery' ? '1px solid #00D1FF' : '1px solid transparent',
-                    color: finishCountToward === 'recovery' ? '#00D1FF' : 'white'
+                    backgroundColor: finishCountToward === 'recovery' ? 'rgba(0,209,255,0.14)' : 'rgba(255,255,255,0.05)',
+                    boxShadow: finishCountToward === 'recovery' ? 'inset 0 0 0 1.5px rgba(0,209,255,0.75)' : 'none',
+                    border: '1px solid transparent',
+                    color: finishCountToward === 'recovery' ? '#fff' : '#bbb',
+                    '--seg-icon': finishCountToward === 'recovery' ? '#00D1FF' : '#bbb'
                   }}
                 >
-                  <span><CategoryIcon category="recovery" size={14} color="currentColor" /></span> Recovery
+                  <span><CategoryIcon category="recovery" size={14} color="var(--seg-icon)" /></span> Recovery
                 </button>
               </div>
               <div className="flex gap-2 mt-2">
@@ -2480,9 +1764,11 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                   onClick={() => { setFinishCountToward('warmup'); triggerHaptic(ImpactStyle.Light); }}
                   className="flex-1 py-1.5 px-3 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
                   style={{
-                    backgroundColor: finishCountToward === 'warmup' ? 'rgba(255,214,10,0.2)' : 'rgba(255,255,255,0.05)',
-                    border: finishCountToward === 'warmup' ? '1px solid #FFD60A' : '1px solid transparent',
-                    color: finishCountToward === 'warmup' ? '#FFD60A' : 'white'
+                    backgroundColor: finishCountToward === 'warmup' ? 'rgba(170,170,170,0.14)' : 'rgba(255,255,255,0.05)',
+                    boxShadow: finishCountToward === 'warmup' ? 'inset 0 0 0 1.5px rgba(170,170,170,0.75)' : 'none',
+                    border: '1px solid transparent',
+                    color: finishCountToward === 'warmup' ? '#fff' : '#bbb',
+                    '--seg-icon': finishCountToward === 'warmup' ? '#aaa' : '#bbb'
                   }}
                 >
                   <span>🔥</span> Warm Up
@@ -2512,14 +1798,9 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
           {/* Link Apple Health Workout Section (hidden for watch workouts) */}
           {workout?.source !== 'watch' && (
           <div className="mb-6">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="flex items-center text-cyan-400">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                </svg>
-              </span>
-              <span className="text-sm font-medium text-white">Link Apple Health Workout</span>
+            <div className="flex items-center gap-[7px]" style={{ marginBottom: 9 }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path fill="#FF2D55" d="M12 21.6c-.4 0-.8-.2-1.1-.4C6.2 17.7 2.4 14.3 2.4 9.6 2.4 6.6 4.7 4.4 7.6 4.4c1.7 0 3.3.8 4.4 2.1 1.1-1.3 2.7-2.1 4.4-2.1 2.9 0 5.2 2.2 5.2 5.2 0 4.7-3.8 8.1-8.5 11.6-.3.2-.7.4-1.1.4z" /></svg>
+              <span className="uppercase" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', color: '#8a8a8a' }}>{linkedWorkout ? 'Linked from Apple Health' : 'Link from Apple Health'}</span>
             </div>
 
             {isLoadingWorkouts ? (
@@ -2558,26 +1839,27 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                         }
                         triggerHaptic(ImpactStyle.Light);
                       }}
-                      className="w-full p-2 rounded-xl text-left"
+                      className="w-full p-3 text-left"
                       style={{
-                        backgroundColor: isSelected ? 'rgba(0,255,148,0.15)' : 'rgba(255,255,255,0.05)',
-                        border: isSelected ? '1px solid rgba(0,255,148,0.4)' : '1px solid rgba(255,255,255,0.1)'
+                        borderRadius: 14,
+                        backgroundColor: 'rgba(255,255,255,0.05)',
+                        boxShadow: isSelected ? 'inset 0 0 0 1.5px rgba(255,255,255,0.22)' : 'inset 0 0 0 1px rgba(255,255,255,0.08)'
                       }}
                     >
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                            <ActivityIcon type={w.type} subtype={w.subtype} size={18} />
+                        <div className="flex items-center gap-[10px]">
+                          <div className="flex items-center justify-center flex-shrink-0" style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: `rgba(${finishCatRgb},0.16)` }}>
+                            <ActivityIcon type={w.type} subtype={w.subtype} size={17} color={finishCatColor} />
                           </div>
                           <div>
-                            <div className="text-sm font-medium text-white">{w.type || 'Workout'}</div>
-                            <div className="text-xs text-gray-500">
+                            <div className="text-white" style={{ fontSize: 13.5, fontWeight: 600 }}>{w.appleWorkoutName || w.type || 'Workout'}</div>
+                            <div style={{ fontSize: 11.5, color: '#8a8a8a' }}>
                               {workoutTime}{workoutDuration && ` • ${workoutDuration}`}{workoutCals && ` • ${workoutCals}`}
                             </div>
                           </div>
                         </div>
                         {isSelected && (
-                          <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ backgroundColor: '#00FF94' }}>
+                          <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ backgroundColor: '#fff' }}>
                             <svg className="w-4 h-4 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                             </svg>
@@ -2597,8 +1879,8 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
             )}
 
             {linkedWorkout && (
-              <div className="mt-2 p-2 rounded-lg" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
-                <p className="text-xs text-center" style={{ color: '#00FF94' }}>
+              <div className="mt-2 p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.04)' }}>
+                <p className="text-xs text-center" style={{ color: '#8a8a8a' }}>
                   Stats from your tracker will be used for this workout
                 </p>
               </div>
@@ -2612,7 +1894,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
 
             {/* Notes */}
             <div>
-              <label className="text-xs text-gray-500 block mb-1">Notes</label>
+              <label className="uppercase block" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', color: '#8a8a8a', marginBottom: 9 }}>Notes</label>
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
@@ -2626,7 +1908,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
             {/* Metrics row */}
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="text-xs text-gray-500 block mb-1">Calories</label>
+                <label className="text-xs block mb-1" style={{ color: '#8a8a8a' }}>Calories</label>
                 <input
                   type="number"
                   value={calories}
@@ -2637,7 +1919,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                 />
               </div>
               <div>
-                <label className="text-xs text-gray-500 block mb-1">Avg HR</label>
+                <label className="text-xs block mb-1" style={{ color: '#8a8a8a' }}>Avg HR</label>
                 <input
                   type="number"
                   value={avgHr}
@@ -2648,7 +1930,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                 />
               </div>
               <div>
-                <label className="text-xs text-gray-500 block mb-1">Max HR</label>
+                <label className="text-xs block mb-1" style={{ color: '#8a8a8a' }}>Max HR</label>
                 <input
                   type="number"
                   value={maxHr}
@@ -2665,9 +1947,9 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
               {photoMissingForChallenge && (
                 <div
                   className="mb-3 p-3 rounded-xl"
-                  style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.35)' }}
+                  style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.2)' }}
                 >
-                  <p className="text-xs font-semibold" style={{ color: '#FFD60A' }}>
+                  <p className="text-xs font-semibold" style={{ color: '#fff' }}>
                     📸 Photo required to fulfill {photoRequiredMatches.length === 1
                       ? `${friendsByUid[photoRequiredMatches[0].challengerUid]?.displayName
                           || friendsByUid[photoRequiredMatches[0].challengerUid]?.username
@@ -2682,7 +1964,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
               )}
               <label
                 className="text-xs block mb-2"
-                style={{ color: photoMissingForChallenge ? '#FFD60A' : 'rgb(107, 114, 128)' }}
+                style={{ color: photoMissingForChallenge ? '#fff' : '#8a8a8a' }}
               >
                 Photo {photoMissingForChallenge ? '(required for challenge)' : '(optional)'}
               </label>
@@ -2698,7 +1980,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
 
               {isLoadingPhoto ? (
                 <div className="w-full h-48 rounded-xl bg-white/5 flex items-center justify-center">
-                  <div className="w-8 h-8 border-2 border-gray-500 border-t-[#00FF94] rounded-full animate-spin" />
+                  <div className="w-8 h-8 border-2 border-gray-500 border-t-white rounded-full animate-spin" />
                 </div>
               ) : photoPreview ? (
                 <div className="space-y-3">
@@ -2725,13 +2007,13 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                     <div className="flex gap-2">
                       <button
                         onClick={() => setIsPhotoPrivate(false)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${!isPhotoPrivate ? 'bg-[#00FF94] text-black' : 'bg-white/10 text-gray-400'}`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${!isPhotoPrivate ? 'bg-white text-black' : 'bg-white/10 text-gray-400'}`}
                       >
                         Friends
                       </button>
                       <button
                         onClick={() => setIsPhotoPrivate(true)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isPhotoPrivate ? 'bg-[#00FF94] text-black' : 'bg-white/10 text-gray-400'}`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isPhotoPrivate ? 'bg-white text-black' : 'bg-white/10 text-gray-400'}`}
                       >
                         Only Me
                       </button>
@@ -2742,21 +2024,16 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                 <div className="flex gap-2">
                   <button
                     onClick={handleTakePhoto}
-                    className="flex-1 flex items-center justify-center gap-2 p-3 rounded-xl bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10 transition-colors"
+                    className="flex-1 flex items-center justify-center gap-2 p-3 bg-white/5 transition-colors" style={{ borderRadius: 14, color: '#ddd' }}
                   >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
+                    <LiveStatIcon d={LIVE_ICON.camera} color="#ccc" size={16} strokeWidth={2} />
                     <span className="text-sm">Camera</span>
                   </button>
                   <button
                     onClick={handleChooseFromLibrary}
-                    className="flex-1 flex items-center justify-center gap-2 p-3 rounded-xl bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10 transition-colors"
+                    className="flex-1 flex items-center justify-center gap-2 p-3 bg-white/5 transition-colors" style={{ borderRadius: 14, color: '#ddd' }}
                   >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
+                    <LiveStatIcon d={LIVE_ICON.image} color="#ccc" size={16} strokeWidth={2} />
                     <span className="text-sm">Library</span>
                   </button>
                 </div>
@@ -2770,14 +2047,17 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                 type="button"
                 onClick={() => { triggerHaptic(ImpactStyle.Light); setChallengeAfterSave(v => !v); }}
                 className="w-full mt-4 flex items-center gap-3 p-3 rounded-xl text-left"
-                style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+                style={{ borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.04)' }}
               >
+                <div className="flex items-center justify-center flex-shrink-0" style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.08)' }}>
+                  <LiveStatIcon d={LIVE_ICON.bolt} color="#ddd" size={16} strokeWidth={2} />
+                </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-white">Challenge a friend</div>
-                  <div className="text-xs text-gray-500 mt-0.5 leading-snug">After saving, send this workout to a friend to match within 24–72 hours.</div>
+                  <div className="text-xs mt-0.5 leading-snug" style={{ color: '#8a8a8a' }}>After saving, send this workout to a friend to match within 24–72 hours.</div>
                 </div>
-                <div className="w-11 h-6 rounded-full relative flex-shrink-0 transition-colors" style={{ backgroundColor: challengeAfterSave ? '#00FF94' : 'rgba(255,255,255,0.15)' }}>
-                  <div className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all" style={{ left: challengeAfterSave ? 22 : 2 }} />
+                <div className="w-11 h-6 rounded-full relative flex-shrink-0 transition-colors" style={{ backgroundColor: challengeAfterSave ? '#fff' : 'rgba(255,255,255,0.15)' }}>
+                  <div className="absolute top-0.5 w-5 h-5 rounded-full transition-all" style={{ left: challengeAfterSave ? 22 : 2, backgroundColor: challengeAfterSave ? '#000' : '#fff' }} />
                 </div>
               </button>
             )}
@@ -2824,7 +2104,11 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
 };
 
 // Pull-to-Refresh Hook with Haptic Feedback - uses native event listeners on #root
-const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled = true } = {}) => {
+// containerRef: the page this refreshes. Only a pull that starts on it counts. The
+// listeners are window-level, so without this a pull on any full-screen gate rendered
+// instead of the app (lock screen, Welcome paywall, update screen, launch loader)
+// refreshed Home's data behind it, with a haptic.
+const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled = true, containerRef = null } = {}) => {
   const [pullDistance, setPullDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -2875,6 +2159,13 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
       return Math.max(rootScroll, windowScroll, docScroll, bodyScroll, appScroll);
     };
 
+    // Whether a touch is on the page this refreshes (always, if no page was given).
+    const onPage = (target) => {
+      if (!containerRef) return true;
+      const page = containerRef.current;
+      return !!(page && target && page.contains(target));
+    };
+
     const handleTouchStart = (e) => {
       if (isRefreshingRef.current) return;
       if (!e.touches || e.touches.length === 0) return;
@@ -2884,6 +2175,11 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
       if (e.target && e.target.closest && e.target.closest('[data-modal-overlay]')) {
         return;
       }
+      // Scrubbable charts (Home's steps strip) own their touches too.
+      if (e.target && e.target.closest && e.target.closest('[data-no-pull-refresh]')) {
+        return;
+      }
+      if (!onPage(e.target)) return;
 
       const touch = e.touches[0];
       const now = Date.now();
@@ -2928,6 +2224,11 @@ const usePullToRefresh = (onRefresh, { threshold = 80, resistance = 2.5, enabled
       if (e.target && e.target.closest && e.target.closest('[data-modal-overlay]')) {
         return;
       }
+      // Scrubbable charts (Home's steps strip) own their touches too.
+      if (e.target && e.target.closest && e.target.closest('[data-no-pull-refresh]')) {
+        return;
+      }
+      if (!onPage(e.target)) return;
 
       // Find our tracked touch
       let touch = null;
@@ -3373,11 +2674,20 @@ const Toast = ({ show, message, onDismiss, onTap, type = 'record' }) => {
 
   if (!isVisible) return null;
 
+  // 'error' covers anything that didn't happen (a failed save, a blocked action), so it
+  // must never wear the green check that 'success' uses.
+  const isError = type === 'error';
   const bgColor = type === 'record'
     ? 'linear-gradient(135deg, rgba(255,215,0,0.15) 0%, rgba(255,149,0,0.1) 100%)'
-    : 'rgba(0,255,148,0.1)';
-  const borderColor = type === 'record' ? 'rgba(255,215,0,0.3)' : 'rgba(0,255,148,0.3)';
-  const icon = type === 'record' ? '🏆' : '✓';
+    : isError ? 'rgba(255,69,58,0.12)' : 'rgba(0,255,148,0.1)';
+  const borderColor = type === 'record' ? 'rgba(255,215,0,0.3)' : isError ? 'rgba(255,69,58,0.35)' : 'rgba(0,255,148,0.3)';
+  const icon = type === 'record' ? '🏆' : isError ? (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ marginTop: 2 }}>
+      <circle cx="12" cy="12" r="10" stroke="#FF453A" strokeWidth="2" />
+      <path d="M12 7v6" stroke="#FF453A" strokeWidth="2" strokeLinecap="round" />
+      <circle cx="12" cy="16.5" r="1.2" fill="#FF453A" />
+    </svg>
+  ) : '✓';
 
   return (
     <div
@@ -3666,619 +2976,258 @@ const CelebrationOverlay = ({ show, onComplete, message = "Goal Complete!", type
   );
 };
 
-// Week Streak Celebration Modal - Animated ring convergence celebration
+// Week-won celebration — "Gold 100" (Nov 2026 redesign, mocks/mock-celebration.html ?v=B).
+// A poster-size week % counts up white → gold while compact goal rows light up underneath
+// (Home's Light up). At 100: a gold burst behind the number, a glow pop and a gold aurora, and
+// the label turns to "Week won · N days to spare". Then "🔥 N Week Winning Streak" with the
+// number rolling up from last week's, then Share my week / Close. Tap mid-way to skip to the
+// end, tap again to close. Under Reduce Motion it shows the final state straight away.
+const CELEB_T0 = 650;     // first block switches on
+const CELEB_STEP = 150;   // between blocks
+const CELEB_STEPS = 760;  // steps bar fill
+const celebReducedMotion = () => { try { return !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches; } catch { return false; } };
+
 const WeekStreakCelebration = ({ show, onClose, onShare, streakCount = 1, goals = {}, weekCounts = {} }) => {
-  const [phase, setPhase] = useState('hidden'); // hidden, fadeIn, converge, burst, content, fadeOut
-  const [ringStates, setRingStates] = useState([
-    { animate: false, converged: false, hasAnimated: false },
-    { animate: false, converged: false, hasAnimated: false },
-    { animate: false, converged: false, hasAnimated: false }
-  ]); // Strength, Cardio, Recovery
-  const [showCheckmark, setShowCheckmark] = useState(false);
-  const [showParticles, setShowParticles] = useState(false);
-  const [showConfetti, setShowConfetti] = useState(false);
-  const [showContent, setShowContent] = useState(false);
-  const [particles, setParticles] = useState([]);
-  const [confetti, setConfetti] = useState([]);
+  const rootRef = useRef(null);
+  const [clock, setClock] = useState(null); // ms into the sequence; null = finished
+  const [closing, setClosing] = useState(false);
+  const animsRef = useRef([]);
+  const timersRef = useRef([]);
+  const rafRef = useRef(0);
 
-  const COLORS = {
-    strength: '#00FF94',
-    cardio: '#FF9500',
-    recovery: '#00D1FF'
-  };
+  // The goals as rows. The third goal is Steps, or Recovery for a week under the older rule.
+  const stepsGoal = (goals.stepsPerDay || 10000) * 7;
+  const rows = [
+    { key: 'lifts', label: 'Strength', color: '#00FF94', rgb: '0,255,148', done: weekCounts.strength || 0, goal: goals.liftsPerWeek || 3 },
+    { key: 'cardio', label: 'Cardio', color: '#FF9500', rgb: '255,149,0', done: weekCounts.cardio || 0, goal: goals.cardioPerWeek || 3 },
+    weekCounts.stepsRule
+      ? { key: 'steps', label: 'Steps', color: '#BF5AF2', rgb: '191,90,242', done: weekCounts.steps || 0, goal: stepsGoal, bar: true }
+      : { key: 'recovery', label: 'Recovery', color: '#00D1FF', rgb: '0,209,255', done: weekCounts.recovery || 0, goal: goals.recoveryPerWeek ?? 2 },
+  ];
+  const fk = (n) => `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  const fmt = (r, n) => (r.bar ? fk(n) : String(n));
 
-  // Ring SVG component with CSS keyframe animation for stroke
-  // hasAnimated: ring already animated and should stay filled (no animation)
-  // animate: ring should start animating now
-  const AnimatedRing = ({ animate, hasAnimated, color, size, strokeWidth, scale = 1 }) => {
-    const radius = (size - strokeWidth) / 2;
-    const circumference = 2 * Math.PI * radius;
+  // The schedule (mock-celebration.html play('B')): blocks from 650ms, 150ms apart; the steps
+  // bar 80ms after the last block over 760ms; the win when it lands (~2.24s for 3 + 2).
+  const plan = useMemo(() => {
+    let k = 0;
+    const blocks = {};
+    rows.forEach((r) => {
+      if (r.bar) return;
+      const n = Math.max(1, r.goal);
+      blocks[r.key] = Array.from({ length: n }, () => CELEB_T0 + (k++) * CELEB_STEP);
+    });
+    const tS = CELEB_T0 + k * CELEB_STEP + 80;
+    const hasBar = rows.some((r) => r.bar);
+    const tWin = hasBar ? tS + CELEB_STEPS : tS + 300;
+    return { blocks, tS, tWin, end: tWin + 950 + 500 };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show]);
+  const { tWin } = plan;
+  const daysLeft = 7 - new Date().getDay();
+  const weekDates = (() => {
+    const f = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const s = new Date(); s.setDate(s.getDate() - s.getDay());
+    const e = new Date(s); e.setDate(s.getDate() + 6);
+    return `${f(s)} – ${f(e)}`;
+  })();
+  const newStreak = Math.max(1, streakCount);
+  const oldStreak = newStreak - 1;
 
-    // If already animated, show full ring without animation
-    // If animate is true but not yet animated, play the animation
-    // Otherwise show empty ring
-    const shouldAnimate = animate && !hasAnimated;
-    const isFilled = hasAnimated;
+  const clearAll = useCallback(() => {
+    animsRef.current.forEach((a) => { try { a.cancel(); } catch { /* already gone */ } });
+    animsRef.current = [];
+    timersRef.current.forEach(clearTimeout);
+    timersRef.current = [];
+    cancelAnimationFrame(rafRef.current);
+  }, []);
 
-    return (
-      <svg
-        width={size}
-        height={size}
-        style={{
-          overflow: 'visible',
-          transform: `scale(${scale})`,
-          transition: 'transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)'
-        }}
-      >
-        <defs>
-          <style>{`
-            @keyframes fillRing-${color.replace('#', '')} {
-              from {
-                stroke-dashoffset: ${circumference};
-              }
-              to {
-                stroke-dashoffset: 0;
-              }
-            }
-          `}</style>
-        </defs>
-        {/* Background ring (dim outline) */}
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke="rgba(255,255,255,0.15)"
-          strokeWidth={strokeWidth}
-        />
-        {/* Animated progress ring */}
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke={color}
-          strokeWidth={strokeWidth}
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={isFilled ? 0 : circumference}
-          transform={`rotate(-90 ${size / 2} ${size / 2})`}
-          style={{
-            animation: shouldAnimate ? `fillRing-${color.replace('#', '')} 0.7s cubic-bezier(0.4, 0, 0.2, 1) forwards` : 'none',
-            filter: `drop-shadow(0 0 8px ${color})`
-          }}
-        />
-      </svg>
+  // Play the sequence each time it opens.
+  useLayoutEffect(() => {
+    if (!show) { setClosing(false); return undefined; }
+    if (celebReducedMotion() || !rootRef.current) { setClock(null); return undefined; }
+    const root = rootRef.current;
+    const q = (sel) => root.querySelector(sel);
+    const qa = (sel) => [...root.querySelectorAll(sel)];
+    const A = (el, kf, o) => { if (el?.animate) animsRef.current.push(el.animate(kf, o)); };
+    const noSh = '0 0 0 0 rgba(0,0,0,0)';
+    const enter = (cls, at) => qa(`[data-enter="${cls}"]`).forEach((el) => A(el, [{ opacity: 0, transform: 'translateY(14px)' }, { opacity: 1, transform: 'translateY(0)' }], { delay: at, duration: 440, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' }));
+    const pop = (el, at) => A(el, [{ transform: 'scale(0)', opacity: 0 }, { transform: 'scale(1.3)', opacity: 1, offset: 0.6 }, { transform: 'scale(1)', opacity: 1 }], { delay: at, duration: 420, easing: 'ease-out', fill: 'backwards' });
+
+    A(q('[data-celeb="veil"]'), [{ opacity: 0 }, { opacity: 1 }], { duration: 360, easing: 'ease-out', fill: 'backwards' });
+    enter('e1', 150); enter('e2', 240); enter('e3', 340);
+    rows.forEach((r) => {
+      if (r.bar) {
+        const fill = q(`[data-celeb-bar="${r.key}"]`);
+        A(fill, [{ width: '0%' }, { width: fill?.style.width || '100%' }], { delay: plan.tS, duration: CELEB_STEPS, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' });
+        if (r.done >= r.goal) {
+          A(fill, [{ boxShadow: noSh }, { boxShadow: noSh, offset: (tWin - 60) / (tWin + 540) }, { boxShadow: `0 0 12px rgba(${r.rgb},.5)` }], { duration: tWin + 540, fill: 'backwards' });
+          pop(q(`[data-celeb-check="${r.key}"]`), tWin - 60);
+        }
+        return;
+      }
+      const times = plan.blocks[r.key];
+      const bloomAt = times[times.length - 1] + 280;
+      times.forEach((t, i) => {
+        const b = q(`[data-celeb-block="${r.key}-${i}"]`);
+        const lit = i < r.done;
+        if (r.done >= r.goal) A(b, [{ boxShadow: noSh }, { boxShadow: noSh, offset: bloomAt / (bloomAt + 600) }, { boxShadow: `0 0 12px rgba(${r.rgb},.5)` }], { duration: bloomAt + 600, fill: 'backwards' });
+        if (lit) A(b, [{ backgroundColor: `rgba(${r.rgb},.2)`, boxShadow: noSh }, { backgroundColor: '#fff', boxShadow: '0 0 16px 3px rgba(255,255,255,.85)', offset: 0.35 }, { backgroundColor: r.color, boxShadow: noSh }], { delay: t, duration: 460, easing: 'ease-out', fill: 'backwards' });
+      });
+      if (r.done >= r.goal) pop(q(`[data-celeb-check="${r.key}"]`), bloomAt);
+    });
+    // The win: the number pops and glows, the burst opens, the aurora comes up.
+    const big = q('[data-celeb="big"]');
+    A(big, [{ textShadow: '0 0 0 rgba(255,215,0,0)' }, { textShadow: '0 0 48px rgba(255,215,0,.85)', offset: 0.45 }, { textShadow: '0 0 34px rgba(255,215,0,.5)' }], { delay: tWin, duration: 900, fill: 'backwards' });
+    A(big, [{ transform: 'scale(1)' }, { transform: 'scale(1.06)', offset: 0.45 }, { transform: 'scale(1)' }], { delay: tWin, duration: 560, easing: 'ease-out', fill: 'backwards' });
+    A(q('[data-celeb="burst"]'), [{ opacity: 0, transform: 'scale(.4)' }, { opacity: 1, transform: 'scale(1.15)', offset: 0.45 }, { opacity: 1, transform: 'scale(1)' }], { delay: tWin, duration: 1000, easing: 'ease-out', fill: 'backwards' });
+    A(q('[data-celeb="aurora"]'), [{ opacity: 0 }, { opacity: 1 }], { delay: tWin, duration: 900, fill: 'backwards' });
+    // Then the streak, the roll, the buttons.
+    enter('e4', tWin + 300);
+    A(q('[data-celeb="odo"]'), [{ transform: 'translateY(0)' }, { transform: 'translateY(-50%)' }], { delay: tWin + 650, duration: 480, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' });
+    A(q('[data-celeb="streak"]'), [{ textShadow: '0 0 18px rgba(255,215,0,.35)' }, { textShadow: '0 0 34px rgba(255,215,0,.9)', offset: 0.4 }, { textShadow: '0 0 18px rgba(255,215,0,.35)' }], { delay: tWin + 650, duration: 760 });
+    enter('e5', tWin + 950);
+
+    timersRef.current.push(
+      setTimeout(() => triggerHaptic(ImpactStyle.Heavy), tWin),
+      setTimeout(() => triggerHaptic(ImpactStyle.Medium), tWin + 650),
     );
-  };
-
-  // Generate particle burst (from center)
-  const generateParticles = useCallback(() => {
-    const newParticles = [];
-    const colors = [COLORS.strength, COLORS.cardio, COLORS.recovery, '#FFD700', '#FF453A', '#BF5AF2'];
-
-    for (let i = 0; i < 40; i++) {
-      const angle = (i / 40) * Math.PI * 2;
-      const velocity = 100 + Math.random() * 80;
-      newParticles.push({
-        id: i,
-        vx: Math.cos(angle) * velocity,
-        vy: Math.sin(angle) * velocity,
-        color: colors[i % colors.length],
-        size: 4 + Math.random() * 6,
-        rotation: Math.random() * 360,
-        isCircle: Math.random() > 0.5
-      });
-    }
-    setParticles(newParticles);
-  }, []);
-
-  // Generate confetti (falling from top)
-  const generateConfetti = useCallback(() => {
-    const newConfetti = [];
-    const colors = [COLORS.strength, COLORS.cardio, COLORS.recovery, '#FFD700', '#FF453A', '#BF5AF2', '#FFFFFF'];
-
-    for (let i = 0; i < 50; i++) {
-      newConfetti.push({
-        id: i,
-        x: Math.random() * 100, // percentage across screen
-        delay: Math.random() * 0.5,
-        duration: 2 + Math.random() * 1.5,
-        color: colors[i % colors.length],
-        size: 6 + Math.random() * 8,
-        rotation: Math.random() * 360,
-        isCircle: Math.random() > 0.6
-      });
-    }
-    setConfetti(newConfetti);
-  }, []);
-
-  // Track timeout IDs so we can cancel them on skip
-  const timeoutsRef = useRef([]);
-
-  const addTimeout = useCallback((fn, delay) => {
-    const id = setTimeout(fn, delay);
-    timeoutsRef.current.push(id);
-    return id;
-  }, []);
-
-  const clearAllTimeouts = useCallback(() => {
-    timeoutsRef.current.forEach(id => clearTimeout(id));
-    timeoutsRef.current = [];
-  }, []);
-
-  // Skip animation and jump to final content state
-  const skipToContent = useCallback(() => {
-    clearAllTimeouts();
-    setPhase('content');
-    setRingStates([
-      { animate: false, converged: true, hasAnimated: true },
-      { animate: false, converged: true, hasAnimated: true },
-      { animate: false, converged: true, hasAnimated: true }
-    ]);
-    setShowCheckmark(true);
-    setShowParticles(false); // Hide particles (they look glitchy when skipped)
-    setShowContent(true);
-    setShowConfetti(true);
-    generateConfetti();
-  }, [clearAllTimeouts, generateConfetti]);
-
-  const handleClose = useCallback(() => {
-    if (phase === 'fadeOut') return; // Prevent double-close
-    clearAllTimeouts();
-    setPhase('fadeOut');
-    setTimeout(onClose, 300);
-  }, [onClose, phase, clearAllTimeouts]);
-
-  const handleShare = useCallback(() => {
-    if (phase === 'fadeOut') return;
-    clearAllTimeouts();
-    setPhase('fadeOut');
-    setTimeout(onShare, 300);
-  }, [onShare, phase, clearAllTimeouts]);
-
-  // Handle tap on the overlay — skip animation or close
-  const handleOverlayTap = useCallback((e) => {
-    // Don't intercept button clicks
-    if (e.target.closest('button')) return;
-
-    if (phase === 'content') {
-      // Already showing content — close
-      handleClose();
-    } else if (phase !== 'hidden' && phase !== 'fadeOut') {
-      // Mid-animation — skip to content
-      skipToContent();
-    }
-  }, [phase, skipToContent, handleClose]);
-
-  // Animation sequence
-  useEffect(() => {
-    if (show && phase === 'hidden') {
-      setPhase('fadeIn');
-
-      // Phase 1: Fade in background, then converge rings one at a time
-      // Each ring fills (closes) as it moves to the center
-      addTimeout(() => {
-        setPhase('converge');
-
-        // First: Recovery ring (rightmost) - fills and moves to center as innermost
-        addTimeout(() => {
-          setRingStates(prev => [
-            prev[0],
-            prev[1],
-            { animate: true, converged: true, hasAnimated: false }
-          ]);
-          triggerHaptic(ImpactStyle.Light);
-          // Mark as animated after animation completes
-          addTimeout(() => {
-            setRingStates(prev => [
-              prev[0],
-              prev[1],
-              { ...prev[2], hasAnimated: true }
-            ]);
-          }, 700);
-        }, 100);
-
-        // Second: Cardio ring - fills and moves to center as middle ring
-        addTimeout(() => {
-          setRingStates(prev => [
-            prev[0],
-            { animate: true, converged: true, hasAnimated: false },
-            prev[2]
-          ]);
-          triggerHaptic(ImpactStyle.Light);
-          // Mark as animated after animation completes
-          addTimeout(() => {
-            setRingStates(prev => [
-              prev[0],
-              { ...prev[1], hasAnimated: true },
-              prev[2]
-            ]);
-          }, 700);
-        }, 900);
-
-        // Third: Strength ring - fills and moves to center as outermost ring
-        addTimeout(() => {
-          setRingStates(prev => [
-            { animate: true, converged: true, hasAnimated: false },
-            prev[1],
-            prev[2]
-          ]);
-          triggerHaptic(ImpactStyle.Heavy);
-          // Mark as animated after animation completes
-          addTimeout(() => {
-            setRingStates(prev => [
-              { ...prev[0], hasAnimated: true },
-              prev[1],
-              prev[2]
-            ]);
-          }, 700);
-        }, 1700);
-
-        // Phase 2: Show particle burst and checkmark
-        addTimeout(() => {
-          setPhase('burst');
-          setShowParticles(true);
-          generateParticles();
-          setShowCheckmark(true);
-          triggerHaptic(ImpactStyle.Medium);
-        }, 2500);
-
-        // Phase 3: Show content and confetti
-        addTimeout(() => {
-          setPhase('content');
-          setShowContent(true);
-          setShowConfetti(true);
-          generateConfetti();
-        }, 2900);
-
-      }, 300);
-    }
-  }, [show, phase, generateParticles, generateConfetti, addTimeout]);
-
-  // Cleanup timeouts on unmount
-  useEffect(() => {
-    return () => clearAllTimeouts();
-  }, [clearAllTimeouts]);
-
-  // Reset state when closed
-  useEffect(() => {
-    if (!show) {
-      setTimeout(() => {
-        setPhase('hidden');
-        setRingStates([
-          { animate: false, converged: false, hasAnimated: false },
-          { animate: false, converged: false, hasAnimated: false },
-          { animate: false, converged: false, hasAnimated: false }
-        ]);
-        setShowCheckmark(false);
-        setShowParticles(false);
-        setShowConfetti(false);
-        setShowContent(false);
-        setParticles([]);
-        setConfetti([]);
-      }, 300);
-    }
+    // One clock for the numbers.
+    const t0 = performance.now();
+    const tick = () => {
+      const t = performance.now() - t0;
+      if (t >= plan.end) { setClock(null); return; }
+      setClock(t);
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    setClock(0);
+    rafRef.current = requestAnimationFrame(tick);
+    return () => clearAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show]);
 
-  if (!show && phase === 'hidden') return null;
+  const skipToEnd = useCallback(() => { clearAll(); setClock(null); }, [clearAll]);
+  const finish = useCallback((cb) => {
+    if (closing) return;
+    clearAll();
+    setClosing(true);
+    setTimeout(cb, 300);
+  }, [closing, clearAll]);
+  const handleClose = useCallback(() => finish(onClose), [finish, onClose]);
+  const handleShare = useCallback(() => finish(onShare), [finish, onShare]);
+  const handleOverlayTap = useCallback((e) => {
+    if (e.target.closest('button')) return;
+    if (clock !== null) skipToEnd(); else handleClose();
+  }, [clock, skipToEnd, handleClose]);
+
+  if (!show) return null;
+
+  const inIntro = clock !== null;
+  const ease = (p) => 1 - Math.pow(1 - Math.min(1, Math.max(0, p)), 3);
+  const shownPct = inIntro ? Math.round(100 * ease((clock - CELEB_T0) / (tWin - CELEB_T0))) : 100;
+  const isWon = !inIntro || clock >= tWin;
+  const rowValue = (r) => {
+    if (!inIntro) return fmt(r, r.done);
+    if (r.bar) return fmt(r, r.done * ease((clock - plan.tS) / CELEB_STEPS));
+    const times = plan.blocks[r.key];
+    const lit = times.slice(0, Math.min(r.done, times.length)).filter((t) => clock >= t + 60).length;
+    return lit >= Math.min(r.done, times.length) ? fmt(r, r.done) : String(lit);
+  };
+  const caps = { fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8a8a8a' };
+  const goldCaps = { ...caps, color: 'rgba(255,215,0,0.92)' };
 
   return (
     <div
+      ref={rootRef}
       data-modal-overlay
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 overflow-hidden text-white"
       onClick={handleOverlayTap}
-      style={{
-        backgroundColor: 'rgba(0,0,0,0.95)',
-        opacity: phase === 'hidden' || phase === 'fadeOut' ? 0 : 1,
-        transition: 'opacity 0.3s ease-out'
-      }}
+      style={{ opacity: closing ? 0 : 1, transition: 'opacity 0.3s ease-out', fontVariantNumeric: 'tabular-nums' }}
     >
-      {/* Radial glow background */}
-      <div
-        className="absolute inset-0"
-        style={{
-          background: showContent
-            ? 'radial-gradient(circle at center, rgba(255,215,0,0.15) 0%, rgba(0,255,148,0.08) 40%, transparent 70%)'
-            : 'transparent',
-          transition: 'background 0.5s ease-out'
-        }}
-      />
+      {/* Home blurred and dimmed behind */}
+      <div data-celeb="veil" className="absolute inset-0" style={{ backgroundColor: 'rgba(0,0,0,0.88)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)' }} />
+      <div data-celeb="aurora" className="absolute pointer-events-none" style={{ left: '-30%', right: '-30%', top: '-8%', height: '62%', background: 'radial-gradient(ellipse 55% 50% at 50% 32%, rgba(255,215,0,0.17), rgba(255,215,0,0.05) 46%, rgba(255,215,0,0) 72%)' }} />
 
-      {/* Particle burst */}
-      {showParticles && (
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          {particles.map((particle) => (
-            <div
-              key={particle.id}
-              className="absolute"
-              style={{
-                left: '50%',
-                top: '40%',
-                width: particle.size,
-                height: particle.size,
-                borderRadius: particle.isCircle ? '50%' : '2px',
-                backgroundColor: particle.color,
-                transform: `translate(-50%, -50%) translate(${particle.vx}px, ${particle.vy}px) rotate(${particle.rotation}deg)`,
-                opacity: 0,
-                animation: 'particleBurst 1s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards'
-              }}
-            />
-          ))}
-        </div>
-      )}
+      <div className="absolute inset-0 flex flex-col items-center justify-center px-6" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 44px)', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+        <div data-enter="e1" style={{ ...caps, marginBottom: 26 }}>{weekDates}</div>
 
-      {/* Confetti falling from top */}
-      {showConfetti && (
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          {confetti.map((piece) => (
-            <div
-              key={piece.id}
-              className="absolute"
-              style={{
-                left: `${piece.x}%`,
-                top: '-20px',
-                width: piece.size,
-                height: piece.isCircle ? piece.size : piece.size * 0.6,
-                borderRadius: piece.isCircle ? '50%' : '2px',
-                backgroundColor: piece.color,
-                animation: `confettiFall ${piece.duration}s ease-out ${piece.delay}s forwards`,
-                transform: `rotate(${piece.rotation}deg)`
-              }}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Rings container */}
-      <div className="relative z-10 flex flex-col items-center">
-        {/* Ring animation area */}
-        <div
-          className="relative flex items-center justify-center mb-3"
-          style={{
-            width: 240,
-            height: 120,
-            transition: 'all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
-            animation: showContent ? 'floatRings 3s ease-in-out infinite' : 'none'
-          }}
-        >
-          {/* Strength Ring (outer when converged) */}
+        {/* The poster number */}
+        <div data-enter="e2" className="relative flex flex-col items-center">
+          <div data-celeb="burst" className="absolute pointer-events-none rounded-full" style={{ left: '50%', top: '42%', width: 440, height: 440, margin: '-220px 0 0 -220px', background: 'radial-gradient(closest-side, rgba(255,215,0,0.3), rgba(255,215,0,0.08) 55%, rgba(255,215,0,0))' }} />
           <div
-            className="absolute"
-            style={{
-              transform: `translateX(${ringStates[0].converged ? 0 : -80}px)`,
-              transition: 'transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
-              zIndex: 1
-            }}
+            data-celeb="big"
+            className="relative flex items-baseline"
+            style={{ fontSize: 116, fontWeight: 800, letterSpacing: '-6px', lineHeight: 0.85, color: isWon ? GOLD : goldMix(shownPct), textShadow: isWon ? '0 0 34px rgba(255,215,0,0.5)' : 'none' }}
           >
-            <AnimatedRing
-              animate={ringStates[0].animate}
-              hasAnimated={ringStates[0].hasAnimated}
-              color={COLORS.strength}
-              size={100}
-              strokeWidth={8}
-              scale={1}
-            />
+            {shownPct}<span style={{ fontSize: 50, letterSpacing: '-2px', marginLeft: 4 }}>%</span>
           </div>
-
-          {/* Cardio Ring (middle when converged) */}
-          <div
-            className="absolute"
-            style={{
-              transform: `translateX(0px)`,
-              transition: 'transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
-              zIndex: 2
-            }}
-          >
-            <AnimatedRing
-              animate={ringStates[1].animate}
-              hasAnimated={ringStates[1].hasAnimated}
-              color={COLORS.cardio}
-              size={100}
-              strokeWidth={8}
-              scale={ringStates[1].converged ? 0.75 : 1}
-            />
+          <div className="relative" style={{ ...(isWon ? goldCaps : caps), marginTop: 18 }}>
+            {isWon ? `Week won · ${daysLeft} ${daysLeft === 1 ? 'day' : 'days'} to spare` : 'Week progress'}
           </div>
-
-          {/* Recovery Ring (inner when converged) */}
-          <div
-            className="absolute"
-            style={{
-              transform: `translateX(${ringStates[2].converged ? 0 : 80}px)`,
-              transition: 'transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
-              zIndex: 3
-            }}
-          >
-            <AnimatedRing
-              animate={ringStates[2].animate}
-              hasAnimated={ringStates[2].hasAnimated}
-              color={weekCounts.stepsRule ? '#BF5AF2' : COLORS.recovery}
-              size={100}
-              strokeWidth={8}
-              scale={ringStates[2].converged ? 0.5 : 1}
-            />
-          </div>
-
-          {/* Checkmark */}
-          {showCheckmark && (
-            <div
-              className="absolute z-10 flex items-center justify-center"
-              style={{
-                animation: 'checkmarkPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards'
-              }}
-            >
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M5 13l4 4L19 7"
-                  stroke="#00FF94"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  style={{
-                    strokeDasharray: 24,
-                    strokeDashoffset: 24,
-                    animation: 'checkmarkDraw 0.4s ease-out 0.1s forwards',
-                    filter: 'drop-shadow(0 0 6px #00FF94)'
-                  }}
-                />
-              </svg>
-            </div>
-          )}
         </div>
 
-        {/* Content */}
-        <div
-          className="text-center"
-          style={{
-            opacity: showContent ? 1 : 0,
-            transform: showContent ? 'translateY(0)' : 'translateY(20px)',
-            transition: 'all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
-            animation: showContent ? 'floatContent 3.5s ease-in-out infinite 0.2s' : 'none'
-          }}
-        >
-          {/* Title */}
-          <div
-            className="text-3xl font-black mb-2"
-            style={{
-              background: 'linear-gradient(135deg, #FFD700 0%, #00FF94 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent'
-            }}
-          >
-            Week Complete!
-          </div>
-
-          {/* Streak count */}
-          <div className="flex items-center justify-center gap-2 mb-4">
-            <span className="text-2xl">🔥</span>
-            <span className="text-xl font-bold text-white">{streakCount} Week Winning Streak</span>
-          </div>
-
-          {/* Goals summary */}
-          <div className="flex items-center justify-center gap-6 mb-6">
-            <div className="flex flex-col items-center">
-              <div className="w-3 h-3 rounded-full mb-1" style={{ backgroundColor: COLORS.strength, boxShadow: `0 0 8px ${COLORS.strength}` }} />
-              <span className="text-[11px] text-gray-400">Strength</span>
-              <span className="text-base font-bold" style={{ color: COLORS.strength }}>
-                {weekCounts.strength || 0}/{goals.liftsPerWeek || 3}
-              </span>
-            </div>
-            <div className="flex flex-col items-center">
-              <div className="w-3 h-3 rounded-full mb-1" style={{ backgroundColor: COLORS.cardio, boxShadow: `0 0 8px ${COLORS.cardio}` }} />
-              <span className="text-[11px] text-gray-400">Cardio</span>
-              <span className="text-base font-bold" style={{ color: COLORS.cardio }}>
-                {weekCounts.cardio || 0}/{goals.cardioPerWeek || 3}
-              </span>
-            </div>
-            {/* Third column is what this week's Winning Streak needed: Steps from the user's
-                start week (utils/weekGoals), Recovery before it. */}
-            {weekCounts.stepsRule ? (
-              <div className="flex flex-col items-center">
-                <div className="w-3 h-3 rounded-full mb-1" style={{ backgroundColor: '#BF5AF2', boxShadow: '0 0 8px #BF5AF2' }} />
-                <span className="text-[11px] text-gray-400">Steps</span>
-                <span className="text-base font-bold" style={{ color: '#BF5AF2' }}>
-                  {Math.round((weekCounts.steps || 0) / 1000)}k/{Math.round((goals.stepsPerDay || 10000) * 7 / 1000)}k
-                </span>
+        {/* Compact goal rows */}
+        <div data-enter="e3" className="w-full flex flex-col" style={{ gap: 16, marginTop: 36, maxWidth: 400 }}>
+          {rows.map((r) => {
+            const met = r.done >= r.goal;
+            return (
+              <div key={r.key}>
+                <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+                  <div className="flex items-center" style={{ gap: 7, fontSize: 14, fontWeight: 600 }}>
+                    <CategoryIcon category={r.key} size={15} /><span>{r.label}</span>
+                  </div>
+                  <div className="flex items-baseline" style={NUM.value}>
+                    {rowValue(r)}<span style={{ ...NUM.valueSmall, marginLeft: 1 }}>/{fmt(r, r.goal)}</span>
+                    {met && (
+                      <span data-celeb-check={r.key} className="inline-flex items-center justify-center rounded-full" style={{ width: 17, height: 17, marginLeft: 7, alignSelf: 'center', backgroundColor: `rgba(${r.rgb},0.14)` }}>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={r.color} strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5l10 -10" /></svg>
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {r.bar ? (
+                  <div className="relative" style={{ height: 9, borderRadius: 4.5, backgroundColor: `rgba(${r.rgb},0.2)` }}>
+                    <div data-celeb-bar={r.key} className="absolute left-0 top-0 bottom-0" style={{ width: `${Math.min(100, r.goal > 0 ? (r.done / r.goal) * 100 : 0)}%`, borderRadius: 4.5, backgroundColor: r.color, boxShadow: met ? `0 0 12px rgba(${r.rgb},0.5)` : 'none' }} />
+                  </div>
+                ) : (
+                  <div className="flex" style={{ gap: 5 }}>
+                    {Array.from({ length: Math.max(1, r.goal) }, (_, i) => (
+                      <div key={i} data-celeb-block={`${r.key}-${i}`} className="flex-1" style={{ height: 9, borderRadius: 4.5, backgroundColor: i < r.done ? r.color : `rgba(${r.rgb},0.2)`, boxShadow: met ? `0 0 12px rgba(${r.rgb},0.5)` : 'none' }} />
+                    ))}
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="flex flex-col items-center">
-                <div className="w-3 h-3 rounded-full mb-1" style={{ backgroundColor: COLORS.recovery, boxShadow: `0 0 8px ${COLORS.recovery}` }} />
-                <span className="text-[11px] text-gray-400">Recovery</span>
-                <span className="text-base font-bold" style={{ color: COLORS.recovery }}>
-                  {weekCounts.recovery || 0}/{goals.recoveryPerWeek ?? 2}
-                </span>
-              </div>
-            )}
-          </div>
+            );
+          })}
+        </div>
 
-          {/* Buttons */}
-          <div className="flex flex-col gap-3 w-64 mx-auto">
-            <button
-              onClick={handleShare}
-              className="w-full py-3 px-6 rounded-xl font-bold text-black transition-all active:scale-95"
-              style={{
-                background: 'linear-gradient(135deg, #FFD700 0%, #00FF94 100%)',
-                boxShadow: '0 4px 20px rgba(255, 215, 0, 0.4)'
-              }}
-            >
-              Share My Week
-            </button>
-            <button
-              onClick={handleClose}
-              className="w-full py-3 px-6 rounded-xl font-medium text-gray-400 transition-all active:scale-95"
-              style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
-            >
-              Close
-            </button>
-          </div>
+        {/* The Winning Streak, rolling up from last week's */}
+        <div data-enter="e4" className="flex items-center" style={{ gap: 12, marginTop: 26 }}>
+          <span style={{ fontSize: 28, lineHeight: 1 }}>🔥</span>
+          <span data-celeb="streak" style={{ fontSize: 42, fontWeight: 800, letterSpacing: '-1.5px', lineHeight: 1, color: GOLD, textShadow: '0 0 18px rgba(255,215,0,0.35)' }}>
+            <span className="inline-block overflow-hidden align-bottom" style={{ height: '1.1em', lineHeight: 1.1 }}>
+              <span data-celeb="odo" className="flex flex-col" style={{ transform: 'translateY(-50%)' }}>
+                <span style={{ height: '1.1em' }}>{oldStreak}</span>
+                <span style={{ height: '1.1em' }}>{newStreak}</span>
+              </span>
+            </span>
+          </span>
+          <div style={{ ...goldCaps, lineHeight: 1.5 }}>Week Winning<br />Streak</div>
+        </div>
+
+        <div data-enter="e5" className="w-full flex flex-col" style={{ gap: 10, maxWidth: 340, marginTop: 30 }}>
+          <button onClick={handleShare} className="w-full rounded-2xl font-bold text-black active:opacity-80 transition-opacity" style={{ height: 52, fontSize: 17, backgroundColor: '#fff' }}>
+            Share my week
+          </button>
+          <button onClick={handleClose} className="w-full rounded-2xl font-semibold active:opacity-70 transition-opacity" style={{ height: 52, fontSize: 17, backgroundColor: 'rgba(255,255,255,0.06)', color: '#bbb' }}>
+            Close
+          </button>
         </div>
       </div>
-
-      {/* CSS Animations */}
-      <style>{`
-        @keyframes particleBurst {
-          0% {
-            transform: translate(-50%, -50%) translate(0, 0) rotate(0deg) scale(1);
-            opacity: 1;
-          }
-          100% {
-            transform: translate(-50%, -50%) translate(var(--vx, 0), var(--vy, 0)) rotate(360deg) scale(0);
-            opacity: 0;
-          }
-        }
-
-        @keyframes confettiFall {
-          0% {
-            transform: translateY(0) rotate(0deg);
-            opacity: 1;
-          }
-          100% {
-            transform: translateY(100vh) rotate(720deg);
-            opacity: 0;
-          }
-        }
-
-        @keyframes checkmarkPop {
-          0% {
-            transform: scale(0);
-            opacity: 0;
-          }
-          50% {
-            transform: scale(1.2);
-          }
-          100% {
-            transform: scale(1);
-            opacity: 1;
-          }
-        }
-
-        @keyframes checkmarkDraw {
-          to {
-            stroke-dashoffset: 0;
-          }
-        }
-
-        @keyframes floatRings {
-          0%, 100% {
-            transform: translateY(0);
-          }
-          50% {
-            transform: translateY(-4px);
-          }
-        }
-
-        @keyframes floatContent {
-          0%, 100% {
-            transform: translateY(0);
-          }
-          50% {
-            transform: translateY(-3px);
-          }
-        }
-      `}</style>
     </div>
   );
 };
+
 
 // Share Modal
 const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChange, onMonthChange, isPro, onPresentPaywall, distanceUnit = 'mi' }) => {
@@ -4799,11 +3748,13 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
       glow: 'rgba(255, 215, 0, 0.15)',
       shadow: 'rgba(255, 215, 0, 0.25)'
     },
+    // White, not green (Nov 2026 redesign: green means Strength). The weekly card's own
+    // glow is gold, and only on a won week (shareWeekWon).
     weekly: {
-      primary: '#00FF94',
-      secondary: '#00D1FF',
-      glow: 'rgba(0, 255, 148, 0.15)',
-      shadow: 'rgba(0, 255, 148, 0.25)'
+      primary: '#FFFFFF',
+      secondary: '#BBBBBB',
+      glow: 'rgba(255, 255, 255, 0.08)',
+      shadow: 'rgba(0, 0, 0, 0.6)'
     },
     monthly: {
       primary: '#8B5CF6',
@@ -4814,6 +3765,8 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
   };
 
   const colors = colorSchemes[cardType];
+  // Whether the shared week was won (drives the weekly card's gold aurora and glow).
+  const shareWeekWon = !!(stats?.weekJudged?.all);
 
   // Helper to format pace
   const formatPace = (pace) => {
@@ -4889,7 +3842,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                 <div className={`${isPostFormat ? 'space-y-1' : 'space-y-1.5'}`}>
                   <div className="flex justify-between items-center">
                     <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}>🏃 Longest Distance</span>
-                    <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{longestDist ? `${longestDist.toFixed(2)} mi` : '--'}</span>
+                    <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{longestDist ? `${_shareMilesToUnit(longestDist).toFixed(2)} ${_shareUnitLabel}` : '--'}</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}>🏃 Most Runs/Week</span>
@@ -4912,8 +3865,8 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                     <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{records.mostCaloriesDay ? records.mostCaloriesDay.toLocaleString() : (getRecordVal(records.highestCalories) || '--')}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}>📍 Most Miles/Week</span>
-                    <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{records.mostMilesWeek ? `${records.mostMilesWeek.toFixed(1)} mi` : '--'}</span>
+                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-[11px]'} text-gray-400`}>📍 Most {_shareUnitLabel === 'km' ? 'KMs' : 'Miles'}/Week</span>
+                    <span className={`font-bold ${isPostFormat ? 'text-[11px]' : 'text-[11px]'}`} style={{ color: colors.primary }}>{records.mostMilesWeek ? `${_shareMilesToUnit(records.mostMilesWeek).toFixed(1)} ${_shareUnitLabel}` : '--'}</span>
                   </div>
                 </div>
               </div>
@@ -4941,7 +3894,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
         const recoveryGoalMet = weekJudged.recovery;
         const allGoalsMet = weekJudged.all ?? (liftsGoalMet && cardioGoalMet && recoveryGoalMet);
 
-        // Calculate percentages for rings (cap at 100%)
+        // Each goal's share of the week (capped at 100%)
         const liftsPercent = liftsGoal > 0 ? Math.min((weeklyLifts / liftsGoal) * 100, 100) : 0;
         const cardioPercent = cardioGoal > 0 ? Math.min((weeklyCardio / cardioGoal) * 100, 100) : 0;
         const recoveryPercent = recoveryGoal > 0 ? Math.min((weeklyRecovery / recoveryGoal) * 100, 100) : 0;
@@ -4955,12 +3908,6 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
 
         // Overall progress, same as Home: the average completion of the three rings.
         const overallPercent = Math.round((liftsPercent + cardioPercent + third.percent) / 3);
-
-        // Ring dimensions for share card
-        const ringSize = isPostFormat ? 56 : 64;
-        const ringStroke = isPostFormat ? 5 : 5;
-        const ringRadius = (ringSize - ringStroke) / 2;
-        const ringCircumference = ringRadius * 2 * Math.PI;
 
         // Analyze weekly activities
         const weeklyAnalysis = analyzeWeeklyActivities(stats?.weeklyActivities);
@@ -4980,128 +3927,123 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
         }
         // Show total hours if >= 1 hour
         if (weeklyAnalysis?.totalMinutes >= 60) {
-          achievements.push({ emoji: '⏱️', text: `${Math.round(weeklyAnalysis.totalMinutes / 60)}hrs total` });
+          const totalHrs = Math.round(weeklyAnalysis.totalMinutes / 60);
+          achievements.push({ emoji: '⏱️', text: `${totalHrs} ${totalHrs === 1 ? 'hr' : 'hrs'} total` });
         }
 
-        // Slide 1: Progress
+        // Slide 1: the week, in Home's look (Nov 2026 redesign, mock-system-light.html shareNew):
+        // the week % as the one big number (white→gold, gold "100%" + WEEK WON when won), the
+        // goal rows as blocks and a steps bar, then Most frequent (won) or the streak on the line.
         if (weeklySlide === 0) {
+          const won = !!allGoalsMet;
+          // Days left only while the shared week is still running.
+          const todayStr = getTodayDate();
+          const rangeStart = weekRange?.startDate ? (weekRange.startDate instanceof Date ? toLocalDateStr(weekRange.startDate) : weekRange.startDate) : null;
+          const rangeEnd = weekRange?.endDate ? (weekRange.endDate instanceof Date ? toLocalDateStr(weekRange.endDate) : weekRange.endDate) : null;
+          const isCurrentWeek = !rangeStart || (rangeStart <= todayStr && (!rangeEnd || rangeEnd >= todayStr));
+          const daysLeftInWeek = 7 - new Date().getDay();
+          const capsStyle = { fontSize: 9.5, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#8a8a8a', marginTop: 8 };
+          const goldCaps = { ...capsStyle, color: 'rgba(255,215,0,0.9)' };
+          // Text-size numbers, scaled to the card (Home's 17px over 15px labels → 14 over 12.5)
+          const cardValue = { fontSize: 14, fontWeight: 700, letterSpacing: '-0.2px', lineHeight: 1 };
+          const cardSmall = { fontSize: 10, fontWeight: 600, color: '#666', marginLeft: 1 };
+          const rows = [
+            { key: 'lifts', label: 'Strength', color: '#00FF94', done: weeklyLifts, goal: liftsGoal, met: liftsGoalMet },
+            { key: 'cardio', label: 'Cardio', color: '#FF9500', done: weeklyCardio, goal: cardioGoal, met: cardioGoalMet },
+            { key: 'steps', label: 'Steps', color: '#BF5AF2', done: weeklySteps, goal: weeklyStepsGoal, met: weeklySteps >= weeklyStepsGoal, steps: true },
+          ];
+          const fk = (n) => `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+          const rgbOf = { lifts: '0,255,148', cardio: '255,149,0', steps: '191,90,242' };
+          const mostFrequent = [
+            (weeklyAnalysis?.topStrength || []).slice(0, 2).map(([name]) => name).join('/'),
+            weeklyAnalysis?.topCardio?.[0]?.[0],
+            weeklyAnalysis?.topRecovery?.[0]?.[0],
+          ].filter(Boolean);
+          const streakNow = stats?.streak || 0;
           return (
             <div
-              className={`relative h-full flex flex-col ${isPostFormat ? 'pt-4 pb-6 px-4' : 'py-5 px-5 justify-center'}`}
+              className="relative h-full flex flex-col justify-between"
+              style={{ padding: isPostFormat ? '18px 20px 14px' : '22px 20px 18px' }}
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
             >
-              {/* Main content wrapper */}
-              <div className={isPostFormat ? 'flex-1' : ''}>
-              {/* Header */}
-              <div className={`text-center ${isPostFormat ? '' : ''}`}>
-                <div className={isPostFormat ? 'text-2xl' : 'text-3xl'} style={{ animation: 'pulse-glow 2s ease-in-out infinite' }}>📅</div>
-                <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-500 uppercase tracking-wider mt-1.5`}>{getWeekDateRange()}</div>
-                <div className={`font-black ${isPostFormat ? 'text-2xl' : 'text-2xl'}`} style={{ color: allGoalsMet ? colors.primary : 'white' }}>
-                  {allGoalsMet ? 'Week Streaked!' : `${overallPercent}% Complete`}
-                </div>
-                <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-0.5`}>{getMotivationalTagline(stats?.streak || 0, allGoalsMet)}</div>
+              {/* Wordmark and the week */}
+              <div className="flex items-center justify-between">
+                <img src="/wordmark.png" alt="dayseven" style={{ height: 13, opacity: 0.8 }} />
+                <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.14em', color: '#8a8a8a', textTransform: 'uppercase' }}>{getWeekDateRange().replace(' - ', ' – ')}</span>
               </div>
 
-              {/* Content */}
-              <div className={`${isPostFormat ? 'flex-none py-2' : 'flex-none pt-3 pb-2'} flex flex-col justify-center`}>
-                {/* Progress bar */}
-                <div className={`w-full ${isPostFormat ? 'mb-4' : 'mb-5'}`}>
-                  <div className={`${isPostFormat ? 'h-2' : 'h-2'} rounded-full overflow-hidden flex`} style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                    {liftsPercent > 0 && (
-                      <div className="h-full transition-all duration-500" style={{ width: `${liftsPercent / 3}%`, backgroundColor: '#00FF94' }} />
-                    )}
-                    {cardioPercent > 0 && (
-                      <div className="h-full transition-all duration-500" style={{ width: `${cardioPercent / 3}%`, backgroundColor: '#FF9500' }} />
-                    )}
-                    {third.percent > 0 && (
-                      <div className="h-full transition-all duration-500" style={{ width: `${third.percent / 3}%`, backgroundColor: third.color }} />
-                    )}
+              {/* The week % — the card's one big number */}
+              <div className="flex items-end justify-between" style={{ paddingBottom: 12, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                <div>
+                  <div className="flex items-baseline" style={{ fontSize: 50, fontWeight: 800, letterSpacing: '-2.6px', lineHeight: 0.8, color: won ? '#FFD700' : goldMix(overallPercent), textShadow: won ? '0 0 22px rgba(255,215,0,0.45)' : 'none' }}>
+                    {won ? 100 : overallPercent}<span style={{ fontSize: 22, letterSpacing: '-0.5px', marginLeft: 1 }}>%</span>
                   </div>
+                  <div style={won ? goldCaps : capsStyle}>{won ? 'Week won' : 'Week progress'}</div>
                 </div>
+                {won ? (
+                  <div className="text-right">
+                    <div style={{ ...cardValue, color: '#FFD700' }}>{streakNow}</div>
+                    <div style={goldCaps}>Week streak</div>
+                  </div>
+                ) : isCurrentWeek ? (
+                  <div className="text-right">
+                    <div style={cardValue}>{daysLeftInWeek}</div>
+                    <div style={capsStyle}>{daysLeftInWeek === 1 ? 'Day left' : 'Days left'}</div>
+                  </div>
+                ) : null}
+              </div>
 
-                {/* Goal Rings */}
-                <div className={`w-full flex items-center ${isPostFormat ? 'justify-center gap-6' : 'justify-around'} ${isPostFormat ? 'mb-4' : 'mb-5'}`}>
-                  <div className="flex flex-col items-center text-center">
-                    <div className="relative">
-                      <svg width={ringSize} height={ringSize} className="transform -rotate-90 block">
-                        <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={ringStroke} />
-                        <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="#00FF94" strokeWidth={ringStroke} strokeLinecap="round"
-                          strokeDasharray={ringCircumference} strokeDashoffset={ringCircumference - (liftsPercent / 100) * ringCircumference} />
-                      </svg>
-                      <div className="absolute inset-0 flex items-center justify-center" data-ring-text="true" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`} style={{ lineHeight: 1 }}>{weeklyLifts}/{liftsGoal}</span>
+              {/* Goal rows: one block per session, a bar for steps, a check when done */}
+              <div className="flex flex-col" style={{ gap: 13 }}>
+                {rows.map((r) => (
+                  <div key={r.key}>
+                    <div className="flex items-end justify-between" style={{ marginBottom: 7 }}>
+                      <div className="flex items-center" style={{ gap: 6, fontSize: 12.5, fontWeight: 600 }}>
+                        <CategoryIcon category={r.key} size={13} /><span>{r.label}</span>
+                      </div>
+                      <div className="flex items-baseline" style={cardValue}>
+                        {r.steps ? fk(r.done) : r.done}<span style={cardSmall}>/{r.steps ? fk(r.goal) : r.goal}</span>
+                        {r.met && (
+                          <span className="inline-flex items-center justify-center rounded-full" style={{ width: 15, height: 15, marginLeft: 5, alignSelf: 'center', backgroundColor: `rgba(${rgbOf[r.key]},0.14)` }}>
+                            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={r.color} strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5l10 -10" /></svg>
+                          </span>
+                        )}
                       </div>
                     </div>
-                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><CategoryIcon category="lifts" size={11} /><span>Strength</span></div>
-                  </div>
-                  <div className="flex flex-col items-center text-center">
-                    <div className="relative">
-                      <svg width={ringSize} height={ringSize} className="transform -rotate-90 block">
-                        <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={ringStroke} />
-                        <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="#FF9500" strokeWidth={ringStroke} strokeLinecap="round"
-                          strokeDasharray={ringCircumference} strokeDashoffset={ringCircumference - (cardioPercent / 100) * ringCircumference} />
-                      </svg>
-                      <div className="absolute inset-0 flex items-center justify-center" data-ring-text="true" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`} style={{ lineHeight: 1 }}>{weeklyCardio}/{cardioGoal}</span>
+                    {r.steps ? (
+                      <div className="relative" style={{ height: 8, borderRadius: 4, backgroundColor: `rgba(${rgbOf[r.key]},0.2)` }}>
+                        <div className="absolute left-0 top-0 bottom-0" style={{ width: `${Math.min(100, r.goal > 0 ? (r.done / r.goal) * 100 : 0)}%`, borderRadius: 4, backgroundColor: r.color, boxShadow: r.met ? `0 0 9px rgba(${rgbOf[r.key]},0.5)` : 'none' }} />
                       </div>
-                    </div>
-                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><CategoryIcon category="cardio" size={11} /><span>Cardio</span></div>
-                  </div>
-                  <div className="flex flex-col items-center text-center">
-                    <div className="relative">
-                      <svg width={ringSize} height={ringSize} className="transform -rotate-90 block">
-                        <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={ringStroke} />
-                        <circle cx={ringSize/2} cy={ringSize/2} r={ringRadius} fill="none" stroke={third.color} strokeWidth={ringStroke} strokeLinecap="round"
-                          strokeDasharray={ringCircumference} strokeDashoffset={ringCircumference - (third.percent / 100) * ringCircumference} />
-                      </svg>
-                      <div className="absolute inset-0 flex items-center justify-center" data-ring-text="true" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <span className={`${isPostFormat ? 'text-sm' : 'text-sm'} font-black`} style={{ lineHeight: 1 }}>{third.text}</span>
+                    ) : (
+                      <div className="flex" style={{ gap: 4 }}>
+                        {Array.from({ length: Math.max(1, r.goal) }, (_, i) => (
+                          <div key={i} className="flex-1" style={{ height: 8, borderRadius: 4, backgroundColor: i < r.done ? r.color : `rgba(${rgbOf[r.key]},0.2)`, boxShadow: r.met ? `0 0 9px rgba(${rgbOf[r.key]},0.5)` : 'none' }} />
+                        ))}
                       </div>
-                    </div>
-                    <div className={`${isPostFormat ? 'text-xs' : 'text-xs'} text-gray-400 mt-1`} style={{ lineHeight: '1.2', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}><CategoryIcon category={third.category} size={11} /><span>{third.label}</span></div>
+                    )}
                   </div>
-                </div>
-
-                {/* Master Streak + Top Activities */}
-                <div className={`w-full ${isPostFormat ? 'py-2 px-3' : 'py-3 px-4'} rounded-2xl`} style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-                  <div className="w-full" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                    <span className={isPostFormat ? 'text-lg' : 'text-xl'} style={{ lineHeight: '1.2' }}>🔥</span>
-                    <span className={`${isPostFormat ? 'text-xl' : 'text-2xl'} font-black`} style={{ color: '#00FF94', lineHeight: '1.2' }}>{stats?.streak || 0}</span>
-                    <span className={`${isPostFormat ? 'text-[11px]' : 'text-xs'} text-gray-400`} style={{ lineHeight: '1.2' }}>week winning streak</span>
-                  </div>
-                  {(() => {
-                    const segments = [];
-                    const strengthNames = (weeklyAnalysis?.topStrength || []).slice(0, 2).map(([name]) => name);
-                    if (strengthNames.length > 0) segments.push({ text: strengthNames.join('/'), color: '#00FF94' });
-                    const topCardioName = weeklyAnalysis?.topCardio?.[0]?.[0];
-                    if (topCardioName) segments.push({ text: topCardioName, color: '#FF9500' });
-                    const topRecoveryName = weeklyAnalysis?.topRecovery?.[0]?.[0];
-                    if (topRecoveryName) segments.push({ text: topRecoveryName, color: '#00D1FF' });
-                    return segments.length > 0 && (
-                      <>
-                        <div className={`w-full h-px ${isPostFormat ? 'my-1.5' : 'my-2'}`} style={{ backgroundColor: 'rgba(255,255,255,0.05)' }} />
-                        <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500 uppercase tracking-wider text-center mb-1`}>Most Frequent</div>
-                        <div className={`${isPostFormat ? 'text-[11px]' : 'text-xs'} text-center`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                          {segments.map((seg, i) => (
-                            <span key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              {i > 0 && <span style={{ color: 'rgba(255,255,255,0.2)' }}>·</span>}
-                              <span style={{ color: seg.color }}>{seg.text}</span>
-                            </span>
-                          ))}
-                        </div>
-                      </>
-                    );
-                  })()}
-                </div>
+                ))}
               </div>
 
-              {/* Footer */}
-              <div className="text-center mt-2">
-                <DaySevenLogo gradient={['#00FF94', '#00D1FF']} size="xs" />
-                <div className="text-[8px] text-gray-600 tracking-widest uppercase -mt-0.5">Weekly Recap</div>
-              </div>
-              </div>
+              {/* Won: what the week was made of. Not won: the streak at stake. */}
+              {won ? (
+                mostFrequent.length > 0 ? (
+                  <div className="text-center" style={{ fontSize: 12.5, fontWeight: 600, color: '#ddd' }}>
+                    <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#8a8a8a', marginBottom: 6 }}>Most frequent</div>
+                    <div>{mostFrequent.map((t, i) => (<React.Fragment key={i}>{i > 0 && <span style={{ color: '#555' }}> · </span>}{t}</React.Fragment>))}</div>
+                  </div>
+                ) : <div />
+              ) : (isCurrentWeek ? (
+                <div className="flex items-center justify-center" style={{ gap: 7, padding: 10, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.04)', fontSize: 12, color: '#aaa' }}>
+                  <span>🔥</span>
+                  {streakNow > 0
+                    ? <span><b style={{ ...cardValue, color: '#FFD700' }}>{streakNow}</b>-week streak on the line</span>
+                    : <span>Win this week to start a streak</span>}
+                </div>
+              ) : <div />)}
+
+              <div className="text-center" style={{ fontSize: 8, fontWeight: 700, color: '#555', letterSpacing: '0.22em', textTransform: 'uppercase' }}>Weekly recap</div>
             </div>
           );
         }
@@ -5150,8 +4092,8 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                   <div className={`${isPostFormat ? 'p-2' : 'p-2.5'} rounded-xl text-center flex flex-col justify-center`} style={{ backgroundColor: 'rgba(0,209,255,0.08)' }}>
                     <div className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-500 uppercase mb-0.5`}>Furthest Distance</div>
                     <div className={`${isPostFormat ? 'text-base' : 'text-lg'} flex justify-center`}>{getActivityEmoji(weeklyAnalysis.longestDistance.type)}</div>
-                    <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-black`} style={{ color: '#00D1FF' }}>{parseFloat(weeklyAnalysis.longestDistance.distance).toFixed(2)}</div>
-                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>miles</div>
+                    <div className={`${isPostFormat ? 'text-sm' : 'text-base'} font-black`} style={{ color: '#00D1FF' }}>{_shareMilesToUnit(weeklyAnalysis.longestDistance.distance).toFixed(2)}</div>
+                    <div className={`${isPostFormat ? 'text-[8px]' : 'text-[9px]'} text-gray-500`}>{_shareUnitLabel === 'km' ? 'km' : 'miles'}</div>
                   </div>
                 ) : weeklyAnalysis?.longestWorkout && (
                   <div className={`${isPostFormat ? 'p-2' : 'p-2.5'} rounded-xl text-center flex flex-col justify-center`} style={{ backgroundColor: 'rgba(0,255,148,0.08)' }}>
@@ -5250,7 +4192,8 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
             <div className="flex-1 flex flex-col items-center justify-center w-full">
               {/* Main master streak number */}
               <div className="text-center">
-                <div className="font-black leading-none" style={{ fontSize: isPostFormat ? '3rem' : '4rem', color: colors.primary, textShadow: `0 0 40px ${colors.glow}, 0 0 80px ${colors.glow}`, animation: 'ring-pulse 3s ease-in-out infinite' }}>
+                {/* Gold: the winning streak's colour app-wide (Nov 2026 redesign) */}
+                <div className="font-black leading-none" style={{ fontSize: isPostFormat ? '3rem' : '4rem', color: GOLD, textShadow: '0 0 40px rgba(255,215,0,0.25), 0 0 80px rgba(255,215,0,0.12)', animation: 'ring-pulse 3s ease-in-out infinite' }}>
                   {stats?.streak || 0}
                 </div>
                 <div className={`${isPostFormat ? 'text-[10px]' : 'text-xs'} font-semibold tracking-widest text-gray-400 uppercase mt-1`}>🔥 Winning Streak</div>
@@ -5344,7 +4287,7 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                     🏃 {_shareMilesToUnit(stats?.monthlyMiles || 0).toFixed(1)} {_shareUnitLabel}
                   </span>
                   <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'} text-gray-400`}>
-                    📅 {stats?.monthlyDaysActive || 0} days active
+                    📅 {stats?.monthlyDaysActive || 0} {(stats?.monthlyDaysActive || 0) === 1 ? 'day' : 'days'} active
                   </span>
                 </div>
               </div>
@@ -5373,24 +4316,30 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                     <CategoryIcon category="recovery" size={9} className="inline align-[-2px] mr-1" /><span className="font-bold" style={{ color: '#00D1FF' }}>{stats?.monthlyRecovery || 0}</span> recovery · bonus
                   </div>
 
-                  {/* Divider line */}
-                  <div className={`border-t border-gray-700 ${isPostFormat ? 'my-1.5' : 'my-2'}`}></div>
-
-                  {/* Most Frequent subsection */}
-                  <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500 uppercase tracking-wider text-center mb-1`}>Most Frequent</div>
-                  <div className={`flex justify-center items-center ${isPostFormat ? 'gap-2' : 'gap-3'} text-center`}>
-                    <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'}`} style={{ color: '#00FF94' }}>
-                      {stats?.monthlyMostFrequentStrength || 'Full Body'}
-                    </span>
-                    <span style={{ color: 'rgba(255,255,255,0.2)' }}>·</span>
-                    <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'}`} style={{ color: '#FF9500' }}>
-                      {stats?.monthlyMostFrequentCardio || 'Running'}
-                    </span>
-                    <span style={{ color: 'rgba(255,255,255,0.2)' }}>·</span>
-                    <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'}`} style={{ color: '#00D1FF' }}>
-                      {stats?.monthlyMostFrequentRecovery?.type || 'Sauna'}
-                    </span>
-                  </div>
+                  {/* Most Frequent: only the categories that have real data; the whole row
+                      hides when none do (it used to fall back to made-up names). */}
+                  {(() => {
+                    const freq = [
+                      { label: stats?.monthlyMostFrequentStrength, color: '#00FF94' },
+                      { label: stats?.monthlyMostFrequentCardio, color: '#FF9500' },
+                      { label: stats?.monthlyMostFrequentRecovery?.type, color: '#00D1FF' },
+                    ].filter(f => f.label);
+                    if (freq.length === 0) return null;
+                    return (
+                      <>
+                        <div className={`border-t border-gray-700 ${isPostFormat ? 'my-1.5' : 'my-2'}`}></div>
+                        <div className={`${isPostFormat ? 'text-[7px]' : 'text-[8px]'} text-gray-500 uppercase tracking-wider text-center mb-1`}>Most Frequent</div>
+                        <div className={`flex justify-center items-center ${isPostFormat ? 'gap-2' : 'gap-3'} text-center`}>
+                          {freq.map((f, i) => (
+                            <React.Fragment key={i}>
+                              {i > 0 && <span style={{ color: 'rgba(255,255,255,0.2)' }}>·</span>}
+                              <span className={`${isPostFormat ? 'text-[9px]' : 'text-[10px]'}`} style={{ color: f.color }}>{f.label}</span>
+                            </React.Fragment>
+                          ))}
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
 
                 {/* Highlights Section - Best Burn, Longest Session, Furthest Distance */}
@@ -5546,17 +4495,23 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
                 : (isMobile ? 'scale(0.95)' : 'scale(1.1)'),
               transformOrigin: 'top center',
               background: 'linear-gradient(180deg, #0a0a0a 0%, #0d0d0d 50%, #000000 100%)',
-              boxShadow: `0 25px 50px -12px ${colors.shadow}, 0 0 100px ${colors.glow}`
+              boxShadow: cardType === 'weekly'
+                ? (shareWeekWon ? '0 25px 50px -12px rgba(255,215,0,0.2), 0 0 100px rgba(255,215,0,0.08)' : '0 25px 50px -12px rgba(0,0,0,0.6)')
+                : `0 25px 50px -12px ${colors.shadow}, 0 0 100px ${colors.glow}`
             }}
           >
-            {/* Aurora/Glow Effect */}
+            {/* Aurora/Glow Effect — the weekly card's is a faint gold, and only on a won week */}
+            {(cardType !== 'weekly' || shareWeekWon) && (
             <div
               className="absolute top-0 left-0 right-0 h-1/2"
               style={{
-                background: `radial-gradient(ellipse 80% 50% at 50% 0%, ${colors.glow} 0%, ${colors.glow.replace('0.15', '0.05')} 40%, transparent 70%)`,
+                background: cardType === 'weekly'
+                  ? 'radial-gradient(ellipse 80% 45% at 50% 0%, rgba(255,215,0,0.13) 0%, rgba(255,215,0,0.04) 45%, transparent 72%)'
+                  : `radial-gradient(ellipse 80% 50% at 50% 0%, ${colors.glow} 0%, ${colors.glow.replace('0.15', '0.05')} 40%, transparent 70%)`,
                 pointerEvents: 'none'
               }}
             />
+            )}
 
           {/* Shimmer Effect */}
           <div
@@ -5590,9 +4545,9 @@ const ShareModal = ({ isOpen, onClose, stats, weekRange, monthRange, onWeekChang
         {/* Weekly Slide Navigation */}
         {cardType === 'weekly' && (
           <div className="flex justify-center gap-2 mb-4">
-            <button onClick={() => setWeeklySlide(0)} className="w-2.5 h-2.5 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 0 ? '#00FF94' : 'rgba(255,255,255,0.2)' }} />
-            <button onClick={() => setWeeklySlide(1)} className="w-2.5 h-2.5 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 1 ? '#00FF94' : 'rgba(255,255,255,0.2)' }} />
-            <button onClick={() => setWeeklySlide(2)} className="w-2.5 h-2.5 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 2 ? '#00FF94' : 'rgba(255,255,255,0.2)' }} />
+            <button onClick={() => setWeeklySlide(0)} className="w-2.5 h-2.5 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 0 ? '#fff' : 'rgba(255,255,255,0.2)' }} />
+            <button onClick={() => setWeeklySlide(1)} className="w-2.5 h-2.5 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 1 ? '#fff' : 'rgba(255,255,255,0.2)' }} />
+            <button onClick={() => setWeeklySlide(2)} className="w-2.5 h-2.5 rounded-full transition-all" style={{ backgroundColor: weeklySlide === 2 ? '#fff' : 'rgba(255,255,255,0.2)' }} />
           </div>
         )}
 
@@ -5921,44 +4876,37 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
     return data;
   };
 
-  // Mini activity rings component
-  const MiniRings = ({ size = 50 }) => {
-    const rings = [
-      { progress: weeklyProgress?.lifts ? Math.min(weeklyProgress.lifts.completed / weeklyProgress.lifts.goal, 1) : 0, color: '#00FF94', label: 'S' },
-      { progress: weeklyProgress?.cardio ? Math.min(weeklyProgress.cardio.completed / weeklyProgress.cardio.goal, 1) : 0, color: '#FF9500', label: 'C' },
-      // Third ring is the week's steps (one of the three goals that win the week); Recovery is a
-      // bonus and stays off the stamp. Falls back to Recovery only when no step data was passed.
-      weekSteps?.goal
-        ? { progress: Math.min(weekSteps.total / weekSteps.goal, 1), color: '#BF5AF2', label: 'St' }
-        : { progress: weeklyProgress?.recovery ? Math.min(weeklyProgress.recovery.completed / weeklyProgress.recovery.goal, 1) : 0, color: '#00D1FF', label: 'R' },
-    ];
-    const cx = size / 2, cy = size / 2;
-    const strokeWidth = 3.5;
-    const gap = 4.5;
-
+  // "This week" on the stamp (Nov 2026 redesign, mock-extras.html stampDark('A') /
+  // stampOverlay('new')): Strength and Cardio as one block per session, Steps as a bar —
+  // or Recovery in cyan when no step data was passed — plus the week % Home shows.
+  const stampWeekRows = [
+    { key: 'lifts', color: '#00FF94', rgb: '0,255,148', done: weeklyProgress?.lifts?.completed || 0, goal: weeklyProgress?.lifts?.goal || 0 },
+    { key: 'cardio', color: '#FF9500', rgb: '255,149,0', done: weeklyProgress?.cardio?.completed || 0, goal: weeklyProgress?.cardio?.goal || 0 },
+    weekSteps?.goal
+      ? { key: 'steps', color: '#BF5AF2', rgb: '191,90,242', done: weekSteps.total || 0, goal: weekSteps.goal, bar: true }
+      : { key: 'recovery', color: '#00D1FF', rgb: '0,209,255', done: weeklyProgress?.recovery?.completed || 0, goal: weeklyProgress?.recovery?.goal || 0 },
+  ];
+  const stampWeekPct = Math.round((stampWeekRows.reduce((sum, r) => sum + (r.goal > 0 ? Math.min(1, r.done / r.goal) : 1), 0) / stampWeekRows.length) * 100);
+  const stampTrack = (r, overlay) => {
+    const empty = overlay ? 'rgba(255,255,255,0.28)' : `rgba(${r.rgb},${TRACK_ALPHA})`;
+    if (r.bar) {
+      return (
+        <div style={{ position: 'relative', height: 5, borderRadius: 2.5, backgroundColor: empty }}>
+          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${r.goal > 0 ? Math.min(100, (r.done / r.goal) * 100) : 0}%`, borderRadius: 2.5, backgroundColor: r.color }} />
+        </div>
+      );
+    }
+    const met = r.goal > 0 && r.done >= r.goal;
     return (
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        {rings.map((ring, i) => {
-          const r = (size / 2) - strokeWidth / 2 - i * gap;
-          const circumference = 2 * Math.PI * r;
-          const offset = circumference * (1 - ring.progress);
-          return (
-            <g key={i}>
-              <circle cx={cx} cy={cy} r={r} fill="none"
-                stroke={isTransparent ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.08)'}
-                strokeWidth={strokeWidth} />
-              <circle cx={cx} cy={cy} r={r} fill="none"
-                stroke={ring.color} strokeWidth={strokeWidth}
-                strokeDasharray={circumference} strokeDashoffset={offset}
-                strokeLinecap="round"
-                transform={`rotate(-90 ${cx} ${cy})`}
-                style={isTransparent ? { filter: `drop-shadow(0 0 3px ${ring.color})` } : {}} />
-            </g>
-          );
-        })}
-      </svg>
+      <div style={{ display: 'flex', gap: 2 }}>
+        {Array.from({ length: Math.max(1, r.goal) }, (_, i) => (
+          <div key={i} style={{ flex: 1, height: 5, borderRadius: 2.5, backgroundColor: i < r.done ? r.color : empty, boxShadow: met && !overlay ? `0 0 8px rgba(${r.rgb},0.5)` : 'none' }} />
+        ))}
+      </div>
     );
   };
+  const stampWeekValue = (r) => (r.bar ? fmtStampK(r.done) : r.done);
+  const stampWeekGoal = (r) => (r.bar ? fmtStampK(r.goal) : r.goal);
 
   // Image generation using html-to-image (faithful browser rendering via SVG foreignObject)
   const generateStampImage = async () => {
@@ -6316,41 +5264,21 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
                 )}
               </div>
 
-              {/* Mini rings + fractions row */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <MiniRings size={32} />
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                  {weeklyProgress?.lifts && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                      <Dumbbell size={10} color="#00FF94" strokeWidth={2.5} />
-                      <span style={{ fontSize: 11, fontWeight: 600, color: '#fff', textShadow: tShadow }}>
-                        {weeklyProgress.lifts.completed}/{weeklyProgress.lifts.goal}
+              {/* This week: the week % and three short tracks, shadowed to read on any photo */}
+              <div style={{ marginBottom: 9 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#fff', textShadow: tShadow, marginBottom: 6 }}>
+                  <span style={{ color: goldMix(stampWeekPct), letterSpacing: 0, fontSize: 12, fontWeight: 800 }}>{stampWeekPct}%</span> this week
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  {stampWeekRows.map((r) => (
+                    <div key={r.key} style={{ display: 'flex', alignItems: 'center', gap: 6, filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.55))' }}>
+                      <CategoryIcon category={r.key} size={10} />
+                      <div style={{ width: 84 }}>{stampTrack(r, true)}</div>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', textShadow: tShadow }}>
+                        {stampWeekValue(r)}<span style={{ fontSize: 8.5, fontWeight: 600, opacity: 0.75 }}>/{stampWeekGoal(r)}</span>
                       </span>
                     </div>
-                  )}
-                  {weeklyProgress?.cardio && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                      <IconRun size={10} color="#FF9500" strokeWidth={2.5} />
-                      <span style={{ fontSize: 11, fontWeight: 600, color: '#fff', textShadow: tShadow }}>
-                        {weeklyProgress.cardio.completed}/{weeklyProgress.cardio.goal}
-                      </span>
-                    </div>
-                  )}
-                  {weekSteps?.goal ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                      <Footprints size={10} color="#BF5AF2" strokeWidth={2.5} />
-                      <span style={{ fontSize: 11, fontWeight: 600, color: '#fff', textShadow: tShadow }}>
-                        {fmtStampK(weekSteps.total)}/{fmtStampK(weekSteps.goal)}
-                      </span>
-                    </div>
-                  ) : weeklyProgress?.recovery && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                      <IconSnowflake size={10} color="#00D1FF" strokeWidth={2.5} />
-                      <span style={{ fontSize: 11, fontWeight: 600, color: '#fff', textShadow: tShadow }}>
-                        {weeklyProgress.recovery.completed}/{weeklyProgress.recovery.goal}
-                      </span>
-                    </div>
-                  )}
+                  ))}
                 </div>
               </div>
 
@@ -6380,7 +5308,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
               <div style={{
                 width: 30, height: 30, borderRadius: 8,
-                backgroundColor: `${categoryColor}15`,
+                backgroundColor: categoryColor.length === 7 ? `rgba(${hexToRgb(categoryColor)},0.16)` : 'rgba(255,255,255,0.08)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 flexShrink: 0,
               }}>
@@ -6456,36 +5384,33 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
               <div style={{ display: 'flex', justifyContent: 'center', gap: 24 }}>
                 {hasDistance && pace > 0 && (
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 20, fontWeight: 700, color: textColor, textShadow: tShadow }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px', lineHeight: 1.2, color: textColor }}>
                       {paceStr}
                     </div>
                     <div style={{
-                      fontSize: 10, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
-                      textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px',
+                      fontSize: 9, fontWeight: 700, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: '0.14em', marginTop: 3,
                     }}>
                       /{distanceUnitLabel} pace
                     </div>
                   </div>
                 )}
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: textColor, textShadow: tShadow }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px', lineHeight: 1.2, color: textColor }}>
                     {durationStr}
                   </div>
                   <div style={{
-                    fontSize: 10, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
-                    textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px',
+                    fontSize: 9, fontWeight: 700, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: '0.14em', marginTop: 3,
                   }}>
                     time
                   </div>
                 </div>
                 {activity.calories > 0 && (
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 20, fontWeight: 700, color: textColor, textShadow: tShadow }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px', lineHeight: 1.2, color: textColor }}>
                       {activity.calories}
                     </div>
                     <div style={{
-                      fontSize: 10, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
-                      textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px',
+                      fontSize: 9, fontWeight: 700, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: '0.14em', marginTop: 3,
                     }}>
                       cal
                     </div>
@@ -6500,24 +5425,22 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
                 {/* Stats row — smaller, right under header */}
                 <div style={{ display: 'flex', justifyContent: 'center', gap: 24, marginTop: -4 }}>
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 22, fontWeight: 800, color: textColor, textShadow: tShadow, lineHeight: 1 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px', lineHeight: 1.2, color: textColor }}>
                       {durationStr}
                     </div>
                     <div style={{
-                      fontSize: 9, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
-                      textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: 2,
+                      fontSize: 9, fontWeight: 700, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: '0.14em', marginTop: 3,
                     }}>
                       duration
                     </div>
                   </div>
                   {activity.calories > 0 && (
                     <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: 22, fontWeight: 800, color: textColor, textShadow: tShadow, lineHeight: 1 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px', lineHeight: 1.2, color: textColor }}>
                         {activity.calories}
                       </div>
                       <div style={{
-                        fontSize: 9, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
-                        textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: 2,
+                        fontSize: 9, fontWeight: 700, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: '0.14em', marginTop: 3,
                       }}>
                         cal
                       </div>
@@ -6571,12 +5494,11 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
                 </div>
                 {activity.calories > 0 && (
                   <div style={{ marginTop: 16 }}>
-                    <div style={{ fontSize: 22, fontWeight: 700, color: textColor, textShadow: tShadow }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px', lineHeight: 1.2, color: textColor }}>
                       {activity.calories}
                     </div>
                     <div style={{
-                      fontSize: 10, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
-                      textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px',
+                      fontSize: 9, fontWeight: 700, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: '0.14em', marginTop: 3,
                     }}>
                       calories
                     </div>
@@ -6602,12 +5524,11 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
                 </div>
                 {activity.calories > 0 && (
                   <div style={{ marginTop: 16 }}>
-                    <div style={{ fontSize: 22, fontWeight: 700, color: textColor, textShadow: tShadow }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px', lineHeight: 1.2, color: textColor }}>
                       {activity.calories}
                     </div>
                     <div style={{
-                      fontSize: 10, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
-                      textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px',
+                      fontSize: 9, fontWeight: 700, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: '0.14em', marginTop: 3,
                     }}>
                       calories
                     </div>
@@ -6635,52 +5556,21 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
             )}
           </div>
 
-          {/* Footer: Rings + Category fractions with icons (centered row) */}
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            marginTop: 'auto', paddingTop: isPost ? 12 : 0, gap: 10,
-          }}>
-            <MiniRings size={40} />
-            <div>
-              <div style={{
-                fontSize: 9, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
-                textShadow: tShadow, letterSpacing: '0.3px', marginBottom: 2,
-              }}>
-                This week
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                {weeklyProgress?.lifts && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                    <Dumbbell size={11} color="#00FF94" strokeWidth={2.5} />
-                    <span style={{ fontSize: 12, fontWeight: 600, color: isTransparent ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.5)', textShadow: tShadow }}>
-                      {weeklyProgress.lifts.completed}/{weeklyProgress.lifts.goal}
-                    </span>
-                  </div>
-                )}
-                {weeklyProgress?.cardio && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                    <IconRun size={11} color="#FF9500" strokeWidth={2.5} />
-                    <span style={{ fontSize: 12, fontWeight: 600, color: isTransparent ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.5)', textShadow: tShadow }}>
-                      {weeklyProgress.cardio.completed}/{weeklyProgress.cardio.goal}
-                    </span>
-                  </div>
-                )}
-                {weekSteps?.goal ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                    <Footprints size={11} color="#BF5AF2" strokeWidth={2.5} />
-                    <span style={{ fontSize: 12, fontWeight: 600, color: isTransparent ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.5)', textShadow: tShadow }}>
-                      {fmtStampK(weekSteps.total)}/{fmtStampK(weekSteps.goal)}
-                    </span>
-                  </div>
-                ) : weeklyProgress?.recovery && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                    <IconSnowflake size={11} color="#00D1FF" strokeWidth={2.5} />
-                    <span style={{ fontSize: 12, fontWeight: 600, color: isTransparent ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.5)', textShadow: tShadow }}>
-                      {weeklyProgress.recovery.completed}/{weeklyProgress.recovery.goal}
-                    </span>
-                  </div>
-                )}
-              </div>
+          {/* Footer: "This week" — the week % and one short track per goal under a hairline */}
+          <div style={{ marginTop: 'auto', paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
+              <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#8a8a8a' }}>This week</span>
+              <span style={{ fontSize: 14, fontWeight: 800, letterSpacing: '-0.3px', color: goldMix(stampWeekPct) }}>
+                {stampWeekPct}<span style={{ fontSize: 9 }}>%</span>
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              {stampWeekRows.map((r) => (
+                <div key={r.key} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <CategoryIcon category={r.key} size={10} />
+                  <div style={{ flex: 1 }}>{stampTrack(r, false)}</div>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -6955,7 +5845,7 @@ const ChangePasswordModal = ({ isOpen, onClose, user }) => {
 };
 
 // Delete Account Modal
-const DeleteAccountModal = ({ isOpen, onClose, user, userProfile, onDeleteComplete }) => {
+const DeleteAccountModal = ({ isOpen, onClose, user, userProfile, onDeleteComplete, showManageSubscription = false, onManageSubscription }) => {
   const [password, setPassword] = useState('');
   const [confirmText, setConfirmText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -7181,6 +6071,22 @@ const DeleteAccountModal = ({ isOpen, onClose, user, userProfile, onDeleteComple
                 </div>
               </div>
 
+              {/* Billing: deleting the account leaves the App Store subscription running. */}
+              <div className="mb-6 p-4 rounded-xl bg-white/5 border border-white/10">
+                <p className="text-white text-sm font-medium mb-1">Your subscription keeps running</p>
+                <p className="text-gray-400 text-sm">
+                  Deleting your account doesn't cancel an App Store subscription. Cancel it first so you aren't charged again.
+                </p>
+                {showManageSubscription && onManageSubscription && (
+                  <button
+                    onClick={onManageSubscription}
+                    className="mt-3 text-sm font-semibold text-white underline underline-offset-2"
+                  >
+                    Manage Subscription
+                  </button>
+                )}
+              </div>
+
               <button
                 onClick={() => setStep(2)}
                 className="w-full py-4 rounded-xl font-semibold text-white bg-red-500/20 border border-red-500/50 transition-all duration-200"
@@ -7300,8 +6206,7 @@ const SmartSaveExplainModal = ({ onClose, onDisable }) => {
         <div className="space-y-3">
           <button
             onClick={onClose}
-            className="w-full py-3 rounded-xl font-semibold text-black"
-            style={{ backgroundColor: '#00FF94' }}
+            className="w-full py-3 rounded-xl font-semibold bg-white text-black active:bg-[#e5e5e5]"
           >
             Got It
           </button>
@@ -7428,12 +6333,12 @@ const OnboardingSurvey = ({ onComplete, onCancel = null, currentGoals = null, cu
     onMouseLeave: (e) => { e.currentTarget.style.transform = 'scale(1)'; },
   };
 
-  // Fitness goal options
+  // Fitness goal options. 'shredded' and 'lose-weight' are no longer offered (the app
+  // makes no weight-loss claims); their smartDefaults rows stay so the fallback lookup
+  // and any saved value still resolve.
   const fitnessGoalOptions = [
-    { value: 'shredded', emoji: '\uD83D\uDD25', label: 'Getting Shredded' },
     { value: 'faster', emoji: '\u26A1', label: 'Getting Faster' },
     { value: 'stronger', emoji: '\uD83D\uDCAA', label: 'Getting Stronger' },
-    { value: 'lose-weight', emoji: '\uD83C\uDFAF', label: 'Losing Weight' },
     { value: 'build-muscle', emoji: '\uD83C\uDFCB\uFE0F', label: 'Building Muscle' },
   ];
 
@@ -8065,7 +6970,7 @@ const DurationPicker = ({ hours, minutes, seconds = 0, onChange, disabled = fals
         style={{ height: itemHeight, background: 'linear-gradient(to top, rgba(10,10,10,1) 0%, rgba(10,10,10,0) 100%)' }} />
       {/* Selection highlight */}
       <div className="absolute left-0 right-0 z-5 pointer-events-none rounded-lg"
-        style={{ top: itemHeight, height: itemHeight, backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.3)' }} />
+        style={{ top: itemHeight, height: itemHeight, backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.18)' }} />
       {/* Scrollable list */}
       <div
         ref={ref}
@@ -8080,7 +6985,7 @@ const DurationPicker = ({ hours, minutes, seconds = 0, onChange, disabled = fals
         {options.map((v) => (
           <div key={v} onClick={() => scrollToValue(ref, v)}
             className="flex items-center justify-center cursor-pointer transition-all duration-150"
-            style={{ height: itemHeight, color: value === v ? '#00FF94' : 'rgba(255,255,255,0.5)', fontWeight: value === v ? 'bold' : 'normal', fontSize: value === v ? '18px' : '14px' }}>
+            style={{ height: itemHeight, color: value === v ? '#fff' : 'rgba(255,255,255,0.5)', fontWeight: value === v ? 'bold' : 'normal', fontSize: value === v ? '18px' : '14px' }}>
             {formatFn(v)}
           </div>
         ))}
@@ -8181,7 +7086,7 @@ const MinutesPicker = ({ value, onChange, label = 'min' }) => {
         <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none"
           style={{ height: itemHeight, background: 'linear-gradient(to top, rgba(10,10,10,1) 0%, rgba(10,10,10,0) 100%)' }} />
         <div className="absolute left-0 right-0 z-5 pointer-events-none rounded-lg"
-          style={{ top: itemHeight, height: itemHeight, backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.3)' }} />
+          style={{ top: itemHeight, height: itemHeight, backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.18)' }} />
         <div ref={ref} className="h-full overflow-y-scroll scrollbar-hide"
           style={{ scrollSnapType: 'none', WebkitOverflowScrolling: 'auto' }}
           onScroll={handleScroll}
@@ -8193,7 +7098,7 @@ const MinutesPicker = ({ value, onChange, label = 'min' }) => {
           {minuteOptions.map(v => (
             <div key={v} onClick={() => { if (ref.current) ref.current.scrollTo({ top: v * itemHeight, behavior: 'smooth' }); }}
               className="flex items-center justify-center cursor-pointer transition-all duration-150"
-              style={{ height: itemHeight, color: value === v ? '#00FF94' : 'rgba(255,255,255,0.5)', fontWeight: value === v ? 'bold' : 'normal', fontSize: value === v ? '18px' : '14px' }}>
+              style={{ height: itemHeight, color: value === v ? '#fff' : 'rgba(255,255,255,0.5)', fontWeight: value === v ? 'bold' : 'normal', fontSize: value === v ? '18px' : '14px' }}>
               {String(v).padStart(2, '0')}
             </div>
           ))}
@@ -8266,14 +7171,14 @@ const ScrollWheel = ({ options, value, onChange, format = (v) => v, width = 56 }
     <div className="relative" style={{ height: itemHeight * visibleItems, width }}>
       <div className="absolute top-0 left-0 right-0 z-10 pointer-events-none" style={{ height: itemHeight, background: 'linear-gradient(to bottom, rgba(10,10,10,1) 0%, rgba(10,10,10,0) 100%)' }} />
       <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none" style={{ height: itemHeight, background: 'linear-gradient(to top, rgba(10,10,10,1) 0%, rgba(10,10,10,0) 100%)' }} />
-      <div className="absolute left-0 right-0 z-5 pointer-events-none rounded-lg" style={{ top: itemHeight, height: itemHeight, backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.3)' }} />
+      <div className="absolute left-0 right-0 z-5 pointer-events-none rounded-lg" style={{ top: itemHeight, height: itemHeight, backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.18)' }} />
       <div ref={ref} className="h-full overflow-y-scroll scrollbar-hide" style={{ scrollSnapType: 'none', WebkitOverflowScrolling: 'auto' }}
         onScroll={handleScroll} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
         <div style={{ height: itemHeight }} />
         {options.map((v) => (
           <div key={v} onClick={() => { if (ref.current) ref.current.scrollTo({ top: options.indexOf(v) * itemHeight, behavior: 'smooth' }); }}
             className="flex items-center justify-center cursor-pointer transition-all duration-150"
-            style={{ height: itemHeight, color: v === value ? '#00FF94' : 'rgba(255,255,255,0.5)', fontWeight: v === value ? 'bold' : 'normal', fontSize: v === value ? '18px' : '14px' }}>
+            style={{ height: itemHeight, color: v === value ? '#fff' : 'rgba(255,255,255,0.5)', fontWeight: v === value ? 'bold' : 'normal', fontSize: v === value ? '18px' : '14px' }}>
             {format(v)}
           </div>
         ))}
@@ -9096,7 +8001,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
           setIsChangingActivityType(false);
         }}
         className="flex items-center gap-2 pl-3 pr-2 py-2 rounded-full transition-all duration-150 active:scale-95 cursor-pointer"
-        style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(0,255,148,0.2)' }}
+        style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)' }}
         onTouchStart={(e) => {
           e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.12)';
           triggerHaptic(ImpactStyle.Light);
@@ -9412,12 +8317,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             handleClose();
           }}
           className="font-bold transition-all duration-150 px-2 py-1 rounded-lg"
-          style={{ color: !activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0 && !pendingActivity?.id) || (mode === 'completed' && !isEditingSaved && photoMissingForChallenge) ? 'rgba(0,255,148,0.3)' : '#00FF94' }}
+          style={{ color: !activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0 && !pendingActivity?.id) || (mode === 'completed' && !isEditingSaved && photoMissingForChallenge) ? 'rgba(255,255,255,0.3)' : '#fff', visibility: mode === null && !pendingActivity?.id ? 'hidden' : undefined }}
           disabled={!activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0 && !pendingActivity?.id) || (mode === 'completed' && !isEditingSaved && photoMissingForChallenge) || (mode !== 'start' && date > getTodayDate())}
           onTouchStart={(e) => {
             if (!e.currentTarget.disabled) {
               e.currentTarget.style.transform = 'scale(0.9)';
-              e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
             }
           }}
           onTouchEnd={(e) => {
@@ -9427,7 +8332,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
           onMouseDown={(e) => {
             if (!e.currentTarget.disabled) {
               e.currentTarget.style.transform = 'scale(0.9)';
-              e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
             }
           }}
           onMouseUp={(e) => {
@@ -9444,10 +8349,10 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       </div>
 
       {pendingActivity?.fromAppleHealth && (
-        <div className="mx-4 mt-4 p-3 rounded-xl" style={{ backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.3)' }}>
+        <div className="mx-4 mt-4 p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.04)', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.08)' }}>
           <div className="flex items-center gap-2 text-sm">
             <span className="text-lg">📱</span>
-            <span style={{ color: '#00FF94' }}>Synced from Apple Health</span>
+            <span className="text-white font-medium">Synced from Apple Health</span>
           </div>
           <div className="flex gap-4 mt-2 text-xs text-gray-400">
             {pendingActivity.calories && <span>{pendingActivity.calories} cal</span>}
@@ -9478,40 +8383,41 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               }}
               className="p-5 rounded-2xl text-left transition-all duration-150 flex items-center gap-4"
               style={{
-                backgroundColor: 'rgba(0,255,148,0.1)',
-                border: '1px solid rgba(0,255,148,0.3)'
+                borderRadius: 20,
+                backgroundColor: 'rgba(255,255,255,0.06)',
+                boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.18)'
               }}
               onTouchStart={(e) => {
                 e.currentTarget.style.transform = 'scale(0.98)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.15)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.09)';
               }}
               onTouchEnd={(e) => {
                 e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)';
               }}
               onMouseDown={(e) => {
                 e.currentTarget.style.transform = 'scale(0.98)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.15)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.09)';
               }}
               onMouseUp={(e) => {
                 e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)';
               }}
             >
-              <div className="w-14 h-14 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(0,255,148,0.2)' }}>
-                <svg className="w-7 h-7" fill="#00FF94" viewBox="0 0 24 24">
+              <div className="w-14 h-14 flex items-center justify-center flex-shrink-0" style={{ borderRadius: 14, backgroundColor: '#fff' }}>
+                <svg className="w-7 h-7" fill="#000" viewBox="0 0 24 24">
                   <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/>
                 </svg>
               </div>
               <div className="flex-1">
-                <div className="font-semibold text-lg" style={{ color: '#00FF94' }}>Start an Activity</div>
-                <div className="text-sm text-gray-400 mt-0.5">Live heart rate & calorie tracking with Apple Watch</div>
+                <div className="font-semibold text-white" style={{ fontSize: 18 }}>Start an Activity</div>
+                <div className="text-sm mt-0.5" style={{ color: '#8a8a8a', lineHeight: 1.35 }}>Live heart rate & calorie tracking with Apple Watch</div>
               </div>
-              <div className="text-gray-500">→</div>
+              <div style={{ color: '#666', fontSize: 18 }}>→</div>
             </button>
 
             {/* Log Completed option - Secondary */}
@@ -9521,14 +8427,14 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 triggerHaptic(ImpactStyle.Light);
               }}
               className="p-5 rounded-2xl text-left transition-all duration-150 flex items-center gap-4"
-              style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+              style={{ borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.04)' }}
               onTouchStart={(e) => {
                 e.currentTarget.style.transform = 'scale(0.98)';
                 e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
               }}
               onTouchEnd={(e) => {
                 e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)';
               }}
               onMouseDown={(e) => {
                 e.currentTarget.style.transform = 'scale(0.98)';
@@ -9536,21 +8442,21 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               }}
               onMouseUp={(e) => {
                 e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)';
               }}
             >
-              <div className="w-14 h-14 rounded-xl flex items-center justify-center text-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
-                ✓
+              <div className="w-14 h-14 flex items-center justify-center flex-shrink-0" style={{ borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.08)' }}>
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
               </div>
               <div className="flex-1">
-                <div className="font-semibold text-lg text-gray-300">Log Completed Activity</div>
-                <div className="text-sm text-gray-500 mt-0.5">Record a workout you already finished</div>
+                <div className="font-semibold" style={{ fontSize: 18, color: '#ddd' }}>Log Completed Activity</div>
+                <div className="text-sm mt-0.5" style={{ color: '#8a8a8a', lineHeight: 1.35 }}>Record a workout you already finished</div>
               </div>
-              <div className="text-gray-500">→</div>
+              <div style={{ color: '#666', fontSize: 18 }}>→</div>
             </button>
 
             {/* Tips for different device users */}
@@ -9655,36 +8561,39 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                               if (workout.maxHr) setMaxHr(String(workout.maxHr));
                               triggerHaptic(ImpactStyle.Medium);
                             }}
-                            className="w-full p-3 rounded-xl text-left transition-all duration-150 flex items-center gap-3"
-                            style={{
-                              backgroundColor: 'rgba(255,255,255,0.05)',
-                              border: '1px solid rgba(255,255,255,0.1)'
-                            }}
+                            className="w-full text-left transition-all duration-150 flex items-center gap-3"
+                            style={{ ...CARD_SURFACE, padding: '12px 14px' }}
                             onTouchStart={(e) => {
                               e.currentTarget.style.transform = 'scale(0.98)';
-                              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
                             }}
                             onTouchEnd={(e) => {
                               e.currentTarget.style.transform = 'scale(1)';
-                              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
                             }}
                           >
-                            <ActivityIcon type={workout.type} subtype={workout.subtype} size={24} />
+                            {(() => {
+                              // Home's line icon on a tile tinted in the workout's category colour
+                              const cat = getActivityCategory(workout);
+                              const catColor = cat === 'lifting' ? '#00FF94' : cat === 'cardio' ? '#FF9500' : cat === 'recovery' ? '#00D1FF' : null;
+                              return (
+                                <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: catColor ? `rgba(${hexToRgb(catColor)},0.16)` : 'rgba(170,170,170,0.16)' }}>
+                                  <ActivityIcon type={workout.type} subtype={workout.subtype} size={22} color={catColor || '#bbb'} />
+                                </div>
+                              );
+                            })()}
                             <div className="flex-1 min-w-0">
-                              <div className="text-white font-medium truncate">
+                              <div className="text-white font-semibold truncate" style={{ fontSize: 15 }}>
                                 {workout.appleWorkoutName || workout.subtype || workout.type}
                               </div>
-                              <div className="text-xs text-gray-400 mt-0.5">
-                                {formatWorkoutDate(workout.date)} • {workout.time} • {workout.duration} min
+                              <div className="mt-0.5" style={{ fontSize: 13, color: '#8a8a8a' }}>
+                                {formatWorkoutDate(workout.date)} · {workout.time} · {workout.duration} min
                               </div>
                               {(workout.calories || workout.distance) && (
-                                <div className="flex gap-2 mt-1 text-xs text-gray-500">
-                                  {workout.calories && <span><CategoryIcon category="calories" size={12} className="inline align-[-2px] mr-1" />{workout.calories} cal</span>}
-                                  {workout.distance && <span>📍 {_milesToDisplay(workout.distance).toFixed(2)} {_distanceUnitLabel}</span>}
+                                <div className="mt-0.5" style={{ fontSize: 12, color: '#666' }}>
+                                  {[workout.calories ? `${workout.calories} cal` : null, workout.distance ? `${_milesToDisplay(workout.distance).toFixed(2)} ${_distanceUnitLabel}` : null].filter(Boolean).join(' · ')}
                                 </div>
                               )}
                             </div>
-                            <span className="text-gray-500">→</span>
+                            <span style={{ color: '#555', fontSize: 20 }}>›</span>
                           </button>
                         );
                       })}
@@ -9956,7 +8865,13 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             {/* Focus Area Selection — shown for all flattened strength types */}
             {STRENGTH_TYPES.includes(activityType) && (
               <div>
-                <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Focus Areas</label>
+                <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">
+                  Focus Areas
+                  {/* Save stays disabled until one is picked (same condition as the Save button) */}
+                  {focusAreas.length === 0 && !pendingActivity?.id && (
+                    <span className="normal-case tracking-normal text-gray-400 ml-2">Pick at least one to save</span>
+                  )}
+                </label>
                 <div className="grid grid-cols-3 gap-2">
                   {Object.entries(FOCUS_AREA_GROUPS).map(([groupName, members]) => {
                     const allSelected = members.every(m => focusAreas.includes(m));
@@ -10094,9 +9009,9 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     onClick={() => setCountToward('warmup')}
                     className="flex-1 py-2 px-3 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
                     style={{
-                      backgroundColor: countToward === 'warmup' ? 'rgba(255,214,10,0.2)' : 'rgba(255,255,255,0.05)',
-                      border: countToward === 'warmup' ? '1px solid #FFD60A' : '1px solid transparent',
-                      color: countToward === 'warmup' ? '#FFD60A' : 'white'
+                      backgroundColor: countToward === 'warmup' ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.05)',
+                      border: countToward === 'warmup' ? '1px solid #fff' : '1px solid transparent',
+                      color: 'white'
                     }}
                   >
                     <span>🔥</span> Warm Up
@@ -10179,12 +9094,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                   <div
                     className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all"
                     style={{
-                      borderColor: saveCustomSport ? '#00FF94' : 'rgba(255,255,255,0.3)',
-                      backgroundColor: saveCustomSport ? 'rgba(0,255,148,0.2)' : 'transparent'
+                      borderColor: saveCustomSport ? '#fff' : 'rgba(255,255,255,0.3)',
+                      backgroundColor: saveCustomSport ? '#fff' : 'transparent'
                     }}
                     onClick={() => { setSaveCustomSport(!saveCustomSport); triggerHaptic(ImpactStyle.Light); }}
                   >
-                    {saveCustomSport && <span style={{ color: '#00FF94' }}>✓</span>}
+                    {saveCustomSport && <span style={{ color: '#000' }}>✓</span>}
                   </div>
                   <span className="text-sm text-gray-400">Save as option for future</span>
                 </label>
@@ -10205,8 +9120,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     onTouchStart={() => triggerHaptic(ImpactStyle.Light)}
                     className="w-12 h-12 rounded-xl flex items-center justify-center transition-all"
                     style={{
-                      backgroundColor: showIconPicker ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
-                      border: showIconPicker ? '1px solid #00FF94' : '1px solid rgba(255,255,255,0.1)'
+                      backgroundColor: showIconPicker ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.05)',
+                      border: showIconPicker ? '1px solid #fff' : '1px solid rgba(255,255,255,0.1)'
                     }}
                   >
                     <ActivityIcon
@@ -10217,7 +9132,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                         customActivityCategory === 'strength' ? '#00FF94' :
                         customActivityCategory === 'cardio' ? '#FF9500' :
                         customActivityCategory === 'recovery' ? '#00D1FF' :
-                        customActivityCategory === 'warmup' ? '#FFD60A' : undefined
+                        customActivityCategory === 'warmup' ? '#aaa' : undefined
                       ) : undefined}
                     />
                   </button>
@@ -10255,11 +9170,11 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                               }}
                               className="w-10 h-10 rounded-lg flex items-center justify-center transition-all hover:bg-white/10"
                               style={{
-                                backgroundColor: customActivityIcon === name ? 'rgba(0,255,148,0.2)' : 'transparent',
-                                border: customActivityIcon === name ? '1px solid #00FF94' : '1px solid transparent'
+                                backgroundColor: customActivityIcon === name ? 'rgba(255,255,255,0.14)' : 'transparent',
+                                border: customActivityIcon === name ? '1px solid #fff' : '1px solid transparent'
                               }}
                             >
-                              <Icon size={20} color={customActivityIcon === name ? '#00FF94' : '#aaa'} strokeWidth={2} />
+                              <Icon size={20} color={customActivityIcon === name ? '#fff' : '#aaa'} strokeWidth={2} />
                             </button>
                           ))}
                         </div>
@@ -10314,12 +9229,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     onClick={() => { setCustomActivityCategory('warmup'); triggerHaptic(ImpactStyle.Light); }}
                     className="w-full mt-2 py-2 px-3 rounded-xl text-center transition-all flex items-center justify-center gap-2"
                     style={{
-                      backgroundColor: customActivityCategory === 'warmup' ? 'rgba(255,214,10,0.15)' : 'rgba(255,255,255,0.05)',
-                      border: customActivityCategory === 'warmup' ? '1px solid #FFD60A' : '1px solid transparent'
+                      backgroundColor: customActivityCategory === 'warmup' ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.05)',
+                      border: customActivityCategory === 'warmup' ? '1px solid #fff' : '1px solid transparent'
                     }}
                   >
                     <span className="text-sm">🔥</span>
-                    <span className="text-xs font-medium" style={{ color: customActivityCategory === 'warmup' ? '#FFD60A' : 'rgba(255,255,255,0.6)' }}>Warm Up</span>
+                    <span className="text-xs font-medium" style={{ color: customActivityCategory === 'warmup' ? '#fff' : 'rgba(255,255,255,0.6)' }}>Warm Up</span>
                   </button>
                   {customActivityCategory === 'warmup' && (
                     <p className="text-[11px] text-gray-500 mt-2">
@@ -10334,12 +9249,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                       <div
                         className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all"
                         style={{
-                          borderColor: saveHKIcon ? '#00FF94' : 'rgba(255,255,255,0.3)',
-                          backgroundColor: saveHKIcon ? 'rgba(0,255,148,0.2)' : 'transparent'
+                          borderColor: saveHKIcon ? '#fff' : 'rgba(255,255,255,0.3)',
+                          backgroundColor: saveHKIcon ? '#fff' : 'transparent'
                         }}
                         onClick={() => { setSaveHKIcon(!saveHKIcon); triggerHaptic(ImpactStyle.Light); }}
                       >
-                        {saveHKIcon && <span style={{ color: '#00FF94' }}>✓</span>}
+                        {saveHKIcon && <span style={{ color: '#000' }}>✓</span>}
                       </div>
                       <span className="text-sm text-gray-400">Remember icon for future {customActivityName} workouts</span>
                     </label>
@@ -10348,12 +9263,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                         <div
                           className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all"
                           style={{
-                            borderColor: saveHKCategory ? '#00FF94' : 'rgba(255,255,255,0.3)',
-                            backgroundColor: saveHKCategory ? 'rgba(0,255,148,0.2)' : 'transparent'
+                            borderColor: saveHKCategory ? '#fff' : 'rgba(255,255,255,0.3)',
+                            backgroundColor: saveHKCategory ? '#fff' : 'transparent'
                           }}
                           onClick={() => { setSaveHKCategory(!saveHKCategory); triggerHaptic(ImpactStyle.Light); }}
                         >
-                          {saveHKCategory && <span style={{ color: '#00FF94' }}>✓</span>}
+                          {saveHKCategory && <span style={{ color: '#000' }}>✓</span>}
                         </div>
                         <span className="text-sm text-gray-400">
                           Always count {customActivityName} toward {
@@ -10371,12 +9286,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     <div
                       className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all"
                       style={{
-                        borderColor: saveCustomActivity ? '#00FF94' : 'rgba(255,255,255,0.3)',
-                        backgroundColor: saveCustomActivity ? 'rgba(0,255,148,0.2)' : 'transparent'
+                        borderColor: saveCustomActivity ? '#fff' : 'rgba(255,255,255,0.3)',
+                        backgroundColor: saveCustomActivity ? '#fff' : 'transparent'
                       }}
                       onClick={() => { setSaveCustomActivity(!saveCustomActivity); triggerHaptic(ImpactStyle.Light); }}
                     >
-                      {saveCustomActivity && <span style={{ color: '#00FF94' }}>✓</span>}
+                      {saveCustomActivity && <span style={{ color: '#000' }}>✓</span>}
                     </div>
                     <span className="text-sm text-gray-400">Save as option for future</span>
                   </label>
@@ -10455,7 +9370,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             ) : activityType !== 'Chiropractic' && (
             <div>
               <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">
-                Duration {isFromAppleHealth && <span style={{ color: '#00FF94' }}>(from Apple Health)</span>}
+                Duration {isFromAppleHealth && <span style={{ color: '#8a8a8a' }}>(from Apple Health)</span>}
               </label>
               <DurationPicker
                 hours={durationHours}
@@ -10608,7 +9523,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                             'hover:bg-white/10'
                           }`}
                           style={{
-                            backgroundColor: dayDate === date ? '#00FF94' : 'transparent',
+                            backgroundColor: dayDate === date ? '#fff' : 'transparent',
                             color: dayDate === date ? 'black' : 'white',
                             opacity: isFuture && dayDate !== date ? 0.25 : 1
                           }}
@@ -10627,26 +9542,26 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                           setShowDatePicker(false);
                         }}
                         className="flex-1 py-2 rounded-lg text-xs font-medium transition-all duration-150"
-                        style={{ backgroundColor: 'rgba(0,255,148,0.1)', color: '#00FF94' }}
+                        style={{ backgroundColor: 'rgba(255,255,255,0.08)', color: '#fff' }}
                         onTouchStart={(e) => {
                           e.currentTarget.style.transform = 'scale(0.95)';
-                          e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.14)';
                         }}
                         onTouchEnd={(e) => {
                           e.currentTarget.style.transform = 'scale(1)';
-                          e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
                         }}
                         onMouseDown={(e) => {
                           e.currentTarget.style.transform = 'scale(0.95)';
-                          e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.14)';
                         }}
                         onMouseUp={(e) => {
                           e.currentTarget.style.transform = 'scale(1)';
-                          e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
                         }}
                         onMouseLeave={(e) => {
                           e.currentTarget.style.transform = 'scale(1)';
-                          e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
                         }}
                       >
                         Today
@@ -10728,7 +9643,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     <button
                       onClick={() => { setActivityTime(formatTimeOfDay()); triggerHaptic(ImpactStyle.Light); }}
                       className="flex-1 py-2 rounded-lg text-xs font-medium transition-all duration-150"
-                      style={{ backgroundColor: 'rgba(0,255,148,0.1)', color: '#00FF94' }}
+                      style={{ backgroundColor: 'rgba(255,255,255,0.08)', color: '#fff' }}
                     >
                       Now
                     </button>
@@ -10784,7 +9699,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                       return isFromNotification && linkedWorkout && !showOtherLinkableWorkouts ? (
                       <>
                         <div
-                          className="p-3 rounded-xl bg-[#00FF94]/20 border-2 border-[#00FF94] cursor-pointer transition-all"
+                          className="p-3 rounded-xl bg-white/10 border-2 border-white cursor-pointer transition-all"
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
@@ -10800,7 +9715,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                               </div>
                             </div>
                             <div className="text-right">
-                              <span className="text-[#00FF94] text-xs font-medium">✓ Linked</span>
+                              <span className="text-white text-xs font-medium">✓ Linked</span>
                             </div>
                           </div>
                           {/* Show metrics preview */}
@@ -10823,7 +9738,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                           <button
                             onClick={() => setShowOtherLinkableWorkouts(true)}
                             className="w-full py-2 text-center text-sm transition-all active:opacity-70"
-                            style={{ color: '#00FF94' }}
+                            style={{ color: '#fff' }}
                           >
                             See other workouts ({otherWorkoutsCount})
                           </button>
@@ -10840,7 +9755,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                               onClick={() => handleLinkWorkout(workout)}
                               className={`w-full p-3 rounded-xl text-left transition-all cursor-pointer ${
                                 isLinked
-                                  ? 'bg-[#00FF94]/20 border-2 border-[#00FF94]'
+                                  ? 'bg-white/10 border-2 border-white'
                                   : 'bg-white/5 border border-white/10 active:bg-white/20'
                               }`}
                             >
@@ -10859,7 +9774,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                                 </div>
                                 <div className="text-right">
                                   {isLinked ? (
-                                    <span className="text-[#00FF94] text-xs font-medium">✓ Linked</span>
+                                    <span className="text-white text-xs font-medium">✓ Linked</span>
                                   ) : (
                                     <span className="text-gray-500 text-xs">Tap to link</span>
                                   )}
@@ -10885,7 +9800,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                         {linkedWorkout && !linkableWorkouts.find(w => w.healthKitUUID === linkedWorkout.healthKitUUID) && (
                           <div
                             onClick={() => handleLinkWorkout(linkedWorkout)}
-                            className="p-3 rounded-xl bg-[#00FF94]/20 border-2 border-[#00FF94] cursor-pointer transition-all"
+                            className="p-3 rounded-xl bg-white/10 border-2 border-white cursor-pointer transition-all"
                           >
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-3">
@@ -10901,7 +9816,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                                 </div>
                               </div>
                               <div className="text-right">
-                                <span className="text-[#00FF94] text-xs font-medium">✓ Linked</span>
+                                <span className="text-white text-xs font-medium">✓ Linked</span>
                               </div>
                             </div>
                             {/* Show metrics preview */}
@@ -10937,7 +9852,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             {/* Optional Metrics Section */}
             <div>
               <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">
-                Workout Metrics {isFromAppleHealth ? <span style={{ color: '#00FF94' }}>(from Apple Health)</span> : linkedWorkout ? <span style={{ color: '#00FF94' }}>(from linked workout)</span> : <span className="text-gray-600">(optional)</span>}
+                Workout Metrics {isFromAppleHealth ? <span style={{ color: '#8a8a8a' }}>(from Apple Health)</span> : linkedWorkout ? <span style={{ color: '#8a8a8a' }}>(from linked workout)</span> : <span className="text-gray-600">(optional)</span>}
               </label>
               <div className="grid grid-cols-3 gap-3">
                 <div>
@@ -10988,7 +9903,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                       || c.challengerName
                       || 'Friend';
                     const cat = c.matchRule?.category;
-                    const tint = cat === 'lifting' ? '#00FF94' : cat === 'cardio' ? '#FF9500' : cat === 'recovery' ? '#00D1FF' : '#FFD60A';
+                    const tint = cat === 'lifting' ? '#00FF94' : cat === 'cardio' ? '#FF9500' : cat === 'recovery' ? '#00D1FF' : '#aaa';
                     return (
                       <button
                         key={c.id}
@@ -11041,9 +9956,9 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                   {photoMissingForChallenge && (
                     <div
                       className="mt-2 p-3 rounded-xl"
-                      style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.35)' }}
+                      style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.2)' }}
                     >
-                      <p className="text-xs font-semibold" style={{ color: '#FFD60A' }}>
+                      <p className="text-xs font-semibold" style={{ color: '#fff' }}>
                         📸 Photo required to fulfill {photoRequiredSelected.length === 1
                           ? `${friendsByUid[photoRequiredSelected[0].challengerUid]?.displayName
                               || friendsByUid[photoRequiredSelected[0].challengerUid]?.username
@@ -11104,7 +10019,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             <div>
               <label
                 className="text-xs uppercase tracking-wider mb-2 block"
-                style={{ color: photoMissingForChallenge ? '#FFD60A' : 'rgb(107, 114, 128)' }}
+                style={{ color: photoMissingForChallenge ? '#fff' : 'rgb(107, 114, 128)' }}
               >
                 Photo {photoMissingForChallenge ? '(required for challenge)' : '(optional)'}
               </label>
@@ -11120,7 +10035,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 
               {isLoadingPhoto ? (
                 <div className="w-full h-48 rounded-xl bg-white/5 flex items-center justify-center">
-                  <div className="w-8 h-8 border-2 border-gray-500 border-t-[#00FF94] rounded-full animate-spin" />
+                  <div className="w-8 h-8 border-2 border-gray-500 border-t-white rounded-full animate-spin" />
                 </div>
               ) : photoPreview ? (
                 <div className="space-y-3">
@@ -11147,13 +10062,13 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     <div className="flex gap-2">
                       <button
                         onClick={() => setIsPhotoPrivate(false)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${!isPhotoPrivate ? 'bg-[#00FF94] text-black' : 'bg-white/10 text-gray-400'}`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${!isPhotoPrivate ? 'bg-white text-black' : 'bg-white/10 text-gray-400'}`}
                       >
                         Friends
                       </button>
                       <button
                         onClick={() => setIsPhotoPrivate(true)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isPhotoPrivate ? 'bg-[#00FF94] text-black' : 'bg-white/10 text-gray-400'}`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isPhotoPrivate ? 'bg-white text-black' : 'bg-white/10 text-gray-400'}`}
                       >
                         Only Me
                       </button>
@@ -11198,8 +10113,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                   <div className="text-sm font-medium text-white">Challenge a friend</div>
                   <div className="text-xs text-gray-500 mt-0.5 leading-snug">After saving, send this workout to a friend to match within 24–72 hours.</div>
                 </div>
-                <div className="w-11 h-6 rounded-full relative flex-shrink-0 transition-colors" style={{ backgroundColor: challengeAfterSave ? '#00FF94' : 'rgba(255,255,255,0.15)' }}>
-                  <div className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all" style={{ left: challengeAfterSave ? 22 : 2 }} />
+                <div className="w-11 h-6 rounded-full relative flex-shrink-0 transition-colors" style={{ backgroundColor: challengeAfterSave ? '#fff' : 'rgba(255,255,255,0.15)' }}>
+                  <div className="absolute top-0.5 w-5 h-5 rounded-full transition-all" style={{ left: challengeAfterSave ? 22 : 2, backgroundColor: challengeAfterSave ? '#000' : '#fff' }} />
                 </div>
               </button>
             )}
@@ -11538,11 +10453,12 @@ const WinningStreakInfoSheet = ({ isOpen, onClose, required = ['lifts', 'cardio'
   );
 };
 
-const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, healthHistory = [], onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onDismissShieldNotice = () => {}, onShieldIntro = () => {}, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImportedCount = 0, onDismissAutoImported, onShareStamp, friends = [], onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, openActivityTarget = null, onOpenActivityTargetHandled = () => {}, showHkEmptyHint = false, hkAccessBlocked = false, onDismissHkEmptyHint = () => {}, onOpenHealthSettings = () => {}, showNotifReask = false, onAcceptNotifReask = () => {}, onDismissNotifReask = () => {}, onReplayCelebration = () => {}, pendingChallenges = [], onOpenPlan = () => {}, onShowWinningStreakInfo = () => {} }) => {
+const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendingSync, activities = [], weeklyProgress: propWeeklyProgress, userData, userProfile, onDeleteActivity, onEditActivity, user, weeklyGoalsRef, latestActivityRef, healthKitData = {}, healthHistory = [], onDismissWorkout, onWorkoutPickerChange, isPro, onPresentPaywall, onDismissShieldNotice = () => {}, onShieldIntro = () => {}, onDeactivateVacation, onRequestResumeInjury, canResumeInjury = false, autoImported = [], onDismissAutoImported, onShareStamp, friends = [], onChallengeActivity, onNavigateToHistory, onNavigateToChallenges, openActivityTarget = null, onOpenActivityTargetHandled = () => {}, showHkEmptyHint = false, hkAccessBlocked = false, onDismissHkEmptyHint = () => {}, onOpenHealthSettings = () => {}, showNotifReask = false, onAcceptNotifReask = () => {}, onDismissNotifReask = () => {}, onReplayCelebration = () => {}, pendingChallenges = [], onOpenPlan = () => {}, onShowWinningStreakInfo = () => {} }) => {
   const [showWorkoutNotification, setShowWorkoutNotification] = useState(true);
   const [hiddenNotificationUUIDs, setHiddenNotificationUUIDs] = useState([]); // UUIDs hidden from notification but still linkable
   const [dismissConfirmWorkouts, setDismissConfirmWorkouts] = useState(null); // Workouts pending dismiss confirmation
   const [showVacationDeactivateConfirm, setShowVacationDeactivateConfirm] = useState(false);
+  const [showRemoveRecoveryConfirm, setShowRemoveRecoveryConfirm] = useState(false);
   const [showWorkoutPicker, setShowWorkoutPicker] = useState(false);
   const [workoutPickerDragY, setWorkoutPickerDragY] = useState(0);
   const [workoutPickerTouchStart, setWorkoutPickerTouchStart] = useState(null);
@@ -11609,6 +10525,30 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
     const cardio = weekActivities.filter(countsAsCardio);
     const recovery = weekActivities.filter(countsAsRecovery);
 
+    // Goal breakdowns (tap a goal on Home). Built from the same lifts / cardio / recovery
+    // lists that fill the goal bars, so every session that filled a block shows up once,
+    // under its own type, and nothing that didn't count (warm-ups, plain walks) does.
+    const breakdownLabel = (a) => {
+      if (a.type === 'Other') return a.subtype || 'Other';
+      if (a.type === 'Strength Training') {
+        const st = a.strengthType || (a.subtype?.startsWith('Bodyweight') ? 'Bodyweight' : 'Weightlifting');
+        return st === 'Lifting' ? 'Weightlifting' : st;
+      }
+      if (a.type === 'Cycle') return 'Cycling';
+      if (a.type === 'Sports' && a.subtype) return a.subtype;
+      return a.type || 'Other';
+    };
+    const groupBreakdown = (list) => {
+      const groups = new Map();
+      list.forEach(a => {
+        const label = breakdownLabel(a);
+        const g = groups.get(label);
+        if (g) g.count += 1;
+        else groups.set(label, { label, count: 1, sample: a });
+      });
+      return [...groups.values()].sort((x, y) => y.count - x.count);
+    };
+
     // Cardio breakdown
     const running = weekActivities.filter(a => a.type === 'Running');
     const cycling = weekActivities.filter(a => a.type === 'Cycle');
@@ -11671,9 +10611,9 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
       : todayActivityCalories;
 
     return {
-      lifts: { completed: lifts.length, goal: goals.liftsPerWeek, sessions: lifts.map(l => l.subtype || l.type), breakdown: { lifting: lifting.length, bodyweight: bodyweight.length, circuit: circuit.length }, muscleGroups, otherActivities: otherStrength },
-      cardio: { completed: cardio.length, goal: goals.cardioPerWeek, miles: totalMiles, sessions: cardio.map(c => c.type), breakdown: { running: running.length, cycling: cycling.length, sports: sports.length, other: otherCardio.length }, otherActivities: otherCardio },
-      recovery: { completed: recovery.length, goal: goals.recoveryPerWeek, sessions: recovery.map(r => r.type), breakdown: { coldPlunge: coldPlunge.length + contrastColdPlungeTally, sauna: sauna.length + contrastSaunaTally, contrastTherapy: contrastTherapy.length, coldShower: contrastColdShowerTally, hotPlunge: contrastHotPlungeTally, massage: massage.length, chiropractic: chiropractic.length, yoga: yoga.length, pilates: pilates.length }, otherActivities: otherRecovery },
+      lifts: { completed: lifts.length, goal: goals.liftsPerWeek, sessions: lifts.map(l => l.subtype || l.type), breakdown: { lifting: lifting.length, bodyweight: bodyweight.length, circuit: circuit.length }, groups: groupBreakdown(lifts), muscleGroups, otherActivities: otherStrength },
+      cardio: { completed: cardio.length, goal: goals.cardioPerWeek, miles: totalMiles, sessions: cardio.map(c => c.type), breakdown: { running: running.length, cycling: cycling.length, sports: sports.length, other: otherCardio.length }, groups: groupBreakdown(cardio), otherActivities: otherCardio },
+      recovery: { completed: recovery.length, goal: goals.recoveryPerWeek, sessions: recovery.map(r => r.type), breakdown: { coldPlunge: coldPlunge.length + contrastColdPlungeTally, sauna: sauna.length + contrastSaunaTally, contrastTherapy: contrastTherapy.length, coldShower: contrastColdShowerTally, hotPlunge: contrastHotPlungeTally, massage: massage.length, chiropractic: chiropractic.length, yoga: yoga.length, pilates: pilates.length }, groups: groupBreakdown(recovery), otherActivities: otherRecovery },
       // Non-cardio walks (don't count toward goals but should be displayed)
       walks: { count: nonCardioWalks.length, activities: nonCardioWalks },
       // Use HealthKit active calories directly — wearables already track all active energy
@@ -11719,13 +10659,13 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
     };
   }, [healthHistory, weekProgress.steps?.today, weekProgress.steps?.goal]);
   const formatK = (n) => `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
-  // Recovery bonus: a small, faintly tinted pill centered right under the rings — grouped with
+  // Recovery bonus: a small, faintly tinted pill centered right under the goal bars — grouped with
   // the goals, but small enough not to read as a fourth ring. (On the Week Progress line it
   // read as feeding the percentage, which it doesn't.) Tap for the breakdown.
   const recoveryBonusPill = (
-    <div className="mt-3.5 flex justify-center">
+    <div className="mt-5 flex justify-center">
       <button
-        onClick={() => { triggerHaptic(ImpactStyle.Light); setShowRecoveryBreakdown(!showRecoveryBreakdown); }}
+        onClick={() => { triggerHaptic(ImpactStyle.Light); toggleBreakdown('recovery'); }}
         className="inline-flex items-center gap-1.5 px-3 py-[5px] rounded-full text-[12px] active:opacity-70 transition-opacity"
         style={{ backgroundColor: 'rgba(0,209,255,0.06)', color: '#aaa' }}
       >
@@ -11744,18 +10684,18 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
     ? `${formatK(weekSteps.leftToday)} more today`
     : `${formatK(weekSteps.perDayToFinish)} a day`;
   const stepsPaceSentence = weekSteps.total >= weekSteps.goal ? (
-    <><span className="font-semibold" style={{ color: '#00FF94' }}>Steps done.</span> {formatK(weekSteps.goal)} for the week — everything from here is extra.</>
+    <><span className="font-semibold text-white">Steps done.</span> {formatK(weekSteps.goal)} for the week — everything from here is extra.</>
   ) : weekSteps.dayIndex === 0 ? (
     <><span className="font-semibold text-white">New week.</span> {stepsRate} wins it.</>
   ) : weekSteps.lastDay ? (
     // Saturday: "to make up" and "more today" would be the same number twice.
     <><span className="font-semibold text-white">Last day.</span> {stepsRate} wins the week.</>
   ) : Math.abs(weekSteps.aheadBy) < 500 ? (
-    <><span className="font-semibold" style={{ color: '#00FF94' }}>On pace going into today.</span> {stepsRate} wins it.</>
+    <><span className="font-semibold text-white">On pace going into today.</span> {stepsRate} wins it.</>
   ) : weekSteps.aheadBy > 0 ? (
-    <><span className="font-semibold" style={{ color: '#00FF94' }}>{formatK(weekSteps.aheadBy)} ahead going into today.</span> {stepsRate} wins it.</>
+    <><span className="font-semibold text-white">{formatK(weekSteps.aheadBy)} ahead going into today.</span> {stepsRate} wins it.</>
   ) : (
-    <><span className="font-semibold" style={{ color: '#FFC800' }}>{formatK(-weekSteps.aheadBy)} behind going into today.</span> {stepsRate} still wins it.</>
+    <><span className="font-semibold text-white">{formatK(-weekSteps.aheadBy)} behind going into today.</span> {stepsRate} still wins it.</>
   );
   const showCaloriesOnHome = userProfile?.privacySettings?.showCaloriesOnHome === true;
 
@@ -11867,12 +10807,32 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
     : 0;
 
   // State for expanding breakdowns
-  const [showStrengthBreakdown, setShowStrengthBreakdown] = useState(false);
-  const [showCardioBreakdown, setShowCardioBreakdown] = useState(false);
-  const [showRecoveryBreakdown, setShowRecoveryBreakdown] = useState(false);
-  const [showStepsBreakdown, setShowStepsBreakdown] = useState(false);
+  // One goal breakdown open at a time; each opens right under its own row.
+  const [openBreakdown, setOpenBreakdown] = useState(null); // 'lifts' | 'cardio' | 'steps' | 'recovery' | null
+  const toggleBreakdown = (key) => setOpenBreakdown((cur) => (cur === key ? null : key));
+  const showStrengthBreakdown = openBreakdown === 'lifts';
+  const showCardioBreakdown = openBreakdown === 'cardio';
+  const showRecoveryBreakdown = openBreakdown === 'recovery';
+  const showStepsBreakdown = openBreakdown === 'steps';
+  // Steps breakdown scrubbing (same as the Week and Month views): the day under the finger.
+  const [stepsScrubIndex, setStepsScrubIndex] = useState(null);
+  const stepsStripRef = useRef(null);
+  const scrubStepsTo = (clientX) => {
+    const el = stepsStripRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const i = Math.max(0, Math.min(6, Math.floor(((clientX - rect.left) / rect.width) * 7)));
+    if (stepsScrubIndex !== i) Haptics.selectionChanged().catch(() => {});
+    setStepsScrubIndex(i);
+  };
   const [showRecentActivity, setShowRecentActivity] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState(null);
+  // Set when a comment notification opens the activity, so its comments start open.
+  // Cleared on close, however it closes, so a later tap opens it the usual way.
+  const [selectedActivityShowsComments, setSelectedActivityShowsComments] = useState(false);
+  useEffect(() => {
+    if (!selectedActivity) setSelectedActivityShowsComments(false);
+  }, [selectedActivity]);
   const [needsDetailsExpanded, setNeedsDetailsExpanded] = useState(false);
 
   // Deep-link from "add muscle groups" notification: when DaySevenApp updates
@@ -11885,6 +10845,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
     if (!openActivityTarget?.activityId) return;
     const found = activities.find(a => String(a.id) === String(openActivityTarget.activityId));
     if (found) {
+      setSelectedActivityShowsComments(Boolean(openActivityTarget.showComments));
       setSelectedActivity(found);
       onOpenActivityTargetHandled();
     }
@@ -11938,6 +10899,144 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
 
   // Today's Activity: today's steps (a count) and today's workouts. Sits under This Week's
   // Goals — the week is the headline ("win the week, not the day").
+  // Steps breakdown: the Sun–Sat day strip, under the Steps row.
+  const stepsBreakdown = (
+    <div className="pt-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs text-gray-400">Steps this week</div>
+        {(() => {
+          if (stepsScrubIndex === null) {
+            return <div className="text-xs font-bold">{formatK(weekSteps.total)} <span className="font-medium" style={{ color: '#777' }}>/ {formatK(weekSteps.goal)}</span></div>;
+          }
+          const d = new Date();
+          d.setHours(12, 0, 0, 0);
+          d.setDate(d.getDate() - weekSteps.dayIndex + stepsScrubIndex);
+          const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          const isFuture = stepsScrubIndex > weekSteps.dayIndex;
+          const daySteps = homeWeekCtx.stepsByDate[key] || 0;
+          return (
+            <div className="text-xs font-bold">
+              <span className="font-medium" style={{ color: '#999' }}>{d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · </span>
+              {isFuture ? <span style={{ color: '#777' }}>—</span> : <span style={{ color: daySteps >= weekSteps.goal / 7 ? '#BF5AF2' : '#fff' }}>{daySteps.toLocaleString()} steps</span>}
+            </div>
+          );
+        })()}
+      </div>
+      {/* Slide a finger across to read a day's exact steps. data-no-pull-refresh keeps
+          Home's pull-to-refresh from starting on a slightly downward scrub. */}
+      <div
+        ref={stepsStripRef}
+        data-no-pull-refresh
+        className="flex gap-[5px] items-end select-none"
+        style={{ touchAction: 'none' }}
+        onPointerDown={(e) => { e.currentTarget.setPointerCapture?.(e.pointerId); scrubStepsTo(e.clientX); }}
+        onPointerMove={(e) => { if (stepsScrubIndex !== null || e.pointerType === 'mouse') scrubStepsTo(e.clientX); }}
+        onPointerUp={() => setStepsScrubIndex(null)}
+        onPointerCancel={() => setStepsScrubIndex(null)}
+        onPointerLeave={(e) => { if (e.pointerType === 'mouse') setStepsScrubIndex(null); }}
+      >
+        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((label, i) => {
+          const d = new Date();
+          d.setHours(12, 0, 0, 0);
+          d.setDate(d.getDate() - weekSteps.dayIndex + i);
+          const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          const isFuture = i > weekSteps.dayIndex;
+          const isToday = i === weekSteps.dayIndex;
+          const daySteps = isFuture ? 0 : (homeWeekCtx.stepsByDate[key] || 0);
+          const dailyGoal = weekSteps.goal / 7;
+          const isScrubbed = i === stepsScrubIndex;
+          return (
+            <div key={i} className="flex-1 flex flex-col items-center gap-1 transition-opacity duration-100" style={{ opacity: stepsScrubIndex !== null && !isScrubbed ? 0.45 : 1 }}>
+              <div className="text-[9px]" style={{ color: isFuture ? 'transparent' : '#777' }}>{isFuture ? '·' : formatK(daySteps)}</div>
+              <div className="w-full h-[34px] rounded-[5px] flex items-end overflow-hidden" style={{ backgroundColor: isFuture ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.06)' }}>
+                <div className="w-full rounded-[5px]" style={{ height: `${Math.min(100, (daySteps / dailyGoal) * 100)}%`, backgroundColor: isScrubbed && !isFuture ? '#fff' : daySteps >= dailyGoal ? '#BF5AF2' : 'rgba(191,90,242,0.55)' }} />
+              </div>
+              <div className="text-[9px]" style={{ color: isToday ? '#fff' : '#777', fontWeight: isToday ? 700 : 400 }}>{label}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="text-[10px] text-gray-500 mt-2 text-center">A full bar is {formatK(weekSteps.goal / 7)} — short days are fine, it's the week that counts.</div>
+    </div>
+  );
+  // Strength breakdown, under the Strength row.
+  const liftsBreakdown = (
+    <div className="pt-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs text-gray-400">Muscle groups trained</div>
+        {(weekProgress.lifts?.groups?.length || 0) > 0 && (
+          <div className="text-[10px] text-gray-500 flex items-center gap-1 flex-wrap justify-end">
+            {weekProgress.lifts.groups.map((g, i) => (
+              <React.Fragment key={g.label}>
+                {i > 0 && ' · '}
+                <ActivityIcon type={g.sample.type} subtype={g.sample.subtype} strengthType={g.sample.strengthType} customIcon={g.sample.customIcon} customEmoji={g.sample.customEmoji} customActivityCategory={g.sample.customActivityCategory} size={10} /> {g.count} {g.label}
+              </React.Fragment>
+            ))}
+          </div>
+        )}
+      </div>
+      {Object.keys(weekProgress.lifts?.muscleGroups || {}).length > 0 ? (
+        <div className="grid grid-cols-3 gap-2 text-center">
+          {Object.entries(weekProgress.lifts.muscleGroups).sort((a, b) => b[1] - a[1]).map(([area, count]) => (
+            <div key={area} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+              <div className="text-lg font-bold">{count}</div>
+              <div className="text-[10px] text-gray-400">{area}</div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-xs text-gray-500 text-center py-2">No focus areas logged yet</div>
+      )}
+    </div>
+  );
+  // Cardio breakdown, under the Cardio row.
+  const cardioBreakdown = (
+    <div className="pt-4">
+      <div className="text-xs text-gray-400 mb-2">Cardio Breakdown</div>
+      {(weekProgress.cardio?.groups?.length || 0) > 0 ? (
+        <div className="grid grid-cols-3 gap-2 text-center">
+          {weekProgress.cardio.groups.map((g) => (
+            <div key={g.label} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+              <div className="text-lg font-bold">{g.count}</div>
+              <div className="flex items-center justify-center gap-1 text-[10px] text-gray-400 min-w-0"><ActivityIcon type={g.sample.type} subtype={g.sample.subtype} strengthType={g.sample.strengthType} customIcon={g.sample.customIcon} customEmoji={g.sample.customEmoji} customActivityCategory={g.sample.customActivityCategory} size={10} /> <span className="truncate">{g.label}</span></div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-xs text-gray-500 text-center py-2">No cardio logged this week</div>
+      )}
+    </div>
+  );
+  // Recovery breakdown, under the Recovery bonus pill.
+  const recoveryBreakdown = (
+    <div className="pt-4">
+      <div className="text-xs text-gray-400 mb-2">Recovery Breakdown</div>
+      {(weekProgress.recovery?.groups?.length || 0) > 0 ? (
+        <div className="grid grid-cols-3 gap-2 text-center">
+          {weekProgress.recovery.groups.map((g) => (
+            <div key={g.label} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+              <div className="text-lg font-bold">{g.count}</div>
+              <div className="flex items-center justify-center gap-1 text-[10px] text-gray-400 min-w-0"><ActivityIcon type={g.sample.type} subtype={g.sample.subtype} strengthType={g.sample.strengthType} customIcon={g.sample.customIcon} customEmoji={g.sample.customEmoji} customActivityCategory={g.sample.customActivityCategory} size={10} /> <span className="truncate">{g.label}</span></div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-xs text-gray-500 text-center py-2">No recovery logged this week</div>
+      )}
+      {/* Only while Recovery really is a bonus: on the older rule the Winning Streak still
+          needs it, and a goal of 0 can never be met. */}
+      {!recoveryNeeded && (
+        <button
+          onClick={() => { triggerHaptic(ImpactStyle.Light); setShowRemoveRecoveryConfirm(true); }}
+          className="w-full mt-3 py-1 text-[12px] active:opacity-70 transition-opacity"
+          style={{ color: '#777' }}
+        >
+          Remove from goals
+        </button>
+      )}
+    </div>
+  );
+
   const todayActivitySection = (
     <>
     {/* Daily Stats - Single Card */}
@@ -11958,11 +11057,11 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         <button
           onClick={() => { triggerHaptic(ImpactStyle.Light); onNavigateToChallenges?.({ status: 'pending' }); }}
           className="w-full mb-3 p-3 rounded-xl flex items-center gap-3 text-left active:opacity-80 transition-opacity"
-          style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.3)' }}
+          style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)' }}
         >
           <span className="text-lg">⚡</span>
           <div className="flex-1 min-w-0">
-            <div className="text-xs font-semibold" style={{ color: '#FFD60A' }}>
+            <div className="text-xs font-semibold text-white">
               {pendingChallenges.length === 1
                 ? `${pendingChallenges[0].challengerName || 'A friend'} challenged you`
                 : `${pendingChallenges.length} challenges waiting on you`}
@@ -11979,38 +11078,15 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
       {/* Banners about logging — workouts detected or imported from Apple Health, strength
           sessions missing muscle groups, Health/notification access — sit with Today's
           Activity, where those workouts land. */}
-      {/* Auto-Imported Summary Banner - Shows after onboarding auto-import */}
-      {autoImportedCount > 0 && (
-        <div className="mb-3">
-          <div
-            className="w-full p-3 rounded-xl flex items-center gap-3"
-            style={{ backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.3)' }}
-          >
-            <span className="text-lg">✅</span>
-            <div className="flex-1">
-              <div className="text-xs font-semibold" style={{ color: '#00FF94' }}>
-                {autoImportedCount} {autoImportedCount === 1 ? 'activity' : 'activities'} imported from Apple Health
-              </div>
-              <div className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
-                Your recent workouts have been auto-saved
-              </div>
-            </div>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onDismissAutoImported?.();
-              }}
-              className="p-1 rounded-full"
-              style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="2" strokeLinecap="round">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Auto-Imported Summary Banner - shows after onboarding auto-import. Current copies,
+          so an edit shows and a deleted one drops out. */}
+      <ImportedWorkoutsBanner
+        imported={autoImported
+          .map((a) => activities.find((x) => String(x.id) === String(a.id)))
+          .filter(Boolean)}
+        onOpen={setSelectedActivity}
+        onDismiss={onDismissAutoImported}
+      />
 
       {/* Pending Workout Banners - Green for known types, Yellow for uncategorized */}
       {(() => {
@@ -12050,9 +11126,12 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
 
         const renderPendingBanner = (workouts, isUncategorized) => {
           if (workouts.length === 0) return null;
-          const rgb = isUncategorized ? '255,200,0' : '0,255,148';
-          const hex = isUncategorized ? '#FFC800' : '#00FF94';
-          const emoji = isUncategorized ? '⚠️' : '📱';
+          // Card surface with a tile (Nov 2026 redesign, mocks/mock-leftovers.html home.new): a
+          // categorized workout gets its category tint and line icon, an uncategorized one an alert.
+          const first = workouts[0];
+          const bannerCat = isUncategorized ? null : getActivityCategory(first);
+          const bannerHex = bannerCat === 'cardio' ? '#FF9500' : bannerCat === 'recovery' ? '#00D1FF' : (bannerCat === 'lifting' || bannerCat === 'lifting+cardio') ? '#00FF94' : null;
+          const tileBg = workouts.length === 1 && bannerHex ? `rgba(${hexToRgb(bannerHex)},0.16)` : 'rgba(255,255,255,0.08)';
           const title = workouts.length === 1
             ? (isUncategorized ? `${workouts[0].appleWorkoutName || workouts[0].type} workout detected` : 'New workout detected')
             : (isUncategorized
@@ -12084,44 +11163,37 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                     openPending();
                   }
                 }}
-                className="w-full p-3 rounded-xl flex items-center gap-3 transition-all duration-150 cursor-pointer"
-                style={{ backgroundColor: `rgba(${rgb},0.1)`, border: `1px solid rgba(${rgb},0.3)` }}
-                onTouchStart={(e) => {
-                  e.currentTarget.style.transform = 'scale(0.98)';
-                  e.currentTarget.style.backgroundColor = `rgba(${rgb},0.15)`;
-                }}
-                onTouchEnd={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.backgroundColor = `rgba(${rgb},0.1)`;
-                }}
-                onMouseDown={(e) => {
-                  e.currentTarget.style.transform = 'scale(0.98)';
-                  e.currentTarget.style.backgroundColor = `rgba(${rgb},0.15)`;
-                }}
-                onMouseUp={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.backgroundColor = `rgba(${rgb},0.1)`;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.backgroundColor = `rgba(${rgb},0.1)`;
-                }}
+                className="w-full flex items-center gap-3 transition-all duration-150 cursor-pointer"
+                style={{ ...CARD_SURFACE, borderRadius: 18, padding: 12 }}
+                onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.98)'; }}
+                onTouchEnd={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+                onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.98)'; }}
+                onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
               >
-                <span className="text-lg">{emoji}</span>
-                <div className="flex-1 text-left">
-                  <div className="text-xs font-semibold" style={{ color: hex }}>
+                <div className="flex items-center justify-center flex-shrink-0" style={{ width: 38, height: 38, borderRadius: 11, backgroundColor: tileBg }}>
+                  {isUncategorized ? (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ddd" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 9v4" /><path d="M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636 -2.87l-8.106 -13.536a1.914 1.914 0 0 0 -3.274 0z" /><path d="M12 16h.01" /></svg>
+                  ) : workouts.length === 1 && bannerHex ? (
+                    <ActivityIcon type={first.type} subtype={first.subtype} size={19} color={bannerHex} />
+                  ) : (
+                    <ActivityIcon type={first.type} subtype={first.subtype} size={19} color="#ddd" />
+                  )}
+                </div>
+                <div className="flex-1 text-left min-w-0">
+                  <div className="text-white truncate" style={{ fontSize: 13.5, fontWeight: 600 }}>
                     {title}
                   </div>
-                  <div className="text-[10px] text-gray-400">
+                  <div className="truncate" style={{ fontSize: 11.5, color: '#8a8a8a', marginTop: 1 }}>
                     {subtitle}
                   </div>
                 </div>
                 {workouts.length > 1 && (
-                  <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ backgroundColor: hex, color: '#000' }}>
+                  <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0" style={{ backgroundColor: '#fff', color: '#000' }}>
                     {workouts.length}
                   </span>
                 )}
-                <span className="px-3 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: `rgba(${rgb},0.2)`, color: hex }}>
+                <span className="flex-shrink-0 bg-white text-black" style={{ padding: '6px 14px', borderRadius: 999, fontSize: 13, fontWeight: 700 }}>
                   {workouts.length === 1 ? 'Add' : 'View'}
                 </span>
                 <button
@@ -12389,8 +11461,8 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             onClick={onAcceptNotifReask}
             className="relative p-3 rounded-xl mb-3 flex items-start gap-3 transition-all duration-150"
             style={{
-              backgroundColor: 'rgba(0,255,148,0.08)',
-              border: '1px solid rgba(0,255,148,0.25)'
+              backgroundColor: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.12)'
             }}
             onTouchStart={(e) => { e.currentTarget.style.opacity = '0.7'; }}
             onTouchEnd={(e) => { e.currentTarget.style.opacity = '1'; }}
@@ -12398,20 +11470,20 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
           >
             <span className="text-xl">🔔</span>
             <div className="flex-1 pr-6">
-              <div className="text-xs font-semibold flex items-center gap-1" style={{ color: '#00FF94' }}>
+              <div className="text-xs font-semibold flex items-center gap-1 text-white">
                 Nice work — want a nudge next time?
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
               </div>
               <div className="text-[10px] text-gray-400 mt-0.5 leading-snug">
-                We'll tell you when a ring is still open — before the week closes. Tap to turn on reminders.
+                We'll tell you when a goal is still open — before the week closes. Tap to turn on reminders.
               </div>
             </div>
             <button
               onClick={(e) => { e.stopPropagation(); onDismissNotifReask(); }}
               className="absolute flex items-center justify-center"
-              style={{ top: 4, right: 4, width: 44, height: 44, color: 'rgba(0,255,148,0.6)' }}
+              style={{ top: 4, right: 4, width: 44, height: 44, color: 'rgba(255,255,255,0.5)' }}
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                 <path d="M3 3L11 11M11 3L3 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
@@ -12420,22 +11492,22 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
           </div>
         )}
 
-      <div className="p-4 rounded-2xl space-y-3" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
+      {/* Same surface and bold numbers as the goals card above (Nov 2026 redesign, mock F1). */}
+      <div className="p-4 space-y-3.5" style={CARD_SURFACE}>
         {/* Steps today, against today's share of the week (utils/weekGoals stepsDailyShare) —
-            fixed for the day, reset each morning from how the week stands. The count turns
-            purple once today's share is walked. No share once the week's steps are done, or
-            for users whose Winning Streak doesn't count steps. */}
+            fixed for the day, reset each morning from how the week stands. No share once the
+            week's steps are done, or for users whose Winning Streak doesn't count steps. */}
         {(() => {
           const todaySteps = weekProgress.steps?.today || 0;
           const showShare = thisWeekJudged.required.includes('steps') && weekSteps.total < weekSteps.goal && weekSteps.perDayToFinish > 0;
           return (
-            <div className="flex items-center gap-3">
-              <span className="text-lg"><CategoryIcon category="steps" size={18} /></span>
-              <div className="flex-1 flex items-baseline justify-between">
-                <span className="text-xs text-gray-400">Steps today</span>
-                <span className="text-[13.5px] font-semibold" style={{ color: showShare && todaySteps >= weekSteps.perDayToFinish ? '#BF5AF2' : undefined }}>
+            <div className="flex items-center gap-3.5">
+              <CategoryIcon category="steps" size={20} className="flex-shrink-0" />
+              <div className="flex-1 flex items-center justify-between">
+                <span className="text-[15px]" style={{ color: '#aaa' }}>Steps today</span>
+                <span className="flex items-baseline" style={{ ...NUM.value, fontVariantNumeric: 'tabular-nums' }}>
                   {todaySteps.toLocaleString()}
-                  {showShare && <span className="font-medium" style={{ color: '#777' }}> / {formatK(weekSteps.perDayToFinish)}</span>}
+                  {showShare && <span style={{ ...NUM.valueSmall, marginLeft: 1 }}>/{formatK(weekSteps.perDayToFinish)}</span>}
                 </span>
               </div>
             </div>
@@ -12447,18 +11519,19 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
         {/* Today's sessions from the weekly plan (Plan tab) */}
         {plannedTodayItems.length > 0 && (
-          <button onClick={onOpenPlan} className="w-full flex items-center gap-3 text-left">
-            {/* Grey like the row label: the calendar isn't a goal category, so no colour */}
-            <span className="text-lg"><SectionIcon type="calendar" size={18} color="#aaa" /></span>
+          <button onClick={onOpenPlan} className="w-full flex items-center gap-3.5 text-left">
+            {/* Grey: the calendar isn't a goal category, so no colour */}
+            <span className="flex-shrink-0"><SectionIcon type="calendar" size={20} color={TEXT_MUTED} /></span>
             <div className="flex-1 flex items-center justify-between gap-2">
-              <span className="text-xs text-gray-400">Planned today</span>
-              <div className="flex flex-wrap justify-end gap-1.5">
+              <span className="text-[15px]" style={{ color: '#aaa' }}>Planned today</span>
+              <div className="flex flex-wrap justify-end gap-x-3 gap-y-1.5">
                 {plannedTodayItems.map((p, i) => (
-                  // Plain text, not a pill — only the icon carries colour (a done item turns
-                  // its label the category colour with a check).
-                  <span key={i} className="flex items-center gap-1 text-[12px] font-semibold"
-                    style={{ color: p.done ? PLAN_CAT[p.cat].color : '#ccc' }}>
-                    {p.done ? '✓' : <CategoryIcon category={PLAN_CAT[p.cat].icon} size={12} />} {p.label}
+                  // Name in white; the colour is the icon while it's to do, and the goals
+                  // card's check badge once it's done.
+                  <span key={i} className="flex items-center gap-2 text-[16px] font-bold text-white">
+                    {!p.done && <CategoryIcon category={PLAN_CAT[p.cat].icon} size={18} />}
+                    <span>{p.label}</span>
+                    {p.done && <CheckBadge color={PLAN_CAT[p.cat].color} />}
                   </span>
                 ))}
               </div>
@@ -12491,23 +11564,23 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                 <button
                   key={act.id || i}
                   onClick={() => { triggerHaptic(ImpactStyle.Light); setSelectedActivity(act); }}
-                  className="w-full flex items-center gap-3 py-1.5 text-left active:opacity-70 transition-opacity"
+                  className="w-full flex items-center gap-3.5 py-1 text-left active:opacity-70 transition-opacity"
                 >
-                  <div className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `rgba(${tint},0.1)` }}>
-                    <ActivityIcon type={act.type} subtype={act.subtype} size={17} sportEmoji={act.sportEmoji} customEmoji={act.customEmoji} customIcon={act.customIcon} countToward={act.countToward} customActivityCategory={act.customActivityCategory} />
+                  <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `rgba(${tint},0.16)` }}>
+                    <ActivityIcon type={act.type} subtype={act.subtype} size={22} sportEmoji={act.sportEmoji} customEmoji={act.customEmoji} customIcon={act.customIcon} countToward={act.countToward} customActivityCategory={act.customActivityCategory} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-[13.5px] font-semibold truncate">{name}</div>
-                    <div className="text-[11.5px] text-gray-400 truncate">{details.join('  ·  ')}</div>
+                    <div className="text-[16px] font-semibold truncate">{name}</div>
+                    <div className="text-[13.5px] truncate mt-0.5" style={{ color: TEXT_MUTED }}>{details.join(' · ')}</div>
                   </div>
-                  <span className="text-gray-600 text-xs">›</span>
+                  <span className="text-gray-600 text-sm">›</span>
                 </button>
               );
             })}
           </div>
         ) : (
-          <p className="text-[12.5px] leading-snug" style={{ color: '#aaa' }}>
-            <span className="font-semibold" style={{ color: '#ccc' }}>No workout yet today.</span> A rest day still counts toward a winning week.
+          <p className="text-[15px] leading-snug" style={{ color: '#aaa' }}>
+            <span className="font-semibold text-white">No workout yet today.</span> Your steps still count toward the week.
           </p>
         )}
 
@@ -12515,11 +11588,11 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             no bar, same row style as Steps today. */}
         {showCaloriesOnHome && (<>
         <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
-        <div className="flex items-center gap-3">
-          <span className="text-lg"><CategoryIcon category="calories" size={18} /></span>
-          <div className="flex-1 flex items-baseline justify-between">
-            <span className="text-xs text-gray-400">Active calories today</span>
-            <span className="text-[13.5px] font-semibold">{weekProgress.calories.burned.toLocaleString()}</span>
+        <div className="flex items-center gap-3.5">
+          <CategoryIcon category="calories" size={20} className="flex-shrink-0" />
+          <div className="flex-1 flex items-center justify-between">
+            <span className="text-[15px]" style={{ color: '#aaa' }}>Active calories today</span>
+            <span style={{ ...NUM.value, fontVariantNumeric: 'tabular-nums' }}>{weekProgress.calories.burned.toLocaleString()}</span>
           </div>
         </div>
         </>)}
@@ -12531,17 +11604,17 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             <div className="h-px" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
             <button
               onClick={() => { triggerHaptic(ImpactStyle.Light); setShowRecentActivity(v => !v); }}
-              className="w-full flex items-center justify-between pt-3 text-left"
+              className="w-full flex items-center justify-between pt-3.5 text-left"
             >
-              <span className="text-xs text-gray-400">Recent activity</span>
+              <span className="text-[15px]" style={{ color: '#aaa' }}>Recent activity</span>
               <span className="text-[10px] text-gray-500">{showRecentActivity ? '▲' : '▼'}</span>
             </button>
             {showRecentActivity && (
               <SwipeableProvider>
                 {/* Rows match today's workout row, a size smaller: category-tinted icon tile,
-                    no box. The solid background is the card's own colour (3% white over the
-                    page ≈ #111) — invisible, but it covers the delete action while swiping. */}
-                <div className="mt-1.5 space-y-0.5">
+                    no box. Transparent on the card; solid only while swiped, to cover the
+                    delete action (swipeBackground). */}
+                <div className="mt-2 space-y-1">
                   {latestActivities.map((act) => {
                     const rtint = { recovery: '0,209,255', cardio: '255,149,0' }[getActivityCategory(act)] || '0,255,148';
                     return (
@@ -12550,17 +11623,17 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                       activity={act}
                       onDelete={(a) => onDeleteActivity && onDeleteActivity(a.id)}
                       onEdit={onEditActivity}
+                      swipeBackground={CARD_BG_SOLID}
                     >
                       <div
                         onClick={() => { triggerHaptic(ImpactStyle.Light); setSelectedActivity(act); }}
-                        className="w-full py-[5px] flex items-center gap-3 text-left cursor-pointer active:opacity-70 transition-opacity"
-                        style={{ backgroundColor: '#111111' }}
+                        className="w-full py-1.5 flex items-center gap-3.5 text-left cursor-pointer active:opacity-70 transition-opacity"
                       >
-                        <div className="w-7 h-7 rounded-[9px] flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `rgba(${rtint},0.1)` }}>
-                          <ActivityIcon type={act.type} subtype={act.subtype} size={15} sportEmoji={act.sportEmoji} customEmoji={act.customEmoji} customIcon={act.customIcon} countToward={act.countToward} customActivityCategory={act.customActivityCategory} />
+                        <div className="w-10 h-10 rounded-[11px] flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `rgba(${rtint},0.16)` }}>
+                          <ActivityIcon type={act.type} subtype={act.subtype} size={20} sportEmoji={act.sportEmoji} customEmoji={act.customEmoji} customIcon={act.customIcon} countToward={act.countToward} customActivityCategory={act.customActivityCategory} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-[13px] font-semibold truncate">{
+                          <div className="text-[15px] font-semibold truncate">{
                             act.type === 'Other' ? (act.subtype || 'Other')
                             : act.type === 'Strength Training' ? (() => {
                               const st = act.strengthType || 'Strength Training';
@@ -12569,11 +11642,11 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                             })()
                             : (act.subtype ? `${act.type} · ${act.subtype}` : act.type)
                           }</div>
-                          <div className="text-[11px] text-gray-400 truncate">
+                          <div className="text-[13px] truncate mt-0.5" style={{ color: TEXT_MUTED }}>
                             {formatFriendlyDate(act.date)}{act.time ? ` · ${act.time}` : ''}{act.duration ? ` · ${act.duration} min` : ''}
                           </div>
                         </div>
-                        <span className="text-gray-600 text-xs">›</span>
+                        <span className="text-gray-600 text-sm">›</span>
                       </div>
                     </SwipeableActivityItem>
                     );
@@ -12584,7 +11657,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             {showRecentActivity && onNavigateToHistory && (
               <button
                 onClick={() => { triggerHaptic(ImpactStyle.Light); onNavigateToHistory(); }}
-                className="w-full text-center text-xs text-gray-400 pt-2"
+                className="w-full text-center text-[13px] text-gray-400 pt-3"
               >
                 See all activity ›
               </button>
@@ -12838,6 +11911,41 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
           </div>
         )}
 
+        {showRemoveRecoveryConfirm && (
+          <div data-modal-overlay className="fixed inset-0 z-[9999] flex items-end justify-center" onClick={() => setShowRemoveRecoveryConfirm(false)}>
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+            <div
+              className="relative w-full max-w-md rounded-t-2xl p-5 text-center"
+              style={{ backgroundColor: '#1a1a1a', paddingBottom: 'calc(20px + env(safe-area-inset-bottom))' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-white font-semibold text-[17px]">Remove Recovery from your goals?</h3>
+              <p className="text-gray-400 text-[13px] mt-1.5 mb-4 leading-snug">
+                {(userData.streaks?.recovery || 0) > 0 && 'Your Recovery streak stops. '}It doesn't affect your Winning Streak, and you can turn it back on in Edit Goals.
+              </p>
+              <button
+                onClick={() => {
+                  setShowRemoveRecoveryConfirm(false);
+                  setOpenBreakdown(null);
+                  triggerHaptic(ImpactStyle.Medium);
+                  onRemoveRecoveryGoal?.();
+                }}
+                className="w-full py-3 rounded-xl text-sm font-semibold"
+                style={{ backgroundColor: 'rgba(255,255,255,0.08)', color: '#FF6B5E' }}
+              >
+                Remove
+              </button>
+              <button
+                onClick={() => setShowRemoveRecoveryConfirm(false)}
+                className="w-full py-3 mt-2 rounded-xl text-sm font-semibold text-white"
+                style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+              >
+                Keep
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Weekly Goals - tour highlight wraps header + card */}
         <div ref={weeklyGoalsRef}>
           <div className="mb-3">
@@ -12853,102 +11961,41 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
               // whose meaning changed: the days left are now headroom, not a deadline.
               : weekComplete
                 ? `${daysLeft} day${daysLeft !== 1 ? 's' : ''} left in the week`
-                : `${hasExistingStreak ? 'Hit these to keep your streaks alive' : `Hit ${thisWeekJudged.required.length === 2 ? 'both' : 'all three'} this week to start your Winning Streak`} · ${daysLeft} day${daysLeft !== 1 ? 's' : ''} left`}</p>
+                // The days left sit in the card's header now, so no trailing "· N days left".
+                : (hasExistingStreak ? 'Hit these to keep your streaks alive' : `Hit ${thisWeekJudged.required.length === 2 ? 'both' : 'all three'} this week to start your Winning Streak`)}</p>
           </div>
 
-          {/* Individual Goals - The Main Event */}
-          <div className="p-5 rounded-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-          <div className="flex items-center justify-around">
-            {/* Strength */}
-            <button
-              className="text-center transition-all duration-150"
-              onClick={() => setShowStrengthBreakdown(!showStrengthBreakdown)}
-              onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.93)'; triggerHaptic(ImpactStyle.Light); }}
-              onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
-              onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.93)'}
-              onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
-              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-            >
-              <div className="relative inline-block">
-                <ProgressRing progress={liftsPercent} size={72} strokeWidth={6} color="#00FF94" />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-xl font-black"><AnimatedCounter value={weekProgress.lifts.completed} />/{weekProgress.lifts.goal}</span>
-                </div>
-              </div>
-              <RingLabel category="lifts" label="Strength" expanded={showStrengthBreakdown} />
-              <RingStreak weeks={userData.streaks?.lifts} color="#00FF94" paused={streakPaused('lifts')} />
-            </button>
-            
-            {/* Cardio */}
-            <button
-              className="text-center transition-all duration-150"
-              onClick={() => setShowCardioBreakdown(!showCardioBreakdown)}
-              onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.93)'; triggerHaptic(ImpactStyle.Light); }}
-              onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
-              onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.93)'}
-              onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
-              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-            >
-              <div className="relative inline-block">
-                <ProgressRing progress={cardioPercent} size={72} strokeWidth={6} color="#FF9500" />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-xl font-black"><AnimatedCounter value={weekProgress.cardio?.completed || 0} />/{weekProgress.cardio?.goal || 0}</span>
-                </div>
-              </div>
-              <RingLabel category="cardio" label="Cardio" expanded={showCardioBreakdown} />
-              <RingStreak weeks={userData.streaks?.cardio} color="#FF9500" paused={streakPaused('cardio')} />
-            </button>
-            
-            {/* Steps — the week's steps against stepsPerDay × 7. Counts toward the Winning
-                Streak (utils/weekGoals); Recovery moved to the bonus row below. */}
-            <button
-              className="text-center transition-all duration-150"
-              onClick={() => setShowStepsBreakdown(!showStepsBreakdown)}
-              onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.93)'; triggerHaptic(ImpactStyle.Light); }}
-              onTouchEnd={(e) => e.currentTarget.style.transform = 'scale(1)'}
-              onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.93)'}
-              onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
-              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-            >
-              <div className="relative inline-block">
-                <ProgressRing progress={Math.min((weekSteps.total / weekSteps.goal) * 100, 100)} size={72} strokeWidth={6} color="#BF5AF2" />
-                {/* Pace tick: where the daily goal × finished days would put the ring */}
-                {weekSteps.dayIndex > 0 && weekSteps.total < weekSteps.goal && (() => {
-                  const a = (weekSteps.dayIndex / 7) * 2 * Math.PI - Math.PI / 2;
-                  const r = (72 - 6) / 2;
-                  return (
-                    <svg width={72} height={72} className="absolute inset-0 pointer-events-none">
-                      <line
-                        x1={36 + (r - 4) * Math.cos(a)} y1={36 + (r - 4) * Math.sin(a)}
-                        x2={36 + (r + 4) * Math.cos(a)} y2={36 + (r + 4) * Math.sin(a)}
-                        stroke="#fff" strokeWidth={2} strokeLinecap="round"
-                      />
-                    </svg>
-                  );
-                })()}
-                <div className="absolute inset-0 flex flex-col items-center justify-center leading-none">
-                  <span className="text-lg font-black">{Math.round(weekSteps.total / 1000)}k</span>
-                  <span className="text-[9px] mt-0.5" style={{ color: '#777' }}>/ {formatK(weekSteps.goal)}</span>
-                </div>
-              </div>
-              <RingLabel category="steps" label="Steps" expanded={showStepsBreakdown} />
-              <RingStreak weeks={userData.streaks?.steps} color="#BF5AF2" paused={streakPaused('steps')} />
-            </button>
-          </div>
+          {/* Individual Goals - The Main Event: the week's % on top, then one row per goal
+              (Nov 2026 redesign, components/WeekGoalsHero — it also plays the Light up intro). */}
+          <div className="p-5" style={CARD_SURFACE}>
+          <WeekGoalsHero
+            percent={overallPercent}
+            daysLeft={daysLeft}
+            rows={[
+              { key: 'lifts', label: 'Strength', color: CATEGORY_COLORS.lifts, kind: 'blocks', done: weekProgress.lifts.completed || 0, goal: weekProgress.lifts.goal || 0, streak: userData.streaks?.lifts || 0, paused: RING_STREAK_PAUSED[streakPaused('lifts')] || null, expanded: showStrengthBreakdown, onToggle: () => toggleBreakdown('lifts'), detail: liftsBreakdown },
+              { key: 'cardio', label: 'Cardio', color: CATEGORY_COLORS.cardio, kind: 'blocks', done: weekProgress.cardio?.completed || 0, goal: weekProgress.cardio?.goal || 0, streak: userData.streaks?.cardio || 0, paused: RING_STREAK_PAUSED[streakPaused('cardio')] || null, expanded: showCardioBreakdown, onToggle: () => toggleBreakdown('cardio'), detail: cardioBreakdown },
+              // Steps — the week's steps against stepsPerDay × 7. Counts toward the Winning
+              // Streak (utils/weekGoals); Recovery is the bonus row below.
+              { key: 'steps', label: 'Steps', color: CATEGORY_COLORS.steps, kind: 'steps', total: weekSteps.total, goal: weekSteps.goal, dayIndex: weekSteps.dayIndex, formatK, streak: userData.streaks?.steps || 0, paused: RING_STREAK_PAUSED[streakPaused('steps')] || null, expanded: showStepsBreakdown, onToggle: () => toggleBreakdown('steps'), detail: stepsBreakdown },
+            ]}
+          />
 
           {/* Recovery bonus pill (Recovery off, goal 0: none) */}
-          {(userData?.goals?.recoveryPerWeek ?? 2) > 0 && recoveryBonusPill}
+          {(userData?.goals?.recoveryPerWeek ?? 2) > 0 && (<>
+            {recoveryBonusPill}
+            <Collapse open={showRecoveryBreakdown}>{recoveryBreakdown}</Collapse>
+          </>)}
 
-          {/* Status line — one slot under the rings for the week's single most important
+          {/* Status line — one slot under the goal bars for the week's single most important
               message. It replaced the stack of banners (vacation, injury, week won, streak at
               risk) that used to sit above the card; in order of priority, the first that
               applies wins, and the steps pace sentence is the everyday fallback. The status
               rows carry no icon: the bold coloured label already says what they are. */}
           {(() => {
             const row = (icon, body, action, centered = false) => (
-              <div className="mt-4 pt-3 border-t border-white/10 flex items-center gap-2">
+              <div className="mt-[22px] pt-3 border-t border-white/10 flex items-center gap-2">
                 {icon && <span className="self-start mt-[1px] flex-shrink-0">{icon}</span>}
-                <p className={`flex-1 text-[12.5px] leading-snug${centered ? ' text-center' : ''}`} style={{ color: '#ccc' }}>{body}</p>
+                <p className={`flex-1 text-[13px] leading-snug${centered ? ' text-center' : ''}`} style={{ color: '#ccc' }}>{body}</p>
                 {action}
               </div>
             );
@@ -12983,8 +12030,8 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                 <button onClick={onReplayCelebration} className="w-full text-left active:opacity-70 transition-opacity">
                   {row(
                     null,
-                    <><span className="font-semibold" style={{ color: '#00FF94' }}>Week won.</span> Your winning streak is safe · tap to replay</>,
-                    <svg width="7" height="12" viewBox="0 0 7 12" fill="none" style={{ color: '#00FF94', flexShrink: 0 }}>
+                    <><span className="font-semibold" style={{ color: GOLD }}>Week won.</span> Your winning streak is safe · tap to replay</>,
+                    <svg width="7" height="12" viewBox="0 0 7 12" fill="none" style={{ color: GOLD, flexShrink: 0 }}>
                       <path d="M1 1L6 6L1 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
                     </svg>
                   )}
@@ -13018,7 +12065,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
                 null,
                 <><span className="font-semibold" style={{ color: '#FF6B5E' }}>{daysLeft === 1 ? 'Last day:' : 'To go:'}</span> {toGo.join(', ')}{stepsNote && <span style={{ color: '#777' }}> ({stepsNote})</span>}</>,
                 null,
-                true // centered under the rings
+                true // centered under the bars
                   )}
                 </button>
               );
@@ -13027,156 +12074,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
             return row(<CategoryIcon category="steps" size={14} />, stepsPaceSentence);
           })()}
 
-          {/* Steps breakdown — Sun–Sat day strip (tap the Steps ring) */}
-          {showStepsBreakdown && (
-            <div className="mt-4 pt-4 border-t border-white/10">
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-xs text-gray-400">Steps this week</div>
-                <div className="text-xs font-bold">{formatK(weekSteps.total)} <span className="font-medium" style={{ color: '#777' }}>/ {formatK(weekSteps.goal)}</span></div>
-              </div>
-              <div className="flex gap-[5px] items-end">
-                {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((label, i) => {
-                  const d = new Date();
-                  d.setHours(12, 0, 0, 0);
-                  d.setDate(d.getDate() - weekSteps.dayIndex + i);
-                  const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-                  const isFuture = i > weekSteps.dayIndex;
-                  const isToday = i === weekSteps.dayIndex;
-                  const daySteps = isFuture ? 0 : (homeWeekCtx.stepsByDate[key] || 0);
-                  const dailyGoal = weekSteps.goal / 7;
-                  return (
-                    <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                      <div className="text-[9px]" style={{ color: isFuture ? 'transparent' : '#777' }}>{isFuture ? '·' : formatK(daySteps)}</div>
-                      <div className="w-full h-[34px] rounded-[5px] flex items-end overflow-hidden" style={{ backgroundColor: isFuture ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.06)' }}>
-                        <div className="w-full rounded-[5px]" style={{ height: `${Math.min(100, (daySteps / dailyGoal) * 100)}%`, backgroundColor: daySteps >= dailyGoal ? '#BF5AF2' : 'rgba(191,90,242,0.55)' }} />
-                      </div>
-                      <div className="text-[9px]" style={{ color: isToday ? '#fff' : '#777', fontWeight: isToday ? 700 : 400 }}>{label}</div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="text-[10px] text-gray-500 mt-2 text-center">A full bar is {formatK(weekSteps.goal / 7)} — short days are fine, it's the week that counts.</div>
-            </div>
-          )}
-
-
-          {/* Strength Breakdown - Expandable */}
-          {showStrengthBreakdown && (
-            <div className="mt-4 pt-4 border-t border-white/10">
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-xs text-gray-400">Muscle groups trained</div>
-                <div className="text-[10px] text-gray-500 flex items-center gap-1">
-                  <ActivityIcon type="Strength Training" strengthType="Weightlifting" size={10} /> {weekProgress.lifts?.breakdown?.lifting || 0} Weightlifting · <ActivityIcon type="Strength Training" strengthType="Bodyweight" size={10} /> {weekProgress.lifts?.breakdown?.bodyweight || 0} Bodyweight{weekProgress.lifts?.breakdown?.circuit ? <> · <ActivityIcon type="Strength Training" strengthType="Circuit" size={10} /> {weekProgress.lifts.breakdown.circuit} Circuit</> : ''}
-                </div>
-              </div>
-              {Object.keys(weekProgress.lifts?.muscleGroups || {}).length > 0 ? (
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  {Object.entries(weekProgress.lifts.muscleGroups).sort((a, b) => b[1] - a[1]).map(([area, count]) => (
-                    <div key={area} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                      <div className="text-lg font-bold">{count}</div>
-                      <div className="text-[10px] text-gray-400">{area}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-xs text-gray-500 text-center py-2">No focus areas logged yet</div>
-              )}
-            </div>
-          )}
-          
-          {/* Cardio Breakdown - Expandable */}
-          {showCardioBreakdown && (
-            <div className="mt-4 pt-4 border-t border-white/10">
-              <div className="text-xs text-gray-400 mb-2">Cardio Breakdown</div>
-              <div className={`grid gap-2 text-center`} style={{ gridTemplateColumns: `repeat(${3 + (weekProgress.cardio?.otherActivities?.length || 0)}, minmax(0, 1fr))` }}>
-                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="text-lg font-bold">{weekProgress.cardio?.breakdown?.running || 0}</div>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Running" size={10} /> Running</div>
-                </div>
-                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="text-lg font-bold">{weekProgress.cardio?.breakdown?.cycling || 0}</div>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Cycle" size={10} /> Cycling</div>
-                </div>
-                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="text-lg font-bold">{weekProgress.cardio?.breakdown?.sports || 0}</div>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Sports" size={10} /> Sports</div>
-                </div>
-                {/* Show each "Other" cardio activity */}
-                {weekProgress.cardio?.otherActivities?.map((activity, i) => (
-                  <div key={activity.id || i} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                    <div className="text-lg font-bold">1</div>
-                    <div className="text-[10px] text-gray-400 flex items-center gap-1"><ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={10} customActivityCategory={activity.customActivityCategory} /> {activity.subtype || 'Other'}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          
-          {/* Recovery Breakdown - Expandable */}
-          {showRecoveryBreakdown && (userData?.goals?.recoveryPerWeek ?? 2) > 0 && (
-            <div className="mt-4 pt-4 border-t border-white/10">
-              <div className="text-xs text-gray-400 mb-2">Recovery Breakdown</div>
-              <div className="grid grid-cols-2 gap-2 text-center">
-                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.coldPlunge || 0}</div>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Cold Plunge" size={10} /> Cold Plunge</div>
-                </div>
-                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.sauna || 0}</div>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Sauna" size={10} /> Sauna</div>
-                </div>
-                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.contrastTherapy || 0}</div>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Contrast Therapy" size={10} /> Contrast</div>
-                </div>
-                {(weekProgress.recovery?.breakdown?.coldShower || 0) > 0 && (
-                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.coldShower}</div>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-400">🚿 Cold Shower</div>
-                </div>
-                )}
-                {(weekProgress.recovery?.breakdown?.hotPlunge || 0) > 0 && (
-                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.hotPlunge}</div>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-400">♨️ Hot Plunge</div>
-                </div>
-                )}
-                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.massage || 0}</div>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Massage" size={10} /> Massage</div>
-                </div>
-                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.chiropractic || 0}</div>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Chiropractic" size={10} /> Chiropractic</div>
-                </div>
-                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.yoga || 0}</div>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Yoga" size={10} /> Yoga</div>
-                </div>
-                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <div className="text-lg font-bold">{weekProgress.recovery?.breakdown?.pilates || 0}</div>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-400"><ActivityIcon type="Pilates" size={10} /> Pilates</div>
-                </div>
-                {/* Show each "Other" recovery activity */}
-                {weekProgress.recovery?.otherActivities?.map((activity, i) => (
-                  <div key={activity.id || i} className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                    <div className="text-lg font-bold">1</div>
-                    <div className="text-[10px] text-gray-400 flex items-center gap-1"><ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={10} customActivityCategory={activity.customActivityCategory} /> {activity.subtype || 'Other'}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Overall Progress Bar */}
-          <div className="mt-4 pt-4 border-t border-white/10">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-gray-400">Week Progress <span className="font-bold ml-1" style={{ color: overallPercent >= 100 ? '#FFD700' : 'white' }}><AnimatedCounter value={overallPercent} />%</span></span>
-            </div>
-            {/* Gold like the winning-streak badge — finishing this bar is what extends that
-                streak. (Green read as part of the Strength ring right above it.) */}
-            <ProgressBar progress={overallPercent} height={4} color="#FFD700" />
-          </div>
+          {/* (The gold Week Progress bar that sat here is now the big number at the top.) */}
         </div>
 
         {/* Streak Shield — quiet grey lines under the card rather than a banner above it
@@ -13365,6 +12263,7 @@ const HomeTab = ({ onAddActivity, onCaptureLocation, pendingSync, activities = [
         isOpen={!!selectedActivity}
         onClose={() => setSelectedActivity(null)}
         activity={selectedActivity}
+        initialShowComments={selectedActivityShowsComments}
         onDelete={onDeleteActivity}
         onEdit={onEditActivity}
         user={user}
@@ -13414,6 +12313,9 @@ function WelcomePaywallStep({ onDone, applyProStatus }) {
 }
 
 export default function DaySevenApp() {
+  // index.html's launch loader stays up while a screen is loading; if the first screen
+  // isn't one (the welcome screen, say), let it go.
+  useEffect(() => { releaseLaunchOverlay(); }, []);
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -13479,6 +12381,12 @@ export default function DaySevenApp() {
   const [friendsInitialTab, setFriendsInitialTab] = useState('friends');
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);
   const [friends, setFriends] = useState([]);
+  const friendsRef = useRef([]);
+  useEffect(() => { friendsRef.current = friends; }, [friends]);
+  // The push showing as a banner because it arrived with the app open, and the handler a
+  // tap on it shares with a tap on the push itself.
+  const [inAppBanner, setInAppBanner] = useState(null);
+  const notificationTapRef = useRef(null);
   const [challengeModalActivity, setChallengeModalActivity] = useState(null); // activity to challenge a friend with (null = modal closed)
   const [outgoingThisMonthChallengeCount, setOutgoingThisMonthChallengeCount] = useState(0);
   // Set when a challenge notification is tapped — tells ChallengesTab which segment/sub
@@ -13508,6 +12416,9 @@ export default function DaySevenApp() {
   // Set when an "add muscle groups" notification is tapped — HomeTab reads this
   // and opens the matching activity's detail modal. Shape: { activityId, nonce }.
   const [homeOpenActivityTarget, setHomeOpenActivityTarget] = useState(null);
+  // The post a comment, reply or reaction notification opens in the Friends feed:
+  // { ownerUid, activityId, openComments, commentId, replyFrom, nonce }.
+  const [feedPostTarget, setFeedPostTarget] = useState(null);
   // Empty-state hint for third-party-wearable users (Garmin/Whoop/Polar/etc.)
   // who granted HK permission but haven't enabled write-to-HealthKit inside
   // their device's companion app. We surface a one-time, dismissible tip on
@@ -13584,6 +12495,10 @@ export default function DaySevenApp() {
   const [feedActiveView, setFeedActiveView] = useState('feed'); // 'feed' or 'leaderboard'
   const [isHomeWorkoutPickerOpen, setIsHomeWorkoutPickerOpen] = useState(false); // Track if HomeTab's workout picker is open
   const [isPro, setIsPro] = useState(false); // RevenueCat "dayseven Pro" entitlement
+  // Whether RevenueCat has answered on this launch (or given up). Until it has, the hard
+  // paywall shows the launch loader rather than the lock screen, which used to flash for
+  // subscribers on every cold start.
+  const [proStatusResolved, setProStatusResolved] = useState(false);
 
   // HealthKit data state
   const [healthKitData, setHealthKitData] = useState({
@@ -13595,7 +12510,9 @@ export default function DaySevenApp() {
   });
 
   // Count of workouts auto-imported from Apple Health during onboarding (for summary banner)
-  const [autoImportedCount, setAutoImportedCount] = useState(0);
+  // This week's workouts the first sync after onboarding saved (the ones not linked during
+  // onboarding), for the banner on Home.
+  const [autoImported, setAutoImported] = useState([]);
 
 
   // Track dismissed workout UUIDs (to not show them again)
@@ -13650,6 +12567,27 @@ export default function DaySevenApp() {
   const userProfileRef = useRef(userProfile);
   useEffect(() => { userProfileRef.current = userProfile; }, [userProfile]);
 
+  // HealthKit workouts that are new to this account: not saved or linked already, not
+  // dismissed, one per real workout across sources (Apple Watch + Strava + Garmin can
+  // each write the same one), and none from before the week the account was created,
+  // since those predate DaySeven and mustn't count toward streaks or ask for details.
+  // The sync and pull-to-refresh both use this. Refresh had its own copy without the
+  // last three filters, so a pull brought back a month of old and dismissed workouts.
+  const selectNewHealthKitWorkouts = (workouts, activities) => {
+    const saved = new Set();
+    (activities || []).forEach((a) => {
+      if (a.healthKitUUID) saved.add(a.healthKitUUID);
+      if (a.linkedHealthKitUUID) saved.add(a.linkedHealthKitUUID);
+    });
+    const dismissed = new Set(dismissedWorkoutUUIDsRef.current);
+    let fresh = dedupeCrossSource((workouts || []).filter(
+      (w) => w.healthKitUUID && !saved.has(w.healthKitUUID) && !dismissed.has(w.healthKitUUID)
+    ));
+    const importFrom = signupWeekStartStr(userProfileRef.current?.createdAt);
+    if (importFrom) fresh = fresh.filter((w) => !w.date || w.date >= importFrom);
+    return fresh;
+  };
+
   // Stop a build older than config/minAppVersion. Not awaited by anything, and a failed read
   // means no gate, so this can never hold up or block a launch. iPhone only: the web app is
   // always the latest.
@@ -13702,7 +12640,16 @@ export default function DaySevenApp() {
     // so they only get access from a real subscription or a forceProTier comp.
     const grandfathered = !!p && p.subscriptionRequired !== true;
     setIsPro(rcStatus || override || grandfathered);
+    rememberPro(userRef.current?.uid, Boolean(rcStatus || override));
+    setProStatusResolved(true);
   }, []);
+  // RevenueCat normally answers in a second or two. If it never does (offline, an error),
+  // stop waiting, so an account without a subscription still reaches the lock screen.
+  useEffect(() => {
+    if (!user || authLoading || proStatusResolved) return undefined;
+    const timer = setTimeout(() => setProStatusResolved(true), 8000);
+    return () => clearTimeout(timer);
+  }, [user, authLoading, proStatusResolved]);
   // Lifetime buyers have nothing to renew or cancel, so Settings shows them a
   // different row. Resolved from the entitlement's expirationDate rather than
   // threaded through every applyProStatus call site — see getPlanType.
@@ -14409,11 +13356,32 @@ export default function DaySevenApp() {
     setHistoryStatsSubView('records');
   };
 
+  // Recovery is only a bonus, so unlike Edit Goals this applies now instead of waiting for
+  // Sunday. A change already queued for Sunday must not bring it back.
+  const handleRemoveRecoveryGoal = async () => {
+    const { goals: prevGoals, goalHistory: prevHistory, pendingGoals: prevPending } = userData;
+    const goals = { ...prevGoals, recoveryPerWeek: 0 };
+    const pending = prevPending ? { ...prevPending, recoveryPerWeek: 0 } : null;
+    const prevRecoveryGoal = prevGoals.recoveryPerWeek;
+    setUserData(prev => ({ ...prev, goals, pendingGoals: pending, goalHistory: withThisWeekGoals(prev.goalHistory, goals) }));
+    setWeeklyProgress(prev => ({ ...prev, recovery: { ...prev.recovery, goal: 0 } }));
+    try {
+      await saveUserGoals(user.uid, goals);
+      if (pending) await savePendingGoals(user.uid, pending);
+    } catch (error) {
+      console.error('[Goals] Failed to remove Recovery:', error);
+      setUserData(prev => ({ ...prev, goals: prevGoals, pendingGoals: prevPending, goalHistory: prevHistory }));
+      setWeeklyProgress(prev => ({ ...prev, recovery: { ...prev.recovery, goal: prevRecoveryGoal } }));
+    }
+  };
+
   // Handle sign out
   const handleSignOut = async () => {
     // Capture user ID and token before clearing state (needed for cleanup)
     const currentUserId = user?.uid;
     const currentToken = fcmTokenRef.current;
+    clearFeedSnapshot();
+    clearAvatarCache();
 
     // Immediately clear user state to show login screen
     setUser(null);
@@ -14426,6 +13394,8 @@ export default function DaySevenApp() {
     setPendingFriendRequests(0);
     setUnreadFeedCount(0);
     setIsPro(false);
+    setProStatusResolved(false);
+    setIsLoading(true); // The next sign-in shows Home's skeleton until its data is in.
     setDevAuthEmail(null);
     // Close any open modals + reset to home tab so the next sign-in lands on a
     // clean Home, not the Settings overlay (which would render on top of Home
@@ -14504,6 +13474,7 @@ export default function DaySevenApp() {
   const handleUpdatePhoto = async (file) => {
     if (!user) return;
     const newPhotoURL = await uploadProfilePhoto(user.uid, file);
+    rememberAvatar(newPhotoURL);
     setUserProfile(prev => ({ ...prev, photoURL: newPhotoURL }));
   };
 
@@ -14681,7 +13652,7 @@ export default function DaySevenApp() {
       setShowToast(true);
     } catch (error) {
       setToastMessage('Failed to send reset email. Please try again.');
-      setToastType('success');
+      setToastType('error');
       setShowToast(true);
     }
   };
@@ -15043,6 +14014,7 @@ export default function DaySevenApp() {
         setHealthHistory(getDemoHealthHistory(365));
         setFriends(getDemoFriends());
         setIsPro(true); // Show pro features in demo
+        setIsLoading(false);
         return;
       }
 
@@ -15058,6 +14030,18 @@ export default function DaySevenApp() {
       // Load remaining data in background (don't await)
       (async () => {
         try {
+          // Start the daily health history now: it doesn't depend on anything below, and
+          // waiting for the user-doc read to finish first added 100-200ms before Home could
+          // show. getDailyHealthHistory never throws, so nothing is left unhandled if a
+          // read below fails first.
+          const healthHistoryPromise = getDailyHealthHistory(user.uid, 365);
+          // Today's steps and calories straight from HealthKit, alongside the data reads below,
+          // so Home's first frame has them. Home shows as soon as the activities are set,
+          // and until the HealthKit sync landed it read 0 steps today: a short ring, a red
+          // "Last day" line and "Streak safe" instead of "Week won". Local queries, quick.
+          const todayHealthPromise = Capacitor.isNativePlatform() && !profile?.disableHealthKitSync && isHealthKitReadAuthorized()
+            ? Promise.all([fetchTodaySteps(), fetchTodayCalories()]).catch(() => null)
+            : Promise.resolve(null);
           // The goals came with the profile read above; read them separately only if that
           // read failed. Home needs them now, ahead of the RevenueCat login below.
           const userGoals = profile ? (profile.goals || null) : await getUserGoals(user.uid);
@@ -15103,10 +14087,16 @@ export default function DaySevenApp() {
                 addCustomerInfoListener(({ isPro: newIsPro }) => {
                   applyProStatus(newIsPro);
                 });
+              } else {
+                setProStatusResolved(true);
               }
             } catch (rcError) {
               console.error('[App] RevenueCat init error:', rcError);
+              setProStatusResolved(true);
             }
+          } else {
+            // RevenueCat only runs in the app.
+            setProStatusResolved(true);
           }
 
           // Re-fetch with forceRefresh to bypass native SDK cache (watch may have updated
@@ -15137,7 +14127,10 @@ export default function DaySevenApp() {
           // Goal history — which goals were in force from which week. The streak walk
           // judges each past week against these rather than today's goals, so lowering a
           // goal can't retroactively mark earlier weeks as met (see utils/streaks).
+          // Written to the ref too, like the shield and vacation below: the load-time
+          // recalc reads the ref, and nothing guarantees a render before it runs.
           if (profileForStreaks?.goalHistory) {
+            userDataRef.current = { ...(userDataRef.current || {}), goalHistory: profileForStreaks.goalHistory };
             setUserData(prev => ({ ...prev, goalHistory: profileForStreaks.goalHistory }));
           }
           // Saved Apple Health type preferences (icon/category for uncategorized types).
@@ -15171,9 +14164,13 @@ export default function DaySevenApp() {
             userDataRef.current = { ...(userDataRef.current || {}), streakShield: loadedShield };
             setUserData(prev => ({ ...prev, streakShield: loadedShield }));
           }
-          // Load vacation mode data
+          // Load vacation mode data. Every branch writes the ref, so the load-time recalc
+          // below always sees the vacation weeks: when only the state was set, a launch
+          // that reached the recalc before a render read none, counted those weeks as
+          // missed, and saved streaks cut short at the last vacation.
           if (profileForStreaks?.vacationMode) {
             const vm = profileForStreaks.vacationMode;
+            userDataRef.current = { ...(userDataRef.current || {}), vacationMode: vm };
             // Auto-deactivate if vacation exceeded 14 days
             if (vm.isActive && vm.startDate) {
               const start = new Date(vm.startDate + 'T12:00:00');
@@ -15273,13 +14270,27 @@ export default function DaySevenApp() {
           // judging a week, and this recalc used to run with no step data at all.
           const [userActivities, healthHistoryData] = await Promise.all([
             userDoc ? userDoc.activities : getUserActivities(user.uid, true),
-            getDailyHealthHistory(user.uid, 365),
+            healthHistoryPromise,
           ]);
           healthHistoryRef.current = healthHistoryData; // visible to the recalc synchronously
           setHealthHistory(healthHistoryData);
           // Fill in any days this week / last week the app wasn't open for (runs in the
           // background; merges into healthHistory when it lands).
           backfillRecentHealthDays();
+          const todayHealth = await todayHealthPromise;
+          if (todayHealth) {
+            const [steps, calories] = todayHealth;
+            // The ref too: the load-time recalc reads today's steps from it.
+            healthKitDataRef.current = { ...(healthKitDataRef.current || {}), todaySteps: steps ?? healthKitDataRef.current?.todaySteps ?? 0 };
+            setHealthKitData(prev => ({
+              ...prev,
+              todaySteps: steps ?? prev.todaySteps ?? 0,
+              todayCalories: calories ?? prev.todayCalories ?? 0,
+              isConnected: prev.isConnected || steps > 0 || calories > 0,
+            }));
+          }
+          // Home's skeleton ends with the data: batched with setActivities below.
+          setIsLoading(false);
           lastFirestoreActivityCount.current = userActivities.length;
           // The streaks as they stand after this load, for the records recalc below.
           let streaksAfterLoad = profileForStreaks?.streaks || null;
@@ -15481,6 +14492,7 @@ export default function DaySevenApp() {
         } catch (error) {
           // Still mark as loaded on error so we don't block record checking forever
           setRecordsLoaded(true);
+          setIsLoading(false);
         }
       })();
     } else {
@@ -15553,22 +14565,7 @@ export default function DaySevenApp() {
           );
           const result = await Promise.race([healthKitPromise, timeoutPromise]);
           if (result.success) {
-            // Find workouts that aren't already in activities
-            const existingUUIDs = new Set(
-              userActivities
-                .filter(a => a.healthKitUUID)
-                .map(a => a.healthKitUUID)
-            );
-            const linkedUUIDs = new Set(
-              userActivities
-                .filter(a => a.linkedHealthKitUUID)
-                .map(a => a.linkedHealthKitUUID)
-            );
-            const newWorkouts = result.workouts.filter(
-              w => w.healthKitUUID &&
-                   !existingUUIDs.has(w.healthKitUUID) &&
-                   !linkedUUIDs.has(w.healthKitUUID)
-            );
+            const newWorkouts = selectNewHealthKitWorkouts(result.workouts, userActivities);
 
             const hasHealthData = (result.todaySteps > 0 || result.todayCalories > 0);
             setHealthKitData(prev => ({
@@ -15612,21 +14609,99 @@ export default function DaySevenApp() {
         }
       } catch {}
 
+      // A tap on a push, or on the banner a push shows when it arrives with the app open.
+      const openNotification = (notification, actionId) => {
+        clearBadge();
+        clearAllNotifications();
+        // Conversion nudges (trial ending): drop the user straight onto the
+        // paywall instead of just opening the app.
+        const tapType = notification?.notification?.data?.type || notification?.data?.type;
+        const tapStage = notification?.notification?.data?.stage || notification?.data?.stage || null;
+        logNotificationOpen(tapType, tapStage); // best-effort open tracking (server pairs it with 'sent')
+        if ((tapType === 'trial_ending' || tapType === 'trial_final') && Capacitor.isNativePlatform()) {
+          presentPaywall()
+            .then(async ({ purchased }) => {
+              if (purchased) { const s = await checkProStatus(); applyProStatus(s); }
+            })
+            .catch(() => {});
+          return;
+        }
+        handleNotificationNavigation(notification, (tab, opts) => {
+          setActiveTab(tab);
+          if (opts?.friendsView) {
+            setFriendsInitialTab(opts.friendsView);
+            setShowFriends(true);
+          }
+          if (tab === 'challenges') {
+            // Challenges moved into Friends — land on Friends → Challenges.
+            setActiveTab('feed');
+            setFriendsViewRequest({ view: 'challenges', nonce: Date.now() });
+            if (opts?.challengesSegment) {
+              setChallengesNavTarget({ segment: opts.challengesSegment, nonce: Date.now() });
+            }
+          }
+        }, {
+          onOpenActivity: (activityId) => {
+            setHomeOpenActivityTarget({ activityId: String(activityId), nonce: Date.now() });
+          },
+          // No owner means the push is about this user's own post.
+          onOpenPost: ({ ownerUid, ...post }) => {
+            setFeedPostTarget({ ...post, ownerUid: ownerUid || uid, nonce: Date.now() });
+          },
+          onShowChallengePicker: ({ activityId, challengeIds }) => {
+            openChallengeChooser({ activityId, challengeIds });
+          },
+          onShowSharePrompt: (summaryData) => {
+            localStorage.removeItem('pendingSharePrompt');
+            if (uid) {
+              updateUserProfile(uid, { pendingSharePrompt: null }).catch(() => {});
+            }
+            const today = new Date();
+            const lastSunday = new Date(today);
+            lastSunday.setDate(today.getDate() - today.getDay() - 7);
+            const lastSaturday = new Date(lastSunday);
+            lastSaturday.setDate(lastSunday.getDate() + 6);
+            setTimeout(() => {
+              setShareWeekRange({ startDate: lastSunday, endDate: lastSaturday });
+              setShowShare(true);
+            }, 500);
+          },
+        });
+      };
+      notificationTapRef.current = openNotification;
+
       const { cleanup, token } = await initializePushNotifications(
         uid,
         async (notification) => {
           const prefs = userProfileRef.current?.notificationPreferences;
           if (prefs && !shouldShowNotification(notification, prefs)) return;
 
-          const title = notification?.notification?.title || notification?.title;
-          const body = notification?.notification?.body || notification?.body;
-          if (title || body) {
-            setToastMessage(body || title);
-            setToastType('success');
-            setShowToast(true);
+          const model = describeInAppNotification(notification, { activities: activitiesRef.current });
+          if (model.name) {
+            const key = Date.now();
+            const friend = model.uid ? friendsRef.current.find((f) => f.uid === model.uid) : null;
+            setInAppBanner({
+              key,
+              model,
+              // The foreground event wraps the push in { notification }; a tapped push
+              // reaches openNotification unwrapped, and its routing reads `.data` directly.
+              notification: notification?.notification || notification,
+              photoURL: friend?.photoURL || null,
+              personName: friend?.displayName || model.person,
+            });
+            // Someone who isn't a friend yet (a friend request): fetch their photo, and
+            // add it if the banner is still up.
+            if (model.uid && !friend) {
+              getPublicProfile(model.uid).then((profile) => {
+                if (!profile?.photoURL && !profile?.displayName) return;
+                setInAppBanner((current) => (current?.key === key
+                  ? { ...current, photoURL: profile.photoURL || null, personName: profile.displayName || current.personName }
+                  : current));
+              });
+            }
           }
           // Push arrived while the app is in the foreground — the user is looking
-          // at it (we just showed an in-app toast), so clear the badge and
+          // at it (we just showed the in-app banner), so clear the badge and
           // re-baseline the server count rather than bumping the icon badge.
           clearBadge();
           if (uid) updateUserProfile(uid, { unreadBadgeCount: 0 }).catch(() => {});
@@ -15645,60 +14720,7 @@ export default function DaySevenApp() {
             }));
           }
         },
-        (notification, actionId) => {
-          clearBadge();
-          clearAllNotifications();
-          // Conversion nudges (trial ending): drop the user straight onto the
-          // paywall instead of just opening the app.
-          const tapType = notification?.notification?.data?.type || notification?.data?.type;
-          const tapStage = notification?.notification?.data?.stage || notification?.data?.stage || null;
-          logNotificationOpen(tapType, tapStage); // best-effort open tracking (server pairs it with 'sent')
-          if ((tapType === 'trial_ending' || tapType === 'trial_final') && Capacitor.isNativePlatform()) {
-            presentPaywall()
-              .then(async ({ purchased }) => {
-                if (purchased) { const s = await checkProStatus(); applyProStatus(s); }
-              })
-              .catch(() => {});
-            return;
-          }
-          handleNotificationNavigation(notification, (tab, opts) => {
-            setActiveTab(tab);
-            if (opts?.friendsView) {
-              setFriendsInitialTab(opts.friendsView);
-              setShowFriends(true);
-            }
-            if (tab === 'challenges') {
-              // Challenges moved into Friends — land on Friends → Challenges.
-              setActiveTab('feed');
-              setFriendsViewRequest({ view: 'challenges', nonce: Date.now() });
-              if (opts?.challengesSegment) {
-                setChallengesNavTarget({ segment: opts.challengesSegment, nonce: Date.now() });
-              }
-            }
-          }, {
-            onOpenActivity: (activityId) => {
-              setHomeOpenActivityTarget({ activityId: String(activityId), nonce: Date.now() });
-            },
-            onShowChallengePicker: ({ activityId, challengeIds }) => {
-              openChallengeChooser({ activityId, challengeIds });
-            },
-            onShowSharePrompt: (summaryData) => {
-              localStorage.removeItem('pendingSharePrompt');
-              if (uid) {
-                updateUserProfile(uid, { pendingSharePrompt: null }).catch(() => {});
-              }
-              const today = new Date();
-              const lastSunday = new Date(today);
-              lastSunday.setDate(today.getDate() - today.getDay() - 7);
-              const lastSaturday = new Date(lastSunday);
-              lastSaturday.setDate(lastSunday.getDate() + 6);
-              setTimeout(() => {
-                setShareWeekRange({ startDate: lastSunday, endDate: lastSaturday });
-                setShowShare(true);
-              }, 500);
-            },
-          });
-        }
+        openNotification
       );
       notificationCleanupRef.current = cleanup;
       fcmTokenRef.current = token;
@@ -15784,31 +14806,11 @@ export default function DaySevenApp() {
             .catch(() => setHkAccessBlocked(false));
         }
 
-        // Find workouts that aren't already in activities (by healthKitUUID) and not dismissed
-        const existingUUIDs = new Set(
-          currentActivities
-            .filter(a => a.healthKitUUID)
-            .map(a => a.healthKitUUID)
-        );
-
-        // Also filter out linked workouts (where activity has linkedHealthKitUUID)
-        const linkedUUIDs = new Set(
-          currentActivities
-            .filter(a => a.linkedHealthKitUUID)
-            .map(a => a.linkedHealthKitUUID)
-        );
-
-        // Filter workouts - exclude already saved, linked, and dismissed activities
-        const dismissedSet = new Set(dismissedWorkoutUUIDsRef.current);
-        const newWorkoutsRaw = result.workouts.filter(
-          w => w.healthKitUUID &&
-               !existingUUIDs.has(w.healthKitUUID) &&
-               !linkedUUIDs.has(w.healthKitUUID) &&
-               !dismissedSet.has(w.healthKitUUID)
-        );
-        // Collapse cross-source duplicates (same workout written to HealthKit
-        // by Apple Watch + Strava + Garmin Connect, etc.).
-        let newWorkouts = dedupeCrossSource(newWorkoutsRaw);
+        // New workouts only. The signup-week cut happens here, before the fresh read below,
+        // so pre-signup workouts don't cost a read on every sync either. (Only the first sync
+        // after onboarding used to skip them, so the next one imported the rest of HealthKit's
+        // 30 days as new.)
+        let newWorkouts = selectNewHealthKitWorkouts(result.workouts, currentActivities);
 
         // Final idempotency guard. The UUID filter above keyed off a snapshot of
         // activitiesRef taken when this run started; re-read the freshest list
@@ -15894,7 +14896,7 @@ export default function DaySevenApp() {
           }));
 
           // Show summary banner on homescreen
-          setAutoImportedCount(onboardingWorkouts.length);
+          setAutoImported(autoImportedActivities);
 
           justOnboardedRef.current = false;
         } else {
@@ -16303,6 +15305,7 @@ export default function DaySevenApp() {
   const { pullDistance, isRefreshing } = usePullToRefresh(refreshData, {
     threshold: 80,
     resistance: 0.5,
+    containerRef: scrollContainerRef,
     enabled: isOnboarded === true
       && !showAddActivity
       && !isHomeWorkoutPickerOpen
@@ -16315,6 +15318,7 @@ export default function DaySevenApp() {
       && !applyPastActivityChallenge
       && !isChallengeDetailOpen
       && !showHomeResumeConfirm
+      && !showTour
   });
 
   // Listen to auth state
@@ -16390,11 +15394,15 @@ export default function DaySevenApp() {
     checkAuth();
   }, [handleUserAuth]);
 
-  // Simulate initial load
+  // Home shows its skeleton until the launch read has set the activities (handleUserAuth
+  // ends it). It used to be a fixed 800ms from mount, which held Home back 0.3-0.4s after
+  // the data was in on every launch, and showed Home empty when the data was slower.
+  // Never more than 3s, so a slow or failed read still reaches Home.
   useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 800);
+    if (!isLoading || !user) return undefined;
+    const timer = setTimeout(() => setIsLoading(false), 3000);
     return () => clearTimeout(timer);
-  }, []);
+  }, [isLoading, user]);
 
   // RevenueCat init runs once at startup. On native we read the cached
   // Firebase user via the Capacitor plugin (the JS SDK's onAuthStateChanged
@@ -16439,12 +15447,26 @@ export default function DaySevenApp() {
     const onMainApp = !!userProfile?.username && !showWelcomePaywall && !showDiscordInvite && isPro;
     if (!isLoading && isOnboarded && userProfile && userProfile.hasCompletedTour !== true && onMainApp && !tourShownRef.current) {
       tourShownRef.current = true;
-      // Delay to ensure home tab UI is fully rendered.
-      const timer = setTimeout(() => {
+      // Delay to ensure home tab UI is fully rendered. A purchase makes isPro true while
+      // the paywall is still closing, so also wait for it to be gone, and for the app to
+      // be in the foreground.
+      let timer;
+      let started = false;
+      const start = () => {
+        if (isPaywallOpen() || document.visibilityState !== 'visible') {
+          timer = setTimeout(start, 400);
+          return;
+        }
+        started = true;
         setActiveTab('home');
         setShowTour(true);
-      }, 1000);
-      return () => clearTimeout(timer);
+      };
+      timer = setTimeout(start, 1000);
+      return () => {
+        clearTimeout(timer);
+        // Re-arm if this run was cut short before the tour began.
+        if (!started) tourShownRef.current = false;
+      };
     }
   }, [isLoading, isOnboarded, userProfile?.hasCompletedTour, userProfile?.username, showWelcomePaywall, showDiscordInvite, isPro]);
 
@@ -17048,7 +16070,7 @@ export default function DaySevenApp() {
   const activateInjuryMode = (durationWeeks, frozenCategories) => {
     if (userData.vacationMode?.isActive) {
       setToastMessage('Turn off vacation mode before starting injury mode');
-      setToastType('success');
+      setToastType('error');
       setShowToast(true);
       return;
     }
@@ -17058,7 +16080,7 @@ export default function DaySevenApp() {
     const remaining = INJURY_YEARLY_CAP - priorUsed;
     if (remaining < INJURY_MIN_WEEKS) {
       setToastMessage(`You've used your ${INJURY_YEARLY_CAP} injury weeks for this year`);
-      setToastType('success');
+      setToastType('error');
       setShowToast(true);
       return;
     }
@@ -17269,7 +16291,7 @@ export default function DaySevenApp() {
       } catch (error) {
         // Continue saving the activity without the photo, but notify user
         setToastMessage('Photo could not be uploaded. Activity saved without photo.');
-        setToastType('success');
+        setToastType('error');
         setShowToast(true);
       }
     }
@@ -18191,21 +17213,9 @@ export default function DaySevenApp() {
   // Show loading spinner while checking auth
   if (updateRequired) return <UpdateRequired />;
 
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="relative w-[60px] h-[60px]">
-          {/* Spinning circle */}
-          <svg className="absolute top-0 left-0 w-[60px] h-[60px] animate-spin" viewBox="0 0 60 60" style={{ animationDuration: '1.5s' }}>
-            <circle cx="30" cy="30" r="26" fill="none" stroke="#333" strokeWidth="5"/>
-            <circle cx="30" cy="30" r="26" fill="none" stroke="#fff" strokeWidth="5" strokeLinecap="round" strokeDasharray="130 360"/>
-          </svg>
-          {/* Number 7 */}
-          <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-2xl font-bold text-white">7</span>
-        </div>
-      </div>
-    );
-  }
+  const launchLoader = <LaunchLoader />;
+
+  if (authLoading) return launchLoader;
 
   // Pre-signup onboarding: survey → results → HK pre-screen → workout linking →
   // notif pre-screen. Permission prompts fire here (pre-signup) so they're the
@@ -18318,9 +17328,14 @@ export default function DaySevenApp() {
   // inline from userProfile so existing & comped users never flash the lock
   // screen while the isPro state catches up on cold start. Demo accounts return
   // early from handleUserAuth with isPro=true, so they never reach here.
+  // Subscribers: until RevenueCat answers on this launch, trust its last answer on this
+  // device, so they go straight in instead of seeing the lock screen flash first.
   const isGrandfathered = userProfile.subscriptionRequired !== true;
-  const hasFullAccess = isPro || isGrandfathered || userProfile.forceProTier === true;
+  const knownSubscriber = !proStatusResolved && lastKnownPro(user.uid);
+  const hasFullAccess = isPro || isGrandfathered || userProfile.forceProTier === true || knownSubscriber;
   if (!hasFullAccess) {
+    // Nothing remembered and no answer yet: stay on the launch loader.
+    if (!proStatusResolved) return launchLoader;
     return (
       <LockedScreen
         userProfile={userProfile}
@@ -18341,6 +17356,10 @@ export default function DaySevenApp() {
       />
     );
   }
+
+  // Launch: one loading screen. The loader stays until the launch read has set Home's data
+  // (or 3s pass), so Home appears finished instead of as a skeleton first.
+  if (isLoading) return launchLoader;
 
   // Custom refresh indicator component
   return (
@@ -18426,6 +17445,7 @@ export default function DaySevenApp() {
       <FinishWorkoutModal
         isOpen={showFinishWorkout}
         workout={activeWorkout}
+        distanceUnit={userProfile?.distanceUnit === 'km' ? 'km' : 'mi'}
         onDiscard={async () => {
           try {
             if (activeWorkout?.source === 'watch') {
@@ -18673,9 +17693,6 @@ export default function DaySevenApp() {
             animation: `${tabDirection === 0 ? 'fadeIn' : tabDirection === 1 ? 'slideInRight' : 'slideInLeft'} 200ms ease-out`
           }}
         >
-          {isLoading ? (
-            <HomeTabSkeleton />
-          ) : (
             <>
               {activeTab === 'home' && (
                 <SectionErrorBoundary name="home">
@@ -18752,6 +17769,7 @@ export default function DaySevenApp() {
                   onAcceptNotifReask={handleAcceptNotifReask}
                   onDismissNotifReask={consumeNotifReask}
                   onShowWinningStreakInfo={openWinningStreakInfo}
+                  onRemoveRecoveryGoal={handleRemoveRecoveryGoal}
                   onReplayCelebration={() => {
                     // Pure replay — no streak/celebration state is written. The modal
                     // resets itself whenever `show` goes false, so re-showing it plays
@@ -18790,8 +17808,8 @@ export default function DaySevenApp() {
                   onDeactivateVacation={requestVacationDeactivation}
                   onRequestResumeInjury={() => setShowHomeResumeConfirm(true)}
                   canResumeInjury={canResumeFromInjury()}
-                  autoImportedCount={autoImportedCount}
-                  onDismissAutoImported={() => setAutoImportedCount(0)}
+                  autoImported={autoImported}
+                  onDismissAutoImported={() => setAutoImported([])}
                   onShareStamp={(activity, routeCoords) => {
                     setStampActivity(activity);
                     setStampRouteCoords(routeCoords || []);
@@ -18829,6 +17847,14 @@ export default function DaySevenApp() {
                   userProfile={userProfile}
                   friends={friends}
                   viewRequest={friendsViewRequest}
+                  postTarget={feedPostTarget}
+                  onPostTargetMissing={(target) => {
+                    // Older than anything the feed shows. Your own post can still open
+                    // from Home; a friend's stays on the feed.
+                    if (target.ownerUid !== user?.uid) return;
+                    setActiveTab('home');
+                    setHomeOpenActivityTarget({ activityId: target.activityId, showComments: target.openComments, nonce: Date.now() });
+                  }}
                   challengesBadge={pendingReceivedChallenges.length}
                   challengesContent={
                 <ChallengesTab
@@ -18938,7 +17964,7 @@ export default function DaySevenApp() {
                     } else {
                       if (userData.injuryMode?.isActive) {
                         setToastMessage('Resume from injury mode before starting vacation mode');
-                        setToastType('success');
+                        setToastType('error');
                         setShowToast(true);
                         return;
                       }
@@ -18946,7 +17972,7 @@ export default function DaySevenApp() {
                       const used = vm.activationYear === currentYear ? (vm.activationsThisYear || 0) : 0;
                       if (used >= 3) {
                         setToastMessage('You\'ve used all 3 vacation activations this year');
-                        setToastType('success');
+                        setToastType('error');
                         setShowToast(true);
                         return;
                       }
@@ -18970,7 +17996,6 @@ export default function DaySevenApp() {
                 </SectionErrorBoundary>
               )}
             </>
-          )}
         </div>
         {showSettings && (
           // data-modal-overlay opts this out of the page-level pull-to-refresh.
@@ -19007,6 +18032,10 @@ export default function DaySevenApp() {
               onUpdatePhoto={handleUpdatePhoto}
               onShare={() => setShowShare(true)}
               onStartTour={() => {
+                // Close Settings first: it covers Home and the nav bar, so the tour's
+                // spotlights would show the Settings page instead of what they point at.
+                setShowSettings(false);
+                setSettingsScrollTo(null);
                 setTourStep(0);
                 setActiveTab('home');
                 setShowTour(true);
@@ -19044,7 +18073,7 @@ export default function DaySevenApp() {
                 } else {
                   if (userData.injuryMode?.isActive) {
                     setToastMessage('Resume from injury mode before starting vacation mode');
-                    setToastType('success');
+                    setToastType('error');
                     setShowToast(true);
                     return;
                   }
@@ -19053,7 +18082,7 @@ export default function DaySevenApp() {
                   const used = vm.activationYear === currentYear ? (vm.activationsThisYear || 0) : 0;
                   if (used >= 3) {
                     setToastMessage('You\'ve used all 3 vacation activations this year');
-                    setToastType('success');
+                    setToastType('error');
                     setShowToast(true);
                     return;
                   }
@@ -19232,6 +18261,7 @@ export default function DaySevenApp() {
           targetRef={getTourTargetRef()}
           onSwitchTab={setActiveTab}
           homeTabRef={homeTabRef}
+          fabRef={logActivityRef}
         />
       )}
 
@@ -19494,6 +18524,8 @@ export default function DaySevenApp() {
         onClose={() => setShowDeleteAccount(false)}
         user={user}
         userProfile={userProfile}
+        showManageSubscription={isPro && planType !== 'lifetime'}
+        onManageSubscription={presentCustomerCenter}
         onDeleteComplete={() => {
           setShowDeleteAccount(false);
           handleSignOut();
@@ -19914,7 +18946,10 @@ export default function DaySevenApp() {
         // Hold off on celebrations while the Challenge a friend modal is up — playing them
         // simultaneously buries the modal. Once the user dismisses the modal (or sends),
         // `challengeModalActivity` flips to null and the overlay animates in.
-        show={showCelebration && !challengeModalActivity}
+        // Also held while the activity stamp (z-index 9999) is open after a timed workout:
+        // the save that opens the stamp is what fires these, and they'd otherwise play
+        // hidden underneath it. They animate in once the stamp closes.
+        show={showCelebration && !challengeModalActivity && !showStampModal}
         message={celebrationMessage}
         type={celebrationType}
         onComplete={() => {
@@ -19924,6 +18959,7 @@ export default function DaySevenApp() {
           if (pendingToast) {
             setTimeout(() => {
               setToastMessage(pendingToast);
+              setToastType('record'); // pending toasts are always record toasts
               setShowToast(true);
               setPendingToast(null);
             }, 300);
@@ -19931,9 +18967,9 @@ export default function DaySevenApp() {
         }}
       />
 
-      <SectionErrorBoundary name="weekCelebration" variant="modal" open={showWeekStreakCelebration && !challengeModalActivity} onClose={() => setShowWeekStreakCelebration(false)}>
+      <SectionErrorBoundary name="weekCelebration" variant="modal" open={showWeekStreakCelebration && !challengeModalActivity && !showStampModal} onClose={() => setShowWeekStreakCelebration(false)}>
       <WeekStreakCelebration
-        show={showWeekStreakCelebration && !challengeModalActivity}
+        show={showWeekStreakCelebration && !challengeModalActivity && !showStampModal}
         streakCount={userData?.streaks?.master || 1}
         goals={userData?.goals || {}}
         // Only while the celebration shows (same reasoning as ShareModal's stats).
@@ -19955,6 +18991,7 @@ export default function DaySevenApp() {
           if (pendingToast) {
             setTimeout(() => {
               setToastMessage(pendingToast);
+              setToastType('record'); // pending toasts are always record toasts
               setShowToast(true);
               setPendingToast(null);
             }, 300);
@@ -20034,12 +19071,24 @@ export default function DaySevenApp() {
       <Toast
         // Same deferral as the celebration overlays — record toasts and any other queued
         // success toast wait for the Challenge a friend modal to close before appearing.
-        show={showToast && !challengeModalActivity}
+        show={showToast && !challengeModalActivity && !showStampModal}
         message={toastMessage}
         onDismiss={() => setShowToast(false)}
         onTap={toastType === 'record' ? navigateToHallOfFame : null}
         type={toastType}
       />
+
+      {inAppBanner && (
+        <InAppNotificationBanner
+          key={inAppBanner.key}
+          model={inAppBanner.model}
+          photoURL={inAppBanner.photoURL}
+          personName={inAppBanner.personName}
+          onTap={() => notificationTapRef.current?.(inAppBanner.notification)}
+          // Only clear it if a newer push hasn't already replaced it.
+          onDone={() => setInAppBanner((current) => (current?.key === inAppBanner.key ? null : current))}
+        />
+      )}
 
       {/* Vacation spill choice — shown when ending a vacation that carried past
           its starting week. Lets the user keep the current week frozen or count
@@ -20091,11 +19140,11 @@ export default function DaySevenApp() {
                   closeVacationSpill(() => deactivateVacationMode(true));
                 }}
                 className="w-full p-3.5 rounded-xl text-left flex items-start gap-3"
-                style={{ backgroundColor: 'rgba(0,255,148,0.08)', border: '1px solid rgba(0,255,148,0.2)' }}
+                style={{ backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.18)' }}
               >
                 <span className="text-xl leading-none mt-0.5">🔥</span>
                 <div>
-                  <div className="text-sm font-semibold" style={{ color: '#00FF94' }}>Count toward my streak</div>
+                  <div className="text-sm font-semibold text-white">Count toward my streak</div>
                   <div className="text-[11px] text-gray-400 mt-0.5 leading-snug">You're back — hit this week's goals to keep your streak going.</div>
                 </div>
               </button>
@@ -20213,6 +19262,7 @@ export default function DaySevenApp() {
         onClose={() => setChallengePickerForFriend(null)}
         activities={displayActivities}
         friend={challengePickerForFriend}
+        onLogWorkout={() => handleAddActivity(getTodayDate())}
         onPick={(activity) => {
           const friend = challengePickerForFriend;
           setChallengePickerForFriend(null);
@@ -20414,7 +19464,7 @@ export default function DaySevenApp() {
       {showHealthReconnect && (
         <HKPrescreen
           title="Reconnect Apple Health."
-          body="Your Apple Health permission was reset — that happens after a reinstall or a move to a new phone. Reconnect to keep logging workouts to your rings automatically."
+          body="Your Apple Health permission was reset — that happens after a reinstall or a move to a new phone. Reconnect to keep logging workouts automatically."
           cta="Reconnect Apple Health"
           onConnected={(granted) => {
             setShowHealthReconnect(false);

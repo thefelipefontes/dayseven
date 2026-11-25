@@ -8,6 +8,47 @@ Paste each field into App Store Connect → App Information / Version page. Limi
 
 ---
 
+## What's New in 1.8.8 (4000 max)
+
+```
+See every step of your week.
+
+• Daily step bars now appear in the calendar's Week view, plus a new day-by-day steps chart in the Month view
+• Slide your finger across any steps chart, including the one on Home, to see that day's exact count
+• Fixes and polish
+```
+
+---
+
+## What's New in 1.8.7 (4000 max)
+
+```
+Your crew, faster.
+
+• The Friends tab opens faster, with your feed ready right away
+• Profile photos appear instantly, with no more empty circles
+• Recovery is a bonus, so now you can take it off your weekly goals. Tap Recovery on Home, then Remove from goals
+• A fresh new look on the Friends tab for when you're just getting started
+• Fixes and polish
+```
+
+---
+
+## What's New in 1.8.6 (4000 max)
+
+```
+Smoother from the first tap.
+
+• Notifications now drop in at the top of the screen while you're in the app. Tap a comment to jump straight to it
+• Swipe left on a comment to delete it: your own anywhere, or anyone's on your activities
+• Comment threads read in order, oldest to newest
+• Opening the app is faster and cleaner, with the DaySeven logo drawing itself while it loads
+• New accounts start with just this week's workouts from Apple Health, so there's nothing old to sort through
+• Fixes and polish
+```
+
+---
+
 ## What's New in 1.8.5 (4000 max)
 
 ```
@@ -15,6 +56,7 @@ Know where your streak stands.
 
 • Your Sunday summary now tells you when the Streak Shield held your week, and what it takes to grow your streak
 • See when friends are on vacation 🌴, on an injury pause 🩹, or had their last week held by the Streak Shield 🛡️, on their profile and the leaderboard
+• Challenges you send now show how your friend did, completed or missed, instead of a win or loss for you
 • New to the every-week Streak Shield? A quick note on Home shows how it works
 • Recovery, your bonus goal, now counts the same every week: hit it and its streak grows, miss it and it resets, even in a week your shield held
 • Uses less data when the app opens and on the leaderboard

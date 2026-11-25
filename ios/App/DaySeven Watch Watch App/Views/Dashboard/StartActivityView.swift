@@ -32,15 +32,16 @@ struct StartActivityView: View {
                 ForEach(strengthTypes) { activityType in
                     activityRowWithPlay(
                         symbol: activityType.sfSymbol,
+                        iconKey: activityType.name,
                         name: activityType.displayName,
-                        color: AppColors.strength,
+                        look: .strength,
                         activityType: "Strength Training",
                         strengthType: activityType.name,
                         hasDetails: true
                     )
                 }
             } header: {
-                sectionHeader("Strength", symbol: "dumbbell.fill", color: AppColors.strength)
+                sectionHeader("Strength", look: .strength)
             }
 
             // MARK: Cardio
@@ -49,23 +50,21 @@ struct StartActivityView: View {
                 ForEach(visibleCardio) { activityType in
                     activityRowWithPlay(
                         symbol: activityType.sfSymbol,
+                        iconKey: activityType.name,
                         name: activityType.displayName,
-                        color: AppColors.cardio,
+                        look: .cardio,
                         activityType: activityType.name,
                         strengthType: nil,
                         hasDetails: !activityType.subtypes.isEmpty
                     )
                 }
                 if !showAllCardio && cardioTypes.count > Self.defaultVisibleCount {
-                    seeMoreButton(
-                        count: cardioTypes.count - Self.defaultVisibleCount,
-                        color: AppColors.cardio
-                    ) {
+                    seeMoreButton(count: cardioTypes.count - Self.defaultVisibleCount) {
                         showAllCardio = true
                     }
                 }
             } header: {
-                sectionHeader("Cardio", symbol: "figure.run", color: AppColors.cardio)
+                sectionHeader("Cardio", look: .cardio)
             }
 
             // MARK: Hybrid (Yoga/Pilates pick counts-toward; Walking picks indoor/outdoor)
@@ -74,14 +73,16 @@ struct StartActivityView: View {
                     if activityType.subtypes.isEmpty {
                         hybridActivityRow(
                             symbol: activityType.sfSymbol,
+                            iconKey: activityType.name,
                             name: activityType.displayName,
                             activityType: activityType.name
                         )
                     } else {
                         activityRowWithPlay(
                             symbol: activityType.sfSymbol,
+                            iconKey: activityType.name,
                             name: activityType.displayName,
-                            color: .gray,
+                            look: .neutral,
                             activityType: activityType.name,
                             strengthType: nil,
                             hasDetails: true
@@ -89,7 +90,7 @@ struct StartActivityView: View {
                     }
                 }
             } header: {
-                sectionHeader("Hybrid", symbol: "wind", color: .gray)
+                sectionHeader("Hybrid", look: .neutral)
             }
 
             // MARK: Recovery
@@ -98,25 +99,25 @@ struct StartActivityView: View {
                 ForEach(visibleRecovery) { activityType in
                     activityRowWithPlay(
                         symbol: activityType.sfSymbol,
+                        iconKey: activityType.name,
                         name: activityType.displayName,
-                        color: AppColors.recovery,
+                        look: .recovery,
                         activityType: activityType.name,
                         strengthType: nil,
                         hasDetails: !activityType.subtypes.isEmpty
                     )
                 }
                 if !showAllRecovery && recoveryTypes.count > Self.defaultVisibleCount {
-                    seeMoreButton(
-                        count: recoveryTypes.count - Self.defaultVisibleCount,
-                        color: AppColors.recovery
-                    ) {
+                    seeMoreButton(count: recoveryTypes.count - Self.defaultVisibleCount) {
                         showAllRecovery = true
                     }
                 }
             } header: {
-                sectionHeader("Recovery", symbol: "figure.cooldown", color: AppColors.recovery)
+                sectionHeader("Recovery", look: .recovery)
             }
         }
+        // Rows as compact as the board's (the badge plus 7pt), not the List's default height
+        .environment(\.defaultMinListRowHeight, 40)
         .navigationDestination(for: WorkoutDestination.self) { destination in
             switch destination {
             case .quickStart(let activityType, let strengthType, let countToward):
@@ -164,15 +165,16 @@ struct StartActivityView: View {
 
     private func activityRowWithPlay(
         symbol: String,
+        iconKey: String,
         name: String,
-        color: Color,
+        look: CategoryLook,
         activityType: String,
         strengthType: String?,
         hasDetails: Bool
     ) -> some View {
         let needsLocationChoice = Self.locationActivities.contains(activityType)
 
-        return HStack {
+        return HStack(spacing: 6) {
             // Left side: tap for details (if available) or quick start
             // Spacer is inside the label so the entire row area is tappable
             Button {
@@ -183,17 +185,7 @@ struct StartActivityView: View {
                     path.append(WorkoutDestination.quickStart(activityType: activityType, strengthType: strengthType))
                 }
             } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: symbol)
-                        .font(.system(size: 20))
-                        .foregroundColor(isWorkoutActive ? color.opacity(0.3) : color)
-                        .frame(width: 28)
-                    Text(name)
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(isWorkoutActive ? .gray : .white)
-                    Spacer()
-                }
-                .contentShape(Rectangle())
+                rowLabel(symbol: symbol, iconKey: iconKey, name: name, look: look)
             }
             .buttonStyle(.plain)
             .disabled(isWorkoutActive)
@@ -209,39 +201,47 @@ struct StartActivityView: View {
                     path.append(WorkoutDestination.quickStart(activityType: activityType, strengthType: strengthType))
                 }
             } label: {
-                Image(systemName: "play.circle.fill")
-                    .font(.system(size: 36))
-                    .foregroundColor(isWorkoutActive ? .green.opacity(0.3) : .green)
+                PlayCircle(look: look, dimmed: isWorkoutActive)
             }
             .buttonStyle(.plain)
             .disabled(isWorkoutActive)
+            .accessibilityLabel("Start \(name)")
         }
-        .padding(.vertical, 6)
+        .modifier(CardRow())
+    }
+
+    /// The tinted badge with the activity's icon, then its name.
+    private func rowLabel(symbol: String, iconKey: String, name: String, look: CategoryLook) -> some View {
+        HStack(spacing: 9) {
+            RoundedRectangle(cornerRadius: 9)
+                .fill(look.badgeTint)
+                .frame(width: 30, height: 30)
+                .overlay(ActivityIcon(name: iconKey, sfSymbol: symbol, color: look.color, size: 16))
+            Text(name)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Spacer(minLength: 0)
+        }
+        .opacity(isWorkoutActive ? 0.35 : 1)
+        .contentShape(Rectangle())
     }
 
     // MARK: - Hybrid Activity Row (Yoga/Pilates → count toward picker)
 
     private func hybridActivityRow(
         symbol: String,
+        iconKey: String,
         name: String,
         activityType: String
     ) -> some View {
-        HStack {
+        HStack(spacing: 6) {
             Button {
                 guard !isWorkoutActive else { return }
                 path.append(WorkoutDestination.hybridPicker(activityType: activityType))
             } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: symbol)
-                        .font(.system(size: 20))
-                        .foregroundColor(isWorkoutActive ? Color.gray.opacity(0.3) : .gray)
-                        .frame(width: 28)
-                    Text(name)
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(isWorkoutActive ? .gray : .white)
-                    Spacer()
-                }
-                .contentShape(Rectangle())
+                rowLabel(symbol: symbol, iconKey: iconKey, name: name, look: .neutral)
             }
             .buttonStyle(.plain)
             .disabled(isWorkoutActive)
@@ -250,72 +250,93 @@ struct StartActivityView: View {
                 guard !isWorkoutActive else { return }
                 path.append(WorkoutDestination.hybridPicker(activityType: activityType))
             } label: {
-                Image(systemName: "play.circle.fill")
-                    .font(.system(size: 36))
-                    .foregroundColor(isWorkoutActive ? .green.opacity(0.3) : .green)
+                PlayCircle(look: .neutral, dimmed: isWorkoutActive)
             }
             .buttonStyle(.plain)
             .disabled(isWorkoutActive)
+            .accessibilityLabel("Start \(name)")
         }
-        .padding(.vertical, 6)
+        .modifier(CardRow())
     }
 
     // MARK: - See More Button
 
-    private func seeMoreButton(count: Int, color: Color, action: @escaping () -> Void) -> some View {
+    private func seeMoreButton(count: Int, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(color)
+            HStack(spacing: 5) {
                 Text("See \(count) more")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(color)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(WeekColors.daysLeft)
+                WeekLineIcon(icon: .chevronDown, color: WeekColors.faint, size: 12, lineWidth: 2.6)
                 Spacer()
             }
             .padding(.vertical, 4)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .listRowBackground(Color.clear)
     }
 
     // MARK: - Section Header
 
-    private func sectionHeader(_ title: String, symbol: String, color: Color) -> some View {
+    /// The category's line icon in its colour, then the title in grey caps.
+    private func sectionHeader(_ title: String, look: CategoryLook) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: symbol)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(color)
-            Text(title.uppercased())
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(color)
+            if look == .neutral {
+                Image(systemName: "wind")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(WeekColors.muted)
+            } else {
+                WeekLineIcon(icon: look.icon, color: look.color, size: 12)
+            }
+            CapsText(title, size: 10)
         }
+    }
+}
+
+// MARK: - Start-page pieces
+
+/// The round play button in the category's tint, with the glyph in its colour.
+struct PlayCircle: View {
+    let look: CategoryLook
+    var dimmed = false
+    var size: CGFloat = 30
+
+    var body: some View {
+        Circle()
+            .fill(look.tint)
+            .frame(width: size, height: size)
+            .overlay(PlayGlyph(color: look.color, size: size * 0.4).offset(x: 1))
+            .opacity(dimmed ? 0.35 : 1)
+    }
+}
+
+/// A list row on the phone's card surface.
+struct CardRow: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(.vertical, 1)
+            .listRowBackground(TodayCard(cornerRadius: 15))
+            .listRowInsets(EdgeInsets(top: 6, leading: 7, bottom: 6, trailing: 7))
     }
 }
 
 // MARK: - Hybrid "Counts Toward" Picker (Yoga/Pilates)
 
-private struct HybridOption: Identifiable {
-    let id: String  // same as value
-    let label: String
-    let value: String
-    let symbol: String
-    let color: Color
-}
 
 struct HybridCountTowardPickerView: View {
     let activityType: String
     @Binding var path: NavigationPath
 
-    private let options: [HybridOption] = [
-        HybridOption(id: "recovery", label: "Recovery", value: "recovery", symbol: "figure.cooldown", color: AppColors.recovery),
-        HybridOption(id: "cardio", label: "Cardio", value: "cardio", symbol: "figure.run", color: AppColors.cardio),
-        HybridOption(id: "strength", label: "Strength", value: "strength", symbol: "dumbbell.fill", color: AppColors.strength),
+    private let options: [(label: String, value: String, look: CategoryLook)] = [
+        ("Recovery", "recovery", .recovery),
+        ("Cardio", "cardio", .cardio),
+        ("Strength", "strength", .strength),
     ]
 
     var body: some View {
         List {
-            ForEach(options) { option in
+            ForEach(options, id: \.value) { option in
                 Button {
                     path.append(WorkoutDestination.quickStart(
                         activityType: activityType,
@@ -323,24 +344,25 @@ struct HybridCountTowardPickerView: View {
                         countToward: option.value
                     ))
                 } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: option.symbol)
-                            .font(.system(size: 16))
-                            .foregroundColor(option.color)
-                            .frame(width: 24)
+                    HStack(spacing: 9) {
+                        RoundedRectangle(cornerRadius: 9)
+                            .fill(option.look.badgeTint)
+                            .frame(width: 30, height: 30)
+                            .overlay(WeekLineIcon(icon: option.look.icon, color: option.look.color, size: 16))
                         Text(option.label)
-                            .font(.system(size: 15, weight: .medium))
+                            .font(.system(size: 15, weight: .semibold))
                             .foregroundColor(.white)
-                        Spacer()
-                        Image(systemName: "play.circle.fill")
-                            .font(.system(size: 24))
-                            .foregroundColor(.green)
+                        Spacer(minLength: 0)
+                        PlayCircle(look: option.look)
                     }
-                    .padding(.vertical, 4)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Start, counts toward \(option.label)")
+                .modifier(CardRow())
             }
         }
+        .environment(\.defaultMinListRowHeight, 40)
         .navigationTitle(activityType)
     }
 }

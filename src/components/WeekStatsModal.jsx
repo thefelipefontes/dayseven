@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Haptics } from '@capacitor/haptics';
 import SectionIcon from './SectionIcon';
 import { SwipeableProvider, SwipeableActivityItem } from './SwipeableActivityItem';
 import ActivityIcon from './ActivityIcon';
@@ -6,10 +7,15 @@ import CategoryIcon from './CategoryIcon';
 import { initialUserData } from '../utils/initialUserData';
 import { countsAsLifting, countsAsCardio, countsAsRecovery } from '../utils/activityCategory';
 import { stepsDailyShare } from '../utils/weekGoals';
+import { formatDistanceValue, unitLabel } from '../utils/distance';
+import { formatFriendlyDate } from '../utils/dateHelpers';
 
-const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity, onSelectActivity, onShare, userData }) => {
+const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity, onSelectActivity, onShare, userData, distanceUnit = 'mi' }) => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+  // Day strip scrubbing (same as the Month view): the day under the finger, or null.
+  const [scrubIndex, setScrubIndex] = useState(null);
+  const stripRef = useRef(null);
   
   useEffect(() => {
     if (isOpen) {
@@ -59,6 +65,19 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
   const weekStepsGoal = dailyStepsGoal * 7;
   const weekStepsTotal = weekData?.steps || 0;
   const formatK = (n) => `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  // Slide a finger across the day strip to read a day's exact steps in the card header,
+  // with a selection tick on each new day.
+  const scrubTo = (clientX) => {
+    const el = stripRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const i = Math.max(0, Math.min(6, Math.floor(((clientX - rect.left) / rect.width) * 7)));
+    if (scrubIndex !== i) Haptics.selectionChanged().catch(() => {});
+    setScrubIndex(i);
+  };
+  const endScrub = () => setScrubIndex(null);
+  const scrubSteps = scrubIndex !== null ? (weekData?.stepsByDay?.[scrubIndex] ?? null) : undefined;
+  const scrubDate = scrubIndex !== null ? weekData?.stepsDates?.[scrubIndex] : null;
 
   // Every week shows Strength, Cardio, Steps with Recovery as the bonus. Whether the week
   // counted still follows the rule it was judged by (utils/weekGoals): weeks before the
@@ -250,13 +269,42 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
           <div className="p-3.5 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-xs text-gray-400 flex items-center gap-2"><CategoryIcon category="steps" size={16} />Steps</span>
-              <span className="text-xs font-bold">{formatK(weekStepsTotal)} <span className="font-medium" style={{ color: '#777' }}>/ {formatK(weekStepsGoal)}</span></span>
-            </div>
-            <div className="h-1.5 rounded-full relative" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
-              <div className="h-full rounded-full" style={{ width: `${Math.min((weekStepsTotal / weekStepsGoal) * 100, 100)}%`, backgroundColor: 'rgba(191,90,242,0.5)' }} />
-              {isLiveWeek && daysElapsed > 1 && weekStepsTotal < weekStepsGoal && (
-                <div className="absolute rounded-full" style={{ left: `calc(${((daysElapsed - 1) / 7) * 100}% - 1px)`, top: '-4px', width: '2px', height: '14px', backgroundColor: '#fff' }} />
+              {scrubIndex !== null ? (
+                <span className="text-xs font-bold">
+                  <span className="font-medium" style={{ color: '#999' }}>{scrubDate ? new Date(`${scrubDate}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][scrubIndex]} · </span>
+                  {scrubSteps === null ? <span style={{ color: '#777' }}>—</span> : <span style={{ color: scrubSteps >= dailyStepsGoal ? '#BF5AF2' : '#fff' }}>{scrubSteps.toLocaleString()} steps</span>}
+                </span>
+              ) : (
+                <span className="text-xs font-bold">{formatK(weekStepsTotal)} <span className="font-medium" style={{ color: '#777' }}>/ {formatK(weekStepsGoal)}</span></span>
               )}
+            </div>
+            {/* Sun–Sat day strip — the same bars as Home's Steps breakdown: a full bar is the
+                daily share of the weekly goal, short days are fine. */}
+            <div
+              ref={stripRef}
+              className="flex gap-[5px] items-end mt-2 select-none"
+              style={{ touchAction: 'none' }}
+              onPointerDown={(e) => { e.currentTarget.setPointerCapture?.(e.pointerId); scrubTo(e.clientX); }}
+              onPointerMove={(e) => { if (scrubIndex !== null || e.pointerType === 'mouse') scrubTo(e.clientX); }}
+              onPointerUp={endScrub}
+              onPointerCancel={endScrub}
+              onPointerLeave={(e) => { if (e.pointerType === 'mouse') endScrub(); }}
+            >
+              {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((label, i) => {
+                const daySteps = weekData?.stepsByDay?.[i] ?? null;
+                const isFuture = daySteps === null;
+                const isToday = isLiveWeek && i === weekData?.todayIndex;
+                const isScrubbed = i === scrubIndex;
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center gap-1 transition-opacity duration-100" style={{ opacity: scrubIndex !== null && !isScrubbed ? 0.45 : 1 }}>
+                    <div className="text-[9px]" style={{ color: isFuture ? 'transparent' : '#777' }}>{isFuture ? '·' : formatK(daySteps)}</div>
+                    <div className="w-full h-[34px] rounded-[5px] flex items-end overflow-hidden" style={{ backgroundColor: isFuture ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.06)' }}>
+                      <div className="w-full rounded-[5px]" style={{ height: `${isFuture ? 0 : Math.min(100, (daySteps / dailyStepsGoal) * 100)}%`, backgroundColor: isScrubbed && !isFuture ? '#fff' : !isFuture && daySteps >= dailyStepsGoal ? '#BF5AF2' : 'rgba(191,90,242,0.55)' }} />
+                    </div>
+                    <div className="text-[9px]" style={{ color: isToday ? '#fff' : '#777', fontWeight: isToday ? 700 : 400 }}>{label}</div>
+                  </div>
+                );
+              })}
             </div>
             <p className="text-[12.5px] mt-2 leading-snug" style={{ color: '#ccc' }}>
               {(() => {
@@ -288,7 +336,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
               <div className="text-[10px] text-gray-400">Sessions</div>
             </div>
             <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              <div className="text-base font-black">{(weekData?.miles || 0).toFixed(1)} mi</div>
+              <div className="text-base font-black">{formatDistanceValue(weekData?.miles || 0, distanceUnit, 1)} {unitLabel(distanceUnit)}</div>
               <div className="text-[10px] text-gray-400">Distance</div>
             </div>
             <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
@@ -395,7 +443,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
                         {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} customActivityCategory={activity.customActivityCategory} />}
                         {activity.subtype || activity.type}
                       </div>
-                      <div className="text-xs text-gray-500">{activity.date}</div>
+                      <div className="text-xs text-gray-500">{formatFriendlyDate(activity.date)}</div>
                     </div>
                     <div className="flex gap-4 text-xs text-gray-400">
                       <span>{activity.duration} min</span>
@@ -443,10 +491,10 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
                         {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} customActivityCategory={activity.customActivityCategory} />}
                         {activity.subtype || activity.type}
                       </div>
-                      <div className="text-xs text-gray-500">{activity.date}</div>
+                      <div className="text-xs text-gray-500">{formatFriendlyDate(activity.date)}</div>
                     </div>
                     <div className="flex gap-4 text-xs text-gray-400">
-                      {activity.distance && <span>{parseFloat(activity.distance).toFixed(2)} mi</span>}
+                      {activity.distance && <span>{formatDistanceValue(activity.distance, distanceUnit, 2)} {unitLabel(distanceUnit)}</span>}
                       <span>{activity.duration} min</span>
                       {activity.calories > 0 && <span>{activity.calories} cal</span>}
                     </div>
@@ -491,7 +539,7 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
                         {activity.type === 'Other' && (activity.customIcon || activity.customEmoji) && <ActivityIcon type="Other" customIcon={activity.customIcon} customEmoji={activity.customEmoji} size={14} customActivityCategory={activity.customActivityCategory} />}
                         {activity.type === 'Other' ? (activity.subtype || activity.type) : activity.type}
                       </div>
-                      <div className="text-xs text-gray-500">{activity.date}</div>
+                      <div className="text-xs text-gray-500">{formatFriendlyDate(activity.date)}</div>
                     </div>
                     <div className="flex gap-4 text-xs text-gray-400">
                       <span>{activity.duration} min</span>
@@ -530,10 +578,10 @@ const WeekStatsModal = ({ isOpen, onClose, weekData, weekLabel, onDeleteActivity
                       <div className="font-medium text-sm flex items-center gap-1">
                         {activity.subtype ? `Walking • ${activity.subtype}` : 'Walking'}
                       </div>
-                      <div className="text-xs text-gray-500">{activity.date}</div>
+                      <div className="text-xs text-gray-500">{formatFriendlyDate(activity.date)}</div>
                     </div>
                     <div className="flex gap-4 text-xs text-gray-400">
-                      {activity.distance && <span>{parseFloat(activity.distance).toFixed(2)} mi</span>}
+                      {activity.distance && <span>{formatDistanceValue(activity.distance, distanceUnit, 2)} {unitLabel(distanceUnit)}</span>}
                       {activity.duration && <span>{activity.duration} min</span>}
                       {activity.calories > 0 && <span>{activity.calories} cal</span>}
                     </div>

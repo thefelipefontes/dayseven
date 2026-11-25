@@ -12,6 +12,10 @@ class CustomViewController: CAPBridgeViewController, UIScrollViewDelegate {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
+        // Before the first layout pass too: until the page paints, an opaque web view is
+        // white, and it showed as a white flash at launch as the splash faded out.
+        webView?.isOpaque = false
+        webView?.backgroundColor = .black
         setNeedsStatusBarAppearanceUpdate()
 
         // Register local HealthKit writer plugin
@@ -42,10 +46,11 @@ class CustomViewController: CAPBridgeViewController, UIScrollViewDelegate {
         webView.scrollView.alwaysBounceVertical = false
         webView.scrollView.alwaysBounceHorizontal = false
 
-        // Set backgrounds
+        // Set backgrounds. Not opaque: an opaque WKWebView draws white until its first
+        // paint and ignores the black behind it.
         webView.backgroundColor = .black
         webView.scrollView.backgroundColor = .black
-        webView.isOpaque = true
+        webView.isOpaque = false
     }
 
     // MARK: - UIScrollViewDelegate

@@ -6,36 +6,13 @@ struct WorkoutControlsTab: View {
     @ObservedObject var workoutMgr: WorkoutManager
 
     var body: some View {
-        VStack(spacing: 16) {
-            Spacer()
-
-            if workoutMgr.isPaused {
-                Text("Paused")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(.yellow)
-            }
-
-            // Pause / Resume
-            Button {
+        WorkoutControlsContent(
+            isPaused: workoutMgr.isPaused,
+            isEnding: workoutMgr.isEnding,
+            onPauseResume: {
                 if workoutMgr.isPaused { workoutMgr.resume() } else { workoutMgr.pause() }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: workoutMgr.isPaused ? "play.fill" : "pause.fill")
-                        .font(.system(size: 18))
-                    Text(workoutMgr.isPaused ? "Resume" : "Pause")
-                        .font(.system(size: 16, weight: .bold))
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(Color.yellow)
-                .foregroundColor(.black)
-                .cornerRadius(14)
-            }
-            .buttonStyle(.plain)
-            .disabled(workoutMgr.isEnding)
-
-            // End
-            Button {
+            },
+            onEnd: {
                 Task {
                     do {
                         _ = try await workoutMgr.endWorkout()
@@ -43,26 +20,79 @@ struct WorkoutControlsTab: View {
                         print("[WorkoutControlsTab] End workout error: \(error)")
                     }
                 }
-            } label: {
-                HStack(spacing: 8) {
-                    if workoutMgr.isEnding {
+            }
+        ) {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                Text(formatElapsedTime(Int(workoutMgr.activeElapsed(at: context.date))))
+            }
+        }
+    }
+}
+
+/// The controls page (board 40): Pause/Resume as the white main pill, End as a quieter
+/// dark-red pill, and while paused the time you stopped at.
+struct WorkoutControlsContent<Elapsed: View>: View {
+    let isPaused: Bool
+    let isEnding: Bool
+    let onPauseResume: () -> Void
+    let onEnd: () -> Void
+    @ViewBuilder let elapsed: () -> Elapsed
+
+    private static var red: Color { ActiveWorkoutView.heartColor } // #FF453A
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Spacer()
+
+            // Paused: where you stopped, in place of the old yellow "Paused"
+            if isPaused {
+                VStack(spacing: 3) {
+                    CapsText("Paused", size: 10)
+                    elapsed()
+                        .font(.system(size: 26, weight: .heavy))
+                        .monospacedDigit()
+                        .tracking(-0.8)
+                        .foregroundColor(.white)
+                }
+                .accessibilityElement(children: .combine)
+            }
+
+            Button(action: onPauseResume) {
+                PillLabel(title: isPaused ? "Resume" : "Pause", fontSize: 16, verticalPadding: 12) {
+                    if isPaused {
+                        PlayGlyph(color: .black, size: 17)
+                    } else {
+                        HStack(spacing: 3) {
+                            RoundedRectangle(cornerRadius: 1.4).frame(width: 4, height: 13)
+                            RoundedRectangle(cornerRadius: 1.4).frame(width: 4, height: 13)
+                        }
+                        .foregroundColor(.black)
+                        .accessibilityHidden(true)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(isEnding)
+
+            // Saving keeps the grey and the spinner
+            Button(action: onEnd) {
+                PillLabel(
+                    title: isEnding ? "Saving..." : "End",
+                    background: isEnding ? Color.gray : Self.red.opacity(0.2),
+                    foreground: isEnding ? .white : Self.red,
+                    fontSize: 16,
+                    verticalPadding: 12
+                ) {
+                    if isEnding {
                         ProgressView()
                             .tint(.white)
                     } else {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 16, weight: .bold))
+                        WeekLineIcon(icon: .xmark, color: Self.red, size: 14, lineWidth: 3)
                     }
-                    Text(workoutMgr.isEnding ? "Saving..." : "End")
-                        .font(.system(size: 16, weight: .bold))
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(workoutMgr.isEnding ? Color.gray : Color.red)
-                .foregroundColor(.white)
-                .cornerRadius(14)
             }
             .buttonStyle(.plain)
-            .disabled(workoutMgr.isEnding)
+            .disabled(isEnding)
 
             Spacer()
         }
@@ -79,7 +109,7 @@ struct RootView: View {
         Group {
             if appVM.authService.isLoading {
                 ProgressView()
-                    .tint(.green)
+                    .tint(.white)
             } else if appVM.authService.isSignedIn {
                 MainTabView()
             } else {

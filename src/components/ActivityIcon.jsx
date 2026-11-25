@@ -419,7 +419,7 @@ function goalCategoryColor(countToward, customActivityCategory) {
   if (raw === 'lifting+cardio') return CATEGORY_COLORS.hybrid;
   if (raw === 'cardio') return CATEGORY_COLORS.cardio;
   if (raw === 'recovery') return CATEGORY_COLORS.recovery;
-  if (raw === 'warmup') return '#FFD60A';
+  if (raw === 'warmup') return '#aaa';
   return null;
 }
 

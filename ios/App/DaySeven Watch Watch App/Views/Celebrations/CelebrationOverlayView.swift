@@ -2,148 +2,169 @@ import SwiftUI
 
 // MARK: - Celebration Overlay View (brief, non-blocking)
 
+/// A category finishing for the week (board 41): a soft glow in its colour, Home's line
+/// icon on a glowing badge, "<Category> done", its blocks lighting up one by one, and one
+/// line saying what's left of the week. No rings and no sparkles.
 struct CelebrationOverlayView: View {
+    @EnvironmentObject var appVM: AppViewModel
     let celebration: CelebrationEvent
 
-    @State private var isAnimating = false
+    /// Set only by previews; the app reads the week from AppViewModel
+    var progress: CelebrationProgress? = nil
+
+    @State private var glowIn = false
+    @State private var iconIn = false
+    @State private var textIn = false
+    @State private var litBlocks = 0
     @State private var isFadingOut = false
 
-    // Sparkle particles
-    @State private var sparkles: [Sparkle] = []
+    private var type: CelebrationType { celebration.type }
+    private var color: Color { type.color }
 
-    private let sparkleCount = 28
+    private var data: CelebrationProgress {
+        progress ?? CelebrationProgress(appVM: appVM, type: type)
+    }
 
     var body: some View {
+        let data = self.data
         ZStack {
-            // Strong radial glow background
+            Color.black.ignoresSafeArea()
+
+            // Soft radial glow in the category colour
             RadialGradient(
-                gradient: Gradient(colors: [
-                    celebration.type.color.opacity(0.75),
-                    celebration.type.color.opacity(0.50),
-                    celebration.type.color.opacity(0.25),
-                    Color.black.opacity(0.90)
-                ]),
-                center: .center,
-                startRadius: 5,
-                endRadius: 160
+                gradient: Gradient(colors: [color.opacity(0.32), color.opacity(0.12), .clear]),
+                center: UnitPoint(x: 0.5, y: 0.4),
+                startRadius: 0,
+                endRadius: 150
             )
             .ignoresSafeArea()
+            .opacity(glowIn ? 1 : 0)
 
-            // Sparkle particles bursting outward
-            ForEach(sparkles) { sparkle in
-                SparkleView(sparkle: sparkle, color: celebration.type.color, isAnimating: isAnimating)
-            }
+            VStack(spacing: 0) {
+                // Tinted badge with the category's line icon, glowing
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(color.opacity(0.18))
+                    .frame(width: 58, height: 58)
+                    .shadow(color: color.opacity(0.45), radius: 13)
+                    .overlay {
+                        if type == .master {
+                            Image(systemName: "flame.fill")
+                                .font(.system(size: 26))
+                                .foregroundColor(color)
+                        } else {
+                            WeekLineIcon(icon: type.lineIcon, color: color, size: 30)
+                        }
+                    }
+                    .scaleEffect(iconIn ? 1 : 0.4)
+                    .opacity(iconIn ? 1 : 0)
 
-            VStack(spacing: 8) {
-                // Icon with ring animation
-                ZStack {
-                    // Outer pulsing ring
-                    Circle()
-                        .stroke(celebration.type.color.opacity(0.3), lineWidth: 3)
-                        .frame(width: 68, height: 68)
-                        .scaleEffect(isAnimating ? 1.3 : 0.8)
-                        .opacity(isAnimating ? 0.0 : 0.6)
+                Text(type.title)
+                    .font(.system(size: 19, weight: .heavy))
+                    .tracking(-0.3)
+                    .foregroundColor(type == .master ? WeekColors.gold : .white)
+                    .padding(.top, 14)
 
-                    // Main ring
-                    Circle()
-                        .stroke(celebration.type.color, lineWidth: 4)
-                        .frame(width: 60, height: 60)
-                        .scaleEffect(isAnimating ? 1.0 : 0.3)
-                        .opacity(isAnimating ? 1.0 : 0)
+                if type != .master {
+                    CapsText("For the week · \(data.done)/\(data.goal)", size: 9.5, color: color)
+                        .padding(.top, 4)
 
-                    // Icon
-                    Image(systemName: celebration.type.icon)
-                        .font(.system(size: 26, weight: .bold))
-                        .foregroundColor(celebration.type.color)
-                        .scaleEffect(isAnimating ? 1.0 : 0.1)
+                    // The category's blocks; done ones light up one by one and glow
+                    HStack(spacing: 4) {
+                        ForEach(0..<max(data.goal, 1), id: \.self) { i in
+                            let lit = i < min(data.done, litBlocks)
+                            Capsule()
+                                .fill(lit ? color : color.opacity(0.22))
+                                .frame(height: 7)
+                                .shadow(color: lit ? color.opacity(0.7) : .clear, radius: 4)
+                        }
+                    }
+                    .frame(width: 118)
+                    .padding(.top, 12)
                 }
 
-                // Title
-                Text(celebration.type.title)
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(celebration.type.color)
-                    .opacity(isAnimating ? 1.0 : 0)
-
-                // Streak count (for category/master celebrations)
-                if let streak = celebration.streakCount, streak > 0 {
-                    Text(celebration.type == .master ? "\(streak) week winning streak" : "\(streak) week streak")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.white.opacity(0.7))
-                        .opacity(isAnimating ? 1.0 : 0)
-                }
+                // What's left of the week, or "Week won" in gold if this finished it
+                Text(data.line)
+                    .font(.system(size: 11.5, weight: data.weekWon ? .bold : .regular))
+                    .foregroundColor(data.weekWon ? WeekColors.gold : WeekColors.muted)
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 12)
+                    .padding(.horizontal, 10)
             }
-            .scaleEffect(isAnimating ? 1.0 : 0.6)
+            .opacity(textIn ? 1 : 0)
+            .padding(.bottom, 10)
         }
         .opacity(isFadingOut ? 0.0 : 1.0)
         .allowsHitTesting(false)
-        .onAppear {
-            // Generate sparkle particles
-            sparkles = (0..<sparkleCount).map { _ in Sparkle.random() }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(type.title). \(data.line)")
+        .onAppear(perform: playEntrance)
+    }
 
-            // Spring-in animation
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
-                isAnimating = true
+    /// Glow fades in, the icon scales in, then the blocks light up one by one; the whole thing
+    /// fades out on the same schedule as before (the manager dismisses it at 3.5s).
+    private func playEntrance() {
+        withAnimation(.easeOut(duration: 0.45)) { glowIn = true }
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.62).delay(0.08)) {
+            iconIn = true
+            textIn = true
+        }
+        let goal = max(data.goal, 1)
+        for i in 1...goal {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4 + 0.14 * Double(i - 1)) {
+                withAnimation(.easeOut(duration: 0.2)) { litBlocks = i }
             }
-            // Start fade-out near the end of the display window
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.8) {
-                withAnimation(.easeOut(duration: 0.7)) {
-                    isFadingOut = true
-                }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.8) {
+            withAnimation(.easeOut(duration: 0.7)) {
+                isFadingOut = true
             }
         }
     }
 }
 
-// MARK: - Sparkle Particle Model
+// MARK: - What the celebration says
 
-private struct Sparkle: Identifiable {
-    let id = UUID()
-    let angle: Double      // radians, direction from center
-    let distance: CGFloat  // how far it travels
-    let size: CGFloat      // star size
-    let delay: Double      // staggered start
-    let duration: Double   // animation duration
-    let brightness: Double // opacity multiplier
+/// The category's count and what's left of Strength, Cardio and weekly Steps.
+struct CelebrationProgress {
+    let done: Int
+    let goal: Int
+    /// "Strength and Steps to go", "Week won", or Recovery's bonus line
+    let line: String
+    let weekWon: Bool
 
-    static func random() -> Sparkle {
-        Sparkle(
-            angle: Double.random(in: 0...(2 * .pi)),
-            distance: CGFloat.random(in: 40...110),
-            size: CGFloat.random(in: 3...8),
-            delay: Double.random(in: 0...0.4),
-            duration: Double.random(in: 0.7...1.5),
-            brightness: Double.random(in: 0.6...1.0)
-        )
+    init(done: Int, goal: Int, strengthMet: Bool, cardioMet: Bool, stepsMet: Bool, type: CelebrationType) {
+        self.done = done
+        self.goal = goal
+        if type == .recovery {
+            line = "A bonus on top of your week"
+            weekWon = false
+            return
+        }
+        var left: [String] = []
+        if !strengthMet { left.append("Strength") }
+        if !cardioMet { left.append("Cardio") }
+        if !stepsMet { left.append("Steps") }
+        weekWon = left.isEmpty
+        switch left.count {
+        case 0: line = "Week won"
+        case 1: line = "\(left[0]) to go"
+        case 2: line = "\(left[0]) and \(left[1]) to go"
+        default: line = "\(left[0]), \(left[1]) and \(left[2]) to go"
+        }
     }
-}
 
-// MARK: - Sparkle View (individual particle)
-
-private struct SparkleView: View {
-    let sparkle: Sparkle
-    let color: Color
-    let isAnimating: Bool
-
-    @State private var hasLaunched = false
-
-    private var endX: CGFloat { cos(sparkle.angle) * sparkle.distance }
-    private var endY: CGFloat { sin(sparkle.angle) * sparkle.distance }
-
-    var body: some View {
-        Image(systemName: "sparkle")
-            .font(.system(size: sparkle.size, weight: .bold))
-            .foregroundColor(color.opacity(sparkle.brightness))
-            .offset(x: hasLaunched ? endX : 0, y: hasLaunched ? endY : 0)
-            .scaleEffect(hasLaunched ? 0.3 : 1.0)
-            .opacity(hasLaunched ? 0.0 : 1.0)
-            .onChange(of: isAnimating) { _, animating in
-                if animating {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + sparkle.delay) {
-                        withAnimation(.easeOut(duration: sparkle.duration)) {
-                            hasLaunched = true
-                        }
-                    }
-                }
-            }
+    @MainActor
+    init(appVM: AppViewModel, type: CelebrationType) {
+        let p = appVM.weeklyProgress
+        let stepsMet = appVM.weekSteps >= appVM.goals.stepsPerDay * 7
+        let count: CategoryProgress
+        switch type {
+        case .strength: count = p.lifts
+        case .cardio: count = p.cardio
+        case .recovery: count = p.recovery
+        case .master: count = p.lifts
+        }
+        self.init(done: count.completed, goal: count.goal,
+                  strengthMet: p.lifts.isComplete, cardioMet: p.cardio.isComplete, stepsMet: stepsMet, type: type)
     }
 }

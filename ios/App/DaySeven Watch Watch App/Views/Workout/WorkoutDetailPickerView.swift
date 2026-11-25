@@ -13,15 +13,59 @@ struct WorkoutDetailPickerView: View {
         ActivityTypes.all.first { $0.name == activityType }
     }
 
-    var body: some View {
-        List {
-            if strengthType != nil {
-                // Strength: show focus areas
-                strengthFocusSection
-            } else if let subtypes = activityTypeDef?.subtypes, !subtypes.isEmpty {
-                // Cardio/Recovery: show subtypes
-                subtypeSection(subtypes)
+    /// Strength picks light up Strength green; subtypes use the activity's own category
+    private var look: CategoryLook {
+        if strengthType != nil { return .strength }
+        guard let def = activityTypeDef, !def.isHybrid else { return .neutral }
+        return CategoryLook(def.category)
+    }
+
+    /// The top action: always a white pill with a black play glyph
+    private func startPill(_ title: String) -> some View {
+        PillLabel(title: title) { PlayGlyph(color: .black, size: 13) }
+    }
+
+    /// A row on the card surface, or tinted and outlined in the category colour when picked
+    private func pickRow(_ title: String, picked: Bool, trailing: AnyView? = nil) -> some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.white)
+            Spacer()
+            if picked {
+                WeekLineIcon(icon: .check, color: look.color, size: 14, lineWidth: 3)
+            } else if let trailing {
+                trailing
             }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .background {
+            if picked {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(look.color.opacity(look == .neutral ? 0.12 : 0.14))
+                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(look.color.opacity(0.35), lineWidth: 1))
+            } else {
+                TodayCard(cornerRadius: 12)
+            }
+        }
+        .contentShape(Rectangle())
+    }
+
+    var body: some View {
+        // A plain stack, not a List: the rows sit 5pt apart like the board, not at the
+        // List's row height
+        ScrollView {
+            VStack(spacing: 5) {
+                if strengthType != nil {
+                    // Strength: show focus areas
+                    strengthFocusSection
+                } else if let subtypes = activityTypeDef?.subtypes, !subtypes.isEmpty {
+                    // Cardio/Recovery: show subtypes
+                    subtypeSection(subtypes)
+                }
+            }
+            .padding(.horizontal, 2)
         }
         .navigationTitle(strengthType ?? activityType)
     }
@@ -44,22 +88,9 @@ struct WorkoutDetailPickerView: View {
                     ))
                 }
             } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 12))
-                        .foregroundColor(selectedFocusAreas.isEmpty ? .green : .black)
-                    Text(selectedFocusAreas.isEmpty ? "Just Start" : "Start Workout")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(selectedFocusAreas.isEmpty ? .green : .black)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, selectedFocusAreas.isEmpty ? 2 : 10)
-                .background(selectedFocusAreas.isEmpty ? Color.clear : Color.green)
-                .cornerRadius(selectedFocusAreas.isEmpty ? 0 : 12)
-                .contentShape(Rectangle())
+                startPill(selectedFocusAreas.isEmpty ? "Just start" : "Start workout")
             }
             .buttonStyle(.plain)
-            .listRowBackground(Color.clear)
 
             // Focus areas (multi-select with checkmarks)
             ForEach(ActivityTypes.strengthFocusAreas, id: \.self) { area in
@@ -70,20 +101,9 @@ struct WorkoutDetailPickerView: View {
                         selectedFocusAreas.insert(area)
                     }
                 } label: {
-                    HStack {
-                        Text(area)
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(selectedFocusAreas.contains(area) ? .green : .white)
-                        Spacer()
-                        if selectedFocusAreas.contains(area) {
-                            Image(systemName: "checkmark")
-                                .foregroundColor(.green)
-                                .font(.system(size: 12))
-                        }
-                    }
-                    .padding(.vertical, 2)
-                    .contentShape(Rectangle())
+                    pickRow(area, picked: selectedFocusAreas.contains(area))
                 }
+                .accessibilityAddTraits(selectedFocusAreas.contains(area) ? .isSelected : [])
                 .buttonStyle(.plain)
             }
         }
@@ -104,15 +124,7 @@ struct WorkoutDetailPickerView: View {
                 Button {
                     path.append(WorkoutDestination.quickStart(activityType: activityType, strengthType: nil))
                 } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 12))
-                            .foregroundColor(.green)
-                        Text("Just Start")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.green)
-                    }
-                    .padding(.vertical, 2)
+                    startPill("Just start")
                 }
                 .buttonStyle(.plain)
             }
@@ -126,14 +138,9 @@ struct WorkoutDetailPickerView: View {
                         focusAreas: nil
                     ))
                 } label: {
-                    HStack {
-                        Text(subtype)
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(.white)
-                        Spacer()
-                    }
-                    .padding(.vertical, 2)
-                    .contentShape(Rectangle())
+                    // A subtype starts the workout straight away, so it carries a play glyph
+                    pickRow(subtype, picked: false,
+                            trailing: AnyView(PlayGlyph(color: look.color, size: 13)))
                 }
                 .buttonStyle(.plain)
             }

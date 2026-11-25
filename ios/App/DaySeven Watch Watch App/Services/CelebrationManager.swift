@@ -5,8 +5,8 @@ import WatchKit
 // MARK: - Celebration Types
 
 enum CelebrationType: String, CaseIterable {
-    case steps
-    case calories
+    // The watch celebrates a category finishing for the week, right after the save that
+    // finished it. (The daily Steps and Calories celebrations never fired and are gone.)
     case strength
     case cardio
     case recovery
@@ -14,40 +14,30 @@ enum CelebrationType: String, CaseIterable {
 
     var color: Color {
         switch self {
-        case .steps: return AppColors.steps
-        case .calories: return .orange
         case .strength: return AppColors.strength
         case .cardio: return AppColors.cardio
         case .recovery: return AppColors.recovery
-        case .master: return AppColors.streak
+        case .master: return WeekColors.gold
         }
     }
 
-    var icon: String {
+    /// Home's line icon for the category
+    var lineIcon: WeekLineIcon.Icon {
         switch self {
-        case .steps: return "figure.walk"
-        case .calories: return "flame.fill"
-        case .strength: return "dumbbell.fill"
-        case .cardio: return "figure.run"
-        case .recovery: return "figure.cooldown"
-        case .master: return "flame.fill"
+        case .strength: return .strength
+        case .cardio: return .cardio
+        case .recovery: return .recovery
+        case .master: return .strength
         }
     }
 
     var title: String {
         switch self {
-        case .steps: return "Steps Goal!"
-        case .calories: return "Calories Goal!"
-        case .strength: return "Strength Goal!"
-        case .cardio: return "Cardio Goal!"
-        case .recovery: return "Recovery Bonus!"
-        case .master: return "Week Won!"
+        case .strength: return "Strength done"
+        case .cardio: return "Cardio done"
+        case .recovery: return "Recovery done"
+        case .master: return "Week won"
         }
-    }
-
-    /// Whether this is a daily goal (resets each day) vs weekly goal
-    var isDaily: Bool {
-        self == .steps || self == .calories
     }
 }
 
@@ -106,16 +96,9 @@ class CelebrationManager: ObservableObject {
     func clearCelebration(_ type: CelebrationType) {
         guard let defaults = defaults else { return }
 
-        if type.isDaily {
-            if var daily = defaults.dictionary(forKey: SharedDefaults.dailyGoalsCelebratedKey) {
-                daily[type.rawValue] = false
-                defaults.set(daily, forKey: SharedDefaults.dailyGoalsCelebratedKey)
-            }
-        } else {
-            if var weekly = defaults.dictionary(forKey: SharedDefaults.weekCategoryCelebratedKey) {
-                weekly[type.rawValue] = false
-                defaults.set(weekly, forKey: SharedDefaults.weekCategoryCelebratedKey)
-            }
+        if var weekly = defaults.dictionary(forKey: SharedDefaults.weekCategoryCelebratedKey) {
+            weekly[type.rawValue] = false
+            defaults.set(weekly, forKey: SharedDefaults.weekCategoryCelebratedKey)
         }
         print("[Celebration] Cleared \(type.rawValue) celebration flag")
     }
@@ -160,55 +143,29 @@ class CelebrationManager: ObservableObject {
     // MARK: - Duplicate Prevention
 
     private func hasCelebrated(_ type: CelebrationType) -> Bool {
-        guard let defaults = defaults else { return false }
-
-        if type.isDaily {
-            guard let daily = defaults.dictionary(forKey: SharedDefaults.dailyGoalsCelebratedKey) else { return false }
-            // Reset if date changed
-            let todayStr = todayDateString()
-            if daily["date"] as? String != todayStr { return false }
-            return daily[type.rawValue] as? Bool ?? false
-        } else {
-            guard let weekly = defaults.dictionary(forKey: SharedDefaults.weekCategoryCelebratedKey) else { return false }
-            let weekStr = currentWeekKey()
-            if weekly["week"] as? String != weekStr { return false }
-            return weekly[type.rawValue] as? Bool ?? false
-        }
+        guard let defaults = defaults,
+              let weekly = defaults.dictionary(forKey: SharedDefaults.weekCategoryCelebratedKey) else { return false }
+        if weekly["week"] as? String != currentWeekKey() { return false }
+        return weekly[type.rawValue] as? Bool ?? false
     }
 
     private func markCelebrated(_ type: CelebrationType) {
         guard let defaults = defaults else { return }
 
-        if type.isDaily {
-            var daily = defaults.dictionary(forKey: SharedDefaults.dailyGoalsCelebratedKey) ?? [:]
-            let todayStr = todayDateString()
-            // Reset if new day
-            if daily["date"] as? String != todayStr {
-                daily = ["date": todayStr]
-            }
-            daily[type.rawValue] = true
-            defaults.set(daily, forKey: SharedDefaults.dailyGoalsCelebratedKey)
-        } else {
-            var weekly = defaults.dictionary(forKey: SharedDefaults.weekCategoryCelebratedKey) ?? [:]
-            let weekStr = currentWeekKey()
-            // Reset if new week
-            if weekly["week"] as? String != weekStr {
-                weekly = ["week": weekStr]
-            }
-            weekly[type.rawValue] = true
-            defaults.set(weekly, forKey: SharedDefaults.weekCategoryCelebratedKey)
+        var weekly = defaults.dictionary(forKey: SharedDefaults.weekCategoryCelebratedKey) ?? [:]
+        let weekStr = currentWeekKey()
+        // Reset if new week
+        if weekly["week"] as? String != weekStr {
+            weekly = ["week": weekStr]
         }
+        weekly[type.rawValue] = true
+        defaults.set(weekly, forKey: SharedDefaults.weekCategoryCelebratedKey)
     }
 
     // MARK: - Haptic Sequences
 
     private func playHapticSequence(for type: CelebrationType) {
         switch type {
-        case .steps, .calories:
-            // 4 notification taps + success — similar to Apple Fitness ring close
-            let haptics: [WKHapticType] = [.notification, .notification, .notification, .notification, .success]
-            playSequence(haptics, interval: 0.25)
-
         case .strength, .cardio, .recovery:
             // 3 rising taps + success
             let haptics: [WKHapticType] = [.directionUp, .directionUp, .directionUp, .success]
@@ -230,10 +187,6 @@ class CelebrationManager: ObservableObject {
     }
 
     // MARK: - Date Helpers
-
-    private func todayDateString() -> String {
-        formatDateString(Date())
-    }
 
     private func currentWeekKey() -> String {
         formatDateString(startOfCurrentWeek())

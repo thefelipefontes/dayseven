@@ -139,26 +139,27 @@ struct WorkoutSummaryView: View {
 
     private var summaryContent: some View {
         ScrollView {
-            VStack(spacing: 10) {
-                // Header
-                Text("\(activityNoun) Complete!")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(.green)
+            VStack(spacing: 0) {
+                // Header: the workout in its category's tint, then "WORKOUT COMPLETE"
+                headerSection
 
-                Text(displayName)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.white)
+                // Total time: the one big number
+                totalTimeSection
+                    .padding(.top, 16)
+                    .padding(.bottom, 12)
 
-                // Stats
+                // Stats as small cards, two per row
                 statsSection
 
                 // Detail pickers
                 if savedByPhone {
                     Text("Saved on your iPhone")
                         .font(.system(size: 12))
-                        .foregroundColor(.gray)
+                        .foregroundColor(WeekColors.muted)
+                        .padding(.top, 12)
                 } else {
                     detailPickersSection
+                        .padding(.top, 10)
                 }
 
                 // Done Button — re-saves if user changed any details after auto-save
@@ -170,30 +171,26 @@ struct WorkoutSummaryView: View {
                         }
                     }
                 } label: {
-                    Text("Done")
-                        .font(.system(size: 14, weight: .bold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Color.green)
-                        .foregroundColor(.black)
-                        .cornerRadius(12)
+                    PillLabel(title: "Done", fontSize: 15, verticalPadding: 10) { EmptyView() }
                 }
                 .buttonStyle(.plain)
+                .padding(.top, 12)
 
                 // Discard Button — deletes the auto-saved activity
                 if !savedByPhone {
                     Button {
                         showDiscardAlert = true
                     } label: {
-                        Text("Discard \(activityNoun)")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.red.opacity(0.8))
+                        Text("Discard \(activityNoun.lowercased())")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(Self.red.opacity(0.9))
+                            .padding(.vertical, 6)
                     }
                     .buttonStyle(.plain)
-                    .padding(.top, 2)
+                    .padding(.top, 4)
                 }
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, 2)
         }
         .navigationBarBackButtonHidden(true)
         .onAppear {
@@ -252,13 +249,13 @@ struct WorkoutSummaryView: View {
         .sheet(isPresented: $showSubtypePicker) {
             if let subtypes = activityTypeDef?.subtypes {
                 NavigationStack {
-                    PickerListView(title: subtypePickerTitle, value: selectedSubtype, options: subtypes, selection: $selectedSubtype)
+                    PickerListView(title: subtypePickerTitle, value: selectedSubtype, options: subtypes, selection: $selectedSubtype, tint: look.color)
                 }
             }
         }
         .sheet(isPresented: $showFocusAreaPicker) {
             NavigationStack {
-                MultiPickerListView(title: "Focus Areas", options: ActivityTypes.strengthFocusAreas, selection: $selectedFocusAreas)
+                MultiPickerListView(title: "Focus Areas", options: ActivityTypes.strengthFocusAreas, selection: $selectedFocusAreas, tint: look.color)
             }
         }
         .sheet(isPresented: $showCountTowardPicker) {
@@ -267,15 +264,81 @@ struct WorkoutSummaryView: View {
                     PickerListView(title: "Counts Toward", value: ActivityTypes.circuitCountTowardDisplay(selectedCountToward), options: ActivityTypes.circuitCountTowardOptions, selection: Binding(
                         get: { ActivityTypes.circuitCountTowardDisplay(selectedCountToward) },
                         set: { if let v = $0 { selectedCountToward = ActivityTypes.circuitCountTowardValue(v) } }
-                    ))
+                    ), tint: look.color)
                 } else {
                     PickerListView(title: "Counts Toward", value: selectedCountToward?.capitalized, options: ActivityTypes.hybridCountTowardOptions, selection: Binding(
                         get: { selectedCountToward?.capitalized },
                         set: { selectedCountToward = $0?.lowercased() }
-                    ))
+                    ), tint: look.color)
                 }
             }
         }
+    }
+
+    // MARK: - Look (board 40's summary)
+
+    private static let red = Color(red: 1.0, green: 0.271, blue: 0.227)     // #FF453A, the heart and Discard
+    private static let coral = Color(red: 1.0, green: 0.420, blue: 0.420)   // #FF6B6B, the calories flame
+    private static let paceGrey = Color(white: 0.81)                        // #cfcfcf
+
+    /// The workout's category: its colour tints the badge, the "complete" line, the pin and
+    /// the picker checkmarks. Hybrid activities follow what they count toward.
+    private var look: CategoryLook {
+        if strengthType != nil { return .strength }
+        switch selectedCountToward ?? initialCountToward {
+        case "strength": return .strength
+        case "cardio": return .cardio
+        case "recovery": return .recovery
+        default: break
+        }
+        guard let def = activityTypeDef else { return .cardio }
+        return def.isHybrid ? .neutral : CategoryLook(def.category)
+    }
+
+    // MARK: - Header
+
+    private var headerSection: some View {
+        HStack(spacing: 9) {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(look.color.opacity(look == .neutral ? 0.14 : 0.18))
+                .frame(width: 34, height: 34)
+                .overlay(ActivityIcon(name: strengthType ?? activityType,
+                                      sfSymbol: activityTypeDef?.sfSymbol ?? "figure.mixed.cardio",
+                                      color: look.color, size: 19))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(displayName)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                CapsText("\(activityNoun) complete", size: 9, color: look.color)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 2)
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: - Total Time
+
+    /// "31m" or "1h 5m": the numbers big, the units smaller
+    private var totalTimeSection: some View {
+        let hours = result.duration / 60, minutes = result.duration % 60
+        let big = { (s: String) in Text(s).font(.system(size: 44, weight: .heavy)).tracking(-1.8) }
+        let unit = { (s: String) in Text(s).font(.system(size: 20, weight: .heavy)).tracking(-0.4) }
+        let time: Text = hours > 0
+            ? big("\(hours)") + unit("h ") + big("\(minutes)") + unit("m")
+            : big("\(minutes)") + unit("m")
+        return VStack(spacing: 5) {
+            time
+                .foregroundColor(.white)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            CapsText("Total time", size: 9.5)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Total time \(formatDuration(result.duration))")
     }
 
     // MARK: - Stats Section
@@ -285,79 +348,72 @@ struct WorkoutSummaryView: View {
         return dist > 0.01
     }
 
+    private struct StatCard: Identifiable {
+        let id: String
+        let icon: WeekLineIcon.Icon
+        let iconColor: Color
+        let label: String
+        let value: Text
+        let unit: String
+    }
+
+    /// The same stats, under the same conditions as before: distance and pace where the
+    /// workout tracks distance, no calories for Sauna/Cold Plunge/Contrast
+    private var statCards: [StatCard] {
+        var cards: [StatCard] = []
+        let unit = appVM.distanceUnit == "km" ? "km" : "mi"
+        if hasDistanceData, let distMiles = result.distance {
+            let value = unit == "km" ? distMiles * 1.60934 : distMiles
+            cards.append(StatCard(id: "distance", icon: .pin, iconColor: look.color, label: "Distance",
+                                  value: Text(String(format: "%.2f", value)), unit: unit))
+            cards.append(StatCard(id: "pace", icon: .pace, iconColor: Self.paceGrey, label: "Avg pace",
+                                  value: Text(averagePaceValue), unit: "/\(unit)"))
+        }
+        if !isRecoveryActivity {
+            cards.append(StatCard(id: "cal", icon: .calories, iconColor: Self.coral, label: "Cal",
+                                  value: Text("\(result.calories)"), unit: ""))
+        }
+        cards.append(StatCard(id: "hr", icon: .heart, iconColor: Self.red, label: "Avg · Max",
+                              value: Text("\(result.avgHr)") + Text(" · ").foregroundColor(WeekColors.faint) + Text("\(result.maxHr)"),
+                              unit: ""))
+        return cards
+    }
+
     private var statsSection: some View {
-        VStack(spacing: 12) {
-            // Total Time
-            statRow(icon: "clock", label: "TOTAL TIME", value: formatDuration(result.duration), color: .green)
-
-            Divider().overlay(Color.gray.opacity(0.3))
-
-            // Distance & Pace (if applicable)
-            if hasDistanceData {
-                statRow(icon: "figure.run", label: "DISTANCE", value: distanceDisplay, color: .blue)
-                Divider().overlay(Color.gray.opacity(0.3))
-
-                statRow(icon: "figure.run.circle", label: "AVG PACE", value: averagePace, color: .cyan)
-                Divider().overlay(Color.gray.opacity(0.3))
-            }
-
-            // Active Calories (hidden for recovery activities like Sauna/Cold Plunge)
-            if !isRecoveryActivity {
-                statRow(icon: "flame.fill", label: "ACTIVE CALORIES", value: "\(result.calories)", color: .orange)
-
-                Divider().overlay(Color.gray.opacity(0.3))
-            }
-
-            // Heart Rate — Avg and Max side by side
-            HStack(spacing: 0) {
-                statColumn(icon: "heart.fill", label: "AVG HR", value: "\(result.avgHr)", unit: "BPM", color: .red)
-                statColumn(icon: "heart.fill", label: "MAX HR", value: "\(result.maxHr)", unit: "BPM", color: .red)
+        let cards = statCards
+        let rows = stride(from: 0, to: cards.count, by: 2).map { Array(cards[$0..<min($0 + 2, cards.count)]) }
+        return VStack(spacing: 6) {
+            ForEach(rows, id: \.first!.id) { row in
+                HStack(spacing: 6) {
+                    ForEach(row) { statCard($0) }
+                }
             }
         }
-        .padding(.vertical, 8)
     }
 
-    // MARK: - Stat Row (full width, large value)
-
-    private func statRow(icon: String, label: String, value: String, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+    /// A small card: the line icon and grey caps label, then a white value and a small grey unit
+    private func statCard(_ card: StatCard) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.system(size: 10))
-                    .foregroundColor(color)
-                Text(label)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.gray)
+                WeekLineIcon(icon: card.icon, color: card.iconColor, size: 10, lineWidth: 2.4)
+                CapsText(card.label, size: 8)
             }
-            Text(value)
-                .font(.system(size: 28, weight: .bold, design: .rounded))
-                .foregroundColor(color)
+            (card.value.font(.system(size: 17, weight: .bold)).foregroundColor(.white)
+             + Text(card.unit.isEmpty ? "" : " " + card.unit)
+                .font(.system(size: 11, weight: .semibold)).foregroundColor(WeekColors.faint))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(EdgeInsets(top: 7, leading: 8, bottom: 8, trailing: 8))
+        .background(TodayCard(cornerRadius: 12))
+        .accessibilityElement(children: .combine)
     }
 
-    // MARK: - Stat Column (for side-by-side items like HR)
-
-    private func statColumn(icon: String, label: String, value: String, unit: String, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 3) {
-                Image(systemName: icon)
-                    .font(.system(size: 9))
-                    .foregroundColor(color)
-                Text(label)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.gray)
-            }
-            HStack(alignment: .firstTextBaseline, spacing: 2) {
-                Text(value)
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
-                    .foregroundColor(color)
-                Text(unit)
-                    .font(.system(size: 10))
-                    .foregroundColor(.gray)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    /// "9:56" — the pace number alone (the unit goes in the card's small grey suffix)
+    private var averagePaceValue: String {
+        averagePace.components(separatedBy: " ").first ?? averagePace
     }
 
     // MARK: - Detail Pickers
@@ -412,27 +468,23 @@ struct WorkoutSummaryView: View {
         Button {
             showSheet.wrappedValue = true
         } label: {
-            VStack(spacing: 2) {
-                if let value = value {
-                    Text(value)
+            // A card-surface row: the caps title, the value (or "Tap to choose"), a chevron
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    CapsText(title, size: 8.5)
+                    Text(value ?? "Tap to choose")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.green)
-                    Text(title)
-                        .font(.system(size: 9))
-                        .foregroundColor(.gray)
-                } else {
-                    Text(title)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.green)
-                    Text("Tap to select")
-                        .font(.system(size: 9))
-                        .foregroundColor(.gray)
+                        .foregroundColor(value == nil ? WeekColors.muted : .white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                 }
+                Spacer(minLength: 4)
+                WeekLineIcon(icon: .chevronRight, color: WeekColors.faint, size: 11, lineWidth: 2.6)
             }
-            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .background(Color(white: 0.15))
-            .cornerRadius(10)
+            .background(TodayCard(cornerRadius: 12))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -519,6 +571,8 @@ private struct PickerListView: View {
     let value: String?
     let options: [String]
     @Binding var selection: String?
+    /// The workout's category colour for the checkmark
+    var tint: Color = .white
 
     var body: some View {
         List {
@@ -531,7 +585,8 @@ private struct PickerListView: View {
                     Spacer()
                     if value == nil {
                         Image(systemName: "checkmark")
-                            .foregroundColor(.green)
+                            .foregroundColor(tint)
+                            .font(.system(size: 12, weight: .bold))
                     }
                 }
             }
@@ -545,8 +600,8 @@ private struct PickerListView: View {
                         Spacer()
                         if value == option {
                             Image(systemName: "checkmark")
-                                .foregroundColor(.green)
-                                .font(.system(size: 12))
+                                .foregroundColor(tint)
+                                .font(.system(size: 12, weight: .bold))
                         }
                     }
                 }
@@ -564,6 +619,8 @@ private struct MultiPickerListView: View {
     let title: String
     let options: [String]
     @Binding var selection: [String]
+    /// The workout's category colour for the checkmarks
+    var tint: Color = .white
 
     var body: some View {
         List {
@@ -580,8 +637,8 @@ private struct MultiPickerListView: View {
                         Spacer()
                         if selection.contains(option) {
                             Image(systemName: "checkmark")
-                                .foregroundColor(.green)
-                                .font(.system(size: 12))
+                                .foregroundColor(tint)
+                                .font(.system(size: 12, weight: .bold))
                         }
                     }
                 }
@@ -592,8 +649,8 @@ private struct MultiPickerListView: View {
                     dismiss()
                 } label: {
                     Text("Done")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.green)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                 }
             }

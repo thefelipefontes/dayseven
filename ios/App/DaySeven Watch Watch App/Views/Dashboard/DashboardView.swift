@@ -23,17 +23,12 @@ struct DashboardView: View {
                             .tint(.green)
                             .padding(.top, 40)
                     } else {
-                        // Master Streak
-                        streakSection
+                        // The week: its %, the streak, and Strength, Cardio and Steps (board 20)
+                        weekSection
 
-                        // Progress Rings
-                        ringsSection
-
-                        // Quick Health Stats
-                        healthStatsSection
-
-                        // Daily Details Link
+                        // Daily Details Link (today's steps, calories and workouts)
                         todayButton
+                            .padding(.top, 6)
 
                         Spacer().frame(height: 8)
 
@@ -88,85 +83,22 @@ struct DashboardView: View {
         }
     }
 
-    // MARK: - Streak Section
+    // MARK: - The Week
 
-    private var streakSection: some View {
-        HStack(spacing: 4) {
-            Image(systemName: appVM.injuryModeActive ? "bandage.fill" : "flame.fill")
-                .foregroundColor(appVM.injuryModeActive ? Color(red: 0.655, green: 0.545, blue: 0.980) : .yellow)
-                .font(.system(size: 18))
-            Text("\(appVM.streaks.master)")
-                .font(.system(size: 28, weight: .black, design: .rounded))
-                .foregroundColor(.white)
-            Text(appVM.injuryModeActive ? "streak · paused" : "winning streak")
-                .font(.system(size: 11))
-                .foregroundColor(appVM.injuryModeActive ? Color(red: 0.655, green: 0.545, blue: 0.980) : .gray)
-        }
+    /// The same week as Home and the widgets: the % averages Strength, Cardio and the week's
+    /// steps (each capped at 100%), and the week is won once all three are met.
+    private var week: WeekModel {
+        WeekModel(
+            liftsDone: appVM.weeklyProgress.lifts.completed, liftsGoal: appVM.weeklyProgress.lifts.goal,
+            cardioDone: appVM.weeklyProgress.cardio.completed, cardioGoal: appVM.weeklyProgress.cardio.goal,
+            weekSteps: appVM.weekSteps, weekStepsGoal: appVM.goals.stepsPerDay * 7,
+            todaySteps: appVM.todaySteps,
+            streak: appVM.streaks.master, streakPaused: appVM.injuryModeActive
+        )
     }
 
-    // MARK: - Rings Section
-
-    private var ringsSection: some View {
-        HStack(spacing: 12) {
-            ProgressRingView(
-                progress: appVM.weeklyProgress.lifts.progress,
-                color: AppColors.strength,
-                label: "Strength",
-                count: "\(appVM.weeklyProgress.lifts.completed)/\(appVM.weeklyProgress.lifts.goal)"
-            )
-            ProgressRingView(
-                progress: appVM.weeklyProgress.cardio.progress,
-                color: AppColors.cardio,
-                label: "Cardio",
-                count: "\(appVM.weeklyProgress.cardio.completed)/\(appVM.weeklyProgress.cardio.goal)"
-            )
-            // Steps — the week's steps against stepsPerDay × 7 (Recovery is a bonus now)
-            ProgressRingView(
-                progress: min(Double(appVM.weekSteps) / Double(max(appVM.goals.stepsPerDay * 7, 1)), 1.0),
-                color: AppColors.steps,
-                label: "Steps",
-                count: "\(Int((Double(appVM.weekSteps) / 1000).rounded()))k"
-            )
-        }
-    }
-
-    // MARK: - Health Stats
-
-    private var healthStatsSection: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 3) {
-                Image(systemName: "figure.walk")
-                    .font(.system(size: 10))
-                    .foregroundColor(AppColors.steps)
-                Text(formatNumber(appVM.todaySteps))
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundColor(.white)
-            }
-
-            HStack(spacing: 3) {
-                Image(systemName: "flame")
-                    .font(.system(size: 10))
-                    .foregroundColor(.orange)
-                Text("\(appVM.todayCalories)")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundColor(.white)
-            }
-
-            if appVM.todayDistance > 0.1 {
-                HStack(spacing: 3) {
-                    Image(systemName: "figure.run")
-                        .font(.system(size: 10))
-                        .foregroundColor(.blue)
-                    Text(String(
-                        format: "%.1f %@",
-                        appVM.distanceUnit == "km" ? appVM.todayDistance * 1.60934 : appVM.todayDistance,
-                        appVM.distanceUnit == "km" ? "km" : "mi"
-                    ))
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundColor(.white)
-                }
-            }
-        }
+    private var weekSection: some View {
+        WeekHomeSection(model: week)
     }
 
     // MARK: - Today Button
@@ -180,15 +112,5 @@ struct DashboardView: View {
                 .foregroundColor(.green)
         }
         .buttonStyle(.plain)
-    }
-
-    // MARK: - Number Formatting
-
-    private func formatNumber(_ num: Int) -> String {
-        if num >= 1000 {
-            let k = Double(num) / 1000.0
-            return String(format: "%.1fk", k)
-        }
-        return "\(num)"
     }
 }

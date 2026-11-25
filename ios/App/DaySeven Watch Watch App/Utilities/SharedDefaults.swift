@@ -242,3 +242,83 @@ struct WidgetStreakData {
         injuryModeActive: false
     )
 }
+
+// MARK: - The week, as Home shows it (shared by the watch home and the complications)
+
+/// The week's numbers and wording, worked out once. The week runs Sunday–Saturday, like the app.
+/// Matches the iPhone widgets: the week % is Home's average of Strength, Cardio and weekly
+/// Steps, each capped at 100%; the week is won once all three are met.
+struct WeekModel {
+    enum Goal { case strength, cardio, steps }
+
+    let liftsDone: Int, liftsGoal: Int
+    let cardioDone: Int, cardioGoal: Int
+    let weekSteps: Int, weekStepsGoal: Int
+    let todaySteps: Int
+    let streak: Int
+    let streakPaused: Bool
+    /// Sunday = 0 … Saturday = 6
+    let finishedDays: Int
+
+    init(liftsDone: Int, liftsGoal: Int, cardioDone: Int, cardioGoal: Int,
+         weekSteps: Int, weekStepsGoal: Int, todaySteps: Int,
+         streak: Int, streakPaused: Bool, date: Date = Date()) {
+        self.liftsDone = liftsDone; self.liftsGoal = liftsGoal
+        self.cardioDone = cardioDone; self.cardioGoal = cardioGoal
+        self.weekSteps = weekSteps; self.weekStepsGoal = weekStepsGoal
+        self.todaySteps = todaySteps
+        self.streak = streak; self.streakPaused = streakPaused
+        finishedDays = Calendar(identifier: .gregorian).component(.weekday, from: date) - 1
+    }
+
+    init(data: WidgetStreakData, date: Date) {
+        self.init(liftsDone: data.liftsCompleted, liftsGoal: data.liftsGoal,
+                  cardioDone: data.cardioCompleted, cardioGoal: data.cardioGoal,
+                  weekSteps: data.weekSteps, weekStepsGoal: data.weekStepsGoal,
+                  todaySteps: data.todaySteps,
+                  streak: data.masterStreak, streakPaused: data.injuryModeActive, date: date)
+    }
+
+    var daysLeft: Int { 7 - finishedDays }
+
+    func done(_ g: Goal) -> Int {
+        switch g {
+        case .strength: return liftsDone
+        case .cardio: return cardioDone
+        case .steps: return weekSteps
+        }
+    }
+    func goal(_ g: Goal) -> Int {
+        switch g {
+        case .strength: return liftsGoal
+        case .cardio: return cardioGoal
+        case .steps: return weekStepsGoal
+        }
+    }
+    func met(_ g: Goal) -> Bool { goal(g) > 0 && done(g) >= goal(g) }
+    func fraction(_ g: Goal) -> Double { goal(g) > 0 ? min(1, Double(done(g)) / Double(goal(g))) : 1 }
+
+    /// Home's week %: the average of the three goals, each capped at 100%.
+    var percent: Int { Int(((fraction(.strength) + fraction(.cardio) + fraction(.steps)) / 3 * 100).rounded()) }
+    var won: Bool { met(.strength) && met(.cardio) && met(.steps) }
+
+    /// Where the steps should be by now (finished days / 7). None on Sunday or once met.
+    var paceFraction: Double? {
+        guard finishedDays > 0, !met(.steps) else { return nil }
+        return Double(finishedDays) / 7
+    }
+
+    /// Home's wording: "3 days left", "1 day left"; once won, "2 days to spare".
+    var daysLeftText: String {
+        let unit = daysLeft == 1 ? "day" : "days"
+        return won ? "\(daysLeft) \(unit) to spare" : "\(daysLeft) \(unit) left"
+    }
+
+    /// 52400 → "52.4k", 70000 → "70k", 900 → "900"
+    static func k(_ n: Int) -> String {
+        guard n >= 1000 else { return "\(n)" }
+        return String(format: "%.1fk", Double(n) / 1000.0).replacingOccurrences(of: ".0k", with: "k")
+    }
+    /// 52400 → "52k" (rounded)
+    static func k0(_ n: Int) -> String { n >= 1000 ? "\(Int((Double(n) / 1000).rounded()))k" : "\(n)" }
+}

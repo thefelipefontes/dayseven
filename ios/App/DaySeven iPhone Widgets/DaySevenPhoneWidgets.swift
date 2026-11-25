@@ -648,10 +648,12 @@ struct MediumWidgetView: View {
                 CapsLabel(text: model.won ? "Week won" : "Week progress", size: 9.5,
                           color: model.won ? WidgetColors.gold : WidgetColors.muted)
                     .padding(.top, 9)
-                Spacer(minLength: 6)
+                // Days left sits with the week's % (board 37, option A)
                 Text(model.daysLeftText)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(Color(white: 0.667))
+                    .padding(.top, 6)
+                Spacer(minLength: 6)
                 HStack(spacing: 5) {
                     StreakChip(data: model.data, size: 14)
                     CapsLabel(text: model.data.injuryModeActive ? "paused" : "wk streak", size: 8.5,
@@ -661,9 +663,9 @@ struct MediumWidgetView: View {
             }
             .frame(width: 112, alignment: .leading)
 
-            VStack(spacing: 0) {
-                ForEach(Array([WeekModel.Goal.strength, .cardio, .steps].enumerated()), id: \.offset) { idx, g in
-                    if idx > 0 { Spacer(minLength: 6) }
+            // The goal rows as one group, 12pt apart, centred in the widget
+            VStack(spacing: 12) {
+                ForEach([WeekModel.Goal.strength, .cardio, .steps], id: \.self) { g in
                     VStack(spacing: 6) {
                         HStack(spacing: 5) {
                             LineIconView(icon: g.icon, color: style.fill(g.color), size: 13)
@@ -676,7 +678,7 @@ struct MediumWidgetView: View {
                     }
                 }
             }
-            .padding(.vertical, 1)
+            .frame(maxHeight: .infinity)
         }
     }
 }

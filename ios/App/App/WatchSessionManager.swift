@@ -3,6 +3,8 @@ import WatchConnectivity
 import FirebaseAuth
 import FirebaseFirestore
 import ActivityKit
+import UIKit
+import WidgetKit
 
 // MARK: - Notification Names for Watch ↔ Phone
 
@@ -362,13 +364,18 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
             }
 
             let docRef = Firestore.firestore().document("users/\(uid)")
+            let email = Auth.auth().currentUser?.email
+            let bgTask = Self.beginWidgetBackgroundTask()
             docRef.getDocument(source: .server) { document, error in
                 if let error = error {
                     print("[WatchSession] transferUserInfo: cache refresh failed: \(error.localizedDescription)")
                 } else {
                     let activityCount = (document?.data()?["activities"] as? [[String: Any]])?.count ?? 0
                     print("[WatchSession] transferUserInfo: cache refreshed, \(activityCount) activities")
+                    // The app may be in the background, where the web layer can't push the widget
+                    PhoneWidgetWeek.write(fromUserDoc: document?.data(), email: email)
                 }
+                Self.endWidgetBackgroundTask(bgTask)
                 // Notify JS layer regardless — it will fetch fresh data via REST
                 DispatchQueue.main.async {
                     NotificationCenter.default.post(name: .watchActivitySaved, object: nil)
@@ -380,6 +387,21 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     }
 
     // MARK: - Handle activity saved from watch
+
+    /// A little background time for the Firestore read and widget write after the Watch's
+    /// message wakes the app, so iOS doesn't suspend it midway.
+    private static func beginWidgetBackgroundTask() -> UIBackgroundTaskIdentifier {
+        var task: UIBackgroundTaskIdentifier = .invalid
+        task = UIApplication.shared.beginBackgroundTask(withName: "WidgetFromWatch") {
+            UIApplication.shared.endBackgroundTask(task)
+        }
+        return task
+    }
+
+    private static func endWidgetBackgroundTask(_ task: UIBackgroundTaskIdentifier) {
+        guard task != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(task)
+    }
 
     /// When the watch saves an activity, force-refresh the Firestore cache
     /// so the Capacitor WebView reads fresh data on next query
@@ -394,13 +416,19 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
 
         // Force read from server to update the native Firestore SDK cache
         let docRef = Firestore.firestore().document("users/\(uid)")
+        let email = Auth.auth().currentUser?.email
+        let bgTask = Self.beginWidgetBackgroundTask()
         docRef.getDocument(source: .server) { document, error in
+            defer { Self.endWidgetBackgroundTask(bgTask) }
             if let error = error {
                 print("[WatchSession] activitySaved: cache refresh failed: \(error.localizedDescription)")
                 replyHandler(["status": "refresh_failed"])
             } else {
                 let activityCount = (document?.data()?["activities"] as? [[String: Any]])?.count ?? 0
                 print("[WatchSession] activitySaved: cache refreshed, \(activityCount) activities")
+                // The Watch's message can wake the app in the background, where the web layer
+                // can't push the widget: write its counts here
+                PhoneWidgetWeek.write(fromUserDoc: document?.data(), email: email)
                 replyHandler(["status": "refreshed", "count": activityCount])
                 // Notify JS layer so it can re-check celebrations / refresh UI
                 DispatchQueue.main.async {
@@ -678,5 +706,191 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
                 "email": email ?? ""
             ])
         }.resume()
+    }
+}
+
+// MARK: - iPhone widget from a Watch save
+
+/// Keeps the iPhone widget's Strength/Cardio/Recovery counts and Recent list current when a
+/// workout is saved on the Watch while the iPhone app isn't open. The Watch's save message
+/// wakes this native code in the background, but the web layer that normally writes the
+/// widget (pushWidgetData in App.jsx) usually doesn't get to run before iOS suspends the
+/// app, so the widget stayed stale until the app was next opened.
+///
+/// It counts the same way the app does: src/utils/activityCategory.js getActivityCategory
+/// and App.jsx calculateWeeklyProgress (Sunday to today, Circuit counting toward both).
+/// Keep it in step with those. Steps, calories and streaks are left as the app last wrote
+/// them: the phone can't read HealthKit while it's locked, and streaks are judged in the app.
+enum PhoneWidgetWeek {
+    static let suiteName = "group.app.dayseven.fitness"
+
+    struct Counts: Equatable {
+        let lifts: Int
+        let cardio: Int
+        let recovery: Int
+    }
+
+    // The type → goal table (src/utils/activityCategory.js)
+    private static let teamSports: Set<String> = [
+        "Basketball", "Soccer", "Football", "Tennis", "Golf", "Badminton", "Boxing", "Martial Arts",
+        "Baseball", "Volleyball", "Hockey", "Lacrosse", "Rugby", "Softball", "Squash", "Table Tennis",
+        "Racquetball", "Handball", "Pickleball", "Cricket", "Australian Football", "Wrestling",
+        "Fencing", "Curling", "Bowling",
+    ]
+    private static let individualCardioSports: Set<String> = [
+        "Track & Field", "Jump Rope", "Downhill Skiing", "Cross Country Skiing", "Snowboarding",
+        "Skating", "Surfing", "Water Polo", "Paddle Sports",
+    ]
+    private static let liftingTypes: Set<String> = ["Strength Training", "Weightlifting", "Bodyweight"]
+    private static let cardioTypes: Set<String> = [
+        "Running", "Cycle", "Sports", "Stair Climbing", "Elliptical", "Rowing", "Ski Trainer",
+        "Swimming", "Hiking", "Dance",
+    ]
+    private static let recoveryTypes: Set<String> = [
+        "Pilates", "Cold Plunge", "Sauna", "Contrast Therapy", "Massage", "Chiropractic",
+        "Stretching", "Foam Rolling", "Tai Chi", "Cooldown",
+    ]
+
+    /// getActivityCategory: countToward, then customActivityCategory, then the type's default.
+    /// 'lifting' | 'cardio' | 'recovery' | 'lifting+cardio' | 'warmup' | 'other'
+    static func category(_ activity: [String: Any]) -> String {
+        if let ct = activity["countToward"] as? String, !ct.isEmpty {
+            return ct == "strength" ? "lifting" : ct
+        }
+        if let custom = activity["customActivityCategory"] as? String, !custom.isEmpty {
+            return custom == "strength" ? "lifting" : custom
+        }
+        let type = activity["type"] as? String ?? ""
+        let sub = activity["subtype"] as? String ?? ""
+        if liftingTypes.contains(type) { return "lifting" }
+        if type == "Circuit" { return "lifting+cardio" }
+        if cardioTypes.contains(type) || teamSports.contains(type) || individualCardioSports.contains(type) { return "cardio" }
+        if type == "Yoga" { return ["Power", "Hot", "Vinyasa"].contains(sub) ? "cardio" : "recovery" }
+        if recoveryTypes.contains(type) { return "recovery" }
+        return "other"
+    }
+
+    static func calendar() -> Calendar {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = .current
+        return cal
+    }
+
+    /// "YYYY-MM-DD" in the device time zone, the format activities and the widget use
+    static func dayKey(_ date: Date, calendar cal: Calendar = calendar()) -> String {
+        let c = cal.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
+
+    /// The Sunday that starts the week containing `now`, as "YYYY-MM-DD"
+    static func weekStartKey(_ now: Date, calendar cal: Calendar = calendar()) -> String {
+        let finished = cal.component(.weekday, from: now) - 1 // Sunday = 0
+        let start = cal.date(byAdding: .day, value: -finished, to: cal.startOfDay(for: now)) ?? now
+        return dayKey(start, calendar: cal)
+    }
+
+    /// calculateWeeklyProgress's counts: this week's activities from Sunday through today
+    static func counts(_ activities: [[String: Any]], now: Date, calendar cal: Calendar = calendar()) -> Counts {
+        let from = weekStartKey(now, calendar: cal), to = dayKey(now, calendar: cal)
+        var lifts = 0, cardio = 0, recovery = 0
+        for a in activities {
+            guard let date = a["date"] as? String, date >= from, date <= to else { continue }
+            switch category(a) {
+            case "lifting": lifts += 1
+            case "cardio": cardio += 1
+            case "lifting+cardio": lifts += 1; cardio += 1
+            case "recovery": recovery += 1
+            default: break
+            }
+        }
+        return Counts(lifts: lifts, cardio: cardio, recovery: recovery)
+    }
+
+    private static func int(_ value: Any?) -> Int {
+        if let n = value as? NSNumber { return n.intValue }
+        if let s = value as? String { return Int(s) ?? Int(Double(s) ?? 0) }
+        return 0
+    }
+
+    /// The Large widget's Recent list, as pushWidgetData builds it: newest date first (ties
+    /// keep their stored order), five at most, each a JSON string.
+    static func recentActivities(_ activities: [[String: Any]]) -> [String] {
+        let ordered = activities.enumerated().sorted { lhs, rhs in
+            let l = lhs.element["date"] as? String ?? "", r = rhs.element["date"] as? String ?? ""
+            return l != r ? l > r : lhs.offset < rhs.offset
+        }
+        return ordered.prefix(5).compactMap { _, a in
+            let type = a["type"] as? String ?? ""
+            let subtype = a["subtype"] as? String
+            let name: String
+            switch type {
+            case "Strength Training": name = (a["strengthType"] as? String) ?? subtype ?? "Strength Training"
+            case "Other": name = subtype ?? "Other"
+            default: name = type
+            }
+            let entry: [String: Any] = [
+                "name": name, "category": category(a), "date": a["date"] as? String ?? "",
+                "duration": int(a["duration"]), "calories": int(a["calories"]),
+            ]
+            guard let data = try? JSONSerialization.data(withJSONObject: entry) else { return nil }
+            return String(data: data, encoding: .utf8)
+        }
+    }
+
+    /// The goals the app shows: a queued goal change counts once its Sunday has come
+    /// (goalsSchedule.js isPendingDue), as the app applies it on its next load.
+    static func goals(from doc: [String: Any], today: String) -> [String: Any] {
+        if let pending = doc["pendingGoals"] as? [String: Any],
+           let applyOn = pending["applyOn"] as? String, today >= applyOn {
+            return pending
+        }
+        return doc["goals"] as? [String: Any] ?? [:]
+    }
+
+    /// The App Review demo account works from mock data that isn't in Firestore
+    /// (src/demoData.js isDemoAccount); leave its widget to the app.
+    static func isDemoAccount(_ doc: [String: Any], email: String?) -> Bool {
+        if doc["demoMode"] as? Bool == true { return true }
+        let username = (doc["username"] as? String)?.lowercased()
+        let mail = email?.lowercased()
+        return username == "appreview" || mail == "appreview@dayseven.app" || mail == "reviewer@dayseven.app"
+    }
+
+    /// Writes the counts, goals and Recent list from a fresh read of users/{uid} and reloads
+    /// the widget. Returns false when it wrote nothing.
+    @discardableResult
+    static func write(fromUserDoc doc: [String: Any]?, email: String?, now: Date = Date()) -> Bool {
+        guard let doc, let defaults = UserDefaults(suiteName: suiteName) else { return false }
+        guard !isDemoAccount(doc, email: email) else {
+            print("[WidgetFromWatch] demo account — leaving the widget to the app")
+            return false
+        }
+        let activities = (doc["activities"] as? [[String: Any]] ?? []).filter { $0["date"] is String }
+        let cal = calendar()
+        let c = counts(activities, now: now, calendar: cal)
+        let g = goals(from: doc, today: dayKey(now, calendar: cal))
+
+        defaults.set(c.lifts, forKey: "liftsCompleted")
+        defaults.set(c.cardio, forKey: "cardioCompleted")
+        defaults.set(c.recovery, forKey: "recoveryCompleted")
+        defaults.set(g["liftsPerWeek"] != nil ? int(g["liftsPerWeek"]) : 4, forKey: "liftsGoal")
+        defaults.set(g["cardioPerWeek"] != nil ? int(g["cardioPerWeek"]) : 3, forKey: "cardioGoal")
+        defaults.set(g["recoveryPerWeek"] != nil ? int(g["recoveryPerWeek"]) : 2, forKey: "recoveryGoal")
+        if g["stepsPerDay"] != nil { defaults.set(int(g["stepsPerDay"]), forKey: "stepsGoal") }
+        defaults.set(recentActivities(activities), forKey: "recentActivities")
+        defaults.set(7 - (cal.component(.weekday, from: now) - 1), forKey: "daysLeftInWeek")
+
+        // The app's last write was for an earlier week: these counts are this week's, so
+        // move the week on. The week's steps restart from 0 until the app adds them up.
+        let thisWeek = weekStartKey(now, calendar: cal)
+        if defaults.string(forKey: "weekStartDate") != thisWeek {
+            defaults.set(thisWeek, forKey: "weekStartDate")
+            defaults.set(0, forKey: "weekSteps")
+        }
+        defaults.set(now.timeIntervalSince1970, forKey: "lastUpdated")
+
+        WidgetCenter.shared.reloadAllTimelines()
+        print("[WidgetFromWatch] wrote \(c.lifts) strength, \(c.cardio) cardio, \(c.recovery) recovery from \(activities.count) activities")
+        return true
     }
 }

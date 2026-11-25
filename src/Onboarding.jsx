@@ -9,6 +9,10 @@ import { fetchHealthKitWorkouts, fetchDailyHealthRange, requestHealthKitAuthoriz
 import { requestNotificationPermission } from './services/notificationService';
 import WeeklyPlanner from './WeeklyPlanner';
 import ShieldLadder from './components/ShieldLadder';
+import CategoryIcon from './components/CategoryIcon';
+import ActivityIcon from './components/ActivityIcon';
+import { WeekHead, GoalRows, GoalRowsMini } from './components/GoalCard';
+import { CARD_SURFACE, GOLD, hexToRgb } from './utils/designTokens';
 import { judgeWeek } from './utils/weekGoals';
 import { SHIELD_MIN_PERCENT } from './utils/streakShield';
 
@@ -26,6 +30,17 @@ export const RING_COLORS = {
 // The third ring is weekly Steps (stepsPerDay × 7) — it counts toward winning the week;
 // Recovery is a bonus with its own streak (utils/weekGoals).
 const weekStepsGoalOf = (weeklyGoals) => (weeklyGoals?.stepsPerDay || 10000) * 7;
+// Rows for components/GoalCard: { key, done, goal } for Strength, Cardio and weekly Steps.
+const goalRowsOf = (weeklyGoals, done = {}) => ([
+  { key: 'lifts', done: done.strength || 0, goal: weeklyGoals?.strength || 0 },
+  { key: 'cardio', done: done.cardio || 0, goal: weeklyGoals?.cardio || 0 },
+  { key: 'steps', done: done.steps || 0, goal: weekStepsGoalOf(weeklyGoals) },
+]);
+// The week's progress the way Home counts it: each goal's share, capped at the goal, averaged.
+const weekPercentOf = (rows) => {
+  const part = (r) => (r.goal > 0 ? Math.min(1, r.done / r.goal) : 1);
+  return Math.round((rows.reduce((a, r) => a + part(r), 0) / rows.length) * 100);
+};
 const formatStepsK = (n) => `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
 
 const pressProps = {
@@ -36,7 +51,9 @@ const pressProps = {
   onMouseLeave: (e) => { e.currentTarget.style.transform = 'scale(1)'; },
 };
 
-const ctaPressProps = (enabled, base = '#00FF94', pressed = '#00CC77') => ({
+// Primary CTAs are white with black text (Nov 2026 redesign: green now means Strength).
+const CTA_BG = '#FFFFFF';
+const ctaPressProps = (enabled, base = CTA_BG, pressed = '#D4D4D4') => ({
   onTouchStart: (e) => { if (enabled) { e.currentTarget.style.transform = 'scale(0.97)'; e.currentTarget.style.backgroundColor = pressed; } },
   onTouchEnd:   (e) => { if (enabled) { e.currentTarget.style.transform = 'scale(1)';    e.currentTarget.style.backgroundColor = base; } },
   onMouseDown:  (e) => { if (enabled) { e.currentTarget.style.transform = 'scale(0.97)'; e.currentTarget.style.backgroundColor = pressed; } },
@@ -141,7 +158,7 @@ const ORIGIN_MESSAGE = {
 const ORIGIN_TIMEFRAME = {
   lifter_adding_cardio:  "In 8 weeks, your lifts will feel easier and your conditioning will catch up. That's what adding the engine does.",
   runner_adding_muscle:  "In 8 weeks, you'll be stronger, more built, and running faster than you were when you were only running.",
-  already_hybrid:        "In 4 weeks, you'll know exactly what a complete week looks like — and you won't want to close anything less.",
+  already_hybrid:        "In 4 weeks, you'll know exactly what a complete week looks like — and you won't want to settle for anything less.",
   starting_from_scratch: "In 6 weeks, you'll have built a streak worth protecting. That's when it stops feeling like effort and starts feeling like identity.",
 };
 
@@ -196,46 +213,6 @@ function buildCreditActivity({ ring, label, dateStr }) {
   return { ...base, type: label, countToward: 'recovery' };
 }
 
-// ============================================================================
-// Ring component (SVG, animated)
-// ============================================================================
-
-function Ring({ color, progress, size = 96, stroke = 10, label, count, goal, goalOnly = false }) {
-  const radius = (size - stroke) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const dash = Math.min(1, Math.max(0, progress)) * circumference;
-  return (
-    <div className="flex flex-col items-center">
-      <div style={{ width: size, height: size, position: 'relative' }}>
-        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: 'rotate(-90deg)' }}>
-          <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={stroke} />
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            fill="none"
-            stroke={color}
-            strokeWidth={stroke}
-            strokeLinecap="round"
-            strokeDasharray={`${dash} ${circumference}`}
-            style={{ transition: 'stroke-dasharray 600ms cubic-bezier(0.34, 1.56, 0.64, 1)' }}
-          />
-        </svg>
-        {(count !== undefined || goal !== undefined) && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            {goalOnly ? (
-              <span className="font-bold" style={{ color, fontSize: size * 0.35, lineHeight: 1 }}>{goal}</span>
-            ) : (
-              <span className="text-white font-bold text-base">{count}{goal !== undefined && <span className="text-gray-500 text-xs font-medium">/{goal}</span>}</span>
-            )}
-          </div>
-        )}
-      </div>
-      {label && <span className="mt-2 text-xs font-semibold uppercase tracking-wider" style={{ color }}>{label}</span>}
-    </div>
-  );
-}
-
 // Horizontal chip selector for adjusting a single goal.
 function GoalChips({ color, value, options, onChange, formatLabel }) {
   return (
@@ -285,7 +262,7 @@ function WelcomeScreen({ onGetStarted, onSignIn }) {
         <button
           onClick={onGetStarted}
           className="w-full py-4 rounded-xl font-bold text-lg transition-all duration-150"
-          style={{ backgroundColor: '#00FF94', color: 'black' }}
+          style={{ backgroundColor: CTA_BG, color: 'black' }}
           {...ctaPressProps(true)}
         >
           Get Started
@@ -380,7 +357,7 @@ function SurveyScreen({ initialAnswers, onComplete, onBack, initialStep = 1 }) {
         return (
           <div className="space-y-3">
             <h2 className="text-2xl font-bold mb-1">What's been your biggest obstacle?</h2>
-            <p className="text-gray-500 text-sm mb-6">Helps us focus the right ring.</p>
+            <p className="text-gray-500 text-sm mb-6">Helps us focus the right goal.</p>
             {Q2_OBSTACLE.map(opt => renderOptionRow({
               key: opt.value,
               emoji: opt.emoji,
@@ -468,7 +445,7 @@ function SurveyScreen({ initialAnswers, onComplete, onBack, initialStep = 1 }) {
           disabled={!canContinue}
           className="w-full py-4 rounded-xl font-bold text-lg transition-all duration-150"
           style={{
-            backgroundColor: canContinue ? '#00FF94' : 'rgba(255,255,255,0.1)',
+            backgroundColor: canContinue ? CTA_BG : 'rgba(255,255,255,0.1)',
             color: canContinue ? 'black' : 'rgba(255,255,255,0.3)',
           }}
           {...ctaPressProps(canContinue)}
@@ -481,7 +458,7 @@ function SurveyScreen({ initialAnswers, onComplete, onBack, initialStep = 1 }) {
 }
 
 // ============================================================================
-// Results screen — personalized message + animated rings
+// Results screen — personalized message + the week's goals as Home's card
 // ============================================================================
 
 const STRENGTH_OPTIONS = [2, 3, 4, 5];
@@ -494,13 +471,6 @@ const STEPS_OPTIONS = [6000, 8000, 10000, 12000, 15000];
 // animated rings + closing line. No editors competing for attention; the
 // user customizes goals on the next screen.
 function ResultsScreen({ answers, weeklyGoals, onContinue, onBack }) {
-  // 0 → 8% pulse to show rings are alive (spec: animateRingTo 0.08, 1200ms easeOut)
-  const [progress, setProgress] = useState(0);
-  useEffect(() => {
-    const t = setTimeout(() => setProgress(0.08), 200);
-    return () => clearTimeout(t);
-  }, []);
-
   const originKey = primaryOrigin(answers.origin);
   const message = ORIGIN_MESSAGE[originKey];
   const timeframe = ORIGIN_TIMEFRAME[originKey];
@@ -539,18 +509,17 @@ function ResultsScreen({ answers, weeklyGoals, onContinue, onBack }) {
             <p className="text-[16px] text-gray-300 leading-snug mb-5 font-medium">
               {message}
             </p>
-            <p className="text-[15px] leading-relaxed mb-12 text-gray-400">
+            <p className="text-[15px] leading-relaxed mb-7 text-gray-400">
               {timeframe}
             </p>
 
-            <div className="flex items-start justify-around mb-4">
-              <Ring color={RING_COLORS.strength} progress={progress} size={104} stroke={10} label="Strength" goal={weeklyGoals.strength} goalOnly />
-              <Ring color={RING_COLORS.cardio}   progress={progress} size={104} stroke={10} label="Cardio"   goal={weeklyGoals.cardio}   goalOnly />
-              <Ring color={RING_COLORS.steps} progress={progress} size={104} stroke={10} label="Steps" goal={formatStepsK(weekStepsGoalOf(weeklyGoals))} goalOnly />
+            {/* The Home card with nothing done yet: an empty slot per session, one bar for steps */}
+            <div className="p-5" style={CARD_SURFACE}>
+              <GoalRows rows={goalRowsOf(weeklyGoals)} goalOnly />
             </div>
 
             {/* Suggestion caption — derived from the survey answers, changeable on the next screen. */}
-            <p className="text-center text-[12px] text-gray-500 flex items-center justify-center gap-1.5">
+            <p className="text-center text-[12px] text-gray-500 flex items-center justify-center gap-1.5 mt-4">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
               </svg>
@@ -564,7 +533,7 @@ function ResultsScreen({ answers, weeklyGoals, onContinue, onBack }) {
         <button
           onClick={onContinue}
           className="w-full py-4 rounded-xl font-bold text-lg transition-all duration-150"
-          style={{ backgroundColor: '#00FF94', color: 'black' }}
+          style={{ backgroundColor: CTA_BG, color: 'black' }}
           {...ctaPressProps(true)}
         >
           Review &amp; edit my goals
@@ -574,8 +543,8 @@ function ResultsScreen({ answers, weeklyGoals, onContinue, onBack }) {
   );
 }
 
-// Customize screen — editable weekly goal chips with a smaller live-updating
-// ring preview so each tap visibly moves the number.
+// Customize screen — editable weekly goal chips with a live one-line preview of the
+// goal rows, so each tap visibly adds or removes a block.
 function CustomizeWeekScreen({ weeklyGoals, onUpdateGoals, onBack, onContinue }) {
   const setField = (key, value) => onUpdateGoals({ ...weeklyGoals, [key]: value });
   return (
@@ -596,20 +565,18 @@ function CustomizeWeekScreen({ weeklyGoals, onUpdateGoals, onBack, onContinue })
       <div className="flex-1 px-6 pb-32 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
         <div className="max-w-md mx-auto">
           <h2 className="text-2xl font-bold mb-2">Make it yours.</h2>
-          <p className="text-gray-400 text-[14px] leading-relaxed mb-7">
+          <p className="text-gray-400 text-[14px] leading-relaxed mb-6">
             Suggested from your answers — change anything that doesn't fit.
           </p>
 
-          {/* Live-updating ring preview */}
-          <div className="flex items-start justify-around mb-8">
-            <Ring color={RING_COLORS.strength} progress={0.08} size={68} stroke={7} label="Strength" goal={weeklyGoals.strength} goalOnly />
-            <Ring color={RING_COLORS.cardio}   progress={0.08} size={68} stroke={7} label="Cardio"   goal={weeklyGoals.cardio}   goalOnly />
-            <Ring color={RING_COLORS.steps} progress={0.08} size={68} stroke={7} label="Steps" goal={formatStepsK(weekStepsGoalOf(weeklyGoals))} goalOnly />
+          {/* Live preview: one-line goal rows, so picking 4 strength shows 4 blocks */}
+          <div className="mb-7" style={{ ...CARD_SURFACE, padding: '17px 18px' }}>
+            <GoalRowsMini rows={goalRowsOf(weeklyGoals)} goalOnly />
           </div>
 
           <div className="mb-5">
             <div className="flex items-center gap-2 mb-2">
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: RING_COLORS.strength }} />
+              <CategoryIcon category="lifts" size={16} />
               <label className="text-[14px] font-semibold">Strength sessions / week</label>
             </div>
             <GoalChips
@@ -622,7 +589,7 @@ function CustomizeWeekScreen({ weeklyGoals, onUpdateGoals, onBack, onContinue })
 
           <div className="mb-5">
             <div className="flex items-center gap-2 mb-2">
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: RING_COLORS.cardio }} />
+              <CategoryIcon category="cardio" size={16} />
               <label className="text-[14px] font-semibold">Cardio sessions / week</label>
             </div>
             <GoalChips
@@ -635,7 +602,7 @@ function CustomizeWeekScreen({ weeklyGoals, onUpdateGoals, onBack, onContinue })
 
           <div className="mb-5">
             <div className="flex items-center gap-2 mb-2">
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: RING_COLORS.recovery }} />
+              <CategoryIcon category="recovery" size={16} />
               <label className="text-[14px] font-semibold">Recovery sessions / week</label>
               <span className="text-[9px] font-bold tracking-wider uppercase px-1.5 py-[1px] rounded-full" style={{ backgroundColor: 'rgba(0,209,255,0.12)', color: RING_COLORS.recovery }}>Bonus</span>
             </div>
@@ -661,7 +628,7 @@ function CustomizeWeekScreen({ weeklyGoals, onUpdateGoals, onBack, onContinue })
         <button
           onClick={onContinue}
           className="w-full py-4 rounded-xl font-bold text-lg transition-all duration-150"
-          style={{ backgroundColor: '#00FF94', color: 'black' }}
+          style={{ backgroundColor: CTA_BG, color: 'black' }}
           {...ctaPressProps(true)}
         >
           Continue
@@ -707,7 +674,7 @@ function DailyTargetsScreen({ weeklyGoals, onUpdateGoals, distanceUnit, onUpdate
               <line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
             <p className="text-[12px] leading-snug" style={{ color: '#E0F7FF' }}>
-              Steps are your third ring and count across the whole week — a slow day just means a bigger one later.
+              Steps are your third goal and count across the whole week — a slow day just means a bigger one later.
             </p>
           </div>
 
@@ -764,7 +731,7 @@ function DailyTargetsScreen({ weeklyGoals, onUpdateGoals, distanceUnit, onUpdate
         <button
           onClick={onContinue}
           className="w-full py-4 rounded-xl font-bold text-lg transition-all duration-150"
-          style={{ backgroundColor: '#00FF94', color: 'black' }}
+          style={{ backgroundColor: CTA_BG, color: 'black' }}
           {...ctaPressProps(true)}
         >
           Continue
@@ -780,8 +747,6 @@ function DailyTargetsScreen({ weeklyGoals, onUpdateGoals, distanceUnit, onUpdate
 // with at least half of each goal, and the Streak Shield holds the streak
 // (utils/streakShield). Both use the goals the person just picked.
 // ============================================================================
-
-const STREAK_CARD = { backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' };
 
 function StreakPage({ page, title, subtitle, cta, onBack, onContinue, children }) {
   return (
@@ -816,7 +781,7 @@ function StreakPage({ page, title, subtitle, cta, onBack, onContinue, children }
         <button
           onClick={onContinue}
           className="w-full py-4 rounded-xl font-bold text-lg transition-all duration-150"
-          style={{ backgroundColor: '#00FF94', color: 'black' }}
+          style={{ backgroundColor: CTA_BG, color: 'black' }}
           {...ctaPressProps(true)}
         >
           {cta}
@@ -837,31 +802,28 @@ function StreakWinScreen({ weeklyGoals, onBack, onContinue }) {
       onBack={onBack}
       onContinue={onContinue}
     >
-      <div className="rounded-2xl p-4 mb-3" style={STREAK_CARD}>
-        <div className="flex justify-center gap-3">
-          <Ring color={RING_COLORS.strength} progress={1} size={88} stroke={8} label="Strength" count={weeklyGoals.strength} />
-          <Ring color={RING_COLORS.cardio} progress={1} size={88} stroke={8} label="Cardio" count={weeklyGoals.cardio} />
-          <Ring color={RING_COLORS.steps} progress={1} size={88} stroke={8} label="Steps" count={formatStepsK(stepsGoal)} />
-        </div>
-        <p className="text-center text-sm font-semibold mt-4">
-          {weeklyGoals.strength} strength · {weeklyGoals.cardio} cardio · {formatStepsK(stepsGoal)} steps <span className="text-gray-400 font-normal whitespace-nowrap">= week won</span>
-        </p>
+      {/* A won week, drawn as Home will show it: gold 100%, every goal filled and checked.
+          The "2 days to spare" is illustrative. */}
+      <div className="mb-3" style={{ ...CARD_SURFACE, padding: '18px 18px 20px' }}>
+        <WeekHead pct={100} won right={2} rightLabel="days to spare" size={50} mb={16} pb={16} />
+        <GoalRows rows={goalRowsOf(weeklyGoals, { strength: weeklyGoals.strength, cardio: weeklyGoals.cardio, steps: stepsGoal })} size="compact" />
       </div>
 
-      <div className="rounded-2xl p-4 mb-4" style={STREAK_CARD}>
-        <p className="text-sm font-semibold mb-2.5">Your Winning Streak</p>
-        <div className="flex gap-1.5">
-          {[1, 2, 3, 4].map((n) => (
-            <div key={n} className="flex-1 h-11 rounded-lg flex flex-col items-center justify-center gap-0.5" style={{ backgroundColor: 'rgba(0,255,148,0.15)' }}>
-              <span className="text-sm font-bold leading-none" style={{ color: '#00FF94' }}>✓</span>
-              <span className="text-[11px] text-gray-400 leading-none">Week {n}</span>
-            </div>
-          ))}
+      {/* The Winning Streak: one gold block per week won, an outline for the next */}
+      <div className="mb-4" style={{ ...CARD_SURFACE, padding: '16px 18px 17px' }}>
+        <div className="flex items-end justify-between">
+          <div className="flex items-baseline" style={{ gap: 7 }}>
+            <span style={{ fontSize: 15, lineHeight: 1 }}>🔥</span>
+            <span style={{ fontSize: 32, fontWeight: 800, letterSpacing: '-1.2px', lineHeight: 0.85, color: GOLD }}>4</span>
+            <span style={{ fontSize: 15, fontWeight: 700, color: 'rgba(255,215,0,0.85)' }}>weeks</span>
+          </div>
+          <span className="uppercase" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', color: 'rgba(255,215,0,0.9)' }}>Winning streak</span>
         </div>
-        <div className="flex items-center justify-between text-xs mt-3">
-          <span className="text-gray-400">Four weeks won in a row</span>
-          <span className="font-bold" style={{ color: '#FFD700' }}>🔥 4 weeks</span>
+        <div className="flex" style={{ gap: 6, marginTop: 14 }}>
+          {[1, 2, 3, 4].map((n) => <i key={n} className="flex-1 block" style={{ height: 12, borderRadius: 6, backgroundColor: GOLD }} />)}
+          <i className="flex-1 block" style={{ height: 12, borderRadius: 6, boxShadow: 'inset 0 0 0 1.5px rgba(255,215,0,0.35)' }} />
         </div>
+        <p className="text-gray-400" style={{ fontSize: 12.5, marginTop: 11 }}>Four weeks won in a row.</p>
       </div>
 
       {weeklyGoals.recovery > 0 && (
@@ -890,7 +852,6 @@ function streakHoldExample(weeklyGoals) {
 
 function StreakShieldScreen({ weeklyGoals, onBack, onContinue }) {
   const ex = useMemo(() => streakHoldExample(weeklyGoals), [weeklyGoals]);
-  const part = (done, goal) => (goal > 0 ? Math.min(1, done / goal) : 1);
   return (
     <StreakPage
       page={2}
@@ -900,20 +861,10 @@ function StreakShieldScreen({ weeklyGoals, onBack, onContinue }) {
       onBack={onBack}
       onContinue={onContinue}
     >
-      <div className="rounded-2xl p-4 mb-3" style={STREAK_CARD}>
-        <div className="flex justify-center gap-3">
-          <Ring color={RING_COLORS.strength} progress={part(ex.counts.lifts, weeklyGoals.strength)} size={88} stroke={8} label="Strength" count={ex.counts.lifts} goal={weeklyGoals.strength} />
-          <Ring color={RING_COLORS.cardio} progress={part(ex.counts.cardio, weeklyGoals.cardio)} size={88} stroke={8} label="Cardio" count={ex.counts.cardio} goal={weeklyGoals.cardio} />
-          <Ring color={RING_COLORS.steps} progress={part(ex.weekSteps, ex.stepsGoal)} size={88} stroke={8} label="Steps" count={formatStepsK(ex.weekSteps)} goal={formatStepsK(ex.stepsGoal)} />
-        </div>
-        <div className="relative h-1.5 rounded-full mt-4" style={{ backgroundColor: 'rgba(255,255,255,0.12)' }}>
-          <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${ex.percent}%`, backgroundColor: '#FFD700' }} />
-          <div className="absolute rounded-full bg-white" style={{ left: `${SHIELD_MIN_PERCENT}%`, top: -4, width: 2, height: 14 }} />
-        </div>
-        <div className="flex items-center justify-between text-xs mt-2">
-          <span className="text-gray-400">This week</span>
-          <span className="font-bold">{ex.percent}% <span className="text-gray-400 font-normal">/ {SHIELD_MIN_PERCENT}%</span></span>
-        </div>
+      {/* An example week that holds: past the line, every goal at least half done */}
+      <div className="mb-3" style={{ ...CARD_SURFACE, padding: '18px 18px 20px' }}>
+        <WeekHead pct={ex.percent} label="This week" right={`${SHIELD_MIN_PERCENT}%`} rightLabel="holds the streak" size={50} mb={16} pb={16} />
+        <GoalRows rows={goalRowsOf(weeklyGoals, { strength: ex.counts.lifts, cardio: ex.counts.cardio, steps: ex.weekSteps })} size="compact" />
       </div>
 
       <ShieldLadder />
@@ -1017,7 +968,7 @@ function ScheduleScreen({ goals, initialPlan, onChange, onBack, onContinue, onSk
         <button
           onClick={onContinue}
           className="w-full py-4 rounded-xl font-bold text-lg transition-all duration-150"
-          style={{ backgroundColor: '#00FF94', color: 'black' }}
+          style={{ backgroundColor: CTA_BG, color: 'black' }}
           {...ctaPressProps(true)}
         >
           Continue
@@ -1076,7 +1027,7 @@ export function HKPrescreen({ onConnected, title, body, cta }) {
             {title || "dayseven works best when it knows what you've already done."}
           </h2>
           <p className="text-gray-400 text-[15px] leading-relaxed">
-            {body || 'Connect Apple Health to automatically log workouts to your rings — no manual entry needed.'}
+            {body || 'Connect Apple Health to automatically log workouts toward your week — no manual entry needed.'}
           </p>
         </div>
       </div>
@@ -1085,7 +1036,7 @@ export function HKPrescreen({ onConnected, title, body, cta }) {
           onClick={handleConnect}
           disabled={requesting}
           className="w-full py-4 rounded-xl font-bold text-lg transition-all duration-150"
-          style={{ backgroundColor: '#00FF94', color: 'black', opacity: requesting ? 0.6 : 1 }}
+          style={{ backgroundColor: CTA_BG, color: 'black', opacity: requesting ? 0.6 : 1 }}
           {...ctaPressProps(!requesting)}
         >
           {requesting ? 'Connecting…' : (cta || 'Connect Apple Health')}
@@ -1120,24 +1071,6 @@ function activityRing(activity) {
   if (['Running','Cycle','Sports','Stair Climbing','Elliptical','Rowing','Hiking','Swimming'].includes(activity.type)) return 'cardio';
   if (['Cold Plunge','Sauna','Contrast Therapy','Massage','Chiropractic','Yoga','Pilates'].includes(activity.type)) return 'recovery';
   return null;
-}
-
-function workoutCardIcon(ring, type) {
-  // Lightweight inline glyph by ring color
-  if (ring === 'strength') return '🏋️';
-  if (ring === 'cardio') {
-    if (type === 'Cycle' || type === 'Cycling') return '🚴';
-    if (type === 'Walking') return '🚶';
-    return '🏃';
-  }
-  if (ring === 'recovery') {
-    if (type === 'Cold Plunge') return '🧊';
-    if (type === 'Sauna')       return '🔥';
-    if (type === 'Yoga')        return '🧘';
-    if (type === 'Pilates')     return '🤸';
-    return '🌿';
-  }
-  return '💪';
 }
 
 function LinkingScreen({ weeklyGoals, hkAuthorized, answers, initialLinked, initialCredits, onContinue }) {
@@ -1293,38 +1226,24 @@ function LinkingScreen({ weeklyGoals, hkAuthorized, answers, initialLinked, init
   // Aggregate progress across the three rings (Strength, Cardio, Steps) — the average of
   // each ring's fill, same as Home's Week Progress.
   const totalPct = ((ringProgress('strength') + ringProgress('cardio') + Math.min(1, weekSteps / weekStepsGoal)) / 3) * 100;
+  // Days left including today, through Saturday (same as Home).
+  const daysLeft = 7 - new Date().getDay();
 
   return (
     <div className="fixed inset-0 z-50 bg-black text-white flex flex-col overflow-hidden">
-      {/* Sticky rings header */}
+      {/* Sticky header: the week so far */}
       <div className="flex-shrink-0 px-6 pb-4" style={{ backgroundColor: '#000', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)' }}>
         <h2 className="text-2xl font-bold mb-1">Let's build your first week.</h2>
-        <p className="text-gray-500 text-sm mb-5">Tap any sessions below to link them to your rings.</p>
-        <div className="flex items-start justify-around">
-          <Ring size={72} stroke={8} color={RING_COLORS.strength} progress={ringProgress('strength')} label="Strength" count={ringTotals.strength} goal={weeklyGoals.strength} />
-          <Ring size={72} stroke={8} color={RING_COLORS.cardio}   progress={ringProgress('cardio')}   label="Cardio"   count={ringTotals.cardio}   goal={weeklyGoals.cardio} />
-          <Ring size={72} stroke={8} color={RING_COLORS.steps} progress={Math.min(1, weekSteps / weekStepsGoal)} label="Steps" count={`${Math.round(weekSteps / 1000)}k`} goal={formatStepsK(weekStepsGoal)} />
-        </div>
-        <p className="text-[11px] text-center text-gray-500 mt-2">
-          {hkAuthorized ? 'Steps fill in from Apple Health.' : 'Steps fill in once Apple Health is connected.'}
-        </p>
-
-        {/* Aggregate progress bar — mirrors the home tab's overall progress
-            pattern so users feel forward motion across all three rings as
-            they tap to link / claim credits. */}
-        <div className="mt-5">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Week progress</span>
-            <span className="text-[12px] font-semibold text-white tabular-nums">
-              {Math.round(totalPct)}%
-            </span>
-          </div>
-          <div className="w-full rounded-full overflow-hidden" style={{ height: 4, backgroundColor: 'rgba(255,255,255,0.1)' }}>
-            <div
-              className="h-full rounded-full transition-all duration-500"
-              style={{ width: `${totalPct}%`, backgroundColor: '#00FF94' }}
-            />
-          </div>
+        <p className="text-gray-500 text-sm mb-4">Tap any sessions below to count them toward this week.</p>
+        {/* A small Home card: tapping a workout below fills a block right here. The big
+            number replaces the old green Week progress bar, as on Home. */}
+        <div style={{ ...CARD_SURFACE, padding: '16px 18px' }}>
+          <WeekHead pct={totalPct} right={daysLeft} rightLabel={daysLeft === 1 ? 'day left' : 'days left'} size={44} mb={14} pb={14} />
+          <GoalRowsMini rows={goalRowsOf(weeklyGoals, { strength: ringTotals.strength, cardio: ringTotals.cardio, steps: weekSteps })} />
+          <p className="text-gray-500 flex items-center gap-1.5" style={{ fontSize: 11.5, marginTop: 13 }}>
+            <CategoryIcon category="steps" size={12} color="#6b7280" />
+            {hkAuthorized ? 'Steps fill in from Apple Health.' : 'Steps fill in once Apple Health is connected.'}
+          </p>
         </div>
       </div>
 
@@ -1345,7 +1264,7 @@ function LinkingScreen({ weeklyGoals, hkAuthorized, answers, initialLinked, init
             <button
               onClick={() => openHealthSettings()}
               className="text-[13px] font-semibold flex items-center gap-1"
-              style={{ color: '#00FF94' }}
+              style={{ color: '#fff' }}
             >
               Open Health
               <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -1357,11 +1276,12 @@ function LinkingScreen({ weeklyGoals, hkAuthorized, answers, initialLinked, init
 
         {hasAnyHK && (
           <div className="mb-6">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3">This week from Apple Health</h3>
+            <h3 className="uppercase mb-3" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', color: '#8a8a8a' }}>This week from Apple Health</h3>
             <div className="space-y-2">
               {hkWorkouts.map(w => {
                 const ring = activityRing(w);
                 const color = ring ? RING_COLORS[ring] : '#777';
+                const rgb = hexToRgb(color);
                 const linked = linkedIds.has(w.id);
                 return (
                   <button
@@ -1369,17 +1289,17 @@ function LinkingScreen({ weeklyGoals, hkAuthorized, answers, initialLinked, init
                     onClick={() => toggleLink(w.id)}
                     className="w-full p-4 rounded-2xl text-left transition-all duration-200 border-2 flex items-center gap-3"
                     style={{
-                      backgroundColor: linked ? `${color}15` : 'rgba(255,255,255,0.04)',
-                      borderColor: linked ? color : 'rgba(255,255,255,0.08)',
+                      backgroundColor: linked ? `rgba(${rgb},0.07)` : 'rgba(255,255,255,0.04)',
+                      borderColor: linked ? `rgba(${rgb},0.55)` : 'rgba(255,255,255,0.06)',
                       transform: 'scale(1)',
                     }}
                     {...pressProps}
                   >
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${color}20` }}>
-                      <span className="text-xl">{workoutCardIcon(ring, w.type)}</span>
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `rgba(${rgb},0.14)` }}>
+                      <ActivityIcon type={w.type} subtype={w.subtype} strengthType={w.strengthType} countToward={w.countToward} size={20} color={color} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-[15px]" style={{ color: linked ? color : 'white' }}>
+                      <div className="font-semibold text-[15px] text-white truncate">
                         {w.type}{w.subtype && w.subtype !== w.type ? ` · ${w.subtype}` : ''}
                       </div>
                       <div className="text-xs text-gray-500 mt-0.5">
@@ -1406,33 +1326,35 @@ function LinkingScreen({ weeklyGoals, hkAuthorized, answers, initialLinked, init
         {hasAnyCredit && (
           <div className="mb-6">
             <div className="flex items-center gap-2 mb-1">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00FF94" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ddd" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2z" />
               </svg>
-              <h3 className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#00FF94' }}>You've earned this</h3>
+              <h3 className="uppercase" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', color: '#ddd' }}>You've earned this</h3>
             </div>
             <p className="text-xs text-gray-500 mb-3">A starting credit for making it through. Tap each one to claim — they count toward your first week's streak.</p>
             <div className="space-y-2">
               {visibleCredits.map(c => {
                 const color = RING_COLORS[c.ring];
+                const rgb = hexToRgb(color);
                 const claimed = claimedCreditIds.has(c.id);
+                const sample = buildCreditActivity({ ring: c.ring, label: c.label, dateStr: todayStr });
                 return (
                   <button
                     key={c.id}
                     onClick={() => toggleCredit(c.id)}
                     className="w-full p-4 rounded-2xl text-left transition-all duration-200 flex items-center gap-3"
                     style={{
-                      backgroundColor: claimed ? `${color}15` : 'rgba(255,255,255,0.025)',
-                      border: claimed ? `2px solid ${color}` : '1px dashed rgba(255,255,255,0.18)',
+                      backgroundColor: claimed ? `rgba(${rgb},0.07)` : 'rgba(255,255,255,0.025)',
+                      border: claimed ? `2px solid rgba(${rgb},0.55)` : '1px dashed rgba(255,255,255,0.18)',
                       transform: 'scale(1)',
                     }}
                     {...pressProps}
                   >
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${color}20` }}>
-                      <span className="text-xl">{workoutCardIcon(c.ring, c.label)}</span>
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `rgba(${rgb},0.14)` }}>
+                      <ActivityIcon type={sample.type} strengthType={sample.strengthType} countToward={sample.countToward} size={20} color={color} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-[15px]" style={{ color: claimed ? color : 'white' }}>
+                      <div className="font-semibold text-[15px] text-white">
                         {c.label}
                       </div>
                       <div className="text-[10px] font-medium uppercase tracking-wider text-gray-500 mt-0.5">
@@ -1467,7 +1389,7 @@ function LinkingScreen({ weeklyGoals, hkAuthorized, answers, initialLinked, init
         <button
           onClick={handleContinue}
           className="w-full py-4 rounded-xl font-bold text-lg transition-all duration-150"
-          style={{ backgroundColor: '#00FF94', color: 'black' }}
+          style={{ backgroundColor: CTA_BG, color: 'black' }}
           {...ctaPressProps(true)}
         >
           Continue
@@ -1479,19 +1401,12 @@ function LinkingScreen({ weeklyGoals, hkAuthorized, answers, initialLinked, init
 
 // ============================================================================
 // Celebrate screen — the "already on your way" moment between the linking
-// screen and the notification ask. Recaps ring state + what's left to
+// screen and the notification ask. Recaps the week so far + what's left to
 // complete the first hybrid week. Always shows with positive framing, even
 // when the user claimed zero credits / linked nothing.
 // ============================================================================
 
 function CelebrateScreen({ weeklyGoals, linkedWorkouts, onboardingCredits, weekSteps = 0, onContinue }) {
-  // Animate rings from 0 → current as the screen mounts.
-  const [progressed, setProgressed] = useState(false);
-  useEffect(() => {
-    const t = setTimeout(() => setProgressed(true), 250);
-    return () => clearTimeout(t);
-  }, []);
-
   const totals = useMemo(() => {
     const c = { strength: 0, cardio: 0, recovery: 0 };
     for (const a of [...(linkedWorkouts || []), ...(onboardingCredits || [])]) {
@@ -1509,47 +1424,14 @@ function CelebrateScreen({ weeklyGoals, linkedWorkouts, onboardingCredits, weekS
   };
   const allDone = remaining.strength === 0 && remaining.cardio === 0 && remaining.steps === 0;
 
-  const ringProgress = (ring) => {
-    if (ring === 'steps') return progressed ? Math.min(1, weekSteps / weekStepsGoal) : 0;
-    const goal = weeklyGoals[ring];
-    if (!goal) return 0;
-    return progressed ? Math.min(1, totals[ring] / goal) : 0;
-  };
+  // Their first look at the real Home card, with what they've already done filled in.
+  const rows = goalRowsOf(weeklyGoals, { strength: totals.strength, cardio: totals.cardio, steps: weekSteps });
+  const daysLeft = 7 - new Date().getDay();
 
   const headline = allDone ? 'First week — locked in.' : 'Already on your way.';
   const subhead = allDone
     ? "Every session from here compounds. Now make it real."
     : "Here's what's left to complete your first full week.";
-
-  const breakdownRow = (ring, label, isLast) => {
-    const rem = remaining[ring];
-    const color = RING_COLORS[ring];
-    return (
-      <div
-        key={ring}
-        className="flex items-center justify-between py-3"
-        style={isLast ? undefined : { borderBottom: '1px solid rgba(255,255,255,0.06)' }}
-      >
-        <div className="flex items-center gap-3">
-          <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
-          <span className="text-[15px] font-semibold text-white">{label}</span>
-        </div>
-        {rem === 0 ? (
-          <span className="text-[13px] font-semibold flex items-center gap-1.5" style={{ color }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-            Complete
-          </span>
-        ) : (
-          <span className="text-[14px] font-semibold text-white tabular-nums">
-            <span style={{ color }}>{ring === 'steps' ? formatStepsK(rem) : rem}</span>
-            <span className="text-gray-500 font-medium">{ring === 'steps' ? ' steps to go' : ' more'}</span>
-          </span>
-        )}
-      </div>
-    );
-  };
 
   return (
     <div className="fixed inset-0 z-50 bg-black text-white flex flex-col overflow-hidden">
@@ -1564,21 +1446,23 @@ function CelebrateScreen({ weeklyGoals, linkedWorkouts, onboardingCredits, weekS
         >
           <div className="max-w-md mx-auto w-full">
             <h2 className="text-[26px] font-bold mb-3 leading-tight">{headline}</h2>
-            <p className="text-[15px] leading-relaxed mb-10 text-gray-400">{subhead}</p>
+            <p className="text-[15px] leading-relaxed mb-7 text-gray-400">{subhead}</p>
 
-            <div className="flex items-start justify-around mb-8">
-              <Ring color={RING_COLORS.strength} progress={ringProgress('strength')} size={96} stroke={9} label="Strength" count={totals.strength} goal={weeklyGoals.strength} />
-              <Ring color={RING_COLORS.cardio}   progress={ringProgress('cardio')}   size={96} stroke={9} label="Cardio"   count={totals.cardio}   goal={weeklyGoals.cardio} />
-              <Ring color={RING_COLORS.steps} progress={ringProgress('steps')} size={96} stroke={9} label="Steps" count={formatStepsK(weekSteps)} goal={formatStepsK(weekStepsGoal)} />
+            {/* What's left sits under each goal; a finished goal shows its check instead */}
+            <div className="p-5" style={CARD_SURFACE}>
+              <WeekHead
+                pct={allDone ? 100 : weekPercentOf(rows)}
+                won={allDone}
+                right={daysLeft}
+                rightLabel={allDone ? (daysLeft === 1 ? 'day to spare' : 'days to spare') : (daysLeft === 1 ? 'day left' : 'days left')}
+              />
+              <GoalRows
+                rows={rows}
+                caption={(r) => (r.done >= r.goal ? null : r.key === 'steps'
+                  ? <><b className="text-white font-bold">{formatStepsK(r.goal - r.done)}</b> steps to go</>
+                  : <><b className="text-white font-bold">{r.goal - r.done}</b> more</>)}
+              />
             </div>
-
-            {!allDone && (
-              <div className="rounded-2xl px-4" style={{ backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                {breakdownRow('strength', 'Strength', false)}
-                {breakdownRow('cardio',   'Cardio',   false)}
-                {breakdownRow('steps', 'Steps', true)}
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -1587,7 +1471,7 @@ function CelebrateScreen({ weeklyGoals, linkedWorkouts, onboardingCredits, weekS
         <button
           onClick={onContinue}
           className="w-full py-4 rounded-xl font-bold text-lg transition-all duration-150"
-          style={{ backgroundColor: '#00FF94', color: 'black' }}
+          style={{ backgroundColor: CTA_BG, color: 'black' }}
           {...ctaPressProps(true)}
         >
           Continue
@@ -1625,7 +1509,7 @@ function NotifPrescreen({ onEnabled, onSkip, submitting = false }) {
         <div className="max-w-md w-full text-center">
           <h2 className="text-2xl font-bold mb-3">Don't let your week slip.</h2>
           <p className="text-gray-400 text-[15px] leading-relaxed mb-8">
-            Enable notifications and dayseven will remind you when a ring is still open — before the week closes.
+            Enable notifications and dayseven will remind you when a goal is still open — before the week closes.
           </p>
 
           {/* Mock notification preview */}
@@ -1636,7 +1520,7 @@ function NotifPrescreen({ onEnabled, onSkip, submitting = false }) {
               <span className="text-[11px] text-gray-500 ml-auto">now</span>
             </div>
             <p className="text-[14px] text-white">
-              Your strength ring is still open. 2 days left.
+              Your strength goal is still open. 2 days left.
             </p>
           </div>
         </div>
@@ -1646,7 +1530,7 @@ function NotifPrescreen({ onEnabled, onSkip, submitting = false }) {
           onClick={handleEnable}
           disabled={busy}
           className="w-full py-4 rounded-xl font-bold text-lg transition-all duration-150"
-          style={{ backgroundColor: '#00FF94', color: 'black', opacity: busy ? 0.6 : 1 }}
+          style={{ backgroundColor: CTA_BG, color: 'black', opacity: busy ? 0.6 : 1 }}
           {...ctaPressProps(!busy)}
         >
           {requesting ? 'Requesting…' : submitting ? 'Loading…' : 'Turn on Notifications'}

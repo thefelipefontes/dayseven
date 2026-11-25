@@ -1,6 +1,8 @@
 import { useState, useLayoutEffect, useRef } from 'react';
 import { triggerHaptic } from './utils/haptics';
 import { ImpactStyle } from '@capacitor/haptics';
+import { GoalRowsMini } from './components/GoalCard';
+import { CARD_SURFACE, GOLD, goldMix } from './utils/designTokens';
 
 // Subscription-only hard paywall surface.
 //
@@ -26,13 +28,21 @@ const BENEFITS = [
   'Streak shields & vacation mode protection',
 ];
 
+// Neutral: green now means Strength (Nov 2026 redesign).
 const CheckIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" className="shrink-0 mt-0.5">
-    <circle cx="10" cy="10" r="10" fill="#00FF94" fillOpacity="0.15" />
-    <path d="M6 10.2l2.6 2.6L14.2 7.2" stroke="#00FF94" strokeWidth="2"
-      strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
+  <span className="shrink-0 mt-0.5 inline-flex items-center justify-center rounded-full" style={{ width: 20, height: 20, backgroundColor: 'rgba(255,255,255,0.1)' }}>
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M20 6L9 17l-5-5" />
+    </svg>
+  </span>
 );
+
+// The illustration under the benefits: a small Home card. Illustrative, NOT the user's data.
+const HERO_ROWS = [
+  { key: 'lifts', done: 3, goal: 3 },
+  { key: 'cardio', done: 1, goal: 2 },
+  { key: 'steps', done: 59000, goal: 70000 },
+];
 
 export default function LockedScreen({ onSubscribe, onRestore, onSignOut, userProfile }) {
   const [busy, setBusy] = useState(null); // 'subscribe' | 'restore' | null
@@ -117,7 +127,7 @@ export default function LockedScreen({ onSubscribe, onRestore, onSignOut, userPr
         >
           {firstName ? `${firstName}, unlock the full` : 'Unlock the full'}
           <br />
-          <span style={{ color: '#00FF94' }}>DaySeven</span> experience
+          <span className="text-white">DaySeven</span> experience
         </h1>
         <p className="text-gray-400 text-[15px] mt-3 leading-snug">
           One membership. Everything included — no limits, no add-ons.
@@ -133,32 +143,25 @@ export default function LockedScreen({ onSubscribe, onRestore, onSignOut, userPr
           ))}
         </ul>
 
-        {/* Aspirational tease — the concentric rings + weekly-streak system
-            they're unlocking. Illustrative hero, NOT the user's real data. */}
+        {/* Aspirational tease — a small Home card: a 12-week Winning Streak over this week's
+            goals. Illustrative hero, NOT the user's real data. */}
         <div className="flex-1 flex items-center justify-center min-h-[180px] py-5">
-          <div className="relative w-[180px] h-[180px]">
-            <svg viewBox="0 0 200 200" className="w-full h-full -rotate-90">
-              {/* tracks */}
-              <circle cx="100" cy="100" r="86" fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="11" />
-              <circle cx="100" cy="100" r="68" fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="11" />
-              <circle cx="100" cy="100" r="50" fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="11" />
-              {/* progress arcs — the three goals that win the week: steps (purple) 85%,
-                  cardio (orange) 60%, strength (green) 75%. Circumferences: r86≈540, r68≈427, r50≈314. */}
-              <circle cx="100" cy="100" r="86" fill="none" stroke="#00FF94" strokeWidth="11"
-                strokeLinecap="round" strokeDasharray="405 540" />
-              <circle cx="100" cy="100" r="68" fill="none" stroke="#FF9500" strokeWidth="11"
-                strokeLinecap="round" strokeDasharray="256 428" />
-              <circle cx="100" cy="100" r="50" fill="none" stroke="#BF5AF2" strokeWidth="11"
-                strokeLinecap="round" strokeDasharray="267 314" />
-            </svg>
-            {/* Streak in the center */}
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <svg width="18" height="18" viewBox="0 0 24 24" className="-mb-0.5">
-                <path fill="#FFD60A" d="M12 2c.6 3 2.5 4.6 3.9 6.4 1.2 1.6 2.1 3.2 2.1 5.1A6 6 0 0 1 6 13.5c0-1.6.6-3 1.6-4.2.3 1.1 1.1 1.9 2.1 2.2C8.9 8.4 10.2 5 12 2z" />
-              </svg>
-              <span className="text-[23px] font-bold leading-none">12</span>
-              <span className="text-[10px] font-semibold tracking-[0.1em] text-gray-400 leading-none mt-0.5">WEEKS</span>
+          <div className="w-full" style={{ ...CARD_SURFACE, padding: '16px 18px 18px' }}>
+            <div className="flex items-end justify-between" style={{ marginBottom: 14, paddingBottom: 14, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+              <div>
+                <div className="flex items-baseline" style={{ gap: 6 }}>
+                  <span style={{ fontSize: 15, lineHeight: 1 }}>🔥</span>
+                  <span style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-1.4px', lineHeight: 0.82, color: GOLD, textShadow: '0 0 18px rgba(255,215,0,0.35)' }}>12</span>
+                  <span style={{ fontSize: 15, fontWeight: 700, color: 'rgba(255,215,0,0.85)' }}>weeks</span>
+                </div>
+                <div className="uppercase" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', marginTop: 9, color: 'rgba(255,215,0,0.9)' }}>Winning streak</div>
+              </div>
+              <div className="text-right">
+                <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-1px', lineHeight: 0.82, color: goldMix(78) }}>78<small style={{ fontSize: 15, marginLeft: 1 }}>%</small></div>
+                <div className="uppercase" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', marginTop: 9, color: '#8a8a8a' }}>This week</div>
+              </div>
             </div>
+            <GoalRowsMini rows={HERO_ROWS} />
           </div>
         </div>
 
@@ -166,8 +169,8 @@ export default function LockedScreen({ onSubscribe, onRestore, onSignOut, userPr
         <button
           onClick={handleSubscribe}
           disabled={!!busy}
-          className="w-full rounded-2xl font-bold text-black text-[17px] py-4 mt-8 transition-opacity active:opacity-80 disabled:opacity-60"
-          style={{ backgroundColor: '#00FF94' }}
+          className="w-full rounded-2xl font-bold text-black text-[17px] py-4 mt-3 transition-opacity active:opacity-80 disabled:opacity-60"
+          style={{ backgroundColor: '#fff' }}
         >
           {busy === 'subscribe' ? 'Opening…' : 'See plans'}
         </button>

@@ -1503,16 +1503,9 @@ export default function ProfilePage(props) {
                       : (activity.subtype ? `${activity.type} · ${activity.subtype}` : activity.type)
                     }</div>
                     <div className="flex items-center gap-2 min-w-0" style={{ fontSize: 12.5, color: '#8a8a8a', marginTop: 2 }}>
-                      <span className="truncate">{formatFriendlyDate(activity.date)}{activity.time ? ` at ${activity.time}` : ''}{activity.duration ? ` · ${activity.duration} min` : ''}</span>
-                      {(activity.healthKitUUID || activity.linkedHealthKitUUID || activity.source === 'healthkit' || activity.fromAppleHealth) && (
-                        <span className="flex items-center gap-1 flex-shrink-0" style={{ color: '#aaa' }}>
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                          </svg>
-                          <span>{activity.sourceDevice || 'Apple Health'}</span>
-                        </span>
-                      )}
+                      {/* Date · time · duration. Where it came from shows on the detail sheet, not here:
+                          it was the same on nearly every row and pushed the duration off the end. */}
+                      <span className="truncate">{formatFriendlyDate(activity.date)}{activity.time ? ` · ${activity.time}` : ''}{activity.duration ? ` · ${activity.duration} min` : ''}</span>
                     </div>
                   </div>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0" aria-hidden="true"><path d="M9 6l6 6l-6 6" /></svg>
@@ -1716,7 +1709,6 @@ export default function ProfilePage(props) {
                       parseFloat(activity.distance) > 0 ? `${formatDistanceValue(activity.distance, distanceUnit, 1)} ${distanceUnitText}` : null,
                       activity.avgHr ? `♥ ${activity.avgHr}` : null,
                     ].filter(Boolean).join(' · ');
-                    const fromHealth = activity.healthKitUUID || activity.linkedHealthKitUUID || activity.source === 'healthkit' || activity.fromAppleHealth;
                     return (
                       <SwipeableActivityItem
                         key={activity.id || i}
@@ -1735,12 +1727,6 @@ export default function ProfilePage(props) {
                             <div className="truncate" style={{ fontSize: 15, fontWeight: 600 }}>{name}</div>
                             <div className="flex items-center gap-1.5 min-w-0" style={{ fontSize: 12.5, color: '#8a8a8a', marginTop: 2 }}>
                               <span className="truncate">{meta}</span>
-                              {fromHealth && (
-                                <span className="flex items-center gap-[3px] flex-shrink-0" style={{ color: '#aaa', marginLeft: 4 }}>
-                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
-                                  {activity.sourceDevice === 'Apple Watch' ? 'Watch' : (activity.sourceDevice || 'Health')}
-                                </span>
-                              )}
                             </div>
                           </div>
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0" aria-hidden="true"><path d="M9 6l6 6l-6 6" /></svg>

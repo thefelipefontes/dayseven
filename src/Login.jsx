@@ -341,7 +341,7 @@ const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
               Don't have an account?{' '}
               <button
                 onClick={() => { resetForm(); setAuthMode('email-signup'); }}
-                className="text-green-400 font-medium hover:underline"
+                className="text-white font-semibold underline decoration-white/35 underline-offset-[3px]"
               >
                 Sign up
               </button>
@@ -390,7 +390,7 @@ const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
               required
-              className="w-full bg-zinc-800 text-white rounded-xl px-4 py-3 border border-zinc-700 focus:border-green-500 focus:outline-none transition-colors"
+              className="w-full bg-zinc-800 text-white rounded-xl px-4 py-3 border border-zinc-700 focus:border-white/55 focus:ring-[3px] focus:ring-white/[0.08] focus:outline-none transition-colors"
             />
           </div>
 
@@ -400,7 +400,7 @@ const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
               <button
                 type="button"
                 onClick={() => { setError(''); setAuthMode('forgot-password'); }}
-                className="text-green-400 text-sm font-medium hover:underline"
+                className="text-white text-sm font-semibold underline decoration-white/35 underline-offset-[3px]"
               >
                 Forgot password?
               </button>
@@ -411,7 +411,7 @@ const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Enter your password"
               required
-              className="w-full bg-zinc-800 text-white rounded-xl px-4 py-3 border border-zinc-700 focus:border-green-500 focus:outline-none transition-colors"
+              className="w-full bg-zinc-800 text-white rounded-xl px-4 py-3 border border-zinc-700 focus:border-white/55 focus:ring-[3px] focus:ring-white/[0.08] focus:outline-none transition-colors"
             />
           </div>
 
@@ -422,8 +422,7 @@ const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full py-3 rounded-full font-semibold text-black transition-all duration-200 active:scale-95 disabled:opacity-50"
-            style={{ backgroundColor: '#00FF94' }}
+            className="w-full py-3 rounded-full font-semibold text-black transition-all duration-200 active:scale-95 disabled:opacity-50 bg-white text-black active:bg-[#e5e5e5]"
           >
             {isLoading ? 'Signing in...' : 'Sign In'}
           </button>
@@ -433,7 +432,7 @@ const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
             <button
               type="button"
               onClick={() => { resetForm(); setAuthMode('email-signup'); }}
-              className="text-green-400 font-medium hover:underline"
+              className="text-white font-semibold underline decoration-white/35 underline-offset-[3px]"
             >
               Sign up
             </button>
@@ -475,7 +474,7 @@ const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder="Your name"
               required
-              className="w-full bg-zinc-800 text-white rounded-xl px-4 py-3 border border-zinc-700 focus:border-green-500 focus:outline-none transition-colors"
+              className="w-full bg-zinc-800 text-white rounded-xl px-4 py-3 border border-zinc-700 focus:border-white/55 focus:ring-[3px] focus:ring-white/[0.08] focus:outline-none transition-colors"
             />
           </div>
 
@@ -487,7 +486,7 @@ const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
               required
-              className="w-full bg-zinc-800 text-white rounded-xl px-4 py-3 border border-zinc-700 focus:border-green-500 focus:outline-none transition-colors"
+              className="w-full bg-zinc-800 text-white rounded-xl px-4 py-3 border border-zinc-700 focus:border-white/55 focus:ring-[3px] focus:ring-white/[0.08] focus:outline-none transition-colors"
             />
           </div>
 
@@ -499,7 +498,7 @@ const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="At least 6 characters"
               required
-              className="w-full bg-zinc-800 text-white rounded-xl px-4 py-3 border border-zinc-700 focus:border-green-500 focus:outline-none transition-colors"
+              className="w-full bg-zinc-800 text-white rounded-xl px-4 py-3 border border-zinc-700 focus:border-white/55 focus:ring-[3px] focus:ring-white/[0.08] focus:outline-none transition-colors"
             />
           </div>
 
@@ -511,7 +510,7 @@ const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="Confirm your password"
               required
-              className="w-full bg-zinc-800 text-white rounded-xl px-4 py-3 border border-zinc-700 focus:border-green-500 focus:outline-none transition-colors"
+              className="w-full bg-zinc-800 text-white rounded-xl px-4 py-3 border border-zinc-700 focus:border-white/55 focus:ring-[3px] focus:ring-white/[0.08] focus:outline-none transition-colors"
             />
           </div>
 
@@ -522,8 +521,7 @@ const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full py-3 rounded-full font-semibold text-black transition-all duration-200 active:scale-95 disabled:opacity-50"
-            style={{ backgroundColor: '#00FF94' }}
+            className="w-full py-3 rounded-full font-semibold text-black transition-all duration-200 active:scale-95 disabled:opacity-50 bg-white text-black active:bg-[#e5e5e5]"
           >
             {isLoading ? 'Creating account...' : 'Create Account'}
           </button>
@@ -535,7 +533,7 @@ const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
             <button
               type="button"
               onClick={() => { resetForm(); setAuthMode('email-signin'); }}
-              className="text-green-400 font-medium hover:underline"
+              className="text-white font-semibold underline decoration-white/35 underline-offset-[3px]"
             >
               Sign in
             </button>
@@ -569,8 +567,8 @@ const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
 
         {resetEmailSent ? (
           <div className="w-full max-w-sm text-center">
-            <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-6">
-              <svg className="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center mx-auto mb-6">
+              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
             </div>
@@ -580,8 +578,7 @@ const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
             </p>
             <button
               onClick={() => { resetForm(); setAuthMode('email-signin'); }}
-              className="w-full py-3 rounded-full font-semibold text-black transition-all duration-200 active:scale-95"
-              style={{ backgroundColor: '#00FF94' }}
+              className="w-full py-3 rounded-full font-semibold text-black transition-all duration-200 active:scale-95 bg-white text-black active:bg-[#e5e5e5]"
             >
               Back to Sign In
             </button>
@@ -596,7 +593,7 @@ const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
                 required
-                className="w-full bg-zinc-800 text-white rounded-xl px-4 py-3 border border-zinc-700 focus:border-green-500 focus:outline-none transition-colors"
+                className="w-full bg-zinc-800 text-white rounded-xl px-4 py-3 border border-zinc-700 focus:border-white/55 focus:ring-[3px] focus:ring-white/[0.08] focus:outline-none transition-colors"
               />
             </div>
 
@@ -607,8 +604,7 @@ const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-3 rounded-full font-semibold text-black transition-all duration-200 active:scale-95 disabled:opacity-50"
-              style={{ backgroundColor: '#00FF94' }}
+              className="w-full py-3 rounded-full font-semibold text-black transition-all duration-200 active:scale-95 disabled:opacity-50 bg-white text-black active:bg-[#e5e5e5]"
             >
               {isLoading ? 'Sending...' : 'Send Reset Link'}
             </button>
@@ -618,7 +614,7 @@ const Login = ({ onLogin, onBack = null, signupOnly = false }) => {
               <button
                 type="button"
                 onClick={() => { resetForm(); setAuthMode('email-signin'); }}
-                className="text-green-400 font-medium hover:underline"
+                className="text-white font-semibold underline decoration-white/35 underline-offset-[3px]"
               >
                 Sign in
               </button>

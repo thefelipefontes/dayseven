@@ -6164,8 +6164,7 @@ const SmartSaveExplainModal = ({ onClose, onDisable }) => {
         <div className="space-y-3">
           <button
             onClick={onClose}
-            className="w-full py-3 rounded-xl font-semibold text-black"
-            style={{ backgroundColor: '#00FF94' }}
+            className="w-full py-3 rounded-xl font-semibold bg-white text-black active:bg-[#e5e5e5]"
           >
             Got It
           </button>
@@ -6929,7 +6928,7 @@ const DurationPicker = ({ hours, minutes, seconds = 0, onChange, disabled = fals
         style={{ height: itemHeight, background: 'linear-gradient(to top, rgba(10,10,10,1) 0%, rgba(10,10,10,0) 100%)' }} />
       {/* Selection highlight */}
       <div className="absolute left-0 right-0 z-5 pointer-events-none rounded-lg"
-        style={{ top: itemHeight, height: itemHeight, backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.3)' }} />
+        style={{ top: itemHeight, height: itemHeight, backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.18)' }} />
       {/* Scrollable list */}
       <div
         ref={ref}
@@ -6944,7 +6943,7 @@ const DurationPicker = ({ hours, minutes, seconds = 0, onChange, disabled = fals
         {options.map((v) => (
           <div key={v} onClick={() => scrollToValue(ref, v)}
             className="flex items-center justify-center cursor-pointer transition-all duration-150"
-            style={{ height: itemHeight, color: value === v ? '#00FF94' : 'rgba(255,255,255,0.5)', fontWeight: value === v ? 'bold' : 'normal', fontSize: value === v ? '18px' : '14px' }}>
+            style={{ height: itemHeight, color: value === v ? '#fff' : 'rgba(255,255,255,0.5)', fontWeight: value === v ? 'bold' : 'normal', fontSize: value === v ? '18px' : '14px' }}>
             {formatFn(v)}
           </div>
         ))}
@@ -7045,7 +7044,7 @@ const MinutesPicker = ({ value, onChange, label = 'min' }) => {
         <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none"
           style={{ height: itemHeight, background: 'linear-gradient(to top, rgba(10,10,10,1) 0%, rgba(10,10,10,0) 100%)' }} />
         <div className="absolute left-0 right-0 z-5 pointer-events-none rounded-lg"
-          style={{ top: itemHeight, height: itemHeight, backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.3)' }} />
+          style={{ top: itemHeight, height: itemHeight, backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.18)' }} />
         <div ref={ref} className="h-full overflow-y-scroll scrollbar-hide"
           style={{ scrollSnapType: 'none', WebkitOverflowScrolling: 'auto' }}
           onScroll={handleScroll}
@@ -7057,7 +7056,7 @@ const MinutesPicker = ({ value, onChange, label = 'min' }) => {
           {minuteOptions.map(v => (
             <div key={v} onClick={() => { if (ref.current) ref.current.scrollTo({ top: v * itemHeight, behavior: 'smooth' }); }}
               className="flex items-center justify-center cursor-pointer transition-all duration-150"
-              style={{ height: itemHeight, color: value === v ? '#00FF94' : 'rgba(255,255,255,0.5)', fontWeight: value === v ? 'bold' : 'normal', fontSize: value === v ? '18px' : '14px' }}>
+              style={{ height: itemHeight, color: value === v ? '#fff' : 'rgba(255,255,255,0.5)', fontWeight: value === v ? 'bold' : 'normal', fontSize: value === v ? '18px' : '14px' }}>
               {String(v).padStart(2, '0')}
             </div>
           ))}
@@ -7130,14 +7129,14 @@ const ScrollWheel = ({ options, value, onChange, format = (v) => v, width = 56 }
     <div className="relative" style={{ height: itemHeight * visibleItems, width }}>
       <div className="absolute top-0 left-0 right-0 z-10 pointer-events-none" style={{ height: itemHeight, background: 'linear-gradient(to bottom, rgba(10,10,10,1) 0%, rgba(10,10,10,0) 100%)' }} />
       <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none" style={{ height: itemHeight, background: 'linear-gradient(to top, rgba(10,10,10,1) 0%, rgba(10,10,10,0) 100%)' }} />
-      <div className="absolute left-0 right-0 z-5 pointer-events-none rounded-lg" style={{ top: itemHeight, height: itemHeight, backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.3)' }} />
+      <div className="absolute left-0 right-0 z-5 pointer-events-none rounded-lg" style={{ top: itemHeight, height: itemHeight, backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.18)' }} />
       <div ref={ref} className="h-full overflow-y-scroll scrollbar-hide" style={{ scrollSnapType: 'none', WebkitOverflowScrolling: 'auto' }}
         onScroll={handleScroll} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
         <div style={{ height: itemHeight }} />
         {options.map((v) => (
           <div key={v} onClick={() => { if (ref.current) ref.current.scrollTo({ top: options.indexOf(v) * itemHeight, behavior: 'smooth' }); }}
             className="flex items-center justify-center cursor-pointer transition-all duration-150"
-            style={{ height: itemHeight, color: v === value ? '#00FF94' : 'rgba(255,255,255,0.5)', fontWeight: v === value ? 'bold' : 'normal', fontSize: v === value ? '18px' : '14px' }}>
+            style={{ height: itemHeight, color: v === value ? '#fff' : 'rgba(255,255,255,0.5)', fontWeight: v === value ? 'bold' : 'normal', fontSize: v === value ? '18px' : '14px' }}>
             {format(v)}
           </div>
         ))}
@@ -7960,7 +7959,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
           setIsChangingActivityType(false);
         }}
         className="flex items-center gap-2 pl-3 pr-2 py-2 rounded-full transition-all duration-150 active:scale-95 cursor-pointer"
-        style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(0,255,148,0.2)' }}
+        style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)' }}
         onTouchStart={(e) => {
           e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.12)';
           triggerHaptic(ImpactStyle.Light);
@@ -8276,12 +8275,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             handleClose();
           }}
           className="font-bold transition-all duration-150 px-2 py-1 rounded-lg"
-          style={{ color: !activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0 && !pendingActivity?.id) || (mode === 'completed' && !isEditingSaved && photoMissingForChallenge) ? 'rgba(0,255,148,0.3)' : '#00FF94' }}
+          style={{ color: !activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0 && !pendingActivity?.id) || (mode === 'completed' && !isEditingSaved && photoMissingForChallenge) ? 'rgba(255,255,255,0.3)' : '#fff', visibility: mode === null && !pendingActivity?.id ? 'hidden' : undefined }}
           disabled={!activityType || (showCustomSportInput && !customSport) || (showCustomActivityInput && !isUncategorizedHKType && (!customActivityName || !customActivityCategory)) || (showCustomActivityInput && isUncategorizedHKType && !customActivityCategory) || (STRENGTH_TYPES.includes(activityType) && focusAreas.length === 0 && !pendingActivity?.id) || (mode === 'completed' && !isEditingSaved && photoMissingForChallenge) || (mode !== 'start' && date > getTodayDate())}
           onTouchStart={(e) => {
             if (!e.currentTarget.disabled) {
               e.currentTarget.style.transform = 'scale(0.9)';
-              e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
             }
           }}
           onTouchEnd={(e) => {
@@ -8291,7 +8290,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
           onMouseDown={(e) => {
             if (!e.currentTarget.disabled) {
               e.currentTarget.style.transform = 'scale(0.9)';
-              e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
             }
           }}
           onMouseUp={(e) => {
@@ -8308,10 +8307,10 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
       </div>
 
       {pendingActivity?.fromAppleHealth && (
-        <div className="mx-4 mt-4 p-3 rounded-xl" style={{ backgroundColor: 'rgba(0,255,148,0.1)', border: '1px solid rgba(0,255,148,0.3)' }}>
+        <div className="mx-4 mt-4 p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.04)', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.08)' }}>
           <div className="flex items-center gap-2 text-sm">
             <span className="text-lg">📱</span>
-            <span style={{ color: '#00FF94' }}>Synced from Apple Health</span>
+            <span className="text-white font-medium">Synced from Apple Health</span>
           </div>
           <div className="flex gap-4 mt-2 text-xs text-gray-400">
             {pendingActivity.calories && <span>{pendingActivity.calories} cal</span>}
@@ -8342,40 +8341,41 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               }}
               className="p-5 rounded-2xl text-left transition-all duration-150 flex items-center gap-4"
               style={{
-                backgroundColor: 'rgba(0,255,148,0.1)',
-                border: '1px solid rgba(0,255,148,0.3)'
+                borderRadius: 20,
+                backgroundColor: 'rgba(255,255,255,0.06)',
+                boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.18)'
               }}
               onTouchStart={(e) => {
                 e.currentTarget.style.transform = 'scale(0.98)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.15)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.09)';
               }}
               onTouchEnd={(e) => {
                 e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)';
               }}
               onMouseDown={(e) => {
                 e.currentTarget.style.transform = 'scale(0.98)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.15)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.09)';
               }}
               onMouseUp={(e) => {
                 e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)';
               }}
             >
-              <div className="w-14 h-14 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(0,255,148,0.2)' }}>
-                <svg className="w-7 h-7" fill="#00FF94" viewBox="0 0 24 24">
+              <div className="w-14 h-14 flex items-center justify-center flex-shrink-0" style={{ borderRadius: 14, backgroundColor: '#fff' }}>
+                <svg className="w-7 h-7" fill="#000" viewBox="0 0 24 24">
                   <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/>
                 </svg>
               </div>
               <div className="flex-1">
-                <div className="font-semibold text-lg" style={{ color: '#00FF94' }}>Start an Activity</div>
-                <div className="text-sm text-gray-400 mt-0.5">Live heart rate & calorie tracking with Apple Watch</div>
+                <div className="font-semibold text-white" style={{ fontSize: 18 }}>Start an Activity</div>
+                <div className="text-sm mt-0.5" style={{ color: '#8a8a8a', lineHeight: 1.35 }}>Live heart rate & calorie tracking with Apple Watch</div>
               </div>
-              <div className="text-gray-500">→</div>
+              <div style={{ color: '#666', fontSize: 18 }}>→</div>
             </button>
 
             {/* Log Completed option - Secondary */}
@@ -8385,14 +8385,14 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                 triggerHaptic(ImpactStyle.Light);
               }}
               className="p-5 rounded-2xl text-left transition-all duration-150 flex items-center gap-4"
-              style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+              style={{ borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.04)' }}
               onTouchStart={(e) => {
                 e.currentTarget.style.transform = 'scale(0.98)';
                 e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
               }}
               onTouchEnd={(e) => {
                 e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)';
               }}
               onMouseDown={(e) => {
                 e.currentTarget.style.transform = 'scale(0.98)';
@@ -8400,21 +8400,21 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
               }}
               onMouseUp={(e) => {
                 e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)';
               }}
             >
-              <div className="w-14 h-14 rounded-xl flex items-center justify-center text-2xl" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
-                ✓
+              <div className="w-14 h-14 flex items-center justify-center flex-shrink-0" style={{ borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.08)' }}>
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
               </div>
               <div className="flex-1">
-                <div className="font-semibold text-lg text-gray-300">Log Completed Activity</div>
-                <div className="text-sm text-gray-500 mt-0.5">Record a workout you already finished</div>
+                <div className="font-semibold" style={{ fontSize: 18, color: '#ddd' }}>Log Completed Activity</div>
+                <div className="text-sm mt-0.5" style={{ color: '#8a8a8a', lineHeight: 1.35 }}>Record a workout you already finished</div>
               </div>
-              <div className="text-gray-500">→</div>
+              <div style={{ color: '#666', fontSize: 18 }}>→</div>
             </button>
 
             {/* Tips for different device users */}
@@ -8519,36 +8519,39 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                               if (workout.maxHr) setMaxHr(String(workout.maxHr));
                               triggerHaptic(ImpactStyle.Medium);
                             }}
-                            className="w-full p-3 rounded-xl text-left transition-all duration-150 flex items-center gap-3"
-                            style={{
-                              backgroundColor: 'rgba(255,255,255,0.05)',
-                              border: '1px solid rgba(255,255,255,0.1)'
-                            }}
+                            className="w-full text-left transition-all duration-150 flex items-center gap-3"
+                            style={{ ...CARD_SURFACE, padding: '12px 14px' }}
                             onTouchStart={(e) => {
                               e.currentTarget.style.transform = 'scale(0.98)';
-                              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
                             }}
                             onTouchEnd={(e) => {
                               e.currentTarget.style.transform = 'scale(1)';
-                              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
                             }}
                           >
-                            <ActivityIcon type={workout.type} subtype={workout.subtype} size={24} />
+                            {(() => {
+                              // Home's line icon on a tile tinted in the workout's category colour
+                              const cat = getActivityCategory(workout);
+                              const catColor = cat === 'lifting' ? '#00FF94' : cat === 'cardio' ? '#FF9500' : cat === 'recovery' ? '#00D1FF' : null;
+                              return (
+                                <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: catColor ? `rgba(${hexToRgb(catColor)},0.16)` : 'rgba(170,170,170,0.16)' }}>
+                                  <ActivityIcon type={workout.type} subtype={workout.subtype} size={22} color={catColor || '#bbb'} />
+                                </div>
+                              );
+                            })()}
                             <div className="flex-1 min-w-0">
-                              <div className="text-white font-medium truncate">
+                              <div className="text-white font-semibold truncate" style={{ fontSize: 15 }}>
                                 {workout.appleWorkoutName || workout.subtype || workout.type}
                               </div>
-                              <div className="text-xs text-gray-400 mt-0.5">
-                                {formatWorkoutDate(workout.date)} • {workout.time} • {workout.duration} min
+                              <div className="mt-0.5" style={{ fontSize: 13, color: '#8a8a8a' }}>
+                                {formatWorkoutDate(workout.date)} · {workout.time} · {workout.duration} min
                               </div>
                               {(workout.calories || workout.distance) && (
-                                <div className="flex gap-2 mt-1 text-xs text-gray-500">
-                                  {workout.calories && <span><CategoryIcon category="calories" size={12} className="inline align-[-2px] mr-1" />{workout.calories} cal</span>}
-                                  {workout.distance && <span>📍 {_milesToDisplay(workout.distance).toFixed(2)} {_distanceUnitLabel}</span>}
+                                <div className="mt-0.5" style={{ fontSize: 12, color: '#666' }}>
+                                  {[workout.calories ? `${workout.calories} cal` : null, workout.distance ? `${_milesToDisplay(workout.distance).toFixed(2)} ${_distanceUnitLabel}` : null].filter(Boolean).join(' · ')}
                                 </div>
                               )}
                             </div>
-                            <span className="text-gray-500">→</span>
+                            <span style={{ color: '#555', fontSize: 20 }}>›</span>
                           </button>
                         );
                       })}
@@ -8964,9 +8967,9 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     onClick={() => setCountToward('warmup')}
                     className="flex-1 py-2 px-3 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
                     style={{
-                      backgroundColor: countToward === 'warmup' ? 'rgba(255,214,10,0.2)' : 'rgba(255,255,255,0.05)',
-                      border: countToward === 'warmup' ? '1px solid #FFD60A' : '1px solid transparent',
-                      color: countToward === 'warmup' ? '#FFD60A' : 'white'
+                      backgroundColor: countToward === 'warmup' ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.05)',
+                      border: countToward === 'warmup' ? '1px solid #fff' : '1px solid transparent',
+                      color: 'white'
                     }}
                   >
                     <span>🔥</span> Warm Up
@@ -9049,12 +9052,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                   <div
                     className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all"
                     style={{
-                      borderColor: saveCustomSport ? '#00FF94' : 'rgba(255,255,255,0.3)',
-                      backgroundColor: saveCustomSport ? 'rgba(0,255,148,0.2)' : 'transparent'
+                      borderColor: saveCustomSport ? '#fff' : 'rgba(255,255,255,0.3)',
+                      backgroundColor: saveCustomSport ? '#fff' : 'transparent'
                     }}
                     onClick={() => { setSaveCustomSport(!saveCustomSport); triggerHaptic(ImpactStyle.Light); }}
                   >
-                    {saveCustomSport && <span style={{ color: '#00FF94' }}>✓</span>}
+                    {saveCustomSport && <span style={{ color: '#000' }}>✓</span>}
                   </div>
                   <span className="text-sm text-gray-400">Save as option for future</span>
                 </label>
@@ -9075,8 +9078,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     onTouchStart={() => triggerHaptic(ImpactStyle.Light)}
                     className="w-12 h-12 rounded-xl flex items-center justify-center transition-all"
                     style={{
-                      backgroundColor: showIconPicker ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
-                      border: showIconPicker ? '1px solid #00FF94' : '1px solid rgba(255,255,255,0.1)'
+                      backgroundColor: showIconPicker ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.05)',
+                      border: showIconPicker ? '1px solid #fff' : '1px solid rgba(255,255,255,0.1)'
                     }}
                   >
                     <ActivityIcon
@@ -9087,7 +9090,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                         customActivityCategory === 'strength' ? '#00FF94' :
                         customActivityCategory === 'cardio' ? '#FF9500' :
                         customActivityCategory === 'recovery' ? '#00D1FF' :
-                        customActivityCategory === 'warmup' ? '#FFD60A' : undefined
+                        customActivityCategory === 'warmup' ? '#aaa' : undefined
                       ) : undefined}
                     />
                   </button>
@@ -9125,11 +9128,11 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                               }}
                               className="w-10 h-10 rounded-lg flex items-center justify-center transition-all hover:bg-white/10"
                               style={{
-                                backgroundColor: customActivityIcon === name ? 'rgba(0,255,148,0.2)' : 'transparent',
-                                border: customActivityIcon === name ? '1px solid #00FF94' : '1px solid transparent'
+                                backgroundColor: customActivityIcon === name ? 'rgba(255,255,255,0.14)' : 'transparent',
+                                border: customActivityIcon === name ? '1px solid #fff' : '1px solid transparent'
                               }}
                             >
-                              <Icon size={20} color={customActivityIcon === name ? '#00FF94' : '#aaa'} strokeWidth={2} />
+                              <Icon size={20} color={customActivityIcon === name ? '#fff' : '#aaa'} strokeWidth={2} />
                             </button>
                           ))}
                         </div>
@@ -9184,12 +9187,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     onClick={() => { setCustomActivityCategory('warmup'); triggerHaptic(ImpactStyle.Light); }}
                     className="w-full mt-2 py-2 px-3 rounded-xl text-center transition-all flex items-center justify-center gap-2"
                     style={{
-                      backgroundColor: customActivityCategory === 'warmup' ? 'rgba(255,214,10,0.15)' : 'rgba(255,255,255,0.05)',
-                      border: customActivityCategory === 'warmup' ? '1px solid #FFD60A' : '1px solid transparent'
+                      backgroundColor: customActivityCategory === 'warmup' ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.05)',
+                      border: customActivityCategory === 'warmup' ? '1px solid #fff' : '1px solid transparent'
                     }}
                   >
                     <span className="text-sm">🔥</span>
-                    <span className="text-xs font-medium" style={{ color: customActivityCategory === 'warmup' ? '#FFD60A' : 'rgba(255,255,255,0.6)' }}>Warm Up</span>
+                    <span className="text-xs font-medium" style={{ color: customActivityCategory === 'warmup' ? '#fff' : 'rgba(255,255,255,0.6)' }}>Warm Up</span>
                   </button>
                   {customActivityCategory === 'warmup' && (
                     <p className="text-[11px] text-gray-500 mt-2">
@@ -9204,12 +9207,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                       <div
                         className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all"
                         style={{
-                          borderColor: saveHKIcon ? '#00FF94' : 'rgba(255,255,255,0.3)',
-                          backgroundColor: saveHKIcon ? 'rgba(0,255,148,0.2)' : 'transparent'
+                          borderColor: saveHKIcon ? '#fff' : 'rgba(255,255,255,0.3)',
+                          backgroundColor: saveHKIcon ? '#fff' : 'transparent'
                         }}
                         onClick={() => { setSaveHKIcon(!saveHKIcon); triggerHaptic(ImpactStyle.Light); }}
                       >
-                        {saveHKIcon && <span style={{ color: '#00FF94' }}>✓</span>}
+                        {saveHKIcon && <span style={{ color: '#000' }}>✓</span>}
                       </div>
                       <span className="text-sm text-gray-400">Remember icon for future {customActivityName} workouts</span>
                     </label>
@@ -9218,12 +9221,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                         <div
                           className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all"
                           style={{
-                            borderColor: saveHKCategory ? '#00FF94' : 'rgba(255,255,255,0.3)',
-                            backgroundColor: saveHKCategory ? 'rgba(0,255,148,0.2)' : 'transparent'
+                            borderColor: saveHKCategory ? '#fff' : 'rgba(255,255,255,0.3)',
+                            backgroundColor: saveHKCategory ? '#fff' : 'transparent'
                           }}
                           onClick={() => { setSaveHKCategory(!saveHKCategory); triggerHaptic(ImpactStyle.Light); }}
                         >
-                          {saveHKCategory && <span style={{ color: '#00FF94' }}>✓</span>}
+                          {saveHKCategory && <span style={{ color: '#000' }}>✓</span>}
                         </div>
                         <span className="text-sm text-gray-400">
                           Always count {customActivityName} toward {
@@ -9241,12 +9244,12 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     <div
                       className="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all"
                       style={{
-                        borderColor: saveCustomActivity ? '#00FF94' : 'rgba(255,255,255,0.3)',
-                        backgroundColor: saveCustomActivity ? 'rgba(0,255,148,0.2)' : 'transparent'
+                        borderColor: saveCustomActivity ? '#fff' : 'rgba(255,255,255,0.3)',
+                        backgroundColor: saveCustomActivity ? '#fff' : 'transparent'
                       }}
                       onClick={() => { setSaveCustomActivity(!saveCustomActivity); triggerHaptic(ImpactStyle.Light); }}
                     >
-                      {saveCustomActivity && <span style={{ color: '#00FF94' }}>✓</span>}
+                      {saveCustomActivity && <span style={{ color: '#000' }}>✓</span>}
                     </div>
                     <span className="text-sm text-gray-400">Save as option for future</span>
                   </label>
@@ -9325,7 +9328,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             ) : activityType !== 'Chiropractic' && (
             <div>
               <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">
-                Duration {isFromAppleHealth && <span style={{ color: '#00FF94' }}>(from Apple Health)</span>}
+                Duration {isFromAppleHealth && <span style={{ color: '#8a8a8a' }}>(from Apple Health)</span>}
               </label>
               <DurationPicker
                 hours={durationHours}
@@ -9478,7 +9481,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                             'hover:bg-white/10'
                           }`}
                           style={{
-                            backgroundColor: dayDate === date ? '#00FF94' : 'transparent',
+                            backgroundColor: dayDate === date ? '#fff' : 'transparent',
                             color: dayDate === date ? 'black' : 'white',
                             opacity: isFuture && dayDate !== date ? 0.25 : 1
                           }}
@@ -9497,26 +9500,26 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                           setShowDatePicker(false);
                         }}
                         className="flex-1 py-2 rounded-lg text-xs font-medium transition-all duration-150"
-                        style={{ backgroundColor: 'rgba(0,255,148,0.1)', color: '#00FF94' }}
+                        style={{ backgroundColor: 'rgba(255,255,255,0.08)', color: '#fff' }}
                         onTouchStart={(e) => {
                           e.currentTarget.style.transform = 'scale(0.95)';
-                          e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.14)';
                         }}
                         onTouchEnd={(e) => {
                           e.currentTarget.style.transform = 'scale(1)';
-                          e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
                         }}
                         onMouseDown={(e) => {
                           e.currentTarget.style.transform = 'scale(0.95)';
-                          e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.2)';
+                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.14)';
                         }}
                         onMouseUp={(e) => {
                           e.currentTarget.style.transform = 'scale(1)';
-                          e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
                         }}
                         onMouseLeave={(e) => {
                           e.currentTarget.style.transform = 'scale(1)';
-                          e.currentTarget.style.backgroundColor = 'rgba(0,255,148,0.1)';
+                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)';
                         }}
                       >
                         Today
@@ -9598,7 +9601,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     <button
                       onClick={() => { setActivityTime(formatTimeOfDay()); triggerHaptic(ImpactStyle.Light); }}
                       className="flex-1 py-2 rounded-lg text-xs font-medium transition-all duration-150"
-                      style={{ backgroundColor: 'rgba(0,255,148,0.1)', color: '#00FF94' }}
+                      style={{ backgroundColor: 'rgba(255,255,255,0.08)', color: '#fff' }}
                     >
                       Now
                     </button>
@@ -9654,7 +9657,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                       return isFromNotification && linkedWorkout && !showOtherLinkableWorkouts ? (
                       <>
                         <div
-                          className="p-3 rounded-xl bg-[#00FF94]/20 border-2 border-[#00FF94] cursor-pointer transition-all"
+                          className="p-3 rounded-xl bg-white/10 border-2 border-white cursor-pointer transition-all"
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
@@ -9670,7 +9673,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                               </div>
                             </div>
                             <div className="text-right">
-                              <span className="text-[#00FF94] text-xs font-medium">✓ Linked</span>
+                              <span className="text-white text-xs font-medium">✓ Linked</span>
                             </div>
                           </div>
                           {/* Show metrics preview */}
@@ -9693,7 +9696,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                           <button
                             onClick={() => setShowOtherLinkableWorkouts(true)}
                             className="w-full py-2 text-center text-sm transition-all active:opacity-70"
-                            style={{ color: '#00FF94' }}
+                            style={{ color: '#fff' }}
                           >
                             See other workouts ({otherWorkoutsCount})
                           </button>
@@ -9710,7 +9713,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                               onClick={() => handleLinkWorkout(workout)}
                               className={`w-full p-3 rounded-xl text-left transition-all cursor-pointer ${
                                 isLinked
-                                  ? 'bg-[#00FF94]/20 border-2 border-[#00FF94]'
+                                  ? 'bg-white/10 border-2 border-white'
                                   : 'bg-white/5 border border-white/10 active:bg-white/20'
                               }`}
                             >
@@ -9729,7 +9732,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                                 </div>
                                 <div className="text-right">
                                   {isLinked ? (
-                                    <span className="text-[#00FF94] text-xs font-medium">✓ Linked</span>
+                                    <span className="text-white text-xs font-medium">✓ Linked</span>
                                   ) : (
                                     <span className="text-gray-500 text-xs">Tap to link</span>
                                   )}
@@ -9755,7 +9758,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                         {linkedWorkout && !linkableWorkouts.find(w => w.healthKitUUID === linkedWorkout.healthKitUUID) && (
                           <div
                             onClick={() => handleLinkWorkout(linkedWorkout)}
-                            className="p-3 rounded-xl bg-[#00FF94]/20 border-2 border-[#00FF94] cursor-pointer transition-all"
+                            className="p-3 rounded-xl bg-white/10 border-2 border-white cursor-pointer transition-all"
                           >
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-3">
@@ -9771,7 +9774,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                                 </div>
                               </div>
                               <div className="text-right">
-                                <span className="text-[#00FF94] text-xs font-medium">✓ Linked</span>
+                                <span className="text-white text-xs font-medium">✓ Linked</span>
                               </div>
                             </div>
                             {/* Show metrics preview */}
@@ -9807,7 +9810,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             {/* Optional Metrics Section */}
             <div>
               <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">
-                Workout Metrics {isFromAppleHealth ? <span style={{ color: '#00FF94' }}>(from Apple Health)</span> : linkedWorkout ? <span style={{ color: '#00FF94' }}>(from linked workout)</span> : <span className="text-gray-600">(optional)</span>}
+                Workout Metrics {isFromAppleHealth ? <span style={{ color: '#8a8a8a' }}>(from Apple Health)</span> : linkedWorkout ? <span style={{ color: '#8a8a8a' }}>(from linked workout)</span> : <span className="text-gray-600">(optional)</span>}
               </label>
               <div className="grid grid-cols-3 gap-3">
                 <div>
@@ -9858,7 +9861,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                       || c.challengerName
                       || 'Friend';
                     const cat = c.matchRule?.category;
-                    const tint = cat === 'lifting' ? '#00FF94' : cat === 'cardio' ? '#FF9500' : cat === 'recovery' ? '#00D1FF' : '#FFD60A';
+                    const tint = cat === 'lifting' ? '#00FF94' : cat === 'cardio' ? '#FF9500' : cat === 'recovery' ? '#00D1FF' : '#aaa';
                     return (
                       <button
                         key={c.id}
@@ -9911,9 +9914,9 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                   {photoMissingForChallenge && (
                     <div
                       className="mt-2 p-3 rounded-xl"
-                      style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.35)' }}
+                      style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.2)' }}
                     >
-                      <p className="text-xs font-semibold" style={{ color: '#FFD60A' }}>
+                      <p className="text-xs font-semibold" style={{ color: '#fff' }}>
                         📸 Photo required to fulfill {photoRequiredSelected.length === 1
                           ? `${friendsByUid[photoRequiredSelected[0].challengerUid]?.displayName
                               || friendsByUid[photoRequiredSelected[0].challengerUid]?.username
@@ -9974,7 +9977,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
             <div>
               <label
                 className="text-xs uppercase tracking-wider mb-2 block"
-                style={{ color: photoMissingForChallenge ? '#FFD60A' : 'rgb(107, 114, 128)' }}
+                style={{ color: photoMissingForChallenge ? '#fff' : 'rgb(107, 114, 128)' }}
               >
                 Photo {photoMissingForChallenge ? '(required for challenge)' : '(optional)'}
               </label>
@@ -9990,7 +9993,7 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
 
               {isLoadingPhoto ? (
                 <div className="w-full h-48 rounded-xl bg-white/5 flex items-center justify-center">
-                  <div className="w-8 h-8 border-2 border-gray-500 border-t-[#00FF94] rounded-full animate-spin" />
+                  <div className="w-8 h-8 border-2 border-gray-500 border-t-white rounded-full animate-spin" />
                 </div>
               ) : photoPreview ? (
                 <div className="space-y-3">
@@ -10017,13 +10020,13 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                     <div className="flex gap-2">
                       <button
                         onClick={() => setIsPhotoPrivate(false)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${!isPhotoPrivate ? 'bg-[#00FF94] text-black' : 'bg-white/10 text-gray-400'}`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${!isPhotoPrivate ? 'bg-white text-black' : 'bg-white/10 text-gray-400'}`}
                       >
                         Friends
                       </button>
                       <button
                         onClick={() => setIsPhotoPrivate(true)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isPhotoPrivate ? 'bg-[#00FF94] text-black' : 'bg-white/10 text-gray-400'}`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isPhotoPrivate ? 'bg-white text-black' : 'bg-white/10 text-gray-400'}`}
                       >
                         Only Me
                       </button>
@@ -10068,8 +10071,8 @@ const AddActivityModal = ({ isOpen, onClose, onSave, pendingActivity = null, def
                   <div className="text-sm font-medium text-white">Challenge a friend</div>
                   <div className="text-xs text-gray-500 mt-0.5 leading-snug">After saving, send this workout to a friend to match within 24–72 hours.</div>
                 </div>
-                <div className="w-11 h-6 rounded-full relative flex-shrink-0 transition-colors" style={{ backgroundColor: challengeAfterSave ? '#00FF94' : 'rgba(255,255,255,0.15)' }}>
-                  <div className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all" style={{ left: challengeAfterSave ? 22 : 2 }} />
+                <div className="w-11 h-6 rounded-full relative flex-shrink-0 transition-colors" style={{ backgroundColor: challengeAfterSave ? '#fff' : 'rgba(255,255,255,0.15)' }}>
+                  <div className="absolute top-0.5 w-5 h-5 rounded-full transition-all" style={{ left: challengeAfterSave ? 22 : 2, backgroundColor: challengeAfterSave ? '#000' : '#fff' }} />
                 </div>
               </button>
             )}
@@ -11012,11 +11015,11 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
         <button
           onClick={() => { triggerHaptic(ImpactStyle.Light); onNavigateToChallenges?.({ status: 'pending' }); }}
           className="w-full mb-3 p-3 rounded-xl flex items-center gap-3 text-left active:opacity-80 transition-opacity"
-          style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.3)' }}
+          style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)' }}
         >
           <span className="text-lg">⚡</span>
           <div className="flex-1 min-w-0">
-            <div className="text-xs font-semibold" style={{ color: '#FFD60A' }}>
+            <div className="text-xs font-semibold text-white">
               {pendingChallenges.length === 1
                 ? `${pendingChallenges[0].challengerName || 'A friend'} challenged you`
                 : `${pendingChallenges.length} challenges waiting on you`}
@@ -11081,9 +11084,12 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
 
         const renderPendingBanner = (workouts, isUncategorized) => {
           if (workouts.length === 0) return null;
-          const rgb = isUncategorized ? '255,200,0' : '0,255,148';
-          const hex = isUncategorized ? '#FFC800' : '#00FF94';
-          const emoji = isUncategorized ? '⚠️' : '📱';
+          // Card surface with a tile (Nov 2026 redesign, mocks/mock-leftovers.html home.new): a
+          // categorized workout gets its category tint and line icon, an uncategorized one an alert.
+          const first = workouts[0];
+          const bannerCat = isUncategorized ? null : getActivityCategory(first);
+          const bannerHex = bannerCat === 'cardio' ? '#FF9500' : bannerCat === 'recovery' ? '#00D1FF' : (bannerCat === 'lifting' || bannerCat === 'lifting+cardio') ? '#00FF94' : null;
+          const tileBg = workouts.length === 1 && bannerHex ? `rgba(${hexToRgb(bannerHex)},0.16)` : 'rgba(255,255,255,0.08)';
           const title = workouts.length === 1
             ? (isUncategorized ? `${workouts[0].appleWorkoutName || workouts[0].type} workout detected` : 'New workout detected')
             : (isUncategorized
@@ -11115,44 +11121,37 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
                     openPending();
                   }
                 }}
-                className="w-full p-3 rounded-xl flex items-center gap-3 transition-all duration-150 cursor-pointer"
-                style={{ backgroundColor: `rgba(${rgb},0.1)`, border: `1px solid rgba(${rgb},0.3)` }}
-                onTouchStart={(e) => {
-                  e.currentTarget.style.transform = 'scale(0.98)';
-                  e.currentTarget.style.backgroundColor = `rgba(${rgb},0.15)`;
-                }}
-                onTouchEnd={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.backgroundColor = `rgba(${rgb},0.1)`;
-                }}
-                onMouseDown={(e) => {
-                  e.currentTarget.style.transform = 'scale(0.98)';
-                  e.currentTarget.style.backgroundColor = `rgba(${rgb},0.15)`;
-                }}
-                onMouseUp={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.backgroundColor = `rgba(${rgb},0.1)`;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.backgroundColor = `rgba(${rgb},0.1)`;
-                }}
+                className="w-full flex items-center gap-3 transition-all duration-150 cursor-pointer"
+                style={{ ...CARD_SURFACE, borderRadius: 18, padding: 12 }}
+                onTouchStart={(e) => { e.currentTarget.style.transform = 'scale(0.98)'; }}
+                onTouchEnd={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+                onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.98)'; }}
+                onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
               >
-                <span className="text-lg">{emoji}</span>
-                <div className="flex-1 text-left">
-                  <div className="text-xs font-semibold" style={{ color: hex }}>
+                <div className="flex items-center justify-center flex-shrink-0" style={{ width: 38, height: 38, borderRadius: 11, backgroundColor: tileBg }}>
+                  {isUncategorized ? (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ddd" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 9v4" /><path d="M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636 -2.87l-8.106 -13.536a1.914 1.914 0 0 0 -3.274 0z" /><path d="M12 16h.01" /></svg>
+                  ) : workouts.length === 1 && bannerHex ? (
+                    <ActivityIcon type={first.type} subtype={first.subtype} size={19} color={bannerHex} />
+                  ) : (
+                    <ActivityIcon type={first.type} subtype={first.subtype} size={19} color="#ddd" />
+                  )}
+                </div>
+                <div className="flex-1 text-left min-w-0">
+                  <div className="text-white truncate" style={{ fontSize: 13.5, fontWeight: 600 }}>
                     {title}
                   </div>
-                  <div className="text-[10px] text-gray-400">
+                  <div className="truncate" style={{ fontSize: 11.5, color: '#8a8a8a', marginTop: 1 }}>
                     {subtitle}
                   </div>
                 </div>
                 {workouts.length > 1 && (
-                  <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ backgroundColor: hex, color: '#000' }}>
+                  <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0" style={{ backgroundColor: '#fff', color: '#000' }}>
                     {workouts.length}
                   </span>
                 )}
-                <span className="px-3 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: `rgba(${rgb},0.2)`, color: hex }}>
+                <span className="flex-shrink-0 bg-white text-black" style={{ padding: '6px 14px', borderRadius: 999, fontSize: 13, fontWeight: 700 }}>
                   {workouts.length === 1 ? 'Add' : 'View'}
                 </span>
                 <button
@@ -11420,8 +11419,8 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
             onClick={onAcceptNotifReask}
             className="relative p-3 rounded-xl mb-3 flex items-start gap-3 transition-all duration-150"
             style={{
-              backgroundColor: 'rgba(0,255,148,0.08)',
-              border: '1px solid rgba(0,255,148,0.25)'
+              backgroundColor: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.12)'
             }}
             onTouchStart={(e) => { e.currentTarget.style.opacity = '0.7'; }}
             onTouchEnd={(e) => { e.currentTarget.style.opacity = '1'; }}
@@ -11429,7 +11428,7 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
           >
             <span className="text-xl">🔔</span>
             <div className="flex-1 pr-6">
-              <div className="text-xs font-semibold flex items-center gap-1" style={{ color: '#00FF94' }}>
+              <div className="text-xs font-semibold flex items-center gap-1 text-white">
                 Nice work — want a nudge next time?
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="9 18 15 12 9 6" />
@@ -11442,7 +11441,7 @@ const HomeTab = ({ onRemoveRecoveryGoal, onAddActivity, onCaptureLocation, pendi
             <button
               onClick={(e) => { e.stopPropagation(); onDismissNotifReask(); }}
               className="absolute flex items-center justify-center"
-              style={{ top: 4, right: 4, width: 44, height: 44, color: 'rgba(0,255,148,0.6)' }}
+              style={{ top: 4, right: 4, width: 44, height: 44, color: 'rgba(255,255,255,0.5)' }}
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                 <path d="M3 3L11 11M11 3L3 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
@@ -19098,11 +19097,11 @@ export default function DaySevenApp() {
                   closeVacationSpill(() => deactivateVacationMode(true));
                 }}
                 className="w-full p-3.5 rounded-xl text-left flex items-start gap-3"
-                style={{ backgroundColor: 'rgba(0,255,148,0.08)', border: '1px solid rgba(0,255,148,0.2)' }}
+                style={{ backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.18)' }}
               >
                 <span className="text-xl leading-none mt-0.5">🔥</span>
                 <div>
-                  <div className="text-sm font-semibold" style={{ color: '#00FF94' }}>Count toward my streak</div>
+                  <div className="text-sm font-semibold text-white">Count toward my streak</div>
                   <div className="text-[11px] text-gray-400 mt-0.5 leading-snug">You're back — hit this week's goals to keep your streak going.</div>
                 </div>
               </button>

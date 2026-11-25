@@ -136,10 +136,8 @@ export default function ChallengeMatchChooser({ isOpen, onClose, activity, candi
           <button
             onClick={handleApply}
             disabled={submitting || selected.size === 0}
-            className="flex-1 py-2.5 rounded-lg text-sm font-semibold"
+            className="flex-1 py-2.5 rounded-lg text-sm font-semibold bg-white text-black active:bg-[#e5e5e5]"
             style={{
-              backgroundColor: '#FFD60A',
-              color: 'black',
               opacity: (submitting || selected.size === 0) ? 0.5 : 1,
             }}
           >

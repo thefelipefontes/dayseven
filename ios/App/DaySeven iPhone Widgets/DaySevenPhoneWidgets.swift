@@ -416,6 +416,7 @@ struct BigPercent: View {
     let model: WeekModel
     let size: CGFloat
     let style: WidgetStyle
+    var neverShrink = false
 
     var body: some View {
         let color = model.won ? WidgetColors.gold : WidgetColors.goldMix(model.percent)
@@ -426,11 +427,16 @@ struct BigPercent: View {
             Text("%")
                 .font(.system(size: (size * 0.46).rounded(), weight: .heavy))
         }
+        .lineLimit(1)
+        .minimumScaleFactor(neverShrink ? 1 : 0.7) // safety net only (a 3-digit "100%" on a narrow Small)
+        .fixedSize(horizontal: false, vertical: neverShrink)
+        // The mock sets the % at line-height 0.82; SwiftUI gives Text its full line box (~1.2×),
+        // which made the Large's content taller than the widget and the scale factor shrink the
+        // one number that should be biggest. Trim the box to the glyphs.
+        .padding(.vertical, -size * 0.18)
         .foregroundColor(style.accented ? .white : color)
         .shadow(color: (model.won && !style.accented) ? WidgetColors.gold.opacity(0.45) : .clear, radius: 9)
         .widgetAccentable()
-        .lineLimit(1)
-        .minimumScaleFactor(0.7)
     }
 }
 
@@ -694,15 +700,15 @@ struct LargeWidgetView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(WidgetColors.muted)
             }
-            .padding(.bottom, 12)
+            .padding(.bottom, 9)
 
             // The week's % (the one big number) and the days left
             HStack(alignment: .bottom) {
                 VStack(alignment: .leading, spacing: 0) {
-                    BigPercent(model: model, size: 50, style: style)
+                    BigPercent(model: model, size: 50, style: style, neverShrink: true)
                     CapsLabel(text: model.won ? "Week won" : "Week progress", size: 10,
                               color: model.won ? WidgetColors.gold : WidgetColors.muted)
-                        .padding(.top, 10)
+                        .padding(.top, 8)
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 0) {
@@ -713,11 +719,11 @@ struct LargeWidgetView: View {
                         .padding(.top, 6)
                 }
             }
-            .padding(.bottom, 12)
+            .padding(.bottom, 10)
             Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
 
             // Strength, Cardio, Steps
-            VStack(spacing: 13) {
+            VStack(spacing: 11) {
                 ForEach([WeekModel.Goal.strength, .cardio, .steps], id: \.self) { g in
                     VStack(spacing: 7) {
                         HStack(spacing: 5) {
@@ -731,24 +737,38 @@ struct LargeWidgetView: View {
                     }
                 }
             }
-            .padding(.top, 14)
+            .padding(.top, 12)
 
-            // Recent workouts
+            // Recent workouts: as many rows as fit (two, one or none), so they never squeeze the
+            // header or the goals — the week % must stay the widget's biggest number.
+            let recent = Array(data.recentActivities.prefix(2))
+            ViewThatFits(in: .vertical) {
+                recentSection(recent)
+                recentSection(Array(recent.prefix(1)))
+                Color.clear.frame(height: 0)
+            }
+            .layoutPriority(1)
+            Spacer(minLength: 0)
+        }
+    }
+
+    @ViewBuilder
+    private func recentSection(_ items: [WidgetActivity]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
             CapsLabel(text: "Recent", size: 9.5)
-                .padding(.top, 18)
-                .padding(.bottom, 8)
-            if data.recentActivities.isEmpty {
+                .padding(.top, 14)
+                .padding(.bottom, 7)
+            if items.isEmpty {
                 Text("No workouts yet this week")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(WidgetColors.muted)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
-                    ForEach(Array(data.recentActivities.prefix(2).enumerated()), id: \.offset) { _, a in
-                        RecentRow(activity: a, showCalories: data.showCalories, style: style)
+                    ForEach(Array(items.enumerated()), id: \.offset) { _, a in
+                        RecentRow(activity: a, showCalories: model.data.showCalories, style: style)
                     }
                 }
             }
-            Spacer(minLength: 0)
         }
     }
 }

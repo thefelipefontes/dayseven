@@ -12,7 +12,7 @@ import ShieldLadder from './components/ShieldLadder';
 import CategoryIcon from './components/CategoryIcon';
 import ActivityIcon from './components/ActivityIcon';
 import { WeekHead, GoalRows, GoalRowsMini } from './components/GoalCard';
-import { CARD_SURFACE, GOLD, hexToRgb } from './utils/designTokens';
+import { CARD_SURFACE, GOLD, NUM, hexToRgb } from './utils/designTokens';
 import { judgeWeek } from './utils/weekGoals';
 import { SHIELD_MIN_PERCENT } from './utils/streakShield';
 
@@ -805,8 +805,8 @@ function StreakWinScreen({ weeklyGoals, onBack, onContinue }) {
       {/* A won week, drawn as Home will show it: gold 100%, every goal filled and checked.
           The "2 days to spare" is illustrative. */}
       <div className="mb-3" style={{ ...CARD_SURFACE, padding: '18px 18px 20px' }}>
-        <WeekHead pct={100} won right={2} rightLabel="days to spare" size={50} mb={16} pb={16} />
-        <GoalRows rows={goalRowsOf(weeklyGoals, { strength: weeklyGoals.strength, cardio: weeklyGoals.cardio, steps: stepsGoal })} size="compact" />
+        <WeekHead pct={100} won right={2} rightLabel="days to spare" />
+        <GoalRows rows={goalRowsOf(weeklyGoals, { strength: weeklyGoals.strength, cardio: weeklyGoals.cardio, steps: stepsGoal })} />
       </div>
 
       {/* The Winning Streak: one gold block per week won, an outline for the next */}
@@ -814,8 +814,9 @@ function StreakWinScreen({ weeklyGoals, onBack, onContinue }) {
         <div className="flex items-end justify-between">
           <div className="flex items-baseline" style={{ gap: 7 }}>
             <span style={{ fontSize: 15, lineHeight: 1 }}>🔥</span>
-            <span style={{ fontSize: 32, fontWeight: 800, letterSpacing: '-1.2px', lineHeight: 0.85, color: GOLD }}>4</span>
-            <span style={{ fontSize: 15, fontWeight: 700, color: 'rgba(255,215,0,0.85)' }}>weeks</span>
+            {/* The week % above is this screen's one big number, so the streak is at text size */}
+            <span style={{ ...NUM.value, color: GOLD }}>4</span>
+            <span style={{ ...NUM.valueSmall, color: 'rgba(255,215,0,0.85)' }}>weeks</span>
           </div>
           <span className="uppercase" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', color: 'rgba(255,215,0,0.9)' }}>Winning streak</span>
         </div>
@@ -863,8 +864,8 @@ function StreakShieldScreen({ weeklyGoals, onBack, onContinue }) {
     >
       {/* An example week that holds: past the line, every goal at least half done */}
       <div className="mb-3" style={{ ...CARD_SURFACE, padding: '18px 18px 20px' }}>
-        <WeekHead pct={ex.percent} label="This week" right={`${SHIELD_MIN_PERCENT}%`} rightLabel="holds the streak" size={50} mb={16} pb={16} />
-        <GoalRows rows={goalRowsOf(weeklyGoals, { strength: ex.counts.lifts, cardio: ex.counts.cardio, steps: ex.weekSteps })} size="compact" />
+        <WeekHead pct={ex.percent} label="This week" right={`${SHIELD_MIN_PERCENT}%`} rightLabel="holds the streak" />
+        <GoalRows rows={goalRowsOf(weeklyGoals, { strength: ex.counts.lifts, cardio: ex.counts.cardio, steps: ex.weekSteps })} />
       </div>
 
       <ShieldLadder />
@@ -1238,7 +1239,7 @@ function LinkingScreen({ weeklyGoals, hkAuthorized, answers, initialLinked, init
         {/* A small Home card: tapping a workout below fills a block right here. The big
             number replaces the old green Week progress bar, as on Home. */}
         <div style={{ ...CARD_SURFACE, padding: '16px 18px' }}>
-          <WeekHead pct={totalPct} right={daysLeft} rightLabel={daysLeft === 1 ? 'day left' : 'days left'} size={44} mb={14} pb={14} />
+          <WeekHead pct={totalPct} right={daysLeft} rightLabel={daysLeft === 1 ? 'day left' : 'days left'} compact mb={14} pb={14} />
           <GoalRowsMini rows={goalRowsOf(weeklyGoals, { strength: ringTotals.strength, cardio: ringTotals.cardio, steps: weekSteps })} />
           <p className="text-gray-500 flex items-center gap-1.5" style={{ fontSize: 11.5, marginTop: 13 }}>
             <CategoryIcon category="steps" size={12} color="#6b7280" />

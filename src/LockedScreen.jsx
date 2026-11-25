@@ -2,7 +2,7 @@ import { useState, useLayoutEffect, useRef } from 'react';
 import { triggerHaptic } from './utils/haptics';
 import { ImpactStyle } from '@capacitor/haptics';
 import { GoalRowsMini } from './components/GoalCard';
-import { CARD_SURFACE, GOLD, goldMix } from './utils/designTokens';
+import { CARD_SURFACE, GOLD, NUM, goldMix } from './utils/designTokens';
 
 // Subscription-only hard paywall surface.
 //
@@ -151,13 +151,13 @@ export default function LockedScreen({ onSubscribe, onRestore, onSignOut, userPr
               <div>
                 <div className="flex items-baseline" style={{ gap: 6 }}>
                   <span style={{ fontSize: 15, lineHeight: 1 }}>🔥</span>
-                  <span style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-1.4px', lineHeight: 0.82, color: GOLD, textShadow: '0 0 18px rgba(255,215,0,0.35)' }}>12</span>
+                  <span style={{ ...NUM.bigCard, lineHeight: 0.82, color: GOLD, textShadow: '0 0 18px rgba(255,215,0,0.35)' }}>12</span>
                   <span style={{ fontSize: 15, fontWeight: 700, color: 'rgba(255,215,0,0.85)' }}>weeks</span>
                 </div>
                 <div className="uppercase" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', marginTop: 9, color: 'rgba(255,215,0,0.9)' }}>Winning streak</div>
               </div>
               <div className="text-right">
-                <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-1px', lineHeight: 0.82, color: goldMix(78) }}>78<small style={{ fontSize: 15, marginLeft: 1 }}>%</small></div>
+                <div style={{ ...NUM.value, color: goldMix(78) }}>78%</div>
                 <div className="uppercase" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', marginTop: 9, color: '#8a8a8a' }}>This week</div>
               </div>
             </div>

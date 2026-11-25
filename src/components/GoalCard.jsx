@@ -1,13 +1,14 @@
 import React from 'react';
 import CategoryIcon from './CategoryIcon';
 import { CheckBadge } from './WeekGoalsHero';
-import { CATEGORY_COLORS, GOLD, WEEK_WON_GLOW, TEXT_MUTED, TEXT_FAINT, goldMix, trackColor, doneGlow } from '../utils/designTokens';
+import { CATEGORY_COLORS, GOLD, WEEK_WON_GLOW, TEXT_MUTED, NUM, goldMix, trackColor, doneGlow } from '../utils/designTokens';
 
 // Static pieces of Home's goals card (components/WeekGoalsHero), for places that show a
 // week rather than live data: onboarding and the lock screen. Same shapes and colours as
-// Home, no animation and no taps. Sizes follow mocks/mock-onboarding.html:
-//   - WeekHead: the big week % with a caps label, and a number + label on the right
-//   - GoalRows 'big': Home's exact row sizes; 'compact': the smaller rows on the streak pages
+// Home, no animation and no taps. Number sizes come from designTokens NUM ("One big number"):
+//   - WeekHead: the week % as the screen's one big number (NUM.big, or NUM.bigCompact where
+//     space is short), with a caps label, and a text-size number + label on the right
+//   - GoalRows: Home's rows, values at text size (NUM.value)
 //   - GoalRowsMini: one line per goal (name, blocks, number), where space is short
 //
 // A row is { key: 'lifts' | 'cardio' | 'steps', done, goal }. Steps are counted in steps.
@@ -17,25 +18,27 @@ const fk = (n) => `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
 const fmt = (key, n) => (key === 'steps' ? fk(n) : String(n));
 const isMet = (r) => r.goal > 0 && r.done >= r.goal;
 
-export function WeekHead({ pct, won = false, right, rightLabel, size = 60, label = 'Week progress', mb = 20, pb = 18 }) {
+export function WeekHead({ pct, won = false, right, rightLabel, compact = false, label = 'Week progress', mb = 18, pb = 16 }) {
+  const big = compact ? NUM.bigCompact : NUM.big;
+  const bigSmall = compact ? NUM.bigCompactSmall : NUM.bigSmall;
   return (
     <div className="flex items-end justify-between" style={{ marginBottom: mb, paddingBottom: pb, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
       <div>
         <div
           className="flex items-baseline"
           style={{
-            fontSize: size, fontWeight: 800, lineHeight: 0.8, letterSpacing: `${(-size * 0.05).toFixed(1)}px`,
+            ...big, lineHeight: 0.8,
             color: won ? GOLD : goldMix(pct), textShadow: won ? WEEK_WON_GLOW : 'none', fontVariantNumeric: 'tabular-nums',
           }}
         >
-          {Math.round(pct)}<span style={{ fontSize: Math.round(size * 0.47), letterSpacing: '-1px', marginLeft: 3 }}>%</span>
+          {Math.round(pct)}<span style={bigSmall}>%</span>
         </div>
         <div className="uppercase" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', marginTop: 12, color: won ? 'rgba(255,215,0,0.9)' : TEXT_MUTED }}>
           {won ? 'Week won' : label}
         </div>
       </div>
       <div className="text-right uppercase" style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.04em', color: TEXT_MUTED }}>
-        <b className="block text-white normal-case" style={{ fontSize: Math.max(24, Math.round(size / 2)), fontWeight: 800, letterSpacing: '-0.8px', lineHeight: 1, marginBottom: 6 }}>{right}</b>
+        <b className="block text-white normal-case" style={{ ...NUM.value, marginBottom: 6 }}>{right}</b>
         {rightLabel}
       </div>
     </div>
@@ -65,14 +68,12 @@ export function GoalTrack({ row, h = 12, gap = 6 }) {
   );
 }
 
-const SIZES = {
-  big: { val: 30, ls: -0.8, small: 16, lab: 15, ic: 18, mb: 11, gap: 22 },
-  compact: { val: 22, ls: -0.5, small: 14, lab: 14, ic: 16, mb: 9, gap: 16 },
-};
+// Home's row spacing ("One big number"): 15px labels, 18px icons, 10px to the bar, 20px apart.
+const ROW = { lab: 15, ic: 18, mb: 10, gap: 20 };
 
 // goalOnly: nothing done yet, the value reads "3 a week". caption(row): a line under the bar.
-export function GoalRows({ rows, size = 'big', goalOnly = false, caption }) {
-  const z = SIZES[size];
+export function GoalRows({ rows, goalOnly = false, caption }) {
+  const z = ROW;
   return (
     <div className="flex flex-col" style={{ gap: z.gap }}>
       {rows.map((r) => {
@@ -85,11 +86,11 @@ export function GoalRows({ rows, size = 'big', goalOnly = false, caption }) {
               <span className="flex items-center gap-2 font-semibold" style={{ fontSize: z.lab, lineHeight: 1.2, paddingBottom: 2 }}>
                 <CategoryIcon category={r.key} size={z.ic} />{LABEL[r.key]}
               </span>
-              <span className="flex items-baseline" style={{ fontSize: z.val, fontWeight: 800, lineHeight: 0.9, letterSpacing: `${z.ls}px`, fontVariantNumeric: 'tabular-nums' }}>
+              <span className="flex items-baseline" style={{ ...NUM.value, fontVariantNumeric: 'tabular-nums' }}>
                 {goalOnly ? (
-                  <>{fmt(r.key, r.goal)}<small style={{ fontSize: z.small, fontWeight: 700, color: TEXT_FAINT, letterSpacing: '-0.2px', marginLeft: 6 }}>a week</small></>
+                  <>{fmt(r.key, r.goal)}<small style={{ ...NUM.valueSmall, marginLeft: 5 }}>a week</small></>
                 ) : (
-                  <>{fmt(r.key, row.done)}<small style={{ fontSize: z.small, fontWeight: 700, color: TEXT_FAINT, letterSpacing: '-0.2px', marginLeft: 1 }}>/{fmt(r.key, r.goal)}</small></>
+                  <>{fmt(r.key, row.done)}<small style={{ ...NUM.valueSmall, marginLeft: 1 }}>/{fmt(r.key, r.goal)}</small></>
                 )}
                 {met && <CheckBadge color={CATEGORY_COLORS[r.key]} style={{ alignSelf: 'center', marginLeft: 8 }} />}
               </span>
@@ -115,9 +116,9 @@ export function GoalRowsMini({ rows, goalOnly = false }) {
               <CategoryIcon category={r.key} size={15} />{LABEL[r.key]}
             </span>
             <div className="flex-1"><GoalTrack row={row} h={10} gap={5} /></div>
-            <span className="text-right" style={{ minWidth: 62, fontSize: 15, lineHeight: 1.2, fontWeight: 800, letterSpacing: '-0.3px', fontVariantNumeric: 'tabular-nums' }}>
+            <span className="text-right" style={{ minWidth: 62, ...NUM.mini, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums' }}>
               {goalOnly ? fmt(r.key, r.goal) : fmt(r.key, row.done)}
-              <small style={{ fontSize: 12, color: TEXT_FAINT, fontWeight: 700 }}>{goalOnly ? ' /wk' : `/${fmt(r.key, r.goal)}`}</small>
+              <small style={NUM.miniSmall}>{goalOnly ? ' /wk' : `/${fmt(r.key, r.goal)}`}</small>
             </span>
           </div>
         );

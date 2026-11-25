@@ -12673,6 +12673,9 @@ export default function DaySevenApp() {
   // doesn't see the previous user's cache.
   const feedCacheRef = useRef(null);
   const activitiesRef = useRef([]);
+  // True once this account's activities have been read (Firestore or demo). Until then the
+  // widget isn't pushed: the empty list would write 0 Strength/Cardio over its last counts.
+  const activitiesLoadedRef = useRef(false);
   // activitiesRef is synced after activities state is declared (see below)
   const lastFirestoreActivityCount = useRef(0); // Track last known Firestore activity count to prevent overwriting
   const activitiesFromFirestore = useRef(false); // Skip debounced save when activities came from Firestore or were saved directly
@@ -13396,6 +13399,7 @@ export default function DaySevenApp() {
     setIsPro(false);
     setProStatusResolved(false);
     setIsLoading(true); // The next sign-in shows Home's skeleton until its data is in.
+    activitiesLoadedRef.current = false;
     setDevAuthEmail(null);
     // Close any open modals + reset to home tab so the next sign-in lands on a
     // clean Home, not the Settings overlay (which would render on top of Home
@@ -14014,6 +14018,7 @@ export default function DaySevenApp() {
         setHealthHistory(getDemoHealthHistory(365));
         setFriends(getDemoFriends());
         setIsPro(true); // Show pro features in demo
+        activitiesLoadedRef.current = true;
         setIsLoading(false);
         return;
       }
@@ -14291,6 +14296,7 @@ export default function DaySevenApp() {
           }
           // Home's skeleton ends with the data: batched with setActivities below.
           setIsLoading(false);
+          activitiesLoadedRef.current = true;
           lastFirestoreActivityCount.current = userActivities.length;
           // The streaks as they stand after this load, for the records recalc below.
           let streaksAfterLoad = profileForStreaks?.streaks || null;
@@ -15792,9 +15798,14 @@ export default function DaySevenApp() {
 
   // Push data to iPhone home screen widget via App Group
   const pushWidgetData = (progress) => {
+    // Before the account's activities are read, the counts would be 0: keep the widget's last.
+    if (!activitiesLoadedRef.current) return;
     const s = userDataRef.current?.streaks || {};
     const g = userDataRef.current?.goals || {};
-    const p = progress || weeklyProgress;
+    // Count from the latest activities, never the weeklyProgress state: several load paths
+    // (cold launch, pull-to-refresh, imports) set activities without recounting it, and a
+    // push from the health-data effects then wrote 0 Strength/Cardio next to the right steps.
+    const p = progress || calculateWeeklyProgress(activitiesRef.current || []);
     const hk = healthKitDataRef.current || {};
 
     // Build recent activities for large widget (most recent first, max 5)
@@ -15855,6 +15866,17 @@ export default function DaySevenApp() {
       recentActivities
     });
   };
+
+  // Keep the week's counts in step with the activities, however they changed (a load, a
+  // pull-to-refresh, a HealthKit or Watch import, a goal edit), and push them to the widget.
+  // Logging and editing already did both; the load paths set activities only, which left
+  // weeklyProgress at its initial zeros after a cold launch.
+  useEffect(() => {
+    if (!activitiesLoadedRef.current) return;
+    const fresh = calculateWeeklyProgress(activities);
+    setWeeklyProgress(fresh);
+    pushWidgetData(fresh);
+  }, [activities, userData?.goals]);
 
   // Re-push widget data when health stats update (steps/calories arrive async)
   useEffect(() => {

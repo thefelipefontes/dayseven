@@ -8,6 +8,22 @@ Paste each field into App Store Connect → App Information / Version page. Limi
 
 ---
 
+## What's New in 1.8.9 (4000 max)
+
+```
+A fresh new look for your week.
+
+• Home shows your week at a glance: your progress up top, a block for every session, and your Winning Streak in gold
+• Plan, Profile and Friends get the same new look
+• New Home Screen widgets in three sizes
+• A redesigned Apple Watch app, with your week on the main screen and today right below it
+• Two new watch face complications: your week with your streak, and your weekly steps
+• Starting, pausing and finishing a workout on your watch all look cleaner
+• Fixes and polish
+```
+
+---
+
 ## What's New in 1.8.8 (4000 max)
 
 ```

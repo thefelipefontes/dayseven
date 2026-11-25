@@ -2627,8 +2627,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             {isFriendOfMine && onOpenChallenge && (
               <button
                 onClick={() => { onOpenChallenge(friend); onClose?.(); }}
-                className="w-full py-3 rounded-full font-semibold transition-all duration-150 active:scale-95"
-                style={{ backgroundColor: '#FFD60A', color: 'black' }}
+                className="w-full py-3 rounded-full font-semibold transition-all duration-150 active:scale-95 bg-white text-black active:bg-[#e5e5e5]"
               >
                 ⚡ Challenge {friend?.displayName?.split(' ')[0] || friend?.username}
               </button>

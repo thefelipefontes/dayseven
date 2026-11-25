@@ -710,8 +710,7 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
                   {onOpenChallenge && (
                     <button
                       onClick={closeAfter(() => { triggerHaptic(ImpactStyle.Light); onOpenChallenge(selectedProfile); })}
-                      className="w-full py-3 rounded-full font-semibold transition-all duration-150 active:scale-95"
-                      style={{ backgroundColor: '#FFD60A', color: 'black' }}
+                      className="w-full py-3 rounded-full font-semibold transition-all duration-150 active:scale-95 bg-white text-black active:bg-[#e5e5e5]"
                     >
                       ⚡ Challenge {selectedProfile.displayName?.split(' ')[0] || selectedProfile.username}
                     </button>
@@ -745,8 +744,7 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
                       const request = requests.find(r => r.fromUid === selectedProfile.uid);
                       if (request) handleAcceptRequest(request);
                     })}
-                    className="flex-1 py-3 rounded-full font-semibold transition-all duration-150 active:scale-95"
-                    style={{ backgroundColor: '#00FF94', color: 'black' }}
+                    className="flex-1 py-3 rounded-full font-semibold transition-all duration-150 active:scale-95 bg-white text-black active:bg-[#e5e5e5]"
                   >
                     Accept
                   </button>
@@ -766,8 +764,7 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
             return (
               <button
                 onClick={closeAfter(() => handleSendRequest(selectedProfile.uid))}
-                className="w-full py-3 rounded-full font-semibold transition-all duration-150 active:scale-95"
-                style={{ backgroundColor: '#00FF94', color: 'black' }}
+                className="w-full py-3 rounded-full font-semibold transition-all duration-150 active:scale-95 bg-white text-black active:bg-[#e5e5e5]"
               >
                 Add Friend
               </button>

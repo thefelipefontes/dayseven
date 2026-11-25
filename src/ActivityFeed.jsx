@@ -494,23 +494,25 @@ const formatLeaderMinutes = (mins) => {
 // One Category Leaders tile: the top 3 by `getValue`, leaving out anyone at zero.
 // Initials come from the app's own ProfilePhoto; this used to load friends' names
 // into a third-party avatar service.
-const CategoryLeaderTile = ({ title, users, getValue, format = (v) => v, color, background }) => {
+// One "Most …" tile (Nov 2026 redesign, mock-extras.html leadersSection): a faint tint of the
+// group's colour with a thin outline, a caps title, and the top three with medal badges.
+const LEADER_MEDALS = ['#FFD700', '#D7D7DE', '#D08A4A'];
+const CategoryLeaderTile = ({ title, users, getValue, format = (v) => v, color }) => {
   const leaders = users
     .map(u => ({ u, v: getValue(u) || 0 }))
     .filter(x => x.v > 0)
     .sort((a, b) => b.v - a.v)
     .slice(0, 3);
   return (
-    <div className="rounded-xl p-3" style={{ backgroundColor: background }}>
-      <div className="text-[10px] text-gray-500 uppercase mb-1">{title}</div>
+    <div style={{ borderRadius: 14, padding: '11px 11px 7px', backgroundColor: hexAlpha(color, 0.07), boxShadow: `inset 0 0 0 1px ${hexAlpha(color, 0.22)}` }}>
+      <div className="uppercase" style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.12em', color: '#9a9a9a', marginBottom: 8 }}>{title}</div>
       {leaders.length === 0 ? (
-        <div className="text-[11px] text-gray-600">No one yet</div>
+        <div className="text-[11px] mb-1" style={{ color: '#666' }}>No one yet</div>
       ) : leaders.map(({ u, v }, i) => (
-        <div key={u.uid} className="flex items-center gap-1.5 mb-1">
-          <span className="text-[10px] text-gray-500">{i + 1}.</span>
-          <ProfilePhoto photoURL={u.photoURL} displayName={u.displayName} size={16} />
-          <span className="text-[11px] text-white truncate flex-1">{u.displayName?.split(' ')[0]}</span>
-          <span className="text-[11px] font-bold" style={{ color }}>{format(v)}</span>
+        <div key={u.uid} className="flex items-center gap-1.5" style={{ marginBottom: 5 }}>
+          <span className="inline-flex items-center justify-center rounded-full flex-shrink-0" style={{ width: 14, height: 14, backgroundColor: LEADER_MEDALS[i], color: '#000', fontSize: 8.5, fontWeight: 800 }}>{i + 1}</span>
+          <span className="truncate flex-1" style={{ fontSize: 11.5, color: i === 0 ? '#fff' : '#ccc' }}>{u.displayName?.split(' ')[0]}</span>
+          <span className="text-white" style={{ fontSize: 12, fontWeight: 700, letterSpacing: '-0.1px' }}>{format(v)}</span>
         </div>
       ))}
     </div>
@@ -1034,18 +1036,23 @@ const MemoizedActivityCard = React.memo(({
 // Empty-state art for the Friends tab: an add button with open crew slots circling it, one in
 // each ring colour. The whole orbit layer spins as an HTML element, which WebKit handles more
 // reliably than transforms on inner SVG groups.
+// Empty Friends tab (Nov 2026 redesign): a row of open seats around a white +, no spinning.
+const CrewSeat = ({ size, alpha }) => (
+  <div className="flex items-center justify-center flex-shrink-0 rounded-full" style={{ width: size, height: size, backgroundColor: 'rgba(255,255,255,0.03)', boxShadow: `inset 0 0 0 1.5px rgba(255,255,255,${alpha})` }}>
+    <svg width={size * 0.5} height={size * 0.5} viewBox="0 0 24 24" fill="none" stroke={`rgba(255,255,255,${alpha})`} strokeWidth="1.8" strokeLinecap="round">
+      <circle cx="12" cy="8" r="4" /><path d="M5 21v-1a7 7 0 0 1 14 0v1" />
+    </svg>
+  </div>
+);
 const CrewOrbit = () => (
-  <div className="relative" style={{ width: 150, height: 124 }} aria-hidden="true">
-    <svg width="150" height="124" viewBox="0 0 150 124" fill="none" className="absolute inset-0 animate-[spin_14s_linear_infinite_reverse] motion-reduce:animate-none">
-      <circle cx="75" cy="62" r="50" stroke="#444" strokeWidth="2" strokeDasharray="3 8" />
-      <circle cx="75" cy="12" r="11" fill="#000" stroke="#00FF94" strokeWidth="3" />
-      <circle cx="118" cy="87" r="11" fill="#000" stroke="#FF9500" strokeWidth="3" />
-      <circle cx="32" cy="87" r="11" fill="#000" stroke="#BF5AF2" strokeWidth="3" />
-    </svg>
-    <svg width="150" height="124" viewBox="0 0 150 124" fill="none" className="absolute inset-0">
-      <circle cx="75" cy="62" r="24" fill="#fff" />
-      <path d="M75 51v22M64 62h22" stroke="#000" strokeWidth="5" strokeLinecap="round" />
-    </svg>
+  <div className="flex items-center justify-center gap-2.5" aria-hidden="true">
+    <CrewSeat size={40} alpha={0.14} />
+    <CrewSeat size={52} alpha={0.22} />
+    <div className="flex items-center justify-center rounded-full flex-shrink-0" style={{ width: 64, height: 64, backgroundColor: '#fff', boxShadow: '0 0 0 8px rgba(255,255,255,0.06)' }}>
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="2.8" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+    </div>
+    <CrewSeat size={52} alpha={0.22} />
+    <CrewSeat size={40} alpha={0.14} />
   </div>
 );
 
@@ -2706,19 +2713,19 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       <div>
         <FriendsHeaderTop />
         <SegmentedControl activeView={activeView} setActiveView={setActiveView} challengesBadge={challengesBadge} />
-        <div className="text-center py-12 px-6">
-          <div className="flex justify-center mb-4"><CrewOrbit /></div>
-          <p className="text-white font-medium mb-2">Find your workout buddies</p>
-          <p className="text-gray-500 text-sm mb-6">Add friends to see their workouts and cheer them on!</p>
+        <div className="text-center px-6" style={{ paddingTop: 56, paddingBottom: 48 }}>
+          <div className="flex justify-center mt-1.5 mb-[22px]"><CrewOrbit /></div>
+          <p className="text-white mb-2" style={{ fontSize: 19, fontWeight: 700, letterSpacing: '-0.3px' }}>Find your workout buddies</p>
+          <p className="text-[14px] mb-6 mx-auto leading-snug" style={{ color: '#9a9a9a', maxWidth: 300 }}>Add friends to see their workouts and cheer them on!</p>
           <TouchButton
             onClick={() => {
               triggerHaptic(ImpactStyle.Medium);
               onOpenFriends();
             }}
-            className="px-6 py-3 rounded-full font-semibold text-black transition-all duration-150"
-            style={{ backgroundColor: '#00FF94' }}
+            className="inline-block px-7 py-[13px] rounded-full font-bold text-[16px] text-black transition-all duration-150"
+            style={{ backgroundColor: '#fff' }}
           >
-            Add Friends
+            Add friends
           </TouchButton>
         </div>
       </div>
@@ -3076,16 +3083,19 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                 const vol = (key) => (user) => user.volume?.[key]?.[r] || 0;
                 const dist = (v) => milesToDisplay(v, u).toFixed(0);
                 const distTitle = `Most ${u === 'km' ? 'KMs' : 'Miles'}`;
-                const ORANGE = 'rgba(255, 149, 0, 0.1)';
-                const GREEN = 'rgba(0, 255, 148, 0.1)';
-                const CYAN = 'rgba(0, 209, 255, 0.1)';
-                const BLUE = 'rgba(52, 152, 219, 0.1)';
+                const ORANGE = '#FF9500';
+                const GREEN = '#00FF94';
+                const CYAN = '#00D1FF';
                 const tile = (props) => <CategoryLeaderTile users={sortedLeaderboard} {...props} />;
+                // Group labels: caps with the category icon (Nov 2026 redesign)
+                const groupLabel = (icon, text) => (
+                  <div className="flex items-center gap-1.5 uppercase" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', color: '#aaa', marginBottom: 9 }}>{icon}{text}</div>
+                );
                 return (
               <div className="mt-8">
                 <div className="mb-4">
                   <div className="flex items-center gap-2">
-                    <SectionIcon type="trophy" />
+                    <SectionIcon type="trophy" color="#fff" />
                     <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Category Leaders</span>
                   </div>
                   <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Top performers by volume {r === 'all' ? 'of all time' : `this ${r}`}</p>
@@ -3093,40 +3103,40 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
 
                 {/* Running Leaders */}
                 <div className="mb-4">
-                  <div className="text-xs text-gray-400 uppercase tracking-wide mb-2"><ActivityIcon type="Running" size={12} className="inline align-[-2px] mr-1" />Running</div>
+                  {groupLabel(<ActivityIcon type="Running" size={13} color={ORANGE} />, 'Running')}
                   <div className="grid grid-cols-3 gap-2">
-                    {tile({ title: 'Most Runs', getValue: vol('runs'), color: '#FF9500', background: ORANGE })}
-                    {tile({ title: distTitle, getValue: vol('miles'), format: dist, color: '#FF9500', background: ORANGE })}
-                    {tile({ title: 'Most Time', getValue: vol('runMinutes'), format: formatLeaderMinutes, color: '#FF9500', background: ORANGE })}
+                    {tile({ title: 'Most Runs', getValue: vol('runs'), color: ORANGE })}
+                    {tile({ title: distTitle, getValue: vol('miles'), format: dist, color: ORANGE })}
+                    {tile({ title: 'Most Time', getValue: vol('runMinutes'), format: formatLeaderMinutes, color: ORANGE })}
                   </div>
                 </div>
 
                 {/* Strength Leaders */}
                 <div className="mb-4">
-                  <div className="text-xs text-gray-400 uppercase tracking-wide mb-2"><CategoryIcon category="lifts" size={12} className="inline align-[-2px] mr-1" />Strength</div>
+                  {groupLabel(<CategoryIcon category="lifts" size={13} />, 'Strength')}
                   <div className="grid grid-cols-2 gap-2">
-                    {tile({ title: 'Most Sessions', getValue: vol('strengthSessions'), color: '#00FF94', background: GREEN })}
-                    {tile({ title: 'Most Time', getValue: vol('liftingMinutes'), format: formatLeaderMinutes, color: '#00FF94', background: GREEN })}
+                    {tile({ title: 'Most Sessions', getValue: vol('strengthSessions'), color: GREEN })}
+                    {tile({ title: 'Most Time', getValue: vol('liftingMinutes'), format: formatLeaderMinutes, color: GREEN })}
                   </div>
                 </div>
 
                 {/* Recovery Leaders */}
                 <div className="mb-4">
-                  <div className="text-xs text-gray-400 uppercase tracking-wide mb-2"><CategoryIcon category="recovery" size={12} className="inline align-[-2px] mr-1" />Recovery</div>
+                  {groupLabel(<CategoryIcon category="recovery" size={13} />, 'Recovery')}
                   <div className="grid grid-cols-3 gap-2">
-                    {tile({ title: <><CategoryIcon category="recovery" size={11} className="inline align-[-2px] mr-1" />Cold Plunge</>, getValue: vol('coldPlunges'), color: '#00D1FF', background: CYAN })}
-                    {tile({ title: <><ActivityIcon type="Sauna" size={11} className="inline align-[-2px] mr-1" />Sauna</>, getValue: vol('saunaSessions'), color: '#00D1FF', background: CYAN })}
-                    {tile({ title: '🧘 Yoga', getValue: vol('yogaSessions'), color: '#00D1FF', background: CYAN })}
+                    {tile({ title: 'Cold Plunge', getValue: vol('coldPlunges'), color: CYAN })}
+                    {tile({ title: 'Sauna', getValue: vol('saunaSessions'), color: CYAN })}
+                    {tile({ title: 'Yoga', getValue: vol('yogaSessions'), color: CYAN })}
                   </div>
                 </div>
 
                 {/* Cycling Leaders */}
                 <div className="mb-4">
-                  <div className="text-xs text-gray-400 uppercase tracking-wide mb-2">🚴 Cycling</div>
+                  {groupLabel(<ActivityIcon type="Cycle" size={13} color={ORANGE} />, 'Cycling')}
                   <div className="grid grid-cols-3 gap-2">
-                    {tile({ title: 'Most Rides', getValue: vol('rides'), color: '#FF9500', background: BLUE })}
-                    {tile({ title: distTitle, getValue: vol('cycleMiles'), format: dist, color: '#FF9500', background: BLUE })}
-                    {tile({ title: 'Most Time', getValue: vol('cycleMinutes'), format: formatLeaderMinutes, color: '#FF9500', background: BLUE })}
+                    {tile({ title: 'Most Rides', getValue: vol('rides'), color: ORANGE })}
+                    {tile({ title: distTitle, getValue: vol('cycleMiles'), format: dist, color: ORANGE })}
+                    {tile({ title: 'Most Time', getValue: vol('cycleMinutes'), format: formatLeaderMinutes, color: ORANGE })}
                   </div>
                 </div>
               </div>

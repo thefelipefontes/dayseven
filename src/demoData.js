@@ -508,7 +508,7 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 6, strength: 10, cardio: 6, steps: 9, recovery: 5, longestMaster: 12 },
     challengeStats: { accepted: 16, wins: 12, losses: 4, currentWinStreak: 2, longestWinStreak: 5 },
     weeksWon: 6,
-    weekly: { calories: 3400, steps: 62000, runs: 2, miles: 12, runMinutes: 105, strengthSessions: 3, liftingMinutes: 180, recoverySessions: 2, coldPlunges: 1, saunaSessions: 1, yogaSessions: 0, rides: 1, cycleMiles: 16, cycleMinutes: 55 } },
+    weekly: { calories: 3400, steps: 62000, runs: 2, miles: 12, runMinutes: 105, strengthSessions: 3, liftingMinutes: 180, recoverySessions: 2, coldPlunges: 1, saunaSessions: 1, yogaSessions: 0, cardioSessions: 3, rides: 1, cycleMiles: 16, cycleMinutes: 55 } },
 
   // 2) Sarah — runner + challenge winner. #1 in challenge wins / longest win streak.
   { uid: 'dummy2', username: 'sarah_runs', displayName: 'Sarah Chen',
@@ -516,7 +516,7 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 12, strength: 12, cardio: 28, steps: 20, recovery: 9, longestMaster: 30 },
     challengeStats: { accepted: 22, wins: 15, losses: 7, currentWinStreak: 4, longestWinStreak: 8 },
     weeksWon: 14,
-    weekly: { calories: 3100, steps: 78000, runs: 3, miles: 22, runMinutes: 200, strengthSessions: 1, liftingMinutes: 45, recoverySessions: 1, coldPlunges: 0, saunaSessions: 0, yogaSessions: 1, rides: 1, cycleMiles: 14, cycleMinutes: 45 } },
+    weekly: { calories: 3100, steps: 78000, runs: 3, miles: 22, runMinutes: 200, strengthSessions: 1, liftingMinutes: 45, recoverySessions: 1, coldPlunges: 0, saunaSessions: 0, yogaSessions: 1, cardioSessions: 6, rides: 1, cycleMiles: 14, cycleMinutes: 45 } },
 
   // 3) Mike — lifter. #1 in strengthSessions / liftingMinutes.
   { uid: 'dummy3', username: 'mike_lifts', displayName: 'Mike Johnson',
@@ -524,7 +524,7 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 9, strength: 22, cardio: 9, steps: 11, recovery: 8, longestMaster: 18 },
     challengeStats: { accepted: 20, wins: 14, losses: 6, currentWinStreak: 3, longestWinStreak: 6 },
     weeksWon: 9,
-    weekly: { calories: 2900, steps: 34000, runs: 0, miles: 0, runMinutes: 0, strengthSessions: 5, liftingMinutes: 300, recoverySessions: 1, coldPlunges: 1, saunaSessions: 0, yogaSessions: 0, rides: 0, cycleMiles: 0, cycleMinutes: 0 } },
+    weekly: { calories: 2900, steps: 34000, runs: 0, miles: 0, runMinutes: 0, strengthSessions: 5, liftingMinutes: 300, recoverySessions: 1, coldPlunges: 1, saunaSessions: 0, yogaSessions: 0, cardioSessions: 0, rides: 0, cycleMiles: 0, cycleMinutes: 0 } },
 
   // 4) Emma — yogi. #1 in master streak / yogaSessions.
   { uid: 'dummy4', username: 'emma_yoga', displayName: 'Emma Williams',
@@ -532,7 +532,7 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 14, strength: 14, cardio: 16, steps: 18, recovery: 28, longestMaster: 35 },
     challengeStats: { accepted: 14, wins: 9, losses: 5, currentWinStreak: 1, longestWinStreak: 4 },
     weeksWon: 18,
-    weekly: { calories: 2600, steps: 48000, runs: 1, miles: 4, runMinutes: 38, strengthSessions: 2, liftingMinutes: 90, recoverySessions: 3, coldPlunges: 0, saunaSessions: 0, yogaSessions: 3, rides: 1, cycleMiles: 12, cycleMinutes: 40 } },
+    weekly: { calories: 2600, steps: 48000, runs: 1, miles: 4, runMinutes: 38, strengthSessions: 2, liftingMinutes: 90, recoverySessions: 3, coldPlunges: 0, saunaSessions: 0, yogaSessions: 3, cardioSessions: 2, rides: 1, cycleMiles: 12, cycleMinutes: 40 } },
 
   // 5) Jake — overall powerhouse. #1 in calories.
   { uid: 'dummy5', username: 'jake_athlete', displayName: 'Jake Martinez',
@@ -540,7 +540,7 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 16, strength: 16, cardio: 18, steps: 17, recovery: 6, longestMaster: 22 },
     challengeStats: { accepted: 24, wins: 16, losses: 8, currentWinStreak: 2, longestWinStreak: 7 },
     weeksWon: 11,
-    weekly: { calories: 4200, steps: 72000, runs: 3, miles: 18, runMinutes: 165, strengthSessions: 3, liftingMinutes: 195, recoverySessions: 2, coldPlunges: 1, saunaSessions: 1, yogaSessions: 0, rides: 1, cycleMiles: 18, cycleMinutes: 60 } },
+    weekly: { calories: 4200, steps: 72000, runs: 3, miles: 18, runMinutes: 165, strengthSessions: 3, liftingMinutes: 195, recoverySessions: 2, coldPlunges: 1, saunaSessions: 1, yogaSessions: 0, cardioSessions: 4, rides: 1, cycleMiles: 18, cycleMinutes: 60 } },
 
   // 6) Lisa — runner + step queen. #1 in steps / runs / miles / cardioStreak.
   { uid: 'dummy6', username: 'lisa_cardio', displayName: 'Lisa Park',
@@ -548,7 +548,7 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 8, strength: 8, cardio: 32, steps: 25, recovery: 5, longestMaster: 24 },
     challengeStats: { accepted: 14, wins: 10, losses: 4, currentWinStreak: 1, longestWinStreak: 5 },
     weeksWon: 10,
-    weekly: { calories: 3600, steps: 88000, runs: 4, miles: 30, runMinutes: 270, strengthSessions: 1, liftingMinutes: 40, recoverySessions: 1, coldPlunges: 0, saunaSessions: 0, yogaSessions: 1, rides: 0, cycleMiles: 0, cycleMinutes: 0 } },
+    weekly: { calories: 3600, steps: 88000, runs: 4, miles: 30, runMinutes: 270, strengthSessions: 1, liftingMinutes: 40, recoverySessions: 1, coldPlunges: 0, saunaSessions: 0, yogaSessions: 1, cardioSessions: 7, rides: 0, cycleMiles: 0, cycleMinutes: 0 } },
 
   // 7) Noah — recovery specialist. #1 in recoverySessions / coldPlunges / saunaSessions.
   { uid: 'dummy7', username: 'noah_climbs', displayName: 'Noah Reyes',
@@ -556,7 +556,7 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 9, strength: 12, cardio: 9, steps: 10, recovery: 18, longestMaster: 14 },
     challengeStats: { accepted: 12, wins: 8, losses: 4, currentWinStreak: 0, longestWinStreak: 3 },
     weeksWon: 5,
-    weekly: { calories: 2400, steps: 42000, runs: 0, miles: 0, runMinutes: 0, strengthSessions: 1, liftingMinutes: 60, recoverySessions: 4, coldPlunges: 2, saunaSessions: 2, yogaSessions: 0, rides: 1, cycleMiles: 12, cycleMinutes: 40 } },
+    weekly: { calories: 2400, steps: 42000, runs: 0, miles: 0, runMinutes: 0, strengthSessions: 1, liftingMinutes: 60, recoverySessions: 4, coldPlunges: 2, saunaSessions: 2, yogaSessions: 0, cardioSessions: 1, rides: 1, cycleMiles: 12, cycleMinutes: 40 } },
 
   // 8) Maya — strength runner-up. Tied for #1 currentWinStreak.
   { uid: 'dummy8', username: 'maya_lifts', displayName: 'Maya Patel',
@@ -564,7 +564,7 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 7, strength: 18, cardio: 7, steps: 8, recovery: 12, longestMaster: 14 },
     challengeStats: { accepted: 18, wins: 12, losses: 6, currentWinStreak: 5, longestWinStreak: 6 },
     weeksWon: 8,
-    weekly: { calories: 3300, steps: 50000, runs: 1, miles: 4, runMinutes: 38, strengthSessions: 4, liftingMinutes: 260, recoverySessions: 1, coldPlunges: 1, saunaSessions: 0, yogaSessions: 0, rides: 0, cycleMiles: 0, cycleMinutes: 0 } },
+    weekly: { calories: 3300, steps: 50000, runs: 1, miles: 4, runMinutes: 38, strengthSessions: 4, liftingMinutes: 260, recoverySessions: 1, coldPlunges: 1, saunaSessions: 0, yogaSessions: 0, cardioSessions: 1, rides: 0, cycleMiles: 0, cycleMinutes: 0 } },
 
   // 9) Leo — cyclist. #1 in rides / cycleMiles / cycleMinutes. Tied for #1 currentWinStreak.
   { uid: 'dummy9', username: 'leo_runner', displayName: 'Leo Hernandez',
@@ -572,7 +572,7 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 5, strength: 5, cardio: 22, steps: 15, recovery: 7, longestMaster: 19 },
     challengeStats: { accepted: 19, wins: 11, losses: 8, currentWinStreak: 5, longestWinStreak: 4 },
     weeksWon: 7,
-    weekly: { calories: 3500, steps: 54000, runs: 1, miles: 5, runMinutes: 45, strengthSessions: 1, liftingMinutes: 45, recoverySessions: 1, coldPlunges: 0, saunaSessions: 1, yogaSessions: 0, rides: 3, cycleMiles: 52, cycleMinutes: 175 } },
+    weekly: { calories: 3500, steps: 54000, runs: 1, miles: 5, runMinutes: 45, strengthSessions: 1, liftingMinutes: 45, recoverySessions: 1, coldPlunges: 0, saunaSessions: 1, yogaSessions: 0, cardioSessions: 5, rides: 3, cycleMiles: 52, cycleMinutes: 175 } },
 
   // 10) Kai — well-rounded #2 across multiple. High master streak.
   { uid: 'dummy10', username: 'kai_movement', displayName: 'Kai Nguyen',
@@ -580,7 +580,7 @@ const DEMO_FRIEND_PROFILES = [
     streaks: { master: 10, strength: 10, cardio: 12, steps: 11, recovery: 14, longestMaster: 26 },
     challengeStats: { accepted: 16, wins: 10, losses: 6, currentWinStreak: 3, longestWinStreak: 4 },
     weeksWon: 12,
-    weekly: { calories: 3000, steps: 58000, runs: 2, miles: 8, runMinutes: 75, strengthSessions: 2, liftingMinutes: 120, recoverySessions: 1, coldPlunges: 0, saunaSessions: 1, yogaSessions: 0, rides: 1, cycleMiles: 14, cycleMinutes: 45 } },
+    weekly: { calories: 3000, steps: 58000, runs: 2, miles: 8, runMinutes: 75, strengthSessions: 2, liftingMinutes: 120, recoverySessions: 1, coldPlunges: 0, saunaSessions: 1, yogaSessions: 0, cardioSessions: 3, rides: 1, cycleMiles: 14, cycleMinutes: 45 } },
 ];
 
 // Period multipliers: weekly numbers expanded into month/year/all totals so the
@@ -639,6 +639,7 @@ export const getDemoLeaderboardFriends = () => {
         miles: expandToPeriods(w.miles),
         runMinutes: expandToPeriods(w.runMinutes),
         strengthSessions: expandToPeriods(w.strengthSessions),
+        cardioSessions: expandToPeriods(w.cardioSessions ?? (w.runs + w.rides)),
         liftingMinutes: expandToPeriods(w.liftingMinutes),
         recoverySessions: expandToPeriods(w.recoverySessions),
         coldPlunges: expandToPeriods(w.coldPlunges),
@@ -675,6 +676,7 @@ export const getDemoUserLeaderboardOverride = (username) => {
       miles: expandToPeriods(w.miles),
       runMinutes: expandToPeriods(w.runMinutes),
       strengthSessions: expandToPeriods(w.strengthSessions),
+      cardioSessions: expandToPeriods(w.cardioSessions ?? (w.runs + w.rides)),
       liftingMinutes: expandToPeriods(w.liftingMinutes),
       recoverySessions: expandToPeriods(w.recoverySessions),
       coldPlunges: expandToPeriods(w.coldPlunges),

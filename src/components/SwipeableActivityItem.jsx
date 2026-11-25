@@ -34,7 +34,10 @@ export const SwipeableProvider = ({ children }) => {
 };
 
 // Swipeable Activity Item Component for swipe-to-delete with long-press menu
-export const SwipeableActivityItem = ({ children, onDelete, activity, onTap, onEdit }) => {
+// `swipeBackground`: for rows on a gradient card (Home's Today's Activity), where a solid
+// backing shows as a dark box. The row is then transparent at rest and takes this solid
+// colour only while it's swiped, which is the only time it has something to cover.
+export const SwipeableActivityItem = ({ children, onDelete, activity, onTap, onEdit, swipeBackground = null }) => {
   const { openId, setOpenId } = useContext(SwipeableContext);
   const [swipeX, setSwipeX] = useState(0);
   const [isBouncing, setIsBouncing] = useState(false);
@@ -278,8 +281,9 @@ export const SwipeableActivityItem = ({ children, onDelete, activity, onTap, onE
         {/* Main content with swipe */}
         <div
           ref={swipeRef}
-          className="relative bg-zinc-900 swipeable-item"
+          className={`relative swipeable-item${swipeBackground ? '' : ' bg-zinc-900'}`}
           style={{
+            ...(swipeBackground ? { backgroundColor: swipeX !== 0 ? swipeBackground : 'transparent' } : {}),
             transform: `translateX(${swipeX}px)${isPressed ? ' scale(0.98)' : ''}`,
             transition: getTransition()
           }}

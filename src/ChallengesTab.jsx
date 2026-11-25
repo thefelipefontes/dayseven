@@ -1,3 +1,4 @@
+import AvatarImage from './components/AvatarImage';
 import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import {
@@ -17,6 +18,8 @@ import OwnProfileModal from './components/OwnProfileModal';
 import FriendProfileCard from './components/FriendProfileCard';
 import ChallengeDetailModal from './components/ChallengeDetailModal';
 import { isDemoAccount, getDemoChallenges } from './demoData';
+import { resolveUnit } from './utils/distance';
+import { CARD_SURFACE, GOLD, NUM } from './utils/designTokens';
 
 const triggerHaptic = async (style = ImpactStyle.Light) => {
   try { await Haptics.impact({ style }); } catch {
@@ -280,8 +283,8 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
 
       {/* Profile card */}
       <div
-        className="rounded-2xl p-4 mb-4 flex items-center gap-4"
-        style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}
+        className="p-4 mb-3.5 flex items-center gap-3.5"
+        style={CARD_SURFACE}
       >
         <button
           onClick={() => { triggerHaptic(ImpactStyle.Light); setShowSelfProfile(true); }}
@@ -290,48 +293,45 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
           style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}
         >
           {userProfile?.photoURL ? (
-            <img src={userProfile.photoURL} alt="" className="w-full h-full object-cover" />
+            <AvatarImage src={userProfile.photoURL} alt="" />
           ) : (
             <span className="text-white text-xl font-semibold">{initial}</span>
           )}
         </button>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <p className="text-white text-base font-semibold truncate">
+          <div className="flex items-center gap-1.5">
+            <p className="text-white text-[17px] font-bold truncate">
               {userProfile?.displayName || userProfile?.username || 'You'}
             </p>
             {(userData?.streaks?.master || 0) > 0 && (
-              <span className="text-sm flex-shrink-0" style={{ color: '#FFD60A' }}>
-                {userData.streaks.master}🔥
+              <span className="flex-shrink-0 flex items-baseline">
+                <span className="text-[17px] font-extrabold" style={{ color: GOLD }}>{userData.streaks.master}</span>
+                <span className="text-[14px]">🔥</span>
               </span>
             )}
           </div>
-          <p className="text-xs truncate" style={{ color: 'rgba(255,255,255,0.5)' }}>
-            {userProfile?.username && <>@{userProfile.username} · </>}
-            <span style={{ color: isPro ? '#FFD60A' : 'rgba(255,255,255,0.5)', fontWeight: isPro ? 600 : 400 }}>
-              {isPro ? 'Pro' : 'Free'}
-            </span>
+          <p className="text-[13px] truncate flex items-center" style={{ color: '#aaa' }}>
+            {userProfile?.username && <span className="truncate">@{userProfile.username}</span>}
+            {isPro ? (
+              <span className="ml-1.5 flex-shrink-0 text-[10px] font-extrabold px-1.5 py-[1px] rounded-[5px]" style={{ letterSpacing: '0.1em', border: '1px solid rgba(255,255,255,0.25)', color: '#ddd' }}>PRO</span>
+            ) : (
+              <span className="flex-shrink-0 whitespace-pre">{userProfile?.username ? ' · ' : ''}Free</span>
+            )}
           </p>
-          <div className="flex items-center gap-3 mt-1">
-            <RecordPill label="Active" value={activeCount} color="#FFD60A" />
-            <RecordPill label="Completed" value={completedCount} color="#00FF94" />
+          {/* Your record. No single big number on this screen, so these are text size (17px). */}
+          <div className="flex items-end gap-4 mt-2">
+            <RecordPill label="Active" value={activeCount} />
+            <RecordPill label="Completed" value={completedCount} />
             {/* W-L instead of Pending — Pending is already shown in the segment toggle
                 below, and W-L is a more useful trophy-style stat for this row. Live-
                 subscribed via subscribeToUserChallengeStats so it ticks up immediately. */}
-            <div className="flex items-baseline gap-1">
-              <span className="text-sm font-bold leading-none">
-                <span style={{ color: '#00FF94' }}>{userProfile?.challengeStats?.wins || 0}</span>
-                <span className="mx-0.5" style={{ color: 'rgba(255,255,255,0.3)' }}>-</span>
-                <span style={{ color: '#FF453A' }}>{userProfile?.challengeStats?.losses || 0}</span>
-              </span>
-              <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.5)' }}>W-L</span>
-            </div>
+            <RecordPill label="W–L" value={`${userProfile?.challengeStats?.wins || 0}–${userProfile?.challengeStats?.losses || 0}`} />
           </div>
         </div>
       </div>
 
       {/* Status filter — one row of chips (the Received / Sent split lives on each card now) */}
-      <div className="flex gap-2 mb-3">
+      <div className="flex gap-2 mb-3.5">
         {SEGMENTS.map(s => {
           const selected = segment === s.key;
           const badgeCount =
@@ -342,26 +342,31 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
             <button
               key={s.key}
               onClick={() => onSegment(s.key)}
-              className="px-3 py-1.5 rounded-full text-[13px] font-medium transition-colors duration-200 flex items-center gap-1.5"
+              className="px-3.5 py-2 rounded-full text-[15px] font-semibold transition-colors duration-200 flex items-center gap-2"
               style={{
-                backgroundColor: selected ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)',
-                color: selected ? 'white' : 'rgba(255,255,255,0.55)',
+                backgroundColor: selected ? '#fff' : 'rgba(255,255,255,0.06)',
+                color: selected ? '#000' : '#aaa',
               }}
             >
               <span>{s.label}</span>
-              {badgeCount > 0 && (
+              {badgeCount > 0 && (() => {
+                // Pending's attention badge stays (white now, not yellow): something waits on you
+                const attention = s.key === 'pending' && buckets.pendingReceived.length > 0;
+                return (
                 <span
-                  className="text-[10px] px-1.5 rounded-full font-semibold"
+                  className="inline-flex items-center justify-center rounded-full text-[12px] font-extrabold"
                   style={{
-                    backgroundColor: s.key === 'pending' && buckets.pendingReceived.length > 0 ? '#FFD60A' : 'rgba(255,255,255,0.1)',
-                    color: s.key === 'pending' && buckets.pendingReceived.length > 0 ? 'black' : 'rgba(255,255,255,0.6)',
-                    minWidth: 18,
-                    lineHeight: '16px',
+                    backgroundColor: selected ? 'rgba(0,0,0,0.12)' : attention ? '#fff' : 'rgba(255,255,255,0.12)',
+                    color: selected || attention ? '#000' : '#ddd',
+                    minWidth: 20,
+                    height: 20,
+                    padding: '0 6px',
                   }}
                 >
                   {badgeCount}
                 </span>
-              )}
+                );
+              })()}
             </button>
           );
         })}
@@ -432,6 +437,7 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
         <FriendProfileCard
           friend={selectedFriend}
           onClose={() => setSelectedFriend(null)}
+          distanceUnit={resolveUnit(userProfile)}
         />
       )}
 
@@ -459,11 +465,11 @@ export default function ChallengesTab({ user, userProfile, userData, activities 
   );
 }
 
-function RecordPill({ label, value, color }) {
+function RecordPill({ label, value }) {
   return (
-    <div className="flex items-baseline gap-1">
-      <span className="text-sm font-bold" style={{ color }}>{value}</span>
-      <span className="text-[11px]" style={{ color: 'rgba(255,255,255,0.5)' }}>{label}</span>
+    <div className="uppercase" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', color: '#8a8a8a' }}>
+      <span className="block text-white normal-case" style={{ ...NUM.value, marginBottom: 3 }}>{value}</span>
+      {label}
     </div>
   );
 }

@@ -1,6 +1,21 @@
 // Convert a Date to YYYY-MM-DD string in local timezone (avoids UTC date shifting)
 export const toLocalDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
+// The local Sunday that starts the week an account was created, as 'YYYY-MM-DD', or null
+// without a usable createdAt (an ISO string, or a Firestore Timestamp from older docs).
+// HealthKit workouts dated before it predate the account.
+export const signupWeekStartStr = (createdAt) => {
+  if (!createdAt) return null;
+  const ms = typeof createdAt.toMillis === 'function' ? createdAt.toMillis()
+    : typeof createdAt.seconds === 'number' ? createdAt.seconds * 1000
+    : new Date(createdAt).getTime();
+  if (!Number.isFinite(ms)) return null;
+  const weekStart = new Date(ms);
+  weekStart.setHours(0, 0, 0, 0);
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+  return toLocalDateStr(weekStart);
+};
+
 // Get today's date in YYYY-MM-DD format (local timezone)
 export const getTodayDate = () => toLocalDateStr(new Date());
 

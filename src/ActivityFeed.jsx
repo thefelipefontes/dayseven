@@ -1,5 +1,6 @@
+import AvatarImage from './components/AvatarImage';
 import CategoryIcon from './components/CategoryIcon';
-import React, { useState, useEffect, useCallback, useRef, useMemo, createContext, useContext } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { getUserActivities, getPersonalRecords, getDailyHealthHistory, getUserProfile, withoutMalformed } from './services/userService';
 import { addReaction, getReactions, removeReaction, addComment, getComments, deleteComment, addReply, getReplies, deleteReply, getFriends } from './services/friendService';
 import { getCompletedChallengesByWinners } from './services/challengeService';
@@ -9,10 +10,13 @@ import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import ActivityIcon from './components/ActivityIcon';
 import FriendProfileCard from './components/FriendProfileCard';
 import ZoomablePhoto from './components/ZoomablePhoto';
+import SwipeableComment, { SwipeableCommentContext } from './components/SwipeableComment';
 import { friendStatus, FRIEND_STATUS } from './utils/friendStatus';
+import { readFeedSnapshot, scheduleFeedSnapshotSave } from './utils/feedSnapshot';
 import { isDemoAccount, getDemoLeaderboardFriends, getDemoActivities, getDemoHealthHistory, getDemoUserData, getDemoChallengeStats, getDemoUserLeaderboardOverride } from './demoData';
 import { resolveUnit, unitLabel, formatDistanceValue, milesToDisplay } from './utils/distance';
 import { getActivityCategory, countsAsLifting, countsAsCardio, countsAsRecovery } from './utils/activityCategory';
+import { CARD_SURFACE, NUM, hexToRgb } from './utils/designTokens';
 
 // Convert a Date to YYYY-MM-DD string in local timezone (avoids UTC date shifting)
 const toLocalDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -88,7 +92,9 @@ const calculateLeaderboardStats = (rawActivities, healthHistory, recordsData) =>
     const strength = periodActivities.filter(countsAsLifting);
     const recovery = periodActivities.filter(countsAsRecovery);
     const cardio = periodActivities.filter(countsAsCardio);
-    const goalSessions = periodActivities.filter(a => countsAsLifting(a) || countsAsCardio(a) || countsAsRecovery(a));
+    // "Workouts" = strength + cardio sessions, the same definition as Hall of Fame's
+    // Most Workouts. Recovery is a bonus and has its own board. A Circuit counts once.
+    const goalSessions = periodActivities.filter(a => countsAsLifting(a) || countsAsCardio(a));
     const coldPlunge = periodActivities.filter(a => a.type === 'Cold Plunge');
     const sauna = periodActivities.filter(a => a.type === 'Sauna');
     const yoga = periodActivities.filter(a => a.type === 'Yoga');
@@ -159,8 +165,8 @@ const calculateLeaderboardStats = (rawActivities, healthHistory, recordsData) =>
   };
 };
 
-// Section header icon component - SVG line icons in brand cyan
-const SectionIcon = ({ type, size = 22, color = '#04d1ff' }) => {
+// Section header icon component - white line icons (Nov 2026 redesign; colour is for goals)
+const SectionIcon = ({ type, size = 22, color = '#ffffff' }) => {
   const icons = {
     leaderboard: (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -224,14 +230,13 @@ const ScrollablePill = ({ onClick, isSelected, color, textColor, children }) => 
     <div
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
-      className="px-2.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-200 flex-shrink-0 cursor-pointer select-none"
+      className="px-3 py-[7px] rounded-full text-[14px] font-semibold whitespace-nowrap transition-all duration-200 flex-shrink-0 cursor-pointer select-none"
       style={{
-        backgroundColor: isSelected ? color : 'rgba(255,255,255,0.05)',
-        color: isSelected ? textColor : 'rgba(255,255,255,0.5)',
-        // Unselected pills carry their category colour as an outline (and on the icon), so the
-        // row is scannable without a selection. Always a 1px border, so selecting one doesn't
-        // shift the row's layout.
-        border: `1px solid ${isSelected ? color : hexAlpha(color, 0.45)}`,
+        // Nov 2026 redesign: the selected chip is a soft tint of its colour with a thin outline
+        // in it; the others are quiet and keep their colour on the icon only.
+        backgroundColor: isSelected ? hexAlpha(color, 0.18) : 'rgba(255,255,255,0.05)',
+        color: isSelected ? color : '#ccc',
+        boxShadow: isSelected ? `inset 0 0 0 1px ${hexAlpha(color, 0.4)}` : 'none',
       }}
     >
       {children}
@@ -299,115 +304,6 @@ const FeedPullToRefreshIndicator = ({ pullDistance, isRefreshing, threshold = 28
           100% { transform: rotate(360deg); }
         }
       `}</style>
-    </div>
-  );
-};
-
-// Context for swipeable comments
-const SwipeableCommentContext = createContext({ openId: null, setOpenId: () => {} });
-
-// Swipeable Comment Component for swipe-to-delete
-const SwipeableComment = ({ children, commentId, onDelete, canDelete }) => {
-  const { openId, setOpenId } = useContext(SwipeableCommentContext);
-  const [swipeX, setSwipeX] = useState(0);
-  const [startX, setStartX] = useState(null);
-  const [startSwipeX, setStartSwipeX] = useState(0);
-  const [isSwiping, setIsSwiping] = useState(false);
-  const deleteButtonWidth = 70;
-  const snapThreshold = 30;
-
-  // Close this item if another one becomes open
-  useEffect(() => {
-    if (openId !== commentId && swipeX !== 0) {
-      setSwipeX(0);
-    }
-  }, [openId, commentId, swipeX]);
-
-  const handleTouchStart = (e) => {
-    if (!canDelete) return;
-    setStartX(e.touches[0].clientX);
-    setStartSwipeX(swipeX);
-    setIsSwiping(true);
-  };
-
-  const handleTouchMove = (e) => {
-    if (!canDelete || startX === null) return;
-    const currentX = e.touches[0].clientX;
-    const diff = currentX - startX;
-
-    if (diff < 0) {
-      setOpenId(commentId);
-    }
-
-    const newSwipeX = Math.max(-deleteButtonWidth - 20, Math.min(0, startSwipeX + diff));
-    setSwipeX(newSwipeX);
-  };
-
-  const handleTouchEnd = () => {
-    if (!canDelete) return;
-    setIsSwiping(false);
-    setStartX(null);
-
-    if (swipeX < -snapThreshold) {
-      setSwipeX(-deleteButtonWidth);
-      setOpenId(commentId);
-    } else {
-      setSwipeX(0);
-      if (openId === commentId) {
-        setOpenId(null);
-      }
-    }
-  };
-
-  const handleDelete = (e) => {
-    e.stopPropagation();
-    setSwipeX(0);
-    setOpenId(null);
-    onDelete();
-  };
-
-  if (!canDelete) {
-    return <div>{children}</div>;
-  }
-
-  return (
-    <div className="relative overflow-hidden rounded-lg">
-      {/* Delete button - positioned on the right, only visible when swiping */}
-      <div
-        className="absolute inset-y-0 right-0 flex items-center rounded-r-lg"
-        style={{
-          width: Math.abs(swipeX) + deleteButtonWidth,
-          backgroundColor: '#FF453A',
-          opacity: swipeX < 0 ? 1 : 0,
-          pointerEvents: swipeX < 0 ? 'auto' : 'none',
-          justifyContent: 'flex-end',
-          paddingRight: 8
-        }}
-      >
-        <button
-          onClick={handleDelete}
-          className="h-full flex items-center justify-center"
-          style={{ width: 40 }}
-        >
-          <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
-        </button>
-      </div>
-
-      {/* Content */}
-      <div
-        className="relative"
-        style={{
-          transform: `translateX(${swipeX}px)`,
-          transition: isSwiping ? 'none' : 'transform 0.3s ease-out'
-        }}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-      >
-        {children}
-      </div>
     </div>
   );
 };
@@ -498,6 +394,17 @@ const TouchButton = ({ onClick, disabled = false, className, style, children, to
 
 // Segmented control component - defined outside ActivityFeed for stable reference (enables CSS animations)
 // Friends has three views: Feed, Leaderboard and Challenges (moved here from its own tab).
+// Leaderboard colours by category (Nov 2026 redesign): the podium, your position card and the
+// bars take the colour of the chip you picked. Workouts is white: it means all sessions.
+const LB_COLORS = {
+  calories: '#FF6B6B', steps: '#BF5AF2', workouts: '#FFFFFF',
+  strengthSessions: '#00FF94', cardioSessions: '#FF9500', recoverySessions: '#00D1FF',
+  master: '#FFD700', strength: '#00FF94', cardio: '#FF9500', stepsStreak: '#BF5AF2', recovery: '#00D1FF',
+  wins: '#FFD60A', currentStreak: '#FF9500', longestStreak: '#FFD700',
+};
+// Past this many sessions for the leader, rows fall back to a bar (blocks get too thin).
+const LB_MAX_BLOCKS = 14;
+
 const FRIENDS_VIEWS = [
   { key: 'feed', label: 'Feed' },
   { key: 'leaderboard', label: 'Leaderboard' },
@@ -505,10 +412,10 @@ const FRIENDS_VIEWS = [
 ];
 const SegmentedControl = ({ activeView, setActiveView, challengesBadge = 0 }) => (
   <div className="px-4 pb-4" style={{ touchAction: 'pan-y' }}>
-    <div className="relative flex p-1 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.05)', touchAction: 'pan-y' }}>
+    <div className="relative flex p-1 rounded-[14px]" style={{ backgroundColor: 'rgba(255,255,255,0.05)', touchAction: 'pan-y' }}>
       {/* Sliding pill indicator - uses transform for smooth hardware-accelerated animation */}
       <div
-        className="absolute top-1 bottom-1 left-1 rounded-lg"
+        className="absolute top-1 bottom-1 left-1 rounded-[10px]"
         style={{
           backgroundColor: 'rgba(255,255,255,0.1)',
           width: `calc((100% - 8px) / ${FRIENDS_VIEWS.length})`,
@@ -520,17 +427,18 @@ const SegmentedControl = ({ activeView, setActiveView, challengesBadge = 0 }) =>
         <TouchButton
           key={tab.key}
           onClick={() => setActiveView(tab.key)}
-          className="flex-1 py-2 px-2 rounded-lg text-sm font-medium relative z-10 text-center flex items-center justify-center gap-1.5"
+          className="flex-1 py-2.5 px-2 rounded-[10px] text-[15px] font-semibold relative z-10 text-center flex items-center justify-center gap-2"
           style={{
-            color: activeView === tab.key ? 'white' : 'rgba(255,255,255,0.5)',
+            color: activeView === tab.key ? 'white' : '#888',
             transition: 'color 0.2s ease-out'
           }}
         >
           {tab.label}
           {tab.key === 'challenges' && challengesBadge > 0 && (
+            // White count badge (Nov 2026 redesign; yellow now reads as gold, the streak's colour)
             <span
-              className="text-[10px] px-1.5 rounded-full font-semibold"
-              style={{ backgroundColor: '#FFD60A', color: 'black', minWidth: 18, lineHeight: '16px' }}
+              className="inline-flex items-center justify-center rounded-full text-[12px] font-extrabold"
+              style={{ backgroundColor: '#fff', color: '#000', minWidth: 20, height: 20, padding: '0 6px' }}
             >
               {challengesBadge}
             </span>
@@ -555,12 +463,11 @@ const ProfilePhoto = React.memo(({ photoURL, displayName, size = 40 }) => (
     }}
   >
     {photoURL ? (
-      <img
+      <AvatarImage
         src={photoURL}
         alt={displayName}
-        className="w-full h-full object-cover"
         draggable={false}
-        style={{
+        imgStyle={{
           touchAction: 'pan-y',
           pointerEvents: 'none',
           WebkitTouchCallout: 'none',
@@ -569,10 +476,48 @@ const ProfilePhoto = React.memo(({ photoURL, displayName, size = 40 }) => (
         }}
       />
     ) : (
-      <span className="text-white text-sm" style={{ pointerEvents: 'none' }}>{displayName?.[0]?.toUpperCase() || '?'}</span>
+      <span className="text-white text-sm" style={{ pointerEvents: 'none', ...(size < 28 ? { fontSize: Math.max(8, Math.round(size * 0.55)), lineHeight: 1 } : null) }}>{displayName?.[0]?.toUpperCase() || '?'}</span>
     )}
   </div>
 ));
+
+// "45m", "1h 20m", "3h". Category Leaders used to floor to whole hours, so anyone
+// under an hour showed "0h".
+const formatLeaderMinutes = (mins) => {
+  const total = Math.round(mins || 0);
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  if (h === 0) return `${m}m`;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+};
+
+// One Category Leaders tile: the top 3 by `getValue`, leaving out anyone at zero.
+// Initials come from the app's own ProfilePhoto; this used to load friends' names
+// into a third-party avatar service.
+// One "Most …" tile (Nov 2026 redesign, mock-extras.html leadersSection): a faint tint of the
+// group's colour with a thin outline, a caps title, and the top three with medal badges.
+const LEADER_MEDALS = ['#FFD700', '#D7D7DE', '#D08A4A'];
+const CategoryLeaderTile = ({ title, users, getValue, format = (v) => v, color }) => {
+  const leaders = users
+    .map(u => ({ u, v: getValue(u) || 0 }))
+    .filter(x => x.v > 0)
+    .sort((a, b) => b.v - a.v)
+    .slice(0, 3);
+  return (
+    <div style={{ borderRadius: 14, padding: '11px 11px 7px', backgroundColor: hexAlpha(color, 0.07), boxShadow: `inset 0 0 0 1px ${hexAlpha(color, 0.22)}` }}>
+      <div className="uppercase" style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.12em', color: '#9a9a9a', marginBottom: 8 }}>{title}</div>
+      {leaders.length === 0 ? (
+        <div className="text-[11px] mb-1" style={{ color: '#666' }}>No one yet</div>
+      ) : leaders.map(({ u, v }, i) => (
+        <div key={u.uid} className="flex items-center gap-1.5" style={{ marginBottom: 5 }}>
+          <span className="inline-flex items-center justify-center rounded-full flex-shrink-0" style={{ width: 14, height: 14, backgroundColor: LEADER_MEDALS[i], color: '#000', fontSize: 8.5, fontWeight: 800 }}>{i + 1}</span>
+          <span className="truncate flex-1" style={{ fontSize: 11.5, color: i === 0 ? '#fff' : '#ccc' }}>{u.displayName?.split(' ')[0]}</span>
+          <span className="text-white" style={{ fontSize: 12, fontWeight: 700, letterSpacing: '-0.1px' }}>{format(v)}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
 
 // Memoized ActivityCard - only re-renders when its specific props change
 // Stable empty fallbacks for card props: a fresh [] / {} on every render fails
@@ -606,6 +551,7 @@ const MemoizedActivityCard = React.memo(({
   isPro,
   onPresentPaywall,
   onPhotoFullscreenChange,
+  focus = null,
 }) => {
   const { friend, type, duration, calories, distance, date, time, id, customEmoji, customIcon, sportEmoji, strengthType, focusAreas, focusArea } = activity;
   const viewerUnit = resolveUnit(userProfile);
@@ -622,6 +568,48 @@ const MemoizedActivityCard = React.memo(({
   const [expandedReplies, setExpandedReplies] = useState({});
   const inputRef = useRef(null);
   const replyInputRef = useRef(null);
+
+  // Opened from a comment or reply notification (`focus`): scroll to that comment, or for
+  // a reply open its thread and scroll to the newest reply from that person, then light it
+  // up for a moment. Waits until it's in `comments`/`commentReplies`, since the feed
+  // fetches the new comment after opening the post. `uncapped` lifts the comments' height
+  // cap so a newest comment past it isn't clipped.
+  const [highlightId, setHighlightId] = useState(null);
+  const [uncapped, setUncapped] = useState(false);
+  const handledFocusRef = useRef(null);
+  const focusTimersRef = useRef([]);
+  useEffect(() => () => focusTimersRef.current.forEach(clearTimeout), []);
+  useEffect(() => { if (!showComments) setUncapped(false); }, [showComments]);
+  useEffect(() => {
+    if (!focus?.nonce || handledFocusRef.current === focus.nonce) return;
+    const comment = comments.find((c) => c.id === focus.commentId);
+    if (!comment) return;
+    let selector = `[data-comment-id="${comment.id}"]`;
+    let target = comment.id;
+    if (focus.replyFrom) {
+      const reply = [...(commentReplies?.[comment.id] || [])].reverse()
+        .find((r) => r.replierUid === focus.replyFrom);
+      if (!reply) return;
+      setExpandedReplies((prev) => ({ ...prev, [comment.id]: true }));
+      selector = `[data-reply-id="${reply.id}"]`;
+      target = `reply-${reply.id}`;
+    }
+    handledFocusRef.current = focus.nonce;
+    setUncapped(true);
+    setHighlightId(target);
+    focusTimersRef.current.push(
+      // After the feed's own scroll to the comments section, which runs at 350ms.
+      setTimeout(() => document.querySelector(selector)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 450),
+      setTimeout(() => setHighlightId(null), 2600),
+    );
+  }, [focus?.nonce, comments, commentReplies]);
+  const highlightStyle = (key) => ({
+    transition: 'background-color 0.8s ease-out',
+    ...(highlightId === key ? { backgroundColor: '#3f3f46' } : {}),
+  });
+  // A post's owner can delete any comment or reply on it (the rules allow the same);
+  // everyone else only their own.
+  const isOwnPost = Boolean(user?.uid) && user.uid === friend.uid;
 
   // Set up the ref callback
   useEffect(() => {
@@ -647,16 +635,16 @@ const MemoizedActivityCard = React.memo(({
     ? (focusAreas || (focusArea ? [focusArea] : [])).join(', ')
     : (activity.subtype || '');
 
-  // For "Other" activities, prefer customIcon (new format) over customEmoji (old format)
-  const useEmoji = (type === 'Other' && customIcon) ? null // Will use ActivityIcon with customIcon
-    : (type === 'Other' && customEmoji) ? customEmoji
-    : (type === 'Sports' && sportEmoji) ? sportEmoji
-    : null;
-
-  // Category color tint for the icon background + icon color override
+  // Category color: a soft tint behind the line icon, the icon in the full color (as on Home)
   const category = getActivityCategory(activity);
-  const categoryBg = category === 'lifting' ? 'rgba(0,255,148,0.15)' : category === 'cardio' ? 'rgba(255,149,0,0.15)' : category === 'recovery' ? 'rgba(0,209,255,0.15)' : undefined;
   const categoryIconColor = category === 'lifting' ? '#00FF94' : category === 'cardio' ? '#FF9500' : category === 'recovery' ? '#00D1FF' : undefined;
+  const categoryBg = categoryIconColor ? `rgba(${hexToRgb(categoryIconColor)},0.16)` : 'rgba(255,255,255,0.06)';
+  // Stats line: numbers bold white, units grey, separated by dots ("34 min · 402 cal · 4.3 mi")
+  const statParts = [
+    duration ? (duration < 60 ? [String(duration), 'min'] : [formatDuration(duration), '']) : null,
+    calories ? [String(calories), 'cal'] : null,
+    distance ? [formatDistanceValue(distance, viewerUnit, 1), unitLabel(viewerUnit)] : null,
+  ].filter(Boolean);
 
   // Count reactions by type
   const reactionCounts = {};
@@ -668,19 +656,19 @@ const MemoizedActivityCard = React.memo(({
   const reactorPhotos = reactions.filter(r => r.reactorPhoto).slice(0, 3);
 
   return (
-    <div className="bg-zinc-900 rounded-xl p-4 mb-3">
+    <div className="p-4 mb-3" style={CARD_SURFACE} data-post-key={activityKey}>
       {/* Header - Friend info */}
-      <div className="flex items-center gap-3 mb-3">
+      <div className="flex items-center gap-3 mb-3.5">
         <TouchButton onClick={() => onSelectFriend(friend)} className="flex-shrink-0">
-          <ProfilePhoto photoURL={friend.photoURL} displayName={friend.displayName} />
+          <ProfilePhoto photoURL={friend.photoURL} displayName={friend.displayName} size={42} />
         </TouchButton>
         <div className="flex-1 min-w-0">
           <TouchButton onClick={() => onSelectFriend(friend)} className="text-left block w-full">
-            <p className="text-white font-medium truncate">{friend.displayName || friend.username}</p>
-            <p className="text-gray-500 text-xs truncate">@{friend.username}</p>
+            <p className="text-white text-[16px] font-semibold truncate">{friend.displayName || friend.username}</p>
+            <p className="text-[13px] truncate" style={{ color: '#777' }}>@{friend.username}</p>
           </TouchButton>
         </div>
-        <span className="text-gray-500 text-xs flex-shrink-0">{formatTimeAgo(date, time)}</span>
+        <span className="text-[13px] flex-shrink-0" style={{ color: '#777' }}>{formatTimeAgo(date, time)}</span>
       </div>
 
       {/* Challenge attribution pill — sits above the activity body so it reads as
@@ -718,18 +706,24 @@ const MemoizedActivityCard = React.memo(({
 
       {/* Activity details */}
       <div className="flex items-center gap-3">
-        <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: categoryBg || 'rgb(39,39,42)' }}>
-          {useEmoji ? <span className="text-2xl">{useEmoji}</span> : <ActivityIcon type={type} strengthType={strengthType} size={24} customIcon={customIcon} color={categoryIconColor} />}
+        {/* The same line icon Home uses, on a tile tinted in the category color */}
+        <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: categoryBg }}>
+          <ActivityIcon type={type} subtype={activity.subtype} strengthType={strengthType} size={24} customIcon={customIcon} customEmoji={customEmoji} sportEmoji={sportEmoji} countToward={activity.countToward} customActivityCategory={activity.customActivityCategory} color={categoryIconColor} />
         </div>
-        <div className="flex-1">
-          <p className="text-white font-medium">
-            {displayType}{displaySubtype ? ` ${type === 'Strength Training' ? '-' : '•'} ${displaySubtype}` : ''}
+        <div className="flex-1 min-w-0">
+          <p className="text-white text-[16px] font-semibold">
+            {displayType}{displaySubtype ? ` · ${displaySubtype}` : ''}
           </p>
-          <div className="flex items-center gap-3 mt-1">
-            {duration && <span className="text-gray-400 text-sm">⏱ {formatDuration(duration)}</span>}
-            {calories && <span className="text-gray-400 text-sm"><CategoryIcon category="calories" size={12} className="inline align-[-2px] mr-1" />{calories} cal</span>}
-            {distance && <span className="text-gray-400 text-sm">📍 {formatDistanceValue(distance, viewerUnit, 1)} {unitLabel(viewerUnit)}</span>}
-          </div>
+          {statParts.length > 0 && (
+            <p className="text-[14px] mt-[3px]" style={{ color: '#8a8a8a' }}>
+              {statParts.map(([n, u], i) => (
+                <React.Fragment key={i}>
+                  {i > 0 && <span style={{ color: '#555', margin: '0 3px' }}>·</span>}
+                  <b className="text-white font-bold">{n}</b>{u ? ` ${u}` : ''}
+                </React.Fragment>
+              ))}
+            </p>
+          )}
         </div>
       </div>
 
@@ -742,7 +736,7 @@ const MemoizedActivityCard = React.memo(({
         })();
         return (
         <>
-          <TouchButton onClick={() => { if (feedPhotoLocked) { onPresentPaywall?.(); return; } setShowFullscreenPhoto(true); }} className="mt-3 rounded-xl overflow-hidden w-full relative group block">
+          <TouchButton onClick={() => { if (feedPhotoLocked) { onPresentPaywall?.(); return; } setShowFullscreenPhoto(true); }} className="mt-3 rounded-[14px] overflow-hidden w-full relative group block">
             <img src={activity.photoURL} alt="Activity" className="w-full h-auto max-h-80 object-cover" style={feedPhotoLocked ? { filter: 'blur(12px)', transform: 'scale(1.05)' } : undefined} />
             {feedPhotoLocked && (
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30">
@@ -790,9 +784,9 @@ const MemoizedActivityCard = React.memo(({
 
       {/* Reactions and Comments section */}
       {id && (
-        <div className="mt-3 pt-3 border-t border-zinc-800">
+        <div className="mt-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5">
               {reactionEmojis.map((emoji) => {
                 const count = reactionCounts[emoji] || 0;
                 const isSelected = userReaction?.reactionType === emoji;
@@ -800,10 +794,11 @@ const MemoizedActivityCard = React.memo(({
                   <TouchButton
                     key={emoji}
                     onClick={() => onReaction(activity, emoji)}
-                    className={`flex items-center gap-1 px-2 py-1 rounded-full transition-all duration-150 ${isSelected ? 'bg-zinc-700 ring-1 ring-white/20' : 'bg-zinc-800 hover:bg-zinc-700'}`}
+                    className="flex items-center gap-[5px] px-2.5 py-1.5 rounded-full transition-all duration-150"
+                    style={isSelected ? { backgroundColor: 'rgba(255,255,255,0.12)', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.18)' } : { backgroundColor: 'rgba(255,255,255,0.06)' }}
                   >
-                    <span className="text-sm">{emoji}</span>
-                    {count > 0 && <span className={`text-xs ${isSelected ? 'text-white' : 'text-gray-400'}`}>{count}</span>}
+                    <span className="text-[14px]">{emoji}</span>
+                    {count > 0 && <span className="text-[14px] font-semibold" style={{ color: '#ddd' }}>{count}</span>}
                   </TouchButton>
                 );
               })}
@@ -812,19 +807,20 @@ const MemoizedActivityCard = React.memo(({
                   onToggleComments();
                   // Don't auto-focus keyboard - let user tap "Add a comment" to focus
                 }}
-                className={`flex items-center gap-1 px-2 py-1 rounded-full transition-all duration-150 ${showComments ? 'bg-zinc-700 ring-1 ring-white/20' : 'bg-zinc-800 hover:bg-zinc-700'}`}
+                className="flex items-center gap-[5px] px-2.5 py-1.5 rounded-full transition-all duration-150"
+                style={showComments ? { backgroundColor: 'rgba(255,255,255,0.12)', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.18)' } : { backgroundColor: 'rgba(255,255,255,0.06)' }}
               >
-                <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="w-4 h-4" style={{ color: '#aaa' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                 </svg>
-                {comments.length > 0 && <span className="text-xs text-gray-400">{comments.length}</span>}
+                {comments.length > 0 && <span className="text-[14px] font-semibold" style={{ color: '#ddd' }}>{comments.length}</span>}
               </TouchButton>
             </div>
 
             {reactorPhotos.length > 0 && (
               <div className="flex items-center -space-x-2">
                 {reactorPhotos.map((reactor, idx) => (
-                  <div key={reactor.reactorUid || idx} className="w-6 h-6 rounded-full border-2 border-zinc-900 overflow-hidden">
+                  <div key={reactor.reactorUid || idx} className="w-[26px] h-[26px] rounded-full overflow-hidden" style={{ boxShadow: '0 0 0 2px #121212' }}>
                     <img src={reactor.reactorPhoto} alt={reactor.reactorName} className="w-full h-full object-cover" />
                   </div>
                 ))}
@@ -834,7 +830,7 @@ const MemoizedActivityCard = React.memo(({
           </div>
 
           {/* Inline Comments Section */}
-          <div className="overflow-hidden transition-all duration-300 ease-out" style={{ maxHeight: showComments ? '1000px' : '0', opacity: showComments ? 1 : 0 }}>
+          <div className="overflow-hidden transition-all duration-300 ease-out" data-post-comments={activityKey} style={{ maxHeight: showComments ? (uncapped ? 'none' : '1000px') : '0', opacity: showComments ? 1 : 0 }}>
             <div className="pt-3 mt-3 border-t border-zinc-800">
               {comments.length > 0 && (
                 <SwipeableCommentContext.Provider value={{ openId: openCommentId, setOpenId: setOpenCommentId }}>
@@ -843,10 +839,10 @@ const MemoizedActivityCard = React.memo(({
                       const replies = commentReplies?.[comment.id] || [];
                       const isExpanded = expandedReplies[comment.id];
                       return (
-                        <div key={comment.id} className="py-1">
+                        <div key={comment.id} className="py-1" data-comment-id={comment.id}>
                           <SwipeableComment
                             commentId={comment.id}
-                            canDelete={comment.commenterUid === user.uid}
+                            canDelete={comment.commenterUid === user.uid || isOwnPost}
                             onDelete={() => onDeleteComment(comment.id)}
                           >
                             <div className="flex gap-2 items-start">
@@ -858,7 +854,7 @@ const MemoizedActivityCard = React.memo(({
                                 )}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <div className="bg-zinc-800 rounded-2xl px-3 py-2">
+                                <div className="bg-zinc-800 rounded-2xl px-3 py-2" style={highlightStyle(comment.id)}>
                                   <span className="text-white text-xs font-medium">{comment.commenterName}</span>
                                   <p className="text-gray-300 text-sm break-words">{comment.text}</p>
                                 </div>
@@ -890,10 +886,10 @@ const MemoizedActivityCard = React.memo(({
                           {isExpanded && replies.length > 0 && (
                             <div className="ml-9 mt-2 space-y-2 border-l-2 border-zinc-700 pl-3">
                               {replies.map((reply) => (
-                                <div key={reply.id}>
+                                <div key={reply.id} data-reply-id={reply.id}>
                                   <SwipeableComment
                                     commentId={`reply-${reply.id}`}
-                                    canDelete={reply.replierUid === user.uid}
+                                    canDelete={reply.replierUid === user.uid || isOwnPost}
                                     onDelete={() => onDeleteReply(comment.id, reply.id)}
                                   >
                                     <div className="flex gap-2 items-start">
@@ -905,7 +901,7 @@ const MemoizedActivityCard = React.memo(({
                                         )}
                                       </div>
                                       <div className="flex-1 min-w-0">
-                                        <div className="bg-zinc-800/70 rounded-2xl px-3 py-1.5">
+                                        <div className="bg-zinc-800/70 rounded-2xl px-3 py-1.5" style={highlightStyle(`reply-${reply.id}`)}>
                                           <span className="text-white text-[11px] font-medium">{reply.replierName}</span>
                                           <p className="text-gray-300 text-xs break-words">{reply.text}</p>
                                         </div>
@@ -929,7 +925,7 @@ const MemoizedActivityCard = React.memo(({
                             <div className="ml-9 mt-2 flex items-center gap-2">
                               <div className="w-6 h-6 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0">
                                 {userProfile?.photoURL ? (
-                                  <img src={userProfile.photoURL} alt="You" className="w-full h-full object-cover" />
+                                  <AvatarImage src={userProfile.photoURL} alt="You" />
                                 ) : (
                                   <span className="text-white text-[9px]">{userProfile?.displayName?.[0]?.toUpperCase() || '?'}</span>
                                 )}
@@ -996,7 +992,7 @@ const MemoizedActivityCard = React.memo(({
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0">
                   {userProfile?.photoURL ? (
-                    <img src={userProfile.photoURL} alt="You" className="w-full h-full object-cover" />
+                    <AvatarImage src={userProfile.photoURL} alt="You" />
                   ) : (
                     <span className="text-white text-[10px]">{userProfile?.displayName?.[0]?.toUpperCase() || '?'}</span>
                   )}
@@ -1037,14 +1033,40 @@ const MemoizedActivityCard = React.memo(({
   );
 });
 
-const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingRequestsCount = 0, onActiveViewChange, feedCacheRef, isPro = false, onPresentPaywall, onOpenChallenge, suppressPullToRefresh = false, challengesContent = null, challengesBadge = 0, viewRequest = null }) => {
+// Empty-state art for the Friends tab: an add button with open crew slots circling it, one in
+// each ring colour. The whole orbit layer spins as an HTML element, which WebKit handles more
+// reliably than transforms on inner SVG groups.
+// Empty Friends tab (Nov 2026 redesign): a row of open seats around a white +, no spinning.
+const CrewSeat = ({ size, alpha }) => (
+  <div className="flex items-center justify-center flex-shrink-0 rounded-full" style={{ width: size, height: size, backgroundColor: 'rgba(255,255,255,0.03)', boxShadow: `inset 0 0 0 1.5px rgba(255,255,255,${alpha})` }}>
+    <svg width={size * 0.5} height={size * 0.5} viewBox="0 0 24 24" fill="none" stroke={`rgba(255,255,255,${alpha})`} strokeWidth="1.8" strokeLinecap="round">
+      <circle cx="12" cy="8" r="4" /><path d="M5 21v-1a7 7 0 0 1 14 0v1" />
+    </svg>
+  </div>
+);
+const CrewOrbit = () => (
+  <div className="flex items-center justify-center gap-2.5" aria-hidden="true">
+    <CrewSeat size={40} alpha={0.14} />
+    <CrewSeat size={52} alpha={0.22} />
+    <div className="flex items-center justify-center rounded-full flex-shrink-0" style={{ width: 64, height: 64, backgroundColor: '#fff', boxShadow: '0 0 0 8px rgba(255,255,255,0.06)' }}>
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="2.8" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+    </div>
+    <CrewSeat size={52} alpha={0.22} />
+    <CrewSeat size={40} alpha={0.14} />
+  </div>
+);
+
+const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingRequestsCount = 0, onActiveViewChange, feedCacheRef, isPro = false, onPresentPaywall, onOpenChallenge, suppressPullToRefresh = false, challengesContent = null, challengesBadge = 0, viewRequest = null, postTarget = null, onPostTargetMissing }) => {
   // Hydrate from the parent-owned cache when re-mounting on tab switch — skips
   // the spinner and renders the previously-loaded feed instantly. The background
   // loadFeed call still runs to refresh data. Cache is uid-tagged so it isn't
-  // reused across user switches.
-  const cachedFeed = feedCacheRef?.current && feedCacheRef.current.uid === user?.uid
-    ? feedCacheRef.current
-    : null;
+  // reused across user switches. The first mount after a launch has no parent cache,
+  // so it falls back to the snapshot saved on this device.
+  const [cachedFeed] = useState(() => (
+    feedCacheRef?.current && feedCacheRef.current.uid === user?.uid
+      ? feedCacheRef.current
+      : readFeedSnapshot(user?.uid)
+  ));
   const [feedActivities, setFeedActivities] = useState(() => cachedFeed?.activities || []);
   const [activityReactions, setActivityReactions] = useState(() => cachedFeed?.reactions || {});
   const [activityComments, setActivityComments] = useState(() => cachedFeed?.comments || {});
@@ -1077,7 +1099,12 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [leaderboardSection, setLeaderboardSection] = useState('activity'); // 'activity', 'streak', or 'challenges'
   const [leaderboardCategory, setLeaderboardCategory] = useState('calories'); // Activity: 'calories', 'steps', 'workouts' | Streak: 'master', 'strength', 'cardio', 'stepsStreak', 'recovery' | Challenges: 'wins', 'currentStreak', 'longestStreak'
-  const [leaderboardTimeRange, setLeaderboardTimeRange] = useState('week'); // Activity: 'week', 'month', 'year', 'all' | Streak/Challenges: 'all'
+  // Each leaderboard section keeps its own range, so visiting Streaks (Year) or Challenges
+  // (All Time) no longer carries that range back into Activity, where a free user would land
+  // on a locked view. Free users always see Activity by week.
+  const [leaderboardRanges, setLeaderboardRanges] = useState({ activity: 'week', streak: 'year', challenges: 'all' });
+  const leaderboardTimeRange = (!isPro && leaderboardSection === 'activity') ? 'week' : leaderboardRanges[leaderboardSection];
+  const setLeaderboardTimeRange = (val) => setLeaderboardRanges(prev => ({ ...prev, [leaderboardSection]: val }));
   const [selectedFriend, setSelectedFriend] = useState(null); // For viewing friend profile
 
   // Enrich friend data when selected — pull from leaderboard cache or fetch from Firestore
@@ -1107,6 +1134,76 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     }
   }, [leaderboardData]);
   const [expandedComments, setExpandedComments] = useState({}); // Track which activities have expanded comments
+
+  // A tapped comment, reply or reaction notification asks for one post (postTarget):
+  // show the feed, open that post's comments, and scroll to them. A post that isn't
+  // among the ones the feed shows goes back to the parent to open some other way.
+  // freshFeedRef: set once loadFeed has replaced the cached feed, the point at which a
+  // post that's still missing really isn't in the feed.
+  const freshFeedRef = useRef(false);
+  const handledPostTargetRef = useRef(null);
+  // The comment inside that post to land on: { key, commentId, replyFrom, nonce }. The
+  // card scrolls to it once it's loaded.
+  const [postFocus, setPostFocus] = useState(null);
+  const postScrollTimerRef = useRef(null);
+  useEffect(() => () => clearTimeout(postScrollTimerRef.current), []);
+  useEffect(() => {
+    if (!postTarget?.nonce || handledPostTargetRef.current === postTarget.nonce) return undefined;
+    const key = `${postTarget.ownerUid}-${postTarget.activityId}`;
+    const activity = feedActivities.find((a) => a.id && `${a.friend.uid}-${a.id}` === key);
+    const markHandled = () => { handledPostTargetRef.current = postTarget.nonce; };
+
+    if (!activity) {
+      if (freshFeedRef.current) {
+        markHandled();
+        onPostTargetMissing?.(postTarget);
+        return undefined;
+      }
+      // Wait for loadFeed, but not forever if it fails.
+      const giveUp = setTimeout(() => {
+        if (handledPostTargetRef.current === postTarget.nonce) return;
+        markHandled();
+        onPostTargetMissing?.(postTarget);
+      }, 8000);
+      return () => clearTimeout(giveUp);
+    }
+
+    markHandled();
+    setActiveView('feed');
+    if (postTarget.openComments) setExpandedComments((prev) => ({ ...prev, [key]: true }));
+    if (postTarget.commentId) {
+      setPostFocus({ key, commentId: postTarget.commentId, replyFrom: postTarget.replyFrom || null, nonce: postTarget.nonce });
+    }
+    const scrollToPost = () => {
+      const attr = postTarget.openComments ? 'data-post-comments' : 'data-post-key';
+      const el = document.querySelector(`[${attr}="${key}"]`);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    };
+    // The notification is about something new, so don't trust a cached feed for this post.
+    Promise.all([
+      getReactions(activity.friend.uid, activity.id),
+      getComments(activity.friend.uid, activity.id),
+    ]).then(async ([reactions, comments]) => {
+      const replies = {};
+      await Promise.all(comments.map(async (comment) => {
+        const list = await getReplies(activity.friend.uid, activity.id, comment.id);
+        if (list.length > 0) replies[comment.id] = list;
+      }));
+      setActivityReactions((prev) => ({ ...prev, [key]: reactions }));
+      setActivityComments((prev) => ({ ...prev, [key]: comments }));
+      setCommentReplies((prev) => ({ ...prev, [key]: replies }));
+      // The new comment can make the section taller: settle on it again, unless the card
+      // is scrolling to the comment itself.
+      if (postTarget.openComments && !postTarget.commentId) {
+        clearTimeout(postScrollTimerRef.current);
+        postScrollTimerRef.current = setTimeout(scrollToPost, 350);
+      }
+    }).catch(() => {});
+    // After the comments finish expanding (a 300ms transition).
+    clearTimeout(postScrollTimerRef.current);
+    postScrollTimerRef.current = setTimeout(scrollToPost, 350);
+    return undefined;
+  }, [postTarget?.nonce, feedActivities]);
 
   // Local pull-to-refresh state (only for feed cards area)
   const [localPullDistance, setLocalPullDistance] = useState(0);
@@ -1138,6 +1235,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       replies: commentReplies,
       challengeMap: activityChallengeMap,
     };
+    if (!isDemoAccount(userProfile, user)) scheduleFeedSnapshotSave(feedCacheRef);
   }, [feedCacheRef, user?.uid, isLoading, feedActivities, activityReactions, activityComments, commentReplies, activityChallengeMap]);
 
   const reactionEmojis = ['💪', '🔥', '👏', '❤️'];
@@ -1461,11 +1559,16 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
 
       // Limit to most recent 50 activities
       const limitedActivities = flatActivities.slice(0, 50);
+      freshFeedRef.current = true;
       setFeedActivities(limitedActivities);
+      // The posts are what the spinner was waiting for. Reactions, comments and challenge pills
+      // fill in on the cards as they arrive.
+      setIsLoading(false);
 
       // Tag activities that fulfilled a challenge (for the "Completed challenge" pill).
       // One call for the challenges the post authors in this feed (self + friends) won.
-      try {
+      // Runs alongside the reactions fetch below instead of ahead of it.
+      const challengeTagging = (async () => { try {
         const winnerUids = Array.from(new Set([
           user?.uid,
           ...friendList.map(f => f.uid),
@@ -1511,7 +1614,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         }
       } catch (err) {
         console.error('[ActivityFeed] challenge tagging failed:', err);
-      }
+      } })();
 
       // Only fetch reactions/comments for the first batch of visible activities
       // This reduces initial Firestore calls from 100+ to ~20
@@ -1550,6 +1653,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       setActivityReactions(reactionsMap);
       setActivityComments(commentsMap);
       setCommentReplies(repliesMap);
+      await challengeTagging;
 
       // Fetch remaining activities' reactions/comments in the background
       if (limitedActivities.length > INITIAL_FETCH_COUNT) {
@@ -1593,7 +1697,9 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     setIsLoading(false);
     setIsRefreshing(false);
     setLocalIsRefreshing(false);
-  }, [friends, user, userProfile]);
+    // Only the profile fields used above: any other profile save would otherwise refetch the
+    // whole feed.
+  }, [friends, user?.uid, user?.email, userProfile?.username, userProfile?.displayName, userProfile?.photoURL, userProfile?.demoMode]);
 
   // Keep ref in sync with state for use in event handlers
   useEffect(() => {
@@ -2143,12 +2249,11 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
   };
 
   const LeaderboardRow = ({ userData, rank, category, timeRange, maxValue, onTap }) => {
-    const getRankStyle = (rank) => {
-      if (rank === 1) return 'bg-gradient-to-r from-yellow-400 to-yellow-600 text-black';
-      if (rank === 2) return 'bg-gradient-to-r from-gray-300 to-gray-500 text-black';
-      if (rank === 3) return 'bg-gradient-to-r from-amber-600 to-amber-800 text-white';
-      return 'bg-zinc-700 text-white';
-    };
+    // Gold, silver and bronze rank badges; the rest neutral (Nov 2026 redesign)
+    const rankBadge = rank === 1 ? { backgroundColor: '#FFD700', color: '#000' }
+      : rank === 2 ? { backgroundColor: '#D7D7DE', color: '#000' }
+      : rank === 3 ? { backgroundColor: '#D08A4A', color: '#000' }
+      : { backgroundColor: 'rgba(255,255,255,0.08)', color: '#ccc' };
 
     const getValue = (tr = timeRange) => {
       const v = userData.volume || {};
@@ -2180,15 +2285,16 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       return val;
     };
 
-    const getUnit = () => {
+    const getUnit = (n) => {
+      const one = n === 1;
       switch (category) {
         case 'calories': return 'cal';
-        case 'steps': return 'steps';
-        case 'workouts': return 'workouts';
-        case 'strengthSessions': return 'sessions';
-        case 'cardioSessions': return 'sessions';
-        case 'recoverySessions': return 'sessions';
-        case 'wins': return 'wins';
+        case 'steps': return one ? 'step' : 'steps';
+        case 'workouts': return one ? 'workout' : 'workouts';
+        case 'strengthSessions': return one ? 'session' : 'sessions';
+        case 'cardioSessions': return one ? 'session' : 'sessions';
+        case 'recoverySessions': return one ? 'session' : 'sessions';
+        case 'wins': return one ? 'win' : 'wins';
         case 'currentStreak': return 'streak';
         case 'longestStreak': return 'longest';
         default: return 'streak';
@@ -2205,26 +2311,13 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       }
     };
 
-    // Memoize trend calculation to prevent changes on every render
-    // Uses a stable hash based on userId + category + timeRange
+    // Trend vs the previous period, from real activity stats only. Streaks and
+    // challenges have no previous-period value to compare, so they show no arrow
+    // (these used to be faked from a hash of the user ID).
     const { trend, delta, percentChange } = useMemo(() => {
       const activityCategories = ['calories', 'steps', 'workouts', 'strengthSessions', 'cardioSessions', 'recoverySessions'];
       if (!activityCategories.includes(category)) {
-        // For streaks, use a stable pseudo-random based on user ID + category + timeRange
-        // This ensures the same user always gets the same trend for a given category/timeRange
-        const seed = `${userData.uid || userData.username}-${category}-${timeRange}`;
-        let hash = 0;
-        for (let i = 0; i < seed.length; i++) {
-          const char = seed.charCodeAt(i);
-          hash = ((hash << 5) - hash) + char;
-          hash = hash & hash; // Convert to 32bit integer
-        }
-        const pseudoRandom = Math.abs(hash % 100) / 100;
-        return {
-          trend: pseudoRandom > 0.6 ? 'up' : pseudoRandom < 0.3 ? 'down' : 'same',
-          delta: null,
-          percentChange: null
-        };
+        return { trend: 'same', delta: null, percentChange: null };
       }
 
       const currentValue = getValue();
@@ -2268,73 +2361,95 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         case 'stepsStreak': return '#BF5AF2';
         case 'calories': return '#FF6B6B';
         case 'steps': return '#BF5AF2';
-        case 'workouts': return '#FFD60A';
+        // White: Workouts means all sessions; its blocks carry the category colours
+        case 'workouts': return '#FFFFFF';
+        case 'wins': return '#FFD60A';
+        case 'currentStreak': return '#FF9500';
         default: return '#FFD700';
       }
     };
 
     const barColor = getCategoryColor();
+    // Session counts draw as blocks, one per session (Home's language); a week's worth fits.
+    // Steps, calories, streaks and wins keep a bar, as does a long range with big counts.
+    const isSessionBoard = ['strengthSessions', 'cardioSessions', 'recoverySessions', 'workouts'].includes(category);
+    const useBlocks = isSessionBoard && maxValue > 0 && maxValue <= LB_MAX_BLOCKS;
+    // Workouts (strength + cardio, a circuit once): each workout a block in its category's
+    // colour, half and half for a circuit.
+    const workoutBlocks = () => {
+      const vol = userData.volume || {};
+      const str = vol.strengthSessions?.[timeRange] || 0;
+      const car = vol.cardioSessions?.[timeRange] || 0;
+      const circuits = Math.max(0, str + car - value);
+      return [
+        ...Array(Math.max(0, str - circuits)).fill('#00FF94'),
+        ...Array(circuits).fill('linear-gradient(90deg, #00FF94 0 50%, #FF9500 50% 100%)'),
+        ...Array(Math.max(0, car - circuits)).fill('#FF9500'),
+      ].slice(0, value);
+    };
 
     return (
       <TouchButton
         onClick={() => !userData.isCurrentUser && onTap && onTap(userData)}
         disabled={userData.isCurrentUser}
-        className={`w-full p-3 rounded-xl mb-2 relative text-left transition-all duration-150 ${
-          userData.isCurrentUser ? 'bg-zinc-800 ring-1 ring-green-500/30' : 'bg-zinc-900 hover:bg-zinc-800/80'
-        }`}
+        className="w-full px-3.5 py-3 rounded-2xl mb-2 relative text-left transition-all duration-150"
+        style={userData.isCurrentUser
+          ? { backgroundColor: hexAlpha(barColor, 0.1), boxShadow: `inset 0 0 0 1px ${hexAlpha(barColor, 0.4)}` }
+          : { backgroundColor: 'rgba(255,255,255,0.04)' }}
       >
         {/* Content row — full width, all info readable regardless of bar width */}
         <div className="flex items-center gap-3">
-          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${getRankStyle(rank)}`}>
-            {rank === 1 ? '👑' : rank}
+          <div className="w-7 h-7 rounded-full flex items-center justify-center text-[13px] font-extrabold flex-shrink-0" style={rankBadge}>
+            {rank === 1 ? <span className="text-[14px]">👑</span> : rank}
           </div>
 
           <div className="flex-shrink-0">
-            <ProfilePhoto photoURL={userData.photoURL} displayName={userData.displayName} size={40} />
+            <ProfilePhoto photoURL={userData.photoURL} displayName={userData.displayName} size={38} />
           </div>
 
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1">
-              <p className={`font-medium truncate ${userData.isCurrentUser ? 'text-green-400' : 'text-white'}`}>
+              <p className="text-white text-[15px] font-semibold truncate">
                 {userData.isCurrentUser ? 'You' : (userData.displayName || userData.username)}
               </p>
               {FRIEND_STATUS[userData.status] && (
                 <span className="text-[13px] flex-shrink-0" aria-label={FRIEND_STATUS[userData.status].label}>{FRIEND_STATUS[userData.status].emoji}</span>
               )}
-              {trend === 'up' && <span className="text-green-400 text-xs">↑</span>}
-              {trend === 'down' && <span className="text-red-400 text-xs">↓</span>}
             </div>
             {!userData.isCurrentUser && (
-              <p className="text-gray-500 text-xs truncate">@{userData.username}</p>
+              <p className="text-[12px] truncate" style={{ color: '#777' }}>@{userData.username}</p>
             )}
           </div>
 
           <div className="text-right">
-            <p className="text-white font-bold">{formatValue(value)}</p>
-            <div className="flex items-center justify-end gap-1">
-              <p className="text-gray-500 text-xs">{getUnit()}</p>
-              {delta !== null && delta !== 0 && (category === 'calories' || category === 'steps') && (
-                <span className={`text-xs ${delta > 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {delta > 0 ? '+' : ''}{percentChange}%
-                </span>
-              )}
-            </div>
+            <p className="text-white" style={NUM.value}>{formatValue(value)}</p>
+            <p className="text-[11.5px] mt-1" style={{ color: '#777' }}>
+              {getUnit(value)}
+              {delta !== null && delta !== 0 && (category === 'calories' || category === 'steps') && <> · {delta > 0 ? '+' : '−'}{Math.abs(percentChange)}%</>}
+            </p>
           </div>
         </div>
 
-        {/* Chart bar — thin variable-width stripe at the bottom of the row.
-            No track behind it; empty space stays empty so 0-value rows show no bar.
-            Width is strictly proportional to the leader's value. */}
-        <div className="mt-3 h-1 relative">
-          <div
-            className="absolute left-0 top-0 h-full rounded-full"
-            style={{
-              width: `${progressPercent}%`,
-              backgroundColor: barColor,
-              transition: 'width 500ms ease-out',
-            }}
-          />
-        </div>
+        {useBlocks ? (
+          <div className="flex mt-2.5" style={{ gap: 3 }}>
+            {(category === 'workouts' ? workoutBlocks() : Array(value).fill(barColor)).map((bg, i) => (
+              <i key={i} className="flex-1 block" style={{ height: 7, borderRadius: 3.5, background: bg }} />
+            ))}
+            {Array.from({ length: Math.max(0, maxValue - value) }, (_, i) => <i key={`e${i}`} className="flex-1 block" style={{ height: 7 }} />)}
+          </div>
+        ) : (
+          // Chart bar on a faint track of its colour; width proportional to the leader's value.
+          <div className="mt-2.5 h-1 relative rounded-full" style={{ backgroundColor: hexAlpha(barColor, 0.15) }}>
+            <div
+              className="absolute left-0 top-0 h-full rounded-full"
+              style={{
+                width: `${progressPercent > 0 ? Math.max(2, progressPercent) : 0}%`,
+                backgroundColor: barColor,
+                transition: 'width 500ms ease-out',
+              }}
+            />
+          </div>
+        )}
       </TouchButton>
     );
   };
@@ -2381,6 +2496,17 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       userSelect: 'none',
     };
 
+    const podiumColor = LB_COLORS[category] || '#FFD700';
+    // Steps in the ranked category's colour (Nov 2026 redesign), fading down
+    const podiumFill = (place) => place === 1
+      ? `linear-gradient(180deg, ${podiumColor}, ${hexAlpha(podiumColor, 0.18)})`
+      : place === 2
+        ? `linear-gradient(180deg, ${hexAlpha(podiumColor, 0.7)}, ${hexAlpha(podiumColor, 0.12)})`
+        : `linear-gradient(180deg, ${hexAlpha(podiumColor, 0.5)}, ${hexAlpha(podiumColor, 0.08)})`;
+    // Dark place numbers on a light podium (white, gold), light ones on the rest
+    const lightPodium = ['#FFFFFF', '#FFD700', '#FFD60A'].includes(podiumColor);
+    const MEDALS = { 1: ['#FFD700', '#000'], 2: ['#D7D7DE', '#000'], 3: ['#D08A4A', '#000'] };
+
     const PodiumSpot = ({ userData, place, height }) => {
       // Use native DOM event listeners for tap detection - allows window capture to get events first
       const photoRef = useRef(null);
@@ -2426,39 +2552,26 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
         >
           {/* Crown for 1st place */}
           {place === 1 && (
-            <div className="text-2xl mb-1 animate-bounce" style={touchPassthroughStyle}>👑</div>
+            <div className="mb-1 animate-bounce" style={{ ...touchPassthroughStyle, fontSize: 26, lineHeight: 1 }}>👑</div>
           )}
 
           {/* Profile photo with ring - tap detected via native DOM events to not block pull-to-refresh */}
           <div
             ref={photoRef}
-            className={`relative mb-2 ${place === 1 ? 'scale-110' : ''}`}
+            className="relative mb-2"
             style={{ ...touchPassthroughStyle, cursor: userData.isCurrentUser ? 'default' : 'pointer' }}
           >
-            <div
-              className={`rounded-full p-0.5 ${
-                place === 1 ? 'bg-gradient-to-r from-yellow-400 to-yellow-600' :
-                place === 2 ? 'bg-gradient-to-r from-gray-300 to-gray-500' :
-                'bg-gradient-to-r from-amber-600 to-amber-800'
-              }`}
-              style={touchPassthroughStyle}
-            >
-              <div className="rounded-full overflow-hidden bg-black" style={touchPassthroughStyle}>
-                <ProfilePhoto
-                  photoURL={userData.photoURL}
-                  displayName={userData.displayName}
-                  size={place === 1 ? 56 : 48}
-                />
-              </div>
+            <div className="rounded-full overflow-hidden bg-black" style={touchPassthroughStyle}>
+              <ProfilePhoto
+                photoURL={userData.photoURL}
+                displayName={userData.displayName}
+                size={place === 1 ? 62 : 54}
+              />
             </div>
-            {/* Place badge */}
+            {/* Place badge: gold, silver, bronze */}
             <div
-              className={`absolute -bottom-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                place === 1 ? 'bg-yellow-500 text-black' :
-                place === 2 ? 'bg-gray-400 text-black' :
-                'bg-amber-700 text-white'
-              }`}
-              style={{ ...touchPassthroughStyle, pointerEvents: 'none' }}
+              className="absolute rounded-full flex items-center justify-center text-[12px] font-extrabold"
+              style={{ ...touchPassthroughStyle, pointerEvents: 'none', right: -4, bottom: -4, width: 22, height: 22, backgroundColor: MEDALS[place][0], color: MEDALS[place][1], boxShadow: '0 0 0 2px #000' }}
             >
               {place}
             </div>
@@ -2466,7 +2579,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
 
           {/* Name, with the 🌴 / 🩹 / 🛡️ status kept outside the truncation */}
           <div className="flex items-center gap-0.5 max-w-[92px]" style={touchPassthroughStyle}>
-            <p className={`text-xs font-medium truncate min-w-0 ${userData.isCurrentUser ? 'text-green-400' : 'text-white'}`} style={touchPassthroughStyle}>
+            <p className="text-[14px] font-semibold truncate min-w-0 text-white" style={touchPassthroughStyle}>
               {userData.isCurrentUser ? 'You' : (userData.displayName?.split(' ')[0] || userData.username)}
             </p>
             {FRIEND_STATUS[userData.status] && (
@@ -2475,18 +2588,14 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           </div>
 
           {/* Score */}
-          <p className="text-white font-bold text-sm" style={touchPassthroughStyle}>{formatValue(getValue(userData))}</p>
+          <p className="text-white" style={{ ...touchPassthroughStyle, ...NUM.value, marginTop: 2 }}>{formatValue(getValue(userData))}</p>
 
-          {/* Podium bar */}
+          {/* Podium step, in the ranked category's colour */}
           <div
-            className={`w-20 rounded-t-lg mt-2 flex items-end justify-center ${
-              place === 1 ? 'bg-gradient-to-t from-yellow-600 to-yellow-400' :
-              place === 2 ? 'bg-gradient-to-t from-gray-500 to-gray-300' :
-              'bg-gradient-to-t from-amber-800 to-amber-600'
-            }`}
-            style={{ ...touchPassthroughStyle, height: `${height}px` }}
+            className="w-[104px] mt-2 flex items-end justify-center"
+            style={{ ...touchPassthroughStyle, height: `${height}px`, borderRadius: '14px 14px 0 0', background: podiumFill(place) }}
           >
-            <span className="text-2xl font-bold text-white/30 mb-2" style={touchPassthroughStyle}>{place}</span>
+            <span className="mb-1.5" style={{ ...touchPassthroughStyle, fontSize: 34, fontWeight: 800, lineHeight: 1, color: lightPodium ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.6)' }}>{place}</span>
           </div>
         </div>
       );
@@ -2494,10 +2603,10 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
 
     // Reorder for podium display: 2nd, 1st, 3rd
     return (
-      <div className="flex items-end justify-center gap-2 mb-6 pt-8" style={touchPassthroughStyle}>
-        <PodiumSpot userData={topThree[1]} place={2} height={60} />
-        <PodiumSpot userData={topThree[0]} place={1} height={80} />
-        <PodiumSpot userData={topThree[2]} place={3} height={40} />
+      <div className="flex items-end justify-center gap-2.5 mb-5 pt-6" style={touchPassthroughStyle}>
+        <PodiumSpot userData={topThree[1]} place={2} height={86} />
+        <PodiumSpot userData={topThree[0]} place={1} height={118} />
+        <PodiumSpot userData={topThree[2]} place={3} height={66} />
       </div>
     );
   };
@@ -2512,13 +2621,13 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       <FriendProfileCard
         friend={friend}
         onClose={onClose}
+        distanceUnit={resolveUnit(userProfile)}
         actions={(
           <div className="space-y-2">
             {isFriendOfMine && onOpenChallenge && (
               <button
                 onClick={() => { onOpenChallenge(friend); onClose?.(); }}
-                className="w-full py-3 rounded-full font-semibold transition-all duration-150 active:scale-95"
-                style={{ backgroundColor: '#FFD60A', color: 'black' }}
+                className="w-full py-3 rounded-full font-semibold transition-all duration-150 active:scale-95 bg-white text-black active:bg-[#e5e5e5]"
               >
                 ⚡ Challenge {friend?.displayName?.split(' ')[0] || friend?.username}
               </button>
@@ -2540,8 +2649,8 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     <div className="px-4 pt-2 pb-4" style={{ touchAction: 'pan-y' }}>
       <div className="flex items-center justify-between" style={{ touchAction: 'pan-y' }}>
         <div>
-          <h1 className="text-xl font-bold text-white">Friends</h1>
-          <p className="text-xs text-gray-500">
+          <h1 className="text-white" style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.6px', lineHeight: 1.1 }}>Friends</h1>
+          <p className="text-[14px] mt-[3px]" style={{ color: '#777' }}>
             {friends?.length || 0} friend{friends?.length !== 1 ? 's' : ''}
           </p>
         </div>
@@ -2550,13 +2659,13 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             triggerHaptic(ImpactStyle.Medium);
             onOpenFriends();
           }}
-          className="flex items-center gap-2 px-4 py-2 rounded-full transition-all duration-150 relative"
-          style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+          className="flex items-center gap-2 px-4 py-[9px] rounded-full transition-all duration-150 relative"
+          style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
         >
-          <svg className="w-4 h-4" fill="none" stroke="white" viewBox="0 0 24 24" strokeWidth={2}>
+          <svg className="w-[18px] h-[18px]" fill="none" stroke="white" viewBox="0 0 24 24" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0ZM3 19.235v-.11a6.375 6.375 0 0 1 12.75 0v.109A12.318 12.318 0 0 1 9.374 21c-2.331 0-4.512-.645-6.374-1.766Z" />
           </svg>
-          <span className="text-sm font-medium text-white">Add</span>
+          <span className="text-[16px] font-semibold text-white">Add</span>
           {pendingRequestsCount > 0 && (
             <span
               className="absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold text-white"
@@ -2603,19 +2712,19 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       <div>
         <FriendsHeaderTop />
         <SegmentedControl activeView={activeView} setActiveView={setActiveView} challengesBadge={challengesBadge} />
-        <div className="text-center py-12 px-6">
-          <div className="text-5xl mb-4">👥</div>
-          <p className="text-white font-medium mb-2">Find your workout buddies</p>
-          <p className="text-gray-500 text-sm mb-6">Add friends to see their workouts and cheer them on!</p>
+        <div className="text-center px-6" style={{ paddingTop: 56, paddingBottom: 48 }}>
+          <div className="flex justify-center mt-1.5 mb-[22px]"><CrewOrbit /></div>
+          <p className="text-white mb-2" style={{ fontSize: 19, fontWeight: 700, letterSpacing: '-0.3px' }}>Find your workout buddies</p>
+          <p className="text-[14px] mb-6 mx-auto leading-snug" style={{ color: '#9a9a9a', maxWidth: 300 }}>Add friends to see their workouts and cheer them on!</p>
           <TouchButton
             onClick={() => {
               triggerHaptic(ImpactStyle.Medium);
               onOpenFriends();
             }}
-            className="px-6 py-3 rounded-full font-semibold text-black transition-all duration-150"
-            style={{ backgroundColor: '#00FF94' }}
+            className="inline-block px-7 py-[13px] rounded-full font-bold text-[16px] text-black transition-all duration-150"
+            style={{ backgroundColor: '#fff' }}
           >
-            Add Friends
+            Add friends
           </TouchButton>
         </div>
       </div>
@@ -2668,8 +2777,9 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     // Leading mark for a leaderboard label. currentColor so it tracks whatever the surrounding
     // text is doing (these render on both the muted "… Rankings" line and inside selected pills,
     // which flip to black text).
+    // The rankings line's icon in the ranked category's colour; the words stay grey (Nov 2026)
     const mark = (cat) => (
-      <CategoryIcon category={cat} size={12} color="currentColor" className="inline align-[-2px] mr-1" />
+      <CategoryIcon category={cat} size={14} color={LB_COLORS[leaderboardCategory] || 'currentColor'} className="inline align-[-3px] mr-2" />
     );
 
     const getCategoryLabel = () => {
@@ -2735,13 +2845,14 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                   }
                   setLeaderboardTimeRange(val);
                 }}
-                className="px-2.5 py-1.5 rounded-lg bg-zinc-800/50 border border-white/10 text-white text-xs appearance-none cursor-pointer shrink-0"
+                className="px-3 py-[7px] rounded-[10px] bg-transparent text-white text-[14px] font-semibold appearance-none cursor-pointer shrink-0"
                 style={{
+                  boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.14)',
                   backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23999'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
                   backgroundRepeat: 'no-repeat',
-                  backgroundPosition: 'right 6px center',
-                  backgroundSize: '12px',
-                  paddingRight: '24px'
+                  backgroundPosition: 'right 9px center',
+                  backgroundSize: '14px',
+                  paddingRight: '30px'
                 }}
               >
                 {leaderboardSection === 'activity' ? (
@@ -2765,11 +2876,11 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           </div>
 
           {/* Section Toggle - Activity / Streaks / Challenges */}
-          <div className="relative flex p-1 rounded-lg mb-3 max-w-[320px] mx-auto" style={{ backgroundColor: 'rgba(255,255,255,0.05)', touchAction: 'pan-y' }}>
+          <div className="relative flex p-1 rounded-xl mb-3 mx-[22px]" style={{ backgroundColor: 'rgba(255,255,255,0.05)', touchAction: 'pan-y' }}>
             <div
-              className="absolute top-1 bottom-1 rounded-md transition-all duration-300 ease-out"
+              className="absolute top-1 bottom-1 rounded-[9px] transition-all duration-300 ease-out"
               style={{
-                backgroundColor: leaderboardSection === 'activity' ? '#00FF94' : leaderboardSection === 'streak' ? '#FFD700' : '#FFD60A',
+                backgroundColor: '#fff',
                 width: 'calc((100% - 8px) / 3)',
                 left: leaderboardSection === 'activity'
                   ? '4px'
@@ -2792,24 +2903,17 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                 onClick={() => {
                   setLeaderboardSection(section.key);
                   // Reset to appropriate defaults when switching
+                  // (each section remembers its own time range — see leaderboardRanges)
                   if (section.key === 'activity') {
                     setLeaderboardCategory('calories');
-                    if (leaderboardTimeRange !== 'week' && leaderboardTimeRange !== 'month' && leaderboardTimeRange !== 'year' && leaderboardTimeRange !== 'all') {
-                      setLeaderboardTimeRange('week');
-                    }
                   } else if (section.key === 'streak') {
                     setLeaderboardCategory('master');
-                    if (leaderboardTimeRange === 'week' || leaderboardTimeRange === 'month') {
-                      setLeaderboardTimeRange('year');
-                    }
                   } else {
-                    // challenges — only "all time" makes sense
                     setLeaderboardCategory('wins');
-                    setLeaderboardTimeRange('all');
                   }
                 }}
-                className="flex-1 py-1.5 rounded-md text-xs font-semibold transition-colors duration-200 relative z-10 text-center"
-                style={{ color: leaderboardSection === section.key ? 'black' : 'rgba(255,255,255,0.5)' }}
+                className="flex-1 py-[7px] rounded-[9px] text-[14px] font-semibold transition-colors duration-200 relative z-10 text-center"
+                style={{ color: leaderboardSection === section.key ? 'black' : '#888' }}
               >
                 {section.label}
               </TouchButton>
@@ -2817,12 +2921,12 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
           </div>
 
           {/* Category Pills */}
-          <div className="flex gap-1.5 overflow-x-auto no-scrollbar mb-4 -mx-1 px-1" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <div className="flex gap-2 overflow-x-auto no-scrollbar mb-3.5 -mx-1 px-1" style={{ WebkitOverflowScrolling: 'touch' }}>
             {leaderboardSection === 'activity' ? (
               [
                 { key: 'calories', cat: 'calories', label: 'Calories', color: '#FF6B6B' },
                 { key: 'steps', cat: 'steps', label: 'Steps', color: '#BF5AF2' },
-                { key: 'workouts', cat: 'workouts', label: 'Workouts', color: '#FFD60A' },
+                { key: 'workouts', cat: 'workouts', label: 'Workouts', color: '#FFFFFF' },
                 { key: 'strengthSessions', cat: 'lifts', label: 'Strength', color: '#00FF94' },
                 { key: 'cardioSessions', cat: 'cardio', label: 'Cardio', color: '#FF9500' },
                 { key: 'recoverySessions', cat: 'recovery', label: 'Recovery', color: '#00D1FF' }
@@ -2834,7 +2938,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                   color={cat.color}
                   textColor="black"
                 >
-                  {cat.cat && <CategoryIcon category={cat.cat} size={12} color={leaderboardCategory === cat.key ? 'currentColor' : cat.color} className="inline align-[-2px] mr-1" />}{cat.label}
+                  {cat.cat && <CategoryIcon category={cat.cat} size={15} color={cat.color} className="inline align-[-3px] mr-1.5" />}{cat.label}
                 </ScrollablePill>
               ))
             ) : leaderboardSection === 'challenges' ? (
@@ -2850,7 +2954,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                   color={cat.color}
                   textColor="black"
                 >
-                  {cat.cat && <CategoryIcon category={cat.cat} size={12} color={leaderboardCategory === cat.key ? 'currentColor' : cat.color} className="inline align-[-2px] mr-1" />}{cat.label}
+                  {cat.cat && <CategoryIcon category={cat.cat} size={15} color={cat.color} className="inline align-[-3px] mr-1.5" />}{cat.label}
                 </ScrollablePill>
               ))
             ) : (
@@ -2870,7 +2974,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
                   color={cat.color}
                   textColor={cat.key === 'master' ? 'black' : 'white'}
                 >
-                  {cat.cat && <CategoryIcon category={cat.cat} size={12} color={leaderboardCategory === cat.key ? 'currentColor' : cat.color} className="inline align-[-2px] mr-1" />}{cat.label}
+                  {cat.cat && <CategoryIcon category={cat.cat} size={15} color={cat.color} className="inline align-[-3px] mr-1.5" />}{cat.label}
                   {cat.bonus && <span className="ml-1 text-[9px] font-bold uppercase tracking-wide opacity-70">bonus</span>}
                 </ScrollablePill>
               ))
@@ -2889,42 +2993,36 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
             </div>
           ) : (
             <>
-              {/* Your Position Card (if not in top 3) */}
-              {currentUserRank > 3 && (
-                <div className="bg-gradient-to-r from-green-900/30 to-green-800/20 rounded-xl p-3 mb-2 border border-green-500/20" style={{ touchAction: 'pan-y' }}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center">
-                        <span className="text-green-400 font-bold">#{currentUserRank}</span>
-                      </div>
-                      <div>
-                        <p className="text-green-400 font-medium">Your Position</p>
-                        <p className="text-gray-400 text-xs">Keep going to climb the ranks!</p>
-                      </div>
+              {/* Your Position Card (if not in top 3): your rank is the screen's one big number, the
+                  card tinted in the ranked category's colour (Nov 2026 redesign) */}
+              {currentUserRank > 3 && (() => {
+                const me = sortedLeaderboard.find(u => u.isCurrentUser);
+                const val = getSortValue(me);
+                const one = val === 1;
+                const lbColor = LB_COLORS[leaderboardCategory] || '#FFD700';
+                const shown = (leaderboardSection === 'activity' && (leaderboardCategory === 'calories' || leaderboardCategory === 'steps'))
+                  ? (val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val)
+                  : val;
+                const unit = leaderboardSection === 'activity'
+                  ? (leaderboardCategory === 'calories' ? 'cal' :
+                     leaderboardCategory === 'steps' ? (one ? 'step' : 'steps') :
+                     leaderboardCategory === 'workouts' ? (one ? 'workout' : 'workouts') : (one ? 'session' : 'sessions'))
+                  : leaderboardSection === 'challenges'
+                    ? (leaderboardCategory === 'wins' ? (one ? 'win' : 'wins') : 'streak')
+                    : 'streak';
+                return (
+                  <div className="flex items-center justify-between mb-2" style={{ padding: '16px 18px', borderRadius: 22, backgroundColor: hexAlpha(lbColor, 0.12), boxShadow: `inset 0 0 0 1px ${hexAlpha(lbColor, 0.35)}`, touchAction: 'pan-y' }}>
+                    <div>
+                      <div className="text-white" style={{ fontSize: 36, fontWeight: 800, letterSpacing: '-1.4px', lineHeight: 1 }}>#{currentUserRank}</div>
+                      <div className="uppercase" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', color: '#8a8a8a', marginTop: 7 }}>Your position</div>
                     </div>
                     <div className="text-right">
-                      <p className="text-white font-bold">
-                        {(() => {
-                          const userData = sortedLeaderboard.find(u => u.isCurrentUser);
-                          const val = getSortValue(userData);
-                          return (leaderboardSection === 'activity' && (leaderboardCategory === 'calories' || leaderboardCategory === 'steps'))
-                            ? (val >= 1000 ? `${(val / 1000).toFixed(1)}k` : val)
-                            : val;
-                        })()}
-                      </p>
-                      <p className="text-gray-500 text-xs">
-                        {leaderboardSection === 'activity'
-                          ? (leaderboardCategory === 'calories' ? 'cal' :
-                             leaderboardCategory === 'steps' ? 'steps' :
-                             leaderboardCategory === 'workouts' ? 'workouts' : 'sessions')
-                          : leaderboardSection === 'challenges'
-                            ? (leaderboardCategory === 'wins' ? 'wins' : 'streak')
-                            : 'streak'}
-                      </p>
+                      <div className="text-white" style={NUM.value}>{shown}</div>
+                      <div className="text-[12px] mt-1" style={{ color: '#777' }}>{unit} · keep climbing</div>
                     </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Podium for top 3 */}
               {topThree.length >= 3 && (
@@ -2937,9 +3035,19 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               )}
 
               {/* Rankings label */}
-              <div className="mb-3">
-                <p className="text-gray-500 text-xs uppercase tracking-wide">{getCategoryLabel()} Rankings</p>
+              <div className="mt-1 mb-2.5 flex items-center gap-2">
+                <p className="uppercase" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', color: '#8a8a8a' }}>
+                  {getCategoryLabel()} rankings
+                  {leaderboardSection === 'activity' && <> · {{ week: 'this week', month: 'this month', year: 'this year', all: 'all time' }[leaderboardTimeRange] || ''}</>}
+                </p>
               </div>
+              {leaderboardCategory === 'workouts' && maxValue > 0 && maxValue <= LB_MAX_BLOCKS && (
+                <div className="flex gap-3.5 -mt-1 mb-3 text-[12px]" style={{ color: '#8a8a8a' }}>
+                  {[['#00FF94', 'Strength'], ['#FF9500', 'Cardio'], ['linear-gradient(90deg, #00FF94 0 50%, #FF9500 50% 100%)', 'Circuit']].map(([bg, l]) => (
+                    <span key={l} className="flex items-center"><i className="inline-block mr-1.5" style={{ width: 10, height: 10, borderRadius: 3, background: bg }} />{l}</span>
+                  ))}
+                </div>
+              )}
 
               {/* Top 3 in list form (compact) */}
               {topThree.map((userData, index) => (
@@ -2968,234 +3076,71 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               ))}
 
               {/* Category Leaders - Volume Stats */}
+              {(() => {
+                const r = leaderboardTimeRange;
+                const u = resolveUnit(userProfile);
+                const vol = (key) => (user) => user.volume?.[key]?.[r] || 0;
+                const dist = (v) => milesToDisplay(v, u).toFixed(0);
+                const distTitle = `Most ${u === 'km' ? 'KMs' : 'Miles'}`;
+                const ORANGE = '#FF9500';
+                const GREEN = '#00FF94';
+                const CYAN = '#00D1FF';
+                const tile = (props) => <CategoryLeaderTile users={sortedLeaderboard} {...props} />;
+                // Group labels: caps with the category icon (Nov 2026 redesign)
+                const groupLabel = (icon, text) => (
+                  <div className="flex items-center gap-1.5 uppercase" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', color: '#aaa', marginBottom: 9 }}>{icon}{text}</div>
+                );
+                return (
               <div className="mt-8">
                 <div className="mb-4">
                   <div className="flex items-center gap-2">
-                    <SectionIcon type="trophy" />
+                    <SectionIcon type="trophy" color="#fff" />
                     <span className="text-[20px] font-semibold text-white" style={{ letterSpacing: '-0.3px' }}>Category Leaders</span>
                   </div>
-                  <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Top performers by volume this {leaderboardTimeRange === 'all' ? 'all time' : leaderboardTimeRange}</p>
+                  <p className="text-[13px] -mt-1 pl-[30px]" style={{ color: '#777' }}>Top performers by volume {r === 'all' ? 'of all time' : `this ${r}`}</p>
                 </div>
 
                 {/* Running Leaders */}
                 <div className="mb-4">
-                  <div className="text-xs text-gray-400 uppercase tracking-wide mb-2"><ActivityIcon type="Running" size={12} className="inline align-[-2px] mr-1" />Running</div>
+                  {groupLabel(<ActivityIcon type="Running" size={13} color={ORANGE} />, 'Running')}
                   <div className="grid grid-cols-3 gap-2">
-                    {/* Most Runs */}
-                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(255, 149, 0, 0.1)' }}>
-                      <div className="text-[10px] text-gray-500 uppercase mb-1">Most Runs</div>
-                      {[...sortedLeaderboard]
-                        .sort((a, b) => (b.volume?.runs?.[leaderboardTimeRange] || 0) - (a.volume?.runs?.[leaderboardTimeRange] || 0))
-                        .slice(0, 3)
-                        .map((user, i) => (
-                          <div key={user.uid} className="flex items-center gap-1.5 mb-1">
-                            <span className="text-[10px] text-gray-500">{i + 1}.</span>
-                            <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
-                            <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
-                            <span className="text-[11px] font-bold" style={{ color: '#FF9500' }}>{user.volume?.runs?.[leaderboardTimeRange] || 0}</span>
-                          </div>
-                        ))}
-                    </div>
-
-                    {/* Most Distance */}
-                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(255, 149, 0, 0.1)' }}>
-                      {(() => {
-                        const u = resolveUnit(userProfile);
-                        return (
-                          <>
-                            <div className="text-[10px] text-gray-500 uppercase mb-1">Most {u === 'km' ? 'KMs' : 'Miles'}</div>
-                            {[...sortedLeaderboard]
-                              .sort((a, b) => (b.volume?.miles?.[leaderboardTimeRange] || 0) - (a.volume?.miles?.[leaderboardTimeRange] || 0))
-                              .slice(0, 3)
-                              .map((user, i) => (
-                                <div key={user.uid} className="flex items-center gap-1.5 mb-1">
-                                  <span className="text-[10px] text-gray-500">{i + 1}.</span>
-                                  <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
-                                  <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
-                                  <span className="text-[11px] font-bold" style={{ color: '#FF9500' }}>{milesToDisplay(user.volume?.miles?.[leaderboardTimeRange] || 0, u).toFixed(0)}</span>
-                                </div>
-                              ))}
-                          </>
-                        );
-                      })()}
-                    </div>
-
-                    {/* Most Time */}
-                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(255, 149, 0, 0.1)' }}>
-                      <div className="text-[10px] text-gray-500 uppercase mb-1">Most Time</div>
-                      {[...sortedLeaderboard]
-                        .sort((a, b) => (b.volume?.runMinutes?.[leaderboardTimeRange] || 0) - (a.volume?.runMinutes?.[leaderboardTimeRange] || 0))
-                        .slice(0, 3)
-                        .map((user, i) => {
-                          const mins = user.volume?.runMinutes?.[leaderboardTimeRange] || 0;
-                          const hrs = Math.floor(mins / 60);
-                          return (
-                            <div key={user.uid} className="flex items-center gap-1.5 mb-1">
-                              <span className="text-[10px] text-gray-500">{i + 1}.</span>
-                              <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
-                              <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
-                              <span className="text-[11px] font-bold" style={{ color: '#FF9500' }}>{hrs}h</span>
-                            </div>
-                          );
-                        })}
-                    </div>
+                    {tile({ title: 'Most Runs', getValue: vol('runs'), color: ORANGE })}
+                    {tile({ title: distTitle, getValue: vol('miles'), format: dist, color: ORANGE })}
+                    {tile({ title: 'Most Time', getValue: vol('runMinutes'), format: formatLeaderMinutes, color: ORANGE })}
                   </div>
                 </div>
 
                 {/* Strength Leaders */}
                 <div className="mb-4">
-                  <div className="text-xs text-gray-400 uppercase tracking-wide mb-2"><CategoryIcon category="lifts" size={12} className="inline align-[-2px] mr-1" />Strength</div>
+                  {groupLabel(<CategoryIcon category="lifts" size={13} />, 'Strength')}
                   <div className="grid grid-cols-2 gap-2">
-                    {/* Most Sessions */}
-                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(0, 255, 148, 0.1)' }}>
-                      <div className="text-[10px] text-gray-500 uppercase mb-1">Most Sessions</div>
-                      {[...sortedLeaderboard]
-                        .sort((a, b) => (b.volume?.strengthSessions?.[leaderboardTimeRange] || 0) - (a.volume?.strengthSessions?.[leaderboardTimeRange] || 0))
-                        .slice(0, 3)
-                        .map((user, i) => (
-                          <div key={user.uid} className="flex items-center gap-1.5 mb-1">
-                            <span className="text-[10px] text-gray-500">{i + 1}.</span>
-                            <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
-                            <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
-                            <span className="text-[11px] font-bold" style={{ color: '#00FF94' }}>{user.volume?.strengthSessions?.[leaderboardTimeRange] || 0}</span>
-                          </div>
-                        ))}
-                    </div>
-
-                    {/* Most Time */}
-                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(0, 255, 148, 0.1)' }}>
-                      <div className="text-[10px] text-gray-500 uppercase mb-1">Most Time</div>
-                      {[...sortedLeaderboard]
-                        .sort((a, b) => (b.volume?.liftingMinutes?.[leaderboardTimeRange] || 0) - (a.volume?.liftingMinutes?.[leaderboardTimeRange] || 0))
-                        .slice(0, 3)
-                        .map((user, i) => {
-                          const mins = user.volume?.liftingMinutes?.[leaderboardTimeRange] || 0;
-                          const hrs = Math.floor(mins / 60);
-                          return (
-                            <div key={user.uid} className="flex items-center gap-1.5 mb-1">
-                              <span className="text-[10px] text-gray-500">{i + 1}.</span>
-                              <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
-                              <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
-                              <span className="text-[11px] font-bold" style={{ color: '#00FF94' }}>{hrs}h</span>
-                            </div>
-                          );
-                        })}
-                    </div>
+                    {tile({ title: 'Most Sessions', getValue: vol('strengthSessions'), color: GREEN })}
+                    {tile({ title: 'Most Time', getValue: vol('liftingMinutes'), format: formatLeaderMinutes, color: GREEN })}
                   </div>
                 </div>
 
                 {/* Recovery Leaders */}
                 <div className="mb-4">
-                  <div className="text-xs text-gray-400 uppercase tracking-wide mb-2"><CategoryIcon category="recovery" size={12} className="inline align-[-2px] mr-1" />Recovery</div>
+                  {groupLabel(<CategoryIcon category="recovery" size={13} />, 'Recovery')}
                   <div className="grid grid-cols-3 gap-2">
-                    {/* Cold Plunge */}
-                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(0, 209, 255, 0.1)' }}>
-                      <div className="text-[10px] text-gray-500 uppercase mb-1"><CategoryIcon category="recovery" size={11} className="inline align-[-2px] mr-1" />Cold Plunge</div>
-                      {[...sortedLeaderboard]
-                        .sort((a, b) => (b.volume?.coldPlunges?.[leaderboardTimeRange] || 0) - (a.volume?.coldPlunges?.[leaderboardTimeRange] || 0))
-                        .slice(0, 3)
-                        .map((user, i) => (
-                          <div key={user.uid} className="flex items-center gap-1.5 mb-1">
-                            <span className="text-[10px] text-gray-500">{i + 1}.</span>
-                            <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
-                            <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
-                            <span className="text-[11px] font-bold" style={{ color: '#00D1FF' }}>{user.volume?.coldPlunges?.[leaderboardTimeRange] || 0}</span>
-                          </div>
-                        ))}
-                    </div>
-
-                    {/* Sauna */}
-                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(0, 209, 255, 0.1)' }}>
-                      <div className="text-[10px] text-gray-500 uppercase mb-1"><ActivityIcon type="Sauna" size={11} className="inline align-[-2px] mr-1" />Sauna</div>
-                      {[...sortedLeaderboard]
-                        .sort((a, b) => (b.volume?.saunaSessions?.[leaderboardTimeRange] || 0) - (a.volume?.saunaSessions?.[leaderboardTimeRange] || 0))
-                        .slice(0, 3)
-                        .map((user, i) => (
-                          <div key={user.uid} className="flex items-center gap-1.5 mb-1">
-                            <span className="text-[10px] text-gray-500">{i + 1}.</span>
-                            <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
-                            <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
-                            <span className="text-[11px] font-bold" style={{ color: '#00D1FF' }}>{user.volume?.saunaSessions?.[leaderboardTimeRange] || 0}</span>
-                          </div>
-                        ))}
-                    </div>
-
-                    {/* Yoga */}
-                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(0, 209, 255, 0.1)' }}>
-                      <div className="text-[10px] text-gray-500 uppercase mb-1">🧘 Yoga</div>
-                      {[...sortedLeaderboard]
-                        .sort((a, b) => (b.volume?.yogaSessions?.[leaderboardTimeRange] || 0) - (a.volume?.yogaSessions?.[leaderboardTimeRange] || 0))
-                        .slice(0, 3)
-                        .map((user, i) => (
-                          <div key={user.uid} className="flex items-center gap-1.5 mb-1">
-                            <span className="text-[10px] text-gray-500">{i + 1}.</span>
-                            <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
-                            <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
-                            <span className="text-[11px] font-bold" style={{ color: '#00D1FF' }}>{user.volume?.yogaSessions?.[leaderboardTimeRange] || 0}</span>
-                          </div>
-                        ))}
-                    </div>
+                    {tile({ title: 'Cold Plunge', getValue: vol('coldPlunges'), color: CYAN })}
+                    {tile({ title: 'Sauna', getValue: vol('saunaSessions'), color: CYAN })}
+                    {tile({ title: 'Yoga', getValue: vol('yogaSessions'), color: CYAN })}
                   </div>
                 </div>
 
                 {/* Cycling Leaders */}
                 <div className="mb-4">
-                  <div className="text-xs text-gray-400 uppercase tracking-wide mb-2">🚴 Cycling</div>
+                  {groupLabel(<ActivityIcon type="Cycle" size={13} color={ORANGE} />, 'Cycling')}
                   <div className="grid grid-cols-3 gap-2">
-                    {/* Most Rides */}
-                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(52, 152, 219, 0.1)' }}>
-                      <div className="text-[10px] text-gray-500 uppercase mb-1">Most Rides</div>
-                      {[...sortedLeaderboard]
-                        .sort((a, b) => (b.volume?.rides?.[leaderboardTimeRange] || 0) - (a.volume?.rides?.[leaderboardTimeRange] || 0))
-                        .slice(0, 3)
-                        .map((user, i) => (
-                          <div key={user.uid} className="flex items-center gap-1.5 mb-1">
-                            <span className="text-[10px] text-gray-500">{i + 1}.</span>
-                            <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
-                            <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
-                            <span className="text-[11px] font-bold" style={{ color: '#FF9500' }}>{user.volume?.rides?.[leaderboardTimeRange] || 0}</span>
-                          </div>
-                        ))}
-                    </div>
-
-                    {/* Most Miles */}
-                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(52, 152, 219, 0.1)' }}>
-                      <div className="text-[10px] text-gray-500 uppercase mb-1">Most Miles</div>
-                      {[...sortedLeaderboard]
-                        .sort((a, b) => (b.volume?.cycleMiles?.[leaderboardTimeRange] || 0) - (a.volume?.cycleMiles?.[leaderboardTimeRange] || 0))
-                        .slice(0, 3)
-                        .map((user, i) => (
-                          <div key={user.uid} className="flex items-center gap-1.5 mb-1">
-                            <span className="text-[10px] text-gray-500">{i + 1}.</span>
-                            <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
-                            <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
-                            <span className="text-[11px] font-bold" style={{ color: '#FF9500' }}>{user.volume?.cycleMiles?.[leaderboardTimeRange]?.toFixed(0) || 0}</span>
-                          </div>
-                        ))}
-                    </div>
-
-                    {/* Most Time */}
-                    <div className="rounded-xl p-3" style={{ backgroundColor: 'rgba(52, 152, 219, 0.1)' }}>
-                      <div className="text-[10px] text-gray-500 uppercase mb-1">Most Time</div>
-                      {[...sortedLeaderboard]
-                        .sort((a, b) => (b.volume?.cycleMinutes?.[leaderboardTimeRange] || 0) - (a.volume?.cycleMinutes?.[leaderboardTimeRange] || 0))
-                        .slice(0, 3)
-                        .map((user, i) => {
-                          const mins = user.volume?.cycleMinutes?.[leaderboardTimeRange] || 0;
-                          const hrs = Math.floor(mins / 60);
-                          return (
-                            <div key={user.uid} className="flex items-center gap-1.5 mb-1">
-                              <span className="text-[10px] text-gray-500">{i + 1}.</span>
-                              <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random`} className="w-4 h-4 rounded-full" alt="" />
-                              <span className="text-[11px] text-white truncate flex-1">{user.displayName?.split(' ')[0]}</span>
-                              <span className="text-[11px] font-bold" style={{ color: '#FF9500' }}>{hrs}h</span>
-                            </div>
-                          );
-                        })}
-                    </div>
+                    {tile({ title: 'Most Rides', getValue: vol('rides'), color: ORANGE })}
+                    {tile({ title: distTitle, getValue: vol('cycleMiles'), format: dist, color: ORANGE })}
+                    {tile({ title: 'Most Time', getValue: vol('cycleMinutes'), format: formatLeaderMinutes, color: ORANGE })}
                   </div>
                 </div>
               </div>
+                );
+              })()}
             </>
           )}
         </div>
@@ -3298,6 +3243,7 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
               comments={activityComments[key] || EMPTY_ARRAY}
               commentReplies={commentReplies[key] || EMPTY_OBJECT}
               showComments={expandedComments[key] || false}
+              focus={postFocus?.key === key ? postFocus : null}
               challengeMeta={challengeMeta}
               user={user}
               userProfile={userProfile}

@@ -1,9 +1,30 @@
+import AvatarImage from './AvatarImage';
 import CategoryIcon from './CategoryIcon';
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getUserProfile } from '../services/userService';
 import { friendStatus, FRIEND_STATUS } from '../utils/friendStatus';
 import ZoomablePhoto from './ZoomablePhoto';
+import { formatDistanceValue, formatPace as formatPaceForUnit, unitLabel } from '../utils/distance';
+import ActivityIcon from './ActivityIcon';
+
+const GOLD = '#FFD700';
+const CAPS = { fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8a8a8a' };
+const CARD = {
+  borderRadius: 22,
+  background: 'linear-gradient(180deg, rgba(255,255,255,0.065), rgba(255,255,255,0.035))',
+  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), inset 0 0 0 1px rgba(255,255,255,0.035)',
+};
+const LineIcon = ({ d, color, size = 15, strokeWidth = 2 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="flex-shrink-0">
+    {d.map((p) => <path key={p} d={p} />)}
+  </svg>
+);
+const ICON = {
+  shield: ['M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3'],
+  bolt: ['M13 3l0 7l6 0l-8 11l0 -7l-6 0l8 -11'],
+  pin: ['M9 11a3 3 0 1 0 6 0a3 3 0 0 0 -6 0', 'M17.657 16.657l-4.243 4.243a2 2 0 0 1 -2.827 0l-4.244 -4.243a8 8 0 1 1 11.314 0z'],
+};
 
 /**
  * Shared friend profile card — opens as a centered-card modal from the Challenges tab,
@@ -24,17 +45,17 @@ import ZoomablePhoto from './ZoomablePhoto';
  * a line saying to add them, instead of a block of zeros.
  */
 const RecoveryBonusRow = ({ children }) => (
-  <div className="mt-2 px-2.5 py-2 rounded-lg flex items-center justify-between" style={{ backgroundColor: 'rgba(0,209,255,0.06)', border: '1px solid rgba(0,209,255,0.18)' }}>
-    <div className="flex items-center gap-1.5 text-xs">
-      <CategoryIcon category="recovery" size={12} />
-      <span className="text-white">Recovery</span>
+  <div className="flex items-center justify-between" style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+    <div className="flex items-center gap-1.5" style={{ fontSize: 12.5, color: '#ccc' }}>
+      <CategoryIcon category="recovery" size={13} />
+      <span>Recovery</span>
       {children}
     </div>
-    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ color: '#00D1FF', backgroundColor: 'rgba(0,209,255,0.12)', letterSpacing: '0.04em' }}>BONUS</span>
+    <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.12em', padding: '2px 6px', borderRadius: 999, boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.22)', color: '#aaa' }}>BONUS</span>
   </div>
 );
 
-export default function FriendProfileCard({ friend, onClose, actions = null, preloadedProfile = null, statsVisible = true }) {
+export default function FriendProfileCard({ friend, onClose, actions = null, preloadedProfile = null, statsVisible = true, distanceUnit = 'mi' }) {
   const [isAnimating, setIsAnimating] = useState(false);
   // When `preloadedProfile` is provided (e.g., the current user's own card — App already
   // has userProfile + userData loaded and live-subscribed), seed state with it and skip
@@ -135,14 +156,6 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
   const fastestPace = recVal(records.fastestPace);
   const mostMilesWeek = records.mostMilesWeek || 0;
 
-  const formatPace = (mins) => {
-    if (!mins || mins <= 0) return '—';
-    const total = Math.round(mins * 60); // whole seconds first, or 7.995 shows as "7:60"
-    const m = Math.floor(total / 60);
-    const s = total % 60;
-    return `${m}:${String(s).padStart(2, '0')}`;
-  };
-
   // Render via portal directly into document.body. This takes the modal out of #root's
   // DOM subtree entirely — touches inside the modal physically can't bubble up to #root
   // (the app's scroll container), which kills the "background page scrolls instead of
@@ -167,10 +180,11 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
       >
         <div className="min-h-full flex items-center justify-center p-4">
         <div
-          className="w-full max-w-sm rounded-3xl overflow-hidden transition-all duration-300 ease-out"
+          className="relative w-full max-w-sm overflow-hidden transition-all duration-300 ease-out"
           style={{
-            backgroundColor: '#0F0F10',
-            border: '1px solid rgba(255,255,255,0.06)',
+            borderRadius: 28,
+            background: 'linear-gradient(180deg, #1a1a1c, #121214)',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), inset 0 0 0 1px rgba(255,255,255,0.05)',
             transform: isAnimating ? 'scale(1) translateY(0)' : 'scale(0.95) translateY(20px)',
             opacity: isAnimating ? 1 : 0,
           }}
@@ -179,45 +193,38 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
           {/* Hero — gold aurora glow + photo + name. Tighter padding (pt-5/pb-3) and a
               smaller photo (64px) than the first cut so the card doesn't dominate the
               screen — feels like a card, not a takeover. */}
-          <div className="relative pt-5 pb-3 px-5">
-            <div
-              className="absolute inset-0 pointer-events-none"
-              style={{
-                background:
-                  'radial-gradient(ellipse 80% 60% at 50% 0%, rgba(255,214,10,0.18) 0%, rgba(255,214,10,0.06) 35%, transparent 70%)',
-              }}
-            />
+          {/* Soft gold glow (Felipe's option A): gold is the winning streak's colour */}
+          <div
+            className="absolute left-0 right-0 top-0 pointer-events-none"
+            style={{ height: 240, background: 'radial-gradient(ellipse 85% 60% at 50% 0%, rgba(255,215,0,0.16) 0%, rgba(255,215,0,0.05) 42%, transparent 74%)' }}
+          />
+          <div className="relative px-5" style={{ paddingTop: 20, paddingBottom: 14 }}>
             <div className="relative flex flex-col items-center">
               <button
                 onClick={() => friend?.photoURL && setShowFullPhoto(true)}
                 className={`w-16 h-16 rounded-full overflow-hidden flex items-center justify-center mb-2 ${friend?.photoURL ? 'cursor-pointer active:scale-95 transition-transform' : ''}`}
                 style={{
                   backgroundColor: 'rgba(255,255,255,0.06)',
-                  border: '2px solid rgba(255,214,10,0.25)',
+                  border: '2px solid rgba(255,215,0,0.35)',
                 }}
               >
                 {friend?.photoURL ? (
-                  <img src={friend.photoURL} alt="" className="w-full h-full object-cover" />
+                  <AvatarImage src={friend.photoURL} alt="" />
                 ) : (
                   <span className="text-white text-xl font-semibold">{initial}</span>
                 )}
               </button>
-              <p className="text-white font-bold text-base truncate max-w-full leading-tight">
+              <p className="text-white truncate max-w-full leading-tight" style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.2px' }}>
                 {friend?.displayName || friend?.username || 'Friend'}
               </p>
-              <div className="flex items-center gap-1.5 text-xs mt-0.5">
-                {friend?.username && (
-                  <span className="text-gray-400 truncate">@{friend.username}</span>
-                )}
-                {masterStreak > 0 && (
-                  <span style={{ color: '#FFD60A' }}>· {masterStreak}🔥</span>
-                )}
-              </div>
+              {friend?.username && (
+                <p className="truncate" style={{ fontSize: 12.5, color: '#9a9a9a', marginTop: 2 }}>@{friend.username}</p>
+              )}
               {status && (
-                <div className="mt-2.5 inline-flex items-center gap-1.5 text-xs rounded-full px-3 py-1" style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: '#d4d4d8' }}>
-                  <span>{status.emoji}</span>
+                <div className="mt-2.5 inline-flex items-center gap-1.5 text-xs rounded-full px-3 py-1" style={{ backgroundColor: 'rgba(255,255,255,0.07)', color: '#ddd' }}>
+                  <LineIcon d={ICON.shield} color="#ddd" size={13} />
                   <span>{status.label}</span>
-                  <span className="text-gray-500">· {status.detail}</span>
+                  <span style={{ color: '#8a8a8a' }}>· {status.detail}</span>
                 </div>
               )}
             </div>
@@ -233,68 +240,60 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
               card itself doesn't need internal scrolling. */}
           {statsVisible && (
           <div className="px-4 pb-3">
-            {/* Headline triplet — Winning Streak (current), Best Streak (longestMasterStreak),
-                Challenges (W-L stacked above completion %). Single-word labels avoid the
-                two-line wrap problem the previous "Challenges W-L" had. */}
-            <div className="grid grid-cols-3 gap-2 mb-3">
-              <StatTile label="Winning Streak" value={masterStreak} />
-              <StatTile label="Best Streak" value={bestMaster} />
-              <div
-                className="rounded-xl p-2 text-center"
-                style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.2)' }}
-              >
-                <p className="text-xl font-bold leading-none">
-                  <span style={{ color: '#00FF94' }}>{wins}</span>
-                  <span className="text-gray-600 mx-0.5">-</span>
-                  <span style={{ color: '#FF453A' }}>{losses}</span>
-                </p>
-                <p className="text-gray-500 text-[10px] mt-1">Challenges</p>
+            {/* Their winning streak is the card's one big number, in gold; Best and the
+                challenge record sit beside it at text size. */}
+            <div className="mb-3" style={{ ...CARD, padding: '16px 18px' }}>
+              <div className="flex items-end justify-between">
+                <div>
+                  <div className="flex items-baseline gap-1.5">
+                    <span style={{ fontSize: 46, fontWeight: 800, letterSpacing: '-2.2px', lineHeight: 0.8, color: GOLD }}>{masterStreak}</span>
+                    <span style={{ fontSize: 20, fontWeight: 700, color: 'rgba(255,215,0,0.8)' }}>{masterStreak === 1 ? 'week' : 'weeks'}</span>
+                  </div>
+                  <div style={{ ...CAPS, fontSize: 11, marginTop: 10, color: 'rgba(255,215,0,0.9)' }}>Winning streak</div>
+                </div>
+                <div className="flex text-right" style={{ gap: 18 }}>
+                  <div>
+                    <div style={{ fontSize: 17, fontWeight: 700 }}>{bestMaster}<span style={{ fontSize: 13, color: '#666', fontWeight: 600 }}>w</span></div>
+                    <div style={{ ...CAPS, marginTop: 6 }}>Best</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 17, fontWeight: 700 }}>{wins}–{losses}</div>
+                    <div style={{ ...CAPS, marginTop: 6 }}>Challenges</div>
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* 🔥 Streak Records — longest streaks ever in each category */}
-            <SectionHeader emoji="🔥" label="Streak Records" />
-            <div
-              className="rounded-xl p-2.5 mb-3"
-              style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
-            >
-              <div className="grid grid-cols-4 gap-1">
-                <StreakPill value={bestMaster} label="Winning" color="#FFD60A" />
-                <StreakPill value={bestStrength} label="Strength" color="#00FF94" />
-                <StreakPill value={bestCardio} label="Cardio" color="#FF9500" />
-                <StreakPill value={bestSteps} label="Steps" color="#BF5AF2" />
-              </div>
+            {/* Streak records — longest streaks ever in each category */}
+            <SectionHeader label="Streak records" />
+            <div className="mb-3 grid grid-cols-4" style={{ ...CARD, padding: '12px 14px' }}>
+              <StreakCol value={bestMaster} label="Winning" winning />
+              <StreakCol value={bestStrength} label="Strength" category="lifts" />
+              <StreakCol value={bestCardio} label="Cardio" category="cardio" />
+              <StreakCol value={bestSteps} label="Steps" category="steps" />
             </div>
 
-            {/* 🏆 All-Time Bests */}
-            <SectionHeader emoji="🏆" label="All-Time Bests" />
-            <div
-              className="rounded-xl p-2.5 mb-3 space-y-1.5"
-              style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
-            >
-              <BestRow icon="🏃" label="Longest Run" value={longestDistance ? `${longestDistance.toFixed(1)} mi` : '—'} />
-              <BestRow icon={<CategoryIcon category="calories" size={13} color="currentColor" />} label="Top Calorie Workout" value={highestCalories ? highestCalories.toLocaleString() : '—'} />
-              <BestRow icon="⚡" label="Fastest Pace" value={fastestPace ? `${formatPace(fastestPace)} /mi` : '—'} />
-              <BestRow icon="📍" label="Most Miles in a Week" value={mostMilesWeek ? `${mostMilesWeek.toFixed(1)} mi` : '—'} />
+            {/* All-time bests */}
+            <SectionHeader label="All-time bests" />
+            <div className="mb-3" style={{ ...CARD, padding: '2px 14px' }}>
+              <BestRow first icon={<ActivityIcon type="Running" size={15} color="#FF9500" />} label="Longest run" value={longestDistance ? `${formatDistanceValue(longestDistance, distanceUnit, 1)} ${unitLabel(distanceUnit)}` : '—'} />
+              <BestRow icon={<CategoryIcon category="calories" size={15} />} label="Top calorie workout" value={highestCalories ? highestCalories.toLocaleString() : '—'} />
+              <BestRow icon={<LineIcon d={ICON.bolt} color="#FF9500" />} label="Fastest pace" value={fastestPace ? formatPaceForUnit(fastestPace * 60, distanceUnit) : '—'} />
+              <BestRow icon={<LineIcon d={ICON.pin} color="#aaa" />} label={distanceUnit === 'km' ? 'Most km in a week' : 'Most miles in a week'} value={mostMilesWeek ? `${formatDistanceValue(mostMilesWeek, distanceUnit, 1)} ${unitLabel(distanceUnit)}` : '—'} />
             </div>
 
-            {/* Current Streaks — the three goals that win the week, then Recovery as a bonus row.
-                Winning is already in the headline triplet. */}
-            <SectionHeader emoji="📈" label="Current Streaks" />
-            <div
-              className="rounded-xl p-2.5"
-              style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
-            >
-              <div className="grid grid-cols-3 gap-1">
-                <StreakPill value={liftsStreak} label="Strength" color="#00FF94" />
-                <StreakPill value={cardioStreak} label="Cardio" color="#FF9500" />
-                <StreakPill value={stepsStreak} label="Steps" color="#BF5AF2" />
+            {/* Current streaks — the three goals that win the week, then Recovery as a bonus row.
+                Winning is already the big number above. */}
+            <SectionHeader label="Current streaks" />
+            <div style={{ ...CARD, padding: '12px 14px' }}>
+              <div className="grid grid-cols-3">
+                <StreakCol value={liftsStreak} label="Strength" category="lifts" />
+                <StreakCol value={cardioStreak} label="Cardio" category="cardio" />
+                <StreakCol value={stepsStreak} label="Steps" category="steps" />
               </div>
-              {/* Recovery is a bonus (its own streak, doesn't win the week): one slim row with
-                  current and best, instead of a pill in each section */}
-              {/* Hidden when this person has Recovery off (goal 0) */}
+              {/* Recovery is a bonus (its own streak, doesn't win the week); hidden when Recovery is off */}
               {(profile?.goals?.recoveryPerWeek ?? 2) > 0 && (
-                <RecoveryBonusRow><span className="font-bold" style={{ color: '#00D1FF' }}>{recoveryStreak}w</span><span className="text-gray-500">· best {bestRecovery}w</span></RecoveryBonusRow>
+                <RecoveryBonusRow><b className="text-white">{recoveryStreak}w</b><span style={{ color: '#777' }}>· best {bestRecovery}w</span></RecoveryBonusRow>
               )}
             </div>
           </div>
@@ -302,7 +301,7 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
 
           {/* Action footer — parent-controlled. Falls back to a Close button if nothing
               else was passed (e.g., the ChallengesTab quick-profile case). */}
-          <div className="px-4 pb-4 pt-2.5" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+          <div className="relative px-4 pb-4 pt-2.5" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
             {actions || (
               <button
                 onClick={handleClose}
@@ -349,40 +348,31 @@ export default function FriendProfileCard({ friend, onClose, actions = null, pre
   );
 }
 
-function StatTile({ label, value }) {
+function SectionHeader({ label }) {
+  return <div style={{ ...CAPS, margin: '0 4px 8px' }}>{label}</div>;
+}
+
+// One streak column: line icon (🔥 for Winning) + label, then the weeks at 17px.
+function StreakCol({ value, label, category, winning = false }) {
   return (
-    <div className="rounded-xl p-2 text-center" style={{ backgroundColor: 'rgba(255,255,255,0.04)' }}>
-      <p className="text-xl font-bold text-white leading-none">{value}</p>
-      <p className="text-gray-500 text-[10px] mt-1">{label}</p>
+    <div>
+      <div className="flex items-center gap-[5px]" style={{ fontSize: 11, fontWeight: 600, color: '#aaa' }}>
+        {winning ? <span style={{ fontSize: 11 }}>🔥</span> : <CategoryIcon category={category} size={12} />}
+        {label}
+      </div>
+      <div style={{ fontSize: 17, fontWeight: 700, marginTop: 4, color: winning ? GOLD : '#fff' }}>
+        {value}<span style={{ fontSize: 13, fontWeight: 600, color: winning ? 'rgba(255,215,0,0.6)' : '#666' }}>w</span>
+      </div>
     </div>
   );
 }
 
-function SectionHeader({ emoji, label }) {
+function BestRow({ icon, label, value, first = false }) {
   return (
-    <div className="flex items-center gap-1.5 mb-1.5 px-1">
-      <span className="text-[12px]">{emoji}</span>
-      <span className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">{label}</span>
-    </div>
-  );
-}
-
-function StreakPill({ value, label, color }) {
-  return (
-    <div className="text-center">
-      <div className="text-base font-black leading-tight" style={{ color }}>{value}</div>
-      <div className="text-[9px] text-gray-500">{label}</div>
-    </div>
-  );
-}
-
-function BestRow({ icon, label, value }) {
-  return (
-    <div className="flex items-center justify-between">
-      <span className="text-[12px] text-gray-400 flex items-center gap-2">
-        <span>{icon}</span> {label}
-      </span>
-      <span className="text-[13px] font-bold text-white">{value}</span>
+    <div className="flex items-center gap-2.5" style={{ padding: '9px 0', borderTop: first ? 'none' : '1px solid rgba(255,255,255,0.06)' }}>
+      {icon}
+      <span className="flex-1" style={{ fontSize: 13, color: '#ccc' }}>{label}</span>
+      <b style={{ fontSize: 15, letterSpacing: '-0.1px' }}>{value}</b>
     </div>
   );
 }

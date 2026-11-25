@@ -34,7 +34,7 @@
       "providers": ["apple.com", "google.com"]
     },
     "FirebaseMessaging": {
-      "presentationOptions": ["badge", "sound", "alert"]
+      "presentationOptions": ["badge", "sound"]
     }
   }
 }

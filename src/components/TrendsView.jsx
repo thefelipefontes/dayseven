@@ -6,8 +6,20 @@ import { triggerHaptic, ImpactStyle } from '../utils/haptics';
 import { parseLocalDate, toLocalDateStr } from '../utils/dateHelpers';
 import { getActivityCategory } from '../utils/activityCategory';
 import { manualCaloriesForDate, manualCaloriesInRange } from '../utils/calories';
+import { milesToDisplay, unitLabel } from '../utils/distance';
 
-const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], healthKitData = {}, isPro, onPresentPaywall }) => {
+const CAPS = { fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8a8a8a' };
+const CARD = {
+  borderRadius: 22,
+  background: 'linear-gradient(180deg, rgba(255,255,255,0.065), rgba(255,255,255,0.035))',
+  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), inset 0 0 0 1px rgba(255,255,255,0.035)',
+};
+const ArrowUp = () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>);
+const ArrowDown = () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8a8a8a" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 5v14M5 12l7 7 7-7" /></svg>);
+
+const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], healthKitData = {}, isPro, onPresentPaywall, distanceUnit = 'mi' }) => {
+  // Distances are stored in miles; convert only for display (bar heights are ratios).
+  const dist = (miles) => milesToDisplay(miles, distanceUnit);
   const [metric, setMetric] = useState('calories');
   const [timeRange, setTimeRange] = useState('1M');
   const [selectedBar, setSelectedBar] = useState(null); // For detail view on click
@@ -101,7 +113,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
   };
 
   // Stacked bar colors for miles breakdown
-  const milesColors = { ran: '#FF5757', biked: '#00D1FF', walked: '#00FF94' };
+  const milesColors = { ran: '#FF9500', biked: 'rgba(255,149,0,0.55)', walked: 'rgba(255,149,0,0.28)' };
 
   // Get today's date string
   const todayStr = useMemo(() => {
@@ -340,13 +352,14 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
   const metricConfig = {
     calories: { label: 'Calories', cat: 'calories', unit: 'cal', color: '#FF6B6B' },
     steps: { label: 'Steps', cat: 'steps', unit: 'steps', color: '#BF5AF2' },
-    miles: { label: 'Miles', icon: '📍', unit: 'mi', color: '#00FF94' }
+    miles: { label: 'Distance', unit: unitLabel(distanceUnit), color: '#FF9500' }
   };
 
   const config = metricConfig[metric] || metricConfig['calories'];
 
   return (
-    <div className="mx-4">
+    // Profile's Stats container already supplies the side margin
+    <div>
       {/* Header */}
       <div className="mb-4">
         <div className="flex items-center gap-2">
@@ -368,10 +381,12 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
             className="flex-1 py-2 rounded-lg text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1"
             style={{
               backgroundColor: metric === key ? 'rgba(255,255,255,0.1)' : 'transparent',
-              color: metric === key ? cfg.color : 'rgba(255,255,255,0.5)'
+              color: metric === key ? '#fff' : '#888'
             }}
           >
-            <span>{cfg.cat ? <CategoryIcon category={cfg.cat} size={13} color="currentColor" /> : cfg.icon}</span>
+            <span className="flex">{cfg.cat ? <CategoryIcon category={cfg.cat} size={13} /> : (
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#FF9500" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 11a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" /><path d="M17.657 16.657l-4.243 4.243a2 2 0 0 1 -2.827 0l-4.244 -4.243a8 8 0 1 1 11.314 0z" /></svg>
+            )}</span>
             {cfg.label}
           </button>
         ))}
@@ -416,219 +431,140 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
         })}
       </div>
 
-      {/* Chart */}
-      <div className="p-4 rounded-2xl mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-        {/* Tooltip - fixed height container to prevent layout shift */}
-        <div style={{ minHeight: metric === 'miles' ? '90px' : '72px' }}>
-          {(hoveredBar !== null || selectedBar !== null) && trendData[hoveredBar !== null ? hoveredBar : selectedBar] ? (() => {
-            const activePoint = trendData[hoveredBar !== null ? hoveredBar : selectedBar];
-            return (
-              <div
-                className="p-3 rounded-xl text-center transition-all duration-200"
-                style={{
-                  backgroundColor: `${config.color}15`,
-                  border: `1px solid ${config.color}40`
-                }}
-              >
-                <div className="text-sm font-bold" style={{ color: config.color }}>
-                  {activePoint.label}
-                </div>
-                <div className="text-xl font-black text-white mt-1">
-                  {metric === 'miles'
-                    ? activePoint.value.toFixed(1)
-                    : activePoint.value.toLocaleString()
-                  } {config.unit}
-                </div>
-                {metric === 'miles' && activePoint.value > 0 && (
-                  <div className="flex items-center justify-center gap-3 mt-1.5 text-[11px]">
-                    {(activePoint.milesRan || 0) > 0 && (
-                      <span style={{ color: milesColors.ran }}>🏃 {activePoint.milesRan.toFixed(1)}</span>
-                    )}
-                    {(activePoint.milesBiked || 0) > 0 && (
-                      <span style={{ color: milesColors.biked }}>🚴 {activePoint.milesBiked.toFixed(1)}</span>
-                    )}
-                    {(activePoint.milesWalked || 0) > 0 && (
-                      <span style={{ color: milesColors.walked }}>🚶 {activePoint.milesWalked.toFixed(1)}</span>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })() : (
-            <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}>
-              <div className="text-sm text-gray-500">Tap a bar to see details</div>
-              <div className="text-xl font-black text-gray-600 mt-1">—</div>
-            </div>
-          )}
-        </div>
-        
-        {/* Chart Area */}
-        <div
-          ref={chartRef}
-          className="h-40 flex items-end gap-0.5 mb-2"
-          style={{ minHeight: '160px', touchAction: 'pan-y' }}
-          onMouseLeave={() => setHoveredBar(null)}
-          onTouchStart={handleChartTouchStart}
-          onTouchMove={handleChartTouchMove}
-          onTouchEnd={handleChartTouchEnd}
-        >
-          {trendData.length > 0 ? trendData.map((point, i) => {
-            const heightPercent = maxValue > 0 ? (point.value / maxValue) * 100 : 0;
-            const isHighlighted = hoveredBar !== null ? hoveredBar === i : selectedBar === i;
-
-            // Stacked bar segments for miles
-            const isMiles = metric === 'miles';
-            const ranPct = isMiles && maxValue > 0 ? ((point.milesRan || 0) / maxValue) * 100 : 0;
-            const bikedPct = isMiles && maxValue > 0 ? ((point.milesBiked || 0) / maxValue) * 100 : 0;
-            const walkedPct = isMiles && maxValue > 0 ? ((point.milesWalked || 0) / maxValue) * 100 : 0;
-            const totalPct = ranPct + bikedPct + walkedPct;
-
-            return (
-              <button
-                key={i}
-                className="flex-1 flex flex-col justify-end h-full cursor-pointer bg-transparent border-none p-0"
-                onMouseEnter={() => setHoveredBar(i)}
-                onClick={() => { if (!isDragging.current && !touchHandledTap.current) setSelectedBar(selectedBar === i ? null : i); touchHandledTap.current = false; }}
-                type="button"
-              >
-                {isMiles ? (
-                  /* Stacked bar for miles breakdown */
-                  <div
-                    className="w-full flex flex-col justify-end pointer-events-none transition-all duration-200"
-                    style={{
-                      height: `${Math.max(heightPercent, 2)}%`,
-                      minHeight: point.value > 0 ? '4px' : '2px',
-                      opacity: isHighlighted ? 1 : 0.6,
-                      transform: isHighlighted ? 'scaleX(1.1)' : 'scaleX(1)',
-                    }}
-                  >
-                    {(point.milesRan || 0) > 0 && (
-                      <div className="w-full rounded-t-sm" style={{
-                        flex: `0 0 ${totalPct > 0 ? ranPct / totalPct * 100 : 0}%`,
-                        backgroundColor: milesColors.ran,
-                        minHeight: '1px'
-                      }} />
-                    )}
-                    {(point.milesBiked || 0) > 0 && (
-                      <div className="w-full" style={{
-                        flex: `0 0 ${totalPct > 0 ? bikedPct / totalPct * 100 : 0}%`,
-                        backgroundColor: milesColors.biked,
-                        minHeight: '1px',
-                        ...((point.milesRan || 0) === 0 ? { borderRadius: '2px 2px 0 0' } : {})
-                      }} />
-                    )}
-                    {(point.milesWalked || 0) > 0 && (
-                      <div className="w-full" style={{
-                        flex: `0 0 ${totalPct > 0 ? walkedPct / totalPct * 100 : 0}%`,
-                        backgroundColor: milesColors.walked,
-                        minHeight: '1px',
-                        ...((point.milesRan || 0) === 0 && (point.milesBiked || 0) === 0 ? { borderRadius: '2px 2px 0 0' } : {})
-                      }} />
-                    )}
-                  </div>
-                ) : (
-                  /* Single bar for other metrics */
-                  <div
-                    className="w-full rounded-t-sm transition-all duration-200 pointer-events-none"
-                    style={{
-                      height: `${Math.max(heightPercent, 2)}%`,
-                      backgroundColor: config.color,
-                      opacity: isHighlighted ? 1 : 0.6,
-                      minHeight: point.value > 0 ? '4px' : '2px',
-                      transform: isHighlighted ? 'scaleX(1.1)' : 'scaleX(1)',
-                      boxShadow: isHighlighted ? `0 0 10px ${config.color}50` : 'none'
-                    }}
-                  />
-                )}
-              </button>
-            );
-          }) : (
-            <div className="w-full h-full flex items-center justify-center text-gray-500 text-sm">
-              No data available
-            </div>
-          )}
-        </div>
-        
-        {/* X-axis labels */}
-        {trendData.length > 0 && (
-          <div className="flex gap-0.5">
-            {trendData.map((point, i) => {
-              const showLabel = trendData.length <= 7 ||
-                (trendData.length <= 14 && i % 2 === 0) ||
-                (trendData.length > 14 && (i === 0 || i === trendData.length - 1 || i % Math.ceil(trendData.length / 5) === 0));
-              const isHighlighted = hoveredBar !== null ? hoveredBar === i : selectedBar === i;
-
-              return (
-                <div key={i} className="flex-1 text-center">
-                  {(showLabel || isHighlighted) && (
-                    <span
-                      className="text-[8px] transition-all duration-200"
-                      style={{
-                        color: isHighlighted ? config.color : 'rgba(255,255,255,0.5)',
-                        fontWeight: isHighlighted ? 'bold' : 'normal'
-                      }}
-                    >
-                      {point.shortLabel || point.label}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Stacked bar legend for miles */}
-        {metric === 'miles' && (
-          <div className="flex items-center justify-center gap-4 mt-2 mb-1">
-            <span className="flex items-center gap-1.5 text-[10px] text-gray-400">
-              <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: milesColors.ran }} /> Ran
-            </span>
-            <span className="flex items-center gap-1.5 text-[10px] text-gray-400">
-              <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: milesColors.biked }} /> Biked
-            </span>
-            <span className="flex items-center gap-1.5 text-[10px] text-gray-400">
-              <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: milesColors.walked }} /> Walked
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* Summary Stats */}
+      {/* Chart card (Nov 2026 redesign, mocks/mock-profile-extras.html trendsView('new')):
+          the tapped bar's value is the one big number, with its change vs the average beside it. */}
       {(() => {
-        const activeBar = hoveredBar !== null ? hoveredBar : selectedBar;
-        const activeValue = activeBar !== null && trendData[activeBar] ? trendData[activeBar].value : null;
-        const vsAvgPercent = activeValue !== null && avg > 0
-          ? Math.round(((activeValue - avg) / avg) * 100)
-          : null;
-
+        const isMiles = metric === 'miles';
+        const fmt = (n) => (isMiles ? dist(n).toFixed(1) : Math.round(n).toLocaleString());
+        const lastIdx = trendData.length - 1;
+        const activeIdx = hoveredBar !== null ? hoveredBar : selectedBar !== null ? selectedBar : lastIdx;
+        const activePoint = activeIdx >= 0 ? trendData[activeIdx] : null;
+        const first = trendData[0];
+        const spanDays = first?.endDate ? Math.round((parseLocalDate(first.endDate) - parseLocalDate(first.date)) / 86400000) + 1 : 1;
+        const bucket = spanDays <= 1 ? 'daily' : spanDays <= 7 ? 'weekly' : 'monthly';
+        const perUnit = { daily: 'day', weekly: 'wk', monthly: 'mo' }[bucket];
+        const vsAvg = activePoint && avg > 0 ? Math.round(((activePoint.value - avg) / avg) * 100) : null;
+        const avgPct = maxValue > 0 ? Math.min(100, (avg / maxValue) * 100) : 0;
         return (
-          <div className="grid grid-cols-3 gap-3 mb-4">
-            <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              <div className="text-lg font-black" style={{ color: config.color }}>
-                {metric === 'miles' ? total.toFixed(1) : total.toLocaleString()}
+          <div className="mb-4" style={{ ...CARD, padding: '18px 18px 16px' }}>
+            <div className="flex items-end justify-between" style={{ marginBottom: isMiles ? 12 : 18 }}>
+              <div className="min-w-0">
+                <div className="flex items-baseline gap-[5px]">
+                  <span style={{ fontSize: 46, fontWeight: 800, letterSpacing: '-2.2px', lineHeight: 0.8 }}>{activePoint ? fmt(activePoint.value) : '—'}</span>
+                  <span style={{ fontSize: 20, fontWeight: 700, color: '#888' }}>{config.unit}</span>
+                </div>
+                <div className="truncate" style={{ ...CAPS, fontSize: 11, marginTop: 10 }}>{activePoint ? activePoint.label : ''}</div>
               </div>
-              <div className="text-[10px] text-gray-400">Total</div>
-            </div>
-            <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              <div className="text-lg font-black" style={{ color: config.color }}>
-                {metric === 'miles' ? avg.toFixed(1) : Math.round(avg).toLocaleString()}
-              </div>
-              <div className="text-[10px] text-gray-400">Average</div>
-            </div>
-            <div className="p-3 rounded-xl text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              {vsAvgPercent !== null ? (
-                <>
-                  <div className="text-lg font-black" style={{ color: vsAvgPercent >= 0 ? '#00FF94' : '#FF453A' }}>
-                    {vsAvgPercent >= 0 ? '+' : ''}{vsAvgPercent}%
+              {vsAvg !== null && (
+                <div className="text-right flex-shrink-0">
+                  <div className="flex items-center justify-end gap-[3px]" style={{ fontSize: 17, fontWeight: 700 }}>
+                    {vsAvg >= 0 ? <ArrowUp /> : <ArrowDown />}{vsAvg >= 0 ? '+' : ''}{vsAvg}%
                   </div>
-                  <div className="text-[10px] text-gray-400">vs Avg</div>
-                </>
-              ) : (
-                <>
-                  <div className="text-lg font-black text-gray-600">—</div>
-                  <div className="text-[10px] text-gray-400">vs Avg</div>
-                </>
+                  <div style={{ ...CAPS, marginTop: 6 }}>vs {bucket} avg</div>
+                </div>
               )}
+            </div>
+            {isMiles && activePoint && activePoint.value > 0 && (
+              <div className="flex flex-wrap" style={{ gap: '4px 14px', marginBottom: 14, fontSize: 12.5, color: '#aaa' }}>
+                {[['Running', 'Ran', activePoint.milesRan], ['Cycle', 'Biked', activePoint.milesBiked], ['Walking', 'Walked', activePoint.milesWalked]].filter(([, , n]) => (n || 0) > 0).map(([type, l, n]) => (
+                  <span key={l} className="flex items-center gap-[5px]"><ActivityIcon type={type} size={13} color="#FF9500" />{l} <b className="text-white">{dist(n).toFixed(1)}</b></span>
+                ))}
+              </div>
+            )}
+
+            {/* Chart Area */}
+            <div className="relative">
+              <div
+                ref={chartRef}
+                className="flex items-end gap-0.5"
+                style={{ height: 150, touchAction: 'pan-y' }}
+                onMouseLeave={() => setHoveredBar(null)}
+                onTouchStart={handleChartTouchStart}
+                onTouchMove={handleChartTouchMove}
+                onTouchEnd={handleChartTouchEnd}
+              >
+                {trendData.length > 0 ? trendData.map((point, i) => {
+                  const heightPercent = maxValue > 0 ? (point.value / maxValue) * 100 : 0;
+                  const isHighlighted = i === activeIdx;
+                  const ranPct = isMiles && maxValue > 0 ? ((point.milesRan || 0) / maxValue) * 100 : 0;
+                  const bikedPct = isMiles && maxValue > 0 ? ((point.milesBiked || 0) / maxValue) * 100 : 0;
+                  const walkedPct = isMiles && maxValue > 0 ? ((point.milesWalked || 0) / maxValue) * 100 : 0;
+                  const totalPct = ranPct + bikedPct + walkedPct;
+                  return (
+                    <button
+                      key={i}
+                      className="flex-1 flex flex-col justify-end h-full cursor-pointer bg-transparent border-none p-0"
+                      onMouseEnter={() => setHoveredBar(i)}
+                      onClick={() => { if (!isDragging.current && !touchHandledTap.current) setSelectedBar(selectedBar === i ? null : i); touchHandledTap.current = false; }}
+                      type="button"
+                    >
+                      {isMiles ? (
+                        <div
+                          className="w-full flex flex-col justify-end pointer-events-none overflow-hidden"
+                          style={{ height: `${Math.max(heightPercent, 2)}%`, minHeight: point.value > 0 ? '4px' : '2px', opacity: isHighlighted ? 1 : 0.5, borderRadius: '4px 4px 0 0', backgroundColor: point.value > 0 ? undefined : 'rgba(255,255,255,0.08)' }}
+                        >
+                          {[['milesRan', ranPct, milesColors.ran], ['milesBiked', bikedPct, milesColors.biked], ['milesWalked', walkedPct, milesColors.walked]].filter(([k]) => (point[k] || 0) > 0).map(([k, pct, c]) => (
+                            <div key={k} className="w-full" style={{ flex: `0 0 ${totalPct > 0 ? pct / totalPct * 100 : 0}%`, backgroundColor: c, minHeight: '1px' }} />
+                          ))}
+                        </div>
+                      ) : (
+                        <div
+                          className="w-full pointer-events-none"
+                          style={{ height: `${Math.max(heightPercent, 2)}%`, minHeight: point.value > 0 ? '4px' : '2px', borderRadius: '4px 4px 0 0', backgroundColor: point.value > 0 ? config.color : 'rgba(255,255,255,0.08)', opacity: point.value > 0 ? (isHighlighted ? 1 : 0.45) : 1 }}
+                        />
+                      )}
+                    </button>
+                  );
+                }) : (
+                  <div className="w-full h-full flex items-center justify-center text-gray-500 text-sm">No data available</div>
+                )}
+              </div>
+              {/* Dashed average line */}
+              {avg > 0 && (
+                <div className="absolute left-0 right-0 pointer-events-none" style={{ bottom: `${avgPct}%`, borderTop: '1.5px dashed rgba(255,255,255,0.35)' }}>
+                  <span className="absolute right-0" style={{ top: -16, fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#aaa' }}>Avg {fmt(avg)}</span>
+                </div>
+              )}
+            </div>
+
+            {/* X-axis labels (caps) */}
+            {trendData.length > 0 && (
+              <div className="flex gap-0.5" style={{ marginTop: 6 }}>
+                {trendData.map((point, i) => {
+                  const showLabel = trendData.length <= 7 ||
+                    (trendData.length <= 14 && i % 2 === 0) ||
+                    (trendData.length > 14 && (i === 0 || i === trendData.length - 1 || i % Math.ceil(trendData.length / 5) === 0));
+                  const isHighlighted = i === activeIdx;
+                  return (
+                    <div key={i} className="flex-1 flex" style={{ minWidth: 0, justifyContent: i === 0 ? 'flex-start' : i === trendData.length - 1 ? 'flex-end' : 'center' }}>
+                      {(showLabel || isHighlighted) && (
+                        <span className="whitespace-nowrap" style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: isHighlighted ? '#fff' : '#777' }}>
+                          {point.shortLabel || point.label}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Legend for distance */}
+            {isMiles && (
+              <div className="flex items-center justify-center gap-4" style={{ marginTop: 10, fontSize: 11, color: '#aaa' }}>
+                {[['Ran', milesColors.ran], ['Biked', milesColors.biked], ['Walked', milesColors.walked]].map(([l, c]) => (
+                  <span key={l} className="flex items-center gap-1.5"><span className="inline-block" style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: c }} />{l}</span>
+                ))}
+              </div>
+            )}
+
+            {/* Footer: Total and Average */}
+            <div className="flex" style={{ gap: 28, marginTop: 16, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+              {[['Total', fmt(total), config.unit], ['Average', fmt(avg), `${config.unit} / ${perUnit}`]].map(([l, n, u]) => (
+                <div key={l}>
+                  <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.2px' }}>{n}<span style={{ fontSize: 13, color: '#666', fontWeight: 600, marginLeft: 3 }}>{u}</span></div>
+                  <div style={{ ...CAPS, marginTop: 5 }}>{l}</div>
+                </div>
+              ))}
             </div>
           </div>
         );
@@ -711,8 +647,8 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
                     <div className="text-[9px] text-gray-400">Calories</div>
                   </div>
                   <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                    <div className="text-sm font-bold text-white">{dayMiles.toFixed(1)}</div>
-                    <div className="text-[9px] text-gray-400">Miles</div>
+                    <div className="text-sm font-bold text-white">{dist(dayMiles).toFixed(1)}</div>
+                    <div className="text-[9px] text-gray-400">{distanceUnit === 'km' ? 'KM' : 'Miles'}</div>
                   </div>
                   <div className="p-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
                     <div className="text-sm font-bold text-white">{totalDuration}</div>
@@ -734,7 +670,7 @@ const TrendsView = ({ activities = [], calendarData = {}, healthHistory = [], he
                         </div>
                         <div className="flex gap-3 mt-1 text-[10px] text-gray-400">
                           {activity.duration && <span>{activity.duration} min</span>}
-                          {activity.distance && <span>{parseFloat(activity.distance).toFixed(2)} mi</span>}
+                          {activity.distance && <span>{dist(activity.distance).toFixed(2)} {unitLabel(distanceUnit)}</span>}
                           {activity.calories && <span>{activity.calories} cal</span>}
                           {activity.avgHr && <span>HR: {activity.avgHr}</span>}
                         </div>

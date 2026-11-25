@@ -1,4 +1,6 @@
+import AvatarImage from './components/AvatarImage';
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import {
   searchUsers,
@@ -12,6 +14,7 @@ import {
 } from './services/friendService';
 import FriendProfileCard from './components/FriendProfileCard';
 import { isDemoAccount, getDemoFriends, getDemoFriendRequests, getDemoSentRequests } from './demoData';
+import { resolveUnit } from './utils/distance';
 
 // Haptic helper
 const triggerHaptic = async (style = ImpactStyle.Medium) => {
@@ -24,6 +27,20 @@ const triggerHaptic = async (style = ImpactStyle.Medium) => {
 };
 
 const FREE_FRIEND_LIMIT = 3;
+
+// Outside Friends so a re-render doesn't remount it and restart the photo load.
+const ProfilePhoto = ({ photoURL, displayName, size = 48 }) => (
+  <div
+    className="rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden"
+    style={{ width: size, height: size }}
+  >
+    {photoURL ? (
+      <AvatarImage src={photoURL} alt={displayName} />
+    ) : (
+      <span className="text-white text-lg">{displayName?.[0]?.toUpperCase() || '?'}</span>
+    )}
+  </div>
+);
 
 const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenChallenge, initialTab = 'friends' }) => {
   const [activeTab, setActiveTab] = useState(initialTab);
@@ -38,6 +55,7 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
   const [justSent, setJustSent] = useState(new Set()); // Track recently sent requests for animation
   const [isClosing, setIsClosing] = useState(false); // Track closing animation
   const [selectedProfile, setSelectedProfile] = useState(null); // Track selected user profile to view
+  const [friendToRemove, setFriendToRemove] = useState(null); // asks before removing a friend
 
   const handleClose = () => {
     setIsClosing(true);
@@ -165,19 +183,6 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
     if (hasReceivedRequest(uid)) return 'received';
     return 'add';
   };
-
-  const ProfilePhoto = ({ photoURL, displayName, size = 48 }) => (
-    <div
-      className="rounded-full bg-zinc-700 flex items-center justify-center overflow-hidden"
-      style={{ width: size, height: size }}
-    >
-      {photoURL ? (
-        <img src={photoURL} alt={displayName} className="w-full h-full object-cover" />
-      ) : (
-        <span className="text-white text-lg">{displayName?.[0]?.toUpperCase() || '?'}</span>
-      )}
-    </div>
-  );
 
   const UserRow = ({ userData, rightContent, onProfileClick }) => (
     <div className="flex items-center justify-between py-3 px-4">
@@ -417,7 +422,7 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
                           onProfileClick={setSelectedProfile}
                           rightContent={
                             <ActionButton
-                              onClick={() => handleRemoveFriend(friend.uid)}
+                              onClick={() => setFriendToRemove(friend)}
                               className="text-red-400 text-sm px-3 py-1 rounded-full hover:bg-red-400/10"
                             >
                               Remove
@@ -695,6 +700,7 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
         <FriendProfileCard
           friend={selectedProfile}
           onClose={() => setSelectedProfile(null)}
+          distanceUnit={resolveUnit(userProfile)}
           statsVisible={isFriend(selectedProfile.uid)}
           actions={(() => {
             const closeAfter = (fn) => () => { fn?.(); setSelectedProfile(null); };
@@ -704,14 +710,13 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
                   {onOpenChallenge && (
                     <button
                       onClick={closeAfter(() => { triggerHaptic(ImpactStyle.Light); onOpenChallenge(selectedProfile); })}
-                      className="w-full py-3 rounded-full font-semibold transition-all duration-150 active:scale-95"
-                      style={{ backgroundColor: '#FFD60A', color: 'black' }}
+                      className="w-full py-3 rounded-full font-semibold transition-all duration-150 active:scale-95 bg-white text-black active:bg-[#e5e5e5]"
                     >
                       ⚡ Challenge {selectedProfile.displayName?.split(' ')[0] || selectedProfile.username}
                     </button>
                   )}
                   <button
-                    onClick={closeAfter(() => handleRemoveFriend(selectedProfile.uid))}
+                    onClick={closeAfter(() => setFriendToRemove(selectedProfile))}
                     className="w-full py-3 rounded-full font-medium transition-all duration-150 active:scale-95 text-red-400"
                     style={{ backgroundColor: 'rgba(255,69,58,0.1)' }}
                   >
@@ -739,8 +744,7 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
                       const request = requests.find(r => r.fromUid === selectedProfile.uid);
                       if (request) handleAcceptRequest(request);
                     })}
-                    className="flex-1 py-3 rounded-full font-semibold transition-all duration-150 active:scale-95"
-                    style={{ backgroundColor: '#00FF94', color: 'black' }}
+                    className="flex-1 py-3 rounded-full font-semibold transition-all duration-150 active:scale-95 bg-white text-black active:bg-[#e5e5e5]"
                   >
                     Accept
                   </button>
@@ -760,14 +764,52 @@ const Friends = ({ user, userProfile, onClose, isPro, onPresentPaywall, onOpenCh
             return (
               <button
                 onClick={closeAfter(() => handleSendRequest(selectedProfile.uid))}
-                className="w-full py-3 rounded-full font-semibold transition-all duration-150 active:scale-95"
-                style={{ backgroundColor: '#00FF94', color: 'black' }}
+                className="w-full py-3 rounded-full font-semibold transition-all duration-150 active:scale-95 bg-white text-black active:bg-[#e5e5e5]"
               >
                 Add Friend
               </button>
             );
           })()}
         />
+      )}
+
+      {/* Confirm before removing a friend */}
+      {friendToRemove && createPortal(
+        <div data-modal-overlay className="fixed inset-0 z-[9999] flex items-end justify-center" onClick={() => setFriendToRemove(null)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div
+            className="relative w-full max-w-md rounded-t-2xl p-5 text-center"
+            style={{ backgroundColor: '#1a1a1a', paddingBottom: 'calc(20px + env(safe-area-inset-bottom))' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-white font-semibold text-[17px]">
+              Remove {friendToRemove.displayName?.split(' ')[0] || friendToRemove.username || 'this friend'}?
+            </h3>
+            <p className="text-gray-400 text-[13px] mt-1.5 mb-4 leading-snug">
+              You'll stop seeing each other's activity. You can add them again later.
+            </p>
+            <button
+              onClick={() => {
+                const uid = friendToRemove.uid;
+                setFriendToRemove(null);
+                triggerHaptic(ImpactStyle.Medium);
+                handleRemoveFriend(uid);
+              }}
+              className="w-full py-3 rounded-xl text-sm font-semibold"
+              style={{ backgroundColor: 'rgba(255,255,255,0.08)', color: '#FF6B5E' }}
+            >
+              Remove
+            </button>
+            <button
+              onClick={() => setFriendToRemove(null)}
+              className="w-full py-3 mt-2 rounded-xl text-sm font-semibold text-white"
+              style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

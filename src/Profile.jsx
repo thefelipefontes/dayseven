@@ -28,7 +28,7 @@ import { manualCaloriesForDate } from './utils/calories';
 import { canHold, goalsShortOfHalf, isHoldWeek, SHIELD_MIN_PERCENT } from './utils/streakShield';
 import ShieldLadder from './components/ShieldLadder';
 import { CheckBadge as GoalCheckBadge } from './components/WeekGoalsHero';
-import { CARD_SURFACE, GOLD, TEXT_MUTED, TEXT_FAINT, CATEGORY_COLORS as CATEGORY_COLORS_BY_CAT } from './utils/designTokens';
+import { CARD_SURFACE, GOLD, TEXT_MUTED, NUM, CATEGORY_COLORS as CATEGORY_COLORS_BY_CAT } from './utils/designTokens';
 
 
 
@@ -973,14 +973,15 @@ export default function ProfilePage(props) {
         <div className="p-5 mb-2.5" style={CARD_SURFACE}>
           <div className="flex items-end justify-between">
             <div>
-              <div className="flex items-baseline" style={{ fontSize: 60, fontWeight: 800, letterSpacing: '-3px', lineHeight: 1, color: GOLD, fontVariantNumeric: 'tabular-nums' }}>
+              <div className="flex items-baseline" style={{ ...NUM.big, lineHeight: 1, color: GOLD, fontVariantNumeric: 'tabular-nums' }}>
                 {streaks.master || 0}
-                <span style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.5px', marginLeft: 6, color: 'rgba(255,215,0,0.75)' }}>{streaks.master === 1 ? 'week' : 'weeks'}</span>
+                {/* A word, not a "%": a little more room than NUM.bigSmall's 2px */}
+                <span style={{ ...NUM.bigSmall, marginLeft: 5, fontWeight: 700, color: 'rgba(255,215,0,0.75)' }}>{streaks.master === 1 ? 'week' : 'weeks'}</span>
               </div>
               <div className="uppercase" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', marginTop: 10, color: 'rgba(255,215,0,0.9)' }}>Winning streak</div>
             </div>
             <div className="text-right">
-              <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.8px', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{Math.max(records.longestMasterStreak || 0, streaks.master || 0)}</div>
+              <div style={{ ...NUM.value, fontVariantNumeric: 'tabular-nums' }}>{Math.max(records.longestMasterStreak || 0, streaks.master || 0)}</div>
               <div className="uppercase" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', marginTop: 7, color: TEXT_MUTED }}>Longest</div>
             </div>
           </div>
@@ -1012,8 +1013,8 @@ export default function ProfilePage(props) {
                 <CategoryIcon category={cat} size={14} />
                 <span>{label}</span>
               </div>
-              <div className="flex items-baseline" style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.8px', lineHeight: 1, marginTop: 10, fontVariantNumeric: 'tabular-nums' }}>
-                {weeks}<span style={{ fontSize: 14, fontWeight: 700, color: TEXT_FAINT, marginLeft: 2, letterSpacing: 0 }}>w</span>
+              <div className="flex items-baseline" style={{ ...NUM.value, marginTop: 10, fontVariantNumeric: 'tabular-nums' }}>
+                {weeks}<span style={{ ...NUM.valueSmall, marginLeft: 1 }}>w</span>
               </div>
               <div className="text-[11px]" style={{ color: '#777', marginTop: 6 }}>{goal}</div>
             </div>

@@ -1287,16 +1287,15 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
     // Generate dummy feed data for appreview account
     if (isDemoAccount(userProfile, user)) {
       const dummyFriends = [
-        { uid: 'dummy1', username: 'alex_fitness', displayName: 'Alex Thompson', photoURL: 'https://i.pravatar.cc/150?img=1' },
-        { uid: 'dummy2', username: 'sarah_runs', displayName: 'Sarah Chen', photoURL: 'https://i.pravatar.cc/150?img=5' },
-        // Mike and Emma use the same portraits as DEMO_FRIEND_PROFILES in demoData.js
-        // so their avatars match both the leaderboard and the workout photo on their
-        // own feed post. The rest of this list is a separate pravatar set — see the
-        // note above dummyFriends.
-        { uid: 'dummy3', username: 'mike_lifts', displayName: 'Mike Johnson', photoURL: 'https://randomuser.me/api/portraits/men/59.jpg' },
+        { uid: 'dummy1', username: 'alex_fitness', displayName: 'Alex Thompson', photoURL: '/demo-avatars/alex.jpg' },
+        { uid: 'dummy2', username: 'sarah_runs', displayName: 'Sarah Chen', photoURL: '/demo-avatars/sarah.jpg' },
+        // Every friend uses the same portrait as DEMO_FRIEND_PROFILES in demoData.js (sources
+        // there), here and in the reactions and comments below, so a face matches everywhere.
+        // Alex, Sarah and Mike's are crops of their own gym selfies on their feed posts.
+        { uid: 'dummy3', username: 'mike_lifts', displayName: 'Mike Johnson', photoURL: '/demo-avatars/mike.jpg' },
         { uid: 'dummy4', username: 'emma_yoga', displayName: 'Emma Williams', photoURL: '/demo-avatars/emma.png' },
-        { uid: 'dummy5', username: 'jake_athlete', displayName: 'Jake Martinez', photoURL: 'https://i.pravatar.cc/150?img=12' },
-        { uid: 'dummy6', username: 'lisa_cardio', displayName: 'Lisa Park', photoURL: 'https://i.pravatar.cc/150?img=16' }
+        { uid: 'dummy5', username: 'jake_athlete', displayName: 'Jake Martinez', photoURL: '/demo-avatars/jake.jpg' },
+        { uid: 'dummy6', username: 'lisa_cardio', displayName: 'Lisa Park', photoURL: '/demo-avatars/lisa.jpg' }
       ];
 
       const today = new Date();
@@ -1430,51 +1429,51 @@ const ActivityFeed = ({ user, userProfile, friends, onOpenFriends, pendingReques
       // Generate dummy reactions
       const dummyReactions = {
         'dummy1-demo-1': [
-          { reactorUid: 'dummy2', reactionType: '🔥', reactorName: 'Sarah Chen', reactorPhoto: 'https://i.pravatar.cc/150?img=5' },
-          { reactorUid: 'dummy3', reactionType: '💪', reactorName: 'Mike Johnson', reactorPhoto: 'https://i.pravatar.cc/150?img=8' },
-          { reactorUid: 'dummy4', reactionType: '🔥', reactorName: 'Emma Williams', reactorPhoto: 'https://i.pravatar.cc/150?img=9' }
+          { reactorUid: 'dummy2', reactionType: '🔥', reactorName: 'Sarah Chen', reactorPhoto: '/demo-avatars/sarah.jpg' },
+          { reactorUid: 'dummy3', reactionType: '💪', reactorName: 'Mike Johnson', reactorPhoto: '/demo-avatars/mike.jpg' },
+          { reactorUid: 'dummy4', reactionType: '🔥', reactorName: 'Emma Williams', reactorPhoto: '/demo-avatars/emma.png' }
         ],
         'dummy2-demo-2': [
-          { reactorUid: 'dummy1', reactionType: '💪', reactorName: 'Alex Thompson', reactorPhoto: 'https://i.pravatar.cc/150?img=1' },
-          { reactorUid: 'dummy5', reactionType: '🔥', reactorName: 'Jake Martinez', reactorPhoto: 'https://i.pravatar.cc/150?img=12' }
+          { reactorUid: 'dummy1', reactionType: '💪', reactorName: 'Alex Thompson', reactorPhoto: '/demo-avatars/alex.jpg' },
+          { reactorUid: 'dummy5', reactionType: '🔥', reactorName: 'Jake Martinez', reactorPhoto: '/demo-avatars/jake.jpg' }
         ],
         'dummy3-demo-3': [
-          { reactorUid: 'dummy6', reactionType: '💪', reactorName: 'Lisa Park', reactorPhoto: 'https://i.pravatar.cc/150?img=16' },
-          { reactorUid: 'dummy1', reactionType: '🔥', reactorName: 'Alex Thompson', reactorPhoto: 'https://i.pravatar.cc/150?img=1' },
-          { reactorUid: 'dummy2', reactionType: '💪', reactorName: 'Sarah Chen', reactorPhoto: 'https://i.pravatar.cc/150?img=5' }
+          { reactorUid: 'dummy6', reactionType: '💪', reactorName: 'Lisa Park', reactorPhoto: '/demo-avatars/lisa.jpg' },
+          { reactorUid: 'dummy1', reactionType: '🔥', reactorName: 'Alex Thompson', reactorPhoto: '/demo-avatars/alex.jpg' },
+          { reactorUid: 'dummy2', reactionType: '💪', reactorName: 'Sarah Chen', reactorPhoto: '/demo-avatars/sarah.jpg' }
         ],
         'dummy4-demo-4': [
-          { reactorUid: 'dummy1', reactionType: '💪', reactorName: 'Alex Thompson', reactorPhoto: 'https://i.pravatar.cc/150?img=1' },
-          { reactorUid: 'dummy5', reactionType: '🔥', reactorName: 'Jake Martinez', reactorPhoto: 'https://i.pravatar.cc/150?img=12' },
-          { reactorUid: 'dummy3', reactionType: '🔥', reactorName: 'Mike Johnson', reactorPhoto: 'https://i.pravatar.cc/150?img=8' }
+          { reactorUid: 'dummy1', reactionType: '💪', reactorName: 'Alex Thompson', reactorPhoto: '/demo-avatars/alex.jpg' },
+          { reactorUid: 'dummy5', reactionType: '🔥', reactorName: 'Jake Martinez', reactorPhoto: '/demo-avatars/jake.jpg' },
+          { reactorUid: 'dummy3', reactionType: '🔥', reactorName: 'Mike Johnson', reactorPhoto: '/demo-avatars/mike.jpg' }
         ],
         'dummy5-demo-5': [
-          { reactorUid: 'dummy3', reactionType: '🏃', reactorName: 'Mike Johnson', reactorPhoto: 'https://i.pravatar.cc/150?img=8' }
+          { reactorUid: 'dummy3', reactionType: '🏃', reactorName: 'Mike Johnson', reactorPhoto: '/demo-avatars/mike.jpg' }
         ],
         'dummy1-demo-7': [
-          { reactorUid: 'dummy3', reactionType: '🧊', reactorName: 'Mike Johnson', reactorPhoto: 'https://i.pravatar.cc/150?img=8' }
+          { reactorUid: 'dummy3', reactionType: '🧊', reactorName: 'Mike Johnson', reactorPhoto: '/demo-avatars/mike.jpg' }
         ],
         'dummy5-demo-10': [
-          { reactorUid: 'dummy1', reactionType: '🔥', reactorName: 'Alex Thompson', reactorPhoto: 'https://i.pravatar.cc/150?img=1' },
-          { reactorUid: 'dummy2', reactionType: '🏃', reactorName: 'Sarah Chen', reactorPhoto: 'https://i.pravatar.cc/150?img=5' },
-          { reactorUid: 'dummy6', reactionType: '💪', reactorName: 'Lisa Park', reactorPhoto: 'https://i.pravatar.cc/150?img=16' }
+          { reactorUid: 'dummy1', reactionType: '🔥', reactorName: 'Alex Thompson', reactorPhoto: '/demo-avatars/alex.jpg' },
+          { reactorUid: 'dummy2', reactionType: '🏃', reactorName: 'Sarah Chen', reactorPhoto: '/demo-avatars/sarah.jpg' },
+          { reactorUid: 'dummy6', reactionType: '💪', reactorName: 'Lisa Park', reactorPhoto: '/demo-avatars/lisa.jpg' }
         ]
       };
 
       // Generate dummy comments
       const dummyComments = {
         'dummy1-demo-1': [
-          { id: 'c1', commenterUid: 'dummy2', commenterName: 'Sarah Chen', commenterPhoto: 'https://i.pravatar.cc/150?img=5', text: 'Beast mode! 💪', createdAt: new Date(today.getTime() - 3600000).toISOString() },
-          { id: 'c2', commenterUid: 'dummy3', commenterName: 'Mike Johnson', commenterPhoto: 'https://i.pravatar.cc/150?img=8', text: 'What exercises did you do?', createdAt: new Date(today.getTime() - 1800000).toISOString() }
+          { id: 'c1', commenterUid: 'dummy2', commenterName: 'Sarah Chen', commenterPhoto: '/demo-avatars/sarah.jpg', text: 'Beast mode! 💪', createdAt: new Date(today.getTime() - 3600000).toISOString() },
+          { id: 'c2', commenterUid: 'dummy3', commenterName: 'Mike Johnson', commenterPhoto: '/demo-avatars/mike.jpg', text: 'What exercises did you do?', createdAt: new Date(today.getTime() - 1800000).toISOString() }
         ],
         'dummy3-demo-3': [
-          { id: 'c3', commenterUid: 'dummy1', commenterName: 'Alex Thompson', commenterPhoto: 'https://i.pravatar.cc/150?img=1', text: 'Leg day is the best day! 🦵', createdAt: new Date(today.getTime() - 3600000).toISOString() }
+          { id: 'c3', commenterUid: 'dummy1', commenterName: 'Alex Thompson', commenterPhoto: '/demo-avatars/alex.jpg', text: 'Leg day is the best day! 🦵', createdAt: new Date(today.getTime() - 3600000).toISOString() }
         ],
         'dummy4-demo-4': [
-          { id: 'c4', commenterUid: 'dummy2', commenterName: 'Sarah Chen', commenterPhoto: 'https://i.pravatar.cc/150?img=5', text: 'Looking strong! 💪🔥', createdAt: new Date(today.getTime() - 7200000).toISOString() }
+          { id: 'c4', commenterUid: 'dummy2', commenterName: 'Sarah Chen', commenterPhoto: '/demo-avatars/sarah.jpg', text: 'Looking strong! 💪🔥', createdAt: new Date(today.getTime() - 7200000).toISOString() }
         ],
         'dummy5-demo-10': [
-          { id: 'c6', commenterUid: 'dummy6', commenterName: 'Lisa Park', commenterPhoto: 'https://i.pravatar.cc/150?img=16', text: 'Beautiful sunrise run! 🌅', createdAt: new Date(today.getTime() - 3 * 86400000 - 3600000).toISOString() }
+          { id: 'c6', commenterUid: 'dummy6', commenterName: 'Lisa Park', commenterPhoto: '/demo-avatars/lisa.jpg', text: 'Beautiful sunrise run! 🌅', createdAt: new Date(today.getTime() - 3 * 86400000 - 3600000).toISOString() }
         ]
       };
 

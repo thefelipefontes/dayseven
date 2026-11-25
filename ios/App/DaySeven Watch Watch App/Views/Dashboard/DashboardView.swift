@@ -6,44 +6,11 @@ import FirebaseAuth
 struct DashboardView: View {
     @EnvironmentObject var appVM: AppViewModel
 
-    @State private var showDailyDetail = false
-
     var body: some View {
-        GeometryReader { geo in
-            ScrollView {
-                VStack(spacing: 10) {
-                    // Title
-                    Text("DaySeven")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundColor(.gray)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                    if appVM.isLoading {
-                        ProgressView()
-                            .tint(.green)
-                            .padding(.top, 40)
-                    } else {
-                        // The week: its %, the streak, and Strength, Cardio and Steps (board 20)
-                        weekSection
-
-                        // Daily Details Link (today's steps, calories and workouts)
-                        todayButton
-                            .padding(.top, 6)
-
-                        Spacer().frame(height: 8)
-
-                        // Account section
-                        accountSection
-                    }
-                }
-                .padding(.horizontal, 4)
-                .frame(minHeight: geo.size.height, alignment: .center)
-                .offset(y: -14)
-            }
-            .scrollBounceBehavior(.basedOnSize)
-        }
-        .sheet(isPresented: $showDailyDetail) {
-            DailyDetailView()
+        WeekHomePage(model: week, isLoading: appVM.isLoading) {
+            todaySection
+        } footer: {
+            accountSection
         }
     }
 
@@ -97,20 +64,59 @@ struct DashboardView: View {
         )
     }
 
-    private var weekSection: some View {
-        WeekHomeSection(model: week)
+    // MARK: - Today
+
+    private var todaySection: some View {
+        TodaySection(
+            todaySteps: appVM.todaySteps,
+            todayTarget: todayStepTarget,
+            weekGoal: appVM.goals.stepsPerDay * 7,
+            calories: appVM.todayCalories,
+            distance: appVM.distanceUnit == "km" ? appVM.todayDistance * 1.60934 : appVM.todayDistance,
+            distanceUnit: appVM.distanceUnit,
+            workouts: todayWorkouts
+        )
     }
 
-    // MARK: - Today Button
+    /// Today's step target, same rule as the phone's Plan tab: what the week still needed at the
+    /// start of today, split over the days left (today included), rounded up to 100. Nil once
+    /// the week's steps are done: then there's no target and the bar is full.
+    private var todayStepTarget: Int? {
+        let weekGoal = appVM.goals.stepsPerDay * 7
+        guard appVM.weekSteps < weekGoal else { return nil }
+        let dayIndex = Calendar.current.component(.weekday, from: Date()) - 1 // 0 = Sunday
+        let daysLeft = max(7 - dayIndex, 1)
+        let beforeToday = max(appVM.weekSteps - appVM.todaySteps, 0)
+        let needed = max(weekGoal - beforeToday, 0)
+        return Int((Double(needed) / Double(daysLeft) / 100).rounded(.up)) * 100
+    }
 
-    private var todayButton: some View {
-        Button {
-            showDailyDetail = true
-        } label: {
-            Text("Today")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.green)
+    private var todayWorkouts: [TodayWorkoutItem] {
+        let today = formatDateString(Date())
+        return appVM.activities.filter { $0.date == today }.map { activity in
+            let category = ActivityTypes.getActivityCategory(activity)
+            let color: Color
+            let icon: WeekLineIcon.Icon
+            switch category {
+            case "lifting", "lifting+cardio": color = AppColors.strength; icon = .dumbbell
+            case "recovery": color = AppColors.recovery; icon = .snowflake
+            default: color = AppColors.cardio; icon = .run
+            }
+            // "Chest, Back · 52 min"
+            var meta: [String] = []
+            let areas = activity.effectiveFocusAreas
+            if !areas.isEmpty { meta.append(areas.joined(separator: ", ")) }
+            else if let subtype = activity.subtype, !subtype.isEmpty { meta.append(subtype) }
+            if let minutes = activity.duration, minutes > 0 {
+                meta.append(minutes >= 60 ? formatDuration(minutes) : "\(minutes) min")
+            }
+            return TodayWorkoutItem(
+                id: "\(activity.id)",
+                name: activity.strengthType ?? activity.type,
+                meta: meta.joined(separator: " · "),
+                color: color,
+                icon: icon
+            )
         }
-        .buttonStyle(.plain)
     }
 }

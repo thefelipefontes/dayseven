@@ -42,11 +42,13 @@ enum WeekColors {
 /// The week's %, the streak, the line under them and the three goal rows.
 struct WeekHomeSection: View {
     let model: WeekModel
+    /// 40/41/42mm: a slightly smaller % and tighter rows, so the whole week fits the first screen
+    var compact = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top) {
-                WeekPercentView(model: model, size: 40)
+                WeekPercentView(model: model, size: compact ? 32 : 40)
                 Spacer(minLength: 4)
                 WeekStreakChip(model: model, size: 15)
                     .padding(.top, 2)
@@ -60,21 +62,21 @@ struct WeekHomeSection: View {
                     .foregroundColor(WeekColors.gold)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
-                    .padding(.top, 8)
+                    .padding(.top, compact ? 6 : 8)
             } else {
                 Text(model.daysLeftText)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(WeekColors.daysLeft)
                     .lineLimit(1)
-                    .padding(.top, 6)
+                    .padding(.top, compact ? 4 : 6)
             }
 
-            VStack(spacing: 9) {
+            VStack(spacing: compact ? 4 : 9) {
                 WeekGoalRow(model: model, goal: .strength)
                 WeekGoalRow(model: model, goal: .cardio)
                 WeekGoalRow(model: model, goal: .steps)
             }
-            .padding(.top, model.won ? 13 : 11)
+            .padding(.top, compact ? 6 : (model.won ? 13 : 11))
         }
         .padding(.horizontal, 4)
     }
@@ -157,7 +159,8 @@ struct WeekGoalRow: View {
         return (Text(main).font(.system(size: 14, weight: .heavy)).foregroundColor(.white)
                 + Text(rest).font(.system(size: 9, weight: .bold)).foregroundColor(WeekColors.faint))
             .lineLimit(1)
-            .minimumScaleFactor(0.8)
+            .minimumScaleFactor(0.8) // narrow screens only
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -218,11 +221,12 @@ struct WeekStepsBar: View {
 // MARK: - Line icons (the same paths Home uses, drawn from their SVG source)
 
 struct WeekLineIcon: View {
-    enum Icon { case strength, cardio, steps }
+    enum Icon { case strength, cardio, steps, dumbbell, run, snowflake, calories, pin, chevronDown }
 
     let icon: Icon
     let color: Color
     let size: CGFloat
+    var lineWidth: CGFloat = 2
 
     static func icon(for g: WeekModel.Goal) -> Icon {
         switch g {
@@ -245,6 +249,20 @@ struct WeekLineIcon: View {
             "M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z",
             "M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z",
             "M16 17h4", "M4 13h4"]
+        case .dumbbell: return [
+            "M17.596 12.768a2 2 0 1 0 2.829-2.829l-1.768-1.767a2 2 0 0 0 2.828-2.829l-2.828-2.828a2 2 0 0 0-2.829 2.828l-1.767-1.768a2 2 0 1 0-2.829 2.829z",
+            "m2.5 21.5 1.4-1.4", "m20.1 3.9 1.4-1.4",
+            "M5.343 21.485a2 2 0 1 0 2.829-2.828l1.767 1.768a2 2 0 1 0 2.829-2.829l-6.364-6.364a2 2 0 1 0-2.829 2.829l1.768 1.767a2 2 0 0 0-2.828 2.829z",
+            "m9.6 14.4 4.8-4.8"]
+        case .run: return [
+            "M12 4a1 1 0 1 0 2 0a1 1 0 1 0 -2 0", "M4 17l5 1l.75 -1.5", "M15 21l0 -4l-4 -3l1 -6", "M7 12l0 -3l5 -1l3 3l3 1"]
+        case .snowflake: return ["M12 2v20", "M2 12h20", "M4.93 4.93l14.14 14.14", "M19.07 4.93L4.93 19.07"]
+        case .calories: return [ // the phone's live-workout calories flame
+            "M12 10.941c2.333 -3.308 .167 -7.823 -1 -8.941c0 3.395 -2.235 5.299 -3.667 6.706c-1.43 1.408 -2.333 3.621 -2.333 5.588c0 3.704 3.134 6.706 7 6.706s7 -3.002 7 -6.706c0 -1.712 -1.232 -4.403 -2.333 -5.588c-2.084 3.353 -3.249 3.353 -4.667 2.235"]
+        case .pin: return [
+            "M9 11a3 3 0 1 0 6 0a3 3 0 0 0 -6 0",
+            "M17.657 16.657l-4.243 4.243a2 2 0 0 1 -2.827 0l-4.244 -4.243a8 8 0 1 1 11.314 0z"]
+        case .chevronDown: return ["M6 9l6 6l6 -6"]
         }
     }
 
@@ -254,7 +272,7 @@ struct WeekLineIcon: View {
             ForEach(Self.paths(icon), id: \.self) { d in
                 WeekSVGPath.path(d)
                     .applying(CGAffineTransform(scaleX: scale, y: scale))
-                    .stroke(color, style: StrokeStyle(lineWidth: 2 * scale, lineCap: .round, lineJoin: .round))
+                    .stroke(color, style: StrokeStyle(lineWidth: lineWidth * scale, lineCap: .round, lineJoin: .round))
             }
         }
         .frame(width: size, height: size)
@@ -391,5 +409,234 @@ enum WeekSVGPath {
                           control2: CGPoint(x: e.x - t * de.x, y: e.y - t * de.y))
             a = b
         }
+    }
+}
+
+// MARK: - The home page (board 20 + board 39, option A)
+
+/// The first screen is the week, with a small arrow above the page dots saying there's more;
+/// the crown scrolls down to Today and then the footer (the account).
+struct WeekHomePage<Today: View, Footer: View>: View {
+    let model: WeekModel
+    let isLoading: Bool
+    @ViewBuilder let today: () -> Today
+    @ViewBuilder let footer: () -> Footer
+
+    @State private var scrolled = false
+
+    var body: some View {
+        GeometryReader { geo in
+            // 40/41/42/44mm: a slightly smaller week so all of it fits above the arrow
+            let compact = geo.size.width < 190
+            ScrollView {
+                VStack(spacing: 0) {
+                    VStack(spacing: compact ? 6 : 10) {
+                        // Sits in the clock's row, like a watchOS title
+                        Text("DaySeven")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundColor(.gray)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        if isLoading {
+                            ProgressView()
+                                .tint(.green)
+                                .padding(.top, 40)
+                        } else {
+                            WeekHomeSection(model: model, compact: compact)
+                        }
+                    }
+                    // Fills the first screen down to its bottom edge (the content is lifted 36pt
+                    // into the clock's row, and the page runs under the bottom inset), so Today
+                    // starts below the fold
+                    .frame(minHeight: geo.size.height + geo.safeAreaInsets.bottom + 36 + 4, alignment: .top)
+
+                    if !isLoading {
+                        today()
+                            .padding(.top, 4)
+                        footer()
+                            .padding(.top, 18)
+                            .padding(.bottom, 24)
+                    }
+                }
+                .padding(.horizontal, 4)
+                .offset(y: -36)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .onScrollGeometryChange(for: Bool.self) { $0.contentOffset.y > 8 } action: { _, now in
+                withAnimation(.easeOut(duration: 0.15)) { scrolled = now }
+            }
+        }
+        // The "more below" arrow: pinned just above the page dots (drawn at the screen's
+        // bottom edge, 6pt up), and gone once the crown has scrolled
+        .overlay {
+            GeometryReader { g in
+                WeekLineIcon(icon: .chevronDown, color: WeekColors.faint, size: 13, lineWidth: 2.6)
+                    .opacity(0.8)
+                    .position(x: g.size.width / 2, y: g.size.height - 21)
+            }
+            .ignoresSafeArea(edges: .bottom)
+            .opacity(isLoading || scrolled ? 0 : 1)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+}
+
+// MARK: - Today, under the week (board 39, option A: the crown scrolls down to it)
+
+/// One of today's workouts, as the Today section lists it.
+struct TodayWorkoutItem: Identifiable {
+    let id: String
+    let name: String
+    let meta: String
+    let color: Color
+    let icon: WeekLineIcon.Icon
+}
+
+/// Steps against today's share of the week, calories, distance and today's workouts.
+struct TodaySection: View {
+    let todaySteps: Int
+    /// Today's share of what's left of the weekly goal; nil once the week's steps are done
+    let todayTarget: Int?
+    let weekGoal: Int
+    let calories: Int
+    let distance: Double   // already in the user's unit
+    let distanceUnit: String
+    let workouts: [TodayWorkoutItem]
+
+    static let calColor = Color(red: 1.0, green: 0.420, blue: 0.420)  // #FF6B6B, the phone's live-workout calories
+    static let pinColor = Color(white: 0.81)                          // #cfcfcf
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            divider
+            stepsCard
+                .padding(.bottom, 8)
+            HStack(spacing: 8) {
+                miniCard(icon: .calories, color: Self.calColor, label: "Cal", value: "\(calories)")
+                miniCard(icon: .pin, color: Self.pinColor, label: distanceUnit == "km" ? "Km" : "Mi",
+                         value: String(format: "%.1f", distance))
+            }
+            .padding(.bottom, 10)
+            caps("Workouts", size: 9.5)
+                .padding(.horizontal, 2)
+                .padding(.bottom, 7)
+            if workouts.isEmpty {
+                Text("No workouts yet today")
+                    .font(.system(size: 12))
+                    .foregroundColor(WeekColors.muted)
+                    .padding(.horizontal, 2)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(workouts) { workoutRow($0) }
+                }
+                .padding(.horizontal, 2)
+            }
+        }
+    }
+
+    private var divider: some View {
+        HStack(spacing: 6) {
+            Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
+            caps("Today", size: 10)
+            Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
+        }
+        .padding(.horizontal, 2)
+        .padding(.bottom, 10)
+    }
+
+    private var stepsCard: some View {
+        let done = todayTarget == nil
+        let fraction = done ? 1 : min(1, Double(todaySteps) / Double(max(todayTarget ?? 1, 1)))
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 5) {
+                WeekLineIcon(icon: .steps, color: AppColors.steps, size: 13)
+                Text("Steps").font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
+                Spacer(minLength: 4)
+                (Text(WeekModel.k(todaySteps)).font(.system(size: 17, weight: .bold)).foregroundColor(.white)
+                 + Text(todayTarget.map { "/\(WeekModel.k($0))" } ?? "")
+                    .font(.system(size: 12, weight: .bold)).foregroundColor(WeekColors.faint))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(AppColors.steps.opacity(0.22))
+                    Capsule().fill(AppColors.steps)
+                        .frame(width: max(6, geo.size.width * fraction))
+                        .opacity(done || todaySteps > 0 ? 1 : 0)
+                }
+            }
+            .frame(height: 6)
+            .padding(.top, 7)
+            // "Week won" now means all three goals, so a done steps week says just that
+            Text(done ? "Steps done for the week" : "On pace for \(WeekModel.k0(weekGoal)) this week")
+                .font(.system(size: 11))
+                .foregroundColor(WeekColors.muted)
+                .lineLimit(2)
+                .padding(.top, 6)
+        }
+        .padding(EdgeInsets(top: 10, leading: 11, bottom: 11, trailing: 11))
+        .background(TodayCard())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(done ? "\(todaySteps) steps today. Steps done for the week"
+                                 : "\(todaySteps) of \(todayTarget ?? 0) steps today")
+    }
+
+    private func miniCard(icon: WeekLineIcon.Icon, color: Color, label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                WeekLineIcon(icon: icon, color: color, size: 11, lineWidth: 2.4)
+                caps(label, size: 8.5)
+            }
+            Text(value)
+                .font(.system(size: 17, weight: .bold))
+                .foregroundColor(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(EdgeInsets(top: 8, leading: 9, bottom: 9, trailing: 9))
+        .background(TodayCard())
+        .accessibilityElement(children: .combine)
+    }
+
+    private func workoutRow(_ w: TodayWorkoutItem) -> some View {
+        HStack(spacing: 8) {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(w.color.opacity(0.16))
+                .frame(width: 26, height: 26)
+                .overlay(WeekLineIcon(icon: w.icon, color: w.color, size: 14))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(w.name)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                if !w.meta.isEmpty {
+                    Text(w.meta)
+                        .font(.system(size: 10.5))
+                        .foregroundColor(WeekColors.muted)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func caps(_ text: String, size: CGFloat) -> some View {
+        Text(text.uppercased())
+            .font(.system(size: size, weight: .bold))
+            .tracking(size * 0.13)
+            .foregroundColor(WeekColors.muted)
+            .lineLimit(1)
+    }
+}
+
+/// The phone's card surface: a faint white gradient, rounded 14.
+private struct TodayCard: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 14)
+            .fill(LinearGradient(colors: [Color.white.opacity(0.085), Color.white.opacity(0.05)],
+                                 startPoint: .top, endPoint: .bottom))
     }
 }

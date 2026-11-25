@@ -31,7 +31,7 @@ import ActivityIcon, { ICON_PICKER_CATEGORIES, CATEGORY_COLORS as ICON_CATEGORY_
 import RouteMapView, { ll2px, bestFit, snapshotBasemap } from './components/RouteMapView';
 import MuscleBodyMap from './components/MuscleBodyMap';
 import { isDemoAccount, getDemoActivities, getDemoUserData, getDemoProfileOverride, getDemoHealthKitData, getDemoHealthHistory, getDemoCalendarData, getDemoFriends, getDemoChallengeStats } from './demoData';
-import { Dumbbell, Footprints } from 'lucide-react';
+import { Dumbbell } from 'lucide-react';
 import { IconRun, IconSnowflake } from '@tabler/icons-react';
 import { triggerHaptic } from './utils/haptics';
 import { clearFeedSnapshot } from './utils/feedSnapshot';
@@ -57,7 +57,7 @@ import { reverseGeocode, formatLocation } from './utils/geocode';
 import SectionIcon from './components/SectionIcon';
 import CategoryIcon from './components/CategoryIcon';
 import WeekGoalsHero, { CheckBadge, Collapse } from './components/WeekGoalsHero';
-import { CATEGORY_COLORS, CARD_SURFACE, CARD_BG_SOLID, GOLD, TEXT_MUTED, NUM, goldMix } from './utils/designTokens';
+import { CATEGORY_COLORS, CARD_SURFACE, CARD_BG_SOLID, GOLD, TEXT_MUTED, NUM, goldMix, hexToRgb, TRACK_ALPHA } from './utils/designTokens';
 import LongPressMenu from './components/LongPressMenu';
 import { SwipeableProvider, SwipeableActivityItem, SwipeableContext, globalIsPulling } from './components/SwipeableActivityItem';
 import WeekStatsModal from './components/WeekStatsModal';
@@ -4834,44 +4834,37 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
     return data;
   };
 
-  // Mini activity rings component
-  const MiniRings = ({ size = 50 }) => {
-    const rings = [
-      { progress: weeklyProgress?.lifts ? Math.min(weeklyProgress.lifts.completed / weeklyProgress.lifts.goal, 1) : 0, color: '#00FF94', label: 'S' },
-      { progress: weeklyProgress?.cardio ? Math.min(weeklyProgress.cardio.completed / weeklyProgress.cardio.goal, 1) : 0, color: '#FF9500', label: 'C' },
-      // Third ring is the week's steps (one of the three goals that win the week); Recovery is a
-      // bonus and stays off the stamp. Falls back to Recovery only when no step data was passed.
-      weekSteps?.goal
-        ? { progress: Math.min(weekSteps.total / weekSteps.goal, 1), color: '#BF5AF2', label: 'St' }
-        : { progress: weeklyProgress?.recovery ? Math.min(weeklyProgress.recovery.completed / weeklyProgress.recovery.goal, 1) : 0, color: '#00D1FF', label: 'R' },
-    ];
-    const cx = size / 2, cy = size / 2;
-    const strokeWidth = 3.5;
-    const gap = 4.5;
-
+  // "This week" on the stamp (Nov 2026 redesign, mock-extras.html stampDark('A') /
+  // stampOverlay('new')): Strength and Cardio as one block per session, Steps as a bar —
+  // or Recovery in cyan when no step data was passed — plus the week % Home shows.
+  const stampWeekRows = [
+    { key: 'lifts', color: '#00FF94', rgb: '0,255,148', done: weeklyProgress?.lifts?.completed || 0, goal: weeklyProgress?.lifts?.goal || 0 },
+    { key: 'cardio', color: '#FF9500', rgb: '255,149,0', done: weeklyProgress?.cardio?.completed || 0, goal: weeklyProgress?.cardio?.goal || 0 },
+    weekSteps?.goal
+      ? { key: 'steps', color: '#BF5AF2', rgb: '191,90,242', done: weekSteps.total || 0, goal: weekSteps.goal, bar: true }
+      : { key: 'recovery', color: '#00D1FF', rgb: '0,209,255', done: weeklyProgress?.recovery?.completed || 0, goal: weeklyProgress?.recovery?.goal || 0 },
+  ];
+  const stampWeekPct = Math.round((stampWeekRows.reduce((sum, r) => sum + (r.goal > 0 ? Math.min(1, r.done / r.goal) : 1), 0) / stampWeekRows.length) * 100);
+  const stampTrack = (r, overlay) => {
+    const empty = overlay ? 'rgba(255,255,255,0.28)' : `rgba(${r.rgb},${TRACK_ALPHA})`;
+    if (r.bar) {
+      return (
+        <div style={{ position: 'relative', height: 5, borderRadius: 2.5, backgroundColor: empty }}>
+          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${r.goal > 0 ? Math.min(100, (r.done / r.goal) * 100) : 0}%`, borderRadius: 2.5, backgroundColor: r.color }} />
+        </div>
+      );
+    }
+    const met = r.goal > 0 && r.done >= r.goal;
     return (
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        {rings.map((ring, i) => {
-          const r = (size / 2) - strokeWidth / 2 - i * gap;
-          const circumference = 2 * Math.PI * r;
-          const offset = circumference * (1 - ring.progress);
-          return (
-            <g key={i}>
-              <circle cx={cx} cy={cy} r={r} fill="none"
-                stroke={isTransparent ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.08)'}
-                strokeWidth={strokeWidth} />
-              <circle cx={cx} cy={cy} r={r} fill="none"
-                stroke={ring.color} strokeWidth={strokeWidth}
-                strokeDasharray={circumference} strokeDashoffset={offset}
-                strokeLinecap="round"
-                transform={`rotate(-90 ${cx} ${cy})`}
-                style={isTransparent ? { filter: `drop-shadow(0 0 3px ${ring.color})` } : {}} />
-            </g>
-          );
-        })}
-      </svg>
+      <div style={{ display: 'flex', gap: 2 }}>
+        {Array.from({ length: Math.max(1, r.goal) }, (_, i) => (
+          <div key={i} style={{ flex: 1, height: 5, borderRadius: 2.5, backgroundColor: i < r.done ? r.color : empty, boxShadow: met && !overlay ? `0 0 8px rgba(${r.rgb},0.5)` : 'none' }} />
+        ))}
+      </div>
     );
   };
+  const stampWeekValue = (r) => (r.bar ? fmtStampK(r.done) : r.done);
+  const stampWeekGoal = (r) => (r.bar ? fmtStampK(r.goal) : r.goal);
 
   // Image generation using html-to-image (faithful browser rendering via SVG foreignObject)
   const generateStampImage = async () => {
@@ -5229,41 +5222,21 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
                 )}
               </div>
 
-              {/* Mini rings + fractions row */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <MiniRings size={32} />
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                  {weeklyProgress?.lifts && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                      <Dumbbell size={10} color="#00FF94" strokeWidth={2.5} />
-                      <span style={{ fontSize: 11, fontWeight: 600, color: '#fff', textShadow: tShadow }}>
-                        {weeklyProgress.lifts.completed}/{weeklyProgress.lifts.goal}
+              {/* This week: the week % and three short tracks, shadowed to read on any photo */}
+              <div style={{ marginBottom: 9 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#fff', textShadow: tShadow, marginBottom: 6 }}>
+                  <span style={{ color: goldMix(stampWeekPct), letterSpacing: 0, fontSize: 12, fontWeight: 800 }}>{stampWeekPct}%</span> this week
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  {stampWeekRows.map((r) => (
+                    <div key={r.key} style={{ display: 'flex', alignItems: 'center', gap: 6, filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.55))' }}>
+                      <CategoryIcon category={r.key} size={10} />
+                      <div style={{ width: 84 }}>{stampTrack(r, true)}</div>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', textShadow: tShadow }}>
+                        {stampWeekValue(r)}<span style={{ fontSize: 8.5, fontWeight: 600, opacity: 0.75 }}>/{stampWeekGoal(r)}</span>
                       </span>
                     </div>
-                  )}
-                  {weeklyProgress?.cardio && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                      <IconRun size={10} color="#FF9500" strokeWidth={2.5} />
-                      <span style={{ fontSize: 11, fontWeight: 600, color: '#fff', textShadow: tShadow }}>
-                        {weeklyProgress.cardio.completed}/{weeklyProgress.cardio.goal}
-                      </span>
-                    </div>
-                  )}
-                  {weekSteps?.goal ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                      <Footprints size={10} color="#BF5AF2" strokeWidth={2.5} />
-                      <span style={{ fontSize: 11, fontWeight: 600, color: '#fff', textShadow: tShadow }}>
-                        {fmtStampK(weekSteps.total)}/{fmtStampK(weekSteps.goal)}
-                      </span>
-                    </div>
-                  ) : weeklyProgress?.recovery && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                      <IconSnowflake size={10} color="#00D1FF" strokeWidth={2.5} />
-                      <span style={{ fontSize: 11, fontWeight: 600, color: '#fff', textShadow: tShadow }}>
-                        {weeklyProgress.recovery.completed}/{weeklyProgress.recovery.goal}
-                      </span>
-                    </div>
-                  )}
+                  ))}
                 </div>
               </div>
 
@@ -5293,7 +5266,7 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
               <div style={{
                 width: 30, height: 30, borderRadius: 8,
-                backgroundColor: `${categoryColor}15`,
+                backgroundColor: categoryColor.length === 7 ? `rgba(${hexToRgb(categoryColor)},0.16)` : 'rgba(255,255,255,0.08)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 flexShrink: 0,
               }}>
@@ -5369,36 +5342,33 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
               <div style={{ display: 'flex', justifyContent: 'center', gap: 24 }}>
                 {hasDistance && pace > 0 && (
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 20, fontWeight: 700, color: textColor, textShadow: tShadow }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px', lineHeight: 1.2, color: textColor }}>
                       {paceStr}
                     </div>
                     <div style={{
-                      fontSize: 10, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
-                      textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px',
+                      fontSize: 9, fontWeight: 700, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: '0.14em', marginTop: 3,
                     }}>
                       /{distanceUnitLabel} pace
                     </div>
                   </div>
                 )}
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: textColor, textShadow: tShadow }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px', lineHeight: 1.2, color: textColor }}>
                     {durationStr}
                   </div>
                   <div style={{
-                    fontSize: 10, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
-                    textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px',
+                    fontSize: 9, fontWeight: 700, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: '0.14em', marginTop: 3,
                   }}>
                     time
                   </div>
                 </div>
                 {activity.calories > 0 && (
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 20, fontWeight: 700, color: textColor, textShadow: tShadow }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px', lineHeight: 1.2, color: textColor }}>
                       {activity.calories}
                     </div>
                     <div style={{
-                      fontSize: 10, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
-                      textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px',
+                      fontSize: 9, fontWeight: 700, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: '0.14em', marginTop: 3,
                     }}>
                       cal
                     </div>
@@ -5413,24 +5383,22 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
                 {/* Stats row — smaller, right under header */}
                 <div style={{ display: 'flex', justifyContent: 'center', gap: 24, marginTop: -4 }}>
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 22, fontWeight: 800, color: textColor, textShadow: tShadow, lineHeight: 1 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px', lineHeight: 1.2, color: textColor }}>
                       {durationStr}
                     </div>
                     <div style={{
-                      fontSize: 9, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
-                      textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: 2,
+                      fontSize: 9, fontWeight: 700, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: '0.14em', marginTop: 3,
                     }}>
                       duration
                     </div>
                   </div>
                   {activity.calories > 0 && (
                     <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: 22, fontWeight: 800, color: textColor, textShadow: tShadow, lineHeight: 1 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px', lineHeight: 1.2, color: textColor }}>
                         {activity.calories}
                       </div>
                       <div style={{
-                        fontSize: 9, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
-                        textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: 2,
+                        fontSize: 9, fontWeight: 700, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: '0.14em', marginTop: 3,
                       }}>
                         cal
                       </div>
@@ -5484,12 +5452,11 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
                 </div>
                 {activity.calories > 0 && (
                   <div style={{ marginTop: 16 }}>
-                    <div style={{ fontSize: 22, fontWeight: 700, color: textColor, textShadow: tShadow }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px', lineHeight: 1.2, color: textColor }}>
                       {activity.calories}
                     </div>
                     <div style={{
-                      fontSize: 10, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
-                      textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px',
+                      fontSize: 9, fontWeight: 700, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: '0.14em', marginTop: 3,
                     }}>
                       calories
                     </div>
@@ -5515,12 +5482,11 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
                 </div>
                 {activity.calories > 0 && (
                   <div style={{ marginTop: 16 }}>
-                    <div style={{ fontSize: 22, fontWeight: 700, color: textColor, textShadow: tShadow }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px', lineHeight: 1.2, color: textColor }}>
                       {activity.calories}
                     </div>
                     <div style={{
-                      fontSize: 10, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
-                      textShadow: tShadow, textTransform: 'uppercase', letterSpacing: '0.5px',
+                      fontSize: 9, fontWeight: 700, color: '#8a8a8a', textTransform: 'uppercase', letterSpacing: '0.14em', marginTop: 3,
                     }}>
                       calories
                     </div>
@@ -5548,52 +5514,21 @@ const ActivityStampModal = ({ isOpen, onClose, activity, weeklyProgress, weekSte
             )}
           </div>
 
-          {/* Footer: Rings + Category fractions with icons (centered row) */}
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            marginTop: 'auto', paddingTop: isPost ? 12 : 0, gap: 10,
-          }}>
-            <MiniRings size={40} />
-            <div>
-              <div style={{
-                fontSize: 9, color: isTransparent ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
-                textShadow: tShadow, letterSpacing: '0.3px', marginBottom: 2,
-              }}>
-                This week
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                {weeklyProgress?.lifts && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                    <Dumbbell size={11} color="#00FF94" strokeWidth={2.5} />
-                    <span style={{ fontSize: 12, fontWeight: 600, color: isTransparent ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.5)', textShadow: tShadow }}>
-                      {weeklyProgress.lifts.completed}/{weeklyProgress.lifts.goal}
-                    </span>
-                  </div>
-                )}
-                {weeklyProgress?.cardio && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                    <IconRun size={11} color="#FF9500" strokeWidth={2.5} />
-                    <span style={{ fontSize: 12, fontWeight: 600, color: isTransparent ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.5)', textShadow: tShadow }}>
-                      {weeklyProgress.cardio.completed}/{weeklyProgress.cardio.goal}
-                    </span>
-                  </div>
-                )}
-                {weekSteps?.goal ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                    <Footprints size={11} color="#BF5AF2" strokeWidth={2.5} />
-                    <span style={{ fontSize: 12, fontWeight: 600, color: isTransparent ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.5)', textShadow: tShadow }}>
-                      {fmtStampK(weekSteps.total)}/{fmtStampK(weekSteps.goal)}
-                    </span>
-                  </div>
-                ) : weeklyProgress?.recovery && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                    <IconSnowflake size={11} color="#00D1FF" strokeWidth={2.5} />
-                    <span style={{ fontSize: 12, fontWeight: 600, color: isTransparent ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.5)', textShadow: tShadow }}>
-                      {weeklyProgress.recovery.completed}/{weeklyProgress.recovery.goal}
-                    </span>
-                  </div>
-                )}
-              </div>
+          {/* Footer: "This week" — the week % and one short track per goal under a hairline */}
+          <div style={{ marginTop: 'auto', paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
+              <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#8a8a8a' }}>This week</span>
+              <span style={{ fontSize: 14, fontWeight: 800, letterSpacing: '-0.3px', color: goldMix(stampWeekPct) }}>
+                {stampWeekPct}<span style={{ fontSize: 9 }}>%</span>
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              {stampWeekRows.map((r) => (
+                <div key={r.key} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <CategoryIcon category={r.key} size={10} />
+                  <div style={{ flex: 1 }}>{stampTrack(r, false)}</div>
+                </div>
+              ))}
             </div>
           </div>
 

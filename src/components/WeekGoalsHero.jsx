@@ -210,7 +210,9 @@ export default function WeekGoalsHero({ percent, daysLeft, rows }) {
         <div>
           <div
             data-week-number
-            className="inline-block"
+            // flex + baseline, not inline-block: an inline-block sits in a line box at the app's
+            // 1.5 line-height, which put ~6pt of extra space between the digits and the label.
+            className="flex items-baseline"
             style={{
               ...NUM.big, lineHeight: 0.8,
               color: goldMix(shownPercent),
@@ -221,7 +223,7 @@ export default function WeekGoalsHero({ percent, daysLeft, rows }) {
           >
             {shownPercent}<span style={NUM.bigSmall}>%</span>
           </div>
-          <div className="uppercase" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', marginTop: 12, color: showWon ? 'rgba(255,215,0,0.92)' : TEXT_MUTED }}>
+          <div className="uppercase" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', marginTop: 10, color: showWon ? 'rgba(255,215,0,0.92)' : TEXT_MUTED }}>
             {showWon ? 'Week won' : 'Week progress'}
           </div>
         </div>

@@ -620,6 +620,21 @@ const OfflineIndicator = () => {
 };
 
 // Active Workout Indicator Component - Shows when a workout is in progress
+// Small line icons for the live workout's stat cells (tabler paths, as in mocks/mock-workouts.html).
+const LIVE_ICON = {
+  heart: ['M19.5 12.572l-7.5 7.428l-7.5 -7.428a5 5 0 1 1 7.5 -6.566a5 5 0 1 1 7.5 6.572'],
+  flame: ['M12 10.941c2.333 -3.308 .167 -7.823 -1 -8.941c0 3.395 -2.235 5.299 -3.667 6.706c-1.43 1.408 -2.333 3.621 -2.333 5.588c0 3.704 3.134 6.706 7 6.706s7 -3.002 7 -6.706c0 -1.712 -1.232 -4.403 -2.333 -5.588c-2.084 3.353 -3.249 3.353 -4.667 2.235'],
+  pin: ['M9 11a3 3 0 1 0 6 0a3 3 0 0 0 -6 0', 'M17.657 16.657l-4.243 4.243a2 2 0 0 1 -2.827 0l-4.244 -4.243a8 8 0 1 1 11.314 0z'],
+  camera: ['M5 7h1a2 2 0 0 0 2 -2a1 1 0 0 1 1 -1h6a1 1 0 0 1 1 1a2 2 0 0 0 2 2h1a2 2 0 0 1 2 2v9a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2', 'M9 13a3 3 0 1 0 6 0a3 3 0 0 0 -6 0'],
+  image: ['M15 8h.01', 'M3 6a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v12a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3v-12z', 'M3 16l5 -5c.928 -.893 2.072 -.893 3 0l5 5', 'M14 14l1 -1c.928 -.893 2.072 -.893 3 0l3 3'],
+  bolt: ['M13 3l0 7l6 0l-8 11l0 -7l-6 0l8 -11'],
+};
+const LiveStatIcon = ({ d, color, size = 12, strokeWidth = 2.4 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {d.map((p) => <path key={p} d={p} />)}
+  </svg>
+);
+
 const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFinishing, onResumedFromWatch, distanceUnit = 'mi' }) => {
   const _metersPerUnit = distanceUnit === 'km' ? 1000 : 1609.34;
   const _unitLabel = distanceUnit === 'km' ? 'KM' : 'MI';
@@ -785,6 +800,12 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
   // Use frozen time when finishing, otherwise use live elapsed time
   const displayElapsed = frozenElapsed !== null ? frozenElapsed : elapsed;
 
+  // The workout's category colour (Nov 2026 redesign): the dot, the icon and its tile take it.
+  const liveCat = getActivityCategory(workout);
+  const liveColor = liveCat === 'cardio' ? '#FF9500' : liveCat === 'recovery' ? '#00D1FF' : (liveCat === 'lifting' || liveCat === 'lifting+cardio') ? '#00FF94' : '#aaa';
+  const liveRgb = hexToRgb(liveColor);
+  const liveIcon = (size) => customEmoji || <ActivityIcon type={workout.type} subtype={workout.subtype} strengthType={workout.strengthType} customIcon={workout.customIcon} sportEmoji={workout.sportEmoji} size={size} color={liveColor} />;
+
   // Compact pill view (default, or forced when finishing)
   if (!isExpanded || isFinishing) {
     return (
@@ -796,31 +817,31 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
             ? { right: '16px' }
             : { left: '50%', transform: 'translateX(-50%)' }
           ),
-          backgroundColor: 'rgba(0,0,0,0.95)',
-          border: isFinishing ? '1px solid rgba(255,180,0,0.6)' : '1px solid rgba(0,255,148,0.4)',
+          backgroundColor: 'rgba(18,18,20,0.96)',
+          boxShadow: `inset 0 0 0 1px ${isFinishing ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.16)'}, 0 8px 24px rgba(0,0,0,0.5)`,
           backdropFilter: 'blur(20px)',
           borderRadius: '20px',
-          padding: '6px 12px',
+          padding: '7px 13px',
         }}
         onClick={() => !isFinishing && setIsExpanded(true)}
       >
-        {/* Status indicator dot - orange when finishing, green when recording */}
+        {/* Status dot in the category colour; it stops pulsing while finishing */}
         <span
           className={`w-2 h-2 rounded-full ${isFinishing ? '' : 'animate-pulse'}`}
-          style={{ backgroundColor: isFinishing ? '#FFB400' : '#00FF94' }}
+          style={{ backgroundColor: liveColor, boxShadow: `0 0 8px rgba(${liveRgb},0.9)` }}
         />
 
         {/* Activity icon */}
-        <span className="text-base flex items-center">{customEmoji || <ActivityIcon type={workout.type} subtype={workout.subtype} strengthType={workout.strengthType} customIcon={workout.customIcon} sportEmoji={workout.sportEmoji} size={16} />}</span>
+        <span className="text-base flex items-center">{liveIcon(15)}</span>
 
         {/* Timer - frozen when finishing */}
-        <span className="font-mono font-semibold text-sm" style={{ color: isFinishing ? '#FFB400' : '#00FF94' }}>
+        <span className="text-white" style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px', fontVariantNumeric: 'tabular-nums' }}>
           {formatElapsed(displayElapsed)}
         </span>
 
         {/* Expand hint - only show when not finishing */}
         {!isFinishing && (
-          <svg className="w-3 h-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+          <svg className="w-3 h-3" style={{ color: '#8a8a8a' }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
           </svg>
         )}
@@ -835,27 +856,28 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
       style={{
         top: '0',
         paddingTop: 'env(safe-area-inset-top, 0px)',
-        backgroundColor: 'rgba(0,0,0,0.98)',
-        borderBottom: '1px solid rgba(0,255,148,0.3)',
+        background: 'linear-gradient(180deg, rgba(26,26,28,0.98), rgba(18,18,20,0.97))',
+        borderRadius: '0 0 28px 28px',
+        boxShadow: '0 20px 40px rgba(0,0,0,0.55), inset 0 -1px 0 rgba(255,255,255,0.06)',
         backdropFilter: 'blur(20px)',
       }}
     >
-      <div className="p-3">
+      <div style={{ padding: '14px 14px 16px' }}>
         {/* Header with collapse */}
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <span
               className="w-2 h-2 rounded-full animate-pulse"
-              style={{ backgroundColor: '#00FF94' }}
+              style={{ backgroundColor: liveColor, boxShadow: `0 0 8px rgba(${liveRgb},0.9)` }}
             />
-            <span className="text-xs text-gray-400 uppercase tracking-wider">Recording</span>
+            <span className="uppercase" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.15em', color: '#8a8a8a' }}>Recording</span>
           </div>
           <button
             onClick={() => setIsExpanded(false)}
-            className="p-1 rounded-lg"
-            style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+            className="flex items-center justify-center"
+            style={{ width: 28, height: 28, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.08)' }}
           >
-            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <svg className="w-3.5 h-3.5" style={{ color: '#aaa' }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
             </svg>
           </button>
@@ -865,18 +887,18 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
           {/* Activity icon */}
           <div
             className="w-11 h-11 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-            style={{ backgroundColor: 'rgba(0,255,148,0.15)' }}
+            style={{ backgroundColor: `rgba(${liveRgb},0.16)` }}
           >
-            {customEmoji || <ActivityIcon type={workout.type} subtype={workout.subtype} strengthType={workout.strengthType} customIcon={workout.customIcon} sportEmoji={workout.sportEmoji} size={22} />}
+            {liveIcon(22)}
           </div>
 
-          {/* Workout info */}
+          {/* Workout info: the timer is the card's one big number */}
           <div className="flex-1 min-w-0">
-            <div className="font-medium text-sm text-white truncate">
+            <div className="text-sm text-white truncate" style={{ fontWeight: 600 }}>
               {typeName}
-              {subtypeName && <span className="text-gray-400 font-normal"> • {subtypeName}</span>}
+              {subtypeName && <span style={{ color: '#8a8a8a', fontWeight: 500 }}> · {subtypeName}</span>}
             </div>
-            <div className="text-xl font-mono font-bold" style={{ color: '#00FF94' }}>
+            <div className="text-white" style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-1.4px', lineHeight: 1.05, fontVariantNumeric: 'tabular-nums' }}>
               {formatElapsed(elapsed)}
             </div>
           </div>
@@ -887,10 +909,10 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
               e.stopPropagation();
               setShowCancelConfirm(true);
             }}
-            className="p-2 rounded-lg transition-all"
-            style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+            className="flex items-center justify-center transition-all flex-shrink-0"
+            style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.08)' }}
           >
-            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <svg className="w-3.5 h-3.5" style={{ color: '#aaa' }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
@@ -928,37 +950,34 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
           <>
         {/* Live metrics from watch or reminder for phone */}
         {workout.source === 'watch' ? (
-          <div className="mt-2 grid grid-cols-3 gap-2">
-            <div className="py-2 px-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              <div className="text-lg font-bold text-white">{liveMetrics.lastHr || '--'}</div>
-              <div className="text-[10px] text-gray-500 flex items-center justify-center gap-1">
-                <span style={{ color: '#FF3B30' }}>♥</span> BPM
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            {[
+              { label: 'bpm', value: liveMetrics.lastHr || '--', icon: <LiveStatIcon d={LIVE_ICON.heart} color="#FF453A" /> },
+              { label: 'cal', value: liveMetrics.calories || '0', icon: <LiveStatIcon d={LIVE_ICON.flame} color="#FF6B6B" /> },
+              { label: _unitLabel.toLowerCase(), value: liveMetrics.distance > 10 ? (liveMetrics.distance / _metersPerUnit).toFixed(2) : '0.00', icon: <LiveStatIcon d={LIVE_ICON.pin} color={liveColor} /> },
+            ].map((m) => (
+              <div key={m.label} style={{ padding: '10px 10px 9px', borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <div className="flex items-center gap-[5px] mb-[5px]">
+                  {m.icon}
+                  <span className="uppercase" style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.15em', color: '#8a8a8a' }}>{m.label}</span>
+                </div>
+                <div className="text-white" style={{ ...NUM.value, fontVariantNumeric: 'tabular-nums' }}>{m.value}</div>
               </div>
-            </div>
-            <div className="py-2 px-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              <div className="text-lg font-bold" style={{ color: '#FF6B6B' }}>{liveMetrics.calories || '0'}</div>
-              <div className="text-[10px] text-gray-500">CAL</div>
-            </div>
-            <div className="py-2 px-2 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-              <div className="text-lg font-bold" style={{ color: '#5AC8FA' }}>
-                {liveMetrics.distance > 10 ? (liveMetrics.distance / _metersPerUnit).toFixed(2) : '0.00'}
-              </div>
-              <div className="text-[10px] text-gray-500">{_unitLabel}</div>
-            </div>
+            ))}
           </div>
         ) : (
-          <div className="mt-2 py-2 px-3 rounded-lg text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-            <span className="text-xs text-gray-500">Track with your watch for heart rate & calories</span>
+          <div className="mt-3 py-2 px-3 text-center" style={{ borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.05)' }}>
+            <span className="text-xs" style={{ color: '#8a8a8a' }}>Track with your watch for heart rate & calories</span>
           </div>
         )}
 
         {/* Finish button */}
         <button
           onClick={onFinish}
-          className="w-full mt-3 py-2.5 rounded-xl font-semibold text-sm text-black transition-all active:scale-[0.98]"
-          style={{ backgroundColor: '#00FF94' }}
+          className="w-full transition-all active:scale-[0.98] bg-white text-black active:bg-[#e5e5e5]"
+          style={{ marginTop: 14, padding: '12px 0', borderRadius: 14, fontSize: 15, fontWeight: 700 }}
         >
-          {workout.source === 'watch' ? 'End Workout' : 'Finish Timer'}
+          {workout.source === 'watch' ? 'End workout' : 'Finish timer'}
         </button>
           </>
         )}
@@ -971,7 +990,7 @@ const ActiveWorkoutIndicator = ({ workout, onFinish, onCancel, activeTab, isFini
 // goal math, stats, share card and weekly planner can't drift apart. See the note there.
 
 // Finish Workout Modal - Shown when user taps "Finish Timer"
-const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linkedWorkoutUUIDs = [], activeChallenges = [], friendsByUid = {} }) => {
+const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linkedWorkoutUUIDs = [], activeChallenges = [], friendsByUid = {}, distanceUnit = 'mi' }) => {
   const [notes, setNotes] = useState('');
   const [calories, setCalories] = useState('');
   const [avgHr, setAvgHr] = useState('');
@@ -1412,6 +1431,12 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
   if (!isOpen || !workout) return null;
 
   const finishCustomEmoji = finishSportEmoji || workout.customEmoji || workout.sportEmoji || null;
+  // The workout's category colour: its tile, the linked row and every selected chip take it.
+  const finishCat = getActivityCategory({ ...workout, countToward: finishCountToward || workout.countToward });
+  const finishCatColor = finishCat === 'cardio' ? '#FF9500' : finishCat === 'recovery' ? '#00D1FF' : (finishCat === 'lifting' || finishCat === 'lifting+cardio') ? '#00FF94' : '#aaa';
+  const finishCatRgb = hexToRgb(finishCatColor);
+  const _milesToDisplay = (mi) => (mi ? parseFloat(mi) * (distanceUnit === 'km' ? 1.60934 : 1) : 0);
+  const _distanceUnitLabel = distanceUnit === 'km' ? 'km' : 'mi';
   const typeName = workout.type === 'Strength Training'
     ? (finishStrengthType || workout.strengthType || 'Strength')
     : workout.type;
@@ -1507,22 +1532,22 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
     >
       <div
         className="w-full max-w-lg rounded-t-3xl overflow-hidden"
-        style={{ backgroundColor: '#1A1A1A', maxHeight: '85vh' }}
+        style={{ background: 'linear-gradient(180deg, #1b1b1d, #141416)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08)', maxHeight: '85vh' }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-800" style={{ touchAction: 'none' }}>
+        <div className="flex items-center justify-between p-4" style={{ touchAction: 'none', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
           <button
             onClick={onClose}
             className="text-gray-400 font-medium px-2 py-1"
           >
             Cancel
           </button>
-          <h2 className="font-bold text-white">Save Workout</h2>
+          <h2 className="font-bold text-white" style={{ fontSize: 16 }}>Save workout</h2>
           <button
             onClick={handleSave}
             disabled={photoMissingForChallenge}
-            className="font-bold px-2 py-1"
-            style={{ color: photoMissingForChallenge ? 'rgba(0,255,148,0.3)' : '#00FF94' }}
+            className="bg-white text-black active:bg-[#e5e5e5]"
+            style={{ padding: '6px 14px', borderRadius: 999, fontWeight: 700, fontSize: 14, opacity: photoMissingForChallenge ? 0.3 : 1 }}
           >
             Save
           </button>
@@ -1531,29 +1556,37 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
         {/* Content */}
         <div ref={scrollContentRef} className="p-4 overflow-y-auto" style={{ maxHeight: 'calc(85vh - 60px)', overscrollBehavior: 'contain' }}>
           {/* Workout summary — compact inline header */}
-          <div className="flex items-center gap-3 mb-4 pb-4 border-b border-white/10">
+          <div className="flex items-center gap-3 pb-4" style={{ marginBottom: 18, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
             <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
-              style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}
+              className="w-11 h-11 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+              style={{ backgroundColor: `rgba(${finishCatRgb},0.16)` }}
             >
-              {finishCustomEmoji || <ActivityIcon type={workout.type} subtype={workout.subtype} strengthType={finishStrengthType || workout.strengthType} sportEmoji={workout.sportEmoji} size={22} />}
+              {finishCustomEmoji || <ActivityIcon type={workout.type} subtype={workout.subtype} strengthType={finishStrengthType || workout.strengthType} sportEmoji={workout.sportEmoji} size={22} color={finishCatColor} />}
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold text-white truncate">
                 {typeName}
-                {subtypeName && <span className="text-gray-400 font-normal"> · {subtypeName}</span>}
+                {subtypeName && <span style={{ color: '#8a8a8a', fontWeight: 500 }}> · {subtypeName}</span>}
               </div>
-              <div className="text-lg font-bold" style={{ color: '#00FF94' }}>
+              <div className="text-white" style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-1px', lineHeight: 1.05 }}>
                 {formatDuration(linkedWorkout?.duration || duration)}
               </div>
             </div>
+            {linkedWorkout?.distance > 0 && (
+              <div className="text-right flex-shrink-0">
+                <div className="text-white" style={NUM.value}>
+                  {_milesToDisplay(linkedWorkout.distance).toFixed(2)}<span style={{ fontSize: 12, color: '#666', fontWeight: 600 }}> {_distanceUnitLabel}</span>
+                </div>
+                <div className="uppercase" style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.15em', color: '#8a8a8a', marginTop: 3 }}>From Health</div>
+              </div>
+            )}
           </div>
 
           {/* Strength Training Pickers */}
           {workout?.type === 'Strength Training' && (
             <>
               <div className="mb-4">
-                <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Strength Type</label>
+                <label className="uppercase block" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', color: '#8a8a8a', marginBottom: 9 }}>Strength Type</label>
                 <div className="flex flex-wrap gap-2">
                   {['Weightlifting', 'Bodyweight', 'Circuit'].map((st) => {
                     const isSelected = finishStrengthType === st;
@@ -1563,9 +1596,11 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                         onClick={() => { setFinishStrengthType(st); triggerHaptic(ImpactStyle.Light); }}
                         className="px-3 py-1.5 rounded-full text-xs transition-all duration-200 flex items-center gap-1.5"
                         style={{
-                          backgroundColor: isSelected ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
-                          border: isSelected ? '1px solid #00FF94' : '1px solid transparent',
-                          color: isSelected ? '#00FF94' : 'white'
+                          backgroundColor: isSelected ? `rgba(${finishCatRgb},0.14)` : 'rgba(255,255,255,0.06)',
+                          boxShadow: isSelected ? `inset 0 0 0 1.5px rgba(${finishCatRgb},0.75)` : 'none',
+                          border: '1px solid transparent',
+                          color: isSelected ? '#fff' : '#ccc',
+                          fontWeight: isSelected ? 600 : 500
                         }}
                       >
                         <ActivityIcon type="Strength Training" strengthType={st} size={16} /> {st}
@@ -1575,7 +1610,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                 </div>
               </div>
               <div className="mb-4">
-                <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Focus Areas</label>
+                <label className="uppercase block" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', color: '#8a8a8a', marginBottom: 9 }}>Focus Areas</label>
                 <div className="grid grid-cols-3 gap-2">
                   {Object.entries(FOCUS_AREA_GROUPS).map(([groupName, members]) => {
                     const allSelected = members.every(m => finishFocusAreas.includes(m));
@@ -1592,9 +1627,10 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                           }}
                           className="px-2 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 text-center"
                           style={{
-                            backgroundColor: allSelected ? 'rgba(0,255,148,0.25)' : someSelected ? 'rgba(0,255,148,0.1)' : 'rgba(255,255,255,0.08)',
-                            border: allSelected ? '1px solid #00FF94' : someSelected ? '1px solid rgba(0,255,148,0.4)' : '1px solid rgba(255,255,255,0.15)',
-                            color: allSelected || someSelected ? '#00FF94' : 'rgba(255,255,255,0.7)'
+                            backgroundColor: allSelected ? `rgba(${finishCatRgb},0.14)` : someSelected ? `rgba(${finishCatRgb},0.07)` : 'rgba(255,255,255,0.06)',
+                            boxShadow: allSelected ? `inset 0 0 0 1.5px rgba(${finishCatRgb},0.75)` : someSelected ? `inset 0 0 0 1px rgba(${finishCatRgb},0.4)` : 'inset 0 0 0 1px rgba(255,255,255,0.12)',
+                            border: '1px solid transparent',
+                            color: allSelected || someSelected ? '#fff' : 'rgba(255,255,255,0.7)'
                           }}
                         >
                           {groupName}
@@ -1607,9 +1643,11 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                               onClick={() => { setFinishFocusAreas(prev => prev.includes(area) ? prev.filter(a => a !== area) : [...prev, area]); triggerHaptic(ImpactStyle.Light); }}
                               className="px-2 py-1.5 rounded-lg text-xs transition-all duration-200 text-center"
                               style={{
-                                backgroundColor: isSelected ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
-                                border: isSelected ? '1px solid #00FF94' : '1px solid transparent',
-                                color: isSelected ? '#00FF94' : 'white'
+                                backgroundColor: isSelected ? `rgba(${finishCatRgb},0.14)` : 'rgba(255,255,255,0.06)',
+                                boxShadow: isSelected ? `inset 0 0 0 1.5px rgba(${finishCatRgb},0.75)` : 'none',
+                                border: '1px solid transparent',
+                                color: isSelected ? '#fff' : '#ccc',
+                                fontWeight: isSelected ? 600 : 500
                               }}
                             >
                               {area}
@@ -1627,7 +1665,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
           {/* Subtype Picker — for activities that have subtypes */}
           {workout?.type && subtypeOptions[workout.type] && (
             <div className="mb-4">
-              <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">
+              <label className="uppercase block" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', color: '#8a8a8a', marginBottom: 9 }}>
                 {workout.type === 'Sports' ? 'Sport' : `${workout.type} Type`}
               </label>
               <div className="flex flex-wrap gap-2">
@@ -1648,9 +1686,11 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                       }}
                       className="px-3 py-1.5 rounded-full text-xs transition-all duration-200 flex items-center gap-1.5"
                       style={{
-                        backgroundColor: isSelected ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
-                        border: isSelected ? '1px solid #00FF94' : '1px solid transparent',
-                        color: isSelected ? '#00FF94' : 'white'
+                        backgroundColor: isSelected ? `rgba(${finishCatRgb},0.14)` : 'rgba(255,255,255,0.06)',
+                        boxShadow: isSelected ? `inset 0 0 0 1.5px rgba(${finishCatRgb},0.75)` : 'none',
+                        border: '1px solid transparent',
+                        color: isSelected ? '#fff' : '#ccc',
+                        fontWeight: isSelected ? 600 : 500
                       }}
                     >
                       {workout.type === 'Sports' ? <ActivityIcon type="Sports" subtype={stName} size={14} /> : stIcon ? <span>{stIcon}</span> : null}
@@ -1665,7 +1705,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
           {/* Count Toward — for all standard activity types */}
           {showFinishCountToward && (
             <div className="mb-4">
-              <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Count Toward</label>
+              <label className="uppercase block" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', color: '#8a8a8a', marginBottom: 9 }}>Count Toward</label>
               <div className="flex gap-2">
                 <button
                   onClick={() => {
@@ -1677,12 +1717,14 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                   }}
                   className="flex-1 p-2.5 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
                   style={{
-                    backgroundColor: (finishCountToward === 'lifting' || finishCountToward === 'lifting+cardio') ? 'rgba(0,255,148,0.2)' : 'rgba(255,255,255,0.05)',
-                    border: (finishCountToward === 'lifting' || finishCountToward === 'lifting+cardio') ? '1px solid #00FF94' : '1px solid transparent',
-                    color: (finishCountToward === 'lifting' || finishCountToward === 'lifting+cardio') ? '#00FF94' : 'white'
+                    backgroundColor: (finishCountToward === 'lifting' || finishCountToward === 'lifting+cardio') ? 'rgba(0,255,148,0.14)' : 'rgba(255,255,255,0.05)',
+                    boxShadow: (finishCountToward === 'lifting' || finishCountToward === 'lifting+cardio') ? 'inset 0 0 0 1.5px rgba(0,255,148,0.75)' : 'none',
+                    border: '1px solid transparent',
+                    color: (finishCountToward === 'lifting' || finishCountToward === 'lifting+cardio') ? '#fff' : '#bbb',
+                    '--seg-icon': (finishCountToward === 'lifting' || finishCountToward === 'lifting+cardio') ? '#00FF94' : '#bbb'
                   }}
                 >
-                  <span><CategoryIcon category="lifts" size={14} color="currentColor" /></span> Strength
+                  <span><CategoryIcon category="lifts" size={14} color="var(--seg-icon)" /></span> Strength
                 </button>
                 <button
                   onClick={() => {
@@ -1694,23 +1736,27 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                   }}
                   className="flex-1 p-2.5 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
                   style={{
-                    backgroundColor: (finishCountToward === 'cardio' || finishCountToward === 'lifting+cardio') ? 'rgba(255,149,0,0.2)' : 'rgba(255,255,255,0.05)',
-                    border: (finishCountToward === 'cardio' || finishCountToward === 'lifting+cardio') ? '1px solid #FF9500' : '1px solid transparent',
-                    color: (finishCountToward === 'cardio' || finishCountToward === 'lifting+cardio') ? '#FF9500' : 'white'
+                    backgroundColor: (finishCountToward === 'cardio' || finishCountToward === 'lifting+cardio') ? 'rgba(255,149,0,0.14)' : 'rgba(255,255,255,0.05)',
+                    boxShadow: (finishCountToward === 'cardio' || finishCountToward === 'lifting+cardio') ? 'inset 0 0 0 1.5px rgba(255,149,0,0.75)' : 'none',
+                    border: '1px solid transparent',
+                    color: (finishCountToward === 'cardio' || finishCountToward === 'lifting+cardio') ? '#fff' : '#bbb',
+                    '--seg-icon': (finishCountToward === 'cardio' || finishCountToward === 'lifting+cardio') ? '#FF9500' : '#bbb'
                   }}
                 >
-                  <span><CategoryIcon category="cardio" size={14} color="currentColor" /></span> Cardio
+                  <span><CategoryIcon category="cardio" size={14} color="var(--seg-icon)" /></span> Cardio
                 </button>
                 <button
                   onClick={() => { setFinishCountToward('recovery'); triggerHaptic(ImpactStyle.Light); }}
                   className="flex-1 p-2.5 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
                   style={{
-                    backgroundColor: finishCountToward === 'recovery' ? 'rgba(0,209,255,0.2)' : 'rgba(255,255,255,0.05)',
-                    border: finishCountToward === 'recovery' ? '1px solid #00D1FF' : '1px solid transparent',
-                    color: finishCountToward === 'recovery' ? '#00D1FF' : 'white'
+                    backgroundColor: finishCountToward === 'recovery' ? 'rgba(0,209,255,0.14)' : 'rgba(255,255,255,0.05)',
+                    boxShadow: finishCountToward === 'recovery' ? 'inset 0 0 0 1.5px rgba(0,209,255,0.75)' : 'none',
+                    border: '1px solid transparent',
+                    color: finishCountToward === 'recovery' ? '#fff' : '#bbb',
+                    '--seg-icon': finishCountToward === 'recovery' ? '#00D1FF' : '#bbb'
                   }}
                 >
-                  <span><CategoryIcon category="recovery" size={14} color="currentColor" /></span> Recovery
+                  <span><CategoryIcon category="recovery" size={14} color="var(--seg-icon)" /></span> Recovery
                 </button>
               </div>
               <div className="flex gap-2 mt-2">
@@ -1718,9 +1764,11 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                   onClick={() => { setFinishCountToward('warmup'); triggerHaptic(ImpactStyle.Light); }}
                   className="flex-1 py-1.5 px-3 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
                   style={{
-                    backgroundColor: finishCountToward === 'warmup' ? 'rgba(255,214,10,0.2)' : 'rgba(255,255,255,0.05)',
-                    border: finishCountToward === 'warmup' ? '1px solid #FFD60A' : '1px solid transparent',
-                    color: finishCountToward === 'warmup' ? '#FFD60A' : 'white'
+                    backgroundColor: finishCountToward === 'warmup' ? 'rgba(170,170,170,0.14)' : 'rgba(255,255,255,0.05)',
+                    boxShadow: finishCountToward === 'warmup' ? 'inset 0 0 0 1.5px rgba(170,170,170,0.75)' : 'none',
+                    border: '1px solid transparent',
+                    color: finishCountToward === 'warmup' ? '#fff' : '#bbb',
+                    '--seg-icon': finishCountToward === 'warmup' ? '#aaa' : '#bbb'
                   }}
                 >
                   <span>🔥</span> Warm Up
@@ -1750,14 +1798,9 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
           {/* Link Apple Health Workout Section (hidden for watch workouts) */}
           {workout?.source !== 'watch' && (
           <div className="mb-6">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="flex items-center text-cyan-400">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                </svg>
-              </span>
-              <span className="text-sm font-medium text-white">Link Apple Health Workout</span>
+            <div className="flex items-center gap-[7px]" style={{ marginBottom: 9 }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path fill="#FF2D55" d="M12 21.6c-.4 0-.8-.2-1.1-.4C6.2 17.7 2.4 14.3 2.4 9.6 2.4 6.6 4.7 4.4 7.6 4.4c1.7 0 3.3.8 4.4 2.1 1.1-1.3 2.7-2.1 4.4-2.1 2.9 0 5.2 2.2 5.2 5.2 0 4.7-3.8 8.1-8.5 11.6-.3.2-.7.4-1.1.4z" /></svg>
+              <span className="uppercase" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', color: '#8a8a8a' }}>{linkedWorkout ? 'Linked from Apple Health' : 'Link from Apple Health'}</span>
             </div>
 
             {isLoadingWorkouts ? (
@@ -1796,26 +1839,27 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                         }
                         triggerHaptic(ImpactStyle.Light);
                       }}
-                      className="w-full p-2 rounded-xl text-left"
+                      className="w-full p-3 text-left"
                       style={{
-                        backgroundColor: isSelected ? 'rgba(0,255,148,0.15)' : 'rgba(255,255,255,0.05)',
-                        border: isSelected ? '1px solid rgba(0,255,148,0.4)' : '1px solid rgba(255,255,255,0.1)'
+                        borderRadius: 14,
+                        backgroundColor: 'rgba(255,255,255,0.05)',
+                        boxShadow: isSelected ? 'inset 0 0 0 1.5px rgba(255,255,255,0.22)' : 'inset 0 0 0 1px rgba(255,255,255,0.08)'
                       }}
                     >
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                            <ActivityIcon type={w.type} subtype={w.subtype} size={18} />
+                        <div className="flex items-center gap-[10px]">
+                          <div className="flex items-center justify-center flex-shrink-0" style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: `rgba(${finishCatRgb},0.16)` }}>
+                            <ActivityIcon type={w.type} subtype={w.subtype} size={17} color={finishCatColor} />
                           </div>
                           <div>
-                            <div className="text-sm font-medium text-white">{w.type || 'Workout'}</div>
-                            <div className="text-xs text-gray-500">
+                            <div className="text-white" style={{ fontSize: 13.5, fontWeight: 600 }}>{w.appleWorkoutName || w.type || 'Workout'}</div>
+                            <div style={{ fontSize: 11.5, color: '#8a8a8a' }}>
                               {workoutTime}{workoutDuration && ` • ${workoutDuration}`}{workoutCals && ` • ${workoutCals}`}
                             </div>
                           </div>
                         </div>
                         {isSelected && (
-                          <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ backgroundColor: '#00FF94' }}>
+                          <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ backgroundColor: '#fff' }}>
                             <svg className="w-4 h-4 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                             </svg>
@@ -1835,8 +1879,8 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
             )}
 
             {linkedWorkout && (
-              <div className="mt-2 p-2 rounded-lg" style={{ backgroundColor: 'rgba(0,255,148,0.1)' }}>
-                <p className="text-xs text-center" style={{ color: '#00FF94' }}>
+              <div className="mt-2 p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.04)' }}>
+                <p className="text-xs text-center" style={{ color: '#8a8a8a' }}>
                   Stats from your tracker will be used for this workout
                 </p>
               </div>
@@ -1850,7 +1894,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
 
             {/* Notes */}
             <div>
-              <label className="text-xs text-gray-500 block mb-1">Notes</label>
+              <label className="uppercase block" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.14em', color: '#8a8a8a', marginBottom: 9 }}>Notes</label>
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
@@ -1864,7 +1908,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
             {/* Metrics row */}
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="text-xs text-gray-500 block mb-1">Calories</label>
+                <label className="text-xs block mb-1" style={{ color: '#8a8a8a' }}>Calories</label>
                 <input
                   type="number"
                   value={calories}
@@ -1875,7 +1919,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                 />
               </div>
               <div>
-                <label className="text-xs text-gray-500 block mb-1">Avg HR</label>
+                <label className="text-xs block mb-1" style={{ color: '#8a8a8a' }}>Avg HR</label>
                 <input
                   type="number"
                   value={avgHr}
@@ -1886,7 +1930,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                 />
               </div>
               <div>
-                <label className="text-xs text-gray-500 block mb-1">Max HR</label>
+                <label className="text-xs block mb-1" style={{ color: '#8a8a8a' }}>Max HR</label>
                 <input
                   type="number"
                   value={maxHr}
@@ -1903,9 +1947,9 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
               {photoMissingForChallenge && (
                 <div
                   className="mb-3 p-3 rounded-xl"
-                  style={{ backgroundColor: 'rgba(255,214,10,0.08)', border: '1px solid rgba(255,214,10,0.35)' }}
+                  style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.2)' }}
                 >
-                  <p className="text-xs font-semibold" style={{ color: '#FFD60A' }}>
+                  <p className="text-xs font-semibold" style={{ color: '#fff' }}>
                     📸 Photo required to fulfill {photoRequiredMatches.length === 1
                       ? `${friendsByUid[photoRequiredMatches[0].challengerUid]?.displayName
                           || friendsByUid[photoRequiredMatches[0].challengerUid]?.username
@@ -1920,7 +1964,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
               )}
               <label
                 className="text-xs block mb-2"
-                style={{ color: photoMissingForChallenge ? '#FFD60A' : 'rgb(107, 114, 128)' }}
+                style={{ color: photoMissingForChallenge ? '#fff' : '#8a8a8a' }}
               >
                 Photo {photoMissingForChallenge ? '(required for challenge)' : '(optional)'}
               </label>
@@ -1936,7 +1980,7 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
 
               {isLoadingPhoto ? (
                 <div className="w-full h-48 rounded-xl bg-white/5 flex items-center justify-center">
-                  <div className="w-8 h-8 border-2 border-gray-500 border-t-[#00FF94] rounded-full animate-spin" />
+                  <div className="w-8 h-8 border-2 border-gray-500 border-t-white rounded-full animate-spin" />
                 </div>
               ) : photoPreview ? (
                 <div className="space-y-3">
@@ -1963,13 +2007,13 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                     <div className="flex gap-2">
                       <button
                         onClick={() => setIsPhotoPrivate(false)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${!isPhotoPrivate ? 'bg-[#00FF94] text-black' : 'bg-white/10 text-gray-400'}`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${!isPhotoPrivate ? 'bg-white text-black' : 'bg-white/10 text-gray-400'}`}
                       >
                         Friends
                       </button>
                       <button
                         onClick={() => setIsPhotoPrivate(true)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isPhotoPrivate ? 'bg-[#00FF94] text-black' : 'bg-white/10 text-gray-400'}`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isPhotoPrivate ? 'bg-white text-black' : 'bg-white/10 text-gray-400'}`}
                       >
                         Only Me
                       </button>
@@ -1980,21 +2024,16 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                 <div className="flex gap-2">
                   <button
                     onClick={handleTakePhoto}
-                    className="flex-1 flex items-center justify-center gap-2 p-3 rounded-xl bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10 transition-colors"
+                    className="flex-1 flex items-center justify-center gap-2 p-3 bg-white/5 transition-colors" style={{ borderRadius: 14, color: '#ddd' }}
                   >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
+                    <LiveStatIcon d={LIVE_ICON.camera} color="#ccc" size={16} strokeWidth={2} />
                     <span className="text-sm">Camera</span>
                   </button>
                   <button
                     onClick={handleChooseFromLibrary}
-                    className="flex-1 flex items-center justify-center gap-2 p-3 rounded-xl bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10 transition-colors"
+                    className="flex-1 flex items-center justify-center gap-2 p-3 bg-white/5 transition-colors" style={{ borderRadius: 14, color: '#ddd' }}
                   >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
+                    <LiveStatIcon d={LIVE_ICON.image} color="#ccc" size={16} strokeWidth={2} />
                     <span className="text-sm">Library</span>
                   </button>
                 </div>
@@ -2008,14 +2047,17 @@ const FinishWorkoutModal = ({ isOpen, workout, onClose, onSave, onDiscard, linke
                 type="button"
                 onClick={() => { triggerHaptic(ImpactStyle.Light); setChallengeAfterSave(v => !v); }}
                 className="w-full mt-4 flex items-center gap-3 p-3 rounded-xl text-left"
-                style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+                style={{ borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.04)' }}
               >
+                <div className="flex items-center justify-center flex-shrink-0" style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.08)' }}>
+                  <LiveStatIcon d={LIVE_ICON.bolt} color="#ddd" size={16} strokeWidth={2} />
+                </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-white">Challenge a friend</div>
-                  <div className="text-xs text-gray-500 mt-0.5 leading-snug">After saving, send this workout to a friend to match within 24–72 hours.</div>
+                  <div className="text-xs mt-0.5 leading-snug" style={{ color: '#8a8a8a' }}>After saving, send this workout to a friend to match within 24–72 hours.</div>
                 </div>
-                <div className="w-11 h-6 rounded-full relative flex-shrink-0 transition-colors" style={{ backgroundColor: challengeAfterSave ? '#00FF94' : 'rgba(255,255,255,0.15)' }}>
-                  <div className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all" style={{ left: challengeAfterSave ? 22 : 2 }} />
+                <div className="w-11 h-6 rounded-full relative flex-shrink-0 transition-colors" style={{ backgroundColor: challengeAfterSave ? '#fff' : 'rgba(255,255,255,0.15)' }}>
+                  <div className="absolute top-0.5 w-5 h-5 rounded-full transition-all" style={{ left: challengeAfterSave ? 22 : 2, backgroundColor: challengeAfterSave ? '#000' : '#fff' }} />
                 </div>
               </button>
             )}
@@ -17403,6 +17445,7 @@ export default function DaySevenApp() {
       <FinishWorkoutModal
         isOpen={showFinishWorkout}
         workout={activeWorkout}
+        distanceUnit={userProfile?.distanceUnit === 'km' ? 'km' : 'mi'}
         onDiscard={async () => {
           try {
             if (activeWorkout?.source === 'watch') {
